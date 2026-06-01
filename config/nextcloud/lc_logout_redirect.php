@@ -1,0 +1,1 @@
+$response = new RedirectResponse($this->urlGenerator->getAbsoluteURL('/auth/logout/'));

@@ -116,6 +116,7 @@ services:
       - "8100:8100" # pgAdmin
       - "8101:8101" # PostgREST
       - "8105:8105" # OpenProject
+      - "8106:8106" # Nextcloud + Collabora
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./volumes/logs/proxy:/var/log/nginx:z
@@ -162,7 +163,7 @@ services:
       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
       OPENCODE_TIMEOUT: ${OPENCODE_TIMEOUT:-600000}
       OPENCODE_CHUNK_TIMEOUT: ${OPENCODE_CHUNK_TIMEOUT:-120000}
-      OPENPROJECT_API_TOKEN: ${OPENPROJECT_API_TOKEN:-}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-}
       POSTGREST_API_KEY: ${API_KEY:-}
     volumes:
       - ./config/opencode/instructions.md:/opencode/instructions.md:ro
@@ -376,6 +377,93 @@ services:
     networks:
       - nocodenation_all_in_wonder_network
 
+  nextcloud-db:
+    image: postgres:17
+    container_name: nextcloud-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DATABASE_PASSWORD}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - ./volumes/nextcloud_db:/var/lib/postgresql/data
+    networks:
+      - nocodenation_all_in_wonder_network
+
+  nextcloud-redis:
+    image: redis:8
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    volumes:
+      - ./volumes/nextcloud_redis/data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"] # Check if Redis responds to PING
+      interval: 5s # Check every 5 seconds
+      timeout: 3s # Allow 3 seconds for the command to complete
+      retries: 5 # Consider unhealthy after 5 consecutive failures
+      start_period: 10s
+    command: redis-server --requirepass ${NEXTCLOUD_REDIS_PASSWORD}
+    networks:
+      - nocodenation_all_in_wonder_network
+
+  nextcloud:
+    image: nextcloud:stable
+    container_name: nextcloud
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DATABASE_PASSWORD}
+      POSTGRES_HOST: nextcloud-db
+      NEXTCLOUD_ADMIN_USER: ${PGADMIN_DEFAULT_EMAIL}
+      NEXTCLOUD_ADMIN_PASSWORD: ${PGADMIN_DEFAULT_EMAIL}
+      NEXTCLOUD_TRUSTED_DOMAINS: "localhost:8106"
+      REDIS_HOST: nextcloud-redis
+      REDIS_HOST_PASSWORD: ${NEXTCLOUD_REDIS_PASSWORD}
+      OVERWRITEPROTOCOL: http
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      nextcloud-redis:
+        condition: service_healthy
+    volumes:
+      - ./volumes/nextcloud/html:/var/www/html
+      - ./volumes/nextcloud/config:/var/www/html/config
+      - ./volumes/nextcloud/data:/var/www/html/data
+      - ./volumes/nextcloud/custom_apps:/var/www/html/custom_apps
+      - ./config/nextcloud/sso_block.php:/tmp/sso_block.php
+      - ./config/nextcloud/lc_logout_redirect.php:/tmp/lc_logout_redirect.php
+      - ./config/nextcloud/session_security_block.php:/tmp/session_security_block.php
+      - ./config/nextcloud/patch_nextcloud.sh:/docker-entrypoint-hooks.d/before-starting/patch_nextcloud.sh
+      - ./config/nextcloud/set_trusted_proxies.sh:/docker-entrypoint-hooks.d/before-starting/set_trusted_proxies.sh
+    networks:
+      - nocodenation_all_in_wonder_network
+
+  collabora:
+    image: collabora/code
+    container_name: collabora
+    restart: unless-stopped
+    cap_add:
+      - MKNOD
+    environment:
+      aliasgroup1: "http://localhost:8106"
+      extra_params: "--o:ssl.enable=false --o:ssl.termination=false --o:mount_jail_tree=false"
+      server_name: "localhost:8106"
+      dictionaries: "de_DE en_GB en_US"
+      username: "collabora"
+      password: "collabora"
+      DONT_GEN_SSL_CERT: "true"
+    volumes:
+      - ./volumes/collabora/fonts:/usr/share/fonts/truetype/custom
+      - ./volumes/collabora/fonts:/opt/cool/systemplate/usr/share/fonts/truetype/custom
+    networks:
+      - nocodenation_all_in_wonder_network
 
 networks:
   nocodenation_all_in_wonder_network:
