@@ -10,15 +10,16 @@ container by their Docker service name.
 
 ## Services
 
-| Service | Internal URL | Purpose |
-|---|---|---|
-| `postgres` | `postgres:5432` | Main PostgreSQL 17 database (pgvector). User: `api_user`, DB: `postgres` |
-| `postgrest_app` | `http://postgrest_app:3000` | PostgREST — REST API auto-generated from the `public` schema |
-| `pgadmin` | `http://pgadmin:80` | pgAdmin 4 web UI |
-| `proxy` | `http://proxy:80` (pgAdmin), `http://proxy:81` (PostgREST) | nginx reverse proxy |
-| `swagger` | `http://swagger:8080` | Swagger UI for PostgREST OpenAPI spec |
+| Service | Internal URL                                                  | Purpose |
+|---|---------------------------------------------------------------|---|
+| `postgres` | `postgres:5432`                                               | Main PostgreSQL 17 database (pgvector). User: `api_user`, DB: `postgres` |
+| `postgrest_app` | `http://postgrest_app:3000`                                   | PostgREST — REST API auto-generated from the `public` schema |
+| `pgadmin` | `http://pgadmin:80`                                           | pgAdmin 4 web UI |
+| `proxy` | `http://proxy:8100` (pgAdmin), `http://proxy:8101` (PostgREST) | nginx reverse proxy |
+| `swagger` | `http://swagger:8080`                                         | Swagger UI for PostgREST OpenAPI spec |
+| `openproject` (via `proxy`) | `http://proxy:8105`                                 | OpenProject — work packages, projects, wikis, time tracking (API v3 at `/api/v3`) |
 
-External ports on the host: pgAdmin → 8100, PostgREST → 8101, Swagger → 8102, OpenCode → 8103.
+External ports on the host: pgAdmin → 8100, PostgREST → 8101, Swagger → 8102, OpenCode → 8103, OpenProject → 8105.
 
 ---
 
@@ -199,6 +200,130 @@ OpenAI-style (`/v1/embeddings`) and llama.cpp-native (`/embedding`) response sha
      -d "{\"p_table_name\": \"docs\", \"p_embedding_column\": \"embedding\", \"p_query\": \"$VEC\", \"p_k\": 5}"
    ```
    It returns the nearest rows ordered by `distance` (cosine; lower = more similar).
+
+---
+
+## OpenProject API
+
+OpenProject exposes a HAL+JSON REST API (v3) at `http://proxy:8105/api/v3`.
+Use it for work packages, projects, users, wikis, time entries, queries, and attachments.
+
+### Authentication — ask the user for an API token
+
+The OpenProject API requires a per-user API token. **You do not have one by default.**
+The first time you need to call the OpenProject API in a session, ask the user to provide
+one with this exact wording:
+
+> I need an OpenProject API token to call the OpenProject API on your behalf.
+> Open OpenProject (http://localhost:8105) → click your avatar (top-right) → **Account settings**
+> → **Access tokens** → **API** → **+ Generate** (or copy an existing one), then paste the
+> token here. I will keep it only for this session.
+
+Once the user provides it, keep it in memory for the rest of the session — do not write it
+to disk and do not echo it back in responses or logs.
+
+The token is used as HTTP Basic Auth with the **literal** username `apikey` and the token
+as the password. Most tools accept the `user:password` form directly:
+
+```bash
+# $OP_TOKEN is the value the user pasted
+curl -s -u "apikey:$OP_TOKEN" \
+  -H "Accept: application/json" \
+  http://proxy:8105/api/v3
+```
+
+If the user has not yet provided a token and is not available to ask (e.g. an autonomous
+run), stop and report that an OpenProject API token is required before continuing — do not
+attempt to call the API anonymously or invent a token.
+
+### Discovering endpoints
+
+The API root returns a HAL document linking to every available collection. Start there
+when unsure which endpoint to use:
+
+```bash
+curl -s -u "apikey:$OP_TOKEN" http://proxy:8105/api/v3 | jq '._links | keys'
+```
+
+Common endpoints:
+
+| Resource | Path |
+|---|---|
+| Projects | `GET /api/v3/projects` |
+| Work packages (global) | `GET /api/v3/work_packages` |
+| Work packages in a project | `GET /api/v3/projects/{id}/work_packages` |
+| Single work package | `GET /api/v3/work_packages/{id}` |
+| Users | `GET /api/v3/users` |
+| Current user | `GET /api/v3/users/me` |
+| Statuses / Types / Priorities | `GET /api/v3/statuses`, `/types`, `/priorities` |
+| Time entries | `GET /api/v3/time_entries` |
+
+### Filtering, paging, sorting
+
+`filters` is a JSON-encoded array of filter objects. URL-encode it before sending.
+
+```bash
+# All open work packages in project 3, page 1, 25 per page, newest first
+curl -s -u "apikey:$OP_TOKEN" \
+  --get http://proxy:8105/api/v3/projects/3/work_packages \
+  --data-urlencode 'filters=[{"status_id":{"operator":"o","values":[]}}]' \
+  --data-urlencode 'pageSize=25' \
+  --data-urlencode 'offset=1' \
+  --data-urlencode 'sortBy=[["updatedAt","desc"]]'
+```
+
+### Creating a work package
+
+OpenProject uses HAL `_links` to reference related resources (project, type, status, etc.)
+by their API URI. `Content-Type` **must** be `application/json`.
+
+```bash
+curl -s -u "apikey:$OP_TOKEN" \
+  -X POST http://proxy:8105/api/v3/projects/3/work_packages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "New task from OpenCode",
+    "description": {"format": "markdown", "raw": "Created via API."},
+    "_links": {
+      "type":     {"href": "/api/v3/types/1"},
+      "priority": {"href": "/api/v3/priorities/8"}
+    }
+  }'
+```
+
+### Updating a work package
+
+Updates require the current `lockVersion` (optimistic concurrency). Fetch the work package
+first, then PATCH with the `lockVersion` you received:
+
+```bash
+curl -s -u "apikey:$OP_TOKEN" \
+  -X PATCH http://proxy:8105/api/v3/work_packages/42 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "lockVersion": 7,
+    "subject": "Updated subject",
+    "_links": {"status": {"href": "/api/v3/statuses/3"}}
+  }'
+```
+
+### Response shape
+
+Every response is HAL+JSON: payload fields at the top level, related-resource URIs under
+`_links`, and embedded sub-resources under `_embedded`. Collections expose items at
+`_embedded.elements` and paging info at the top level (`total`, `count`, `pageSize`,
+`offset`).
+
+```bash
+curl -s -u "apikey:$OP_TOKEN" http://proxy:8105/api/v3/work_packages \
+  | jq '._embedded.elements[] | {id, subject, status: ._links.status.title}'
+```
+
+### Errors
+
+Errors return a HAL document with `_type: "Error"`, an `errorIdentifier`, and a
+human-readable `message`. `422` typically means a validation failure (check `_embedded.details`).
+`409` on PATCH means the `lockVersion` is stale — re-fetch the resource and retry.
 
 ---
 

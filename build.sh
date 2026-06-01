@@ -11,7 +11,7 @@ build_image() {
   docker build --no-cache -t "$tag" "$context"
 }
 
-build_image "webdb-playground/opencode:latest" "${SCRIPT_DIR}/config/opencode"
-build_image "webdb-playground/bun-runner:latest" "${SCRIPT_DIR}/config/bun_runner"
+build_image "all-in-wonder/opencode:latest" "${SCRIPT_DIR}/config/opencode"
+build_image "all-in-wonder/bun-runner:latest" "${SCRIPT_DIR}/config/bun_runner"
 
 echo "Done."
