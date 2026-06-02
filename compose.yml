@@ -119,6 +119,7 @@ services:
       - "8106:8106" # Nextcloud + Collabora
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./config/openproject/theme:/usr/share/nginx/custom-theme:ro
       - ./volumes/logs/proxy:/var/log/nginx:z
     depends_on:
       - postgrest_app
@@ -256,7 +257,8 @@ services:
       - ./volumes/openproject:/var/openproject/assets
       - ./config/openproject/auth_source_sso.rb:/app/app/controllers/concerns/auth_source_sso.rb
       - ./config/openproject/proxy_auth_source.rb:/app/app/models/proxy_auth_source.rb
-    command: "./docker/prod/web"
+      - ./config/openproject/patch_theme.sh:/patch/patch_theme.sh:ro
+    command: ["bash", "-c", "bash /patch/patch_theme.sh; exec ./docker/prod/web"]
     depends_on:
       openproject-db:
         condition: service_healthy

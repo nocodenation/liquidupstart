@@ -1,0 +1,100 @@
+/**
+ * Custom theme for the All-in-Wonder OpenProject instance.
+ *
+ * Served statically by nginx at /custom-theme/style.css and injected into the
+ * <head> of every OpenProject page by config/openproject/patch_theme.sh.
+ * Because this link is appended last in <head>, these rules load after
+ * OpenProject's own stylesheets.
+ *
+ * OpenProject is built on GitHub Primer. Brand colors flow through a small set
+ * of CSS custom properties (see app/views/custom_styles/_inline_css.erb and
+ * _primer_color_mapping.erb in the OpenProject source). Redefining them on
+ * :root recolors the app the same way the Enterprise "Design" admin would —
+ * without needing an Enterprise token.
+ *
+ * Bump the ?v= query in patch_theme.sh when you change this file to bust the
+ * browser cache.
+ */
+
+:root {
+	/* The five variables OpenProject's own theming exposes */
+	--primary-button-color: #0075dd;
+	/*--accent-color: #0082c9;*/
+	--header-bg-color: #F8FBFD;
+	--header-item-font-color: #0075dd;
+	/*--main-menu-bg-color: #2d3436;*/
+	/*--main-menu-bg-selected-background: #1b2426;*/
+
+	/*!* A few derived shades OpenProject normally computes from the above.*/
+	/*   Set them explicitly so hovers/contrast stay consistent. *!*/
+	/*--primary-button-color--major1: #006aa3;   !* darker (hover/active) *!*/
+	/*--primary-button-color--minor1: #cfe6f4;   !* light tint *!*/
+	/*--accent-color--major1: #006aa3;*/
+	/*--header-item-font-color: #ffffff;*/
+	/*--main-menu-font-color: #ffffff;*/
+	--main-menu-bg-color: #F8FBFD;
+	--main-menu-selected-font-color: #0075dd;
+	--headers-color: #2B79BB;
+}
+
+/* Primer maps the accent color inside themed scopes with !important, so mirror
+   it here to guarantee links/controls pick up the brand color. */
+[data-color-mode][data-light-theme="light"],
+[data-color-mode][data-dark-theme="dark"] {
+	/*--fgColor-accent: var(--accent-color) !important;*/
+	/*--fgColor-link: var(--accent-color) !important;*/
+	/*--bgColor-accent-emphasis: var(--accent-color) !important;*/
+}
+
+[data-color-mode="light"][data-light-theme="light"], [data-color-mode="auto"][data-light-theme="light"] {
+	--bgColor-default: #F8FBFD;
+	--borderColor-default: rgb(43 130 225 / 0.3);
+	--borderColor-muted: rgb(43 130 225 / 0.2);
+	--main-menu-border-color: rgb(43 130 225 / 0.2);
+	--control-transparent-bgColor-selected: rgb(43 130 225 / 0.15);
+	--control-transparent-bgColor-hover: rgb(43 130 225 / 0.1);
+}
+
+/* ---------------------------------------------------------------------------
+ * Add any further custom rules below. This is plain CSS with full reach over
+ * the OpenProject UI — not limited to the five built-in variables.
+ * ------------------------------------------------------------------------- */
+
+/*.op-app-header {*/
+/*	background-image: linear-gradient(to right, #5bfab3, #00afef);*/
+/*}*/
+
+/*.op-logo--icon_white {*/
+/*	background-image: url('/custom-theme/img/logo.svg') !important;*/
+/*	background-repeat: no-repeat;*/
+/*	background-position: center;*/
+/*	background-size: contain;*/
+/*}*/
+
+/*.op-logo {*/
+/*	!*width: 200px;*!*/
+/*}*/
+
+.op-logo--link {
+	background-image: url('/custom-theme/img/logo.png') !important;
+}
+
+#menu-toggle--collapse-button .Button-visual,
+.Button--invisible .Button-visual {
+	color: var(--main-menu-selected-font-color);
+}
+
+.op-widget-box--header-title .editable-toolbar-title--fixed,
+.op-widget-box--header-title .toolbar--editable-toolbar,
+.op-widget-box--header-title .editable-toolbar-title--input,
+.PageHeader-title {
+	color: var(--headers-color) !important;
+}
+
+.ng-select.ng-select--primerized .ng-select-container {
+	background-color: white !important;
+}
+
+.top-menu-search--input .ng-select-container {
+	border-color: rgb(43 130 225 / 0.2) !important;
+}
