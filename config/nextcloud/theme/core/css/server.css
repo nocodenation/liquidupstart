@@ -1,0 +1,86 @@
+/**
+ * Custom CSS for the All-in-Wonder Nextcloud instance.
+ *
+ * Loaded ADDITIVELY, after Nextcloud's own stylesheets (see
+ * lib/private/Template/ResourceLocator.php: doFindTheme() runs after
+ * doFind()), so rules here override the defaults by cascade order.
+ *
+ * Modern Nextcloud is driven by CSS custom properties. The Theming app
+ * injects them into <head> with high specificity, so when you redefine a
+ * variable that the Theming app also controls, scope it tightly (body /
+ * :root body) and/or keep your changes to variables the app does not set.
+ */
+
+/* ---------------------------------------------------------------------------
+ * Brand colors via CSS custom properties
+ * ------------------------------------------------------------------------- */
+body {
+	--color-primary: #0082c9;
+	--color-primary-default: #0082c9;
+	--color-primary-element: #0082c9;
+	--color-primary-element-hover: #339bd4;
+	--color-primary-hover: #339bd4;
+}
+
+/* ---------------------------------------------------------------------------
+ * Header (top bar)
+ * ------------------------------------------------------------------------- */
+#body-user #header,
+#body-settings #header,
+#body-public #header {
+	background-color: var(--color-primary, #0082c9);
+}
+
+/* ---------------------------------------------------------------------------
+ * Login screen background
+ * ------------------------------------------------------------------------- */
+#body-login {
+	background: linear-gradient(160deg, #30b6ff 0%, #0082c9 100%);
+}
+
+/* ---------------------------------------------------------------------------
+ * Primary action buttons
+ * ------------------------------------------------------------------------- */
+.primary,
+button.primary,
+.button.primary,
+input[type="submit"].primary,
+input[type="button"].primary {
+	border-color: #0082c9;
+	background-color: #0082c9;
+}
+
+.primary:hover,
+button.primary:hover,
+.button.primary:hover,
+.primary:focus,
+button.primary:focus,
+.button.primary:focus {
+	background-color: #339bd4;
+}
+
+/* ---------------------------------------------------------------------------
+ * Logo
+ *
+ * Modern Nextcloud sets logos via CSS custom properties (--image-logoheader,
+ * --image-logo) injected by the Theming app into :root. The header element
+ * is #header #nextcloud .logo (specificity 0,2,1). We use !important on
+ * background-image to bypass the variable system regardless of load order.
+ *
+ * User pages: <a id="nextcloud"><div class="logo logo-icon"></div></a>
+ * Login page: <div id="header" class="header-guest"><div class="logo"></div>
+ * ------------------------------------------------------------------------- */
+
+/* Header icon (small, all authenticated pages) */
+/*#header #nextcloud .logo {*/
+/*	background-image: url('../img/logo-icon.svg') !important;*/
+/*	filter: none !important;*/
+/*}*/
+
+/*!* Login / guest pages *!*/
+/*#header.header-guest .logo,*/
+/*#header .logo {*/
+/*	background-image: url('../img/logo.svg') !important;*/
+/*	filter: none !important;*/
+/*	height: auto !important;*/
+/*}*/

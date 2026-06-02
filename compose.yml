@@ -437,9 +437,12 @@ services:
       - ./volumes/nextcloud/config:/var/www/html/config
       - ./volumes/nextcloud/data:/var/www/html/data
       - ./volumes/nextcloud/custom_apps:/var/www/html/custom_apps
+      - ./config/nextcloud/theme:/var/www/html/themes/aiw:ro
+      - ./config/nextcloud/no_skeleton.config.php:/tmp/no_skeleton.config.php
       - ./config/nextcloud/sso_block.php:/tmp/sso_block.php
       - ./config/nextcloud/lc_logout_redirect.php:/tmp/lc_logout_redirect.php
       - ./config/nextcloud/session_security_block.php:/tmp/session_security_block.php
+      - ./config/nextcloud/pre_install.sh:/docker-entrypoint-hooks.d/pre-installation/pre_install.sh
       - ./config/nextcloud/patch_nextcloud.sh:/docker-entrypoint-hooks.d/before-starting/patch_nextcloud.sh
       - ./config/nextcloud/set_trusted_proxies.sh:/docker-entrypoint-hooks.d/before-starting/set_trusted_proxies.sh
     networks:

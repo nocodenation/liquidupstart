@@ -11,6 +11,10 @@ ${PHP_BIN} -f "${OCC}" config:system:set trusted_proxies 0 --value="172.0.0.0/8"
 # Ensure https is used in generated URLs
 ${PHP_BIN} -f "${OCC}" config:system:set overwriteprotocol --value="http"
 
+# Activate the custom filesystem theme (themes/aiw, mounted read-only).
+# CSS in themes/aiw/core/css/server.css loads additively on top of defaults.
+${PHP_BIN} -f "${OCC}" config:system:set theme --value="aiw"
+
 # Install Nextcloud Office (richdocuments) if not already installed
 if ${PHP_BIN} -f "${OCC}" app:list --output=json | grep -q '"richdocuments"'; then
   echo "Nextcloud Office already installed"
