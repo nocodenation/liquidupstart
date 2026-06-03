@@ -1,9 +1,8 @@
 # Project Instructions
 
 This is the **WebDB Playground** — a Docker Compose environment on the
-`nocodenation_all_in_wonder_network`. Services are reachable from this container by
-their Docker name; user-facing surfaces are reachable from the host browser on
-`X.localhost:8888`.
+`nocodenation_all_in_wonder_network`. All `X.localhost:8888` service URLs resolve
+from within this container and from the user's browser — use them everywhere.
 
 Detailed how-tos live in skills under `~/.config/opencode/skills/`. This file is the
 small, always-loaded index — environment map, global rules that apply across every
@@ -13,16 +12,16 @@ skill, and a router that says which skill to invoke for what.
 
 ## Services
 
-| Service | Internal URL | External URL (browser) | Purpose |
-|---|---|---|---|
-| `postgres` | `postgres:5432` | — | Postgres 17 with pgvector. User: `api_user`, DB: `postgres` |
-| `postgrest_app` | `http://postgrest_app:3000` | — | PostgREST — REST API auto-generated from `public` |
-| `pgadmin` | `http://pgadmin:80` | `http://pgadmin.localhost:8888` | pgAdmin 4 web UI |
-| `swagger` | `http://swagger:8080` | `http://swagger.localhost:8888` | Swagger UI for PostgREST |
-| `opencode` | `http://opencode:4096` | `http://opencode.localhost:8888` | OpenCode web interface |
-| `bun_runner` | `http://bun_runner:3000` | `http://app.localhost:8888` | SSR React app runner (serves `/app`) |
-| `openproject-web` | `http://proxy:8888` + `Host: openproject.localhost:8888` | `http://openproject.localhost:8888` | OpenProject — work packages, projects, wikis, time tracking |
-| `nextcloud` | `http://proxy:8888` + `Host: nextcloud.localhost:8888` | `http://nextcloud.localhost:8888` | Nextcloud file storage |
+| Service | URL | Purpose |
+|---|---|---|
+| `postgres` | `postgres:5432` | Postgres 17 with pgvector. User: `api_user`, DB: `postgres` |
+| `postgrest_app` | `http://postgrest_app:3000` | PostgREST — REST API auto-generated from `public`; use direct container URL for your own calls |
+| `pgadmin` | `http://pgadmin.localhost:8888` | pgAdmin 4 web UI |
+| `swagger` | `http://swagger.localhost:8888` | Swagger UI for PostgREST |
+| `opencode` | `http://opencode.localhost:8888` | OpenCode web interface |
+| `bun_runner` | `http://app.localhost:8888` | SSR React app runner (serves `/app`) |
+| `openproject-web` | `http://openproject.localhost:8888` | OpenProject — work packages, projects, wikis, time tracking |
+| `nextcloud` | `http://nextcloud.localhost:8888` | Nextcloud file storage |
 
 ---
 
@@ -43,45 +42,20 @@ discovery surface.
 
 ---
 
-## Internal vs external URLs — hard rule
+## URL rule — hard rule
 
-There are two URL spaces and they are **not** interchangeable:
+**Only use the URLs listed in the Services table above.** No other addresses exist
+as far as you are concerned.
 
-- **Internal URLs** (`http://postgrest_app:3000`, `http://bun_runner:3000`,
-  `http://proxy:8888` with a `Host:` header, etc.) resolve only inside the Docker
-  network. Use them for **your own outbound calls** — `curl`, HTTP clients,
-  container-to-container.
-- **External URLs** (`http://X.localhost:8888`) are what the user's browser can reach.
-  Use them for **anything you quote, paste, or hand back to the user** — chat replies,
-  markdown links, "open this here" instructions, links embedded in OpenProject work
-  packages, generated UI text, log lines a user will read.
-
-**Hard rule:** every URL in a message *to the user* must use the `X.localhost:8888`
-form. If you're about to send a string containing `proxy:`, `postgrest_app:`,
-`pgadmin:`, `swagger:`, `opencode:`, `bun_runner:`, `openproject-web:`, or
-`nextcloud:` to the user, stop and rewrite to the matching external form using the
-table above.
-
-This includes **supplementary info** — do not list "internal URL: …" or "container
-URL: …" alongside an external URL "for completeness". The user does not need it and
-cannot use it. The published `X.localhost:8888` URL **is** the one they reach the
-service on; never hedge with phrases like "may need to be configured" — the host
-port in the table above is already mapped by `docker compose`.
-
-Wrong (user-facing): `http://proxy:8888/remote.php/dav/files/user@example.org/foo.pdf`
-Right (user-facing): `http://nextcloud.localhost:8888/apps/files/files/12345?dir=/Documents&openfile=true&editing=false`
-
-The boundary is **"will the user's browser load this URL?"**, not "which container is
-this code in":
-
-- Your own `curl` / HTTP-client calls from this container → **internal** (`proxy:8888`
-  with Host header, `postgrest_app:3000`, etc.). The browser is not involved.
-- Anything you quote, paste, or hand back to the user in chat, markdown, work-package
-  descriptions, etc. → **external** (`X.localhost:8888`). The browser will load it.
-- **Generated bun-app code straddles both.** Server-side fetches inside the bun app
-  (SSR data loading, API routes) → **internal**. URLs that end up as `src=` / `href=`
-  / browser `fetch()` in the HTML/JS shipped to the browser → **external**. See the
-  **bun-app** skill for the full server-vs-client pattern.
+- Never construct or use bare container hostnames such as `proxy`, `nextcloud`,
+  `pgadmin`, `openproject-web`, `bun_runner`, `swagger`, or `opencode` as HTTP
+  hosts — those are internal Docker names that are not in the table.
+- Never use `proxy:8888` with a `Host:` header as a roundabout way to reach a
+  service. Each service already has its own URL in the table; use that directly.
+- For PostgREST your own `curl`/API calls use `http://postgrest_app:3000` (the
+  table URL). Never quote that address to the user — point them to
+  `http://swagger.localhost:8888` instead.
+- Every URL you show the user must be an `X.localhost:8888` URL from the table.
 
 ---
 

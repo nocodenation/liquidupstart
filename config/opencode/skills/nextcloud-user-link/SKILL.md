@@ -47,9 +47,8 @@ and `editing=false` when you have a specific file in mind.
 
 ## What never to send the user
 
-- WebDAV URLs (`http://proxy:8888/remote.php/dav/files/...` or any `/remote.php/dav/...`
-  form) — machine endpoints; render as raw XML or trigger a download dialog.
-- The `proxy:8888` hostname in any form — the user's browser can't resolve it.
+- WebDAV URLs (any `/remote.php/dav/...` form) — machine endpoints; render as raw
+  XML or trigger a download dialog.
 - Public-share URLs (`http://nextcloud.localhost:8888/s/<token>`) — unless the user
   **explicitly** asked for one (see next section).
 
@@ -69,8 +68,7 @@ After confirmation:
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
-  -X POST "http://proxy:8888/ocs/v2.php/apps/files_sharing/api/v1/shares" \
+  -X POST "http://nextcloud.localhost:8888/ocs/v2.php/apps/files_sharing/api/v1/shares" \
   -H "OCS-APIRequest: true" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "path=<path-relative-to-user-root>&shareType=3&permissions=1"

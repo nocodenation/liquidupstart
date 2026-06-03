@@ -126,7 +126,15 @@ services:
       - opencode
       - bun_runner
     networks:
-      - nocodenation_all_in_wonder_network
+      nocodenation_all_in_wonder_network:
+        aliases:
+          - pgadmin.localhost
+          - postgrest.localhost
+          - swagger.localhost
+          - opencode.localhost
+          - app.localhost
+          - openproject.localhost
+          - nextcloud.localhost
 
   swagger:
     image: swaggerapi/swagger-ui

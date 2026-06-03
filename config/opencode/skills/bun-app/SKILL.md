@@ -5,8 +5,7 @@ description: Create or update the SSR React user-facing application in /app, run
 
 The Bun Runner container watches `/app` and runs whatever lives there as an SSR React
 application. The same `/app` volume is mounted into this container, so file edits
-land directly. The runner serves the app at `http://app.localhost:8888` (external) /
-`http://bun_runner:3000` (internal).
+land directly. The runner serves the app at `http://app.localhost:8888`.
 
 ## Build and edit workflow
 
@@ -121,12 +120,11 @@ Then act on the choice:
 
 **(B) Use directly from Nextcloud** — pass the app **direct file URLs that bypass the
 Nextcloud UI**:
-- For server-side fetches from the Bun app: use the internal URL
-  `http://proxy:8888/remote.php/dav/files/<user>/<path>` with HTTP Basic auth and
-  `Host: nextcloud.localhost:8888`, embedding the credentials directly in the app
-  source (see *Credentials the app needs* above — `$PGADMIN_DEFAULT_EMAIL` as the
-  username, the user-pasted app password as the password). The Bun app then
-  `fetch()`es the raw file.
+- For server-side fetches from the Bun app: use
+  `http://nextcloud.localhost:8888/remote.php/dav/files/<user>/<path>` with HTTP
+  Basic auth, embedding the credentials directly in the app source (see *Credentials
+  the app needs* above — `$PGADMIN_DEFAULT_EMAIL` as the username, the user-pasted
+  app password as the password). The Bun app then `fetch()`es the raw file.
 - For browser-side embedding (images, downloads, video sources, etc.): generate a
   public-share download URL via the OCS shares API (see the **nextcloud-user-link**
   skill — *When public shares are allowed*) and use the
@@ -137,97 +135,55 @@ Nextcloud UI**:
 URLs in app code. Those open the Nextcloud Files-app UI, not the raw file — they
 belong in chat replies to the user, not in app sources.
 
-## Internal vs external URLs in app code
+## URLs in app code
 
-The bun app straddles two execution contexts and they need different URLs. **Pick the
-URL based on who actually performs the request, not on which file the code lives in.**
+Use `X.localhost:8888` URLs throughout — both server-side and client-side code use
+the same URLs. The one exception is PostgREST, where server code should call the
+container directly to avoid the nginx hop.
 
-| Request runs in… | URL to use | Reason |
-|---|---|---|
-| **Server side** — SSR `loader`/`getServerSideProps`, API route handlers, anything inside the Bun process before HTML is sent to the browser | **Internal** (see constants below) | The Bun Runner container is on the Docker network and can resolve those hostnames; faster, no round-trip via the host. |
-| **Client side** — `useEffect`/`fetch` in client components, `<img src>`, `<a href>`, `<video src>`, anything that ends up in HTML/JS the browser fetches or follows | **External** (`http://postgrest.localhost:8888`, `http://openproject.localhost:8888`, `http://nextcloud.localhost:8888`) | The user's browser cannot resolve Docker-internal hostnames. |
-
-A request that uses the wrong URL fails for exactly one of two reasons: an internal
-URL leaking into the browser (`net::ERR_NAME_NOT_RESOLVED`) or an external
-`X.localhost:8888` URL used from server code that unnecessarily round-trips via the
-host.
-
-### Pattern: URL constants + host helper
-
-PostgREST is reached directly. OpenProject and Nextcloud go through the nginx proxy
-on port 8888 with a `Host` header identifying the virtual host — wrap this in a
-helper so call sites stay clean:
+### Pattern: URL constants
 
 ```ts
 // src/lib/urls.ts
 
-// Internal bases — used only from server-side code (loaders, API routes, server components).
-export const POSTGREST   = "http://postgrest_app:3000";
-export const PROXY       = "http://proxy:8888";
+// PostgREST — server-side only (browser can't reach container names).
+// For client-side PostgREST calls use "http://postgrest.localhost:8888".
+export const POSTGREST = "http://postgrest_app:3000";
 
-// Adds the right Host header for proxy-routed services.
-export function proxyHeaders(
-  service: "openproject" | "nextcloud",
-  extra: Record<string, string> = {}
-): Record<string, string> {
-  const hosts = {
-    openproject: "openproject.localhost:8888",
-    nextcloud:   "nextcloud.localhost:8888",
-  };
-  return { Host: hosts[service], ...extra };
-}
-
-// Public bases — used only for URLs the browser will load (href/src/client fetch).
-export const PUBLIC_BASES = {
-  postgrest:   "http://postgrest.localhost:8888",
-  openproject: "http://openproject.localhost:8888",
-  nextcloud:   "http://nextcloud.localhost:8888",
-};
+// All other services — same URL works in both server and browser code.
+export const OPENPROJECT = "http://openproject.localhost:8888";
+export const NEXTCLOUD   = "http://nextcloud.localhost:8888";
 ```
 
-Server-side usage:
+Usage:
 
 ```ts
-import { PROXY, POSTGREST, proxyHeaders } from "@/lib/urls";
+import { POSTGREST, OPENPROJECT, NEXTCLOUD } from "@/lib/urls";
 
-// PostgREST — direct, no Host header needed
+// PostgREST — direct
 const rows = await fetch(`${POSTGREST}/my_table`).then(r => r.json());
 
-// OpenProject API — via proxy with Host header
-const wps = await fetch(`${PROXY}/api/v3/work_packages`, {
-  headers: proxyHeaders("openproject", {
+// OpenProject API
+const wps = await fetch(`${OPENPROJECT}/api/v3/work_packages`, {
+  headers: {
     Authorization: `Basic ${btoa(`apikey:${OP_TOKEN}`)}`,
     Accept: "application/json",
-  }),
+  },
 }).then(r => r.json());
 
-// Nextcloud WebDAV — via proxy with Host header
+// Nextcloud WebDAV
 const file = await fetch(
-  `${PROXY}/remote.php/dav/files/${username}/Documents/report.pdf`,
-  { headers: proxyHeaders("nextcloud", { Authorization: `Basic ${btoa(`${user}:${pass}`)}` }) }
+  `${NEXTCLOUD}/remote.php/dav/files/${username}/Documents/report.pdf`,
+  { headers: { Authorization: `Basic ${btoa(`${user}:${pass}`)}` } }
 );
 ```
 
-### Common mistakes to avoid
-
-- Putting `http://proxy:8888/...` into a `<a href>` or `<img src>` — the browser
-  can't reach it. Use `http://openproject.localhost:8888/...` or
-  `http://nextcloud.localhost:8888/...`.
-- Calling `fetch("http://proxy:8888/...")` without a `Host` header — nginx won't know
-  which virtual host to route to and will return 404 or the wrong service.
-- Calling `fetch("http://openproject.localhost:8888/...")` from server code — works
-  only if the host resolves inside the container; prefer the internal `proxy:8888`
-  path so the call stays on the Docker network.
-- Passing an internal URL from the server into a JSON payload that the client then
-  uses to construct a `fetch` or `src` — if the browser issues the final request, the
-  URL must be external.
-
 ### Files served by the app from Nextcloud — recap
 
-- Server-side `fetch()` of a Nextcloud file → `http://proxy:8888/remote.php/dav/...`
-  with `proxyHeaders("nextcloud", { Authorization: ... })`.
-- Anything the **browser** loads (`<img>`, download link, inline PDF) → external
-  public-share download URL (`http://nextcloud.localhost:8888/s/<token>/download`).
+- Server-side `fetch()` of a Nextcloud file → `http://nextcloud.localhost:8888/remote.php/dav/...`
+  with `Authorization: Basic ...`.
+- Anything the **browser** loads (`<img>`, download link, inline PDF) → public-share
+  download URL (`http://nextcloud.localhost:8888/s/<token>/download`).
 - Never the Files-app viewer URL (`/apps/files/files/...?openfile=true`) — it opens
   the Nextcloud UI, not the raw file.
 
@@ -274,10 +230,8 @@ sentence entirely.
   reads or writes*).
 - Never embed Nextcloud Files-app viewer URLs (`/apps/files/files/...?openfile=true`)
   in app sources — those are for chat replies, not for app code.
-- Server-side requests use internal hostnames (`postgrest_app:3000` for PostgREST;
-  `proxy:8888` with `proxyHeaders()` for OpenProject and Nextcloud). Anything the
-  browser will load (`href`, `src`, client `fetch`) uses external (`X.localhost:8888`).
-  See *Internal vs external URLs in app code*.
+- Use `X.localhost:8888` URLs throughout; PostgREST server-side calls use
+  `postgrest_app:3000` directly to avoid the nginx hop. See *URLs in app code*.
 - User-facing summaries cite **only** `http://app.localhost:8888` — never mention
   `bun_runner:3000` "for completeness" and never hedge that the URL "may need to be
   configured". See *Telling the user where the app is*.

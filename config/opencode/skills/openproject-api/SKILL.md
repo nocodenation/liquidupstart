@@ -3,10 +3,7 @@ name: openproject-api
 description: Read and write OpenProject resources (work packages, projects, users, time entries, queries) via its HAL+JSON REST API. Use for any "create a task", "list tickets", "update status", "find work packages", or similar request.
 ---
 
-OpenProject exposes a HAL+JSON REST API (v3) at the internal URL
-`http://proxy:8888/api/v3` (with `Host: openproject.localhost:8888`). The user-facing
-web UI lives at `http://openproject.localhost:8888` — see **Links you give to the
-user** below for translation.
+OpenProject exposes a HAL+JSON REST API (v3) at `http://openproject.localhost:8888/api/v3`.
 
 ## Authentication — ask the user for an API token
 
@@ -31,9 +28,8 @@ the value the user pasted:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -H "Host: openproject.localhost:8888" \
   -H "Accept: application/json" \
-  http://proxy:8888/api/v3
+  http://openproject.localhost:8888/api/v3
 ```
 
 If a request returns `401`, the token is likely wrong or revoked — ask the user for a
@@ -45,8 +41,7 @@ The API root is HAL: it links to every collection. Start there when unsure:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -H "Host: openproject.localhost:8888" \
-  http://proxy:8888/api/v3 | jq '._links | keys'
+  http://openproject.localhost:8888/api/v3 | jq '._links | keys'
 ```
 
 Common endpoints:
@@ -69,8 +64,7 @@ Common endpoints:
 ```bash
 # Open work packages in project 3, page 1, 25/page, newest first
 curl -s -u "apikey:$OP_TOKEN" \
-  -H "Host: openproject.localhost:8888" \
-  --get http://proxy:8888/api/v3/projects/3/work_packages \
+  --get http://openproject.localhost:8888/api/v3/projects/3/work_packages \
   --data-urlencode 'filters=[{"status_id":{"operator":"o","values":[]}}]' \
   --data-urlencode 'pageSize=25' \
   --data-urlencode 'offset=1' \
@@ -83,8 +77,7 @@ Related resources are referenced via HAL `_links` by their API URI:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -H "Host: openproject.localhost:8888" \
-  -X POST http://proxy:8888/api/v3/projects/3/work_packages \
+  -X POST http://openproject.localhost:8888/api/v3/projects/3/work_packages \
   -H "Content-Type: application/json" \
   -d '{
     "subject": "New task from OpenCode",
@@ -103,8 +96,7 @@ PATCH with the `lockVersion` you received:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -H "Host: openproject.localhost:8888" \
-  -X PATCH http://proxy:8888/api/v3/work_packages/42 \
+  -X PATCH http://openproject.localhost:8888/api/v3/work_packages/42 \
   -H "Content-Type: application/json" \
   -d '{
     "lockVersion": 7,
@@ -121,8 +113,7 @@ paging info at the top level (`total`, `count`, `pageSize`, `offset`).
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -H "Host: openproject.localhost:8888" \
-  http://proxy:8888/api/v3/work_packages \
+  http://openproject.localhost:8888/api/v3/work_packages \
   | jq '._embedded.elements[] | {id, subject, status: ._links.status.title}'
 ```
 

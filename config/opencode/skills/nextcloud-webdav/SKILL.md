@@ -3,11 +3,10 @@ name: nextcloud-webdav
 description: Discover, read, write, list, and delete user files in Nextcloud — the source of truth for all user data — over WebDAV. Use whenever you need to find out what files exist ("what books / PDFs / documents / images are in the system", "list my files", "what data do I have"), or save / read / delete a specific file.
 ---
 
-User files live in **Nextcloud**, reached from this container via the nginx proxy at
-`http://proxy:8888` with `Host: nextcloud.localhost:8888`. Nextcloud is the **source
-of truth** for any user-owned content; if the user asks about *what files exist*, the
-answer comes from a PROPFIND here, **not** from a filesystem listing inside this
-container.
+User files live in **Nextcloud** at `http://nextcloud.localhost:8888`. Nextcloud is
+the **source of truth** for any user-owned content; if the user asks about *what
+files exist*, the answer comes from a PROPFIND here, **not** from a filesystem
+listing inside this container.
 
 A `/data` folder is also mounted, but it is a one-way scratch/staging space shared
 with the Bun Runner container — **not** where user data lives. `find /data` and
@@ -23,10 +22,9 @@ WebDAV root with `Depth: infinity`:
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -X PROPFIND \
   -H "Depth: infinity" \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/" \
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/" \
   | xmllint --xpath "//*[local-name()='href']/text()" -
 ```
 
@@ -57,14 +55,13 @@ required; do not attempt anonymous access.
 The examples below use `$NC_APP_PASSWORD` as a shell placeholder for the value the
 user pasted.
 
-The per-user WebDAV root (accessed via the proxy):
+The per-user WebDAV root:
 
 ```
-http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/
+http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/
 ```
 
-Pass `-u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD"` and `-H "Host: nextcloud.localhost:8888"`
-on every request.
+Pass `-u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD"` on every request.
 
 **Why an app password and not the plain login password:** Nextcloud is patched (see
 `config/nextcloud/session_security_block.php`) to reject Basic-auth logins where
@@ -76,10 +73,9 @@ the WebDAV password must be a Nextcloud **app password**, which is exactly what 
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -X PROPFIND \
   -H "Depth: 1" \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
 ```
 
 Returns XML. Pipe through
@@ -89,9 +85,8 @@ Returns XML. Pipe through
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -o /tmp/report.pdf \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf"
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf"
 ```
 
 ## Upload a file
@@ -100,11 +95,10 @@ curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -X PUT \
   --data-binary @/tmp/output.json \
   -H "Content-Type: application/json" \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/output.json"
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/output.json"
 ```
 
 ### Capture the file ID at upload time
@@ -115,9 +109,8 @@ header **now** so you don't have to PROPFIND for it later (see the
 
 ```bash
 curl -s -D - -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -X PUT --data-binary @/tmp/report.pdf \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
   | awk 'BEGIN{IGNORECASE=1} /^OC-FileId:/ {print $2}' | tr -d '\r' | sed 's/[^0-9].*//'
 ```
 
@@ -128,18 +121,16 @@ file ID.
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -X MKCOL \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode"
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode"
 ```
 
 ## Delete a file or directory
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -X DELETE \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/old.json"
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/old.json"
 ```
 
 ## Look up a file's ID after the fact
@@ -148,10 +139,9 @@ When the file already exists and the upload response is gone:
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -H "Host: nextcloud.localhost:8888" \
   -X PROPFIND -H "Depth: 0" \
   --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid/></d:prop></d:propfind>' \
-  "http://proxy:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
+  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
   | xmllint --xpath "//*[local-name()='fileid']/text()" -
 ```
 
@@ -179,7 +169,6 @@ skill (*Data the app reads or writes*) for the full flow.
 
 ## Rules
 
-- Internal calls always use `http://proxy:8888` with `-H "Host: nextcloud.localhost:8888"`.
-  Never share a `/remote.php/dav/...` URL with the user — that's a machine endpoint.
+- Never share a `/remote.php/dav/...` URL with the user — that's a machine endpoint.
   For user-facing links, use the **nextcloud-user-link** skill.
 - Capture `OC-FileId` at upload time when you know you'll need to link to the file.
