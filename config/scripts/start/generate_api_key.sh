@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "Generating API key..."
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${SCRIPT_DIR}/.env"
+PROJECT_DIR="$(dirname $(dirname $(dirname "${SCRIPT_DIR}")))"
+ENV_FILE="${PROJECT_DIR}/.env"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: .env file not found at ${ENV_FILE}" >&2

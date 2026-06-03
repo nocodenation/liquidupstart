@@ -3,8 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
-PGADMIN_TEMPLATES_DIR="${SCRIPT_DIR}/config/pgadmin/templates"
-PGADMIN_OUTPUT_DIR="${SCRIPT_DIR}/config/pgadmin"
 NGINX_TEMPLATES_DIR="${SCRIPT_DIR}/config/nginx/templates"
 NGINX_OUTPUT_DIR="${SCRIPT_DIR}/config/nginx"
 
@@ -13,66 +11,13 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# 1. Stop existing containers
-echo "Stopping existing containers..."
 "${SCRIPT_DIR}/down.sh"
 
-# 2. Generate API key (updates API_KEY in .env)
-echo "Generating API key..."
-"${SCRIPT_DIR}/generate_api_key.sh"
-
-sed_inplace() {
-  if sed --version >/dev/null 2>&1; then
-    sed -i "$@"
-  else
-    sed -i '' "$@"
-  fi
-}
-
-# 3. Render a template file by replacing {{ VAR_NAME }} placeholders with .env values
-render_template() {
-  local content
-  content="$(<"$1")"
-  while IFS='=' read -r key value; do
-    [[ -z "$key" || "$key" =~ ^# ]] && continue
-    value="${value//\"/}"
-    content="${content//\{\{ ${key} \}\}/${value}}"
-  done < "$ENV_FILE"
-  printf '%s\n' "$content"
-}
-
-# 3. Render pgadmin templates
-for template in "${PGADMIN_TEMPLATES_DIR}"/*; do
-  [[ -f "$template" ]] || continue
-  filename="$(basename "$template")"
-  outfile="${PGADMIN_OUTPUT_DIR}/${filename}"
-  echo "Rendering pgadmin template: ${filename}"
-  rm -rf "$outfile"
-  render_template "$template" > "$outfile"
-done
-
-# 4. Render nginx templates
-for template in "${NGINX_TEMPLATES_DIR}"/*; do
-  [[ -f "$template" ]] || continue
-  filename="$(basename "$template")"
-  mkdir -p "$NGINX_OUTPUT_DIR"
-  outfile="${NGINX_OUTPUT_DIR}/${filename}"
-  echo "Rendering nginx template: ${filename}"
-  rm -rf "$outfile"
-  render_template "$template" > "$outfile"
-  # Replace API_KEY_PLACEHOLDER with API_KEY from .env
-  API_KEY="$(grep -E '^API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-  sed_inplace "s|API_KEY_PLACEHOLDER|${API_KEY}|g" "${NGINX_OUTPUT_DIR}/${filename}"
-done
-
-
-# 5. Ensure log directories exist and are writable by containers that
-#    run as non-root (pgadmin_db, postgrest, nginx workers).
-LOGS_DIR="${SCRIPT_DIR}/volumes/logs"
-for svc in postgres pgadmin_db pgadmin proxy swagger; do
-  mkdir -p "${LOGS_DIR}/${svc}"
-  chmod 0777 "${LOGS_DIR}/${svc}"
-done
+"${SCRIPT_DIR}/config/scripts/start/generate_api_key.sh"
+"${SCRIPT_DIR}/config/scripts/start/pgadmin.sh"
+"${SCRIPT_DIR}/config/scripts/start/opencode.sh"
+"${SCRIPT_DIR}/config/scripts/start/nginx.sh"
+"${SCRIPT_DIR}/config/scripts/start/nifi.sh"
 
 # 6. Ensure shared network exists
 docker network inspect nocodenation_playground_network >/dev/null 2>&1 \
@@ -82,6 +27,10 @@ docker network inspect nocodenation_playground_network >/dev/null 2>&1 \
 echo "Starting containers..."
 docker compose up -d
 
+PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+NIFI_USERNAME="$(grep -E '^NIFI_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+NIFI_PASSWORD="$(grep -E '^NIFI_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+
 echo "pgAdmin is available on:          http://pgadmin.localhost:8888"
 echo "REST interface is available on:   http://postgrest.localhost:8888"
 echo "Swagger UI is available on:       http://swagger.localhost:8888"
@@ -89,8 +38,13 @@ echo "OpenCode is available on:         http://opencode.localhost:8888"
 echo "Node app is available on:         http://app.localhost:8888"
 echo "OpenProject is available on:      http://openproject.localhost:8888"
 echo "NextCloud is available on:        http://nextcloud.localhost:8888"
-PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 echo "        password for NextCloud admin actions is: ${PGADMIN_DEFAULT_EMAIL}"
+echo ""
+echo "NiFi is available on:             https://localhost:8443"
+echo "        username: ${NIFI_USERNAME}"
+echo "        password: ${NIFI_PASSWORD}"
+echo "                ports 8900-8999 are available for ingresses"
+echo "                ingress will be available on https://localhost:PORT"
 echo ""
 echo "Added (but not integrated) hermes"
 echo "        Web UI:                           http://localhost:9119"

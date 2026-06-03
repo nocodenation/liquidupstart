@@ -6,6 +6,8 @@ PGADMIN_TEMPLATES_DIR="${SCRIPT_DIR}/config/pgadmin/templates"
 PGADMIN_OUTPUT_DIR="${SCRIPT_DIR}/config/pgadmin"
 NGINX_TEMPLATES_DIR="${SCRIPT_DIR}/config/nginx/templates"
 NGINX_OUTPUT_DIR="${SCRIPT_DIR}/config/nginx"
+NIFI_TEMPLATES_DIR="${SCRIPT_DIR}/config/nifi/templates"
+NIFI_OUTPUT_DIR="${SCRIPT_DIR}/config/nifi"
 
 # Remove rendered pgadmin config files
 for template in "${PGADMIN_TEMPLATES_DIR}"/*; do
@@ -21,4 +23,12 @@ for template in "${NGINX_TEMPLATES_DIR}"/*; do
   filename="$(basename "$template")"
   rm -rf "${NGINX_OUTPUT_DIR}/${filename}"
   echo "Removed: config/nginx/${filename}"
+done
+
+# Remove rendered nifi config files
+for template in "${NIFI_TEMPLATES_DIR}"/*; do
+  [[ -f "$template" ]] || continue
+  filename="$(basename "$template")"
+  rm -rf "${NIFI_OUTPUT_DIR}/${filename}"
+  echo "Removed: config/nifi/${filename}"
 done

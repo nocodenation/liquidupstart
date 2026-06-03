@@ -22,6 +22,7 @@ skill, and a router that says which skill to invoke for what.
 | `bun_runner` | `http://app.localhost:8888` | SSR React app runner (serves `/app`) |
 | `openproject-web` | `http://openproject.localhost:8888` | OpenProject — work packages, projects, wikis, time tracking |
 | `nextcloud` | `http://nextcloud.localhost:8888` | Nextcloud file storage |
+| `nifi` | `https://nifi.localhost:8888` | Apache NiFi — data flow automation, pipelines, ingress on ports 8900–8999 |
 
 ---
 
@@ -70,6 +71,8 @@ values back in responses or logs.
 | `$PGADMIN_DEFAULT_EMAIL` | Nextcloud WebDAV username (also pgAdmin SSO email) |
 | `$OPENCODE_EMBEDDING_HOST` | Base URL of the OpenAI-compatible embedding server |
 | `$OPENCODE_EMBEDDING_MODEL` | Embedding model name |
+| `$NIFI_USERNAME` | NiFi single-user login — use to generate an API bearer token |
+| `$NIFI_PASSWORD` | NiFi single-user password — use to generate an API bearer token |
 
 ---
 
@@ -103,3 +106,4 @@ from memory.
 | `nextcloud-webdav` | You're reading, writing, listing, or deleting a file in Nextcloud |
 | `nextcloud-user-link` | You need to give the user a link to a Nextcloud file/folder, or embed a Nextcloud reference in a chat reply or a work package |
 | `bun-app` | You're creating or modifying the SSR React app in `/app` |
+| `nifi-api` | You're building or managing a NiFi data flow, starting/stopping processors, setting up an HTTP ingress, or routing data between services |

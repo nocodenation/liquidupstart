@@ -114,10 +114,12 @@ services:
     restart: unless-stopped
     ports:
       - "8888:8888"
+      - "8900-8999:8900-8999" # For NiFi ingresses
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./config/openproject/theme:/usr/share/nginx/custom-theme:ro
       - ./volumes/logs/proxy:/var/log/nginx:z
+      - ./volumes/nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - postgrest_app
       - pgadmin
@@ -135,6 +137,7 @@ services:
           - app.localhost
           - openproject.localhost
           - nextcloud.localhost
+          - nifi.localhost
 
   swagger:
     image: swaggerapi/swagger-ui
@@ -168,6 +171,8 @@ services:
       OPENCODE_CHUNK_TIMEOUT: ${OPENCODE_CHUNK_TIMEOUT:-120000}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-}
       POSTGREST_API_KEY: ${API_KEY:-}
+      NIFI_USERNAME: ${NIFI_USERNAME:-}
+      NIFI_PASSWORD: ${NIFI_PASSWORD:-}
     volumes:
       - ./config/opencode/instructions.md:/opencode/instructions.md:ro
       - ./config/opencode/skills:/root/.config/opencode/skills
@@ -272,7 +277,7 @@ services:
           "CMD",
           "curl",
           "-f",
-          "http://localhost:8080/health_checks/default",
+          "http://127.0.0.1:8080/health_checks/default",
         ]
       interval: 30s
       timeout: 5s
@@ -470,6 +475,31 @@ services:
     networks:
       - nocodenation_all_in_wonder_network
 
+  nifi:
+    image: all-in-wonder/nifi:latest
+    container_name: nifi
+    restart: unless-stopped
+    environment:
+      SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
+      NIFI_WEB_PROXY_HOST: "nifi.localhost:8888"
+      NIFI_WEB_HTTPS_PORT: 8888
+      NIFI_WEB_HTTPS_HOST: "0.0.0.0"
+    volumes:
+      - ./volumes/data:/files
+      - ./volumes/python_extensions:/opt/nifi/nifi-current/python_extensions
+      - ./volumes/nar_extensions:/opt/nifi/nifi-current/nar_extensions
+      - ./volumes/nifi/conf:/opt/nifi/nifi-current/conf
+      - ./volumes/nifi/database_repository:/opt/nifi/nifi-current/database_repository
+      - ./volumes/nifi/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
+      - ./volumes/nifi/content_repository:/opt/nifi/nifi-current/content_repository
+      - ./volumes/nifi/provenance_repository:/opt/nifi/nifi-current/provenance_repository
+      - ./volumes/nifi/state:/opt/nifi/nifi-current/state
+    networks:
+      nocodenation_all_in_wonder_network:
+#        aliases:
+#          - localhost
+
   hermes:
     image: nousresearch/hermes-agent
     container_name: hermes
@@ -477,13 +507,13 @@ services:
     volumes:
       - ./volumes/hermes:/opt/data
     environment:
-      - API_SERVER_ENABLED=true
-      - API_SERVER_HOST=0.0.0.0
-      - API_SERVER_KEY=${HERMES_API_KEY}
-      - API_SERVER_CORS_ORIGINS='*'
-      - HERMES_DASHBOARD=1
-      - HERMES_DASHBOARD_TUI=1
-      - HERMES_DASHBOARD_INSECURE=1
+      API_SERVER_ENABLED: true
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_KEY: ${HERMES_API_KEY}
+      API_SERVER_CORS_ORIGINS: '*'
+      HERMES_DASHBOARD: 1
+      HERMES_DASHBOARD_TUI: 1
+      HERMES_DASHBOARD_INSECURE: 1
     command: ["gateway", "run"]
     ports:
       - "8642:8642"
