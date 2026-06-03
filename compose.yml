@@ -470,6 +470,27 @@ services:
     networks:
       - nocodenation_all_in_wonder_network
 
+  hermes:
+    image: nousresearch/hermes-agent
+    container_name: hermes
+    restart: unless-stopped
+    volumes:
+      - ./volumes/hermes:/opt/data
+    environment:
+      - API_SERVER_ENABLED=true
+      - API_SERVER_HOST=0.0.0.0
+      - API_SERVER_KEY=${HERMES_API_KEY}
+      - API_SERVER_CORS_ORIGINS='*'
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_TUI=1
+      - HERMES_DASHBOARD_INSECURE=1
+    command: ["gateway", "run"]
+    ports:
+      - "8642:8642"
+      - "9119:9119"
+    networks:
+      - nocodenation_all_in_wonder_network
+
 networks:
   nocodenation_all_in_wonder_network:
     name: nocodenation_all_in_wonder_network
