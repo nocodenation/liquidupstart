@@ -14,50 +14,50 @@
 /* ---------------------------------------------------------------------------
  * Brand colors via CSS custom properties
  * ------------------------------------------------------------------------- */
-body {
-	--color-primary: #0082c9;
-	--color-primary-default: #0082c9;
-	--color-primary-element: #0082c9;
-	--color-primary-element-hover: #339bd4;
-	--color-primary-hover: #339bd4;
-}
+/*body {*/
+/*	--color-primary: #0082c9;*/
+/*	--color-primary-default: #0082c9;*/
+/*	--color-primary-element: #0082c9;*/
+/*	--color-primary-element-hover: #339bd4;*/
+/*	--color-primary-hover: #339bd4;*/
+/*}*/
 
-/* ---------------------------------------------------------------------------
- * Header (top bar)
- * ------------------------------------------------------------------------- */
-#body-user #header,
-#body-settings #header,
-#body-public #header {
-	background-color: var(--color-primary, #0082c9);
-}
+/*!* ---------------------------------------------------------------------------*/
+/* * Header (top bar)*/
+/* * ------------------------------------------------------------------------- *!*/
+/*#body-user #header,*/
+/*#body-settings #header,*/
+/*#body-public #header {*/
+/*	background-color: var(--color-primary, #0082c9);*/
+/*}*/
 
-/* ---------------------------------------------------------------------------
- * Login screen background
- * ------------------------------------------------------------------------- */
-#body-login {
-	background: linear-gradient(160deg, #30b6ff 0%, #0082c9 100%);
-}
+/*!* ---------------------------------------------------------------------------*/
+/* * Login screen background*/
+/* * ------------------------------------------------------------------------- *!*/
+/*#body-login {*/
+/*	background: linear-gradient(160deg, #30b6ff 0%, #0082c9 100%);*/
+/*}*/
 
-/* ---------------------------------------------------------------------------
- * Primary action buttons
- * ------------------------------------------------------------------------- */
-.primary,
-button.primary,
-.button.primary,
-input[type="submit"].primary,
-input[type="button"].primary {
-	border-color: #0082c9;
-	background-color: #0082c9;
-}
+/*!* ---------------------------------------------------------------------------*/
+/* * Primary action buttons*/
+/* * ------------------------------------------------------------------------- *!*/
+/*.primary,*/
+/*button.primary,*/
+/*.button.primary,*/
+/*input[type="submit"].primary,*/
+/*input[type="button"].primary {*/
+/*	border-color: #0082c9;*/
+/*	background-color: #0082c9;*/
+/*}*/
 
-.primary:hover,
-button.primary:hover,
-.button.primary:hover,
-.primary:focus,
-button.primary:focus,
-.button.primary:focus {
-	background-color: #339bd4;
-}
+/*.primary:hover,*/
+/*button.primary:hover,*/
+/*.button.primary:hover,*/
+/*.primary:focus,*/
+/*button.primary:focus,*/
+/*.button.primary:focus {*/
+/*	background-color: #339bd4;*/
+/*}*/
 
 /* ---------------------------------------------------------------------------
  * Logo

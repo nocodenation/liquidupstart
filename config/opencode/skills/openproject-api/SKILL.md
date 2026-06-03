@@ -4,8 +4,9 @@ description: Read and write OpenProject resources (work packages, projects, user
 ---
 
 OpenProject exposes a HAL+JSON REST API (v3) at the internal URL
-`http://proxy:8105/api/v3`. The user-facing web UI lives at `http://localhost:8105`
-— see **Links you give to the user** below for translation.
+`http://proxy:8888/api/v3` (with `Host: openproject.localhost:8888`). The user-facing
+web UI lives at `http://openproject.localhost:8888` — see **Links you give to the
+user** below for translation.
 
 ## Authentication — ask the user for an API token
 
@@ -15,7 +16,7 @@ with this exact wording:
 
 > I need an OpenProject API token to call the OpenProject API on your behalf.
 > Open the tokens page (you're already logged in):
-> **http://localhost:8105/my/access_tokens**
+> **http://openproject.localhost:8888/my/access_tokens**
 > Under **API**, click **+ Generate** (or copy an existing one), then paste the token
 > here. I will keep it only for this session.
 
@@ -30,8 +31,9 @@ the value the user pasted:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
+  -H "Host: openproject.localhost:8888" \
   -H "Accept: application/json" \
-  http://proxy:8105/api/v3
+  http://proxy:8888/api/v3
 ```
 
 If a request returns `401`, the token is likely wrong or revoked — ask the user for a
@@ -42,7 +44,9 @@ new one (same prompt above) before retrying.
 The API root is HAL: it links to every collection. Start there when unsure:
 
 ```bash
-curl -s -u "apikey:$OP_TOKEN" http://proxy:8105/api/v3 | jq '._links | keys'
+curl -s -u "apikey:$OP_TOKEN" \
+  -H "Host: openproject.localhost:8888" \
+  http://proxy:8888/api/v3 | jq '._links | keys'
 ```
 
 Common endpoints:
@@ -65,7 +69,8 @@ Common endpoints:
 ```bash
 # Open work packages in project 3, page 1, 25/page, newest first
 curl -s -u "apikey:$OP_TOKEN" \
-  --get http://proxy:8105/api/v3/projects/3/work_packages \
+  -H "Host: openproject.localhost:8888" \
+  --get http://proxy:8888/api/v3/projects/3/work_packages \
   --data-urlencode 'filters=[{"status_id":{"operator":"o","values":[]}}]' \
   --data-urlencode 'pageSize=25' \
   --data-urlencode 'offset=1' \
@@ -78,7 +83,8 @@ Related resources are referenced via HAL `_links` by their API URI:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -X POST http://proxy:8105/api/v3/projects/3/work_packages \
+  -H "Host: openproject.localhost:8888" \
+  -X POST http://proxy:8888/api/v3/projects/3/work_packages \
   -H "Content-Type: application/json" \
   -d '{
     "subject": "New task from OpenCode",
@@ -97,7 +103,8 @@ PATCH with the `lockVersion` you received:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -X PATCH http://proxy:8105/api/v3/work_packages/42 \
+  -H "Host: openproject.localhost:8888" \
+  -X PATCH http://proxy:8888/api/v3/work_packages/42 \
   -H "Content-Type: application/json" \
   -d '{
     "lockVersion": 7,
@@ -113,7 +120,9 @@ sub-resources under `_embedded`. Collections list items at `_embedded.elements` 
 paging info at the top level (`total`, `count`, `pageSize`, `offset`).
 
 ```bash
-curl -s -u "apikey:$OP_TOKEN" http://proxy:8105/api/v3/work_packages \
+curl -s -u "apikey:$OP_TOKEN" \
+  -H "Host: openproject.localhost:8888" \
+  http://proxy:8888/api/v3/work_packages \
   | jq '._embedded.elements[] | {id, subject, status: ._links.status.title}'
 ```
 
@@ -127,15 +136,15 @@ HAL document with `_type: "Error"`, `errorIdentifier`, and a human-readable `mes
 ## Links you give to the user
 
 `/api/v3/...` URLs return JSON for machines — **never** quote one back to the user.
-Translate to the web URL on `http://localhost:8105`:
+Translate to the web URL on `http://openproject.localhost:8888`:
 
 | API path (your calls) | Link for the user |
 |---|---|
-| `/api/v3/work_packages/<id>` | `http://localhost:8105/work_packages/<id>` |
-| `/api/v3/projects/<id>` | `http://localhost:8105/projects/<id>` |
-| `/api/v3/projects/<id>/work_packages` | `http://localhost:8105/projects/<id>/work_packages` |
-| `/api/v3/users/<id>` | `http://localhost:8105/users/<id>` |
-| `/api/v3/queries/<id>` | `http://localhost:8105/projects/<project-id>/work_packages?query_id=<id>` |
+| `/api/v3/work_packages/<id>` | `http://openproject.localhost:8888/work_packages/<id>` |
+| `/api/v3/projects/<id>` | `http://openproject.localhost:8888/projects/<id>` |
+| `/api/v3/projects/<id>/work_packages` | `http://openproject.localhost:8888/projects/<id>/work_packages` |
+| `/api/v3/users/<id>` | `http://openproject.localhost:8888/users/<id>` |
+| `/api/v3/queries/<id>` | `http://openproject.localhost:8888/projects/<project-id>/work_packages?query_id=<id>` |
 
 The numeric `<id>` from the HAL `_links.self.href` is the same in both spaces — swap
 the host, drop `/api/v3`, use the matching web route.
@@ -144,6 +153,6 @@ the host, drop `/api/v3`, use the matching web route.
 
 When a description, comment, or attachment note needs to point at a file in Nextcloud,
 embed the Files-app deep link to that specific file — see the **nextcloud-user-link**
-skill. **Never** paste a public-share URL (`http://localhost:8106/s/<token>`) into a
-work package: descriptions, history, and notification emails propagate that token
-forever, and the file becomes accessible to anyone the URL ever reaches.
+skill. **Never** paste a public-share URL (`http://nextcloud.localhost:8888/s/<token>`)
+into a work package: descriptions, history, and notification emails propagate that
+token forever, and the file becomes accessible to anyone the URL ever reaches.

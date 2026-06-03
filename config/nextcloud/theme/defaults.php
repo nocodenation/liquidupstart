@@ -12,7 +12,7 @@
  */
 class OC_Theme {
 	public function getBaseUrl(): string {
-		return 'https://localhost:8106';
+		return 'https://nextcloud.localhost:8888';
 	}
 
 	public function getDocBaseUrl(): string {
@@ -57,20 +57,20 @@ class OC_Theme {
 		return $this->getDocBaseUrl() . '/server/latest/go.php?to=' . $key;
 	}
 
-	/** Mail header / primary brand color. */
-	public function getColorPrimary(): string {
-		return '#0082c9';
-	}
-
-	/** Login background color. */
-	public function getColorBackground(): string {
-		return '#30b6ff';
-	}
-
-	/** Overrides for core SCSS variables. */
-	public function getScssVariables(): array {
-		return [
-			'color-primary' => '#0082c9',
-		];
-	}
+// 	/** Mail header / primary brand color. */
+// 	public function getColorPrimary(): string {
+// 		return '#0082c9';
+// 	}
+//
+// 	/** Login background color. */
+// 	public function getColorBackground(): string {
+// 		return '#30b6ff';
+// 	}
+//
+// 	/** Overrides for core SCSS variables. */
+// 	public function getScssVariables(): array {
+// 		return [
+// 			'color-primary' => '#0082c9',
+// 		];
+// 	}
 }

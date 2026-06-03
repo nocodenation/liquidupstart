@@ -15,7 +15,7 @@ file you wrote on their behalf. The right link opens **that specific file** in t
 existing session. Canonical shape:
 
 ```
-http://localhost:8106/apps/files/files/<fileid>?dir=/<readable-parent>&openfile=true&editing=false
+http://nextcloud.localhost:8888/apps/files/files/<fileid>?dir=/<readable-parent>&openfile=true&editing=false
 ```
 
 - `<fileid>` — numeric Nextcloud file ID. Get it via the **nextcloud-webdav** skill
@@ -29,14 +29,14 @@ http://localhost:8106/apps/files/files/<fileid>?dir=/<readable-parent>&openfile=
 
 | Goal | Link for the user |
 |---|---|
-| **Default**: "give me a link to the file" | `http://localhost:8106/apps/files/files/<fileid>?dir=/<parent>&openfile=true&editing=false` |
-| User asked for the folder, not the file | `http://localhost:8106/apps/files/files?dir=/<readable-path>` |
-| Open the Files app at the root | `http://localhost:8106/apps/files/files?dir=/` |
+| **Default**: "give me a link to the file" | `http://nextcloud.localhost:8888/apps/files/files/<fileid>?dir=/<parent>&openfile=true&editing=false` |
+| User asked for the folder, not the file | `http://nextcloud.localhost:8888/apps/files/files?dir=/<readable-path>` |
+| Open the Files app at the root | `http://nextcloud.localhost:8888/apps/files/files?dir=/` |
 
 ## What a correct reply looks like
 
 > Saved to `Documents/report.pdf` — open it here:
-> `http://localhost:8106/apps/files/files/12345?dir=/Documents&openfile=true&editing=false`
+> `http://nextcloud.localhost:8888/apps/files/files/12345?dir=/Documents&openfile=true&editing=false`
 
 (`12345` is the actual file ID you captured at upload or fetched via PROPFIND.)
 
@@ -47,12 +47,11 @@ and `editing=false` when you have a specific file in mind.
 
 ## What never to send the user
 
-- WebDAV URLs (`http://proxy:8106/remote.php/dav/files/...` or
-  `http://localhost:8106/remote.php/dav/files/...`) — machine endpoints; render as raw
-  XML or trigger a download dialog.
-- The `proxy:8106` hostname in any form — the user's browser can't resolve it.
-- Public-share URLs (`http://localhost:8106/s/<token>`) — unless the user **explicitly**
-  asked for one (see next section).
+- WebDAV URLs (`http://proxy:8888/remote.php/dav/files/...` or any `/remote.php/dav/...`
+  form) — machine endpoints; render as raw XML or trigger a download dialog.
+- The `proxy:8888` hostname in any form — the user's browser can't resolve it.
+- Public-share URLs (`http://nextcloud.localhost:8888/s/<token>`) — unless the user
+  **explicitly** asked for one (see next section).
 
 This applies equally to chat replies, OpenProject work-package descriptions and
 comments, generated UI, log lines a user will read, and any other surface visible to
@@ -70,13 +69,14 @@ After confirmation:
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -X POST "http://proxy:8106/ocs/v2.php/apps/files_sharing/api/v1/shares" \
+  -H "Host: nextcloud.localhost:8888" \
+  -X POST "http://proxy:8888/ocs/v2.php/apps/files_sharing/api/v1/shares" \
   -H "OCS-APIRequest: true" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "path=<path-relative-to-user-root>&shareType=3&permissions=1"
 ```
 
-The response includes a `<url>` field already on `http://localhost:8106/s/<token>` —
+The response includes a `<url>` field already on `http://nextcloud.localhost:8888/s/<token>` —
 that's the URL you give to the user.
 
 If asked for a share that is **not** public (e.g. "share with another user"), use

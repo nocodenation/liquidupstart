@@ -63,7 +63,7 @@ curl -s -X DELETE "http://postgrest_app:3000/<table_name>?id=eq.42" \
 
 - Always use the internal `http://postgrest_app:3000` host for your own calls. Never
   quote the PostgREST URL back to the user — if they need to browse the API, give them
-  the Swagger UI link at `http://localhost:8102`.
+  the Swagger UI link at `http://swagger.localhost:8888`.
 - Re-fetch the OpenAPI spec after any schema change in this session. PostgREST
   auto-reloads via the `pgrst_watch` event trigger, but you still need the new spec to
   construct the right request.
