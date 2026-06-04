@@ -48,6 +48,42 @@ openssl req -x509 -newkey rsa:4096 -nodes \
     -addext "subjectAltName=DNS:nifi.localhost,DNS:*.nifi.localhost"
 echo "Certificate generated at ${CERTS_DIR}."
 
+STORE_PASSWORD="$(grep -E '^NIFI_KEYSTORE_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+
+echo "Generating NiFi keystore (PKCS12)..."
+rm -f "${CERTS_DIR}/nifi.keystore.p12"
+openssl pkcs12 -export \
+    -in "${CERTS_DIR}/nifi.localhost.crt" \
+    -inkey "${CERTS_DIR}/nifi.localhost.key" \
+    -out "${CERTS_DIR}/nifi.keystore.p12" \
+    -name "nifi-ingress" \
+    -passout "pass:${STORE_PASSWORD}"
+
+echo "Generating NiFi truststore (PKCS12)..."
+rm -f "${CERTS_DIR}/nifi.truststore.p12"
+if command -v keytool &>/dev/null; then
+    keytool -importcert -trustcacerts \
+        -alias "nifi-ingress" \
+        -file "${CERTS_DIR}/nifi.localhost.crt" \
+        -keystore "${CERTS_DIR}/nifi.truststore.p12" \
+        -storetype PKCS12 \
+        -storepass "${STORE_PASSWORD}" \
+        -noprompt
+else
+    docker run --rm \
+        -v "${CERTS_DIR}:/certs" \
+        eclipse-temurin:17-jre-jammy \
+        keytool -importcert -trustcacerts \
+            -alias "nifi-ingress" \
+            -file "/certs/nifi.localhost.crt" \
+            -keystore "/certs/nifi.truststore.p12" \
+            -storetype PKCS12 \
+            -storepass "${STORE_PASSWORD}" \
+            -noprompt
+fi
+chmod 644 "${CERTS_DIR}/nifi.keystore.p12" "${CERTS_DIR}/nifi.truststore.p12"
+echo "Keystore/truststore generated. Password: ${STORE_PASSWORD}"
+
 
 for template in "${TEMPLATES_DIR}"/*; do
   [[ -f "$template" ]] || continue
@@ -61,3 +97,56 @@ for template in "${TEMPLATES_DIR}"/*; do
   API_KEY="$(grep -E '^API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
   sed_inplace "s|API_KEY_PLACEHOLDER|${API_KEY}|g" "${CONFIG_DIR}/${filename}"
 done
+
+
+NGINX_CONF="${CONFIG_DIR}/nginx.conf"
+
+if [[ -f "$NGINX_CONF" ]]; then
+    echo "Generating NiFi ingress server blocks in nginx config..."
+
+    ingress_blocks=$(mktemp)
+
+    for port in $(seq 8900 8999); do
+        cat >> "$ingress_blocks" <<EOF
+
+server {
+    listen 8833 ssl;
+
+    server_name ${port}.nifi.localhost;
+
+    ssl_certificate     /etc/nginx/certs/nifi.localhost.crt;
+    ssl_certificate_key /etc/nginx/certs/nifi.localhost.key;
+    ssl_protocols       TLSv1.3;
+
+    location / {
+        proxy_pass https://nifi:${port};
+        proxy_ssl_verify off;
+        proxy_ssl_server_name on;
+        proxy_ssl_name \$host;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_http_version 1.1;
+
+        proxy_read_timeout 300s;
+        client_max_body_size 0;
+    }
+}
+EOF
+    done
+
+    awk -v blocks="$ingress_blocks" '
+        /# NIFI INGRESS/ {
+            print
+            while ((getline line < blocks) > 0) print line
+            next
+        }
+        { print }
+    ' "$NGINX_CONF" > "${NGINX_CONF}.tmp" && mv "${NGINX_CONF}.tmp" "$NGINX_CONF"
+
+    rm -f "$ingress_blocks"
+    echo "NiFi ingress server blocks generated."
+fi
