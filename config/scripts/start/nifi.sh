@@ -74,7 +74,7 @@ if [[ -f "$NGINX_CONF" ]]; then
 server {
     listen 8833 ssl;
 
-    server_name ingress-${port}.nifi.localhost;
+    server_name ingress.${port}.nifi.localhost;
 
     ssl_certificate     /etc/nginx/certs/nifi.localhost.crt;
     ssl_certificate_key /etc/nginx/certs/nifi.localhost.key;
