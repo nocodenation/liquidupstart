@@ -115,7 +115,6 @@ services:
     ports:
       - "8888:8888"
       - "8833:8833"
-      - "8900-8999:8900-8999" # For NiFi ingresses
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./config/openproject/theme:/usr/share/nginx/custom-theme:ro
@@ -139,6 +138,106 @@ services:
           - openproject.localhost
           - nextcloud.localhost
           - nifi.localhost
+          - ingress-8900.nifi.localhost
+          - ingress-8901.nifi.localhost
+          - ingress-8902.nifi.localhost
+          - ingress-8903.nifi.localhost
+          - ingress-8904.nifi.localhost
+          - ingress-8905.nifi.localhost
+          - ingress-8906.nifi.localhost
+          - ingress-8907.nifi.localhost
+          - ingress-8908.nifi.localhost
+          - ingress-8909.nifi.localhost
+          - ingress-8910.nifi.localhost
+          - ingress-8911.nifi.localhost
+          - ingress-8912.nifi.localhost
+          - ingress-8913.nifi.localhost
+          - ingress-8914.nifi.localhost
+          - ingress-8915.nifi.localhost
+          - ingress-8916.nifi.localhost
+          - ingress-8917.nifi.localhost
+          - ingress-8918.nifi.localhost
+          - ingress-8919.nifi.localhost
+          - ingress-8920.nifi.localhost
+          - ingress-8921.nifi.localhost
+          - ingress-8922.nifi.localhost
+          - ingress-8923.nifi.localhost
+          - ingress-8924.nifi.localhost
+          - ingress-8925.nifi.localhost
+          - ingress-8926.nifi.localhost
+          - ingress-8927.nifi.localhost
+          - ingress-8928.nifi.localhost
+          - ingress-8929.nifi.localhost
+          - ingress-8930.nifi.localhost
+          - ingress-8931.nifi.localhost
+          - ingress-8932.nifi.localhost
+          - ingress-8933.nifi.localhost
+          - ingress-8934.nifi.localhost
+          - ingress-8935.nifi.localhost
+          - ingress-8936.nifi.localhost
+          - ingress-8937.nifi.localhost
+          - ingress-8938.nifi.localhost
+          - ingress-8939.nifi.localhost
+          - ingress-8940.nifi.localhost
+          - ingress-8941.nifi.localhost
+          - ingress-8942.nifi.localhost
+          - ingress-8943.nifi.localhost
+          - ingress-8944.nifi.localhost
+          - ingress-8945.nifi.localhost
+          - ingress-8946.nifi.localhost
+          - ingress-8947.nifi.localhost
+          - ingress-8948.nifi.localhost
+          - ingress-8949.nifi.localhost
+          - ingress-8950.nifi.localhost
+          - ingress-8951.nifi.localhost
+          - ingress-8952.nifi.localhost
+          - ingress-8953.nifi.localhost
+          - ingress-8954.nifi.localhost
+          - ingress-8955.nifi.localhost
+          - ingress-8956.nifi.localhost
+          - ingress-8957.nifi.localhost
+          - ingress-8958.nifi.localhost
+          - ingress-8959.nifi.localhost
+          - ingress-8960.nifi.localhost
+          - ingress-8961.nifi.localhost
+          - ingress-8962.nifi.localhost
+          - ingress-8963.nifi.localhost
+          - ingress-8964.nifi.localhost
+          - ingress-8965.nifi.localhost
+          - ingress-8966.nifi.localhost
+          - ingress-8967.nifi.localhost
+          - ingress-8968.nifi.localhost
+          - ingress-8969.nifi.localhost
+          - ingress-8970.nifi.localhost
+          - ingress-8971.nifi.localhost
+          - ingress-8972.nifi.localhost
+          - ingress-8973.nifi.localhost
+          - ingress-8974.nifi.localhost
+          - ingress-8975.nifi.localhost
+          - ingress-8976.nifi.localhost
+          - ingress-8977.nifi.localhost
+          - ingress-8978.nifi.localhost
+          - ingress-8979.nifi.localhost
+          - ingress-8980.nifi.localhost
+          - ingress-8981.nifi.localhost
+          - ingress-8982.nifi.localhost
+          - ingress-8983.nifi.localhost
+          - ingress-8984.nifi.localhost
+          - ingress-8985.nifi.localhost
+          - ingress-8986.nifi.localhost
+          - ingress-8987.nifi.localhost
+          - ingress-8988.nifi.localhost
+          - ingress-8989.nifi.localhost
+          - ingress-8990.nifi.localhost
+          - ingress-8991.nifi.localhost
+          - ingress-8992.nifi.localhost
+          - ingress-8993.nifi.localhost
+          - ingress-8994.nifi.localhost
+          - ingress-8995.nifi.localhost
+          - ingress-8996.nifi.localhost
+          - ingress-8997.nifi.localhost
+          - ingress-8998.nifi.localhost
+          - ingress-8999.nifi.localhost
 
   swagger:
     image: swaggerapi/swagger-ui

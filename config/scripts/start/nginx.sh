@@ -45,7 +45,7 @@ openssl req -x509 -newkey rsa:4096 -nodes \
     -out "${CERTS_DIR}/nifi.localhost.crt" \
     -days 3650 \
     -subj "/CN=nifi.localhost" \
-    -addext "subjectAltName=DNS:nifi.localhost"
+    -addext "subjectAltName=DNS:nifi.localhost,DNS:*.nifi.localhost"
 echo "Certificate generated at ${CERTS_DIR}."
 
 

@@ -72,9 +72,9 @@ if [[ -f "$NGINX_CONF" ]]; then
         cat >> "$ingress_blocks" <<EOF
 
 server {
-    listen ${port} ssl;
+    listen 8833 ssl;
 
-    server_name nifi.localhost;
+    server_name ingress-${port}.nifi.localhost;
 
     ssl_certificate     /etc/nginx/certs/nifi.localhost.crt;
     ssl_certificate_key /etc/nginx/certs/nifi.localhost.key;
