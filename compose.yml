@@ -487,7 +487,7 @@ services:
       NIFI_WEB_HTTPS_PORT: 8833
       NIFI_WEB_HTTPS_HOST: "0.0.0.0"
     volumes:
-      - ./volumes/data:/files
+      - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/nifi/nifi-current/python_extensions
       - ./volumes/nar_extensions:/opt/nifi/nifi-current/nar_extensions
       - ./volumes/nifi/conf:/opt/nifi/nifi-current/conf
