@@ -114,6 +114,7 @@ services:
     restart: unless-stopped
     ports:
       - "8888:8888"
+      - "8833:8833"
       - "8900-8999:8900-8999" # For NiFi ingresses
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
@@ -482,8 +483,8 @@ services:
     environment:
       SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME}
       SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
-      NIFI_WEB_PROXY_HOST: "nifi.localhost:8888"
-      NIFI_WEB_HTTPS_PORT: 8888
+      NIFI_WEB_PROXY_HOST: "nifi.localhost:8833"
+      NIFI_WEB_HTTPS_PORT: 8833
       NIFI_WEB_HTTPS_HOST: "0.0.0.0"
     volumes:
       - ./volumes/data:/files

@@ -1,4 +1,4 @@
-FROM apache/nifi:latest
+FROM ghcr.io/nocodenation/liquid-nifi:latest
 
 USER root:root
 RUN apt-get --allow-releaseinfo-change update

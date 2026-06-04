@@ -3,7 +3,7 @@ name: nifi-api
 description: Build, run, and monitor Apache NiFi data flows via the NiFi REST API. Use for any "create a flow", "start/stop a processor", "ingest data", "schedule a pipeline", "monitor queue", or similar request.
 ---
 
-NiFi is available at `https://nifi.localhost:8888`. It uses a **self-signed certificate** — always pass `-k` (or `--insecure`) in every curl call to skip TLS verification.
+NiFi is available at `https://nifi.localhost:8833`. It uses a **self-signed certificate** — always pass `-k` (or `--insecure`) in every curl call to skip TLS verification.
 
 ## Authentication — token from environment
 
@@ -11,7 +11,7 @@ NiFi uses bearer tokens. Credentials are already available as environment variab
 
 ```bash
 NIFI_TOKEN=$(curl -sk \
-  -X POST https://nifi.localhost:8888/nifi-api/access/token \
+  -X POST https://nifi.localhost:8833/nifi-api/access/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "username=${NIFI_USERNAME}" \
   --data-urlencode "password=${NIFI_PASSWORD}" \
@@ -22,7 +22,7 @@ Use it as a Bearer token on every subsequent call:
 
 ```bash
 curl -sk -H "Authorization: Bearer $NIFI_TOKEN" \
-  https://nifi.localhost:8888/nifi-api/flow/status
+  https://nifi.localhost:8833/nifi-api/flow/status
 ```
 
 Tokens expire after 12 hours. If you get a `401`, regenerate with the same command above.
@@ -58,7 +58,7 @@ Example: an `InvokeHTTP` processor posting to PostgREST uses `http://postgrest.l
 
 ## Links you give the user
 
-- **NiFi canvas**: `https://nifi.localhost:8888/nifi`
-- **Specific process group**: `https://nifi.localhost:8888/nifi/?processGroupId={groupId}`
+- **NiFi canvas**: `https://nifi.localhost:8833/nifi`
+- **Specific process group**: `https://nifi.localhost:8833/nifi/?processGroupId={groupId}`
 
 Never give the user `/nifi-api/` URLs — those return JSON for machines.

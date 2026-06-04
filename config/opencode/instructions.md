@@ -22,7 +22,7 @@ skill, and a router that says which skill to invoke for what.
 | `bun_runner` | `http://app.localhost:8888` | SSR React app runner (serves `/app`) |
 | `openproject-web` | `http://openproject.localhost:8888` | OpenProject — work packages, projects, wikis, time tracking |
 | `nextcloud` | `http://nextcloud.localhost:8888` | Nextcloud file storage |
-| `nifi` | `https://nifi.localhost:8888` | Apache NiFi — data flow automation, pipelines, ingress on ports 8900–8999 |
+| `nifi` | `https://nifi.localhost:8833` | Apache NiFi — data flow automation, pipelines, ingress on ports 8900–8999 |
 
 ---
 
