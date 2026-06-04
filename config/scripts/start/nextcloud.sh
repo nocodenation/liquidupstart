@@ -42,5 +42,6 @@ for template in "${TEMPLATES_DIR}"/*; do
   echo "Rendering nextcloud template: ${filename}"
   rm -rf "$outfile"
   render_template "$template" > "$outfile"
+  chmod +x "$outfile"
   sed_inplace "s|SYSTEM_HTTP_PORT|${HTTP_PORT}|g" "${CONFIG_DIR}/${filename}"
 done
