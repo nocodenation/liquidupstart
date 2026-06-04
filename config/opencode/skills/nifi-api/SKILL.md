@@ -43,6 +43,27 @@ When you configure a processor to listen on one of these ports (e.g. `ListenHTTP
 
 - `https://8900.nifi.localhost:HTTPS_PORT/<configured-path>`
 
+## SSL Context Service
+
+Whenever a processor or flow requires an SSL context service (e.g. `HandleHttpRequest`, `InvokeHTTP` over HTTPS, `ListenHTTP` with TLS), first check whether a `StandardRestrictedSSLContextService` controller service already exists (list controller services via the API). If one exists, reuse it — do not create a duplicate. If none exists, create one with these exact property values — read `$NIFI_KEYSTORE_PASSWORD` from the environment first:
+
+```bash
+echo $NIFI_KEYSTORE_PASSWORD
+```
+
+| Property | Value |
+|---|---|
+| Keystore Filename | `/certs/nifi.keystore.p12` |
+| Keystore Password | value of `$NIFI_KEYSTORE_PASSWORD` |
+| Key Password | value of `$NIFI_KEYSTORE_PASSWORD` |
+| Keystore Type | `PKCS12` |
+| Truststore Filename | `/certs/nifi.truststore.p12` |
+| Truststore Password | value of `$NIFI_KEYSTORE_PASSWORD` |
+| Truststore Type | `PKCS12` |
+| TLS Protocol | `TLS` |
+
+Enable the controller service after creating it. Never ask the user for the keystore password — it is already injected as `$NIFI_KEYSTORE_PASSWORD`.
+
 ## Connecting NiFi to other services
 
 When a NiFi processor needs to call another service (PostgREST, Nextcloud, OpenProject, etc.), use the same `X.localhost:PORT` URLs from the services table in the main instructions — these resolve from inside NiFi containers just as they do from the browser.

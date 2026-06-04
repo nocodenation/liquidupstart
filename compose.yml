@@ -275,6 +275,7 @@ services:
       NIFI_PASSWORD: ${NIFI_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
+      NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
     volumes:
       - ./config/opencode/instructions.md:/opencode/instructions.md:ro
       - ./config/opencode/skills:/root/.config/opencode/skills
