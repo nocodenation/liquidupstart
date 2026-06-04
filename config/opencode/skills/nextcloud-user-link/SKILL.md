@@ -3,6 +3,8 @@ name: nextcloud-user-link
 description: Construct the correct user-facing link to a file or folder in Nextcloud. Use whenever you need to show the user where a file is, embed a Nextcloud reference in a chat reply or a work package, or decide whether to create a share.
 ---
 
+**Port resolution:** run `echo $SYSTEM_HTTP_PORT` and use the result as `PORT` in every URL below. Never guess or use a default.
+
 This skill exists because pointing the user at a Nextcloud file is a place LLMs
 repeatedly get wrong: they paste WebDAV URLs (machine-only), link the parent folder
 (forces the user to hunt for the file), or create public shares (leak the file to
@@ -12,10 +14,10 @@ anyone with the URL). Follow the rules below exactly.
 
 The user is already logged into Nextcloud as themselves and has full access to every
 file you wrote on their behalf. The right link opens **that specific file** in their
-existing session. Canonical shape:
+existing session. Canonical shape (PORT = resolved `$SYSTEM_HTTP_PORT`):
 
 ```
-http://nextcloud.localhost:8888/apps/files/files/<fileid>?dir=/<readable-parent>&openfile=true&editing=false
+http://nextcloud.localhost:PORT/apps/files/files/<fileid>?dir=/<readable-parent>&openfile=true&editing=false
 ```
 
 - `<fileid>` — numeric Nextcloud file ID. Get it via the **nextcloud-webdav** skill
@@ -29,14 +31,16 @@ http://nextcloud.localhost:8888/apps/files/files/<fileid>?dir=/<readable-parent>
 
 | Goal | Link for the user |
 |---|---|
-| **Default**: "give me a link to the file" | `http://nextcloud.localhost:8888/apps/files/files/<fileid>?dir=/<parent>&openfile=true&editing=false` |
-| User asked for the folder, not the file | `http://nextcloud.localhost:8888/apps/files/files?dir=/<readable-path>` |
-| Open the Files app at the root | `http://nextcloud.localhost:8888/apps/files/files?dir=/` |
+| **Default**: "give me a link to the file" | `http://nextcloud.localhost:PORT/apps/files/files/<fileid>?dir=/<parent>&openfile=true&editing=false` |
+| User asked for the folder, not the file | `http://nextcloud.localhost:PORT/apps/files/files?dir=/<readable-path>` |
+| Open the Files app at the root | `http://nextcloud.localhost:PORT/apps/files/files?dir=/` |
 
 ## What a correct reply looks like
 
+Resolve PORT first (`echo $SYSTEM_HTTP_PORT`), then reply:
+
 > Saved to `Documents/report.pdf` — open it here:
-> `http://nextcloud.localhost:8888/apps/files/files/12345?dir=/Documents&openfile=true&editing=false`
+> `http://nextcloud.localhost:PORT/apps/files/files/12345?dir=/Documents&openfile=true&editing=false`
 
 (`12345` is the actual file ID you captured at upload or fetched via PROPFIND.)
 
@@ -49,7 +53,7 @@ and `editing=false` when you have a specific file in mind.
 
 - WebDAV URLs (any `/remote.php/dav/...` form) — machine endpoints; render as raw
   XML or trigger a download dialog.
-- Public-share URLs (`http://nextcloud.localhost:8888/s/<token>`) — unless the user
+- Public-share URLs (`http://nextcloud.localhost:PORT/s/<token>`) — unless the user
   **explicitly** asked for one (see next section).
 
 This applies equally to chat replies, OpenProject work-package descriptions and
@@ -68,14 +72,14 @@ After confirmation:
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -X POST "http://nextcloud.localhost:8888/ocs/v2.php/apps/files_sharing/api/v1/shares" \
+  -X POST "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/ocs/v2.php/apps/files_sharing/api/v1/shares" \
   -H "OCS-APIRequest: true" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "path=<path-relative-to-user-root>&shareType=3&permissions=1"
 ```
 
-The response includes a `<url>` field already on `http://nextcloud.localhost:8888/s/<token>` —
-that's the URL you give to the user.
+The response includes a `<url>` field with `http://nextcloud.localhost:PORT/s/<token>` —
+resolve PORT first (`echo $SYSTEM_HTTP_PORT`), then give that URL to the user.
 
 If asked for a share that is **not** public (e.g. "share with another user"), use
 `shareType=0` with `shareWith=<username>` — that keeps access scoped.

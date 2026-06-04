@@ -100,7 +100,7 @@ services:
       PGRST_DB_URI: postgres://api_user:${DATABASE_PASSWORD}@postgres:5432/postgres
       PGRST_DB_SCHEMA: public
       PGRST_DB_ANON_ROLE: api_anon
-      PGRST_OPENAPI_SERVER_PROXY_URI: http://postgrest.localhost:8888
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://postgrest.localhost:${SYSTEM_HTTP_PORT:-8888}
       PGRST_JWT_SECRET: ${POSTGREST_JWT_SECTET}
     depends_on:
       postgres:
@@ -113,8 +113,8 @@ services:
     container_name: proxy
     restart: unless-stopped
     ports:
-      - "8888:8888"
-      - "8833:8833"
+      - "${SYSTEM_HTTP_PORT:-8888}:${SYSTEM_HTTP_PORT:-8888}"
+      - "${SYSTEM_HTTPS_PORT:-8833}:${SYSTEM_HTTPS_PORT:-8833}"
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./config/openproject/theme:/usr/share/nginx/custom-theme:ro
@@ -244,7 +244,7 @@ services:
     container_name: swagger
     restart: unless-stopped
     environment:
-      API_URL: http://postgrest.localhost:8888/
+      API_URL: http://postgrest.localhost:${SYSTEM_HTTP_PORT:-8888}/
     volumes:
       - ./volumes/logs/swagger:/var/log/nginx:z
     networks:
@@ -273,6 +273,8 @@ services:
       POSTGREST_API_KEY: ${API_KEY:-}
       NIFI_USERNAME: ${NIFI_USERNAME:-}
       NIFI_PASSWORD: ${NIFI_PASSWORD:-}
+      SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
+      SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
     volumes:
       - ./config/opencode/instructions.md:/opencode/instructions.md:ro
       - ./config/opencode/skills:/root/.config/opencode/skills
@@ -345,7 +347,7 @@ services:
     container_name: openproject-web
     environment:
       OPENPROJECT_HTTPS: "false"
-      OPENPROJECT_HOST__NAME: "openproject.localhost:8888"
+      OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
       OPENPROJECT_HSTS: "false"
       RAILS_CACHE_STORE: "memcache"
       OPENPROJECT_CACHE__MEMCACHE__SERVER: "cache:11211"
@@ -392,7 +394,7 @@ services:
     container_name: openproject-worker
     environment:
       OPENPROJECT_HTTPS: "false"
-      OPENPROJECT_HOST__NAME: "openproject.localhost:8888"
+      OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
       OPENPROJECT_HSTS: "false"
       RAILS_CACHE_STORE: "memcache"
       OPENPROJECT_CACHE__MEMCACHE__SERVER: "cache:11211"
@@ -426,7 +428,7 @@ services:
     container_name: openproject-cron
     environment:
       OPENPROJECT_HTTPS: "false"
-      OPENPROJECT_HOST__NAME: "openproject.localhost:8888"
+      OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
       OPENPROJECT_HSTS: "false"
       RAILS_CACHE_STORE: "memcache"
       OPENPROJECT_CACHE__MEMCACHE__SERVER: "cache:11211"
@@ -460,7 +462,7 @@ services:
     container_name: openproject-seeder
     environment:
       OPENPROJECT_HTTPS: "false"
-      OPENPROJECT_HOST__NAME: "openproject.localhost:8888"
+      OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
       OPENPROJECT_HSTS: "false"
       RAILS_CACHE_STORE: "memcache"
       OPENPROJECT_CACHE__MEMCACHE__SERVER: "cache:11211"
@@ -530,7 +532,7 @@ services:
       POSTGRES_HOST: nextcloud-db
       NEXTCLOUD_ADMIN_USER: ${PGADMIN_DEFAULT_EMAIL}
       NEXTCLOUD_ADMIN_PASSWORD: ${PGADMIN_DEFAULT_EMAIL}
-      NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.localhost:8888"
+      NEXTCLOUD_TRUSTED_DOMAINS: "nextcloud.localhost:${SYSTEM_HTTP_PORT:-8888}"
       REDIS_HOST: nextcloud-redis
       REDIS_HOST_PASSWORD: ${NEXTCLOUD_REDIS_PASSWORD}
       OVERWRITEPROTOCOL: http
@@ -562,9 +564,9 @@ services:
     cap_add:
       - MKNOD
     environment:
-      aliasgroup1: "http://nextcloud.localhost:8888"
+      aliasgroup1: "http://nextcloud.localhost:${SYSTEM_HTTP_PORT:-8888}"
       extra_params: "--o:ssl.enable=false --o:ssl.termination=false --o:mount_jail_tree=false"
-      server_name: "nextcloud.localhost:8888"
+      server_name: "nextcloud.localhost:${SYSTEM_HTTP_PORT:-8888}"
       dictionaries: "de_DE en_GB en_US"
       username: "collabora"
       password: "collabora"
@@ -582,8 +584,8 @@ services:
     environment:
       SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME}
       SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
-      NIFI_WEB_PROXY_HOST: "nifi.localhost:8833"
-      NIFI_WEB_HTTPS_PORT: 8833
+      NIFI_WEB_PROXY_HOST: "nifi.localhost:${SYSTEM_HTTPS_PORT:-8833}"
+      NIFI_WEB_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       NIFI_WEB_HTTPS_HOST: "0.0.0.0"
     volumes:
       - ./volumes/data:/data
@@ -598,8 +600,6 @@ services:
       - ./volumes/nginx/certs:/certs:ro
     networks:
       nocodenation_all_in_wonder_network:
-#        aliases:
-#          - localhost
 
   hermes:
     image: nousresearch/hermes-agent
@@ -624,4 +624,4 @@ services:
 
 networks:
   nocodenation_all_in_wonder_network:
-    name: nocodenation_all_in_wonder_network
+    name: nocodenation_all_in_wonder_network_${SYSTEM_HTTP_PORT:-8888}

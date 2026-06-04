@@ -1,7 +1,7 @@
 # Project Instructions
 
 This is the **WebDB Playground** — a Docker Compose environment on the
-`nocodenation_all_in_wonder_network`. All `X.localhost:8888` service URLs resolve
+`nocodenation_all_in_wonder_network`. All `X.localhost:PORT` service URLs resolve
 from within this container and from the user's browser — use them everywhere.
 
 Detailed how-tos live in skills under `~/.config/opencode/skills/`. This file is the
@@ -10,19 +10,40 @@ skill, and a router that says which skill to invoke for what.
 
 ---
 
+## Port resolution — hard rule
+
+`PORT` and `HTTPS_PORT` used throughout these instructions and every skill are
+**not** literal values — they must be resolved from the environment every time
+before any URL is shown to the user or used in a response.
+
+**Run these commands and use the printed values:**
+
+```bash
+PORT=$(echo $SYSTEM_HTTP_PORT)
+HTTPS_PORT=$(echo $SYSTEM_HTTPS_PORT)
+```
+
+**Never** substitute a guessed or remembered default. **Never** output a URL
+containing the literal text `PORT`, `HTTPS_PORT`, `${SYSTEM_HTTP_PORT}`, or
+`${SYSTEM_HTTPS_PORT}` to the user.
+
+---
+
 ## Services
+
+`PORT` = resolved `$SYSTEM_HTTP_PORT` · `HTTPS_PORT` = resolved `$SYSTEM_HTTPS_PORT` (see above)
 
 | Service | URL | Purpose |
 |---|---|---|
 | `postgres` | `postgres:5432` | Postgres 17 with pgvector. User: `api_user`, DB: `postgres` |
 | `postgrest_app` | `http://postgrest_app:3000` | PostgREST — REST API auto-generated from `public`; use direct container URL for your own calls |
-| `pgadmin` | `http://pgadmin.localhost:8888` | pgAdmin 4 web UI |
-| `swagger` | `http://swagger.localhost:8888` | Swagger UI for PostgREST |
-| `opencode` | `http://opencode.localhost:8888` | OpenCode web interface |
-| `bun_runner` | `http://app.localhost:8888` | SSR React app runner (serves `/app`) |
-| `openproject-web` | `http://openproject.localhost:8888` | OpenProject — work packages, projects, wikis, time tracking |
-| `nextcloud` | `http://nextcloud.localhost:8888` | Nextcloud file storage |
-| `nifi` | `https://nifi.localhost:8833` | Apache NiFi — data flow automation, pipelines, ingress on ports 8900–8999 |
+| `pgadmin` | `http://pgadmin.localhost:PORT` | pgAdmin 4 web UI |
+| `swagger` | `http://swagger.localhost:PORT` | Swagger UI for PostgREST |
+| `opencode` | `http://opencode.localhost:PORT` | OpenCode web interface |
+| `bun_runner` | `http://app.localhost:PORT` | SSR React app runner (serves `/app`) |
+| `openproject-web` | `http://openproject.localhost:PORT` | OpenProject — work packages, projects, wikis, time tracking |
+| `nextcloud` | `http://nextcloud.localhost:PORT` | Nextcloud file storage |
+| `nifi` | `https://nifi.localhost:HTTPS_PORT` | Apache NiFi — data flow automation, pipelines, ingress on subdomains `https://{port}.nifi.localhost:HTTPS_PORT` (ports 8900–8999) |
 
 ---
 
@@ -51,12 +72,13 @@ as far as you are concerned.
 - Never construct or use bare container hostnames such as `proxy`, `nextcloud`,
   `pgadmin`, `openproject-web`, `bun_runner`, `swagger`, or `opencode` as HTTP
   hosts — those are internal Docker names that are not in the table.
-- Never use `proxy:8888` with a `Host:` header as a roundabout way to reach a
-  service. Each service already has its own URL in the table; use that directly.
+- Never use `proxy:8888` (the internal nginx container name) with a `Host:` header
+  as a roundabout way to reach a service. Each service already has its own URL in
+  the table; use that directly.
 - For PostgREST your own `curl`/API calls use `http://postgrest_app:3000` (the
   table URL). Never quote that address to the user — point them to
-  `http://swagger.localhost:8888` instead.
-- Every URL you show the user must be an `X.localhost:8888` URL from the table.
+  `http://swagger.localhost:PORT` instead (PORT = resolved `$SYSTEM_HTTP_PORT`).
+- Every URL you show the user must be an `X.localhost:PORT` URL from the table.
 
 ---
 
@@ -73,6 +95,8 @@ values back in responses or logs.
 | `$OPENCODE_EMBEDDING_MODEL` | Embedding model name |
 | `$NIFI_USERNAME` | NiFi single-user login — use to generate an API bearer token |
 | `$NIFI_PASSWORD` | NiFi single-user password — use to generate an API bearer token |
+| `$SYSTEM_HTTP_PORT` | External HTTP port — resolve with `echo $SYSTEM_HTTP_PORT`; use the result as `PORT` in every URL |
+| `$SYSTEM_HTTPS_PORT` | External HTTPS port — resolve with `echo $SYSTEM_HTTPS_PORT`; use the result as `HTTPS_PORT` in every NiFi URL |
 
 ---
 

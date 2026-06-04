@@ -11,9 +11,9 @@
  * list of overridable methods.
  */
 class OC_Theme {
-	public function getBaseUrl(): string {
-		return 'https://nextcloud.localhost:8888';
-	}
+// 	public function getBaseUrl(): string {
+// 		return 'https://nextcloud.localhost:8888';
+// 	}
 
 	public function getDocBaseUrl(): string {
 		return 'https://docs.nextcloud.com';

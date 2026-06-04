@@ -34,7 +34,7 @@ fi
 # wopi_url: internal Docker address Nextcloud uses to reach Collabora
 # public_wopi_url: address the browser uses to reach Collabora (through nginx)
 ${PHP_BIN} -f "${OCC}" config:app:set richdocuments wopi_url        --value="http://collabora:9980"
-${PHP_BIN} -f "${OCC}" config:app:set richdocuments public_wopi_url  --value="http://nextcloud.localhost:8888"
+${PHP_BIN} -f "${OCC}" config:app:set richdocuments public_wopi_url  --value="http://nextcloud.localhost:SYSTEM_HTTP_PORT"
 ${PHP_BIN} -f "${OCC}" config:app:set richdocuments wopi_allowlist   --value="172.0.0.0/8"
 ${PHP_BIN} -f "${OCC}" config:app:set richdocuments doc_format       --value="ooxml"
 ${PHP_BIN} -f "${OCC}" richdocuments:activate-config || true

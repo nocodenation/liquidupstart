@@ -85,6 +85,12 @@ chmod 644 "${CERTS_DIR}/nifi.keystore.p12" "${CERTS_DIR}/nifi.truststore.p12"
 echo "Keystore/truststore generated. Password: ${STORE_PASSWORD}"
 
 
+API_KEY="$(grep -E '^API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+HTTP_PORT="${HTTP_PORT:-8888}"
+HTTPS_PORT="${HTTPS_PORT:-8833}"
+
 for template in "${TEMPLATES_DIR}"/*; do
   [[ -f "$template" ]] || continue
   filename="$(basename "$template")"
@@ -93,9 +99,9 @@ for template in "${TEMPLATES_DIR}"/*; do
   echo "Rendering nginx template: ${filename}"
   rm -rf "$outfile"
   render_template "$template" > "$outfile"
-  # Replace API_KEY_PLACEHOLDER with API_KEY from .env
-  API_KEY="$(grep -E '^API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
   sed_inplace "s|API_KEY_PLACEHOLDER|${API_KEY}|g" "${CONFIG_DIR}/${filename}"
+  sed_inplace "s|SYSTEM_HTTP_PORT|${HTTP_PORT}|g" "${CONFIG_DIR}/${filename}"
+  sed_inplace "s|SYSTEM_HTTPS_PORT|${HTTPS_PORT}|g" "${CONFIG_DIR}/${filename}"
 done
 
 
@@ -110,7 +116,7 @@ if [[ -f "$NGINX_CONF" ]]; then
         cat >> "$ingress_blocks" <<EOF
 
 server {
-    listen 8833 ssl;
+    listen ${HTTPS_PORT} ssl;
 
     server_name ${port}.nifi.localhost;
 

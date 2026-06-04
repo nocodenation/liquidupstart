@@ -3,9 +3,11 @@ name: bun-app
 description: Create or update the SSR React user-facing application in /app, run by the Bun Runner container. Use whenever the user asks to "build a UI", "make a node app", "add a page", "update the app", or similar.
 ---
 
+**Port resolution:** run `echo $SYSTEM_HTTP_PORT` → use the result as `PORT`. Never guess or use a default.
+
 The Bun Runner container watches `/app` and runs whatever lives there as an SSR React
 application. The same `/app` volume is mounted into this container, so file edits
-land directly. The runner serves the app at `http://app.localhost:8888`.
+land directly. The runner serves the app at `http://app.localhost:PORT` (PORT = resolved `$SYSTEM_HTTP_PORT`).
 
 ## Build and edit workflow
 
@@ -25,7 +27,7 @@ The Bun Runner container is **already running**. When you edit `/app`, it:
    `bun install` / `npm install` / `yarn install` / `pnpm install` from this
    container. There is no install step for you to do.
 2. **Starts and serves the app** on its internal port 3000, which is published as
-   `app.localhost:8888` on the host. Do not start a server process yourself — no
+   `app.localhost:PORT` on the host. Do not start a server process yourself — no
    `bun run`, `bun start`, `node server.js`, `npm run dev`, background `&` jobs,
    `nohup`, `pm2`, `tmux`, etc. There is no start step for you to do either.
 3. **Restarts** when `package.json`'s `version` changes (which is why every edit must
@@ -37,7 +39,7 @@ Things this means in practice:
   resolve; it's the running app. Do **not** "free up" the port, kill the bun_runner
   process, or pick a different port to run a parallel server on. A parallel server is
   unmanaged, unreachable from the published mapping, and invisible to the user.
-- The app's URL is **always** `http://app.localhost:8888` — see *Telling the user
+- The app's URL is **always** `http://app.localhost:PORT` (PORT = resolved `$SYSTEM_HTTP_PORT`) — see *Telling the user
   where the app is*. Never invent a new URL; if you do, you are running a second
   process the runner does not know about and the user will be confused.
 - If the runner doesn't pick up your change, the fix is not to run the app yourself.
@@ -72,9 +74,9 @@ env var, a runtime config file the user has to set, or any place outside `/app/`
 
 When you do this, tell the user that the credential they pasted now lives inside the
 app's source code, and that they can revoke it any time from the same page they
-generated it on (OpenProject **Access tokens** at
-`http://openproject.localhost:8888/my/access_tokens`, or Nextcloud **Devices & sessions**
-at `http://nextcloud.localhost:8888/settings/user/security`).
+generated it on. Run `echo $SYSTEM_HTTP_PORT` to get PORT, then give them:
+OpenProject **Access tokens** at `http://openproject.localhost:PORT/my/access_tokens`,
+or Nextcloud **Devices & sessions** at `http://nextcloud.localhost:PORT/settings/user/security`.
 
 ## Data the app reads or writes
 
@@ -121,38 +123,41 @@ Then act on the choice:
 **(B) Use directly from Nextcloud** — pass the app **direct file URLs that bypass the
 Nextcloud UI**:
 - For server-side fetches from the Bun app: use
-  `http://nextcloud.localhost:8888/remote.php/dav/files/<user>/<path>` with HTTP
+  `http://nextcloud.localhost:PORT/remote.php/dav/files/<user>/<path>` with HTTP
   Basic auth, embedding the credentials directly in the app source (see *Credentials
   the app needs* above — `$PGADMIN_DEFAULT_EMAIL` as the username, the user-pasted
   app password as the password). The Bun app then `fetch()`es the raw file.
 - For browser-side embedding (images, downloads, video sources, etc.): generate a
   public-share download URL via the OCS shares API (see the **nextcloud-user-link**
   skill — *When public shares are allowed*) and use the
-  `http://nextcloud.localhost:8888/s/<token>/download` form. **Tell the user before
+  `http://nextcloud.localhost:PORT/s/<token>/download` form. **Tell the user before
   you do this** — each share is accessible to anyone who has the URL.
 
-**Never** embed `http://nextcloud.localhost:8888/apps/files/files/<fileid>?…&openfile=true&…`
+**Never** embed `http://nextcloud.localhost:PORT/apps/files/files/<fileid>?…&openfile=true&…`
 URLs in app code. Those open the Nextcloud Files-app UI, not the raw file — they
 belong in chat replies to the user, not in app sources.
 
 ## URLs in app code
 
-Use `X.localhost:8888` URLs throughout — both server-side and client-side code use
-the same URLs. The one exception is PostgREST, where server code should call the
-container directly to avoid the nginx hop.
+Use `X.localhost:PORT` URLs throughout — both server-side and client-side code use
+the same URLs. Resolve PORT by running `echo $SYSTEM_HTTP_PORT` and substitute the
+printed value when writing literal URL strings into app source code. The one exception
+is PostgREST, where server code should call the container directly to avoid the nginx hop.
 
 ### Pattern: URL constants
 
 ```ts
 // src/lib/urls.ts
+// Run `echo $SYSTEM_HTTP_PORT` and replace PORT below with the printed value.
 
 // PostgREST — server-side only (browser can't reach container names).
-// For client-side PostgREST calls use "http://postgrest.localhost:8888".
+// For client-side PostgREST calls use "http://postgrest.localhost:PORT".
 export const POSTGREST = "http://postgrest_app:3000";
 
 // All other services — same URL works in both server and browser code.
-export const OPENPROJECT = "http://openproject.localhost:8888";
-export const NEXTCLOUD   = "http://nextcloud.localhost:8888";
+// Replace PORT with the resolved value of $SYSTEM_HTTP_PORT.
+export const OPENPROJECT = "http://openproject.localhost:PORT";
+export const NEXTCLOUD   = "http://nextcloud.localhost:PORT";
 ```
 
 Usage:
@@ -180,27 +185,29 @@ const file = await fetch(
 
 ### Files served by the app from Nextcloud — recap
 
-- Server-side `fetch()` of a Nextcloud file → `http://nextcloud.localhost:8888/remote.php/dav/...`
+- Server-side `fetch()` of a Nextcloud file → `http://nextcloud.localhost:PORT/remote.php/dav/...`
   with `Authorization: Basic ...`.
 - Anything the **browser** loads (`<img>`, download link, inline PDF) → public-share
-  download URL (`http://nextcloud.localhost:8888/s/<token>/download`).
+  download URL (`http://nextcloud.localhost:PORT/s/<token>/download`).
 - Never the Files-app viewer URL (`/apps/files/files/...?openfile=true`) — it opens
   the Nextcloud UI, not the raw file.
 
 ## Telling the user where the app is
 
-The app is reachable in the user's browser at exactly one URL: **`http://app.localhost:8888`**.
-That host port is already mapped by `docker compose` (`proxy:8888 → bun_runner:3000`
+Resolve PORT first (`echo $SYSTEM_HTTP_PORT`), then:
+
+The app is reachable in the user's browser at exactly one URL: **`http://app.localhost:PORT`**.
+That host port is already mapped by `docker compose` (`proxy:PORT → bun_runner:3000`
 via nginx virtual host `app.localhost`); it works as-is, every time. Do not hedge
 ("may need to be configured", "if the proxy is set up", "external port may need…") —
 the mapping is part of this environment.
 
 When you finish building or updating the app, the user-facing summary should look
-like:
+like (PORT = resolved `$SYSTEM_HTTP_PORT`):
 
-> Done. The bookshelf is live at **http://app.localhost:8888** — click any book to
+> Done. The bookshelf is live at **http://app.localhost:PORT** — click any book to
 > open it in the PDF reader. Pages also reachable directly:
-> `http://app.localhost:8888/book/<name>`.
+> `http://app.localhost:PORT/book/<name>`.
 
 That's the whole "where is it" section. Don't add a second list of "internal URLs",
 "container URLs", or "the app is also available at bun_runner:3000". The user has no
@@ -212,11 +219,11 @@ way to reach those, and they will assume something is broken when they see them.
 > - Internal URL: http://bun_runner:3000
 > - Bookshelf: http://bun_runner:3000/
 >
-> The external port app.localhost:8888 may need to be configured in the Docker proxy.
+> The external port app.localhost:PORT may need to be configured in the Docker proxy.
 
 Every line above is wrong: the internal hostname is unreachable from the browser, and
 the URL does **not** need any further configuration. The correct version substitutes
-`http://app.localhost:8888` for every `http://bun_runner:3000` and removes the hedging
+`http://app.localhost:PORT` for every `http://bun_runner:3000` and removes the hedging
 sentence entirely.
 
 ## Rules
@@ -230,9 +237,9 @@ sentence entirely.
   reads or writes*).
 - Never embed Nextcloud Files-app viewer URLs (`/apps/files/files/...?openfile=true`)
   in app sources — those are for chat replies, not for app code.
-- Use `X.localhost:8888` URLs throughout; PostgREST server-side calls use
+- Use `X.localhost:PORT` URLs throughout (PORT = resolved `$SYSTEM_HTTP_PORT`); PostgREST server-side calls use
   `postgrest_app:3000` directly to avoid the nginx hop. See *URLs in app code*.
-- User-facing summaries cite **only** `http://app.localhost:8888` — never mention
+- User-facing summaries cite **only** `http://app.localhost:PORT` — never mention
   `bun_runner:3000` "for completeness" and never hedge that the URL "may need to be
   configured". See *Telling the user where the app is*.
 - Never run install or start commands yourself (`bun install`, `bun run`, `node …`,

@@ -3,7 +3,9 @@ name: nextcloud-webdav
 description: Discover, read, write, list, and delete user files in Nextcloud — the source of truth for all user data — over WebDAV. Use whenever you need to find out what files exist ("what books / PDFs / documents / images are in the system", "list my files", "what data do I have"), or save / read / delete a specific file.
 ---
 
-User files live in **Nextcloud** at `http://nextcloud.localhost:8888`. Nextcloud is
+**Port resolution:** run `echo $SYSTEM_HTTP_PORT` → use the result as `PORT`. Never guess or use a default.
+
+User files live in **Nextcloud** at `http://nextcloud.localhost:PORT` (PORT = resolved `$SYSTEM_HTTP_PORT`). Nextcloud is
 the **source of truth** for any user-owned content; if the user asks about *what
 files exist*, the answer comes from a PROPFIND here, **not** from a filesystem
 listing inside this container.
@@ -24,7 +26,7 @@ WebDAV root with `Depth: infinity`:
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PROPFIND \
   -H "Depth: infinity" \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/" \
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/" \
   | xmllint --xpath "//*[local-name()='href']/text()" -
 ```
 
@@ -37,12 +39,14 @@ will not contain user uploads.
 
 The WebDAV username is injected as `$PGADMIN_DEFAULT_EMAIL` (e.g.
 `user@nocodenation.org`). The WebDAV **password** is *not* injected — you must ask the
-user for an app password. The first time you need to call Nextcloud in a session, ask
-with this exact wording:
+user for an app password. The first time you need to call Nextcloud in a session:
+
+1. Run `echo $SYSTEM_HTTP_PORT` to get the actual port value (call it PORT).
+2. Ask the user with this wording, substituting PORT with the value you just read:
 
 > I need a Nextcloud app password to read/write your files over WebDAV.
 > Open your Security settings (you're already logged in):
-> **http://nextcloud.localhost:8888/settings/user/security**
+> **http://nextcloud.localhost:PORT/settings/user/security**
 > Scroll to **Devices & sessions**, enter a name (e.g. "OpenCode"), click **Create new
 > app password**, and paste the generated token here. I will keep it only for this
 > session.
@@ -55,10 +59,10 @@ required; do not attempt anonymous access.
 The examples below use `$NC_APP_PASSWORD` as a shell placeholder for the value the
 user pasted.
 
-The per-user WebDAV root:
+The per-user WebDAV root (PORT = resolved `$SYSTEM_HTTP_PORT`):
 
 ```
-http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/
+http://nextcloud.localhost:PORT/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/
 ```
 
 Pass `-u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD"` on every request.
@@ -75,7 +79,7 @@ the WebDAV password must be a Nextcloud **app password**, which is exactly what 
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PROPFIND \
   -H "Depth: 1" \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
 ```
 
 Returns XML. Pipe through
@@ -86,7 +90,7 @@ Returns XML. Pipe through
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -o /tmp/report.pdf \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf"
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf"
 ```
 
 ## Upload a file
@@ -98,7 +102,7 @@ curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PUT \
   --data-binary @/tmp/output.json \
   -H "Content-Type: application/json" \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/output.json"
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/output.json"
 ```
 
 ### Capture the file ID at upload time
@@ -110,7 +114,7 @@ header **now** so you don't have to PROPFIND for it later (see the
 ```bash
 curl -s -D - -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PUT --data-binary @/tmp/report.pdf \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
   | awk 'BEGIN{IGNORECASE=1} /^OC-FileId:/ {print $2}' | tr -d '\r' | sed 's/[^0-9].*//'
 ```
 
@@ -122,7 +126,7 @@ file ID.
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X MKCOL \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode"
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode"
 ```
 
 ## Delete a file or directory
@@ -130,7 +134,7 @@ curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X DELETE \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/old.json"
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/old.json"
 ```
 
 ## Look up a file's ID after the fact
@@ -141,7 +145,7 @@ When the file already exists and the upload response is gone:
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PROPFIND -H "Depth: 0" \
   --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid/></d:prop></d:propfind>' \
-  "http://nextcloud.localhost:8888/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
+  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
   | xmllint --xpath "//*[local-name()='fileid']/text()" -
 ```
 
