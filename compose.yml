@@ -277,8 +277,8 @@ services:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
     volumes:
-      - ./config/opencode/instructions.md:/opencode/instructions.md:ro
-      - ./config/opencode/skills:/root/.config/opencode/skills
+      - ./config/agents/instructions.md:/opencode/instructions.md:ro
+      - ./config/agents/skills:/root/.config/opencode/skills
       - ./config/opencode/package.json:/root/.config/opencode/package.json
       - ./config/opencode/tools:/root/.config/opencode/tools:ro
       - ./volumes/logs/postgres:/logs/postgres:ro
@@ -603,11 +603,23 @@ services:
       nocodenation_all_in_wonder_network:
 
   hermes:
-    image: nousresearch/hermes-agent
+#    image: nousresearch/hermes-agent
+    image: all-in-wonder/hermes:latest
     container_name: hermes
     restart: unless-stopped
+    extra_hosts:
+      - "embedding_host:${OPENCODE_EMBEDDING_HOST_IP:-127.0.0.1}"
+    ports:
+      - "9119:9119"
+      - "8642:8642"
     volumes:
-      - ./volumes/hermes:/opt/data
+      - ./volumes/hermes:/root/.hermes
+      - ./config/hermes/config.yaml:/opt/config.yaml
+#      - ./config/hermes/entrypoint.sh:/entrypoint.sh
+      - ./config/agents/skills:/opt/custom-skills
+      - ./config/agents/instructions.md:/root/.hermes/SOUL.md
+      - ./config/hermes/plugins/ingest_pdf:/root/.hermes/plugins/ingest_pdf:ro
+      - ./volumes/data:/data
     environment:
       API_SERVER_ENABLED: true
       API_SERVER_HOST: 0.0.0.0
@@ -616,10 +628,21 @@ services:
       HERMES_DASHBOARD: 1
       HERMES_DASHBOARD_TUI: 1
       HERMES_DASHBOARD_INSECURE: 1
+      GATEWAY_ALLOW_ALL_USERS: true
+      CUSTOM_SKILLS_FOLDER: /opt/custom-skills
+      POSTGREST_API_KEY: ${API_KEY:-}
+      POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
+      OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
+      OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
+      OPENCODE_OPENAI_KEY: ${OPENCODE_OPENAI_KEY:-}
+      NIFI_USERNAME: ${NIFI_USERNAME:-}
+      NIFI_PASSWORD: ${NIFI_PASSWORD:-}
+      SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
+      SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
+      NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+#      HERMES_UID: 0
     command: ["gateway", "run"]
-    ports:
-      - "8642:8642"
-      - "9119:9119"
     networks:
       - nocodenation_all_in_wonder_network
 

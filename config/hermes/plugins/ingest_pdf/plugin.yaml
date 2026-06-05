@@ -1,0 +1,12 @@
+name: ingest_pdf
+version: 1.0.0
+description: >-
+  Ingest a PDF (or a folder of PDFs) into the WebDB Playground RAG store
+  (rag_documents, rag_chunks) via PostgREST. Extracts text page-by-page,
+  chunks ~400 tokens (50 overlap), embeds each chunk via a self-hosted
+  OpenAI-compatible endpoint or OpenAI, and inserts rows with the raw float
+  vector. Python port of the OpenCode ingest_pdf tool.
+author: all-in-wonder
+kind: standalone
+provides_tools:
+  - ingest_pdf

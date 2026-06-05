@@ -1,0 +1,7 @@
+skills:
+  external_dirs:
+    - ${CUSTOM_SKILLS_FOLDER}
+
+plugins:
+  enabled:
+    - ingest_pdf

@@ -1,0 +1,15 @@
+# Python deps for the ingest_pdf Hermes plugin.
+#
+# These are installed into the Hermes venv at IMAGE-BUILD time via the bundled
+# uv (see config/hermes/Dockerfile) — NOT with pip at runtime, because the venv
+# is uv-managed and has no pip.
+#
+# The OpenAI embedding path is implemented over `requests` (already shipped in
+# the Hermes venv), so the `openai` SDK is intentionally NOT a dependency — this
+# avoids re-resolving/clobbering Hermes' own pinned packages.
+#
+# Latest versions verified 2026-06-05.
+
+pypdf==6.13.0
+tiktoken==0.13.0
+# requests — already provided by hermes-agent (>=2.33); not pinned here.

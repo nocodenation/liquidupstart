@@ -7,6 +7,12 @@ CONFIG_DIR="${PROJECT_DIR}/config/nifi"
 STATE_DIR="${PROJECT_DIR}/volumes/nifi"
 TEMPLATES_DIR="${CONFIG_DIR}/templates"
 
+# Enable --no-cache only when passed in (e.g. by build.sh).
+NO_CACHE=""
+for arg in "$@"; do
+    [ "$arg" = "--no-cache" ] && NO_CACHE="--no-cache"
+done
+
 # Load environment variables from .env file if it exists
 if [ -f "${PROJECT_DIR}/.env" ]; then
     # Export variables from .env file, ignoring comments and empty lines
@@ -16,13 +22,13 @@ if [ -f "${PROJECT_DIR}/.env" ]; then
 fi
 
 # Use environment variables (with defaults if not set)
-SYSTEM_DEPENDENCIES="${SYSTEM_DEPENDENCIES:-}"
-POST_INSTALLATION_COMMANDS="${POST_INSTALLATION_COMMANDS:-}"
+NIFI_SYSTEM_DEPENDENCIES="${NIFI_SYSTEM_DEPENDENCIES:-}"
+NIFI_POST_INSTALLATION_COMMANDS="${NIFI_POST_INSTALLATION_COMMANDS:-}"
 
-# Build the final list of additional packages from SYSTEM_DEPENDENCIES
+# Build the final list of additional packages from NIFI_SYSTEM_DEPENDENCIES
 ADDITIONAL_PACKAGES_STR=""
-if [ -n "$SYSTEM_DEPENDENCIES" ]; then
-    IFS=',' read -r -a __DEPS <<< "$SYSTEM_DEPENDENCIES"
+if [ -n "$NIFI_SYSTEM_DEPENDENCIES" ]; then
+    IFS=',' read -r -a __DEPS <<< "$NIFI_SYSTEM_DEPENDENCIES"
     __DEPS_TRIMMED=()
     for d in "${__DEPS[@]}"; do
         trimmed=$(echo "$d" | xargs)
@@ -55,9 +61,9 @@ if [ -n "$ADDITIONAL_PACKAGES_STR" ]; then
 fi
 
 # If post installation commands provided, inject them under the marker in Dockerfile
-if [ -n "$POST_INSTALLATION_COMMANDS" ]; then
+if [ -n "$NIFI_POST_INSTALLATION_COMMANDS" ]; then
     # Build the block of RUN commands from comma-separated list
-    IFS=',' read -r -a __CMDS <<< "$POST_INSTALLATION_COMMANDS"
+    IFS=',' read -r -a __CMDS <<< "$NIFI_POST_INSTALLATION_COMMANDS"
     POST_INSTALL_BLOCK=""
     for c in "${__CMDS[@]}"; do
         # trim whitespace around the command
@@ -84,4 +90,4 @@ fi
 docker image rm "all-in-wonder/nifi:latest" >/dev/null 2>&1 || true
 
 echo "Building all-in-wonder/nifi:latest from ${PROJECT_DIR}/config/nifi..."
-docker build --no-cache -t "all-in-wonder/nifi:latest" "${PROJECT_DIR}/config/nifi"
+docker build ${NO_CACHE:+--no-cache} --progress=plain -t "all-in-wonder/nifi:latest" "${PROJECT_DIR}/config/nifi"

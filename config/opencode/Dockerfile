@@ -1,11 +1,11 @@
 FROM node:lts-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git jq \
-    && rm -rf /var/lib/apt/lists/*
-RUN apt-get install -y nodejs python3-pip yt-dlp && rm -rf /var/lib/apt/lists/*
-RUN pip3 install openai-whisper --break-system-packages
-RUN npm install -g ytdl-core
+    && apt-get install -y --no-install-recommends ca-certificates curl git jq
+#    && rm -rf /var/lib/apt/lists/*
+#RUN apt-get install -y nodejs python3-pip yt-dlp
+#RUN pip3 install openai-whisper --break-system-packages
+#RUN npm install -g ytdl-core
 RUN npm install -g opencode-ai
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

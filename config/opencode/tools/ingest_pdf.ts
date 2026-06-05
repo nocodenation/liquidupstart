@@ -1,5 +1,5 @@
 /**
- * Custom OpenCode tool — PDF ingester for the WebDB Playground RAG store.
+ * Custom OpenCode tool — PDF ingester for the All-In-Wonder RAG store.
  *
  * Reads a PDF (or a folder of PDFs), extracts text page-by-page, chunks at
  * ~400 tokens with 50-token overlap, embeds each chunk via the project's
@@ -279,6 +279,54 @@ async function pgrestInsert(
     return (await r.json()) as unknown[]
 }
 
+// === Schema preflight ===
+async function pgrestTableExists(base: string, apiKey: string, table: string): Promise<boolean> {
+    // 200 for a limit=0 select means the table exists; a missing table returns 404
+    // (PGRST205). On a network error, assume present and let the real insert surface it.
+    try {
+        const r = await fetch(`${base}/${table}?limit=0`, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+        })
+        return r.ok
+    } catch {
+        return true
+    }
+}
+
+function requiredSchemaMessage(missing: string[], dims: number): string {
+    // Hand the LLM the exact tables + structure this tool writes to, so it can
+    // create them and re-run, instead of failing only after the expensive work.
+    return [
+        `error: required table(s) missing: ${missing.join(", ")}.`,
+        "Create the RAG schema before ingesting, then call ingest_pdf again with the same arguments.",
+        "",
+        "Required tables:",
+        "  rag_documents(",
+        "    id           seqnumber primary key (auto-increment),",
+        "    filename     text,",
+        "    source_path  text,",
+        "    metadata     jsonb",
+        "  )",
+        "  rag_chunks(",
+        "    id           seqnumber primary key (auto-increment),",
+        "    document_id  integer references rag_documents(id),",
+        "    chunk_index  integer,",
+        "    content      text,",
+        "    token_count  integer,",
+        "    metadata     jsonb,",
+        `    embedding    vector(${dims})`,
+        "  )",
+        "",
+        "Setup:",
+        `  1. Create both tables (embedding column type vector(${dims})). Typed columns can use the`,
+        "     create_table RPC (map the embedding column type 'vector'); metadata must be jsonb and",
+        "     rag_chunks.document_id should reference rag_documents(id).",
+        "  2. Add the HNSW index: POST /rpc/create_vector_index",
+        '     {"p_table_name": "rag_chunks", "p_embedding_column_name": "embedding"}.',
+        "  3. See the vector-search skill, then re-run ingest_pdf.",
+    ].join("\n")
+}
+
 // === Per-file orchestration ===
 async function preparePdf(pdfPath: string, log: Logger): Promise<{ pages: string[]; chunks: Chunk[] }> {
     log(`[1/5] reading PDF: ${pdfPath}`)
@@ -375,7 +423,7 @@ async function findPdfs(folder: string, log: Logger): Promise<string[]> {
 // === Tool definition ===
 export default tool({
     description:
-        "Ingest a PDF (or folder of PDFs) into the WebDB Playground RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds via the self-hosted OPENCODE_EMBEDDING_HOST endpoint, and inserts rows with the raw 4096-dim float vector (binary quantization is applied at index time by pgvector).",
+        "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds via the self-hosted OPENCODE_EMBEDDING_HOST endpoint, and inserts rows with the raw 4096-dim float vector (binary quantization is applied at index time by pgvector).",
     args: {
         input: tool.schema
             .string()
@@ -452,6 +500,17 @@ export default tool({
         if (needsEmbed && !embedHost) return "error: OPENCODE_EMBEDDING_HOST not set"
         if (needsEmbed && !embedModel) return "error: OPENCODE_EMBEDDING_MODEL not set"
         if (needsPgrest && !apiKey) return "error: POSTGREST_API_KEY not set"
+
+        // Preflight: for a real ingest, make sure the destination tables exist BEFORE
+        // the expensive work (reading PDFs + embedding). If missing, return the exact
+        // required schema so the agent can create the tables and re-run.
+        if (needsPgrest) {
+            const missing: string[] = []
+            for (const t of ["rag_documents", "rag_chunks"]) {
+                if (!(await pgrestTableExists(postgrestUrl, apiKey, t))) missing.push(t)
+            }
+            if (missing.length) return requiredSchemaMessage(missing, EMBED_DIMS)
+        }
 
         // Phase 1: parse + chunk + fingerprint each PDF
         type Prepared = {
