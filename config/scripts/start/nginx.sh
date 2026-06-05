@@ -71,6 +71,7 @@ if command -v keytool &>/dev/null; then
         -noprompt
 else
     docker run --rm \
+        --user "$(id -u):$(id -g)" \
         -v "${CERTS_DIR}:/certs" \
         eclipse-temurin:17-jre-jammy \
         keytool -importcert -trustcacerts \
