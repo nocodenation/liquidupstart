@@ -627,12 +627,12 @@ services:
       # (load_hermes_dotenv, override=true). Bind-mounting the file over the
       # volume makes config/hermes/.env the source of truth — edit it and
       # restart. Copy config/hermes/.env.example to .env and fill in keys.
-      - ./config/hermes/.env:/root/.hermes/.env
+      - ./config/hermes/.env:/opt/.env
       - ./config/hermes/config.yaml:/opt/config.yaml
 #      - ./config/hermes/entrypoint.sh:/entrypoint.sh
       - ./config/agents/skills:/opt/custom-skills
-      - ./config/agents/instructions.md:/root/.hermes/SOUL.md
-      - ./config/hermes/plugins/ingest_pdf:/root/.hermes/plugins/ingest_pdf:ro
+      - ./config/agents/instructions.md:/opt/SOUL.md
+      - ./config/hermes/plugins/ingest_pdf:/opt/plugins/ingest_pdf:ro
       - ./volumes/data:/data
     environment:
       API_SERVER_ENABLED: true

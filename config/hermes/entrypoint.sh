@@ -9,6 +9,10 @@ if [ -f /opt/config.yaml ] && [ ! -f /root/.hermes/config.yaml ]; then
     cp /opt/config.yaml /root/.hermes/config.yaml
 fi
 
+cp /opt/.env /root/.hermes/.env
+cp /opt/SOUL.md /root/.hermes/opt/SOUL.md
+cp /opt/plugins/ingest_pdf /root/.hermes/plugins/ingest_pdf
+
 # curl hard-codes *.localhost -> 127.0.0.1 (RFC 6761), so inside this container
 # names like nextcloud.localhost never reach the proxy. Route any request to the
 # system HTTP/HTTPS ports through the proxy container instead, keeping the
