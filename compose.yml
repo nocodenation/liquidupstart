@@ -242,9 +242,9 @@ services:
           - 8997.nifi.localhost
           - 8998.nifi.localhost
           - 8999.nifi.localhost
-#          - hermes.localhost
-#          - api.hermes.localhost
-#          - webhooks.hermes.localhost
+          - hermes.localhost
+          - api.hermes.localhost
+          - webhooks.hermes.localhost
 
   swagger:
     image: swaggerapi/swagger-ui
@@ -610,60 +610,61 @@ services:
     networks:
       nocodenation_all_in_wonder_network:
 
-#  hermes:
-##    image: nousresearch/hermes-agent
-#    image: all-in-wonder/hermes:latest
-#    container_name: hermes
-#    restart: unless-stopped
-#    extra_hosts:
-#      - "embedding_host:${OPENCODE_EMBEDDING_HOST_IP:-127.0.0.1}"
-#    ports:
-#      - "9119:9119"
-#      - "8642:8642"
-#      - "8644:8644"
-#    volumes:
-#      - ./volumes/hermes:/root/.hermes
-#      # API keys / secrets: hermes auto-loads ~/.hermes/.env at startup
-#      # (load_hermes_dotenv, override=true). Bind-mounting the file over the
-#      # volume makes config/hermes/.env the source of truth — edit it and
-#      # restart. Copy config/hermes/.env.example to .env and fill in keys.
-#      - ./config/hermes/.env:/root/.hermes/.env
-#      - ./config/hermes/config.yaml:/opt/config.yaml
-##      - ./config/hermes/entrypoint.sh:/entrypoint.sh
-#      - ./config/agents/skills:/opt/custom-skills
-#      - ./config/agents/instructions.md:/root/.hermes/SOUL.md
-#      - ./config/hermes/plugins/ingest_pdf:/root/.hermes/plugins/ingest_pdf:ro
-#      - ./volumes/data:/data
-#    environment:
-#      API_SERVER_ENABLED: true
-#      API_SERVER_HOST: 0.0.0.0
-#      API_SERVER_KEY: ${HERMES_API_KEY}
-#      API_SERVER_CORS_ORIGINS: '*'
-#      WEBHOOK_ENABLED: true
-#      WEBHOOK_PORT: 8644
-#      WEBHOOK_SECRET: ${HERMES_API_KEY:-}
-#      HERMES_DASHBOARD: 1
-#      HERMES_DASHBOARD_TUI: 1
-#      HERMES_DASHBOARD_INSECURE: 1
-#      HERMES_DASHBOARD_HOST: 0.0.0.0
-#      HERMES_DASHBOARD_PORT: 9119
-#      GATEWAY_ALLOW_ALL_USERS: true
-#      CUSTOM_SKILLS_FOLDER: /opt/custom-skills
-#      POSTGREST_API_KEY: ${API_KEY:-}
-#      POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
-#      OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
-#      OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
-#      OPENCODE_OPENAI_KEY: ${OPENCODE_OPENAI_KEY:-}
-#      NIFI_USERNAME: ${NIFI_USERNAME:-}
-#      NIFI_PASSWORD: ${NIFI_PASSWORD:-}
-#      SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
-#      SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
-#      NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
-#      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-##      HERMES_UID: 0
-#    command: ["gateway", "run"]
-#    networks:
-#      - nocodenation_all_in_wonder_network
+  hermes:
+#    image: nousresearch/hermes-agent
+    image: all-in-wonder/hermes:latest
+    container_name: hermes
+    restart: unless-stopped
+    extra_hosts:
+      - "embedding_host:${OPENCODE_EMBEDDING_HOST_IP:-127.0.0.1}"
+    ports:
+      - "9119:9119"
+      - "8642:8642"
+      - "8644:8644"
+    volumes:
+      - ./volumes/hermes:/root/.hermes
+      # API keys / secrets: hermes auto-loads ~/.hermes/.env at startup
+      # (load_hermes_dotenv, override=true). Bind-mounting the file over the
+      # volume makes config/hermes/.env the source of truth — edit it and
+      # restart. Copy config/hermes/.env.example to .env and fill in keys.
+      - ./config/hermes/.env:/root/.hermes/.env
+      - ./config/hermes/config.yaml:/opt/config.yaml
+#      - ./config/hermes/entrypoint.sh:/entrypoint.sh
+      - ./config/agents/skills:/opt/custom-skills
+      - ./config/agents/instructions.md:/root/.hermes/SOUL.md
+      - ./config/hermes/plugins/ingest_pdf:/root/.hermes/plugins/ingest_pdf:ro
+      - ./volumes/data:/data
+    environment:
+      API_SERVER_ENABLED: true
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_KEY: ${HERMES_API_KEY}
+      API_SERVER_CORS_ORIGINS: '*'
+      WEBHOOK_ENABLED: true
+      WEBHOOK_PORT: 8644
+      WEBHOOK_SECRET: ${HERMES_API_KEY:-}
+      HERMES_DASHBOARD: 1
+      HERMES_DASHBOARD_TUI: 1
+      HERMES_DASHBOARD_INSECURE: 1
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: 9119
+      GATEWAY_ALLOW_ALL_USERS: true
+      CUSTOM_SKILLS_FOLDER: /opt/custom-skills
+      POSTGREST_API_KEY: ${API_KEY:-}
+      POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
+      OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
+      OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
+      OPENCODE_OPENAI_KEY: ${OPENCODE_OPENAI_KEY:-}
+      NIFI_USERNAME: ${NIFI_USERNAME:-}
+      NIFI_PASSWORD: ${NIFI_PASSWORD:-}
+      SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
+      SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
+      NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+#      HERMES_UID: 0
+    command: ["gateway", "run"]
+    networks:
+      - nocodenation_all_in_wonder_network
+
   openclaw-gateway:
     image: ghcr.io/openclaw/openclaw:latest
     build: .

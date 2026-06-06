@@ -9,6 +9,6 @@ BUILD_ARGS=("$@")
 "${SCRIPT_DIR}/config/scripts/build/opencode.sh" "${BUILD_ARGS[@]}"
 "${SCRIPT_DIR}/config/scripts/build/bun-runner.sh" "${BUILD_ARGS[@]}"
 "${SCRIPT_DIR}/config/scripts/build/nifi.sh" "${BUILD_ARGS[@]}"
-#"${SCRIPT_DIR}/config/scripts/build/hermes.sh" "${BUILD_ARGS[@]}"
+"${SCRIPT_DIR}/config/scripts/build/hermes.sh" "${BUILD_ARGS[@]}"
 
 echo "Done."
