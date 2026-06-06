@@ -72,7 +72,8 @@ After confirmation:
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
-  -X POST "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/ocs/v2.php/apps/files_sharing/api/v1/shares" \
+  -X POST "http://proxy:${SYSTEM_HTTP_PORT}/ocs/v2.php/apps/files_sharing/api/v1/shares" \
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
   -H "OCS-APIRequest: true" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "path=<path-relative-to-user-root>&shareType=3&permissions=1"

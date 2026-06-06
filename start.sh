@@ -19,6 +19,7 @@ fi
 "${SCRIPT_DIR}/config/scripts/start/nextcloud.sh"
 "${SCRIPT_DIR}/config/scripts/start/nginx.sh"
 "${SCRIPT_DIR}/config/scripts/start/nifi.sh"
+"${SCRIPT_DIR}/config/scripts/start/openclaw.sh"
 
 
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
@@ -57,4 +58,8 @@ echo "Hermes is available on:           http://hermes.localhost:${HTTP_PORT}"
 echo "        api is available at:      http://api.hermes.localhost:${HTTP_PORT}"
 echo "        webhooks url is:          http://webhooks.hermes.localhost:${HTTP_PORT}"
 echo "                API/Webhooks token is: ${HERMES_API_KEY}"
+echo ""
+echo "OpenClaw is available on:         http://openclaw.localhost:${HTTP_PORT}"
+echo "        node bridge is at:        http://bridge.openclaw.localhost:${HTTP_PORT}"
+echo "        MS Teams endpoint is:     http://msteams.openclaw.localhost:${HTTP_PORT}"
 echo ""

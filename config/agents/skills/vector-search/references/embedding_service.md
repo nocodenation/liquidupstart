@@ -56,13 +56,11 @@ When vector search is unavailable or exact phrase matching is needed:
 
 ```bash
 # Case-insensitive substring match
-curl -s "http://postgrest_app:3000/rag_chunks?content=ilike.*Michael Jackson.*&limit=20" \
-  -H "Authorization: Bearer *** \
-  -H "Content-Type: application/json"
+curl -s "http://proxy:8888/rag_chunks?content=ilike.*Michael Jackson.*&limit=20" -H "Host: postgrest.localhost:8888"
 
 # Or retrieve all and grep locally (faster for small corpuses)
-curl -s "http://postgrest_app:3000/rag_chunks?select=content,chunk_index&document_id=eq.1&limit=200" \
-  -H "Authorization: Bearer *** \
+curl -s "http://proxy:8888/rag_chunks?select=content,chunk_index&document_id=eq.1&limit=200" \
+  -H "Host: postgrest.localhost:8888" \
   | jq -r '.[] | "\(.chunk_index)\t\(.content)"' \
   | grep -i "jackson"
 ```

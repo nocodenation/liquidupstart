@@ -85,8 +85,8 @@ column via PostgREST (see **postgrest-api**).
 ### 3. Add the HNSW index
 
 ```bash
-curl -s -X POST http://postgrest_app:3000/rpc/create_vector_index \
-  -H "Authorization: Bearer $POSTGREST_API_KEY" \
+curl -s -X POST http://proxy:8888/rpc/create_vector_index \
+  -H "Host: postgrest.localhost:8888" \
   -H "Content-Type: application/json" \
   -d '{"p_table_name": "docs", "p_embedding_column_name": "embedding"}'
 ```
@@ -99,8 +99,8 @@ HNSW's 2000-dim limit on the `vector` type (the `bit` type supports up to 64000 
 Embed the query text (same recipe as above into `$VEC`), then:
 
 ```bash
-curl -s -X POST http://postgrest_app:3000/rpc/find_closest_vectors \
-  -H "Authorization: Bearer $POSTGREST_API_KEY" \
+curl -s -X POST http://proxy:8888/rpc/find_closest_vectors \
+  -H "Host: postgrest.localhost:8888" \
   -H "Content-Type: application/json" \
   -d "{\"p_table_name\": \"docs\", \"p_embedding_column\": \"embedding\", \"p_query\": \"$VEC\", \"p_k\": 5, \"p_rerank_factor\": 4}"
 ```
@@ -159,9 +159,7 @@ A ~165-page PDF yields ~260 chunks and ingests in a couple of minutes.
 
 - **Text search fallback**: When vector search is unavailable or you need exact matching, plain text search via PostgREST is a viable fallback:
   ```bash
-  curl -s "http://postgrest_app:3000/rag_chunks?content=ilike.*query.*&limit=20"
+  curl -s "http://proxy:8888/rag_chunks?content=ilike.*query.*&limit=20" -H "Host: postgrest.localhost:8888"
   ```
-
-- **JWT issues affect vector RPCs too**: The `find_closest_vectors` and `create_vector_index` RPCs use the same PostgREST JWT authentication. See **postgrest-api** for the authentication pitfalls and workarounds.
 
 - **Bit-type HNSW confirmed working**: The binary quantization → `binary_quantize(embedding)::bit(4096)` → HNSW with `bit_hamming_ops` approach works end-to-end. (The embedding column stays `vector(4096)`; cosine is applied only in the rerank stage, not on the bit index.) Vector search returns meaningful similarity scores (e.g., 0.78–0.85 for relevant chunks).

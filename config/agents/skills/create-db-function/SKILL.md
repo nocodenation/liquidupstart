@@ -34,30 +34,22 @@ Decision order — stop at the first that works:
 
 Given a description of what a database function should do, I will:
 
-1. Read the API key from `/workspace/.env`
-2. Fetch the live OpenAPI spec from PostgREST to understand existing tables and types
-3. Write a `plpgsql` or `sql` function body that satisfies the request
-4. Call `deploy_function` to create/replace the function in PostgreSQL
-5. Verify the new endpoint responds correctly
+1. Fetch the live OpenAPI spec from PostgREST to understand existing tables and types
+2. Write a `plpgsql` or `sql` function body that satisfies the request
+3. Call `deploy_function` to create/replace the function in PostgreSQL
+4. Verify the new endpoint responds correctly
 
 ## Steps
 
-### 1. Read the API key
-
-In this environment the JWT is in the `POSTGREST_API_KEY` environment variable:
+### 1. Fetch the live OpenAPI spec
 ```bash
-API_KEY=$(printenv POSTGREST_API_KEY)
-```
-
-### 2. Fetch the live OpenAPI spec
-```bash
-curl -s http://postgrest_app:3000/ \
-  -H "Authorization: Bearer $API_KEY" \
+curl -s http://proxy:8888/ \
+  -H "Host: postgrest.localhost:8888" \
   -H "Accept: application/json"
 ```
 Inspect the `definitions` and `paths` sections to understand available tables and existing RPC functions before writing any code.
 
-### 3. Deploy the function
+### 2. Deploy the function
 
 **Shell escaping is treacherous** — function bodies contain single quotes, double quotes, backslashes, and newlines that will break inline `-d '...'` strings. Use a file-based payload instead:
 
@@ -75,8 +67,8 @@ cat > /tmp/deploy_fn.json <<'EOF'
 EOF
 
 # Call with file input
-curl -s -X POST http://postgrest_app:3000/rpc/deploy_function \
-  -H "Authorization: Bearer $API_KEY" \
+curl -s -X POST http://proxy:8888/rpc/deploy_function \
+  -H "Host: postgrest.localhost:8888" \
   -H "Content-Type: application/json" \
   -d @/tmp/deploy_fn.json
 ```
@@ -90,11 +82,11 @@ Rules for `function_body`:
 - `function_name` must be lowercase alphanumeric with underscores only
 - Only `plpgsql` and `sql` languages are allowed
 
-### 4. Verify
+### 3. Verify
 Call the new endpoint with representative input and confirm the response is correct:
 ```bash
-curl -s -X POST http://postgrest_app:3000/rpc/<function_name> \
-  -H "Authorization: Bearer $API_KEY" \
+curl -s -X POST http://proxy:8888/rpc/<function_name> \
+  -H "Host: postgrest.localhost:8888" \
   -H "Content-Type: application/json" \
   -d '{ "param1": "test_value" }'
 ```
@@ -108,7 +100,7 @@ curl -s -X POST http://postgrest_app:3000/rpc/<function_name> \
 
 ## Practical Notes from Production Use
 
-- **JWT auth**: The `POSTGREST_API_KEY` environment variable is the source of truth. See **postgrest-api** for authentication pitfalls and reliable patterns (`printenv`, Python subprocess).
+- **No auth needed**: Reached through the proxy (`http://proxy:8888` + `Host: postgrest.localhost:8888`), PostgREST accepts unauthenticated requests — the proxy injects the bearer token, so don't send an `Authorization` header. See **postgrest-api**.
 
 - **File-based JSON payload avoids shell quoting nightmares**: Deploying functions with inline `-d '...'` strings is fragile. Writing the full JSON to a file and using `curl -d @file` is the reliable path.
 

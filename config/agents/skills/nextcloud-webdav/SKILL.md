@@ -5,10 +5,15 @@ description: Discover, read, write, list, and delete user files in Nextcloud —
 
 **Port resolution:** run `echo $SYSTEM_HTTP_PORT` → use the result as `PORT`. Never guess or use a default.
 
-User files live in **Nextcloud** at `http://nextcloud.localhost:PORT` (PORT = resolved `$SYSTEM_HTTP_PORT`). Nextcloud is
-the **source of truth** for any user-owned content; if the user asks about *what
-files exist*, the answer comes from a PROPFIND here, **not** from a filesystem
-listing inside this container.
+User files live in **Nextcloud**, the **source of truth** for any user-owned content;
+if the user asks about *what files exist*, the answer comes from a PROPFIND here, **not**
+from a filesystem listing inside this container.
+
+Reach Nextcloud from inside the containers through the nginx **proxy**: connect to
+`http://proxy:${SYSTEM_HTTP_PORT}` and set `-H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}"`
+(the `X.localhost` name does not resolve in-container — see the main instructions'
+**URL rule**). Append the WebDAV path to that proxy URL, e.g.
+`/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/...`. Every curl below already uses this form.
 
 A `/data` folder is also mounted, but it is a one-way scratch/staging space shared
 with the Bun Runner container — **not** where user data lives. `find /data` and
@@ -26,7 +31,8 @@ WebDAV root with `Depth: infinity`:
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PROPFIND \
   -H "Depth: infinity" \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/" \
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/" \
   | xmllint --xpath "//*[local-name()='href']/text()" -
 ```
 
@@ -59,13 +65,14 @@ required; do not attempt anonymous access.
 The examples below use `$NC_APP_PASSWORD` as a shell placeholder for the value the
 user pasted.
 
-The per-user WebDAV root (PORT = resolved `$SYSTEM_HTTP_PORT`):
+The per-user WebDAV path, appended to the proxy URL (PORT = resolved `$SYSTEM_HTTP_PORT`):
 
 ```
-http://nextcloud.localhost:PORT/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/
+http://proxy:PORT/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/   (Host: nextcloud.localhost:PORT)
 ```
 
-Pass `-u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD"` on every request.
+Pass `-u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD"` and `-H "Host: nextcloud.localhost:PORT"`
+on every request.
 
 **Why an app password and not the plain login password:** Nextcloud is patched (see
 `config/nextcloud/session_security_block.php`) to reject Basic-auth logins where
@@ -79,7 +86,8 @@ the WebDAV password must be a Nextcloud **app password**, which is exactly what 
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PROPFIND \
   -H "Depth: 1" \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
 ```
 
 Returns XML. Pipe through
@@ -90,7 +98,8 @@ Returns XML. Pipe through
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -o /tmp/report.pdf \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf"
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf"
 ```
 
 ## Upload a file
@@ -102,7 +111,8 @@ curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PUT \
   --data-binary @/tmp/output.json \
   -H "Content-Type: application/json" \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/output.json"
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/output.json"
 ```
 
 ### Capture the file ID at upload time
@@ -114,7 +124,8 @@ header **now** so you don't have to PROPFIND for it later (see the
 ```bash
 curl -s -D - -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PUT --data-binary @/tmp/report.pdf \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
   | awk 'BEGIN{IGNORECASE=1} /^OC-FileId:/ {print $2}' | tr -d '\r' | sed 's/[^0-9].*//'
 ```
 
@@ -126,7 +137,8 @@ file ID.
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X MKCOL \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode"
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode"
 ```
 
 ## Delete a file or directory
@@ -134,7 +146,8 @@ curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X DELETE \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/old.json"
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/OpenCode/old.json"
 ```
 
 ## Look up a file's ID after the fact
@@ -144,8 +157,9 @@ When the file already exists and the upload response is gone:
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PROPFIND -H "Depth: 0" \
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
   --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid/></d:prop></d:propfind>' \
-  "http://nextcloud.localhost:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/Documents/report.pdf" \
   | xmllint --xpath "//*[local-name()='fileid']/text()" -
 ```
 

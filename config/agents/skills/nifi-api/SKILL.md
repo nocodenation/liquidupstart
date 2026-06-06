@@ -5,7 +5,12 @@ description: Build, run, and monitor Apache NiFi data flows via the NiFi REST AP
 
 **Port resolution:** run `echo $SYSTEM_HTTPS_PORT` → use the result as `HTTPS_PORT`; run `echo $SYSTEM_HTTP_PORT` → use as `PORT`. Never guess or default these values.
 
-NiFi is available at `https://nifi.localhost:HTTPS_PORT`. It uses a **self-signed certificate** — always pass `-k` (or `--insecure`) in every curl call to skip TLS verification.
+NiFi's REST API is reached from inside the containers through the nginx **proxy**:
+connect to `https://proxy:${SYSTEM_HTTPS_PORT}` and set
+`-H "Host: nifi.localhost:${SYSTEM_HTTPS_PORT}"` (the `X.localhost` name does not resolve
+in-container — see the main instructions' **URL rule**). It uses a **self-signed
+certificate** — always pass `-k` (or `--insecure`) in every curl call to skip TLS
+verification. Every API curl below already uses this form.
 
 ## Authentication — token from environment
 
@@ -13,7 +18,8 @@ NiFi uses bearer tokens. Credentials are already available as environment variab
 
 ```bash
 NIFI_TOKEN=$(curl -sk \
-  -X POST https://nifi.localhost:${SYSTEM_HTTPS_PORT}/nifi-api/access/token \
+  -X POST https://proxy:${SYSTEM_HTTPS_PORT}/nifi-api/access/token \
+  -H "Host: nifi.localhost:${SYSTEM_HTTPS_PORT}" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "username=${NIFI_USERNAME}" \
   --data-urlencode "password=${NIFI_PASSWORD}" \
@@ -24,7 +30,8 @@ Use it as a Bearer token on every subsequent call:
 
 ```bash
 curl -sk -H "Authorization: Bearer $NIFI_TOKEN" \
-  https://nifi.localhost:${SYSTEM_HTTPS_PORT}/nifi-api/flow/status
+  -H "Host: nifi.localhost:${SYSTEM_HTTPS_PORT}" \
+  https://proxy:${SYSTEM_HTTPS_PORT}/nifi-api/flow/status
 ```
 
 Tokens expire after 12 hours. If you get a `401`, regenerate with the same command above.
@@ -66,9 +73,9 @@ Enable the controller service after creating it. Never ask the user for the keys
 
 ## Connecting NiFi to other services
 
-When a NiFi processor needs to call another service (PostgREST, Nextcloud, OpenProject, etc.), use the same `X.localhost:PORT` URLs from the services table in the main instructions — these resolve from inside NiFi containers just as they do from the browser.
+When a NiFi processor needs to call another service (PostgREST, Nextcloud, OpenProject, etc.), it must go through the nginx **proxy** the same way the API calls above do — the `X.localhost` names don't resolve reliably in-container (see the main instructions' **URL rule**). Point the processor's URL at `http://proxy:PORT` (or `https://proxy:HTTPS_PORT`) and add a dynamic property named `Host` set to `<service>.localhost:PORT` so nginx routes it (in `InvokeHTTP`, dynamic properties are sent as request headers).
 
-Example: an `InvokeHTTP` processor posting to PostgREST uses `http://postgrest.localhost:PORT/{table}` with `Authorization: Bearer <POSTGREST_API_KEY>`. Resolve `PORT` from `$SYSTEM_HTTP_PORT` before configuring the processor URL.
+Example: an `InvokeHTTP` processor posting to PostgREST sets **Remote URL** = `http://proxy:8888/{table}` and a dynamic property **Host** = `postgrest.localhost:8888` — no `Authorization` header is needed, the proxy injects the bearer token and PostgREST accepts the request.
 
 ## Error handling
 

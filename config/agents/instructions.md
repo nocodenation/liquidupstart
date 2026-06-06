@@ -1,8 +1,11 @@
 # Project Instructions
 
 This is the **All-In-Wonder** — a Docker Compose environment on the
-`nocodenation_all_in_wonder_network`. All `X.localhost:PORT` service URLs resolve
-from within this container and from the user's browser — use them everywhere.
+`nocodenation_all_in_wonder_network`. The `X.localhost:PORT` service URLs below are
+**user-facing** — they resolve in the user's browser. They do **not** resolve
+reliably from inside these containers, so your own network calls (curl, server-side
+`fetch`, a processor's HTTP request) must go through the nginx `proxy` with a `Host:`
+header instead — see the **URL rule** below.
 
 Detailed how-tos live in skills under `~/.config/opencode/skills/`. This file is the
 small, always-loaded index — environment map, global rules that apply across every
@@ -36,7 +39,7 @@ containing the literal text `PORT`, `HTTPS_PORT`, `${SYSTEM_HTTP_PORT}`, or
 | Service | URL | Purpose |
 |---|---|---|
 | `postgres` | `postgres:5432` | Postgres 17 with pgvector. User: `api_user`, DB: `postgres` |
-| `postgrest_app` | `http://postgrest_app:3000` | PostgREST — REST API auto-generated from `public`; use direct container URL for your own calls |
+| `postgrest_app` | `http://postgrest.localhost:8888` | PostgREST — REST API auto-generated from `public`. For your own calls reach it through the proxy (`http://proxy:8888` + `-H "Host: postgrest.localhost:8888"`); no auth header needed — see **URL rule** |
 | `pgadmin` | `http://pgadmin.localhost:PORT` | pgAdmin 4 web UI |
 | `swagger` | `http://swagger.localhost:PORT` | Swagger UI for PostgREST |
 | `opencode` | `http://opencode.localhost:PORT` | OpenCode web interface |
@@ -66,19 +69,61 @@ discovery surface.
 
 ## URL rule — hard rule
 
-**Only use the URLs listed in the Services table above.** No other addresses exist
-as far as you are concerned.
+There are two contexts, and they use two different forms. Get this right every time.
 
-- Never construct or use bare container hostnames such as `proxy`, `nextcloud`,
-  `pgadmin`, `openproject-web`, `bun_runner`, `swagger`, or `opencode` as HTTP
-  hosts — those are internal Docker names that are not in the table.
-- Never use `proxy:8888` (the internal nginx container name) with a `Host:` header
-  as a roundabout way to reach a service. Each service already has its own URL in
-  the table; use that directly.
-- For PostgREST your own `curl`/API calls use `http://postgrest_app:3000` (the
-  table URL). Never quote that address to the user — point them to
-  `http://swagger.localhost:PORT` instead (PORT = resolved `$SYSTEM_HTTP_PORT`).
-- Every URL you show the user must be an `X.localhost:PORT` URL from the table.
+### A. User-facing — the `X.localhost:PORT` form
+
+Any URL you **show the user**, and any **client-side / browser** code in a Bun app,
+uses the `X.localhost:PORT` (or `https://nifi.localhost:HTTPS_PORT`) URLs from the
+Services table. These resolve in the user's browser via the host port mapping. Every
+URL you put in a response to the user must be one of these.
+
+### B. Your own network calls — go through `proxy`, route with a `Host:` header
+
+Any request that is **not** rendered to the user and **not** run in the browser — a
+`curl` in a tool/shell call, a server-side `fetch()` in a Bun app, an LLM tool fetch,
+a NiFi processor's HTTP call — must **not** target the `X.localhost` names directly:
+they do not resolve reliably from inside the containers. Instead connect to the nginx
+`proxy` container and carry the service name in a `Host:` header:
+
+| To reach | Connect to | Add header |
+|---|---|---|
+| any HTTP service | `http://proxy:PORT` | `Host: <service>.localhost:PORT` |
+| NiFi (HTTPS) | `https://proxy:HTTPS_PORT` (with `-k`) | `Host: nifi.localhost:HTTPS_PORT` |
+
+`PORT` = `$SYSTEM_HTTP_PORT` (default 8888), `HTTPS_PORT` = `$SYSTEM_HTTPS_PORT`
+(default 8833) — the proxy listens on those same ports internally.
+
+The `Host:` value is a bare `hostname:port` — **no `http://` / `https://` scheme.**
+nginx routes on the hostname (the `:port` part is ignored for routing and may be
+omitted), so the host must be one of the service names in the table.
+
+```bash
+# PostgREST — the proxy injects the bearer token, so no auth header is needed
+curl -s http://proxy:8888/ -H "Host: postgrest.localhost:8888"
+curl -s http://proxy:8888/my_table -H "Host: postgrest.localhost:8888"
+
+# Nextcloud WebDAV
+curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
+  -X PROPFIND -H "Depth: 1" \
+  -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
+  "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
+
+# NiFi — self-signed cert, so -k
+curl -sk https://proxy:${SYSTEM_HTTPS_PORT}/nifi-api/flow/status \
+  -H "Host: nifi.localhost:${SYSTEM_HTTPS_PORT}" \
+  -H "Authorization: Bearer $NIFI_TOKEN"
+```
+
+- **Never show the `proxy:PORT` address or the `Host:` header trick to the user** — it
+  is a pure internal transport. User-facing links are always the `X.localhost:PORT`
+  form. For the PostgREST API specifically, never quote any of its addresses to the
+  user — point them at `http://swagger.localhost:PORT` (PORT = resolved
+  `$SYSTEM_HTTP_PORT`; PostgREST has no UI of its own).
+- **Never use bare container names** (`nextcloud:80`, `openproject-web:8080`,
+  `postgrest_app:3000`, etc.) as the host for these calls. They bypass nginx — which
+  means no auth-header injection (Nextcloud / OpenProject SSO) and no PostgREST bearer
+  token. Always go through `proxy` so nginx adds them.
 
 ---
 
@@ -89,7 +134,6 @@ values back in responses or logs.
 
 | Var | Purpose |
 |---|---|
-| `$POSTGREST_API_KEY` | Bearer token for PostgREST calls |
 | `$PGADMIN_DEFAULT_EMAIL` | Nextcloud WebDAV username (also pgAdmin SSO email) |
 | `$OPENCODE_EMBEDDING_HOST` | Base URL of the OpenAI-compatible embedding server |
 | `$OPENCODE_EMBEDDING_MODEL` | Embedding model name |

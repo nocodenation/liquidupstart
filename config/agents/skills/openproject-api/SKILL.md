@@ -5,7 +5,11 @@ description: Read and write OpenProject resources (work packages, projects, user
 
 **Port resolution:** run `echo $SYSTEM_HTTP_PORT` → use the result as `PORT`. Never guess or use a default.
 
-OpenProject exposes a HAL+JSON REST API (v3) at `http://openproject.localhost:PORT/api/v3` (PORT = resolved `$SYSTEM_HTTP_PORT`).
+OpenProject exposes a HAL+JSON REST API (v3) under `/api/v3`. Reach it from inside the
+containers through the nginx **proxy**: connect to `http://proxy:${SYSTEM_HTTP_PORT}` and
+set `-H "Host: openproject.localhost:${SYSTEM_HTTP_PORT}"` (the `X.localhost` name does not
+resolve in-container — see the main instructions' **URL rule**). Every curl below already
+uses this form (PORT = resolved `$SYSTEM_HTTP_PORT`).
 
 ## Authentication — ask the user for an API token
 
@@ -33,7 +37,8 @@ the value the user pasted:
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
   -H "Accept: application/json" \
-  http://openproject.localhost:${SYSTEM_HTTP_PORT}/api/v3
+  -H "Host: openproject.localhost:${SYSTEM_HTTP_PORT}" \
+  http://proxy:${SYSTEM_HTTP_PORT}/api/v3
 ```
 
 If a request returns `401`, the token is likely wrong or revoked — ask the user for a
@@ -45,7 +50,8 @@ The API root is HAL: it links to every collection. Start there when unsure:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  http://openproject.localhost:${SYSTEM_HTTP_PORT}/api/v3 | jq '._links | keys'
+  -H "Host: openproject.localhost:${SYSTEM_HTTP_PORT}" \
+  http://proxy:${SYSTEM_HTTP_PORT}/api/v3 | jq '._links | keys'
 ```
 
 Common endpoints:
@@ -68,7 +74,8 @@ Common endpoints:
 ```bash
 # Open work packages in project 3, page 1, 25/page, newest first
 curl -s -u "apikey:$OP_TOKEN" \
-  --get http://openproject.localhost:${SYSTEM_HTTP_PORT}/api/v3/projects/3/work_packages \
+  -H "Host: openproject.localhost:${SYSTEM_HTTP_PORT}" \
+  --get http://proxy:${SYSTEM_HTTP_PORT}/api/v3/projects/3/work_packages \
   --data-urlencode 'filters=[{"status_id":{"operator":"o","values":[]}}]' \
   --data-urlencode 'pageSize=25' \
   --data-urlencode 'offset=1' \
@@ -81,7 +88,8 @@ Related resources are referenced via HAL `_links` by their API URI:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -X POST http://openproject.localhost:${SYSTEM_HTTP_PORT}/api/v3/projects/3/work_packages \
+  -X POST http://proxy:${SYSTEM_HTTP_PORT}/api/v3/projects/3/work_packages \
+  -H "Host: openproject.localhost:${SYSTEM_HTTP_PORT}" \
   -H "Content-Type: application/json" \
   -d '{
     "subject": "New task from OpenCode",
@@ -100,7 +108,8 @@ PATCH with the `lockVersion` you received:
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  -X PATCH http://openproject.localhost:${SYSTEM_HTTP_PORT}/api/v3/work_packages/42 \
+  -X PATCH http://proxy:${SYSTEM_HTTP_PORT}/api/v3/work_packages/42 \
+  -H "Host: openproject.localhost:${SYSTEM_HTTP_PORT}" \
   -H "Content-Type: application/json" \
   -d '{
     "lockVersion": 7,
@@ -117,7 +126,8 @@ paging info at the top level (`total`, `count`, `pageSize`, `offset`).
 
 ```bash
 curl -s -u "apikey:$OP_TOKEN" \
-  http://openproject.localhost:${SYSTEM_HTTP_PORT}/api/v3/work_packages \
+  -H "Host: openproject.localhost:${SYSTEM_HTTP_PORT}" \
+  http://proxy:${SYSTEM_HTTP_PORT}/api/v3/work_packages \
   | jq '._embedded.elements[] | {id, subject, status: ._links.status.title}'
 ```
 

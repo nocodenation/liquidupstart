@@ -63,6 +63,17 @@ if [ -n "${OPENCODE_OPENAI_KEY}" ]; then
     }"
 fi
 
+if [ -n "${OPENCODE_OPENROUTER_KEY}" ]; then
+    _PROVIDERS="${_PROVIDERS},
+    \"openrouter\": {
+      \"options\": {
+        \"apiKey\": \"${OPENCODE_OPENROUTER_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      }
+    }"
+fi
+
 printf '{
   "model": "%s",
   "instructions": ["/opencode/instructions.md"],
@@ -75,18 +86,6 @@ printf '{
     "mdns": false
   }
 }\n' "$OPENCODE_FULL_MODEL" "$_PROVIDERS" "$OPENCODE_PORT" > "/root/.config/opencode/opencode.json"
-
-# curl hard-codes *.localhost -> 127.0.0.1 (RFC 6761), so inside this container
-# names like nextcloud.localhost never reach the proxy. Route any request to the
-# system HTTP/HTTPS ports through the proxy container instead, keeping the
-# original Host header so nginx vhost routing still works. Scoped to the ports,
-# so external traffic is untouched. Rewritten each start so it tracks the env.
-SYSTEM_HTTP_PORT="${SYSTEM_HTTP_PORT:-8888}"
-SYSTEM_HTTPS_PORT="${SYSTEM_HTTPS_PORT:-8833}"
-{
-    printf 'connect-to = ":%s:proxy:%s"\n' "$SYSTEM_HTTP_PORT" "$SYSTEM_HTTP_PORT"
-    printf 'connect-to = ":%s:proxy:%s"\n' "$SYSTEM_HTTPS_PORT" "$SYSTEM_HTTPS_PORT"
-} > /root/.curlrc
 
 echo "Starting opencode web on port $OPENCODE_PORT (model: $OPENCODE_FULL_MODEL)"
 exec opencode web

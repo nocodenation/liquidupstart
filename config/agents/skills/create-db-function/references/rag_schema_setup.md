@@ -116,16 +116,14 @@ END;
 
 ```bash
 # Check document exists
-curl -s "http://postgrest_app:3000/rag_documents?id=eq.1" \
-  -H "Authorization: Bearer ***"
+curl -s "http://proxy:8888/rag_documents?id=eq.1" -H "Host: postgrest.localhost:8888"
 
 # Count chunks
-curl -s "http://postgrest_app:3000/rag_chunks?document_id=eq.1&select=id,chunk_index,token_count" \
-  -H "Authorization: Bearer ***"
+curl -s "http://proxy:8888/rag_chunks?document_id=eq.1&select=id,chunk_index,token_count" -H "Host: postgrest.localhost:8888"
 
 # Vector search (requires embedding query first)
-curl -s -X POST http://postgrest_app:3000/rpc/find_closest_vectors \
-  -H "Authorization: Bearer *** \
+curl -s -X POST http://proxy:8888/rpc/find_closest_vectors \
+  -H "Host: postgrest.localhost:8888" \
   -H "Content-Type: application/json" \
   -d '{"p_table_name": "rag_chunks", "p_embedding_column": "embedding", "p_query": "[...4096 floats...]", "p_k": 5, "p_rerank_factor": 4}'
 ```

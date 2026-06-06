@@ -10,8 +10,8 @@ up via the `pgrst_watch` event trigger).
 ## Call
 
 ```bash
-curl -s -X POST http://postgrest_app:3000/rpc/create_table \
-  -H "Authorization: Bearer $POSTGREST_API_KEY" \
+curl -s -X POST http://proxy:8888/rpc/create_table \
+  -H "Host: postgrest.localhost:8888" \
   -H "Content-Type: application/json" \
   -d '{
     "p_table_name": "my_table",
@@ -46,12 +46,11 @@ curl -s -X POST http://postgrest_app:3000/rpc/create_table \
 Re-fetch the OpenAPI spec to confirm the table is exposed:
 
 ```bash
-curl -s http://postgrest_app:3000/ \
-  -H "Authorization: Bearer $POSTGREST_API_KEY" | jq '.paths | keys' | grep <table_name>
+curl -s http://proxy:8888/ -H "Host: postgrest.localhost:8888" | jq '.paths | keys' | grep <table_name>
 ```
 
-Then `POST`/`GET`/`PATCH`/`DELETE` at `http://postgrest_app:3000/<table_name>` — see
-the **postgrest-api** skill.
+Then `POST`/`GET`/`PATCH`/`DELETE` at `http://proxy:8888/<table_name>` with
+`-H "Host: postgrest.localhost:8888"` — see the **postgrest-api** skill.
 
 ## Rules
 

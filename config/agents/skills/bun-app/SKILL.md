@@ -122,11 +122,13 @@ Then act on the choice:
 
 **(B) Use directly from Nextcloud** — pass the app **direct file URLs that bypass the
 Nextcloud UI**:
-- For server-side fetches from the Bun app: use
-  `http://nextcloud.localhost:PORT/remote.php/dav/files/<user>/<path>` with HTTP
-  Basic auth, embedding the credentials directly in the app source (see *Credentials
-  the app needs* above — `$PGADMIN_DEFAULT_EMAIL` as the username, the user-pasted
-  app password as the password). The Bun app then `fetch()`es the raw file.
+- For server-side fetches from the Bun app: fetch
+  `http://proxy:PORT/remote.php/dav/files/<user>/<path>` with a
+  `Host: nextcloud.localhost:PORT` header (the `X.localhost` name doesn't resolve in the
+  Bun Runner container — see *URLs in app code*) and HTTP Basic auth, embedding the
+  credentials directly in the app source (see *Credentials the app needs* above —
+  `$PGADMIN_DEFAULT_EMAIL` as the username, the user-pasted app password as the
+  password). The Bun app then `fetch()`es the raw file.
 - For browser-side embedding (images, downloads, video sources, etc.): generate a
   public-share download URL via the OCS shares API (see the **nextcloud-user-link**
   skill — *When public shares are allowed*) and use the
@@ -139,10 +141,18 @@ belong in chat replies to the user, not in app sources.
 
 ## URLs in app code
 
-Use `X.localhost:PORT` URLs throughout — both server-side and client-side code use
-the same URLs. Resolve PORT by running `echo $SYSTEM_HTTP_PORT` and substitute the
-printed value when writing literal URL strings into app source code. The one exception
-is PostgREST, where server code should call the container directly to avoid the nginx hop.
+Two contexts, two forms (see the main instructions' **URL rule**):
+
+- **Client-side / browser code** — use the `X.localhost:PORT` URLs. They resolve in the
+  user's browser via the host port mapping.
+- **Server-side code** (runs in the Bun Runner container) — the `X.localhost` names do
+  **not** resolve in-container. Fetch the nginx `proxy` instead and pass a `Host:` header
+  naming the service. nginx routes on that header and injects auth (PostgREST bearer
+  token, Nextcloud / OpenProject SSO headers), so no `Authorization` header is needed for
+  PostgREST.
+
+Resolve PORT by running `echo $SYSTEM_HTTP_PORT` and substitute the printed value when
+writing literal URL strings into app source code.
 
 ### Pattern: URL constants
 
@@ -150,27 +160,35 @@ is PostgREST, where server code should call the container directly to avoid the 
 // src/lib/urls.ts
 // Run `echo $SYSTEM_HTTP_PORT` and replace PORT below with the printed value.
 
-// PostgREST — server-side only (browser can't reach container names).
-// For client-side PostgREST calls use "http://postgrest.localhost:PORT".
-export const POSTGREST = "http://postgrest_app:3000";
+// --- Browser / client-side: public X.localhost:PORT URLs ---
+export const OPENPROJECT_PUBLIC = "http://openproject.localhost:PORT";
+export const NEXTCLOUD_PUBLIC   = "http://nextcloud.localhost:PORT";
 
-// All other services — same URL works in both server and browser code.
-// Replace PORT with the resolved value of $SYSTEM_HTTP_PORT.
-export const OPENPROJECT = "http://openproject.localhost:PORT";
-export const NEXTCLOUD   = "http://nextcloud.localhost:PORT";
+// --- Server-side (Bun Runner container): go through the proxy ---
+// Connect to `proxy` and set the Host header (a bare hostname:port — no scheme).
+// nginx routes on Host and injects auth, so PostgREST needs no Authorization header.
+export const PROXY = "http://proxy:PORT";   // :8888 by default
+export const HOST = {
+  postgrest:   "postgrest.localhost:PORT",
+  nextcloud:   "nextcloud.localhost:PORT",
+  openproject: "openproject.localhost:PORT",
+};
 ```
 
-Usage:
+Usage (server-side — everything goes through the proxy):
 
 ```ts
-import { POSTGREST, OPENPROJECT, NEXTCLOUD } from "@/lib/urls";
+import { PROXY, HOST } from "@/lib/urls";
 
-// PostgREST — direct
-const rows = await fetch(`${POSTGREST}/my_table`).then(r => r.json());
+// PostgREST — proxy injects the bearer token, so no auth header
+const rows = await fetch(`${PROXY}/my_table`, {
+  headers: { Host: HOST.postgrest },
+}).then(r => r.json());
 
 // OpenProject API
-const wps = await fetch(`${OPENPROJECT}/api/v3/work_packages`, {
+const wps = await fetch(`${PROXY}/api/v3/work_packages`, {
   headers: {
+    Host: HOST.openproject,
     Authorization: `Basic ${btoa(`apikey:${OP_TOKEN}`)}`,
     Accept: "application/json",
   },
@@ -178,15 +196,18 @@ const wps = await fetch(`${OPENPROJECT}/api/v3/work_packages`, {
 
 // Nextcloud WebDAV
 const file = await fetch(
-  `${NEXTCLOUD}/remote.php/dav/files/${username}/Documents/report.pdf`,
-  { headers: { Authorization: `Basic ${btoa(`${user}:${pass}`)}` } }
+  `${PROXY}/remote.php/dav/files/${username}/Documents/report.pdf`,
+  { headers: { Host: HOST.nextcloud, Authorization: `Basic ${btoa(`${user}:${pass}`)}` } }
 );
 ```
 
+Browser code instead uses the `*_PUBLIC` constants — e.g. an `<img src>` pointing at a
+Nextcloud public-share download URL on `http://nextcloud.localhost:PORT`.
+
 ### Files served by the app from Nextcloud — recap
 
-- Server-side `fetch()` of a Nextcloud file → `http://nextcloud.localhost:PORT/remote.php/dav/...`
-  with `Authorization: Basic ...`.
+- Server-side `fetch()` of a Nextcloud file → `http://proxy:PORT/remote.php/dav/...`
+  with `Host: nextcloud.localhost:PORT` and `Authorization: Basic ...`.
 - Anything the **browser** loads (`<img>`, download link, inline PDF) → public-share
   download URL (`http://nextcloud.localhost:PORT/s/<token>/download`).
 - Never the Files-app viewer URL (`/apps/files/files/...?openfile=true`) — it opens
@@ -237,8 +258,10 @@ sentence entirely.
   reads or writes*).
 - Never embed Nextcloud Files-app viewer URLs (`/apps/files/files/...?openfile=true`)
   in app sources — those are for chat replies, not for app code.
-- Use `X.localhost:PORT` URLs throughout (PORT = resolved `$SYSTEM_HTTP_PORT`); PostgREST server-side calls use
-  `postgrest_app:3000` directly to avoid the nginx hop. See *URLs in app code*.
+- Browser code uses `X.localhost:PORT` URLs (PORT = resolved `$SYSTEM_HTTP_PORT`);
+  server-side code goes through the proxy (`http://proxy:PORT` + a
+  `Host: <service>.localhost:PORT` header, no scheme in the value), which also injects the
+  PostgREST bearer token. See *URLs in app code*.
 - User-facing summaries cite **only** `http://app.localhost:PORT` — never mention
   `bun_runner:3000` "for completeness" and never hedge that the URL "may need to be
   configured". See *Telling the user where the app is*.

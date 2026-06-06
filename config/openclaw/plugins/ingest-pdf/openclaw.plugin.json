@@ -1,0 +1,19 @@
+{
+  "id": "ingest-pdf",
+  "name": "PDF Ingester",
+  "description": "Ingest PDFs into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "contracts": {
+    "tools": [
+      "ingest_pdf"
+    ]
+  }
+}
