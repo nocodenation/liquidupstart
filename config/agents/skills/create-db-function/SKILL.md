@@ -3,6 +3,33 @@ name: create-db-function
 description: Deploy a new PostgreSQL function and expose it via the PostgREST REST API
 ---
 
+## Prefer the built-in functions — deploy a new one only as a last resort
+
+This database already ships generic, maintained RPC functions (defined in
+`config/postgres/init-db.sql`). Use them as-is. Do **not** deploy bespoke,
+single-purpose copies of them.
+
+Built-in functions:
+- `create_table(p_table_name, p_columns, p_primary_keys)` — create a table. Types:
+  `string`, `number`, `datetime`, `jsonb`, `vector`, `seqnumber`. See **create-table**.
+- `create_vector_index(p_table_name, p_embedding_column_name)` — HNSW index for a
+  `vector(4096)` embedding column. See **vector-search**.
+- `find_closest_vectors(p_table_name, p_embedding_column, p_query, p_k, p_rerank_factor)`
+  — two-stage KNN vector search. See **vector-search**.
+- `deploy_function(...)` — deploy a genuinely new function (this skill).
+
+Decision order — stop at the first that works:
+1. **Reuse a built-in as-is.** This includes RAG: build the tables with `create_table`
+   and index them with `create_vector_index`. Do **NOT** deploy `setup_rag_schema()`,
+   `create_rag_vector_index()`, or any `*_rag_*` / table-specific wrapper — they just
+   duplicate the built-ins (and earlier hand-rolled copies shipped wrong column types
+   and a nonexistent bit cosine opclass).
+2. **Call a built-in with different arguments.** They are generic — pass your table /
+   column names rather than wrapping them.
+3. **Only if no built-in can do it**, deploy a new function via `deploy_function`. Make
+   it **generic and reusable** (parameterise table/column names); never hard-code one
+   table's name into a new function.
+
 ## What I do
 
 Given a description of what a database function should do, I will:
@@ -56,7 +83,10 @@ curl -s -X POST http://postgrest_app:3000/rpc/deploy_function \
 
 Rules for `function_body`:
 - Write the body between `BEGIN` and `END;` — do not include `CREATE FUNCTION` or `$$` delimiters
-- Escape single quotes by doubling them: `'value'` → `''value''`
+- Write single quotes normally: `RETURN 'ok';`, not `RETURN ''ok'';`. `deploy_function`
+  wraps the body with `format(..., %L)` (see `config/postgres/init-db.sql`), which already
+  quotes it as a SQL literal and doubles any inner quotes for you. Doubling them yourself
+  produces `''ok''` (an empty string, then `ok`, then an empty string) and a syntax error.
 - `function_name` must be lowercase alphanumeric with underscores only
 - Only `plpgsql` and `sql` languages are allowed
 
@@ -82,7 +112,8 @@ curl -s -X POST http://postgrest_app:3000/rpc/<function_name> \
 
 - **File-based JSON payload avoids shell quoting nightmares**: Deploying functions with inline `-d '...'` strings is fragile. Writing the full JSON to a file and using `curl -d @file` is the reliable path.
 
-- **Function deployment verified**: The `deploy_function` RPC works correctly. Examples successfully deployed in this environment:
-  - `setup_rag_schema()` — creates `rag_documents`, `rag_chunks`, foreign key, converts `metadata` to `jsonb`
-  - `create_rag_vector_index()` — creates HNSW index on `binary_quantize(embedding)::bit(4096)` with `vector_cosine_ops`
-  - `create_vector_index(p_table_name, p_embedding_column_name)` — generic version
+- **`deploy_function` RPC works** — but reserve it for genuinely new, generic logic (see the decision order at the top).
+
+- **Do not recreate these one-off RAG functions.** They were deployed here historically and are now superseded by the built-ins — recreating them is the anti-pattern this skill warns against:
+  - `setup_rag_schema()` → instead build `rag_documents` / `rag_chunks` with the **`create_table`** RPC (use `jsonb` for `metadata`, `vector` for `embedding`).
+  - `create_rag_vector_index()` → instead call the built-in **`create_vector_index(p_table_name, p_embedding_column_name)`** on the `vector(4096)` column.

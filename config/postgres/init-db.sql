@@ -33,9 +33,10 @@ CREATE EVENT TRIGGER pgrst_watch
 -- Expected JSON structure:
 -- {
 --   "table_name": "Table Name",
---   "columns": {"col1": "string", "col2": "number", "col3": "datetime"},
+--   "columns": {"col1": "string", "col2": "number", "col3": "datetime", "col4": "jsonb"},
 --   "primary_keys": ["col1"]
 -- }
+-- Supported column types: string, number, datetime, vector, seqnumber, jsonb
 CREATE OR REPLACE FUNCTION public.create_table(p_table_name text, p_columns json, p_primary_keys text[])
 RETURNS void
 LANGUAGE plpgsql
@@ -73,7 +74,8 @@ WHEN 'number'     THEN v_pgtype := 'numeric';
 WHEN 'datetime'   THEN v_pgtype := 'timestamp';
 WHEN 'vector'     THEN v_pgtype := 'vector(4096)';
 WHEN 'seqnumber'  THEN v_pgtype := 'numeric';
-ELSE RAISE EXCEPTION 'Unsupported type "%" for column "%". Supported: string, number, datetime, vector, seqnumber', v_val, v_key;
+WHEN 'jsonb'      THEN v_pgtype := 'jsonb';
+ELSE RAISE EXCEPTION 'Unsupported type "%" for column "%". Supported: string, number, datetime, vector, seqnumber, jsonb', v_val, v_key;
 END CASE;
 
     IF lower(v_val) = 'seqnumber' THEN

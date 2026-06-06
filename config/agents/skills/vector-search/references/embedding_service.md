@@ -41,8 +41,7 @@ It handles:
 1. PDF text extraction (page-by-page)
 2. Chunking (~400 tokens, 50-token overlap)
 3. Embedding each chunk via this endpoint
-4. Binary quantization → `bit(4096)` storage
-5. Insert into `rag_chunks` with embedding
+4. Insert into `rag_chunks` with the raw `vector(4096)` embedding (NOT bit — bit is index-only; see SKILL.md)
 
 ## Performance Notes
 

@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 USER 0:0
 
-RUN apt update && apt install -y ripgrep curl git xz-utils ca-certificates build-essential
+RUN apt update && apt install -y ripgrep curl git xz-utils ca-certificates build-essential libxml2-utils jq git
 RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh > /install.sh
 RUN chmod +x /install.sh
 RUN /install.sh --non-interactive --skip-setup

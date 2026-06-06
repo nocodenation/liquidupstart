@@ -55,5 +55,6 @@ echo "                ingress will be available on https://PORT.nifi.localhost:$
 echo ""
 echo "Hermes is available on:           http://hermes.localhost:${HTTP_PORT}"
 echo "        api is available at:      http://api.hermes.localhost:${HTTP_PORT}"
-echo "                API token is: ${HERMES_API_KEY}"
+echo "        webhooks url is:          http://webhooks.hermes.localhost:${HTTP_PORT}"
+echo "                API/Webhooks token is: ${HERMES_API_KEY}"
 echo ""

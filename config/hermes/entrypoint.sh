@@ -9,6 +9,18 @@ if [ -f /opt/config.yaml ] && [ ! -f /root/.hermes/config.yaml ]; then
     cp /opt/config.yaml /root/.hermes/config.yaml
 fi
 
+# curl hard-codes *.localhost -> 127.0.0.1 (RFC 6761), so inside this container
+# names like nextcloud.localhost never reach the proxy. Route any request to the
+# system HTTP/HTTPS ports through the proxy container instead, keeping the
+# original Host header so nginx vhost routing still works. Scoped to the ports,
+# so external traffic is untouched. Rewritten each start so it tracks the env.
+SYSTEM_HTTP_PORT="${SYSTEM_HTTP_PORT:-8888}"
+SYSTEM_HTTPS_PORT="${SYSTEM_HTTPS_PORT:-8833}"
+{
+    printf 'connect-to = ":%s:proxy:%s"\n' "$SYSTEM_HTTP_PORT" "$SYSTEM_HTTP_PORT"
+    printf 'connect-to = ":%s:proxy:%s"\n' "$SYSTEM_HTTPS_PORT" "$SYSTEM_HTTPS_PORT"
+} > /root/.curlrc
+
 # This image is not s6-supervised, so `gateway run` won't auto-spawn the
 # dashboard for us, and `hermes dashboard` doesn't read the HERMES_DASHBOARD*
 # env vars on its own. Start both ourselves: the dashboard (web UI) in the

@@ -93,3 +93,15 @@ The `$POSTGREST_API_KEY` environment variable contains a JWT that may have forma
   ```
 
 - **Verify auth works first**: Before complex RPC calls, test with a simple `GET /rag_chunks?limit=1` to confirm the JWT is accepted.
+
+- **Never paste secret VALUES inline — reference the env var by name.** Keep the literal
+  command as `-H "Authorization: Bearer $KEY"` (or `$POSTGREST_API_KEY`) and let the
+  shell expand it. If you ever substitute the actual token text into a command, secret-
+  masking can replace it with `***` mid-string, which silently corrupts shell quoting and
+  produces baffling `unexpected EOF while looking for matching` / `syntax error near
+  unexpected token` failures that look like a quoting bug but are really a masking
+  artifact. Same applies to embedding queries and any other secret. When a command with
+  inline-looking secrets fails to parse, suspect masking first: rewrite it to reference
+  `$VAR`, or for heavily-quoted curl (nested JSON + jq) write the command to a `.sh`
+  file via the file tool and `bash` it, which is immune to both masking and shell-escaping
+  headaches.

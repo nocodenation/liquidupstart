@@ -374,6 +374,9 @@ def _schema_setup_hint(dims: int) -> list[str]:
         f"column type 'vector' -> vector({dims})); metadata must be jsonb and "
         "rag_chunks.document_id should reference rag_documents(id) — add those with SQL "
         "if create_table cannot.",
+        f"The embedding column MUST be vector({dims}) (raw floats), NOT bit({dims}). "
+        f"bit({dims}) is only an internal index projection (binary_quantize(col)::"
+        f"bit({dims})); a bit embedding column breaks find_closest_vectors.",
         "After the tables exist, add the index: POST /rpc/create_vector_index with "
         "{\"p_table_name\": \"rag_chunks\", \"p_embedding_column_name\": \"embedding\"}.",
         "See the vector-search skill for the full embed/store/index/search workflow.",

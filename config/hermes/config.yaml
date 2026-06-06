@@ -5,3 +5,14 @@ skills:
 plugins:
   enabled:
     - ingest_pdf
+
+# The dashboard's webhook UI checks platforms.webhook.enabled from config.yaml
+# (the WEBHOOK_* env vars only configure the runtime listener, not this view),
+# so the platform must be declared here for subscriptions to be creatable.
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      host: "0.0.0.0"
+      port: 8644
+      secret: ${HERMES_API_KEY}

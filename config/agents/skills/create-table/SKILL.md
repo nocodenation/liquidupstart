@@ -32,8 +32,14 @@ curl -s -X POST http://postgrest_app:3000/rpc/create_table \
 | `string` | `text` | |
 | `number` | `numeric` | |
 | `datetime` | `timestamp` | |
-| `vector` | `vector(4096)` | 4096-dim pgvector column; see **vector-search** skill |
+| `jsonb` | `jsonb` | Structured JSON (objects/arrays) — use for metadata, tags, nested data |
+| `vector` | `vector(4096)` | 4096-dim raw-float pgvector column; see **vector-search** skill |
 | `seqnumber` | `numeric` + auto-increment sequence | Use for primary-key IDs |
+
+> **Embeddings are `vector`, never `bit`.** The `vector` type creates a `vector(4096)`
+> column of raw floats. `bit(4096)` is **not** a column type here — it only appears
+> inside the HNSW index expression (`binary_quantize(col)::bit(4096)`). Declaring an
+> embedding column as `bit` breaks similarity search. See **vector-search** for why.
 
 ## After creating
 
