@@ -10,7 +10,8 @@ if [ -f /opt/config.yaml ] && [ ! -f /root/.hermes/config.yaml ]; then
 fi
 
 cp /opt/.env /root/.hermes/.env
-cp /opt/SOUL.md /root/.hermes/opt/SOUL.md
+cp /opt/SOUL.md /root/.hermes/SOUL.md
+mkdir -p /root/.hermes/plugins
 cp /opt/plugins/ingest_pdf /root/.hermes/plugins/ingest_pdf
 
 # curl hard-codes *.localhost -> 127.0.0.1 (RFC 6761), so inside this container
