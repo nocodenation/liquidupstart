@@ -1,7 +1,7 @@
 FROM node:lts-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git libxml2-utils jq 
+    && apt-get install -y --no-install-recommends ca-certificates curl git libxml2-utils jq __SYSTEM_DEPENDENCIES__
 #    && rm -rf /var/lib/apt/lists/*
 #RUN apt-get install -y nodejs python3-pip yt-dlp
 #RUN pip3 install openai-whisper --break-system-packages

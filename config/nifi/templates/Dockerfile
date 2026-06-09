@@ -2,7 +2,7 @@ FROM ghcr.io/nocodenation/liquid-nifi:latest
 
 USER root:root
 RUN apt-get --allow-releaseinfo-change update
-RUN apt-get install -y python3 python3-pip
+RUN apt-get install -y python3 python3-pip __SYSTEM_DEPENDENCIES__
 
 # POST_INSTALL_COMMANDS
 
