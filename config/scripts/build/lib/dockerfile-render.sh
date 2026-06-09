@@ -31,12 +31,11 @@ print_warning() {
 # Combine a generic value with a per-image value according to a mode.
 #   $1 = generic value (e.g. SYSTEM_DEPENDENCIES)
 #   $2 = per-image value (e.g. NIFI_SYSTEM_DEPENDENCIES)
-#   $3 = mode: "add" appends the per-image value to the generic one;
-#        "override" uses only the per-image value (ignoring the generic one,
-#        which means an empty per-image value installs/runs nothing);
-#        empty/unset keeps just the generic value (no override). Any other
-#        (unrecognized) value also falls back to the generic value, but emits
-#        a warning so typos like "addd" aren't silently ignored.
+#   $3 = mode: "add" (or empty/unset, the default) appends the per-image value
+#        to the generic one; "override" uses only the per-image value (ignoring
+#        the generic one, which means an empty per-image value installs/runs
+#        nothing). Any other (unrecognized) value falls back to "add" behavior,
+#        but emits a warning so typos like "addd" aren't silently ignored.
 #   $4 = optional label for the mode variable, used in the warning message.
 # Echoes the resulting comma-separated value.
 resolve_setting() {
@@ -46,27 +45,24 @@ resolve_setting() {
     local mode
     mode="$(printf '%s' "$3" | tr '[:upper:]' '[:lower:]' | xargs)"
 
+    # Unrecognized (non-empty, non-override, non-add) modes warn, then fall
+    # through to the default "add" behavior below.
     case "$mode" in
-        override)
-            printf '%s' "$specific"
-            ;;
-        add)
-            if [ -n "$generic" ] && [ -n "$specific" ]; then
-                printf '%s, %s' "$generic" "$specific"
-            else
-                # Whichever side is non-empty (or empty when both are).
-                printf '%s%s' "$generic" "$specific"
-            fi
-            ;;
-        "")
-            # No mode set: no per-image override, use the generic value.
-            printf '%s' "$generic"
-            ;;
+        override|add|"") ;;
         *)
-            print_warning "unrecognized ${label} value '$(printf '%s' "$3" | xargs)'; expected 'add' or 'override'. Ignoring the per-image value and using the generic value."
-            printf '%s' "$generic"
+            print_warning "unrecognized ${label} value '$(printf '%s' "$3" | xargs)'; expected 'add' or 'override'. Falling back to 'add'."
             ;;
     esac
+
+    if [ "$mode" = "override" ]; then
+        # Only the per-image value; generic ignored (empty => nothing).
+        printf '%s' "$specific"
+    elif [ -n "$generic" ] && [ -n "$specific" ]; then
+        printf '%s, %s' "$generic" "$specific"
+    else
+        # Whichever side is non-empty (or empty when both are).
+        printf '%s%s' "$generic" "$specific"
+    fi
 }
 
 # Resolve the effective SYSTEM_DEPENDENCIES and POST_INSTALLATION_COMMANDS for a
