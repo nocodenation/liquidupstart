@@ -312,21 +312,27 @@ async function embedChunks(cfg: BackendConfig, texts: string[], log: Logger): Pr
 // === Backend resolution ===
 type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message: string }
 
-// Decide which embedding backend to use from env + the optional explicit
-// `embedding_backend` arg. When MORE THAN ONE backend is configured and no
-// explicit choice was made, returns ok:false with a message asking the agent to
-// have the user choose (then re-run with embedding_backend set). Also reports
-// the "none configured" failure with the same shape.
-function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): BackendResolution {
+// Env var(s) a backend needs, for "not configured" messages.
+const BACKEND_NEED: Record<string, string> = {
+    self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
+    openai: "OPENAI_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
+}
+
+type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
+
+// The configured backends, in priority order. The OpenAI/OpenRouter vectors are
+// zero-padded to EMBED_DIMS so every backend fills vector(4096). The API-key
+// backends read the provider-native names that already live in config/openclaw/.env
+// (loaded via the gateway's env_file) — no OPENCODE_* aliases. OPENROUTER_API_KEY
+// there is also OpenClaw's own chat-model key.
+function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     const embedHost = (env.OPENCODE_EMBEDDING_HOST ?? "").trim()
     const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
-    // The API-key backends read the provider-native names that already live in
-    // config/openclaw/.env (loaded via the gateway's env_file) — no OPENCODE_*
-    // aliases. OPENROUTER_API_KEY there is also OpenClaw's own chat-model key.
     const openaiKey = (env.OPENAI_API_KEY ?? "").trim()
     const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
 
-    const available: { backend: Backend; cfg: BackendConfig; label: string }[] = []
+    const available: AvailBackend[] = []
     if (embedHost && embedModel) {
         available.push({
             backend: "self_hosted",
@@ -348,17 +354,22 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
             label: `openrouter: ${DEFAULT_OPENROUTER_MODEL} (3072-dim, zero-padded to 4096; uses the OpenRouter key/quota)`,
         })
     }
+    return available
+}
+
+// Decide which embedding backend to use for a FRESH corpus from env + the
+// optional explicit `embedding_backend` arg. When MORE THAN ONE backend is
+// configured and no explicit choice was made, returns ok:false with a message
+// asking the agent to have the user choose. Existing corpora go through
+// resolvePinnedBackend instead.
+function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): BackendResolution {
+    const available = availableBackends(env)
 
     const req = (requested ?? "").toLowerCase()
     if (req) {
         const found = available.find((a) => a.backend === req)
         if (found) return { ok: true, cfg: found.cfg }
-        const need: Record<string, string> = {
-            self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
-            openai: "OPENAI_API_KEY",
-            openrouter: "OPENROUTER_API_KEY",
-        }
-        return { ok: false, message: `error: embedding_backend=${req} requires ${need[req] ?? "its configuration"}.` }
+        return { ok: false, message: `error: embedding_backend=${req} requires ${BACKEND_NEED[req] ?? "its configuration"}.` }
     }
 
     // auto / unset
@@ -376,6 +387,71 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
             `NEEDS USER INPUT — ${available.length} embedding backends are configured. Do NOT choose one yourself and do NOT call ingest_pdf again yet. Present these options to the user verbatim and STOP your turn until they reply; then re-run ingest_pdf with embedding_backend set to one of [${available.map((a) => a.backend).join(", ")}]:`,
             ...available.map((a) => `  - ${a.label}`),
         ].join("\n"),
+    }
+}
+
+// Resolve the backend for a corpus that already has embeddings, forcing the SAME
+// (backend, model) that produced them — openai/nemotron/etc. vectors live in
+// different spaces and must never be mixed in one rag_chunks table. Returns
+// ok:false (telling the user) when that backend/model is no longer usable.
+function resolvePinnedBackend(
+    pinned: { backend: string; model: string },
+    requested: string | undefined,
+    env: NodeJS.ProcessEnv,
+): BackendResolution {
+    const wantBackend = pinned.backend
+    const wantModel = pinned.model
+
+    const req = (requested ?? "").toLowerCase()
+    if (req && req !== wantBackend) {
+        return {
+            ok: false,
+            message: `error: this RAG corpus was embedded with model '${wantModel}' via the '${wantBackend}' backend; ingesting with '${req}' would mix incompatible vector spaces. Re-run with embedding_backend='${wantBackend}' (or omit it), or use a fresh corpus.`,
+        }
+    }
+
+    const found = availableBackends(env).find((a) => a.backend === wantBackend)
+    if (!found) {
+        return {
+            ok: false,
+            message: `error: this RAG corpus was embedded with model '${wantModel}' via the '${wantBackend}' backend, which is not configured now (needs ${BACKEND_NEED[wantBackend] ?? "its configuration"}). Restore it to add more documents, or ingest into a fresh corpus.`,
+        }
+    }
+
+    const cfg = { ...found.cfg }
+    if (wantBackend === "self_hosted") {
+        if (cfg.model !== wantModel) {
+            return {
+                ok: false,
+                message: `error: this RAG corpus was embedded with the self-hosted model '${wantModel}', but the endpoint is now configured for '${cfg.model}'. These are incompatible — restore OPENCODE_EMBEDDING_MODEL='${wantModel}', or ingest into a fresh corpus.`,
+            }
+        }
+    } else {
+        // openai / openrouter: call the exact pinned model (a model-not-found error
+        // surfaces at embed time and tells the user it's unavailable).
+        cfg.model = wantModel
+    }
+    return { ok: true, cfg }
+}
+
+// The (backend, model) the corpus was first embedded with, from the earliest
+// rag_documents row's metadata. null for a fresh/unknown corpus.
+async function pinnedIdentity(base: string, apiKey: string): Promise<{ backend: string; model: string } | null> {
+    try {
+        const r = await fetch(`${base}/rag_documents?select=metadata&order=id.asc&limit=1`, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+        })
+        if (!r.ok) return null
+        const rows = (await r.json()) as Array<{ metadata?: Record<string, unknown> }>
+        const meta = rows[0]?.metadata
+        const backend = meta?.embed_backend
+        const model = meta?.embed_model
+        if (typeof backend === "string" && backend && typeof model === "string" && model) {
+            return { backend, model }
+        }
+        return null
+    } catch {
+        return null
     }
 }
 
@@ -699,17 +775,6 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
     const needsEmbed = !(dryRun || estimateOnly)
     const needsPgrest = !(dryRun || estimateOnly)
 
-    // Resolve the embedding backend (self-hosted vs OpenAI). Only required for a
-    // real ingest — dry-run / estimate-only never embed. If both backends are
-    // configured and the caller didn't pick one, resolveBackend returns a message
-    // asking the user to choose; surface it and stop.
-    let backend: BackendConfig | null = null
-    if (needsEmbed) {
-        const res = resolveBackend(args.embedding_backend, process.env)
-        if (!res.ok) return res.message
-        backend = res.cfg
-        log(`embedding backend: ${backend.backend} (model=${backend.model}, dims=${EMBED_DIMS})`)
-    }
     if (needsPgrest && !apiKey) return "error: POSTGREST_API_KEY not set"
 
     // Preflight: for a real ingest, make sure the destination tables exist BEFORE
@@ -721,6 +786,24 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
             if (!(await pgrestTableExists(postgrestUrl, apiKey, t))) missing.push(t)
         }
         if (missing.length) return requiredSchemaMessage(missing, EMBED_DIMS)
+    }
+
+    // Resolve the embedding backend — only for a real ingest (dry-run /
+    // estimate-only never embed). If the corpus already has documents, PIN to the
+    // model that produced them (different models = incompatible vector spaces).
+    // Otherwise resolve freely (asking the user when ambiguous).
+    let backend: BackendConfig | null = null
+    if (needsEmbed) {
+        const pinned = await pinnedIdentity(postgrestUrl, apiKey)
+        const res = pinned
+            ? resolvePinnedBackend(pinned, args.embedding_backend, process.env)
+            : resolveBackend(args.embedding_backend, process.env)
+        if (!res.ok) return res.message
+        backend = res.cfg
+        log(
+            `embedding backend: ${backend.backend} (model=${backend.model}, dims=${EMBED_DIMS})` +
+                (pinned ? " [pinned to existing corpus]" : ""),
+        )
     }
 
     // Phase 1: parse + chunk + fingerprint each PDF

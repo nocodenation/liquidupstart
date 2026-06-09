@@ -33,6 +33,35 @@ This prints `"[v1,v2,...,v4096]"` — store it directly in a `vector` column. Th
 (`/v1/embeddings`) and llama.cpp-native (`/embedding`) response shapes. **Do not**
 binarize on the client side — pgvector does that at index time.
 
+## Match the corpus's embedding model (CRITICAL for search)
+
+Embeddings from different models are NOT comparable (e.g. `llama-embed-nemotron-8b`
+4096-dim vs OpenAI `text-embedding-3-large` 3072-dim zero-padded to 4096). A query
+MUST be embedded with the SAME backend+model the corpus was built with, and padded
+to 4096 the same way — otherwise search returns garbage.
+
+`ingest_pdf` records this per document. Read it before searching:
+
+```bash
+curl -s "http://postgrest_app:3000/rag_documents?select=metadata&order=id.asc&limit=1" \
+  -H "Authorization: Bearer $POSTGREST_API_KEY" \
+  | jq -r '.[0].metadata | "\(.embed_backend)\t\(.embed_model)"'
+```
+
+Embed the query with that backend/model (self_hosted: `$OPENCODE_EMBEDDING_HOST`;
+openai: `https://api.openai.com/v1/embeddings`; openrouter:
+`https://openrouter.ai/api/v1/embeddings`, with the matching API key) and right-pad
+to 4096 — the jq filter does it automatically:
+
+```bash
+... | jq -r '(.data[0].embedding // .embedding) as $e
+             | ($e + [range(4096 - ($e|length)) | 0])
+             | "[" + (map(tostring) | join(",")) + "]"'
+```
+
+If the corpus's model is no longer available, say so rather than embedding the query
+with a different model.
+
 ## End-to-end workflow
 
 ### 1. Create a table with a vector column
@@ -92,6 +121,9 @@ similar). The embedding column is omitted from the response.
   configured), never auto-select a backend to "unblock progress" — present the
   options, ask the user, and wait for their reply before re-running with
   `embedding_backend` set.
+- One corpus = one embedding model. Embed queries with the SAME backend+model the
+  corpus was built with (read `rag_documents.metadata.embed_backend`/`embed_model`)
+  and pad to 4096. Never mix models in a table; if the model is unavailable, say so.
 - Vectors are always 4096-dim — anything else won't fit `vector(4096)` or the index.
   If the model dimension changes, the schema needs to change too.
 - Never binary-quantize on the client side. The index does it.

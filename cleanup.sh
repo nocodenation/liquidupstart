@@ -10,6 +10,10 @@ NIFI_TEMPLATES_DIR="${SCRIPT_DIR}/config/nifi/templates"
 NIFI_OUTPUT_DIR="${SCRIPT_DIR}/config/nifi"
 NEXTCLOUD_TEMPLATES_DIR="${SCRIPT_DIR}/config/nextcloud/templates"
 NEXTCLOUD_OUTPUT_DIR="${SCRIPT_DIR}/config/nextcloud"
+HERMES_TEMPLATES_DIR="${SCRIPT_DIR}/config/hermes/templates"
+HERMES_OUTPUT_DIR="${SCRIPT_DIR}/config/hermes"
+OPENCLAW_TEMPLATES_DIR="${SCRIPT_DIR}/config/openclaw/templates"
+OPENCLAW_OUTPUT_DIR="${SCRIPT_DIR}/config/openclaw"
 
 # Remove rendered pgadmin config files
 for template in "${PGADMIN_TEMPLATES_DIR}"/*; do
@@ -41,4 +45,20 @@ for template in "${NIFI_TEMPLATES_DIR}"/*; do
   filename="$(basename "$template")"
   rm -rf "${NIFI_OUTPUT_DIR}/${filename}"
   echo "Removed: config/nifi/${filename}"
+done
+
+# Remove rendered hermes config files
+for template in "${HERMES_TEMPLATES_DIR}"/*; do
+  [[ -f "$template" ]] || continue
+  filename="$(basename "$template")"
+  rm -rf "${HERMES_OUTPUT_DIR}/${filename}"
+  echo "Removed: config/hermes/${filename}"
+done
+
+# Remove rendered openclaw config files
+for template in "${OPENCLAW_TEMPLATES_DIR}"/*; do
+  [[ -f "$template" ]] || continue
+  filename="$(basename "$template")"
+  rm -rf "${OPENCLAW_OUTPUT_DIR}/${filename}"
+  echo "Removed: config/openclaw/${filename}"
 done

@@ -63,6 +63,46 @@ This prints `"[v1,v2,...,v4096]"` — store it directly in a `vector` column. Th
 (`/v1/embeddings`) and llama.cpp-native (`/embedding`) response shapes. **Do not**
 binarize on the client side — pgvector does that at index time.
 
+## Match the corpus's embedding model (CRITICAL for search)
+
+Embeddings from different models live in **different vector spaces** and are NOT
+comparable — e.g. `llama-embed-nemotron-8b` (4096-dim) vs OpenAI
+`text-embedding-3-large` (3072-dim, zero-padded to 4096). A query embedded with
+model A returns garbage against a corpus embedded with model B. So **a query MUST
+be embedded with the same backend+model the corpus was built with**, and padded to
+4096 the same way.
+
+`ingest_pdf` records this in each `rag_documents` row's `metadata`. Read it before
+searching:
+
+```bash
+curl -s "http://proxy:8888/rag_documents?select=metadata&order=id.asc&limit=1" \
+  -H "Host: postgrest.localhost:8888" \
+  | jq -r '.[0].metadata | "\(.embed_backend)\t\(.embed_model)"'
+# e.g. "openrouter   openai/text-embedding-3-large"  or  "self_hosted  llama-embed-nemotron-8b"
+```
+
+Then embed the query with THAT backend/model and **right-pad to 4096** (no-op for a
+4096-dim model; adds 1024 zeros for a 3072-dim OpenAI/OpenRouter model). The jq
+filter below pads automatically:
+
+```bash
+# self_hosted: $OPENCODE_EMBEDDING_HOST + $OPENCODE_EMBEDDING_MODEL
+# openai:      https://api.openai.com/v1/embeddings  (Authorization: Bearer <openai key>)
+# openrouter:  https://openrouter.ai/api/v1/embeddings (Authorization: Bearer <openrouter key>)
+VEC=$(curl -s -X POST "$EMBED_URL" \
+  -H "Content-Type: application/json" ${AUTH:+-H "Authorization: Bearer $AUTH"} \
+  -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"query text\"}" \
+  | jq -r '(.data[0].embedding // .embedding) as $e
+           | ($e + [range(4096 - ($e|length)) | 0])
+           | "[" + (map(tostring) | join(",")) + "]"')
+```
+
+Use the API-key env var that matches your runtime (provider-native
+`OPENAI_API_KEY` / `OPENROUTER_API_KEY`, or the `OPENCODE_*` equivalents — whichever
+is present). If the corpus's model is no longer available, say so rather than
+silently embedding the query with a different model.
+
 ## End-to-end workflow
 
 ### 1. Create a table with a vector column
@@ -96,7 +136,8 @@ HNSW's 2000-dim limit on the `vector` type (the `bit` type supports up to 64000 
 
 ### 4. Search
 
-Embed the query text (same recipe as above into `$VEC`), then:
+Embed the query text **with the corpus's own embedding model** (see "Match the
+corpus's embedding model" above — get `$VEC` padded to 4096), then:
 
 ```bash
 curl -s -X POST http://proxy:8888/rpc/find_closest_vectors \
@@ -157,6 +198,9 @@ A ~165-page PDF yields ~260 chunks and ingests in a couple of minutes.
 - Backend choice is the user's, not yours: when `ingest_pdf` reports
   `needs_backend_choice` / `NEEDS USER INPUT`, never auto-select a backend to
   "unblock progress" — present the options, ask, and wait for the reply.
+- One corpus = one embedding model. Embed queries with the SAME backend+model the
+  corpus was built with (read `rag_documents.metadata.embed_backend`/`embed_model`)
+  and pad to 4096. Never mix models in a table; if the model is unavailable, say so.
 - Vectors are always 4096-dim — anything else won't fit `vector(4096)` or the index.
   If the model dimension changes, the schema needs to change too.
 - Never binary-quantize on the client side. The index does it.

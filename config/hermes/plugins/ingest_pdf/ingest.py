@@ -454,10 +454,17 @@ def _find_pdfs(folder: Path, log) -> list[Path]:
 
 # --- Backend resolution ---------------------------------------------------
 
-def _resolve_backend(args: dict) -> tuple[str, dict]:
-    """Return (backend, cfg). backend in {'self_hosted','openai','openrouter'}.
-    Raises IngestError when the requested/only backend is unavailable, and
-    BackendChoiceRequired when >1 backend is configured under auto."""
+_BACKEND_NEED = {
+    "self_hosted": "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+
+def _available_backends(args: dict) -> dict:
+    """Map of configured backend name -> {cfg, label}. The OpenAI and OpenRouter
+    vectors are zero-padded to EMBED_DIMS in _embed_openai_compat, so every
+    backend fills vector(4096)."""
     embed_host = os.environ.get("OPENCODE_EMBEDDING_HOST", "").strip()
     embed_model_env = os.environ.get("OPENCODE_EMBEDDING_MODEL", "").strip()
     # Hermes loads config/hermes/.env into the process env at startup
@@ -468,9 +475,6 @@ def _resolve_backend(args: dict) -> tuple[str, dict]:
 
     model_override = args.get("model")
 
-    # Build the set of available backends (name -> {cfg, label}). The OpenAI and
-    # OpenRouter vectors are zero-padded to EMBED_DIMS in _embed_openai_compat,
-    # so every backend fills vector(4096).
     available: dict[str, dict] = {}
     if embed_host and embed_model_env:
         available["self_hosted"] = {
@@ -487,17 +491,21 @@ def _resolve_backend(args: dict) -> tuple[str, dict]:
             "cfg": {"url": OPENROUTER_EMBEDDINGS_URL, "key": openrouter_key, "model": model_override or DEFAULT_OPENROUTER_MODEL},
             "label": f"{DEFAULT_OPENROUTER_MODEL} (3072-dim, zero-padded to 4096; uses the OpenRouter key/quota)",
         }
+    return available
+
+
+def _resolve_backend(args: dict) -> tuple[str, dict]:
+    """Return (backend, cfg). backend in {'self_hosted','openai','openrouter'}.
+    Raises IngestError when the requested/only backend is unavailable, and
+    BackendChoiceRequired when >1 backend is configured under auto. Used for a
+    FRESH corpus; existing corpora go through _resolve_pinned_backend."""
+    available = _available_backends(args)
 
     requested = (args.get("embedding_backend") or "auto").lower()
     if requested != "auto":
         if requested in available:
             return requested, available[requested]["cfg"]
-        need = {
-            "self_hosted": "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
-            "openai": "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-        }
-        raise IngestError(f"embedding_backend={requested} requires {need.get(requested, 'its configuration')}")
+        raise IngestError(f"embedding_backend={requested} requires {_BACKEND_NEED.get(requested, 'its configuration')}")
 
     # auto
     if not available:
@@ -511,6 +519,68 @@ def _resolve_backend(args: dict) -> tuple[str, dict]:
         return name, available[name]["cfg"]
     # More than one available and no explicit choice: ask the user.
     raise BackendChoiceRequired({k: v["label"] for k, v in available.items()})
+
+
+def _resolve_pinned_backend(args: dict, pinned: dict) -> tuple[str, dict]:
+    """Resolve the backend for a corpus that already has embeddings, forcing the
+    SAME (backend, model) that produced them — openai/nemotron/etc. vectors live
+    in different spaces and must never be mixed in one rag_chunks table. Raises
+    IngestError (telling the user) when that backend/model is no longer usable."""
+    want_backend = pinned["backend"]
+    want_model = pinned["model"]
+
+    requested = (args.get("embedding_backend") or "").lower()
+    if requested and requested != want_backend:
+        raise IngestError(
+            f"this RAG corpus was embedded with model '{want_model}' via the '{want_backend}' "
+            f"backend; ingesting with '{requested}' would mix incompatible vector spaces. "
+            f"Re-run with embedding_backend='{want_backend}' (or omit it), or use a fresh corpus."
+        )
+
+    available = _available_backends(args)
+    if want_backend not in available:
+        raise IngestError(
+            f"this RAG corpus was embedded with model '{want_model}' via the '{want_backend}' "
+            f"backend, which is not configured now (needs {_BACKEND_NEED.get(want_backend, 'its configuration')}). "
+            f"Restore it to add more documents, or ingest into a fresh corpus."
+        )
+
+    cfg = dict(available[want_backend]["cfg"])
+    if want_backend == "self_hosted":
+        # The self-hosted endpoint serves whatever OPENCODE_EMBEDDING_MODEL names;
+        # if that differs from the pinned model the vectors would be incompatible.
+        current_model = cfg.get("model")
+        if current_model != want_model:
+            raise IngestError(
+                f"this RAG corpus was embedded with the self-hosted model '{want_model}', but the "
+                f"endpoint is now configured for '{current_model}'. These are incompatible — restore "
+                f"OPENCODE_EMBEDDING_MODEL='{want_model}', or ingest into a fresh corpus."
+            )
+    else:
+        # openai / openrouter: call the exact pinned model (a model-not-found error
+        # from the API surfaces at embed time and tells the user it's unavailable).
+        cfg["model"] = want_model
+    return want_backend, cfg
+
+
+def _pinned_identity(session: requests.Session, base: str, log) -> dict | None:
+    """The (backend, model) the corpus was first embedded with, read from the
+    earliest rag_documents row's metadata. None for a fresh/unknown corpus."""
+    try:
+        r = session.get(f"{base}/rag_documents?select=metadata&order=id.asc&limit=1", timeout=30)
+    except requests.RequestException:
+        return None
+    if not r.ok:
+        return None
+    rows = r.json()
+    if not rows:
+        return None
+    meta = rows[0].get("metadata") or {}
+    backend = meta.get("embed_backend")
+    model = meta.get("embed_model")
+    if backend and model:
+        return {"backend": backend, "model": model}
+    return None
 
 
 def _embed(backend: str, cfg: dict, texts: list[str], log) -> list[list[float]]:
@@ -546,33 +616,19 @@ def run_ingest(args: dict) -> dict:
     needs_embed = not (dry_run or estimate_only)
     needs_pgrest = not (dry_run or estimate_only)
 
-    # Resolve embedding backend early so estimate/dry-run can report it, but only
-    # *require* it when we will actually embed.
+    # Resolve embedding backend. For a REAL ingest we resolve AFTER the preflight
+    # + pin lookup below, so an existing corpus forces its original (backend,
+    # model) and we never mix incompatible vector spaces. For dry-run /
+    # estimate-only (no embedding) resolve now, best-effort, just for the report.
     backend = None
     cfg: dict = {}
-    try:
-        backend, cfg = _resolve_backend(args)
-    except BackendChoiceRequired as e:
-        if needs_embed:
-            options = ", ".join(f"'{name}'" for name in e.backends)
-            return done(
-                {
-                    "success": False,
-                    "needs_backend_choice": True,
-                    "error": (
-                        "NEEDS USER INPUT — multiple embedding backends are configured. Do NOT "
-                        "choose one yourself and do NOT call ingest_pdf again yet. Present these "
-                        "options to the user verbatim and STOP your turn until they reply, then "
-                        f"re-run ingest_pdf with embedding_backend set to one of: {options}."
-                    ),
-                    "backends": e.backends,
-                }
-            )
-        log(f"note: multiple embedding backends configured; embedding_backend choice deferred")
-    except IngestError as e:
-        if needs_embed:
-            return done({"success": False, "error": str(e)})
-        log(f"note: {e}")
+    if not needs_embed:
+        try:
+            backend, cfg = _resolve_backend(args)
+        except BackendChoiceRequired:
+            log("note: multiple embedding backends configured; choice deferred")
+        except IngestError as e:
+            log(f"note: {e}")
 
     # PostgREST config
     postgrest_url = (os.environ.get("POSTGREST_URL") or DEFAULT_POSTGREST).rstrip("/")
@@ -605,6 +661,35 @@ def run_ingest(args: dict) -> dict:
                     "setup": _schema_setup_hint(dims),
                 }
             )
+
+        # Tables exist. For a real ingest, pin to the corpus's existing embedding
+        # identity (if any) so subsequent ingests reuse the SAME model — openai /
+        # nemotron / etc. vectors live in different spaces and must not be mixed.
+        if needs_embed:
+            pinned = _pinned_identity(pf, postgrest_url, log)
+            try:
+                if pinned:
+                    backend, cfg = _resolve_pinned_backend(args, pinned)
+                    log(f"corpus pinned to {backend}/{cfg.get('model')} (matching existing embeddings)")
+                else:
+                    backend, cfg = _resolve_backend(args)
+            except BackendChoiceRequired as e:
+                options = ", ".join(f"'{name}'" for name in e.backends)
+                return done(
+                    {
+                        "success": False,
+                        "needs_backend_choice": True,
+                        "error": (
+                            "NEEDS USER INPUT — multiple embedding backends are configured. Do NOT "
+                            "choose one yourself and do NOT call ingest_pdf again yet. Present these "
+                            "options to the user verbatim and STOP your turn until they reply, then "
+                            f"re-run ingest_pdf with embedding_backend set to one of: {options}."
+                        ),
+                        "backends": e.backends,
+                    }
+                )
+            except IngestError as e:
+                return done({"success": False, "error": str(e)})
 
     # Resolve input into a list of PDFs
     input_path = _resolve_input(raw_input)
