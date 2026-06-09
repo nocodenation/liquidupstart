@@ -612,7 +612,6 @@ services:
       nocodenation_all_in_wonder_network:
 
   hermes:
-#    image: nousresearch/hermes-agent
     image: all-in-wonder/hermes:latest
     container_name: hermes
     restart: unless-stopped
@@ -624,13 +623,8 @@ services:
       - "8644:8644"
     volumes:
       - ./volumes/hermes:/root/.hermes
-      # API keys / secrets: hermes auto-loads ~/.hermes/.env at startup
-      # (load_hermes_dotenv, override=true). Bind-mounting the file over the
-      # volume makes config/hermes/.env the source of truth — edit it and
-      # restart. Copy config/hermes/.env.example to .env and fill in keys.
       - ./config/hermes/.env:/opt/.env
       - ./config/hermes/config.yaml:/opt/config.yaml
-#      - ./config/hermes/entrypoint.sh:/entrypoint.sh
       - ./config/agents/skills:/opt/custom-skills
       - ./config/agents/instructions.md:/opt/SOUL.md
       - ./config/hermes/plugins/ingest_pdf:/opt/plugins/ingest_pdf:ro
@@ -661,7 +655,6 @@ services:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-#      HERMES_UID: 0
     command: ["gateway", "run"]
     networks:
       - nocodenation_all_in_wonder_network
@@ -669,12 +662,6 @@ services:
   openclaw-gateway:
     image: all-in-wonder/openclaw:latest
     build: .
-    # Rootless/userns-remapped Docker maps the host user (uid 1000) to container
-    # root (0:0), so the bind-mounted volumes/ (host-owned by 1000) appear as 0:0
-    # inside the container. Run as 0:0 so the process maps back to the host UID
-    # that owns the mounts; otherwise the image's node user (uid 1000) hits EACCES
-    # writing /home/node/.openclaw/state. Container-root is still your unprivileged
-    # host user under userns remap (cap_drop / no-new-privileges still apply).
     user: "0:0"
     container_name: openclaw-gateway
     env_file:
@@ -684,26 +671,12 @@ services:
       HOME: /home/node
       OPENCLAW_HOME: /home/node
       TERM: xterm-256color
-      # Pin container-side state, workspace, and config paths so host values written to
-      # `.env` (used by Compose for the bind-mount source below) cannot leak
-      # into runtime code that resolves these env vars inside the container.
-      # Without this override, a macOS host path like /Users/<you>/.openclaw/...
-      # imported from .env caused first-reply `mkdir '/Users'` EACCES failures
-      # in Linux Docker (#77436).
       OPENCLAW_STATE_DIR: /home/node/.openclaw
       OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
       OPENCLAW_CONFIG_DIR: /home/node/.openclaw
       OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
-      # Auth is delegated to the nginx proxy (gateway.auth.mode=trusted-proxy in
-      # openclaw.json, patched by config/scripts/start/openclaw.sh). The dashboard
-      # no longer uses a gateway token, so it is intentionally not passed here.
-      # OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
-      # Empty means auto: Bonjour disables itself in detected containers.
-      # Set 0 only on host/macvlan/mDNS-capable networks; set 1 to force off.
       OPENCLAW_DISABLE_BONJOUR: ${OPENCLAW_DISABLE_BONJOUR:-}
-      # OpenTelemetry export is outbound OTLP/HTTP from the Gateway. Prometheus
-      # uses the existing authenticated Gateway route; it does not need a port.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:-}
@@ -730,27 +703,9 @@ services:
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
-      # Skills: bind config/agents/skills into precedence slot #4
-      # (~/.openclaw/skills). No openclaw.json edit needed — OpenClaw scans
-      # this path at load time. Read-only: these are config-managed, not written
-      # by the agent.
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
-      # Plugins: bind the prebuilt plugin tree. Registered via plugins.load.paths
-      # in openclaw.json (set by config/scripts/start/openclaw.sh). Each plugin's
-      # dist/*.mjs is a self-contained bundle, so no node_modules is needed at
-      # runtime. Read-only: the bundle + manifest are built/committed via build.sh.
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
-      ## Uncomment the lines below to enable sandbox isolation
-      ## (agents.defaults.sandbox). Requires Docker CLI in the image
-      ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
-      ## scripts/docker/setup.sh with OPENCLAW_SANDBOX=1 for automated setup.
-      ## Set DOCKER_GID to the host's docker group GID (run: stat -c '%g' /var/run/docker.sock).
-      # - /var/run/docker.sock:/var/run/docker.sock
-    # group_add:
-    #   - "${DOCKER_GID:-999}"
-    # Let bundled local-model providers reach host-side LM Studio/Ollama via
-    # http://host.docker.internal:<port>. Docker Desktop usually provides this
-    # alias; the host-gateway mapping makes it work on Linux Docker Engine too.
+      - ./volumes/data:/data
     cap_drop:
       - NET_RAW
       - NET_ADMIN
@@ -758,22 +713,7 @@ services:
       - no-new-privileges:true
     extra_hosts:
       - "host.docker.internal:host-gateway"
-      # Map the embedding endpoint hostname the same way the opencode service does
-      # (compose.yml ~line 264). OPENCODE_EMBEDDING_HOST is http://embedding_host:8801,
-      # but "embedding_host" is not a container — it resolves via this static hosts
-      # entry to OPENCODE_EMBEDDING_HOST_IP. Without it the ingest_pdf tool's embed
-      # calls fail DNS resolution inside the gateway (HTTP 000 / "host unreachable").
       - "embedding_host:${OPENCODE_EMBEDDING_HOST_IP:-127.0.0.1}"
-    # Behind the proxy (like opencode): no host ports are published. The gateway
-    # is reached only through nginx via openclaw.localhost (18789),
-    # bridge.openclaw.localhost (18790), and msteams.openclaw.localhost (3978).
-    # `--bind lan` (below) keeps the gateway listening on the container interface
-    # so the proxy — in a different network namespace — can reach it. The
-    # openclaw-cli still talks to 127.0.0.1:18789 via the shared netns, unaffected.
-    # ports:
-    #   - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-    #   - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
-    #   - "${OPENCLAW_MSTEAMS_PORT:-3978}:3978"
     init: true
     restart: unless-stopped
     command:
@@ -781,12 +721,6 @@ services:
         "node",
         "dist/index.js",
         "gateway",
-        # "loopback" binds 127.0.0.1 only, so the published port (above) never
-        # forwards and other containers can't reach it. "lan" binds the
-        # container's network interface, which is what the Docker port mapping
-        # and inter-service traffic need. Valid values: loopback|lan|tailnet|
-        # auto|custom (the previous "local" is not valid and crash-loops with
-        # "Invalid --bind").
         "--bind",
         "lan",
         "--port",
@@ -810,8 +744,6 @@ services:
   openclaw-cli:
     image: all-in-wonder/openclaw:latest
     network_mode: "service:openclaw-gateway"
-    # See openclaw-gateway above: run as 0:0 so the rootless/userns-remapped host
-    # UID owns the bind-mounted volumes/ and avoids EACCES on writes.
     user: "0:0"
     container_name: openclaw-cli
     env_file:
@@ -822,24 +754,14 @@ services:
       - NET_ADMIN
     security_opt:
       - no-new-privileges:true
-    # No extra_hosts here: Docker rejects custom host-to-IP mappings combined with
-    # network_mode: service: (below). The CLI shares the gateway's network namespace,
-    # and the ingest_pdf embed calls run in the gateway process anyway, so the
-    # embedding_host mapping on openclaw-gateway is what matters.
     environment:
       HOME: /home/node
       OPENCLAW_HOME: /home/node
       TERM: xterm-256color
-      # Pin container-side state, workspace, and config paths so host values written to
-      # `.env` cannot leak into runtime code via the env_file import (#77436).
       OPENCLAW_STATE_DIR: /home/node/.openclaw
       OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
       OPENCLAW_CONFIG_DIR: /home/node/.openclaw
       OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
-      # Auth is delegated to the nginx proxy (gateway.auth.mode=trusted-proxy in
-      # openclaw.json, patched by config/scripts/start/openclaw.sh). The dashboard
-      # no longer uses a gateway token, so it is intentionally not passed here.
-      # OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
       BROWSER: echo
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
@@ -861,21 +783,15 @@ services:
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
-      # Skills: same mount as openclaw-gateway so the CLI (and `setup`) see the
-      # same skill set. See the gateway service for details.
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
-      # Plugins: same mount as openclaw-gateway. See the gateway service for details.
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
+      - ./volumes/data:/data
     stdin_open: true
     tty: true
     init: true
     entrypoint: ["node", "dist/index.js"]
     depends_on:
       - openclaw-gateway
-    # No `networks:` here: `network_mode: service:openclaw-gateway` (above) makes
-    # this container share the gateway's network namespace, which is already
-    # attached to nocodenation_all_in_wonder_network. Declaring both is a Compose
-    # error ("mutually exclusive network_mode and networks").
 
 networks:
   nocodenation_all_in_wonder_network:
