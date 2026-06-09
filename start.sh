@@ -25,7 +25,7 @@ fi
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTP_PORT="${HTTP_PORT:-8888}"
 HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-HTTPS_PORT="${HTTP_PORT:-8888}"
+HTTPS_PORT="${HTTPS_PORT:-8833}"
 
 docker network inspect nocodenation_playground_network_${HTTP_PORT} >/dev/null 2>&1 \
   || docker network create nocodenation_playground_network_${HTTP_PORT}
