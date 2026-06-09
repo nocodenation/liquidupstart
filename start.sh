@@ -19,6 +19,7 @@ fi
 "${SCRIPT_DIR}/config/scripts/start/nextcloud.sh"
 "${SCRIPT_DIR}/config/scripts/start/nginx.sh"
 "${SCRIPT_DIR}/config/scripts/start/nifi.sh"
+"${SCRIPT_DIR}/config/scripts/start/hermes.sh"
 "${SCRIPT_DIR}/config/scripts/start/openclaw.sh"
 
 

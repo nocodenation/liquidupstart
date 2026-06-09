@@ -47,10 +47,20 @@ for template in "${NIFI_TEMPLATES_DIR}"/*; do
   echo "Removed: config/nifi/${filename}"
 done
 
+# Map a template basename to the filename it renders to. Most templates render
+# to a same-named file (e.g. Dockerfile -> Dockerfile), but env_template renders
+# to .env (see config/scripts/start/{hermes,openclaw}.sh).
+rendered_name() {
+  case "$1" in
+    env_template) echo ".env" ;;
+    *) echo "$1" ;;
+  esac
+}
+
 # Remove rendered hermes config files
 for template in "${HERMES_TEMPLATES_DIR}"/*; do
   [[ -f "$template" ]] || continue
-  filename="$(basename "$template")"
+  filename="$(rendered_name "$(basename "$template")")"
   rm -rf "${HERMES_OUTPUT_DIR}/${filename}"
   echo "Removed: config/hermes/${filename}"
 done
@@ -58,7 +68,7 @@ done
 # Remove rendered openclaw config files
 for template in "${OPENCLAW_TEMPLATES_DIR}"/*; do
   [[ -f "$template" ]] || continue
-  filename="$(basename "$template")"
+  filename="$(rendered_name "$(basename "$template")")"
   rm -rf "${OPENCLAW_OUTPUT_DIR}/${filename}"
   echo "Removed: config/openclaw/${filename}"
 done

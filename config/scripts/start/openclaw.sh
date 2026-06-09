@@ -10,6 +10,49 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+sed_inplace() {
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$@"
+  else
+    sed -i '' "$@"
+  fi
+}
+
+# Read a KEY=value from the project-root .env (empty string if unset/missing).
+get_env() {
+  grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\""
+}
+
+# Render config/openclaw/.env from the template, then inject the model-provider
+# keys from the project-root .env. The template is the contract: only keys it
+# already declares (as a commented `# KEY=` line) are supported by OpenClaw —
+# any other keys in the root .env are ignored. For a supported key with a
+# non-empty value we uncomment its line and substitute the value; empty keys
+# stay commented so OpenClaw falls back to its other auth sources.
+OPENCLAW_DIR="${PROJECT_DIR}/config/openclaw"
+OPENCLAW_ENV_TEMPLATE="${OPENCLAW_DIR}/templates/env_template"
+OPENCLAW_ENV="${OPENCLAW_DIR}/.env"
+
+if [[ ! -f "$OPENCLAW_ENV_TEMPLATE" ]]; then
+  echo "Error: OpenClaw env template not found at ${OPENCLAW_ENV_TEMPLATE}" >&2
+  exit 1
+fi
+
+echo "Rendering OpenClaw env: ${OPENCLAW_ENV}"
+cp "$OPENCLAW_ENV_TEMPLATE" "$OPENCLAW_ENV"
+
+for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY; do
+  # Skip keys the template does not declare — OpenClaw does not support them.
+  grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
+  value="$(get_env "$key")"
+  [[ -z "$value" ]] && continue
+  # Match the commented template line `# KEY=...` (anchored on `KEY=` so the
+  # `_1`/`_KEYS`/`LIVE_*` variants are not touched) and replace it with the
+  # uncommented assignment. `|` delimiter avoids clashing with key characters.
+  sed_inplace -E "s|^#[[:space:]]*${key}=.*|${key}=${value}|" "$OPENCLAW_ENV"
+  echo "  set ${key} (uncommented from root .env)"
+done
+
 # OpenClaw bind-mounts these host dirs into the gateway/CLI containers
 # (see compose.yml). Create them up front so that under rootless/userns-remapped
 # Docker they map back to the host UID that owns them, instead of letting the

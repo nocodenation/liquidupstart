@@ -298,6 +298,8 @@ services:
       - ./volumes/logs/bun_runner:/logs/bun_runner:ro
       - ./volumes/app:/app
       - ./volumes/data:/data
+      - ./volumes/python_extensions:/opt/python_extensions
+      - ./volumes/nar_extensions:/opt/nar_extensions
     networks:
       - nocodenation_all_in_wonder_network
 
@@ -629,6 +631,8 @@ services:
       - ./config/agents/instructions.md:/opt/SOUL.md
       - ./config/hermes/plugins/ingest_pdf:/opt/plugins/ingest_pdf:ro
       - ./volumes/data:/data
+      - ./volumes/python_extensions:/opt/python_extensions
+      - ./volumes/nar_extensions:/opt/nar_extensions
     environment:
       API_SERVER_ENABLED: true
       API_SERVER_HOST: 0.0.0.0
@@ -705,6 +709,8 @@ services:
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
       - ./volumes/data:/data
+      - ./volumes/python_extensions:/opt/python_extensions
+      - ./volumes/nar_extensions:/opt/nar_extensions
     cap_drop:
       - NET_RAW
       - NET_ADMIN
@@ -784,6 +790,8 @@ services:
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
       - ./volumes/data:/data
+      - ./volumes/python_extensions:/opt/python_extensions
+      - ./volumes/nar_extensions:/opt/nar_extensions
     stdin_open: true
     tty: true
     init: true
