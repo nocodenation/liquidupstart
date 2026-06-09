@@ -33,6 +33,26 @@ resolve_image_settings "OPENCLAW"
 # Render the Dockerfile from the template, injecting the deps/commands.
 render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${CONFIG_DIR}/Dockerfile"
 
+# Optionally install the Claude Code CLI into the image. When
+# OPENCLAW_ENABLE_CLAUDE_CLI=1 the "# CLAUDE_CLI_INSTALL" marker in the rendered
+# Dockerfile is turned into a `RUN npm install -g @anthropic-ai/claude-code`
+# step (still running as root, before the trailing `USER node`). The companion
+# start script (config/scripts/start/openclaw.sh) then points OpenClaw at the
+# claude-cli runtime. When the flag is unset/0 the marker stays a comment, so
+# the image is unchanged.
+sed_inplace() {
+  if sed --version >/dev/null 2>&1; then
+    sed -i "$@"
+  else
+    sed -i '' "$@"
+  fi
+}
+
+if [ "${OPENCLAW_ENABLE_CLAUDE_CLI:-0}" = "1" ]; then
+    echo "OPENCLAW_ENABLE_CLAUDE_CLI=1: installing Claude Code CLI into the image."
+    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${CONFIG_DIR}/Dockerfile"
+fi
+
 docker image rm "all-in-wonder/openclaw:latest" >/dev/null 2>&1 || true
 echo "Building all-in-wonder/openclaw:latest from ${CONFIG_DIR}..."
 docker build ${NO_CACHE:+--no-cache} --progress=plain -t "all-in-wonder/openclaw:latest" "${CONFIG_DIR}"

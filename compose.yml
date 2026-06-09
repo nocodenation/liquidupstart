@@ -697,6 +697,10 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
+      # Forwarded to the Claude CLI by /usr/local/bin/openclaw-claude. A direct
+      # CLAUDE_CODE_OAUTH_TOKEN env would be stripped by OpenClaw's child-env
+      # scrubbing, so we pass it under this non-cleared alias and re-inject it.
+      OPENCLAW_CLAUDE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       POSTGREST_API_KEY: ${API_KEY:-}
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
@@ -712,8 +716,16 @@ services:
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
+      - ./volumes/_openclaw-claude:/home/node/.claude
+      # Make the shared agent skills + instructions available to Claude Code
+      # (claude-cli backend): ~/.claude/skills auto-discovers SKILL.md dirs and
+      # ~/.claude/CLAUDE.md is loaded as global instructions. Nested under the
+      # .claude credential volume above (Docker applies the deeper mounts inside).
+      - ./config/agents/skills:/home/node/.claude/skills:ro
+      - ./config/agents/instructions.md:/home/node/.claude/CLAUDE.md:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
+      - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/python_extensions
       - ./volumes/nar_extensions:/opt/nar_extensions
@@ -778,6 +790,10 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
+      # Forwarded to the Claude CLI by /usr/local/bin/openclaw-claude. A direct
+      # CLAUDE_CODE_OAUTH_TOKEN env would be stripped by OpenClaw's child-env
+      # scrubbing, so we pass it under this non-cleared alias and re-inject it.
+      OPENCLAW_CLAUDE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       TZ: ${OPENCLAW_TZ:-UTC}
       POSTGREST_API_KEY: ${API_KEY:-}
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
@@ -793,8 +809,16 @@ services:
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
+      - ./volumes/_openclaw-claude:/home/node/.claude
+      # Make the shared agent skills + instructions available to Claude Code
+      # (claude-cli backend): ~/.claude/skills auto-discovers SKILL.md dirs and
+      # ~/.claude/CLAUDE.md is loaded as global instructions. Nested under the
+      # .claude credential volume above (Docker applies the deeper mounts inside).
+      - ./config/agents/skills:/home/node/.claude/skills:ro
+      - ./config/agents/instructions.md:/home/node/.claude/CLAUDE.md:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
+      - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/python_extensions
       - ./volumes/nar_extensions:/opt/nar_extensions

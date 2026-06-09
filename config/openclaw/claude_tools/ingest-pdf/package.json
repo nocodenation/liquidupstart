@@ -1,0 +1,20 @@
+{
+  "name": "claude-tool-ingest-pdf",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Claude Code MCP server: ingest PDFs into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST.",
+  "scripts": {
+    "build": "./build.sh"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "esbuild": "^0.24.0",
+    "js-tiktoken": "^1.0.0",
+    "unpdf": "^0.12.0"
+  }
+}
