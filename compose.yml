@@ -667,7 +667,7 @@ services:
       - nocodenation_all_in_wonder_network
 
   openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: all-in-wonder/openclaw:latest
     build: .
     # Rootless/userns-remapped Docker maps the host user (uid 1000) to container
     # root (0:0), so the bind-mounted volumes/ (host-owned by 1000) appear as 0:0
@@ -809,7 +809,7 @@ services:
       nocodenation_all_in_wonder_network:
 
   openclaw-cli:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: all-in-wonder/openclaw:latest
     network_mode: "service:openclaw-gateway"
     # See openclaw-gateway above: run as 0:0 so the rootless/userns-remapped host
     # UID owns the bind-mounted volumes/ and avoids EACCES on writes.

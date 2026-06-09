@@ -11,5 +11,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 "${SCRIPT_DIR}/config/scripts/build/bun-runner.sh" "$@"
 "${SCRIPT_DIR}/config/scripts/build/nifi.sh" "$@"
 "${SCRIPT_DIR}/config/scripts/build/hermes.sh" "$@"
+"${SCRIPT_DIR}/config/scripts/build/openclaw.sh" "$@"
 
 echo "Done."
