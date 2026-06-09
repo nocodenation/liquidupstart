@@ -19,8 +19,10 @@ sed_inplace() {
 }
 
 # Read a KEY=value from the project-root .env (empty string if unset/missing).
+# `|| true`: a missing key makes grep exit 1, which under `set -o pipefail` +
+# `set -e` would otherwise abort the whole script.
 get_env() {
-  grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\""
+  grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
 
 # Render config/hermes/.env from the template, then inject the model-provider
@@ -41,7 +43,9 @@ fi
 echo "Rendering Hermes env: ${HERMES_ENV}"
 cp "$HERMES_ENV_TEMPLATE" "$HERMES_ENV"
 
-for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY; do
+for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
+           GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
+           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY; do
   # Skip keys the template does not declare — Hermes does not support them.
   grep -qE "^#[[:space:]]*${key}=" "$HERMES_ENV" || continue
   value="$(get_env "$key")"

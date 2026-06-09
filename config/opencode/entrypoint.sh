@@ -74,6 +74,65 @@ if [ -n "${OPENROUTER_API_KEY}" ]; then
     }"
 fi
 
+# The providers below are resolved from the bundled models.dev registry (npm
+# package + base URL come from there), so only the apiKey is supplied — same as
+# the blocks above. Google accepts either GOOGLE_API_KEY or GEMINI_API_KEY.
+_GOOGLE_KEY="${GOOGLE_API_KEY:-${GEMINI_API_KEY:-}}"
+if [ -n "${_GOOGLE_KEY}" ]; then
+    _PROVIDERS="${_PROVIDERS},
+    \"google\": {
+      \"options\": {
+        \"apiKey\": \"${_GOOGLE_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      }
+    }"
+fi
+
+if [ -n "${ZAI_API_KEY}" ]; then
+    _PROVIDERS="${_PROVIDERS},
+    \"zai\": {
+      \"options\": {
+        \"apiKey\": \"${ZAI_API_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      }
+    }"
+fi
+
+if [ -n "${AI_GATEWAY_API_KEY}" ]; then
+    _PROVIDERS="${_PROVIDERS},
+    \"vercel\": {
+      \"options\": {
+        \"apiKey\": \"${AI_GATEWAY_API_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      }
+    }"
+fi
+
+if [ -n "${MINIMAX_API_KEY}" ]; then
+    _PROVIDERS="${_PROVIDERS},
+    \"minimax\": {
+      \"options\": {
+        \"apiKey\": \"${MINIMAX_API_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      }
+    }"
+fi
+
+if [ -n "${SYNTHETIC_API_KEY}" ]; then
+    _PROVIDERS="${_PROVIDERS},
+    \"synthetic\": {
+      \"options\": {
+        \"apiKey\": \"${SYNTHETIC_API_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      }
+    }"
+fi
+
 printf '{
   "model": "%s",
   "instructions": ["/opencode/instructions.md"],
