@@ -245,6 +245,20 @@ fi
 if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   OAUTH_TOKEN="$(get_env CLAUDE_CODE_OAUTH_TOKEN)"
 
+  # Make instructions.md available to Claude Code as its global instructions at
+  # ~/.claude/CLAUDE.md. Copied into the credential volume (host-side) rather than
+  # bind-mounted: a nested single-FILE mount inside the .claude volume fails on
+  # Docker Desktop / macOS ("mountpoint ... is outside of rootfs"). Re-copied each
+  # start so edits to instructions.md propagate. (Skills are a nested DIRECTORY
+  # mount in compose.yml, which works fine.)
+  INSTRUCTIONS_SRC="${PROJECT_DIR}/config/agents/instructions.md"
+  if [[ -f "$INSTRUCTIONS_SRC" ]]; then
+    cp -f "$INSTRUCTIONS_SRC" "${CLAUDE_DIR}/CLAUDE.md"
+    echo "Claude CLI: installed instructions.md -> ${CLAUDE_DIR}/CLAUDE.md"
+  else
+    echo "Warning: ${INSTRUCTIONS_SRC} not found; Claude Code will have no global CLAUDE.md." >&2
+  fi
+
   # Clear stale config backups left by aborted/previous runs. Claude Code
   # fails hard ("config file not found, but a backup exists") when the main
   # .claude.json is gone yet a backup remains — which is exactly the state a

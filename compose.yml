@@ -717,12 +717,13 @@ services:
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
       - ./volumes/_openclaw-claude:/home/node/.claude
-      # Make the shared agent skills + instructions available to Claude Code
-      # (claude-cli backend): ~/.claude/skills auto-discovers SKILL.md dirs and
-      # ~/.claude/CLAUDE.md is loaded as global instructions. Nested under the
-      # .claude credential volume above (Docker applies the deeper mounts inside).
+      # Make the shared agent skills available to Claude Code (claude-cli backend):
+      # ~/.claude/skills auto-discovers SKILL.md dirs. A nested DIRECTORY mount
+      # inside the .claude volume is fine; a nested single-FILE mount is not (it
+      # fails on Docker Desktop / macOS: "mountpoint ... is outside of rootfs"), so
+      # instructions.md is NOT mounted to ~/.claude/CLAUDE.md here — the start
+      # script copies it into the volume instead (config/scripts/start/openclaw.sh).
       - ./config/agents/skills:/home/node/.claude/skills:ro
-      - ./config/agents/instructions.md:/home/node/.claude/CLAUDE.md:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
@@ -810,12 +811,13 @@ services:
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
       - ./volumes/_openclaw-claude:/home/node/.claude
-      # Make the shared agent skills + instructions available to Claude Code
-      # (claude-cli backend): ~/.claude/skills auto-discovers SKILL.md dirs and
-      # ~/.claude/CLAUDE.md is loaded as global instructions. Nested under the
-      # .claude credential volume above (Docker applies the deeper mounts inside).
+      # Make the shared agent skills available to Claude Code (claude-cli backend):
+      # ~/.claude/skills auto-discovers SKILL.md dirs. A nested DIRECTORY mount
+      # inside the .claude volume is fine; a nested single-FILE mount is not (it
+      # fails on Docker Desktop / macOS: "mountpoint ... is outside of rootfs"), so
+      # instructions.md is NOT mounted to ~/.claude/CLAUDE.md here — the start
+      # script copies it into the volume instead (config/scripts/start/openclaw.sh).
       - ./config/agents/skills:/home/node/.claude/skills:ro
-      - ./config/agents/instructions.md:/home/node/.claude/CLAUDE.md:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
