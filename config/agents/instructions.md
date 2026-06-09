@@ -174,4 +174,5 @@ from memory.
 | `nextcloud-webdav` | You're reading, writing, listing, or deleting a file in Nextcloud |
 | `nextcloud-user-link` | You need to give the user a link to a Nextcloud file/folder, or embed a Nextcloud reference in a chat reply or a work package |
 | `bun-app` | You're creating or modifying the SSR React app in `/app` |
-| `nifi-api` | You're building or managing a NiFi data flow, starting/stopping processors, setting up an HTTP ingress, or routing data between services |
+| `nifi-api` | You need the NiFi REST API mechanics — auth token, CRUD calls, starting/stopping processors, setting up an HTTP ingress, routing data between services, or the user-facing canvas/ingress links |
+| `nifi` | You're **designing or building** a NiFi flow — laying out processors/funnels/connections, termination & cleanup rules, visual layout standards, or building and deploying a custom processor / NAR (pairs with `nifi-api` for the actual calls) |
