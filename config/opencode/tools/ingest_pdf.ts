@@ -2,23 +2,34 @@
  * Custom OpenCode tool — PDF ingester for the All-In-Wonder RAG store.
  *
  * Reads a PDF (or a folder of PDFs), extracts text page-by-page, chunks at
- * ~400 tokens with 50-token overlap, embeds each chunk via the project's
- * self-hosted OpenAI-compatible endpoint ($OPENCODE_EMBEDDING_HOST), and
- * inserts rows into rag_documents / rag_chunks via PostgREST. The chunk
- * embedding column is `vector(4096)`; pgvector's binary-quantization HNSW
- * index handles the 2000-dim HNSW limit at index time, so we store the raw
- * float vector and let the index/queries do the quantization.
+ * ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows into
+ * rag_documents / rag_chunks via PostgREST. The chunk embedding column is
+ * `vector(4096)`; pgvector's binary-quantization HNSW index handles the
+ * 2000-dim HNSW limit at index time, so we store the raw float vector and let
+ * the index/queries do the quantization.
+ *
+ * Embedding backends (see resolveBackend):
+ *   - self_hosted: $OPENCODE_EMBEDDING_HOST + $OPENCODE_EMBEDDING_MODEL
+ *     (4096-dim, OpenAI-compatible /v1/embeddings).
+ *   - openai:      $OPENCODE_OPENAI_KEY (text-embedding-3-large, 3072-dim
+ *     zero-padded to 4096 to share the same column).
+ *   - openrouter:  $OPENCODE_OPENROUTER_KEY (openai/text-embedding-3-large via
+ *     OpenRouter's OpenAI-compatible endpoint, same 3072->4096 padding).
+ * If only one is configured it is used automatically; if more than one is, the
+ * tool asks the user to pick via the embedding_backend arg; if none is, it does
+ * no work and explains why.
  *
  * Runs inside the opencode container. PostgREST is reached at the docker
  * service URL; auth comes from $POSTGREST_API_KEY. No .env file is read.
  *
  * Tool surface:
- *   input             string   PDF file or folder (non-recursive)
- *   title?            string   override (single-file only)
- *   dry_run?          bool     parse+chunk only, no API/DB
- *   estimate_only?    bool     report chunk + token totals, no API/DB
- *   skip_existing?    bool     dedup against rag_documents by filename
- *   collision_policy? enum     fingerprint | skip | ingest | fail
+ *   input              string   PDF file or folder (non-recursive)
+ *   title?             string   override (single-file only)
+ *   dry_run?           bool     parse+chunk only, no API/DB
+ *   estimate_only?     bool     report chunk + token totals, no API/DB
+ *   skip_existing?     bool     dedup against rag_documents by filename
+ *   collision_policy?  enum     fingerprint | skip | ingest | fail
+ *   embedding_backend? enum     self_hosted | openai | openrouter (pick when >1 configured)
  */
 
 import { tool } from "@opencode-ai/plugin"
@@ -29,20 +40,30 @@ import { getEncoding } from "js-tiktoken"
 import { extractText, getDocumentProxy } from "unpdf"
 
 // === Config ===
-/*
-TODO:
- - add OpenAI embedding model support (with 4096-bit vectors as well) if user have provided OPENCODE_OPENAI_KEY.
- - Do not use self-hosted embedding if OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL are not provided
- - If user defined both OPENCODE_EMBEDDING_HOST+OPENCODE_EMBEDDING_MODEL, and OPENCODE_OPENAI_KEY - should give user a choice which embedding to use
- - If neither OPENCODE_EMBEDDING_HOST+OPENCODE_EMBEDDING_MODEL, nor OPENCODE_OPENAI_KEY provided - the tool should not try to do anything and report LLM why it can not ingest pdfs
- */
 const DEFAULT_POSTGREST = "http://postgrest_app:3000"
-const EMBED_DIMS = 4096 // llama-embed-nemotron-8b output; matches bit(4096) column
+const EMBED_DIMS = 4096 // RAG schema vector(4096): self-hosted emits this natively; OpenAI is zero-padded up to it
 const CHUNK_TOKENS = 400
 const CHUNK_OVERLAP = 50
 const MAX_RETRIES = 6
 const INITIAL_BACKOFF_S = 2.0
 const MAX_BACKOFF_S = 60.0
+
+// OpenAI-compatible embedding backends (openai, openrouter). The largest
+// hosted model, text-embedding-3-large, is 3072-dim (the `dimensions` param can
+// only shrink below that, never reach 4096), so each vector is right-padded
+// with zeros to EMBED_DIMS and shares the same vector(4096) column as the
+// self-hosted backend; the zero tail does not affect cosine / inner-product
+// ranking within a single-backend table.
+const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
+const DEFAULT_OPENAI_MODEL = "text-embedding-3-large"
+// OpenRouter exposes the same OpenAI-compatible /embeddings shape; models are
+// provider-prefixed (e.g. openai/text-embedding-3-large, 3072-dim).
+const OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
+const DEFAULT_OPENROUTER_MODEL = "openai/text-embedding-3-large"
+const OPENAI_BATCH = 64 // OpenAI/OpenRouter accept an input array; batch to cut round-trips
+
+type Backend = "self_hosted" | "openai" | "openrouter"
+type BackendConfig = { backend: Backend; model: string; host?: string; apiKey?: string; url?: string }
 
 const enc = getEncoding("cl100k_base")
 
@@ -203,6 +224,156 @@ async function embedAll(
     return out
 }
 
+// === Embedding via OpenAI-compatible endpoints (openai, openrouter) ===
+// Right-pad a vector with zeros up to `dims`. The largest hosted model is
+// 3072-dim, so its vectors are padded to the project's 4096-dim column.
+function padToDims(vec: number[], dims: number): number[] {
+    if (vec.length === dims) return vec
+    if (vec.length > dims) throw new Error(`embedding has ${vec.length} dims, more than the ${dims}-dim column`)
+    return vec.concat(new Array(dims - vec.length).fill(0))
+}
+
+// Embed via an OpenAI-compatible /v1/embeddings endpoint (OpenAI or OpenRouter).
+// `label` is used only in log/error messages.
+async function embedOpenAICompat(
+    url: string,
+    apiKey: string,
+    model: string,
+    texts: string[],
+    log: Logger,
+    label: string,
+): Promise<number[][]> {
+    const out: number[][] = []
+    const total = texts.length
+    for (let i = 0; i < total; i += OPENAI_BATCH) {
+        const batch = texts.slice(i, i + OPENAI_BATCH)
+        let attempt = 0
+        let backoff = INITIAL_BACKOFF_S
+        while (true) {
+            let r: Response
+            try {
+                r = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+                    body: JSON.stringify({ model, input: batch }),
+                })
+            } catch (e) {
+                attempt++
+                if (attempt > MAX_RETRIES) throw e
+                const msg = (e as { message?: string })?.message ?? String(e)
+                log(`  transient network error contacting ${label}: ${msg}, retry ${attempt}/${MAX_RETRIES} in ${backoff.toFixed(1)}s`)
+                await sleep(backoff * 1000)
+                backoff = Math.min(backoff * 2, MAX_BACKOFF_S)
+                continue
+            }
+            if (r.ok) {
+                const body = (await r.json()) as { data?: Array<{ embedding: number[] }> }
+                for (const d of body.data ?? []) out.push(padToDims(d.embedding, EMBED_DIMS))
+                break
+            }
+            const txt = await r.text().catch(() => "")
+            // insufficient_quota is permanent — do not retry.
+            let code: string | undefined
+            try {
+                code = (JSON.parse(txt) as { error?: { code?: string } })?.error?.code
+            } catch {
+                /* non-JSON body */
+            }
+            if (code === "insufficient_quota") throw new Error(`${label} insufficient_quota — fix billing and retry`)
+            const retryable = [408, 425, 429, 500, 502, 503, 504].includes(r.status)
+            if (!retryable) throw new Error(`${label} HTTP ${r.status}: ${txt}`)
+            attempt++
+            if (attempt > MAX_RETRIES) throw new Error(`${label} HTTP ${r.status} after ${MAX_RETRIES} retries: ${txt}`)
+            let wait = backoff
+            const ra = r.headers.get("retry-after")
+            if (ra) {
+                const n = parseFloat(ra)
+                if (Number.isFinite(n)) wait = Math.max(wait, n)
+            }
+            log(`  transient HTTP ${r.status} from ${label}, retry ${attempt}/${MAX_RETRIES} in ${wait.toFixed(1)}s`)
+            await sleep(wait * 1000)
+            backoff = Math.min(backoff * 2, MAX_BACKOFF_S)
+        }
+        log(`  embedded ${Math.min(i + OPENAI_BATCH, total)}/${total}`)
+    }
+    return out
+}
+
+// Dispatch to the selected embedding backend.
+async function embedChunks(cfg: BackendConfig, texts: string[], log: Logger): Promise<number[][]> {
+    if (cfg.backend === "self_hosted") return embedAll(cfg.host!, cfg.model, texts, log)
+    return embedOpenAICompat(cfg.url!, cfg.apiKey!, cfg.model, texts, log, cfg.backend)
+}
+
+// === Backend resolution ===
+type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message: string }
+
+// Decide which embedding backend to use from env + the optional explicit
+// `embedding_backend` arg. When MORE THAN ONE backend is configured and no
+// explicit choice was made, returns ok:false with a message asking the agent to
+// have the user choose (then re-run with embedding_backend set). Also reports
+// the "none configured" failure with the same shape.
+function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): BackendResolution {
+    const embedHost = (env.OPENCODE_EMBEDDING_HOST ?? "").trim()
+    const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
+    // `||` (not `??`): a present-but-empty var (compose sets `KEY: ${KEY:-}` to "")
+    // still falls through to the next source instead of shadowing it.
+    const openaiKey = (env.OPENCODE_OPENAI_KEY || env.OPENAI_API_KEY || "").trim()
+    const openrouterKey = (env.OPENCODE_OPENROUTER_KEY ?? "").trim()
+
+    const available: { backend: Backend; cfg: BackendConfig; label: string }[] = []
+    if (embedHost && embedModel) {
+        available.push({
+            backend: "self_hosted",
+            cfg: { backend: "self_hosted", host: embedHost, model: embedModel },
+            label: `self_hosted: ${embedModel} via ${embedHost} (4096-dim, no API cost)`,
+        })
+    }
+    if (openaiKey) {
+        available.push({
+            backend: "openai",
+            cfg: { backend: "openai", apiKey: openaiKey, model: DEFAULT_OPENAI_MODEL, url: OPENAI_EMBEDDINGS_URL },
+            label: `openai: ${DEFAULT_OPENAI_MODEL} (3072-dim, zero-padded to 4096; uses the OpenAI key/quota)`,
+        })
+    }
+    if (openrouterKey) {
+        available.push({
+            backend: "openrouter",
+            cfg: { backend: "openrouter", apiKey: openrouterKey, model: DEFAULT_OPENROUTER_MODEL, url: OPENROUTER_EMBEDDINGS_URL },
+            label: `openrouter: ${DEFAULT_OPENROUTER_MODEL} (3072-dim, zero-padded to 4096; uses the OpenRouter key/quota)`,
+        })
+    }
+
+    const req = (requested ?? "").toLowerCase()
+    if (req) {
+        const found = available.find((a) => a.backend === req)
+        if (found) return { ok: true, cfg: found.cfg }
+        const need: Record<string, string> = {
+            self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
+            openai: "OPENCODE_OPENAI_KEY",
+            openrouter: "OPENCODE_OPENROUTER_KEY",
+        }
+        return { ok: false, message: `error: embedding_backend=${req} requires ${need[req] ?? "its configuration"}.` }
+    }
+
+    // auto / unset
+    if (available.length === 0) {
+        return {
+            ok: false,
+            message:
+                "error: no embedding backend configured. Set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENCODE_OPENAI_KEY (OpenAI), or OPENCODE_OPENROUTER_KEY (OpenRouter), then re-run.",
+        }
+    }
+    if (available.length === 1) return { ok: true, cfg: available[0].cfg }
+    return {
+        ok: false,
+        message: [
+            `NEEDS USER INPUT — ${available.length} embedding backends are configured. Do NOT choose one yourself and do NOT call ingest_pdf again yet. Present these options to the user verbatim and STOP your turn until they reply; then re-run ingest_pdf with embedding_backend set to one of [${available.map((a) => a.backend).join(", ")}]:`,
+            ...available.map((a) => `  - ${a.label}`),
+        ].join("\n"),
+    }
+}
+
 // === File fingerprint ===
 async function fileFingerprint(filePath: string): Promise<Fingerprint> {
     const st = await fs.stat(filePath)
@@ -346,8 +517,7 @@ async function ingestOne(
         pdfPath: string
         pages: string[]
         chunks: Chunk[]
-        embedHost: string
-        embedModel: string
+        backend: BackendConfig
         apiKey: string
         postgrestUrl: string
         titleOverride: string | null
@@ -355,10 +525,10 @@ async function ingestOne(
     },
     log: Logger,
 ): Promise<{ documentId: number; chunkCount: number }> {
-    const { pdfPath, pages, chunks, embedHost, embedModel, apiKey, postgrestUrl, titleOverride, fingerprint } = args
-    log(`[3/5] embedding via ${embedHost} model=${embedModel} (dims=${EMBED_DIMS})`)
+    const { pdfPath, pages, chunks, backend, apiKey, postgrestUrl, titleOverride, fingerprint } = args
+    log(`[3/5] embedding via ${backend.backend} model=${backend.model} (dims=${EMBED_DIMS})`)
     const chunkTexts = chunks.map((c) => c.content)
-    const vecs = await embedAll(embedHost, embedModel, chunkTexts, log)
+    const vecs = await embedChunks(backend, chunkTexts, log)
     if (vecs.length !== chunks.length) {
         throw new Error(`embedding count mismatch ${vecs.length} vs ${chunks.length}`)
     }
@@ -368,7 +538,8 @@ async function ingestOne(
         title: titleOverride ?? path.basename(pdfPath, path.extname(pdfPath)),
         page_count: pages.length,
         chunk_count: chunks.length,
-        embed_model: embedModel,
+        embed_backend: backend.backend,
+        embed_model: backend.model,
         embed_dims: EMBED_DIMS,
         chunk_tokens: CHUNK_TOKENS,
         chunk_overlap: CHUNK_OVERLAP,
@@ -423,7 +594,7 @@ async function findPdfs(folder: string, log: Logger): Promise<string[]> {
 // === Tool definition ===
 export default tool({
     description:
-        "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds via the self-hosted OPENCODE_EMBEDDING_HOST endpoint, and inserts rows with the raw 4096-dim float vector (binary quantization is applied at index time by pgvector).",
+        "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENCODE_OPENAI_KEY), or OpenRouter (OPENCODE_OPENROUTER_KEY); if more than one is configured, the tool asks you to choose via embedding_backend.",
     args: {
         input: tool.schema
             .string()
@@ -449,6 +620,12 @@ export default tool({
             .optional()
             .describe(
                 "How to handle filename matches when skip_existing is set. fingerprint (default): compare size+mtime+sha256, skip if same. skip: always skip. ingest: always ingest a new row. fail: abort the batch.",
+            ),
+        embedding_backend: tool.schema
+            .enum(["self_hosted", "openai", "openrouter"])
+            .optional()
+            .describe(
+                "Which embedding backend to use. self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENCODE_OPENAI_KEY (text-embedding-3-large). openrouter = OPENCODE_OPENROUTER_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
             ),
     },
     async execute(args, context) {
@@ -491,14 +668,22 @@ export default tool({
 
         // Env / config — all from process.env (no .env file inside the container).
         const apiKey = process.env.POSTGREST_API_KEY ?? ""
-        const embedHost = process.env.OPENCODE_EMBEDDING_HOST ?? ""
-        const embedModel = process.env.OPENCODE_EMBEDDING_MODEL ?? ""
         const postgrestUrl = process.env.POSTGREST_URL ?? DEFAULT_POSTGREST
 
         const needsEmbed = !(dryRun || estimateOnly)
         const needsPgrest = !(dryRun || estimateOnly)
-        if (needsEmbed && !embedHost) return "error: OPENCODE_EMBEDDING_HOST not set"
-        if (needsEmbed && !embedModel) return "error: OPENCODE_EMBEDDING_MODEL not set"
+
+        // Resolve the embedding backend (self-hosted vs OpenAI). Only required for
+        // a real ingest — dry-run / estimate-only never embed. If both backends are
+        // configured and the caller didn't pick one, resolveBackend returns a
+        // message asking the user to choose; surface it and stop.
+        let backend: BackendConfig | null = null
+        if (needsEmbed) {
+            const res = resolveBackend(args.embedding_backend, process.env)
+            if (!res.ok) return res.message
+            backend = res.cfg
+            log(`embedding backend: ${backend.backend} (model=${backend.model}, dims=${EMBED_DIMS})`)
+        }
         if (needsPgrest && !apiKey) return "error: POSTGREST_API_KEY not set"
 
         // Preflight: for a real ingest, make sure the destination tables exist BEFORE
@@ -647,7 +832,8 @@ export default tool({
         // Batch totals (informational only — no cost estimate for self-hosted)
         const totalTokens = prep.reduce((a, p) => a + p.tokens, 0)
         const totalChunks = prep.reduce((a, p) => a + p.chunks.length, 0)
-        log(`\nbatch total: ${prep.length} doc(s), ${totalChunks} chunk(s), ~${totalTokens} tokens (model=${embedModel || "<unset>"}, dims=${EMBED_DIMS})`)
+        const backendLabel = backend ? `${backend.backend}/${backend.model}` : "no-embed"
+        log(`\nbatch total: ${prep.length} doc(s), ${totalChunks} chunk(s), ~${totalTokens} tokens (backend=${backendLabel}, dims=${EMBED_DIMS})`)
 
         if (dryRun) {
             const sample = prep[0].chunks[0]
@@ -673,8 +859,7 @@ export default tool({
                         pdfPath: p.path,
                         pages: p.pages,
                         chunks: p.chunks,
-                        embedHost,
-                        embedModel,
+                        backend: backend!,
                         apiKey,
                         postgrestUrl,
                         titleOverride,

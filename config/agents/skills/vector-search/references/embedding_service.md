@@ -32,12 +32,14 @@ curl -s -X POST "$OPENCODE_EMBEDDING_HOST/v1/embeddings" \
 
 ## Integration with RAG Pipeline
 
-The `ingest_pdf` tool uses this endpoint automatically when:
-- `OPENCODE_EMBEDDING_HOST` is set
-- `OPENCODE_EMBEDDING_MODEL` is set
-- No `OPENCODE_OPENAI_KEY` is present (or `embedding_backend: self_hosted` specified)
+The `ingest_pdf` tool has three embedding backends:
+- **self_hosted** — this endpoint (`OPENCODE_EMBEDDING_HOST` + `OPENCODE_EMBEDDING_MODEL`), 4096-dim.
+- **openai** — `OPENCODE_OPENAI_KEY` (`text-embedding-3-large`, 3072-dim, zero-padded to 4096 to share the same `vector(4096)` column).
+- **openrouter** — `OPENCODE_OPENROUTER_KEY` (`openai/text-embedding-3-large` via OpenRouter's OpenAI-compatible `/v1/embeddings`, same 3072→4096 padding).
 
-It handles:
+Selection: if only one is configured it is used automatically; if **more than one** is configured the tool asks you to choose (pass `embedding_backend: self_hosted | openai | openrouter` and re-run); if none is configured it does no work and explains why.
+
+When the self-hosted backend is used it handles:
 1. PDF text extraction (page-by-page)
 2. Chunking (~400 tokens, 50-token overlap)
 3. Embedding each chunk via this endpoint

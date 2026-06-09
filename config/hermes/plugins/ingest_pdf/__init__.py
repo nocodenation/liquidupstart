@@ -24,9 +24,12 @@ INGEST_PDF_SCHEMA = {
         "Ingest a PDF (or a folder of PDFs) into the RAG store (rag_documents, "
         "rag_chunks) via PostgREST. Extracts text page-by-page, chunks ~400 "
         "tokens with 50-token overlap, embeds each chunk, and inserts rows with "
-        "the raw float vector. The embedding backend is chosen automatically: "
-        "the self-hosted OPENCODE_EMBEDDING_HOST endpoint when configured, "
-        "otherwise OpenAI when OPENCODE_OPENAI_KEY is set. Returns a JSON summary "
+        "the raw 4096-dim float vector. The embedding backend is the self-hosted "
+        "OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or "
+        "OpenRouter (OPENROUTER_API_KEY); if only one is configured it is "
+        "used automatically, and if MORE THAN ONE is configured the tool returns "
+        "needs_backend_choice=true so you can ask the user to pick (then re-run "
+        "with embedding_backend set). Returns a JSON summary "
         "(documents created, chunk counts, skips, failures) plus a step log. "
         "If the destination tables (rag_documents, rag_chunks) do not exist yet, the "
         "tool does NO work and instead returns needs_schema=true with the exact "
@@ -81,27 +84,23 @@ INGEST_PDF_SCHEMA = {
             },
             "embedding_backend": {
                 "type": "string",
-                "enum": ["auto", "self_hosted", "openai"],
+                "enum": ["auto", "self_hosted", "openai", "openrouter"],
                 "description": (
-                    "Embedding backend. auto (default): self-hosted if "
-                    "OPENCODE_EMBEDDING_HOST+MODEL are set, else OpenAI if "
-                    "OPENCODE_OPENAI_KEY is set. self_hosted / openai force one."
+                    "Embedding backend. auto (default): use the only configured "
+                    "backend; if MORE THAN ONE of self-hosted (OPENCODE_EMBEDDING_"
+                    "HOST+MODEL), OpenAI (OPENAI_API_KEY) and OpenRouter "
+                    "(OPENROUTER_API_KEY) is configured, the tool returns "
+                    "needs_backend_choice so you can ask the user. self_hosted / "
+                    "openai / openrouter force one. OpenAI/OpenRouter vectors "
+                    "(3072-dim) are zero-padded to the 4096-dim column."
                 ),
             },
             "model": {
                 "type": "string",
                 "description": (
                     "Override the embedding model. Self-hosted: defaults to "
-                    "OPENCODE_EMBEDDING_MODEL. OpenAI: defaults to "
-                    "text-embedding-3-large."
-                ),
-            },
-            "dimensions": {
-                "type": "integer",
-                "description": (
-                    "OpenAI only: truncate output to this many dimensions "
-                    "(Matryoshka). Must match the rag_chunks.embedding column "
-                    "dimension. Ignored for the self-hosted backend."
+                    "OPENCODE_EMBEDDING_MODEL. OpenAI: text-embedding-3-large. "
+                    "OpenRouter: openai/text-embedding-3-large."
                 ),
             },
         },

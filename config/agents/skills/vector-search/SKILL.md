@@ -129,6 +129,13 @@ End-to-end flow that works (verified):
 2. **Download each PDF into `/data/<name>.pdf`** over WebDAV (it's the staging mount
    `ingest_pdf` can read). Verify with `head -c 5 file` → `%PDF-`.
 3. **Call `ingest_pdf`** with `skip_existing=true` (so re-runs don't duplicate).
+   - **If the tool returns `needs_backend_choice` / a `NEEDS USER INPUT` message**
+     (more than one embedding backend configured), it did NO work on purpose. You
+     MUST stop and ask the user which backend to use: present the listed options
+     and wait for their reply. Do NOT pick one yourself, and do NOT re-call
+     `ingest_pdf` until they answer — then re-run with `embedding_backend` set to
+     their choice. This is a deliberate exception to "make reasonable assumptions
+     to unblock progress": the backend choice is the user's, not yours.
    - On the FIRST call in a fresh environment the RAG tables won't exist yet: the tool
      returns `needs_schema=true` and does no work. Create them, then re-run.
    - The required schema is exactly two tables — create via `create_table`:
@@ -147,6 +154,9 @@ A ~165-page PDF yields ~260 chunks and ingests in a couple of minutes.
 
 ## Rules
 
+- Backend choice is the user's, not yours: when `ingest_pdf` reports
+  `needs_backend_choice` / `NEEDS USER INPUT`, never auto-select a backend to
+  "unblock progress" — present the options, ask, and wait for the reply.
 - Vectors are always 4096-dim — anything else won't fit `vector(4096)` or the index.
   If the model dimension changes, the schema needs to change too.
 - Never binary-quantize on the client side. The index does it.

@@ -7,14 +7,23 @@ container* as a non-interactive tool:
   * No argparse / no interactive cost prompt — args come from the tool call.
   * No .env file — config comes from process env (POSTGREST_*, OPENCODE_*).
   * Output is collected into a structured dict + step log instead of printing.
-  * Two embedding backends, both over plain `requests` (the `openai` SDK in the
+  * Three embedding backends, all over plain `requests` (the `openai` SDK in the
     venv is left untouched to avoid disturbing Hermes' pinned deps):
-      - self_hosted: POST $OPENCODE_EMBEDDING_HOST/v1/embeddings  (default; 4096-dim
+      - self_hosted: POST $OPENCODE_EMBEDDING_HOST/v1/embeddings  (4096-dim
         llama-embed-nemotron-8b -> vector(4096))
-      - openai:      POST https://api.openai.com/v1/embeddings    (text-embedding-3-*)
+      - openai:      POST https://api.openai.com/v1/embeddings    (text-embedding-3-large,
+        3072-dim, zero-padded to 4096 to share the same vector(4096) column; uses $OPENAI_API_KEY)
+      - openrouter:  POST https://openrouter.ai/api/v1/embeddings (openai/text-embedding-3-large,
+        same OpenAI-compatible shape + 3072->4096 padding; uses $OPENROUTER_API_KEY)
 
-Backend selection mirrors the design notes in ingest_pdf.ts:
-  - auto: self-hosted if HOST+MODEL set, else OpenAI if key set, else error.
+The API-key backends use the provider-native names ($OPENAI_API_KEY /
+$OPENROUTER_API_KEY) that Hermes already loads from config/hermes/.env — there
+are no OPENCODE_* aliases for them (unlike the OpenCode/OpenClaw ports).
+
+Backend selection (mirrors the OpenCode/OpenClaw ingest_pdf tools):
+  - auto: use the only configured backend; if MORE THAN ONE is configured, raise
+    BackendChoiceRequired so the tool asks the user to pick (needs_backend_choice).
+  - self_hosted / openai / openrouter force one; error if that one isn't configured.
   - the raw float vector is inserted as a pgvector text literal; binary
     quantization is applied at index time by the DB, so we store full precision.
 """
@@ -46,6 +55,16 @@ except Exception:  # pragma: no cover - defensive
 DEFAULT_POSTGREST = "http://postgrest_app:3000"  # docker service URL (in-network)
 OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 DEFAULT_OPENAI_MODEL = "text-embedding-3-large"
+# OpenRouter exposes the same OpenAI-compatible /embeddings shape; models are
+# provider-prefixed (e.g. openai/text-embedding-3-large, 3072-dim).
+OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
+DEFAULT_OPENROUTER_MODEL = "openai/text-embedding-3-large"
+
+# RAG schema column is vector(4096): the self-hosted llama-embed-nemotron-8b emits
+# 4096 dims natively; OpenAI's largest model is 3072-dim, so OpenAI vectors are
+# right-padded with zeros up to this width to share the same column (the zero
+# tail doesn't affect cosine / inner-product ranking within an all-OpenAI table).
+EMBED_DIMS = 4096
 
 CHUNK_TOKENS = 400
 CHUNK_OVERLAP = 50
@@ -70,6 +89,17 @@ EMBED_MODELS = {
 
 class IngestError(Exception):
     """Raised for user-facing configuration / validation failures."""
+
+
+class BackendChoiceRequired(Exception):
+    """Raised when more than one embedding backend is configured but the caller
+    didn't pick one (embedding_backend=auto). The tool surfaces this as a prompt
+    asking the user to choose, rather than silently defaulting to one backend."""
+
+    def __init__(self, backends: dict[str, str]):
+        # backends: {backend_name: human-readable label}
+        self.backends = backends
+        super().__init__("embedding backend choice required")
 
 
 # --- PDF -> text ----------------------------------------------------------
@@ -209,10 +239,20 @@ def _embed_self_hosted(host: str, model: str, texts: list[str], log) -> list[lis
     return out
 
 
-def _embed_openai(api_key: str, model: str, texts: list[str], dimensions: int | None, log) -> list[list[float]]:
+def _pad_to_dims(vec: list[float], dims: int) -> list[float]:
+    """Right-pad a vector with zeros up to `dims` (OpenAI <= 3072 -> 4096 column)."""
+    if len(vec) == dims:
+        return vec
+    if len(vec) > dims:
+        raise IngestError(f"embedding has {len(vec)} dims, more than the {dims}-dim column")
+    return vec + [0.0] * (dims - len(vec))
+
+
+def _embed_openai_compat(url: str, api_key: str, model: str, texts: list[str], log, label: str) -> list[list[float]]:
+    """Embed via an OpenAI-compatible /v1/embeddings endpoint (openai or openrouter).
+    `label` is used only in log/error messages."""
     out: list[list[float]] = []
     total = len(texts)
-    payload_extra = {"dimensions": dimensions} if dimensions is not None else {}
     for i in range(0, total, OPENAI_BATCH):
         batch = texts[i : i + OPENAI_BATCH]
         attempt = 0
@@ -220,25 +260,25 @@ def _embed_openai(api_key: str, model: str, texts: list[str], dimensions: int | 
         while True:
             try:
                 r = requests.post(
-                    OPENAI_EMBEDDINGS_URL,
+                    url,
                     headers={
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {api_key}",
                     },
-                    data=json.dumps({"model": model, "input": batch, **payload_extra}),
+                    data=json.dumps({"model": model, "input": batch}),
                     timeout=120,
                 )
             except requests.RequestException as e:
                 attempt += 1
                 if attempt > MAX_RETRIES:
-                    raise IngestError(f"network error contacting OpenAI: {e}")
-                log(f"  transient network error (OpenAI); retry {attempt}/{MAX_RETRIES} in {backoff:.1f}s")
+                    raise IngestError(f"network error contacting {label}: {e}")
+                log(f"  transient network error ({label}); retry {attempt}/{MAX_RETRIES} in {backoff:.1f}s")
                 time.sleep(backoff)
                 backoff = min(backoff * 2, MAX_BACKOFF_S)
                 continue
             if r.ok:
                 data = r.json().get("data") or []
-                out.extend(d["embedding"] for d in data)
+                out.extend(_pad_to_dims(d["embedding"], EMBED_DIMS) for d in data)
                 break
             # insufficient_quota is permanent — do not retry.
             code = None
@@ -247,12 +287,12 @@ def _embed_openai(api_key: str, model: str, texts: list[str], dimensions: int | 
             except Exception:
                 pass
             if code == "insufficient_quota":
-                raise IngestError("OpenAI insufficient_quota — fix billing and retry")
+                raise IngestError(f"{label} insufficient_quota — fix billing and retry")
             if not _retryable_status(r.status_code):
-                raise IngestError(f"OpenAI HTTP {r.status_code}: {r.text[:300]}")
+                raise IngestError(f"{label} HTTP {r.status_code}: {r.text[:300]}")
             attempt += 1
             if attempt > MAX_RETRIES:
-                raise IngestError(f"OpenAI HTTP {r.status_code} after {MAX_RETRIES} retries: {r.text[:300]}")
+                raise IngestError(f"{label} HTTP {r.status_code} after {MAX_RETRIES} retries: {r.text[:300]}")
             wait = backoff
             ra = r.headers.get("retry-after")
             if ra:
@@ -260,7 +300,7 @@ def _embed_openai(api_key: str, model: str, texts: list[str], dimensions: int | 
                     wait = max(wait, float(ra))
                 except ValueError:
                     pass
-            log(f"  transient HTTP {r.status_code} (OpenAI); retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
+            log(f"  transient HTTP {r.status_code} ({label}); retry {attempt}/{MAX_RETRIES} in {wait:.1f}s")
             time.sleep(wait)
             backoff = min(backoff * 2, MAX_BACKOFF_S)
         log(f"  embedded {min(i + OPENAI_BATCH, total)}/{total}")
@@ -341,9 +381,8 @@ def _table_exists(session: requests.Session, base: str, table: str) -> bool:
 
 
 def _expected_dims(backend: str | None, cfg: dict) -> int:
-    if backend == "openai":
-        return int(cfg.get("dimensions") or cfg.get("native_dims") or 3072)
-    return 4096  # self-hosted llama-embed-nemotron-8b
+    # Both backends store vector(4096): self-hosted natively, OpenAI zero-padded.
+    return EMBED_DIMS
 
 
 def _required_schema(dims: int) -> dict:
@@ -416,59 +455,69 @@ def _find_pdfs(folder: Path, log) -> list[Path]:
 # --- Backend resolution ---------------------------------------------------
 
 def _resolve_backend(args: dict) -> tuple[str, dict]:
-    """Return (backend, cfg). backend in {'self_hosted','openai'}. Raises IngestError
-    when the requested/auto backend is unavailable."""
+    """Return (backend, cfg). backend in {'self_hosted','openai','openrouter'}.
+    Raises IngestError when the requested/only backend is unavailable, and
+    BackendChoiceRequired when >1 backend is configured under auto."""
     embed_host = os.environ.get("OPENCODE_EMBEDDING_HOST", "").strip()
     embed_model_env = os.environ.get("OPENCODE_EMBEDDING_MODEL", "").strip()
-    openai_key = (
-        os.environ.get("OPENCODE_OPENAI_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-        or ""
-    ).strip()
+    # Hermes loads config/hermes/.env into the process env at startup
+    # (load_hermes_dotenv, override=true), so the API-key backends read the
+    # provider-native names that already live in that file — no OPENCODE_* aliases.
+    openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
 
-    self_hosted_ok = bool(embed_host and embed_model_env)
-    openai_ok = bool(openai_key)
+    model_override = args.get("model")
+
+    # Build the set of available backends (name -> {cfg, label}). The OpenAI and
+    # OpenRouter vectors are zero-padded to EMBED_DIMS in _embed_openai_compat,
+    # so every backend fills vector(4096).
+    available: dict[str, dict] = {}
+    if embed_host and embed_model_env:
+        available["self_hosted"] = {
+            "cfg": {"host": embed_host, "model": model_override or embed_model_env},
+            "label": f"{embed_model_env} via {embed_host} (4096-dim, no API cost)",
+        }
+    if openai_key:
+        available["openai"] = {
+            "cfg": {"url": OPENAI_EMBEDDINGS_URL, "key": openai_key, "model": model_override or DEFAULT_OPENAI_MODEL},
+            "label": f"{DEFAULT_OPENAI_MODEL} (3072-dim, zero-padded to 4096; uses the OpenAI key/quota)",
+        }
+    if openrouter_key:
+        available["openrouter"] = {
+            "cfg": {"url": OPENROUTER_EMBEDDINGS_URL, "key": openrouter_key, "model": model_override or DEFAULT_OPENROUTER_MODEL},
+            "label": f"{DEFAULT_OPENROUTER_MODEL} (3072-dim, zero-padded to 4096; uses the OpenRouter key/quota)",
+        }
 
     requested = (args.get("embedding_backend") or "auto").lower()
-    if requested == "self_hosted":
-        chosen = "self_hosted"
-    elif requested == "openai":
-        chosen = "openai"
-    else:  # auto — prefer the self-hosted, project-default endpoint
-        if self_hosted_ok:
-            chosen = "self_hosted"
-        elif openai_ok:
-            chosen = "openai"
-        else:
-            raise IngestError(
-                "no embedding backend configured: set OPENCODE_EMBEDDING_HOST + "
-                "OPENCODE_EMBEDDING_MODEL for the self-hosted endpoint, or "
-                "OPENCODE_OPENAI_KEY for OpenAI."
-            )
-
-    if chosen == "self_hosted" and not self_hosted_ok:
-        raise IngestError("self_hosted backend requires OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL")
-    if chosen == "openai" and not openai_ok:
-        raise IngestError("openai backend requires OPENCODE_OPENAI_KEY (or OPENAI_API_KEY)")
-
-    if chosen == "self_hosted":
-        return "self_hosted", {
-            "host": embed_host,
-            "model": (args.get("model") or embed_model_env),
+    if requested != "auto":
+        if requested in available:
+            return requested, available[requested]["cfg"]
+        need = {
+            "self_hosted": "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
+            "openai": "OPENAI_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
         }
-    model = args.get("model") or DEFAULT_OPENAI_MODEL
-    info = EMBED_MODELS.get(model, {})
-    native = info.get("native_dims")
-    dims = args.get("dimensions")
-    if dims is not None and not info.get("configurable", True) and dims != native:
-        raise IngestError(f"OpenAI model {model} does not support custom dimensions ({native} only)")
-    return "openai", {"key": openai_key, "model": model, "dimensions": dims, "native_dims": native}
+        raise IngestError(f"embedding_backend={requested} requires {need.get(requested, 'its configuration')}")
+
+    # auto
+    if not available:
+        raise IngestError(
+            "no embedding backend configured: set OPENCODE_EMBEDDING_HOST + "
+            "OPENCODE_EMBEDDING_MODEL (self-hosted), OPENAI_API_KEY (OpenAI), "
+            "or OPENROUTER_API_KEY (OpenRouter)."
+        )
+    if len(available) == 1:
+        name = next(iter(available))
+        return name, available[name]["cfg"]
+    # More than one available and no explicit choice: ask the user.
+    raise BackendChoiceRequired({k: v["label"] for k, v in available.items()})
 
 
 def _embed(backend: str, cfg: dict, texts: list[str], log) -> list[list[float]]:
     if backend == "self_hosted":
         return _embed_self_hosted(cfg["host"], cfg["model"], texts, log)
-    return _embed_openai(cfg["key"], cfg["model"], texts, cfg.get("dimensions"), log)
+    # openai / openrouter share the OpenAI-compatible path; backend name = label.
+    return _embed_openai_compat(cfg["url"], cfg["key"], cfg["model"], texts, log, backend)
 
 
 # --- Orchestration --------------------------------------------------------
@@ -503,6 +552,23 @@ def run_ingest(args: dict) -> dict:
     cfg: dict = {}
     try:
         backend, cfg = _resolve_backend(args)
+    except BackendChoiceRequired as e:
+        if needs_embed:
+            options = ", ".join(f"'{name}'" for name in e.backends)
+            return done(
+                {
+                    "success": False,
+                    "needs_backend_choice": True,
+                    "error": (
+                        "NEEDS USER INPUT — multiple embedding backends are configured. Do NOT "
+                        "choose one yourself and do NOT call ingest_pdf again yet. Present these "
+                        "options to the user verbatim and STOP your turn until they reply, then "
+                        f"re-run ingest_pdf with embedding_backend set to one of: {options}."
+                    ),
+                    "backends": e.backends,
+                }
+            )
+        log(f"note: multiple embedding backends configured; embedding_backend choice deferred")
     except IngestError as e:
         if needs_embed:
             return done({"success": False, "error": str(e)})

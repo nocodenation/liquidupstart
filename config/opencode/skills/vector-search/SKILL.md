@@ -87,6 +87,11 @@ similar). The embedding column is omitted from the response.
 
 ## Rules
 
+- Backend choice is the user's, not yours: when `ingest_pdf` reports
+  `needs_backend_choice` / `NEEDS USER INPUT` (more than one embedding backend
+  configured), never auto-select a backend to "unblock progress" — present the
+  options, ask the user, and wait for their reply before re-running with
+  `embedding_backend` set.
 - Vectors are always 4096-dim — anything else won't fit `vector(4096)` or the index.
   If the model dimension changes, the schema needs to change too.
 - Never binary-quantize on the client side. The index does it.
