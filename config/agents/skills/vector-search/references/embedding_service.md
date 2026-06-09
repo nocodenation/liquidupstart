@@ -34,8 +34,8 @@ curl -s -X POST "$OPENCODE_EMBEDDING_HOST/v1/embeddings" \
 
 The `ingest_pdf` tool has three embedding backends:
 - **self_hosted** — this endpoint (`OPENCODE_EMBEDDING_HOST` + `OPENCODE_EMBEDDING_MODEL`), 4096-dim.
-- **openai** — `OPENCODE_OPENAI_KEY` (`text-embedding-3-large`, 3072-dim, zero-padded to 4096 to share the same `vector(4096)` column).
-- **openrouter** — `OPENCODE_OPENROUTER_KEY` (`openai/text-embedding-3-large` via OpenRouter's OpenAI-compatible `/v1/embeddings`, same 3072→4096 padding).
+- **openai** — `OPENAI_API_KEY` (`text-embedding-3-large`, 3072-dim, zero-padded to 4096 to share the same `vector(4096)` column).
+- **openrouter** — `OPENROUTER_API_KEY` (`openai/text-embedding-3-large` via OpenRouter's OpenAI-compatible `/v1/embeddings`, same 3072→4096 padding).
 
 Selection: if only one is configured it is used automatically; if **more than one** is configured the tool asks you to choose (pass `embedding_backend: self_hosted | openai | openrouter` and re-run); if none is configured it does no work and explains why.
 

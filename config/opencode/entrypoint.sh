@@ -41,33 +41,33 @@ _PROVIDERS="    \"llamacpp\": {
       }
     }"
 
-if [ -n "${OPENCODE_ANTHROPIC_KEY}" ]; then
+if [ -n "${ANTHROPIC_API_KEY}" ]; then
     _PROVIDERS="${_PROVIDERS},
     \"anthropic\": {
       \"options\": {
-        \"apiKey\": \"${OPENCODE_ANTHROPIC_KEY}\",
+        \"apiKey\": \"${ANTHROPIC_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
       }
     }"
 fi
 
-if [ -n "${OPENCODE_OPENAI_KEY}" ]; then
+if [ -n "${OPENAI_API_KEY}" ]; then
     _PROVIDERS="${_PROVIDERS},
     \"openai\": {
       \"options\": {
-        \"apiKey\": \"${OPENCODE_OPENAI_KEY}\",
+        \"apiKey\": \"${OPENAI_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
       }
     }"
 fi
 
-if [ -n "${OPENCODE_OPENROUTER_KEY}" ]; then
+if [ -n "${OPENROUTER_API_KEY}" ]; then
     _PROVIDERS="${_PROVIDERS},
     \"openrouter\": {
       \"options\": {
-        \"apiKey\": \"${OPENCODE_OPENROUTER_KEY}\",
+        \"apiKey\": \"${OPENROUTER_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
       }

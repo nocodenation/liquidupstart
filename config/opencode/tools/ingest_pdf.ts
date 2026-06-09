@@ -11,9 +11,9 @@
  * Embedding backends (see resolveBackend):
  *   - self_hosted: $OPENCODE_EMBEDDING_HOST + $OPENCODE_EMBEDDING_MODEL
  *     (4096-dim, OpenAI-compatible /v1/embeddings).
- *   - openai:      $OPENCODE_OPENAI_KEY (text-embedding-3-large, 3072-dim
+ *   - openai:      $OPENAI_API_KEY (text-embedding-3-large, 3072-dim
  *     zero-padded to 4096 to share the same column).
- *   - openrouter:  $OPENCODE_OPENROUTER_KEY (openai/text-embedding-3-large via
+ *   - openrouter:  $OPENROUTER_API_KEY (openai/text-embedding-3-large via
  *     OpenRouter's OpenAI-compatible endpoint, same 3072->4096 padding).
  * If only one is configured it is used automatically; if more than one is, the
  * tool asks the user to pick via the embedding_backend arg; if none is, it does
@@ -311,8 +311,8 @@ type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message
 // Env var(s) a backend needs, for "not configured" messages.
 const BACKEND_NEED: Record<string, string> = {
     self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
-    openai: "OPENCODE_OPENAI_KEY",
-    openrouter: "OPENCODE_OPENROUTER_KEY",
+    openai: "OPENAI_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
 }
 
 type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
@@ -324,8 +324,8 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
     // `||` (not `??`): a present-but-empty var (compose sets `KEY: ${KEY:-}` to "")
     // still falls through to the next source instead of shadowing it.
-    const openaiKey = (env.OPENCODE_OPENAI_KEY || env.OPENAI_API_KEY || "").trim()
-    const openrouterKey = (env.OPENCODE_OPENROUTER_KEY ?? "").trim()
+    const openaiKey = (env.OPENAI_API_KEY || "").trim()
+    const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
 
     const available: AvailBackend[] = []
     if (embedHost && embedModel) {
@@ -372,7 +372,7 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
         return {
             ok: false,
             message:
-                "error: no embedding backend configured. Set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENCODE_OPENAI_KEY (OpenAI), or OPENCODE_OPENROUTER_KEY (OpenRouter), then re-run.",
+                "error: no embedding backend configured. Set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENAI_API_KEY (OpenAI), or OPENROUTER_API_KEY (OpenRouter), then re-run.",
         }
     }
     if (available.length === 1) return { ok: true, cfg: available[0].cfg }
@@ -670,7 +670,7 @@ async function findPdfs(folder: string, log: Logger): Promise<string[]> {
 // === Tool definition ===
 export default tool({
     description:
-        "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENCODE_OPENAI_KEY), or OpenRouter (OPENCODE_OPENROUTER_KEY); if more than one is configured, the tool asks you to choose via embedding_backend.",
+        "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if more than one is configured, the tool asks you to choose via embedding_backend.",
     args: {
         input: tool.schema
             .string()
@@ -701,7 +701,7 @@ export default tool({
             .enum(["self_hosted", "openai", "openrouter"])
             .optional()
             .describe(
-                "Which embedding backend to use. self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENCODE_OPENAI_KEY (text-embedding-3-large). openrouter = OPENCODE_OPENROUTER_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
+                "Which embedding backend to use. self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
             ),
     },
     async execute(args, context) {
