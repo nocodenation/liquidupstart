@@ -9,6 +9,27 @@ API; storage uses `vector(4096)`; indexing uses an HNSW index on the binary-quan
 form (Hamming distance) for speed; search reranks the binary candidates with exact
 cosine distance for precision.
 
+## Retrieval rule: semantic search MUST go through `find_closest_vectors`
+
+To search a RAG corpus or answer a question over `rag_chunks` (or any table with a
+`vector` column), you **MUST** embed the query and call the **`find_closest_vectors`**
+RPC (see **Search**, step 4 below). That is the only correct retrieval path here.
+
+Do **NOT** substitute a direct PostgREST/SQL query on the table — e.g.
+`GET /rag_chunks?content=ilike.*term*`, `=like.`, `=fts.`, or `select=...` with column
+filters — for semantic retrieval. Those are **lexical** matches: they hit only literal
+substrings and miss paraphrases, synonyms, and conceptually related passages, so for a
+natural-language question they return poor or empty results. Scanning/`select`-ing many
+`rag_chunks` rows to read them yourself is also wrong — it bypasses ranking, blows the
+context window, and still isn't semantic.
+
+The query-embedding steps are **required, not optional**: read the corpus's model from
+`rag_documents.metadata`, embed the query with that same backend+model, right-pad to
+4096, then call `find_closest_vectors`. Don't skip them because a direct query looks
+simpler. The only acceptable non-vector query is an explicit exact-string/keyword lookup
+the user asked for, or a genuine fallback when the embedding service is down — and you
+should say so when you do that.
+
 ## Data types: `vector(4096)` (column) vs `bit(4096)` (index) — read this first
 
 These are two different representations at two different layers. Conflating them is the
@@ -195,6 +216,11 @@ A ~165-page PDF yields ~260 chunks and ingests in a couple of minutes.
 
 ## Rules
 
+- Retrieval is semantic: to answer a question over a corpus, embed the query and call
+  `find_closest_vectors`. NEVER substitute a direct `rag_chunks` `ilike`/`like`/`fts`
+  query or a `select`-and-read-rows scan for semantic retrieval (see the retrieval rule
+  at the top). Lexical queries are only for explicit exact-string lookups or a stated
+  embedding-service-down fallback.
 - Backend choice is the user's, not yours: when `ingest_pdf` reports
   `needs_backend_choice` / `NEEDS USER INPUT`, never auto-select a backend to
   "unblock progress" — present the options, ask, and wait for the reply.
@@ -211,9 +237,14 @@ A ~165-page PDF yields ~260 chunks and ingests in a couple of minutes.
 
 - **Embedding endpoint reliability**: The self-hosted embedding service at `$OPENCODE_EMBEDDING_HOST` (OpenAI-compatible `/v1/embeddings`) works reliably. The model `llama-embed-nemotron-8b` returns 4096-dim vectors as expected.
 
-- **Text search fallback**: When vector search is unavailable or you need exact matching, plain text search via PostgREST is a viable fallback:
+- **Lexical lookup is NOT a retrieval substitute**: a direct `content=ilike.*term*`
+  query is a *keyword* match, not semantic search. Use it ONLY for an explicit
+  exact-phrase/string lookup the user asked for, or as a genuine last resort when the
+  embedding service is down (and say so). It is never the default for answering questions
+  over the corpus — for that, embed the query and call `find_closest_vectors` (see the
+  retrieval rule at the top). Example exact-string lookup:
   ```bash
-  curl -s "http://proxy:8888/rag_chunks?content=ilike.*query.*&limit=20" -H "Host: postgrest.localhost:8888"
+  curl -s "http://proxy:8888/rag_chunks?content=ilike.*exact%20phrase*&limit=20" -H "Host: postgrest.localhost:8888"
   ```
 
 - **Bit-type HNSW confirmed working**: The binary quantization → `binary_quantize(embedding)::bit(4096)` → HNSW with `bit_hamming_ops` approach works end-to-end. (The embedding column stays `vector(4096)`; cosine is applied only in the rerank stage, not on the bit index.) Vector search returns meaningful similarity scores (e.g., 0.78–0.85 for relevant chunks).

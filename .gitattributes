@@ -1,0 +1,8 @@
+# Bash scripts are executed by bash — including inside Linux containers — so they
+# must keep LF endings even when checked out on a Windows machine. Without this a
+# Windows clone can rewrite them to CRLF and bash fails with "\r: command not found".
+*.sh   text eol=lf
+
+# Windows wrappers. .bat in particular is parsed more reliably by cmd.exe with CRLF.
+*.bat  text eol=crlf
+*.ps1  text eol=crlf

@@ -1,0 +1,28 @@
+# Helper "toolbox" image for running the project's existing bash orchestration
+# scripts (build.sh / start.sh / down.sh / cleanup.sh and the helpers under
+# config/scripts/) on hosts that have no Unix shell — i.e. Windows.
+#
+# It carries the same GNU userland those scripts assume (bash, GNU sed/grep,
+# gawk, coreutils), plus openssl and keytool (for the NiFi cert/keystore steps)
+# and the Docker CLI + Compose plugin. It does NOT run its own Docker engine:
+# the Windows wrapper bind-mounts the host's Docker socket into it, so it
+# orchestrates containers against Docker Desktop's engine — no docker-in-docker.
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash ca-certificates curl gnupg openssl gawk sed grep coreutils procps \
+      default-jre-headless \
+ && install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+ && chmod a+r /etc/apt/keyrings/docker.asc \
+ && . /etc/os-release \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${VERSION_CODENAME} stable" \
+      > /etc/apt/sources.list.d/docker.list \
+ && apt-get update && apt-get install -y --no-install-recommends \
+      docker-ce-cli docker-buildx-plugin docker-compose-plugin \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY toolbox-entry.sh /usr/local/bin/toolbox-entry
+RUN chmod +x /usr/local/bin/toolbox-entry
+
+ENTRYPOINT ["/usr/local/bin/toolbox-entry"]

@@ -121,14 +121,24 @@ services:
       - ./volumes/logs/proxy:/var/log/nginx:z
       - ./volumes/nginx/certs:/etc/nginx/certs:ro
     depends_on:
-      - postgrest_app
-      - pgadmin
-      - openproject-web
-      - swagger
-      - opencode
-      - bun_runner
-      - openclaw-gateway
-      - hermes
+      postgrest_app:
+        condition: service_started
+      pgadmin:
+        condition: service_started
+      openproject-web:
+        condition: service_started
+      swagger:
+        condition: service_started
+      opencode:
+        condition: service_started
+      bun_runner:
+        condition: service_started
+      openclaw-gateway:
+        condition: service_healthy
+      hermes:
+        condition: service_started
+      nextcloud:
+        condition: service_healthy
     networks:
       nocodenation_all_in_wonder_network:
         aliases:
@@ -543,6 +553,12 @@ services:
     image: nextcloud:stable
     container_name: nextcloud
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost/status.php"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 600s
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
@@ -697,9 +713,6 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
-      # Forwarded to the Claude CLI by /usr/local/bin/openclaw-claude. A direct
-      # CLAUDE_CODE_OAUTH_TOKEN env would be stripped by OpenClaw's child-env
-      # scrubbing, so we pass it under this non-cleared alias and re-inject it.
       OPENCLAW_CLAUDE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       POSTGREST_API_KEY: ${API_KEY:-}
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
@@ -717,15 +730,9 @@ services:
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
       - ./volumes/_openclaw-claude:/home/node/.claude
-      # Make the shared agent skills available to Claude Code (claude-cli backend):
-      # ~/.claude/skills auto-discovers SKILL.md dirs. A nested DIRECTORY mount
-      # inside the .claude volume is fine; a nested single-FILE mount is not (it
-      # fails on Docker Desktop / macOS: "mountpoint ... is outside of rootfs"), so
-      # instructions.md is NOT mounted to ~/.claude/CLAUDE.md here — the start
-      # script copies it into the volume instead (config/scripts/start/openclaw.sh).
       - ./config/agents/skills:/home/node/.claude/skills:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
-      - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
+      - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/python_extensions
@@ -740,16 +747,25 @@ services:
       - "embedding_host:${OPENCODE_EMBEDDING_HOST_IP:-127.0.0.1}"
     init: true
     restart: unless-stopped
+    tmpfs:
+      # Shadow the state plugins dir with an in-container tmpfs (normal perms, NOT
+      # the Docker Desktop 777 file share). Neither this gateway nor openclaw-cli
+      # can then persist a world-writable plugin here for OpenClaw's loader to
+      # block. ingest-pdf is loaded from /home/node/openclaw-plugins (see command).
+      - /home/node/.openclaw/plugins
+    # Windows/Docker-Desktop fix: the host plugins bind mount is presented mode 777,
+    # and OpenClaw refuses to load a world-writable plugin. So plugins are mounted
+    # read-only at /opt/plugins and copied at startup into a container-local dir
+    # with normal perms (off the file share) before the gateway launches.
+    # plugins.load.paths points at /home/node/openclaw-plugins (see openclaw.sh).
     command:
-      [
-        "node",
-        "dist/index.js",
-        "gateway",
-        "--bind",
-        "lan",
-        "--port",
-        "18789",
-      ]
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /home/node/openclaw-plugins
+        cp -a /opt/plugins/. /home/node/openclaw-plugins/
+        chmod -R go-w /home/node/openclaw-plugins
+        exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test:
         [
@@ -791,9 +807,6 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
-      # Forwarded to the Claude CLI by /usr/local/bin/openclaw-claude. A direct
-      # CLAUDE_CODE_OAUTH_TOKEN env would be stripped by OpenClaw's child-env
-      # scrubbing, so we pass it under this non-cleared alias and re-inject it.
       OPENCLAW_CLAUDE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       TZ: ${OPENCLAW_TZ:-UTC}
       POSTGREST_API_KEY: ${API_KEY:-}
@@ -811,15 +824,9 @@ services:
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
       - ./volumes/_openclaw-claude:/home/node/.claude
-      # Make the shared agent skills available to Claude Code (claude-cli backend):
-      # ~/.claude/skills auto-discovers SKILL.md dirs. A nested DIRECTORY mount
-      # inside the .claude volume is fine; a nested single-FILE mount is not (it
-      # fails on Docker Desktop / macOS: "mountpoint ... is outside of rootfs"), so
-      # instructions.md is NOT mounted to ~/.claude/CLAUDE.md here — the start
-      # script copies it into the volume instead (config/scripts/start/openclaw.sh).
       - ./config/agents/skills:/home/node/.claude/skills:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
-      - ./config/openclaw/plugins:/home/node/.openclaw/plugins:ro
+      - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/python_extensions
@@ -827,6 +834,11 @@ services:
     stdin_open: true
     tty: true
     init: true
+    tmpfs:
+      # See openclaw-gateway: keep the state plugins dir off the 777 file share so
+      # `openclaw setup` doesn't persist a world-writable plugin into the shared
+      # state volume that the gateway would then refuse to load.
+      - /home/node/.openclaw/plugins
     entrypoint: ["node", "dist/index.js"]
     depends_on:
       - openclaw-gateway
