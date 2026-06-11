@@ -145,7 +145,7 @@ else
     -v "${STATE_DIR}:/state" \
     -e PRIMARY_MODEL="${PRIMARY_MODEL}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
-    -e PLUGIN_PATHS="/home/node/.openclaw/plugins/ingest-pdf" \
+    -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
     -e '
@@ -213,9 +213,12 @@ else
       if (pluginPaths.length) {
         c.plugins = c.plugins || {};
         c.plugins.load = c.plugins.load || {};
-        const paths = Array.isArray(c.plugins.load.paths) ? c.plugins.load.paths : [];
-        for (const pp of pluginPaths) if (!paths.includes(pp)) paths.push(pp);
-        c.plugins.load.paths = paths;
+        // Authoritative: the start script owns this list, so REPLACE it instead of
+        // appending. Stale entries must be dropped because OpenClaw validates every
+        // load.path at startup and aborts if one is missing — e.g. an old
+        // /home/node/.openclaw/plugins/ingest-pdf left in a persisted openclaw.json
+        // (that dir is now a tmpfs and intentionally empty).
+        c.plugins.load.paths = pluginPaths;
       }
 
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
@@ -288,12 +291,68 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "Claude CLI: already authenticated (login persists in ${CLAUDE_DIR})."
   elif [[ -t 0 && -t 1 ]]; then
     echo "Claude CLI: not authenticated — starting interactive Claude Code sign-in."
-    echo "  Open the printed URL, authorize, and paste the code back. Login persists in ${CLAUDE_DIR}."
-    if claude_cli "-it" auth login --claudeai; then
+    echo "  A sign-in URL appears below. Open it, authorize, then paste the code here."
+    echo "  Claude reads the code without echoing it (looks like nothing happened —"
+    echo "  worse through the Windows wrapper's nested terminal), so we capture it"
+    echo "  ourselves and show one '*' per character. Press Enter when done."
+    echo "  Login persists in ${CLAUDE_DIR}."
+
+    # Read a secret from the controlling terminal, echoing a '*' per character so a
+    # paste is visibly confirmed even when the underlying prompt doesn't echo.
+    # Reads/writes /dev/tty directly (so it's independent of the terminal's echo
+    # state) and handles backspace plus a trailing CR from a Windows-style paste.
+    read_masked() {  # $1=prompt  $2=output-var-name
+      local __p="$1" __out="$2" ch acc=""
+      printf '%s' "$__p" > /dev/tty
+      while IFS= read -rsn1 ch < /dev/tty; do
+        [[ -z "$ch" || "$ch" == $'\r' ]] && break
+        if [[ "$ch" == $'\177' || "$ch" == $'\b' ]]; then
+          [[ -n "$acc" ]] && { acc="${acc%?}"; printf '\b \b' > /dev/tty; }
+          continue
+        fi
+        acc+="$ch"; printf '*' > /dev/tty
+      done
+      printf '\n' > /dev/tty
+      printf -v "$__out" '%s' "$acc"
+    }
+
+    # Drive `claude auth login` but supply the pasted code ourselves so we control
+    # the echo. claude prints its URL/prompt to the terminal (we leave stdout/err
+    # alone); its stdin is a FIFO we fill from read_masked once the user has the
+    # code. `-i` only: `-t` can't combine with a non-tty (FIFO) stdin. Opening the
+    # FIFO read-write (3<>) avoids the open() blocking if claude bails early.
+    login_with_masked_paste() {
+      local fifo code rc=0
+      fifo="$(mktemp -u)"; mkfifo "$fifo"
+      claude_cli "-i" auth login --claudeai < "$fifo" &
+      local pid=$!
+      exec 3<> "$fifo"
+      # Give claude a moment to start; if it exited immediately it likely needs a
+      # real TTY — bail so the caller can fall back to the plain interactive login.
+      sleep 1
+      if ! kill -0 "$pid" 2>/dev/null; then
+        exec 3>&-; rm -f "$fifo"; return 1
+      fi
+      read_masked "Paste the authorization code (shown as *): " code
+      printf '%s\n' "$code" >&3 2>/dev/null || true
+      exec 3>&-
+      rm -f "$fifo"
+      wait "$pid" || rc=$?
+      return $rc
+    }
+
+    if login_with_masked_paste || claude_cli "" auth status >/dev/null 2>&1; then
+      echo "Claude CLI: login complete."
+    elif claude_cli "-it" auth login --claudeai; then
+      # Fallback: the masked-paste path didn't complete (e.g. claude insisted on a
+      # real TTY); run claude's own interactive login directly.
       echo "Claude CLI: login complete."
     else
       echo "Warning: Claude Code sign-in did not complete; OpenClaw requests will fail until you authenticate." >&2
-      echo "Retry with: docker compose exec -it openclaw-gateway openclaw-claude auth login --claudeai" >&2
+      echo "  Retry interactively:" >&2
+      echo "    docker compose exec -it openclaw-gateway openclaw-claude auth login --claudeai" >&2
+      echo "  Or generate a long-lived token and set it in .env as CLAUDE_CODE_OAUTH_TOKEN:" >&2
+      echo "    docker compose exec -it openclaw-gateway openclaw-claude setup-token" >&2
     fi
   else
     # No terminal attached — cannot prompt; tell the user how to do it manually.
