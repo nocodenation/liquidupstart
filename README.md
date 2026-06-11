@@ -13,7 +13,7 @@
    | | Build | Start | Stop | Clean rendered config |
    |---|---|---|---|---|
    | **Linux / macOS** | `./build.sh` | `./start.sh` | `./down.sh` | `./cleanup.sh` |
-   | **Windows** | double-click `build.bat` | double-click `start.bat` | `down.bat` | `cleanup.bat` |
+   | **Windows** | double-click `win\build.bat` | double-click `win\start.bat` | `win\down.bat` | `win\cleanup.bat` |
 
 3. Access services (default port `8888`, set by `SYSTEM_HTTP_PORT` in `.env`):
    - pgAdmin: http://pgadmin.localhost:8888/

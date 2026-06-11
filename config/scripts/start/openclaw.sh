@@ -145,7 +145,7 @@ else
     -v "${STATE_DIR}:/state" \
     -e PRIMARY_MODEL="${PRIMARY_MODEL}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
-    -e PLUGIN_PATHS="/home/node/.openclaw/plugins/ingest-pdf" \
+    -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
     -e '
@@ -213,9 +213,12 @@ else
       if (pluginPaths.length) {
         c.plugins = c.plugins || {};
         c.plugins.load = c.plugins.load || {};
-        const paths = Array.isArray(c.plugins.load.paths) ? c.plugins.load.paths : [];
-        for (const pp of pluginPaths) if (!paths.includes(pp)) paths.push(pp);
-        c.plugins.load.paths = paths;
+        // Authoritative: the start script owns this list, so REPLACE it instead of
+        // appending. Stale entries must be dropped because OpenClaw validates every
+        // load.path at startup and aborts if one is missing — e.g. an old
+        // /home/node/.openclaw/plugins/ingest-pdf left in a persisted openclaw.json
+        // (that dir is now a tmpfs and intentionally empty).
+        c.plugins.load.paths = pluginPaths;
       }
 
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
