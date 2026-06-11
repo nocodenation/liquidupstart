@@ -39,28 +39,47 @@ NIFI_USERNAME="$(grep -E '^NIFI_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d 
 NIFI_PASSWORD="$(grep -E '^NIFI_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HERMES_API_KEY="$(grep -E '^HERMES_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
-echo "pgAdmin is available on:          http://pgadmin.localhost:${HTTP_PORT}"
-echo "REST interface is available on:   http://postgrest.localhost:${HTTP_PORT}"
-echo "Swagger UI is available on:       http://swagger.localhost:${HTTP_PORT}"
-echo "OpenCode is available on:         http://opencode.localhost:${HTTP_PORT}"
-echo "Node app is available on:         http://app.localhost:${HTTP_PORT}"
-echo "OpenProject is available on:      http://openproject.localhost:${HTTP_PORT}"
+# Colors only when stdout is a terminal (stays plain when piped/redirected).
+if [[ -t 1 ]]; then
+  HDR=$'\033[1;32m'   # bold green  - section headers
+  SVC=$'\033[1m'      # bold        - service names
+  URL=$'\033[36m'     # cyan        - URLs
+  CRED=$'\033[1;33m'  # bold yellow - passwords/tokens
+  DIM=$'\033[2m'      # dim         - secondary info
+  RST=$'\033[0m'
+else
+  HDR='' SVC='' URL='' CRED='' DIM='' RST=''
+fi
+
+url_line() { printf "  ${SVC}%-13s${RST} ${URL}%s${RST}\n" "$1" "$2"; }
+
 echo ""
-echo "NextCloud is available on:        http://nextcloud.localhost:${HTTP_PORT}"
-echo "        password for NextCloud admin actions is: ${PGADMIN_DEFAULT_EMAIL}"
+echo "${HDR}=== Web interfaces = Storage =====================================${RST}"
+url_line "NextCloud"   "http://nextcloud.localhost:${HTTP_PORT}"
+url_line "pgAdmin"     "http://pgadmin.localhost:${HTTP_PORT}"
+url_line "REST API"    "http://postgrest.localhost:${HTTP_PORT}"
+url_line "Swagger UI"  "http://swagger.localhost:${HTTP_PORT}"
 echo ""
-echo "NiFi is available on:             https://nifi.localhost:${HTTPS_PORT}"
-echo "        username: ${NIFI_USERNAME}"
-echo "        password: ${NIFI_PASSWORD}"
-echo "                ports 8900-8999 are available for ingresses"
-echo "                ingress will be available on https://PORT.nifi.localhost:${HTTPS_PORT}"
+echo "${HDR}=== Web interfaces = Applications ================================${RST}"
+url_line "NiFi"        "https://nifi.localhost:${HTTPS_PORT}"
+url_line "Node app"    "http://app.localhost:${HTTP_PORT}"
+url_line "OpenProject" "http://openproject.localhost:${HTTP_PORT}"
 echo ""
-echo "Hermes is available on:           http://hermes.localhost:${HTTP_PORT}"
-echo "        api is available at:      http://api.hermes.localhost:${HTTP_PORT}"
-echo "        webhooks url is:          http://webhooks.hermes.localhost:${HTTP_PORT}"
-echo "                API/Webhooks token is: ${HERMES_API_KEY}"
+echo "${HDR}=== Web interfaces = AI Harnesses ================================${RST}"
+url_line "Hermes"      "http://hermes.localhost:${HTTP_PORT}"
+url_line "OpenClaw"    "http://openclaw.localhost:${HTTP_PORT}   - recommended"
+url_line "OpenCode"    "http://opencode.localhost:${HTTP_PORT}"
 echo ""
-echo "OpenClaw is available on:         http://openclaw.localhost:${HTTP_PORT}"
-echo "        node bridge is at:        http://bridge.openclaw.localhost:${HTTP_PORT}"
-echo "        MS Teams endpoint is:     http://msteams.openclaw.localhost:${HTTP_PORT}"
+echo "${HDR}=== Logins, passwords & tokens ===================================${RST}"
+echo "  Hermes API/Webhooks token:  ${CRED}${HERMES_API_KEY}${RST}"
+echo "  NextCloud admin password:   ${CRED}${PGADMIN_DEFAULT_EMAIL}${RST}"
+echo "  NiFi username:              ${CRED}${NIFI_USERNAME}${RST}"
+echo "  NiFi password:              ${CRED}${NIFI_PASSWORD}${RST}"
+echo ""
+echo "${HDR}=== Additional endpoints =========================================${RST}"
+echo "  ${DIM}Hermes API:                 ${URL}http://api.hermes.localhost:${HTTP_PORT}${RST}"
+echo "  ${DIM}Hermes webhooks:            ${URL}http://webhooks.hermes.localhost:${HTTP_PORT}${RST}"
+echo "  ${DIM}NiFi ingresses: ports 8900-8999, served on https://PORT.nifi.localhost:${HTTPS_PORT}${RST}"
+echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost:${HTTP_PORT}${RST}"
+echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
 echo ""
