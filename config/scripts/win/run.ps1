@@ -87,6 +87,26 @@ $script = switch ($Action) {
   'cleanup' { './scripts/linux/cleanup.sh' }
 }
 
+# --- 'run' action: open the dashboard in the default browser once it is up ---
+# run.sh's own browser-open (xdg-open/open) is a no-op here because it executes
+# inside the toolbox container, so the host side must do the opening. A hidden
+# watcher polls the URL and opens it on the first response — a fixed delay
+# would not do, since the dashboard image build on a first run can take minutes.
+if ($Action -eq 'run') {
+  $port = 8808
+  if ($Rest) {
+    for ($i = 0; $i -lt $Rest.Count - 1; $i++) {
+      if ($Rest[$i] -eq '--port') { $port = $Rest[$i + 1] }
+    }
+  }
+  $watch = "`$d = (Get-Date).AddMinutes(15); while ((Get-Date) -lt `$d) { " +
+    "try { Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:$port/' -TimeoutSec 2 | Out-Null; " +
+    "Start-Process 'http://localhost:$port/'; break } catch { Start-Sleep -Seconds 2 } }"
+  Start-Process powershell -WindowStyle Hidden -ArgumentList @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $watch
+  )
+}
+
 # Allocate a TTY only when we actually have an interactive console (so piped or
 # scheduled runs don't fail with "the input device is not a TTY").
 $tty = @()
