@@ -2,25 +2,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${SCRIPT_DIR}/.env"
-NGINX_TEMPLATES_DIR="${SCRIPT_DIR}/config/nginx/templates"
-NGINX_OUTPUT_DIR="${SCRIPT_DIR}/config/nginx"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+cd "${PROJECT_DIR}"
+ENV_FILE="${PROJECT_DIR}/.env"
+NGINX_TEMPLATES_DIR="${PROJECT_DIR}/config/nginx/templates"
+NGINX_OUTPUT_DIR="${PROJECT_DIR}/config/nginx"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: .env file not found at ${ENV_FILE}" >&2
   exit 1
 fi
 
-"${SCRIPT_DIR}/down.sh"
+"${PROJECT_DIR}/scripts/linux/down.sh"
 
-"${SCRIPT_DIR}/config/scripts/start/generate_api_key.sh"
-"${SCRIPT_DIR}/config/scripts/start/pgadmin.sh"
-"${SCRIPT_DIR}/config/scripts/start/opencode.sh"
-"${SCRIPT_DIR}/config/scripts/start/nextcloud.sh"
-"${SCRIPT_DIR}/config/scripts/start/nginx.sh"
-"${SCRIPT_DIR}/config/scripts/start/nifi.sh"
-"${SCRIPT_DIR}/config/scripts/start/hermes.sh"
-"${SCRIPT_DIR}/config/scripts/start/openclaw.sh"
+"${PROJECT_DIR}/config/scripts/start/generate_api_key.sh"
+"${PROJECT_DIR}/config/scripts/start/pgadmin.sh"
+"${PROJECT_DIR}/config/scripts/start/opencode.sh"
+"${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
+"${PROJECT_DIR}/config/scripts/start/nginx.sh"
+"${PROJECT_DIR}/config/scripts/start/nifi.sh"
+"${PROJECT_DIR}/config/scripts/start/hermes.sh"
+"${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
 
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"

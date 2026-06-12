@@ -2,18 +2,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PGADMIN_TEMPLATES_DIR="${SCRIPT_DIR}/config/pgadmin/templates"
-PGADMIN_OUTPUT_DIR="${SCRIPT_DIR}/config/pgadmin"
-NGINX_TEMPLATES_DIR="${SCRIPT_DIR}/config/nginx/templates"
-NGINX_OUTPUT_DIR="${SCRIPT_DIR}/config/nginx"
-NIFI_TEMPLATES_DIR="${SCRIPT_DIR}/config/nifi/templates"
-NIFI_OUTPUT_DIR="${SCRIPT_DIR}/config/nifi"
-NEXTCLOUD_TEMPLATES_DIR="${SCRIPT_DIR}/config/nextcloud/templates"
-NEXTCLOUD_OUTPUT_DIR="${SCRIPT_DIR}/config/nextcloud"
-HERMES_TEMPLATES_DIR="${SCRIPT_DIR}/config/hermes/templates"
-HERMES_OUTPUT_DIR="${SCRIPT_DIR}/config/hermes"
-OPENCLAW_TEMPLATES_DIR="${SCRIPT_DIR}/config/openclaw/templates"
-OPENCLAW_OUTPUT_DIR="${SCRIPT_DIR}/config/openclaw"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+cd "${PROJECT_DIR}"
+PGADMIN_TEMPLATES_DIR="${PROJECT_DIR}/config/pgadmin/templates"
+PGADMIN_OUTPUT_DIR="${PROJECT_DIR}/config/pgadmin"
+NGINX_TEMPLATES_DIR="${PROJECT_DIR}/config/nginx/templates"
+NGINX_OUTPUT_DIR="${PROJECT_DIR}/config/nginx"
+NIFI_TEMPLATES_DIR="${PROJECT_DIR}/config/nifi/templates"
+NIFI_OUTPUT_DIR="${PROJECT_DIR}/config/nifi"
+NEXTCLOUD_TEMPLATES_DIR="${PROJECT_DIR}/config/nextcloud/templates"
+NEXTCLOUD_OUTPUT_DIR="${PROJECT_DIR}/config/nextcloud"
+HERMES_TEMPLATES_DIR="${PROJECT_DIR}/config/hermes/templates"
+HERMES_OUTPUT_DIR="${PROJECT_DIR}/config/hermes"
+OPENCLAW_TEMPLATES_DIR="${PROJECT_DIR}/config/openclaw/templates"
+OPENCLAW_OUTPUT_DIR="${PROJECT_DIR}/config/openclaw"
 
 # Remove rendered pgadmin config files
 for template in "${PGADMIN_TEMPLATES_DIR}"/*; do

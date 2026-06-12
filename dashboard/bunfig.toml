@@ -1,0 +1,10 @@
+# Pin the public registry so the lockfile resolves identically everywhere
+# (host machines may have a private mirror configured globally, whose URLs
+# would otherwise leak into bun.lock and break the docker build).
+#
+# NOTE: a user-level ~/.npmrc registry still overrides this file. When
+# changing dependencies, regenerate the lockfile with:
+#   bun install --registry https://registry.npmjs.org
+# and check that bun.lock contains no private mirror URLs.
+[install]
+registry = "https://registry.npmjs.org"

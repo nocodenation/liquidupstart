@@ -586,6 +586,9 @@ services:
       - ./config/nextcloud/lc_logout_redirect.php:/tmp/lc_logout_redirect.php
       - ./config/nextcloud/session_security_block.php:/tmp/session_security_block.php
       - ./config/nextcloud/pre_install.sh:/docker-entrypoint-hooks.d/pre-installation/pre_install.sh
+      # before-starting hooks run in name order: install first (recovers a
+      # half-installed volume; no-op when installed), then patch, then config.
+      - ./config/nextcloud/install_nextcloud.sh:/docker-entrypoint-hooks.d/before-starting/install_nextcloud.sh
       - ./config/nextcloud/patch_nextcloud.sh:/docker-entrypoint-hooks.d/before-starting/patch_nextcloud.sh
       - ./config/nextcloud/set_trusted_proxies.sh:/docker-entrypoint-hooks.d/before-starting/set_trusted_proxies.sh
     networks:

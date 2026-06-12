@@ -7,6 +7,6 @@ set -euo pipefail
 # restore it here before handing control to the requested script. (No-ops on a
 # share that already presents files as executable.)
 chmod +x ./*.sh 2>/dev/null || true
-find ./config -name '*.sh' -type f -exec chmod +x {} + 2>/dev/null || true
+find ./scripts ./config -name '*.sh' -type f -exec chmod +x {} + 2>/dev/null || true
 
 exec "$@"

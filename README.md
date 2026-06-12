@@ -7,13 +7,20 @@
 
 ## Run it
 
-1. Copy `.env.example` to `.env` (on Windows this is done for you on first run).
-2. Build the images, then start:
+1. Run the dashboard: `./run.sh` (Windows: double-click `run.bat`), then
+   open http://localhost:8808. On the first run it shows the configuration
+   form (secrets left empty are generated for you); afterwards it shows the
+   service dashboard: tiles with every URL & credential when the stack runs,
+   **Build** / **Start** / **Stop** buttons with a live log, and a
+   **Configuration** button to change `.env` anytime.
+   (Manual alternative: copy `.env.example` to `.env`, edit it by hand, and
+   use the scripts below.)
+2. Or build the images and start from the terminal:
 
    | | Build | Start | Stop | Clean rendered config |
    |---|---|---|---|---|
-   | **Linux / macOS** | `./build.sh` | `./start.sh` | `./down.sh` | `./cleanup.sh` |
-   | **Windows** | double-click `win\build.bat` | double-click `win\start.bat` | `win\down.bat` | `win\cleanup.bat` |
+   | **Linux / macOS** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/cleanup.sh` |
+   | **Windows** | double-click `scripts\windows\build.bat` | double-click `scripts\windows\start.bat` | `scripts\windows\stop.bat` | `scripts\windows\cleanup.bat` |
 
 3. Access services (default port `8888`, set by `SYSTEM_HTTP_PORT` in `.env`):
    - pgAdmin: http://pgadmin.localhost:8888/

@@ -21,7 +21,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('build', 'start', 'down', 'cleanup')]
+  [ValidateSet('run', 'build', 'start', 'down', 'cleanup')]
   [string]$Action,
 
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -46,13 +46,17 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- preflight: .env present (seed from .env.example on first run) ------------
+# The run (setup UI) action handles seeding itself (run.sh) and must keep
+# going, so the "review the values, then run again" stop applies to other
+# actions.
 $envFile = Join-Path $root '.env'
-if (-not (Test-Path $envFile)) {
+if (($Action -ne 'run') -and (-not (Test-Path $envFile))) {
   $envExample = Join-Path $root '.env.example'
   if (Test-Path $envExample) {
     Copy-Item $envExample $envFile -ErrorAction Stop
     Write-Host "No .env found - created one from .env.example." -ForegroundColor Yellow
-    Write-Host "Review the values in .env, then run this again." -ForegroundColor Yellow
+    Write-Host "Run run.bat (project root) to fill in the values via the dashboard," -ForegroundColor Yellow
+    Write-Host "or review .env by hand, then run this again." -ForegroundColor Yellow
     exit 0
   }
   Fail ".env not found and no .env.example to seed it from."
@@ -76,10 +80,11 @@ if ([string]::IsNullOrWhiteSpace($imageId)) {
 
 # --- action -> script ---------------------------------------------------------
 $script = switch ($Action) {
-  'build'   { './build.sh' }
-  'start'   { './start.sh' }
-  'down'    { './down.sh' }
-  'cleanup' { './cleanup.sh' }
+  'run'     { './run.sh' }
+  'build'   { './scripts/linux/build.sh' }
+  'start'   { './scripts/linux/start.sh' }
+  'down'    { './scripts/linux/down.sh' }
+  'cleanup' { './scripts/linux/cleanup.sh' }
 }
 
 # Allocate a TTY only when we actually have an interactive console (so piped or

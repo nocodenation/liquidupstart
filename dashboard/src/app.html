@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>All-In-Wonder Dashboard</title>
+    %sveltekit.head%
+  </head>
+  <!-- No link preloading: stack state changes while the user is on a page
+       (Start/Stop run for minutes), and hover-preloaded data would navigate
+       to a stale snapshot of it. -->
+  <body>
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>
