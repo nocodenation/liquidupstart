@@ -71,13 +71,15 @@
           />
         {:else if item.type === 'number'}
           <input type="number" id={item.key} name={item.key} value={fieldValue(item)} />
-        {:else if item.type === 'password'}
+        {:else if item.type === 'password' || section.autogen}
           <!-- Track edits in state: the dynamic `type` shares one template
                effect with the other attributes, so a Show/Hide toggle
                re-assigns `value` — without the edits overlay that would reset
-               the field to the initial server value, wiping typed input. -->
+               the field to the initial server value, wiping typed input.
+               Non-secret autogen fields (e.g. APP_ID) take this branch too,
+               as plain text: still readonly + Generate, just never masked. -->
           <input
-            type={revealed[item.key] ? 'text' : 'password'}
+            type={item.type === 'password' ? (revealed[item.key] ? 'text' : 'password') : 'text'}
             id={item.key}
             name={item.key}
             value={edits[item.key] ?? fieldValue(item)}
@@ -87,13 +89,15 @@
             spellcheck="false"
             placeholder={section.autogen ? '(empty = generated on save)' : ''}
           />
-          <button
-            type="button"
-            class="aux"
-            onclick={() => (revealed[item.key] = !revealed[item.key])}
-          >
-            {revealed[item.key] ? 'Hide' : 'Show'}
-          </button>
+          {#if item.type === 'password'}
+            <button
+              type="button"
+              class="aux"
+              onclick={() => (revealed[item.key] = !revealed[item.key])}
+            >
+              {revealed[item.key] ? 'Hide' : 'Show'}
+            </button>
+          {/if}
           {#if section.autogen}
             <button
               type="submit"

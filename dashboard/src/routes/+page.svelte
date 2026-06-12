@@ -53,7 +53,7 @@
     </details>
 
     <section class="card">
-      <TaskRunner showStart={false} showStop onchange={() => invalidateAll()} />
+      <TaskRunner startLabel="Restart" showStop onchange={() => invalidateAll()} />
     </section>
   {:else}
     <section class="card">

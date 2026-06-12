@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 RESULT_FILE="${SCRIPT_DIR}/.install-result"
 IMAGE="all-in-wonder/dashboard:latest"
-CONTAINER="all-in-wonder-dashboard"
 PORT=8808
 
 usage() {
@@ -31,6 +30,22 @@ if [[ ! -f "$ENV_FILE" ]]; then
   cp "${SCRIPT_DIR}/.env.example" "$ENV_FILE"
   echo "No .env found - created one from .env.example."
 fi
+
+# APP_ID identifies this installation (creation timestamp of the .env) and is
+# appended to every container name so checkouts don't collide. Stamp it when
+# the .env was just created — or backfill it into a pre-existing .env.
+APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
+if [[ -z "$APP_ID" ]]; then
+  APP_ID="$(date +%Y%m%d%H%M%S)"
+  if grep -qE '^APP_ID=' "$ENV_FILE"; then
+    sed -i.bak "s/^APP_ID=.*/APP_ID=${APP_ID}/" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+  else
+    printf '\nAPP_ID=%s\n' "$APP_ID" >> "$ENV_FILE"
+  fi
+  echo "Stamped APP_ID=${APP_ID} into .env."
+fi
+
+CONTAINER="all-in-wonder-dashboard-${APP_ID}"
 
 if [[ -n "$(docker ps -q --filter "name=^${CONTAINER}$")" ]]; then
   echo "Error: the dashboard is already running. Stop it first with:" >&2

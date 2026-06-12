@@ -17,6 +17,9 @@
     showStart = true,
     showStop = false,
     numbered = false,
+    // 'Restart' on the dashboard's running view — start.sh begins with
+    // down.sh, so the start task is a restart when the stack is up.
+    startLabel = 'Start',
     busy = $bindable(false),
     onchange
   } = $props();
@@ -202,7 +205,13 @@
       disabled={runningTask !== '' || (needBuild && !buildOk)}
       onclick={() => runTask('start')}
     >
-      {#if runningTask === 'start'}Starting…{:else if startOk}Restart{:else}{needBuild && numbered ? '2. ' : ''}Start{/if}
+      {#if runningTask === 'start'}
+        {startLabel === 'Restart' ? 'Restarting…' : 'Starting…'}
+      {:else if startOk || startLabel === 'Restart'}
+        Restart
+      {:else}
+        {needBuild && numbered ? '2. ' : ''}Start
+      {/if}
     </button>
   {/if}
   {#if showStop}

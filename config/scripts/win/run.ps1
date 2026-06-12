@@ -46,20 +46,43 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- preflight: .env present (seed from .env.example on first run) ------------
-# The run (setup UI) action handles seeding itself (run.sh) and must keep
-# going, so the "review the values, then run again" stop applies to other
-# actions.
+# Seeded for every action (the container names below need APP_ID from it); the
+# "review the values, then run again" stop only applies to non-run actions —
+# the run (dashboard) action exists precisely to fill the values in.
 $envFile = Join-Path $root '.env'
-if (($Action -ne 'run') -and (-not (Test-Path $envFile))) {
+if (-not (Test-Path $envFile)) {
   $envExample = Join-Path $root '.env.example'
-  if (Test-Path $envExample) {
-    Copy-Item $envExample $envFile -ErrorAction Stop
-    Write-Host "No .env found - created one from .env.example." -ForegroundColor Yellow
+  if (-not (Test-Path $envExample)) {
+    Fail ".env not found and no .env.example to seed it from."
+  }
+  Copy-Item $envExample $envFile -ErrorAction Stop
+  Write-Host "No .env found - created one from .env.example." -ForegroundColor Yellow
+  if ($Action -ne 'run') {
     Write-Host "Run run.bat (project root) to fill in the values via the dashboard," -ForegroundColor Yellow
     Write-Host "or review .env by hand, then run this again." -ForegroundColor Yellow
     exit 0
   }
-  Fail ".env not found and no .env.example to seed it from."
+}
+
+# --- APP_ID: installation id appended to every container name -----------------
+# The creation timestamp of the .env. Stamped here when empty/missing so it is
+# known before any container is named (run.sh applies the same logic on
+# Linux/macOS and skips when already set).
+$appId = ''
+$idLine = Select-String -Path $envFile -Pattern '^APP_ID=(.*)$' | Select-Object -First 1
+if ($idLine) { $appId = $idLine.Matches[0].Groups[1].Value.Trim().Trim('"') }
+if (-not $appId) {
+  $appId = Get-Date -Format 'yyyyMMddHHmmss'
+  $content = Get-Content -Raw $envFile
+  if ($content -match '(?m)^APP_ID=') {
+    $content = $content -replace '(?m)^APP_ID=.*$', "APP_ID=$appId"
+  } else {
+    $content += "`nAPP_ID=$appId`n"
+  }
+  # WriteAllText writes UTF-8 without a BOM; Set-Content -Encoding UTF8 on
+  # Windows PowerShell adds one, which would corrupt the first .env line.
+  [System.IO.File]::WriteAllText($envFile, $content)
+  Write-Host "Stamped APP_ID=$appId into .env." -ForegroundColor Yellow
 }
 
 # --- map the host project dir to the path Docker Desktop's engine sees --------
@@ -96,7 +119,8 @@ $script = switch ($Action) {
 # do, since the dashboard image build on a first run can take minutes. The
 # watcher also exits as soon as this script's process is gone (Ctrl-C/window
 # closed), so it never lingers.
-$runnerName = 'all-in-wonder-dashboard-runner'
+$runnerName = "all-in-wonder-dashboard-runner-$appId"
+$dashboardName = "all-in-wonder-dashboard-$appId"
 if ($Action -eq 'run') {
   $port = 8808
   if ($Rest) {
@@ -130,7 +154,7 @@ while ((Get-Date) -lt $deadline) {
   # A previous Ctrl-C may have left the runner/dashboard containers behind
   # (killing the docker CLI does not stop a container) — clear them first.
   & docker rm -f $runnerName 2>$null | Out-Null
-  & docker rm -f all-in-wonder-dashboard 2>$null | Out-Null
+  & docker rm -f $dashboardName 2>$null | Out-Null
 }
 
 # Allocate a TTY only when we actually have an interactive console (so piped or
@@ -158,7 +182,7 @@ try {
 } finally {
   if ($Action -eq 'run') {
     & docker rm -f $runnerName 2>$null | Out-Null
-    & docker rm -f all-in-wonder-dashboard 2>$null | Out-Null
+    & docker rm -f $dashboardName 2>$null | Out-Null
   }
 }
 exit $code

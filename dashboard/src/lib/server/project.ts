@@ -65,11 +65,17 @@ function dockerOutput(args: string[], timeoutMs = 30_000): Promise<string> {
   });
 }
 
+// Installation id appended to every container name (compose.yml uses
+// ${APP_ID:-0}, so mirror that default).
+export function appId(): string {
+  return envValues().get('APP_ID')?.value || '0';
+}
+
 // The nginx proxy publishes every service URL and depends on all of them, so
 // "proxy is running" is the best single signal for "the stack is up".
 export async function stackState(): Promise<{ running: boolean; needBuild: boolean }> {
   const [proxy, images] = await Promise.all([
-    dockerOutput(['ps', '-q', '--filter', 'name=^proxy$', '--filter', 'status=running']),
+    dockerOutput(['ps', '-q', '--filter', `name=^proxy-${appId()}$`, '--filter', 'status=running']),
     dockerExitCode(['image', 'inspect', ...BUILT_IMAGES])
   ]);
   return { running: proxy.trim() !== '', needBuild: images !== 0 };
