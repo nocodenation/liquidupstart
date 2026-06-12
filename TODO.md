@@ -1,1 +1,0 @@
-- make pgadmin not require authentication (create a default user, compy proper data (servers.json and pgpass) into that user and make it authenticated by default)
