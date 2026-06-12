@@ -90,8 +90,13 @@ $script = switch ($Action) {
 # --- 'run' action: open the dashboard in the default browser once it is up ---
 # run.sh's own browser-open (xdg-open/open) is a no-op here because it executes
 # inside the toolbox container, so the host side must do the opening. A hidden
-# watcher polls the URL and opens it on the first response — a fixed delay
-# would not do, since the dashboard image build on a first run can take minutes.
+# watcher waits for the dashboard port to accept TCP connections (a raw socket,
+# not Invoke-WebRequest — that one routes through IE/system proxy settings and
+# can fail even for localhost) and then opens the URL. A fixed delay would not
+# do, since the dashboard image build on a first run can take minutes. The
+# watcher also exits as soon as this script's process is gone (Ctrl-C/window
+# closed), so it never lingers.
+$runnerName = 'all-in-wonder-dashboard-runner'
 if ($Action -eq 'run') {
   $port = 8808
   if ($Rest) {
@@ -99,12 +104,33 @@ if ($Action -eq 'run') {
       if ($Rest[$i] -eq '--port') { $port = $Rest[$i + 1] }
     }
   }
-  $watch = "`$d = (Get-Date).AddMinutes(15); while ((Get-Date) -lt `$d) { " +
-    "try { Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:$port/' -TimeoutSec 2 | Out-Null; " +
-    "Start-Process 'http://localhost:$port/'; break } catch { Start-Sleep -Seconds 2 } }"
+  $watcherFile = Join-Path $env:TEMP 'aiw-open-dashboard.ps1'
+  @'
+param([int]$Port, [int]$ParentPid)
+$deadline = (Get-Date).AddMinutes(15)
+while ((Get-Date) -lt $deadline) {
+  if (-not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { exit }
+  $client = New-Object System.Net.Sockets.TcpClient
+  try {
+    $client.Connect('127.0.0.1', $Port)
+    if ($client.Connected) {
+      Start-Sleep -Seconds 1
+      Start-Process "http://localhost:$Port/"
+      exit
+    }
+  } catch { } finally { $client.Dispose() }
+  Start-Sleep -Seconds 2
+}
+'@ | Set-Content -Path $watcherFile -Encoding ASCII
   Start-Process powershell -WindowStyle Hidden -ArgumentList @(
-    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $watch
+    '-NoProfile', '-ExecutionPolicy', 'Bypass',
+    '-File', $watcherFile, '-Port', $port, '-ParentPid', $PID
   )
+
+  # A previous Ctrl-C may have left the runner/dashboard containers behind
+  # (killing the docker CLI does not stop a container) — clear them first.
+  & docker rm -f $runnerName 2>$null | Out-Null
+  & docker rm -f all-in-wonder-dashboard 2>$null | Out-Null
 }
 
 # Allocate a TTY only when we actually have an interactive console (so piped or
@@ -113,7 +139,9 @@ $tty = @()
 if (-not [Console]::IsInputRedirected) { $tty = @('-i', '-t') }
 
 # --- run the unchanged .sh inside the toolbox against the host engine ---------
-$dockerArgs = @('run', '--rm') + $tty + @(
+$named = @()
+if ($Action -eq 'run') { $named = @('--name', $runnerName) }
+$dockerArgs = @('run', '--rm') + $named + $tty + @(
   '-v', '/var/run/docker.sock:/var/run/docker.sock',
   '-v', "${root}:${enginePath}",
   '-w', $enginePath,
@@ -121,5 +149,16 @@ $dockerArgs = @('run', '--rm') + $tty + @(
   'bash', $script
 ) + $Rest
 
-& docker @dockerArgs
-exit $LASTEXITCODE
+# The finally block runs even on Ctrl-C: that keystroke only kills the local
+# docker CLI process, while the toolbox container (running run.sh) and the
+# dashboard container it started would otherwise keep running server-side.
+try {
+  & docker @dockerArgs
+  $code = $LASTEXITCODE
+} finally {
+  if ($Action -eq 'run') {
+    & docker rm -f $runnerName 2>$null | Out-Null
+    & docker rm -f all-in-wonder-dashboard 2>$null | Out-Null
+  }
+}
+exit $code
