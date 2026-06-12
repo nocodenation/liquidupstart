@@ -122,33 +122,37 @@ $script = switch ($Action) {
 $runnerName = "all-in-wonder-dashboard-runner-$appId"
 $dashboardName = "all-in-wonder-dashboard-$appId"
 if ($Action -eq 'run') {
-  $port = 8808
-  if ($Rest) {
-    for ($i = 0; $i -lt $Rest.Count - 1; $i++) {
-      if ($Rest[$i] -eq '--port') { $port = $Rest[$i + 1] }
-    }
-  }
+  # run.sh scans for a free port (starting at 7777, or --port N) and writes
+  # the one it settled on to .dashboard-port — the watcher reads it from
+  # there, waits for the port to accept connections, and opens the browser.
+  $portFile = Join-Path $root '.dashboard-port'
+  Remove-Item $portFile -ErrorAction SilentlyContinue
   $watcherFile = Join-Path $env:TEMP 'aiw-open-dashboard.ps1'
   @'
-param([int]$Port, [int]$ParentPid)
+param([string]$PortFile, [int]$ParentPid)
 $deadline = (Get-Date).AddMinutes(15)
 while ((Get-Date) -lt $deadline) {
   if (-not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { exit }
-  $client = New-Object System.Net.Sockets.TcpClient
-  try {
-    $client.Connect('127.0.0.1', $Port)
-    if ($client.Connected) {
-      Start-Sleep -Seconds 1
-      Start-Process "http://localhost:$Port/"
-      exit
+  if (Test-Path $PortFile) {
+    $port = (Get-Content $PortFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($port -match '^\d+$') {
+      $client = New-Object System.Net.Sockets.TcpClient
+      try {
+        $client.Connect('127.0.0.1', [int]$port)
+        if ($client.Connected) {
+          Start-Sleep -Seconds 1
+          Start-Process "http://localhost:$port/"
+          exit
+        }
+      } catch { } finally { $client.Dispose() }
     }
-  } catch { } finally { $client.Dispose() }
+  }
   Start-Sleep -Seconds 2
 }
 '@ | Set-Content -Path $watcherFile -Encoding ASCII
   Start-Process powershell -WindowStyle Hidden -ArgumentList @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', $watcherFile, '-Port', $port, '-ParentPid', $PID
+    '-File', $watcherFile, '-PortFile', $portFile, '-ParentPid', $PID
   )
 
   # A previous Ctrl-C may have left the runner/dashboard containers behind

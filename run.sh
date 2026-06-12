@@ -5,12 +5,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 RESULT_FILE="${SCRIPT_DIR}/.install-result"
 IMAGE="all-in-wonder/dashboard:latest"
-PORT=8808
+PORT=7777
+PORT_FILE="${SCRIPT_DIR}/.dashboard-port"
 
 usage() {
   echo "Usage: $0 [--port N]"
   echo "Runs the web dashboard: configure .env, build, start/stop the stack,"
-  echo "and see every service URL & credential (default port: ${PORT})."
+  echo "and see every service URL & credential. Starts looking for a free"
+  echo "port at ${PORT} (or N) and takes the first available one."
 }
 
 while [[ $# -gt 0 ]]; do
@@ -67,23 +69,53 @@ DOCKER_SOCK="${DOCKER_SOCK#unix://}"
 echo "Building the dashboard image..."
 docker build -q -t "$IMAGE" "${SCRIPT_DIR}/dashboard" >/dev/null
 
-rm -f "$RESULT_FILE"
+rm -f "$RESULT_FILE" "$PORT_FILE"
 
-cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
+cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -f "$PORT_FILE"; }
 trap cleanup INT TERM
 
-URL="http://localhost:${PORT}"
-# ORIGIN must match the URL in the browser: SvelteKit rejects form posts from
-# any other origin, which keeps random websites from writing into .env (or
-# triggering builds) while the installer is up.
-docker run -d --rm --name "$CONTAINER" \
-  -p "127.0.0.1:${PORT}:3000" \
-  -e "ORIGIN=${URL}" \
-  -e "ENV_DIR=${SCRIPT_DIR}" \
-  -e "HOST_DOCKER_SOCK=${DOCKER_SOCK}" \
-  -v "${SCRIPT_DIR}:${SCRIPT_DIR}" \
-  -v "${DOCKER_SOCK}:/var/run/docker.sock" \
-  "$IMAGE" >/dev/null
+# Find a free port by simply trying to publish it: the bind happens on the
+# docker engine (i.e. the real host), so this also works when run.sh itself
+# executes inside the Windows toolbox container, where probing host ports
+# directly is impossible. A port taken by another dashboard instance (another
+# checkout) or any other process makes `docker run` fail with a bind error —
+# then try the next one.
+MAX_PORT=$((PORT + 100))
+while :; do
+  URL="http://localhost:${PORT}"
+  # ORIGIN must match the URL in the browser: SvelteKit rejects form posts
+  # from any other origin, which keeps random websites from writing into .env
+  # (or triggering builds) while the dashboard is up.
+  set +e
+  RUN_ERR="$(docker run -d --rm --name "$CONTAINER" \
+    -p "127.0.0.1:${PORT}:3000" \
+    -e "ORIGIN=${URL}" \
+    -e "ENV_DIR=${SCRIPT_DIR}" \
+    -e "HOST_DOCKER_SOCK=${DOCKER_SOCK}" \
+    -v "${SCRIPT_DIR}:${SCRIPT_DIR}" \
+    -v "${DOCKER_SOCK}:/var/run/docker.sock" \
+    "$IMAGE" 2>&1 >/dev/null)"
+  RUN_RC=$?
+  set -e
+  [[ $RUN_RC -eq 0 ]] && break
+  if echo "$RUN_ERR" | grep -qiE 'port is already allocated|address already in use|bind for'; then
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    echo "Port ${PORT} is taken - trying $((PORT + 1))..."
+    PORT=$((PORT + 1))
+    if (( PORT > MAX_PORT )); then
+      echo "Error: no free port found between $((MAX_PORT - 100)) and ${MAX_PORT}." >&2
+      exit 1
+    fi
+    continue
+  fi
+  echo "Error: failed to start the dashboard container:" >&2
+  echo "$RUN_ERR" >&2
+  exit 1
+done
+
+# Read by the Windows-side browser watcher (run.ps1), which cannot know which
+# port the scan above settled on.
+echo "$PORT" > "$PORT_FILE"
 
 echo ""
 echo "All-In-Wonder dashboard is running:  ${URL}"
@@ -101,7 +133,7 @@ fi
 
 docker wait "$CONTAINER" >/dev/null 2>&1 || true
 trap - INT TERM
-rm -f "$RESULT_FILE"
+rm -f "$RESULT_FILE" "$PORT_FILE"
 
 echo "Dashboard stopped. The stack keeps whatever state it was in"
 echo "(run ./run.sh again - or scripts/linux/{start,down}.sh - to manage it)."

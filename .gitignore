@@ -5,3 +5,4 @@ volumes/
 dashboard/node_modules/
 dashboard/.svelte-kit/
 dashboard/build/
+.dashboard-port

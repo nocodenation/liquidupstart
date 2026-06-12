@@ -8,7 +8,7 @@
 ## Run it
 
 1. Run the dashboard: `./run.sh` (Windows: double-click `run.bat`), then
-   open http://localhost:8808. On the first run it shows the configuration
+   open the printed URL (first free port from 7777 up). On the first run it shows the configuration
    form (secrets left empty are generated for you); afterwards it shows the
    service dashboard: tiles with every URL & credential when the stack runs,
    **Build** / **Start** / **Stop** buttons with a live log, and a
