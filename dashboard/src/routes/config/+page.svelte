@@ -1,6 +1,9 @@
 <script>
   let { data, form } = $props();
   let revealed = $state({});
+  // Live values of password fields the user has typed into (see the comment
+  // at the password input).
+  let edits = $state({});
 
   // After a "Generate" round-trip the form action returns every submitted
   // value, so user edits survive; otherwise values come from .env.
@@ -69,11 +72,16 @@
         {:else if item.type === 'number'}
           <input type="number" id={item.key} name={item.key} value={fieldValue(item)} />
         {:else if item.type === 'password'}
+          <!-- Track edits in state: the dynamic `type` shares one template
+               effect with the other attributes, so a Show/Hide toggle
+               re-assigns `value` — without the edits overlay that would reset
+               the field to the initial server value, wiping typed input. -->
           <input
             type={revealed[item.key] ? 'text' : 'password'}
             id={item.key}
             name={item.key}
-            value={fieldValue(item)}
+            value={edits[item.key] ?? fieldValue(item)}
+            oninput={(e) => (edits[item.key] = e.currentTarget.value)}
             readonly={section.autogen}
             autocomplete="off"
             spellcheck="false"
