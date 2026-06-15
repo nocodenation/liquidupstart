@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname $(dirname $(dirname "${SCRIPT_DIR}")))"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
 # Enable --no-cache only when passed in (e.g. by build.sh).
 NO_CACHE=""

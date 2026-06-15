@@ -4,7 +4,7 @@ set -euo pipefail
 echo "Generating API key..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname $(dirname $(dirname "${SCRIPT_DIR}")))"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENV_FILE="${PROJECT_DIR}/.env"
 
 if [[ ! -f "$ENV_FILE" ]]; then
