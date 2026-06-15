@@ -50,11 +50,12 @@ export const load: PageServerLoad = async () => {
     {
       title: 'AI Harnesses',
       tiles: [
-        {
-          name: 'Hermes',
-          url: `http://hermes.localhost:${http}`,
-          creds: [{ label: 'API/Webhooks token', value: get('HERMES_API_KEY') }]
-        },
+        // hermes disabled (not built/started)
+        // {
+        //   name: 'Hermes',
+        //   url: `http://hermes.localhost:${http}`,
+        //   creds: [{ label: 'API/Webhooks token', value: get('HERMES_API_KEY') }]
+        // },
         { name: 'OpenClaw', url: `http://openclaw.localhost:${http}`, note: 'recommended' },
         { name: 'OpenCode', url: `http://opencode.localhost:${http}` }
       ]
@@ -62,8 +63,9 @@ export const load: PageServerLoad = async () => {
   ];
 
   const extras = [
-    { name: 'Hermes API', url: `http://api.hermes.localhost:${http}` },
-    { name: 'Hermes webhooks', url: `http://webhooks.hermes.localhost:${http}` },
+    // hermes disabled (not built/started)
+    // { name: 'Hermes API', url: `http://api.hermes.localhost:${http}` },
+    // { name: 'Hermes webhooks', url: `http://webhooks.hermes.localhost:${http}` },
     {
       name: 'NiFi ingresses',
       note: `ports 8900-8999, served on https://PORT.nifi.localhost:${https}`

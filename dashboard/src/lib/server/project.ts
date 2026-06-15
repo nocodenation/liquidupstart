@@ -12,7 +12,8 @@ export const EXAMPLE_FILE = join(ENV_DIR, '.env.example');
 export const RESULT_FILE = join(ENV_DIR, '.install-result');
 
 // Images produced by build.sh; all must exist for a start to succeed.
-export const BUILT_IMAGES = ['opencode', 'bun-runner', 'nifi', 'hermes', 'openclaw'].map(
+// 'hermes' is intentionally disabled (commented out in build.sh/start.sh/compose.yml).
+export const BUILT_IMAGES = ['opencode', 'bun-runner', 'nifi', 'openclaw'].map(
   (n) => `all-in-wonder/${n}:latest`
 );
 
