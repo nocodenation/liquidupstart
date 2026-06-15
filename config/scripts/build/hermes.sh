@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname $(dirname $(dirname "${SCRIPT_DIR}")))"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 CONFIG_DIR="${PROJECT_DIR}/config/hermes"
 TEMPLATES_DIR="${CONFIG_DIR}/templates"
 

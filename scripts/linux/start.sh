@@ -21,7 +21,8 @@ fi
 "${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
 "${PROJECT_DIR}/config/scripts/start/nginx.sh"
 "${PROJECT_DIR}/config/scripts/start/nifi.sh"
-"${PROJECT_DIR}/config/scripts/start/hermes.sh"
+# hermes disabled: not started
+# "${PROJECT_DIR}/config/scripts/start/hermes.sh"
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
 
@@ -39,7 +40,7 @@ docker compose up -d
 PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 NIFI_USERNAME="$(grep -E '^NIFI_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 NIFI_PASSWORD="$(grep -E '^NIFI_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-HERMES_API_KEY="$(grep -E '^HERMES_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+# hermes disabled: HERMES_API_KEY="$(grep -E '^HERMES_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
 # Colors only when stdout is a terminal (stays plain when piped/redirected).
 if [[ -t 1 ]]; then
@@ -68,19 +69,19 @@ url_line "Node app"    "http://app.localhost:${HTTP_PORT}        - build an app 
 url_line "OpenProject" "http://openproject.localhost:${HTTP_PORT}"
 echo ""
 echo "${HDR}=== Web interfaces = AI Harnesses ================================${RST}"
-url_line "Hermes"      "http://hermes.localhost:${HTTP_PORT}"
+# hermes disabled: url_line "Hermes"      "http://hermes.localhost:${HTTP_PORT}"
 url_line "OpenClaw"    "http://openclaw.localhost:${HTTP_PORT}   - recommended"
 url_line "OpenCode"    "http://opencode.localhost:${HTTP_PORT}"
 echo ""
 echo "${HDR}=== Logins, passwords & tokens ===================================${RST}"
-echo "  Hermes API/Webhooks token:  ${CRED}${HERMES_API_KEY}${RST}"
+# hermes disabled: echo "  Hermes API/Webhooks token:  ${CRED}${HERMES_API_KEY}${RST}"
 echo "  NextCloud admin password:   ${CRED}${PGADMIN_DEFAULT_EMAIL}${RST}"
 echo "  NiFi username:              ${CRED}${NIFI_USERNAME}${RST}"
 echo "  NiFi password:              ${CRED}${NIFI_PASSWORD}${RST}"
 echo ""
 echo "${HDR}=== Additional endpoints =========================================${RST}"
-echo "  ${DIM}Hermes API:                 ${URL}http://api.hermes.localhost:${HTTP_PORT}${RST}"
-echo "  ${DIM}Hermes webhooks:            ${URL}http://webhooks.hermes.localhost:${HTTP_PORT}${RST}"
+# hermes disabled: echo "  ${DIM}Hermes API:                 ${URL}http://api.hermes.localhost:${HTTP_PORT}${RST}"
+# hermes disabled: echo "  ${DIM}Hermes webhooks:            ${URL}http://webhooks.hermes.localhost:${HTTP_PORT}${RST}"
 echo "  ${DIM}NiFi ingresses: ports 8900-8999, served on https://PORT.nifi.localhost:${HTTPS_PORT}${RST}"
 echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost:${HTTP_PORT}${RST}"
 echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname $(dirname $(dirname "${SCRIPT_DIR}")))"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENV_FILE="${PROJECT_DIR}/.env"
 CONFIG_DIR="${PROJECT_DIR}/config/nginx"
 TEMPLATES_DIR="${CONFIG_DIR}/templates"
@@ -61,8 +61,12 @@ openssl pkcs12 -export \
 
 echo "Generating NiFi truststore (PKCS12)..."
 rm -f "${CERTS_DIR}/nifi.truststore.p12"
+# keytool is a Java tool: it decodes file paths/argv with the locale's charset
+# (sun.jnu.encoding). On a non-UTF-8 locale - the toolbox's Debian default is
+# ANSI_X3.4-1968 - a non-ASCII project path (e.g. ".../Geschäft/...") is mangled
+# to "?" and keytool can't find the cert. Force a UTF-8 locale so paths survive.
 if command -v keytool &>/dev/null; then
-    keytool -importcert -trustcacerts \
+    LC_ALL=C.UTF-8 keytool -importcert -trustcacerts \
         -alias "nifi-ingress" \
         -file "${CERTS_DIR}/nifi.localhost.crt" \
         -keystore "${CERTS_DIR}/nifi.truststore.p12" \
@@ -72,6 +76,7 @@ if command -v keytool &>/dev/null; then
 else
     docker run --rm \
         --user "$(id -u):$(id -g)" \
+        -e LC_ALL=C.UTF-8 \
         -v "${CERTS_DIR}:/certs" \
         eclipse-temurin:17-jre-jammy \
         keytool -importcert -trustcacerts \

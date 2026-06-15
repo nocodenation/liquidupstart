@@ -12,7 +12,8 @@ cd "${PROJECT_DIR}"
 "${PROJECT_DIR}/config/scripts/build/opencode.sh" "$@"
 "${PROJECT_DIR}/config/scripts/build/bun-runner.sh" "$@"
 "${PROJECT_DIR}/config/scripts/build/nifi.sh" "$@"
-"${PROJECT_DIR}/config/scripts/build/hermes.sh" "$@"
+# hermes disabled: not built (re-enable here + start.sh + compose.yml + nginx template + dashboard)
+# "${PROJECT_DIR}/config/scripts/build/hermes.sh" "$@"
 "${PROJECT_DIR}/config/scripts/build/openclaw.sh" "$@"
 
 echo "Done."
