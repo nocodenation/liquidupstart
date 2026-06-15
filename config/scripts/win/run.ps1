@@ -150,10 +150,14 @@ while ((Get-Date) -lt $deadline) {
   Start-Sleep -Seconds 2
 }
 '@ | Set-Content -Path $watcherFile -Encoding ASCII
-  Start-Process powershell -WindowStyle Hidden -ArgumentList @(
-    '-NoProfile', '-ExecutionPolicy', 'Bypass',
-    '-File', $watcherFile, '-PortFile', $portFile, '-ParentPid', $PID
-  )
+  # Pass the args as one explicitly double-quoted string, NOT an array:
+  # Start-Process -ArgumentList joins array elements with plain spaces and does
+  # NOT quote elements that contain spaces, so a username/path with spaces
+  # (e.g. "C:\Users\First Last\...", or the spaced %TEMP% under it) would split
+  # -File / -PortFile mid-path and the hidden watcher would never start — the
+  # browser would then never open. Quoting the two paths keeps them intact.
+  $watcherArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$watcherFile`" -PortFile `"$portFile`" -ParentPid $PID"
+  Start-Process powershell -WindowStyle Hidden -ArgumentList $watcherArgs
 
   # A previous Ctrl-C may have left the runner/dashboard containers behind
   # (killing the docker CLI does not stop a container) — clear them first.
