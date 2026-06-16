@@ -53,7 +53,9 @@ export function looksSecret(key: string): boolean {
 export type InputType = 'text' | 'password' | 'number' | 'checkbox' | 'select-mode';
 
 export function inputType(key: string): InputType {
-  if (key === 'OPENCLAW_ENABLE_CLAUDE_CLI') return 'checkbox';
+  // OPENCLAW_ENABLE_* toggles are 0/1 flags — render as checkboxes
+  // (OPENCLAW_ENABLE_CLAUDE_CLI, OPENCLAW_ENABLE_COPILOT, …).
+  if (/^OPENCLAW_ENABLE_/.test(key)) return 'checkbox';
   if (/_MODE$/.test(key)) return 'select-mode';
   if (/PORT$|TIMEOUT$/.test(key)) return 'number';
   if (looksSecret(key)) return 'password';

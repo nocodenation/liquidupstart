@@ -45,7 +45,8 @@ cp "$OPENCLAW_ENV_TEMPLATE" "$OPENCLAW_ENV"
 
 for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
            GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
-           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY; do
+           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY \
+           COPILOT_GITHUB_TOKEN; do
   # Skip keys the template does not declare — OpenClaw does not support them.
   grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
   value="$(get_env "$key")"
@@ -81,6 +82,16 @@ done
 # CLI backend and OPENCLAW_PRIMARY_MODEL is ignored.
 ENABLE_CLAUDE_CLI="$(get_env OPENCLAW_ENABLE_CLAUDE_CLI)"
 [[ -z "$ENABLE_CLAUDE_CLI" ]] && ENABLE_CLAUDE_CLI=0
+CLAUDE_CLI_MODEL="$(get_env OPENCLAW_CLAUDE_CLI_MODEL)"
+[[ -z "$CLAUDE_CLI_MODEL" ]] && CLAUDE_CLI_MODEL="anthropic/claude-opus-4-8"
+
+# GitHub Copilot backend toggle (sibling of OPENCLAW_ENABLE_CLAUDE_CLI). When 1,
+# OPENCLAW_COPILOT_MODEL becomes the primary and OPENCLAW_PRIMARY_MODEL is
+# ignored. Precedence when more than one is set: claude-cli > copilot > primary.
+ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
+[[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
+COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
+[[ -z "$COPILOT_MODEL" ]] && COPILOT_MODEL="github-copilot/gpt-4.1"
 
 # Bootstrap baseline OpenClaw config + workspace inside the state volume.
 # `setup` (without --wizard) is non-interactive: it only creates the config,
@@ -123,15 +134,42 @@ fi
 #      apply and every browser would otherwise be forced to pair.
 #
 #   4. agents.defaults.model.primary — `setup` writes a placeholder
-#      ("openclaw-default"). When OPENCLAW_ENABLE_CLAUDE_CLI=1 we force the latest
-#      Claude Code Opus (anthropic/claude-opus-4-8) on the claude-cli runtime and
-#      ignore OPENCLAW_PRIMARY_MODEL; otherwise we override with
-#      OPENCLAW_PRIMARY_MODEL when set.
+#      ("openclaw-default"). Precedence: OPENCLAW_ENABLE_CLAUDE_CLI=1 forces
+#      OPENCLAW_CLAUDE_CLI_MODEL on the claude-cli runtime; else
+#      OPENCLAW_ENABLE_COPILOT=1 forces OPENCLAW_COPILOT_MODEL on github-copilot;
+#      else OPENCLAW_PRIMARY_MODEL when set. The first two ignore
+#      OPENCLAW_PRIMARY_MODEL.
 #
 # `|| true`: when a key is absent grep exits 1, which under `set -o pipefail`
 # + `set -e` would abort the whole script (and stop start.sh before it brings
 # the stack up). Tolerate a missing key and fall through to the guard below.
 PRIMARY_MODEL="$(grep -E '^OPENCLAW_PRIMARY_MODEL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d "'\"" || true)"
+
+# Build a `provider/*` wildcard allowlist from the model-provider tokens that are
+# set, so OpenClaw's model picker shows every model from every credentialed
+# provider — not just the primary. `agents.defaults.models` is an allowlist when
+# set, and bundled providers publish their own catalogs once auth is present, so
+# a wildcard per provider is enough. Maps each token to its OpenClaw provider id;
+# GEMINI_API_KEY and GOOGLE_API_KEY both map to "google" (the node patch dedupes
+# by object key). No associative arrays, for bash 3.2 (macOS) compatibility.
+MODEL_WILDCARDS=""
+for _tp in \
+  "ANTHROPIC_API_KEY:anthropic" \
+  "OPENAI_API_KEY:openai" \
+  "OPENROUTER_API_KEY:openrouter" \
+  "GEMINI_API_KEY:google" \
+  "GOOGLE_API_KEY:google" \
+  "ZAI_API_KEY:zai" \
+  "AI_GATEWAY_API_KEY:vercel-ai-gateway" \
+  "MINIMAX_API_KEY:minimax" \
+  "SYNTHETIC_API_KEY:synthetic" \
+  "TOKENHUB_API_KEY:tokenhub" \
+  "LKEAP_API_KEY:lkeap" \
+  "COPILOT_GITHUB_TOKEN:github-copilot"; do
+  if [[ -n "$(get_env "${_tp%%:*}")" ]]; then
+    MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_tp##*:}/*"
+  fi
+done
 
 if [[ ! -f "$CONFIG_JSON" ]]; then
   echo "Warning: ${CONFIG_JSON} not found after setup; cannot patch config." >&2
@@ -145,7 +183,11 @@ else
     -v "${STATE_DIR}:/state" \
     -e PRIMARY_MODEL="${PRIMARY_MODEL}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
+    -e CLAUDE_CLI_MODEL="${CLAUDE_CLI_MODEL}" \
+    -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
+    -e COPILOT_MODEL="${COPILOT_MODEL}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
+    -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
     -e '
@@ -175,12 +217,18 @@ else
       // is localhost-only and useless behind the proxy, so use the break-glass key.
       c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
 
-      // Model selection. When the Claude CLI backend is enabled, force the
-      // latest Claude Code Opus on the claude-cli runtime and IGNORE
-      // OPENCLAW_PRIMARY_MODEL. Otherwise set the primary from PRIMARY_MODEL
+      // Model selection. Precedence: claude-cli > copilot > OPENCLAW_PRIMARY_MODEL.
+      // claude-cli forces OPENCLAW_CLAUDE_CLI_MODEL on the claude-cli runtime;
+      // copilot forces OPENCLAW_COPILOT_MODEL on the github-copilot provider; both
+      // ignore OPENCLAW_PRIMARY_MODEL. Otherwise set the primary from PRIMARY_MODEL
       // when provided (an empty value leaves the placeholder/manual choice).
       const enableClaudeCli = process.env.ENABLE_CLAUDE_CLI === "1";
-      const CLAUDE_CLI_MODEL = "anthropic/claude-opus-4-8"; // latest Opus available via Claude Code
+      const enableCopilot = process.env.ENABLE_COPILOT === "1";
+      if (enableClaudeCli && enableCopilot) {
+        console.log("openclaw.json: both claude-cli and copilot enabled — using claude-cli (copilot ignored).");
+      }
+      const CLAUDE_CLI_MODEL = process.env.CLAUDE_CLI_MODEL || "anthropic/claude-opus-4-8";
+      const COPILOT_MODEL = process.env.COPILOT_MODEL || "github-copilot/gpt-4.1";
       if (enableClaudeCli) {
         c.agents = c.agents || {};
         c.agents.defaults = c.agents.defaults || {};
@@ -197,11 +245,38 @@ else
         c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
         c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
         c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
+      } else if (enableCopilot) {
+        c.agents = c.agents || {};
+        c.agents.defaults = c.agents.defaults || {};
+        c.agents.defaults.model = c.agents.defaults.model || {};
+        c.agents.defaults.model.primary = COPILOT_MODEL;
+        // Ensure the github-copilot catalog is selectable even when auth comes
+        // from the device-flow sign-in (no COPILOT_GITHUB_TOKEN in env, so the
+        // MODEL_WILDCARDS list below would not include it).
+        c.agents.defaults.models = c.agents.defaults.models || {};
+        if (!c.agents.defaults.models["github-copilot/*"]) c.agents.defaults.models["github-copilot/*"] = {};
       } else if (process.env.PRIMARY_MODEL) {
         c.agents = c.agents || {};
         c.agents.defaults = c.agents.defaults || {};
         c.agents.defaults.model = c.agents.defaults.model || {};
         c.agents.defaults.model.primary = process.env.PRIMARY_MODEL;
+      }
+
+      // Model picker allowlist. `agents.defaults.models` is an allowlist when set,
+      // so without this only the primary (plus the claude-cli ref) would show.
+      // Add a `provider/*` wildcard for every provider whose token is present
+      // (built in MODEL_WILDCARDS by the start script), so the picker offers every
+      // model from every credentialed provider. Idempotent and additive: existing
+      // entries (e.g. the claude-cli model ref with its runtime) are preserved.
+      const modelWildcards = (process.env.MODEL_WILDCARDS || "")
+        .split(",").map((s) => s.trim()).filter(Boolean);
+      if (modelWildcards.length) {
+        c.agents = c.agents || {};
+        c.agents.defaults = c.agents.defaults || {};
+        c.agents.defaults.models = c.agents.defaults.models || {};
+        for (const w of modelWildcards) {
+          if (!c.agents.defaults.models[w]) c.agents.defaults.models[w] = {};
+        }
       }
 
       // Register local plugin dirs (idempotent add). A plugin loaded from
@@ -228,8 +303,13 @@ else
       if (pluginPaths.length) {
         console.log("openclaw.json: plugins.load.paths =", JSON.stringify(c.plugins.load.paths));
       }
+      if (modelWildcards.length) {
+        console.log("openclaw.json: model allowlist wildcards =", JSON.stringify(modelWildcards));
+      }
       if (enableClaudeCli) {
         console.log("openclaw.json: set agents.defaults.model.primary =", CLAUDE_CLI_MODEL, "(claude-cli runtime; OPENCLAW_PRIMARY_MODEL ignored)");
+      } else if (enableCopilot) {
+        console.log("openclaw.json: set agents.defaults.model.primary =", COPILOT_MODEL, "(github-copilot; OPENCLAW_PRIMARY_MODEL ignored)");
       } else if (process.env.PRIMARY_MODEL) {
         console.log("openclaw.json: set agents.defaults.model.primary =", process.env.PRIMARY_MODEL);
       }

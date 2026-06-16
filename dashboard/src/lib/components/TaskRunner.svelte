@@ -74,10 +74,21 @@
   let codeSent = $state(false);
   let authLogEl = $state(null);
 
+  // GitHub Copilot sign-in (OpenClaw native github-copilot provider). Device
+  // flow: show a URL + code, the CLI polls and completes when the user
+  // authorizes — no code is pasted back.
+  let needCopilotAuth = $state(false);
+  let copilotLog = $state('');
+  let copilotRunning = $state(false);
+  let copilotOk = $state(false);
+  let copilotLogEl = $state(null);
+  let copilotUrl = $derived(copilotLog.match(/https:\/\/github\.com\/login\/device/)?.[0] ?? '');
+  let copilotCode = $derived(copilotLog.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1] ?? '');
+
   // Mirror the in-flight state out to the parent (bind:busy), e.g. to keep
   // navigation like the Finish button disabled while a task runs.
   $effect(() => {
-    busy = runningTask !== '' || authRunning;
+    busy = runningTask !== '' || authRunning || copilotRunning;
     activeTask = runningTask;
   });
 
@@ -88,6 +99,10 @@
   $effect(() => {
     authLog;
     if (authLogEl) authLogEl.scrollTop = authLogEl.scrollHeight;
+  });
+  $effect(() => {
+    copilotLog;
+    if (copilotLogEl) copilotLogEl.scrollTop = copilotLogEl.scrollHeight;
   });
 
   // Proactive check, like the terminal start.sh: claude-cli backend on, no
@@ -112,6 +127,59 @@
   $effect(() => {
     probeClaudeAuth();
   });
+
+  // Same idea as probeClaudeAuth, for the native Copilot provider: copilot on,
+  // no headless token, OpenClaw set up, gateway up, no github-copilot profile.
+  async function probeCopilotAuth() {
+    if (copilotOk || (needBuild && !buildOk)) return;
+    try {
+      const res = await fetch('/copilot-auth');
+      if (res.ok) {
+        const { needed } = await res.json();
+        if (needed) needCopilotAuth = true;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  $effect(() => {
+    probeCopilotAuth();
+  });
+
+  // Device-flow sign-in: stream the login, show the URL + code; the CLI polls
+  // and exits 0 once the user authorizes in the browser.
+  async function startCopilotAuth() {
+    if (copilotRunning) return;
+    copilotRunning = true;
+    copilotLog = '';
+    try {
+      const res = await fetch('/copilot-auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+      });
+      if (!res.ok || !res.body) {
+        copilotLog = `Could not start sign-in: ${res.status} ${await res.text()}\n`;
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        copilotLog += decoder.decode(value, { stream: true });
+      }
+      if (copilotLog.includes('[auth succeeded]')) {
+        copilotOk = true;
+        needCopilotAuth = false;
+      }
+    } catch (e) {
+      copilotLog += `\n[connection lost: ${e.message}]\n`;
+    } finally {
+      copilotRunning = false;
+    }
+  }
 
   async function runTask(task) {
     if (runningTask) return;
@@ -159,6 +227,7 @@
       // Re-probe once the task is done: a build may have just produced the
       // OpenClaw image, a start may have just rendered openclaw.json.
       probeClaudeAuth();
+      probeCopilotAuth();
     } catch (e) {
       log += `\n[connection lost: ${e.message}]\n`;
       failedTask = task;
@@ -344,6 +413,42 @@
             <span class="dim">code sent — waiting for claude to confirm…</span>
           {/if}
         </div>
+      {/if}
+    {/if}
+  </section>
+{/if}
+
+{#if needCopilotAuth || copilotRunning || copilotOk}
+  <section class="authbox">
+    <h2>GitHub Copilot sign-in</h2>
+    {#if copilotOk}
+      <p class="okmsg">
+        GitHub Copilot is authenticated — the login persists in
+        <code>volumes/_openclaw</code>, and OpenClaw picks it up automatically.
+      </p>
+    {:else}
+      <p>
+        OpenClaw is set to use GitHub Copilot (<code>OPENCLAW_ENABLE_COPILOT=1</code>), which needs
+        a one-time device sign-in. Click below, open the link, and enter the code shown — the page
+        finishes on its own once you authorize. Requires an active GitHub Copilot plan.
+      </p>
+      <div class="runbar">
+        <button type="button" class="save" disabled={copilotRunning} onclick={startCopilotAuth}>
+          {copilotRunning ? 'Waiting for authorization…' : 'Sign in to GitHub Copilot'}
+        </button>
+        {#if copilotUrl && copilotRunning}
+          <a href={copilotUrl} target="_blank" rel="noopener noreferrer" class="back">
+            Open {copilotUrl} ↗
+          </a>
+        {/if}
+      </div>
+      {#if copilotCode && copilotRunning}
+        <p>
+          Enter this code at the link: <code class="devicecode">{copilotCode}</code>
+        </p>
+      {/if}
+      {#if copilotLog}
+        <pre class="runlog" bind:this={copilotLogEl}>{copilotLog}</pre>
       {/if}
     {/if}
   </section>
