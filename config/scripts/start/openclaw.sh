@@ -468,3 +468,63 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "Warning: failed to register the ingest_pdf MCP tool; it will be unavailable to claude." >&2
   fi
 fi
+
+# When the GitHub Copilot backend is enabled, OpenClaw's native github-copilot
+# provider needs a login in the agent's auth store. The gateway discovers each
+# provider's catalog at boot, so the login must be in place BEFORE `docker
+# compose up` (back in start.sh) — otherwise the gateway boots token-less and
+# never lists the Copilot models. So here, before that, we block until the user
+# has signed in (via the dashboard's Copilot panel), instead of restarting the
+# gateway afterwards.
+#
+# COPILOT_GITHUB_TOKEN (a gho_/ghu_ OAuth token) skips the wait. Otherwise we
+# check/poll the auth store with a throwaway openclaw container that mounts the
+# same state/secrets/plugins the gateway uses (no running gateway required); the
+# dashboard performs the actual device-flow login the same way.
+if [[ "$ENABLE_COPILOT" == "1" ]]; then
+  COPILOT_TOKEN="$(get_env COPILOT_GITHUB_TOKEN)"
+
+  # Run an openclaw CLI command against the shared auth store without the gateway.
+  # The plugins mount is required: openclaw validates the full config (including
+  # plugins.load.paths) before running any subcommand.
+  copilot_cli() {
+    docker run --rm --user 0:0 --entrypoint openclaw \
+      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
+      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
+      -v "${STATE_DIR}:/home/node/.openclaw" \
+      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
+      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
+      all-in-wonder/openclaw:latest "$@"
+  }
+  copilot_authed() { copilot_cli models auth list 2>/dev/null | grep -qi github-copilot; }
+
+  if [[ -n "$COPILOT_TOKEN" ]]; then
+    echo "GitHub Copilot: COPILOT_GITHUB_TOKEN set in .env — skipping interactive sign-in."
+  elif copilot_authed; then
+    echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
+  else
+    # Emit the marker the dashboard watches for (it opens the Copilot sign-in
+    # panel), plus a human-readable note for terminal/CI runs.
+    echo "::aiw-copilot-auth-required::"
+    echo ""
+    echo "========================= GITHUB COPILOT SIGN-IN NEEDED ========================="
+    echo "OpenClaw is set to use GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1) but isn't"
+    echo "authenticated yet. Sign in via the dashboard's 'GitHub Copilot sign-in' panel"
+    echo "(or set COPILOT_GITHUB_TOKEN in .env for headless auth)."
+    echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
+    echo "================================================================================="
+
+    _deadline=$(( $(date +%s) + 900 ))
+    until copilot_authed; do
+      if (( $(date +%s) >= _deadline )); then
+        echo "Warning: GitHub Copilot sign-in not completed in time; starting without it." >&2
+        echo "  Copilot models won't be listed until you sign in and start again." >&2
+        break
+      fi
+      sleep 8
+    done
+    copilot_authed && echo "GitHub Copilot: sign-in detected — continuing startup."
+  fi
+fi

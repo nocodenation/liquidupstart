@@ -48,10 +48,12 @@
       .filter((l) => l.startsWith(MARKER))
       .map((l) => l.slice(MARKER.length).trim())
   );
+  // Hide all `::aiw-*::` control markers (error banners, copilot-auth signal)
+  // from the visible log — they drive UI state, not user-facing output.
   let displayLog = $derived(
     log
       .split('\n')
-      .filter((l) => !l.startsWith(MARKER))
+      .filter((l) => !l.startsWith('::aiw-'))
       .join('\n')
   );
 
@@ -210,6 +212,9 @@
         // Detected mid-stream so the sign-in panel appears right away, while
         // the rest of the start keeps running.
         if (!authOk && log.includes('ACTION REQUIRED')) needClaudeAuth = true;
+        // openclaw.sh emits this marker and then BLOCKS the start until the
+        // Copilot sign-in completes, so the gateway boots authenticated.
+        if (!copilotOk && log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
       }
       if (log.includes(`[${task} succeeded]`)) {
         if (task === 'build') buildOk = true;
@@ -424,7 +429,7 @@
     {#if copilotOk}
       <p class="okmsg">
         GitHub Copilot is authenticated — the login persists in
-        <code>volumes/_openclaw</code>, and OpenClaw picks it up automatically.
+        <code>volumes/_openclaw</code>, and the startup continues now that you're signed in.
       </p>
     {:else}
       <p>
