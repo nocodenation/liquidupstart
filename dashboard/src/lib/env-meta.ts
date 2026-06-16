@@ -7,6 +7,19 @@
 
 export type SectionMode = 'normal' | 'autogenerate' | 'hidden';
 
+// Host ports published by the nginx proxy. Empty in .env.example: filled on the
+// first setup (the UI seeds these defaults and finds the next free port if one
+// is taken), then locked — Nextcloud and other services are configured against
+// the initial ports, so changing them later would break the install.
+export const SYSTEM_PORT_DEFAULTS: Record<string, string> = {
+  SYSTEM_HTTP_PORT: '8888',
+  SYSTEM_HTTPS_PORT: '8833'
+};
+
+export function isSystemPort(key: string): boolean {
+  return key in SYSTEM_PORT_DEFAULTS;
+}
+
 export function sectionModeFromTitle(title: string): { mode: SectionMode; displayTitle: string } {
   let mode: SectionMode = 'normal';
   let marked = false;

@@ -545,6 +545,45 @@ button.save.rebuild:hover {
   background: #996117;
 }
 
+.errbox {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #b3422f;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #fdecea;
+  color: #7f2418;
+}
+.errbox strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+.errbox ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.errbox p {
+  margin: 0;
+}
+
+.porthint {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+}
+.porthint.checking,
+.porthint.locked {
+  color: var(--muted, #888);
+}
+.porthint.ok {
+  color: #2e7d32;
+}
+.porthint.changed {
+  color: #b9791f;
+}
+.porthint.error {
+  color: #b3422f;
+}
+
 .dashfoot {
   display: flex;
   justify-content: flex-end;

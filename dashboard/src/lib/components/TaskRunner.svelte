@@ -35,6 +35,25 @@
   let buildOk = $state(false);
   let startOk = $state(false);
   let logEl = $state(null);
+  // Set to the task name when a run fails, so we show a prominent error banner
+  // rather than leaving the reason buried in the streamed log.
+  let failedTask = $state('');
+
+  // Scripts emit `::aiw-error::<message>` lines to raise a UI banner. Pull those
+  // out for the banner and hide the raw marker lines from the log pane.
+  const MARKER = '::aiw-error::';
+  let errors = $derived(
+    log
+      .split('\n')
+      .filter((l) => l.startsWith(MARKER))
+      .map((l) => l.slice(MARKER.length).trim())
+  );
+  let displayLog = $derived(
+    log
+      .split('\n')
+      .filter((l) => !l.startsWith(MARKER))
+      .join('\n')
+  );
 
   const TASK_LABELS = { build: 'Build', start: 'Start', down: 'Stop', rebuild: 'Rebuild' };
 
@@ -98,6 +117,7 @@
     if (runningTask) return;
     runningTask = task;
     log = '';
+    failedTask = '';
     elapsed = 0;
     const t0 = Date.now();
     const ticker = setInterval(() => (elapsed = Math.floor((Date.now() - t0) / 1000)), 1000);
@@ -133,12 +153,15 @@
           startOk = false;
         }
         onchange?.(task);
+      } else if (log.includes(`[${task} failed`)) {
+        failedTask = task;
       }
       // Re-probe once the task is done: a build may have just produced the
       // OpenClaw image, a start may have just rendered openclaw.json.
       probeClaudeAuth();
     } catch (e) {
       log += `\n[connection lost: ${e.message}]\n`;
+      failedTask = task;
     } finally {
       clearInterval(ticker);
       runningTask = '';
@@ -248,8 +271,23 @@
   {/if}
 </div>
 
-{#if log}
-  <pre class="runlog" bind:this={logEl}>{log}</pre>
+{#if failedTask && runningTask === ''}
+  <div class="errbox" role="alert">
+    <strong>{TASK_LABELS[failedTask] ?? failedTask} failed</strong>
+    {#if errors.length}
+      <ul>
+        {#each errors as e}
+          <li>{e}</li>
+        {/each}
+      </ul>
+    {:else}
+      <p>Something went wrong — see the log below for details.</p>
+    {/if}
+  </div>
+{/if}
+
+{#if displayLog}
+  <pre class="runlog" bind:this={logEl}>{displayLog}</pre>
 {/if}
 
 {#if runningTask}

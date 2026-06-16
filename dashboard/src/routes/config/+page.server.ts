@@ -4,10 +4,12 @@ import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { listFields, parseEnvValues, parseExample, renderEnv } from '$lib/env-file';
 import {
+  SYSTEM_PORT_DEFAULTS,
   inputType,
   isBuildAffecting,
   isCollapsedSection,
   isCollapsedSubheading,
+  isSystemPort,
   sectionDescription,
   subheadingDescription
 } from '$lib/env-meta';
@@ -93,6 +95,10 @@ export const actions: Actions = {
     const fd = await request.formData();
     const { exampleText, sections, envValues } = readState();
 
+    // The system ports are set on the first setup and locked thereafter, so the
+    // first save (before any secret exists) is the only one allowed to set them.
+    const configured = Boolean(envValues.get('DATABASE_PASSWORD')?.value);
+
     let rebuild = false;
     const final = new Map<string, { value: string; quoted: boolean }>();
     for (const { section, field } of listFields(sections)) {
@@ -107,6 +113,14 @@ export const actions: Actions = {
         value = (fd.get(key)?.toString() ?? cur?.value ?? field.defaultValue).trim();
       }
       if (section.mode === 'autogenerate' && value === '') value = autogenValue(key);
+
+      // System ports: keep the established value once configured (ignore any
+      // submitted change), and fall back to the default if a first-setup save
+      // somehow left it empty.
+      if (isSystemPort(key)) {
+        if (configured) value = cur?.value || SYSTEM_PORT_DEFAULTS[key];
+        else if (value === '') value = SYSTEM_PORT_DEFAULTS[key];
+      }
       if (isBuildAffecting(key) && value !== (cur?.value ?? field.defaultValue)) rebuild = true;
       final.set(key, { value, quoted: field.quoted || (cur?.quoted ?? false) });
     }

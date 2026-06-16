@@ -1,9 +1,22 @@
 <script>
+  import { onMount } from 'svelte';
+  import { SYSTEM_PORT_DEFAULTS } from '$lib/env-meta';
+
   let { data, form } = $props();
   let revealed = $state({});
   // Live values of password fields the user has typed into (see the comment
-  // at the password input).
+  // at the password input). Port fields use this overlay too, so an autofilled
+  // free port replaces what's shown and is what gets submitted.
   let edits = $state({});
+
+  // The host-published ports we availability-check. Other *_PORT keys are
+  // internal container ports and aren't bound on the host, so we leave them be.
+  const PORT_KEYS = Object.keys(SYSTEM_PORT_DEFAULTS);
+  // Once the install is configured the ports are locked: Nextcloud and other
+  // services were set up against them, so changing them would break the stack.
+  const portsLocked = data.configured;
+  // key -> { state: 'checking'|'ok'|'changed'|'error', message }
+  let portStatus = $state({});
 
   // After a "Generate" round-trip the form action returns every submitted
   // value, so user edits survive; otherwise values come from .env.
@@ -13,6 +26,74 @@
     }
     return field.value;
   }
+
+  // Initial .env values for the port fields, found by walking the section tree
+  // (fields can be nested inside collapsed groups).
+  const initialPorts = $derived.by(() => {
+    const out = {};
+    const visit = (items) => {
+      for (const it of items ?? []) {
+        if (it.kind === 'group') visit(it.items);
+        else if (it.kind === 'field' && PORT_KEYS.includes(it.key)) out[it.key] = it.value;
+      }
+    };
+    for (const s of data.sections) visit(s.items);
+    return out;
+  });
+
+  const currentPort = (key) => Number(edits[key] ?? initialPorts[key]);
+  const otherPortKey = (key) => PORT_KEYS.find((k) => k !== key);
+
+  // Probe the host for `key`'s port; if taken, autofill the next free one.
+  // `exclude` keeps the two ports from landing on the same value.
+  async function checkPort(key, exclude = []) {
+    const port = currentPort(key);
+    if (!Number.isInteger(port) || port < 1) {
+      portStatus[key] = null;
+      return;
+    }
+    portStatus[key] = { state: 'checking' };
+    try {
+      const qs = new URLSearchParams({ port: String(port) });
+      const ex = exclude.filter((n) => Number.isInteger(n) && n > 0);
+      if (ex.length) qs.set('exclude', ex.join(','));
+      const res = await fetch(`/port-check?${qs}`);
+      const result = await res.json();
+      if (result.error) {
+        portStatus[key] = { state: 'error', message: `Couldn't check port ${port}: ${result.error}` };
+      } else if (result.free) {
+        portStatus[key] = { state: 'ok', message: `Port ${port} is available.` };
+      } else if (result.suggestion) {
+        edits[key] = String(result.suggestion);
+        portStatus[key] = {
+          state: 'changed',
+          message: `Port ${port} is in use — switched to ${result.suggestion}.`
+        };
+      } else {
+        portStatus[key] = {
+          state: 'error',
+          message: `Port ${port} is in use and no free port was found nearby.`
+        };
+      }
+    } catch {
+      portStatus[key] = { state: 'error', message: `Couldn't check port ${port}.` };
+    }
+  }
+
+  // First setup only: seed empty port fields with their defaults, then check
+  // availability (autofilling the next free port if a default is taken). HTTP
+  // first, then HTTPS excluding HTTP's settled value so they can't collide.
+  // When locked there's nothing to do — the ports are fixed.
+  onMount(async () => {
+    if (portsLocked) return;
+    for (const key of PORT_KEYS) {
+      if (key in initialPorts && !String(initialPorts[key] ?? '').trim()) {
+        edits[key] = String(SYSTEM_PORT_DEFAULTS[key]);
+      }
+    }
+    if (PORT_KEYS[0] in initialPorts) await checkPort(PORT_KEYS[0]);
+    if (PORT_KEYS[1] in initialPorts) await checkPort(PORT_KEYS[1], [currentPort(PORT_KEYS[0])]);
+  });
 </script>
 
 {#snippet itemView(item, section)}
@@ -69,6 +150,33 @@
             value="1"
             checked={fieldValue(item) === '1'}
           />
+        {:else if item.type === 'number' && PORT_KEYS.includes(item.key)}
+          {#if portsLocked}
+            <!-- Locked after initial setup: readonly so it still submits the
+                 fixed value, and the server pins it regardless. -->
+            <input type="number" id={item.key} name={item.key} value={fieldValue(item)} readonly />
+          {:else}
+            <!-- First setup: value flows through `edits` so a probed free port
+                 can replace it; the button re-checks after manual edits. -->
+            <input
+              type="number"
+              id={item.key}
+              name={item.key}
+              value={edits[item.key] ?? fieldValue(item)}
+              oninput={(e) => {
+                edits[item.key] = e.currentTarget.value;
+                portStatus[item.key] = null;
+              }}
+            />
+            <button
+              type="button"
+              class="aux"
+              onclick={() => checkPort(item.key, [currentPort(otherPortKey(item.key))])}
+              disabled={portStatus[item.key]?.state === 'checking'}
+            >
+              {portStatus[item.key]?.state === 'checking' ? 'Checking…' : 'Check'}
+            </button>
+          {/if}
         {:else if item.type === 'number'}
           <input type="number" id={item.key} name={item.key} value={fieldValue(item)} />
         {:else if item.type === 'password' || section.autogen}
@@ -120,6 +228,20 @@
           />
         {/if}
       </div>
+      {#if PORT_KEYS.includes(item.key)}
+        {#if portsLocked}
+          <p class="porthint locked">
+            Fixed at initial setup — Nextcloud and other services were configured against
+            this port, so it can't be changed now.
+          </p>
+        {:else if portStatus[item.key]}
+          <p class="porthint {portStatus[item.key].state}">
+            {portStatus[item.key].state === 'checking'
+              ? `Checking port ${currentPort(item.key)}…`
+              : portStatus[item.key].message}
+          </p>
+        {/if}
+      {/if}
     </div>
   {/if}
 {/snippet}
