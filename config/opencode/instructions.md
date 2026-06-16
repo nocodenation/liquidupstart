@@ -40,7 +40,7 @@ containing the literal text `PORT`, `HTTPS_PORT`, `${SYSTEM_HTTP_PORT}`, or
 | `pgadmin` | `http://pgadmin.localhost:PORT` | pgAdmin 4 web UI |
 | `swagger` | `http://swagger.localhost:PORT` | Swagger UI for PostgREST |
 | `opencode` | `http://opencode.localhost:PORT` | OpenCode web interface |
-| `bun_runner` | `http://app.localhost:PORT` | SSR React app runner (serves `/app`) |
+| `bun_runner` | `http://app.localhost:PORT` | SSR React app runner (serves `/bun_app`) |
 | `openproject-web` | `http://openproject.localhost:PORT` | OpenProject — work packages, projects, wikis, time tracking |
 | `nextcloud` | `http://nextcloud.localhost:PORT` | Nextcloud file storage |
 | `nifi` | `https://nifi.localhost:HTTPS_PORT` | Apache NiFi — data flow automation, pipelines, ingress on subdomains `https://{port}.nifi.localhost:HTTPS_PORT` (ports 8900–8999) |
@@ -58,7 +58,7 @@ a Nextcloud PROPFIND (see the **nextcloud-webdav** skill), **not** from `find /d
 `ls /data`, or any other filesystem listing inside this container. Always.
 
 `/data` is a one-way scratch mount used only when handing a *specific, named* file
-from this container to an app in `/app` (see the **bun-app** skill). It is empty by
+from this container to an app in `/bun_app` (see the **bun-app** skill). It is empty by
 default, it does not contain the user's content, and it should never be used as a
 discovery surface.
 
@@ -111,7 +111,7 @@ When asked about logs, check `/logs`:
 | `/logs/pgadmin` | pgAdmin web UI |
 | `/logs/proxy` | nginx reverse proxy |
 | `/logs/swagger` | Swagger UI |
-| `/logs/bun_runner` | Bun Runner — dependency install, build, and runtime logs for the app in `/app` |
+| `/logs/bun_runner` | Bun Runner — dependency install, build, and runtime logs for the app in `/bun_app` |
 
 ---
 
@@ -129,5 +129,5 @@ from memory.
 | `openproject-api` | You're touching work packages, projects, queries, users, time entries (read or write) |
 | `nextcloud-webdav` | You're reading, writing, listing, or deleting a file in Nextcloud |
 | `nextcloud-user-link` | You need to give the user a link to a Nextcloud file/folder, or embed a Nextcloud reference in a chat reply or a work package |
-| `bun-app` | You're creating or modifying the SSR React app in `/app` |
+| `bun-app` | You're creating or modifying the SSR React app in `/bun_app` |
 | `nifi-api` | You're building or managing a NiFi data flow, starting/stopping processors, setting up an HTTP ingress, or routing data between services |

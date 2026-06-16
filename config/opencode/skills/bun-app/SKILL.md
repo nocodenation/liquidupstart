@@ -1,29 +1,29 @@
 ---
 name: bun-app
-description: Create or update the SSR React user-facing application in /app, run by the Bun Runner container. Use whenever the user asks to "build a UI", "make a node app", "add a page", "update the app", or similar.
+description: Create or update the SSR React user-facing application in /bun_app, run by the Bun Runner container. Use whenever the user asks to "build a UI", "make a node app", "add a page", "update the app", or similar.
 ---
 
 **Port resolution:** run `echo $SYSTEM_HTTP_PORT` → use the result as `PORT`. Never guess or use a default.
 
-The Bun Runner container watches `/app` and runs whatever lives there as an SSR React
-application. The same `/app` volume is mounted into this container, so file edits
+The Bun Runner container watches `/bun_app` and runs whatever lives there as an SSR React
+application. The same `/bun_app` volume is mounted into this container, so file edits
 land directly. The runner serves the app at `http://app.localhost:PORT` (PORT = resolved `$SYSTEM_HTTP_PORT`).
 
 ## Build and edit workflow
 
-- Put all application code into `/app` — pages, components, server entrypoint, etc.
-- **Bump `version` in `/app/package.json` on every edit** so the runner reliably
+- Put all application code into `/bun_app` — pages, components, server entrypoint, etc.
+- **Bump `version` in `/bun_app/package.json` on every edit** so the runner reliably
   picks up the change.
 - When creating or modifying `package.json`, write it to `/tmp/package.json` first.
-  Only after every other create/edit in `/app` is done, copy `/tmp/package.json` to
-  `/app/package.json` — `package.json` must be the **last** file touched in `/app`,
+  Only after every other create/edit in `/bun_app` is done, copy `/tmp/package.json` to
+  `/bun_app/package.json` — `package.json` must be the **last** file touched in `/bun_app`,
   because the runner restarts on package-manifest changes.
 
 ## The Bun Runner owns install and run — do not duplicate it
 
-The Bun Runner container is **already running**. When you edit `/app`, it:
+The Bun Runner container is **already running**. When you edit `/bun_app`, it:
 
-1. **Installs dependencies** from `/app/package.json` on its own. Do not run
+1. **Installs dependencies** from `/bun_app/package.json` on its own. Do not run
    `bun install` / `npm install` / `yarn install` / `pnpm install` from this
    container. There is no install step for you to do.
 2. **Starts and serves the app** on its internal port 3000, which is published as
@@ -43,10 +43,10 @@ Things this means in practice:
   where the app is*. Never invent a new URL; if you do, you are running a second
   process the runner does not know about and the user will be confused.
 - If the runner doesn't pick up your change, the fix is not to run the app yourself.
-  Bump `version` in `/app/package.json` and check `/logs/bun_runner` (see *Where to
+  Bump `version` in `/bun_app/package.json` and check `/logs/bun_runner` (see *Where to
   look when something breaks*).
 - If install or startup is failing, the symptoms are in `/logs/bun_runner` — read
-  those, fix the cause in `/app/`, don't side-step the runner.
+  those, fix the cause in `/bun_app/`, don't side-step the runner.
 
 ## Where to look when something breaks
 
@@ -59,8 +59,8 @@ The Bun Runner container does **not** carry credentials for OpenProject or Nextc
 and the user cannot reconfigure its environment (no editing env vars, no compose
 changes). When the app you generate needs to call either service, ask the user for
 the relevant credential using the prompt defined in the matching skill — then **embed
-the value directly in the app's source code** under `/app/`. Do not write it to an
-env var, a runtime config file the user has to set, or any place outside `/app/`.
+the value directly in the app's source code** under `/bun_app/`. Do not write it to an
+env var, a runtime config file the user has to set, or any place outside `/bun_app/`.
 
 - For OpenProject API calls — use the prompt in the **openproject-api** skill
   (*Authentication — ask the user for an API token*) to get the token, then embed it
@@ -229,8 +229,8 @@ sentence entirely.
 ## Rules
 
 - SSR React only — don't introduce a different framework.
-- One bump per edit on `version` in `/app/package.json`.
-- Last write into `/app` is always `/app/package.json` (copy from `/tmp/package.json`).
+- One bump per edit on `version` in `/bun_app/package.json`.
+- Last write into `/bun_app` is always `/bun_app/package.json` (copy from `/tmp/package.json`).
 - Before writing an app that uses user files, list those files from Nextcloud
   (PROPFIND) — never `find /data` or `ls /data` — then ask the user whether to copy
   them into `/data` or have the app fetch from Nextcloud directly (see *Data the app

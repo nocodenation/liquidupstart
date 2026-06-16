@@ -13,7 +13,9 @@ WORKDIR /app
 # docker CLI: the Build/Start page actions run the project's build.sh/start.sh
 # in the "toolbox" helper container against the host engine (socket mounted by
 # install.sh) — same pattern the Windows .bat wrappers use.
-RUN apk add --no-cache docker-cli
+# docker-cli-buildx adds the BuildKit builder so the one-time toolbox image build
+# uses `docker buildx build` instead of the deprecated legacy builder.
+RUN apk add --no-cache docker-cli docker-cli-buildx
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./
 # Run as root: with rootless Docker the host user maps to container root, so

@@ -313,7 +313,7 @@ services:
       - ./volumes/logs/proxy:/logs/proxy:ro
       - ./volumes/logs/swagger:/logs/swagger:ro
       - ./volumes/logs/bun_runner:/logs/bun_runner:ro
-      - ./volumes/app:/app
+      - ./volumes/bun_app:/bun_app
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/python_extensions
       - ./volumes/nar_extensions:/opt/nar_extensions
@@ -325,7 +325,7 @@ services:
     container_name: bun_runner-${APP_ID:-0}
     restart: unless-stopped
     volumes:
-      - ./volumes/app:/app
+      - ./volumes/bun_app:/bun_app
       - ./volumes/data:/data
       - ./volumes/build_info:/build_info
       - ./volumes/logs/bun_runner:/logs
@@ -635,6 +635,7 @@ services:
       - ./volumes/nifi/content_repository:/opt/nifi/nifi-current/content_repository
       - ./volumes/nifi/provenance_repository:/opt/nifi/nifi-current/provenance_repository
       - ./volumes/nifi/state:/opt/nifi/nifi-current/state
+      - ./volumes/nifi/logs:/opt/nifi/nifi-current/logs
       - ./volumes/nginx/certs:/certs:ro
     networks:
       nocodenation_all_in_wonder_network:
@@ -740,6 +741,7 @@ services:
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
       - ./volumes/data:/data
+      - ./volumes/bun_app:/bun_app
       - ./volumes/python_extensions:/opt/python_extensions
       - ./volumes/nar_extensions:/opt/nar_extensions
     cap_drop:

@@ -77,11 +77,15 @@ export async function POST({ request }) {
         const probe = await run(['image', 'inspect', TOOLBOX], () => {}, track);
         if (probe !== 0) {
           write('Helper toolbox image not found - building it (one time only)...\n\n');
-          const b = await run(
-            ['build', '-t', TOOLBOX, '-f', 'config/win/Dockerfile.toolbox', 'config/win'],
-            write,
-            track
-          );
+          // Prefer BuildKit via buildx (the legacy builder is deprecated and will
+          // be removed). `--load` is required so the result lands in the local
+          // image store, where the `image inspect` probe above can find it on the
+          // next run. Fall back to the classic builder on hosts without buildx.
+          const hasBuildx = (await run(['buildx', 'version'], () => {}, track)) === 0;
+          const buildArgs = hasBuildx
+            ? ['buildx', 'build', '--load', '-t', TOOLBOX, '-f', 'config/win/Dockerfile.toolbox', 'config/win']
+            : ['build', '-t', TOOLBOX, '-f', 'config/win/Dockerfile.toolbox', 'config/win'];
+          const b = await run(buildArgs, write, track);
           if (b !== 0) {
             write(`\n[toolbox build failed with exit code ${b}]\n`);
             return;
