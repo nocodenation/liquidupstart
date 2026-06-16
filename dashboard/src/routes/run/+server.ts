@@ -23,7 +23,9 @@ const TOOLBOX = 'all-in-wonder/toolbox:latest';
 const TASKS: Record<string, string> = {
   build: './scripts/linux/build.sh',
   start: './scripts/linux/start.sh',
-  down: './scripts/linux/down.sh'
+  down: './scripts/linux/down.sh',
+  // Stop the stack, then rebuild every image — for picking up a pulled update.
+  rebuild: './scripts/linux/rebuild.sh'
 };
 
 let running = false;

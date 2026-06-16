@@ -537,6 +537,14 @@ button.save.stop:hover {
   background: #93351f;
 }
 
+button.save.rebuild {
+  background: #b9791f;
+}
+
+button.save.rebuild:hover {
+  background: #996117;
+}
+
 .dashfoot {
   display: flex;
   justify-content: flex-end;

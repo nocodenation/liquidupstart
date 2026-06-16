@@ -16,11 +16,16 @@
     needBuild = false,
     showStart = true,
     showStop = false,
+    // Rebuild = stop the stack + rebuild all images (to pick up a pulled update).
+    showRebuild = false,
     numbered = false,
     // 'Restart' on the dashboard's running view — start.sh begins with
     // down.sh, so the start task is a restart when the stack is up.
     startLabel = 'Start',
     busy = $bindable(false),
+    // Bindable mirror of the in-flight task ('' when idle). Lets the parent
+    // react while a task runs — e.g. hide service tiles during a teardown.
+    activeTask = $bindable(''),
     onchange
   } = $props();
 
@@ -31,7 +36,7 @@
   let startOk = $state(false);
   let logEl = $state(null);
 
-  const TASK_LABELS = { build: 'Build', start: 'Start', down: 'Stop' };
+  const TASK_LABELS = { build: 'Build', start: 'Start', down: 'Stop', rebuild: 'Rebuild' };
 
   function formatElapsed(s) {
     const h = Math.floor(s / 3600);
@@ -54,6 +59,7 @@
   // navigation like the Finish button disabled while a task runs.
   $effect(() => {
     busy = runningTask !== '' || authRunning;
+    activeTask = runningTask;
   });
 
   $effect(() => {
@@ -121,6 +127,11 @@
         if (task === 'build') buildOk = true;
         if (task === 'start') startOk = true;
         if (task === 'down') startOk = false;
+        // Rebuild leaves images fresh but the stack stopped — like build, then down.
+        if (task === 'rebuild') {
+          buildOk = true;
+          startOk = false;
+        }
         onchange?.(task);
       }
       // Re-probe once the task is done: a build may have just produced the
@@ -222,6 +233,17 @@
       onclick={() => runTask('down')}
     >
       {runningTask === 'down' ? 'Stopping…' : 'Stop'}
+    </button>
+  {/if}
+  {#if showRebuild}
+    <button
+      type="button"
+      class="save rebuild"
+      disabled={runningTask !== ''}
+      onclick={() => runTask('rebuild')}
+      title="Stop the stack and rebuild all images — use after pulling a new version"
+    >
+      {runningTask === 'rebuild' ? 'Rebuilding…' : 'Rebuild'}
     </button>
   {/if}
 </div>
