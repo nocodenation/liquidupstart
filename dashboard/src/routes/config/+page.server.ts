@@ -136,7 +136,7 @@ export const actions: Actions = {
     // the terminal.
     writeFileSync(RESULT_FILE, `saved=1\nrebuild=${rebuild ? 1 : 0}\n`);
 
-    redirect(303, `/done?rebuild=${rebuild ? 1 : 0}`);
+    redirect(303, `/done?rebuild=${rebuild ? 1 : 0}${configured ? '' : '&first=1'}`);
   },
 
   // Re-render the form with one field replaced by a fresh secret; nothing

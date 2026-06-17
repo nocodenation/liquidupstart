@@ -94,6 +94,7 @@ CONFIG_JSON="${STATE_DIR}/openclaw.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
   cd "${PROJECT_DIR}"
   docker compose run --rm --user 0:0 openclaw-cli setup
+  docker compose rm -sf openclaw-gateway >/dev/null 2>&1 || true
 else
   echo "OpenClaw config already present at ${CONFIG_JSON}; skipping setup."
 fi

@@ -27,6 +27,7 @@
     <TaskRunner
       needBuild={data.needBuild}
       numbered={data.needBuild}
+      showRebuild={!data.needBuild}
       bind:busy
       onchange={(task) => {
         if (task === 'start') started = true;
