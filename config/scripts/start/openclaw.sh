@@ -46,8 +46,7 @@ cp "$OPENCLAW_ENV_TEMPLATE" "$OPENCLAW_ENV"
 
 for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
            GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
-           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY \
-           COPILOT_GITHUB_TOKEN; do
+           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY; do
   # Skip keys the template does not declare — OpenClaw doesn't support them.
   grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
   value="$(get_env "$key")"
@@ -85,11 +84,6 @@ CLAUDE_CLI_MODEL="$(get_env OPENCLAW_CLAUDE_CLI_MODEL)"
 # Precedence when several are set: claude-cli > copilot > primary.
 ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
 [[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
-# A provided token implies Copilot is enabled (headless auth).
-if [[ -n "$(get_env COPILOT_GITHUB_TOKEN)" && "$ENABLE_COPILOT" != "1" ]]; then
-  echo "GitHub Copilot: COPILOT_GITHUB_TOKEN present — enabling Copilot (OPENCLAW_COPILOT_MODEL becomes primary)."
-  ENABLE_COPILOT=1
-fi
 COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
 [[ -z "$COPILOT_MODEL" ]] && COPILOT_MODEL="github-copilot/gpt-4.1"
 
@@ -142,8 +136,7 @@ for _tp in \
   "MINIMAX_API_KEY:minimax" \
   "SYNTHETIC_API_KEY:synthetic" \
   "TOKENHUB_API_KEY:tokenhub" \
-  "LKEAP_API_KEY:lkeap" \
-  "COPILOT_GITHUB_TOKEN:github-copilot"; do
+  "LKEAP_API_KEY:lkeap"; do
   if [[ -n "$(get_env "${_tp%%:*}")" ]]; then
     MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_tp##*:}/*"
   fi
@@ -220,10 +213,6 @@ else
         c.agents.defaults = c.agents.defaults || {};
         c.agents.defaults.model = c.agents.defaults.model || {};
         c.agents.defaults.model.primary = COPILOT_MODEL;
-        // Keep the github-copilot catalog selectable under device-flow auth (no
-        // COPILOT_GITHUB_TOKEN, so MODEL_WILDCARDS below would not include it).
-        c.agents.defaults.models = c.agents.defaults.models || {};
-        if (!c.agents.defaults.models["github-copilot/*"]) c.agents.defaults.models["github-copilot/*"] = {};
       } else if (process.env.PRIMARY_MODEL) {
         c.agents = c.agents || {};
         c.agents.defaults = c.agents.defaults || {};
@@ -241,6 +230,10 @@ else
         c.gateway.http.endpoints.chatCompletions.enabled = true;
         c.agents = c.agents || {};
         c.agents.defaults = c.agents.defaults || {};
+        // Keep the github-copilot catalog selectable whenever Copilot is enabled,
+        // even when claude-cli is the primary model.
+        c.agents.defaults.models = c.agents.defaults.models || {};
+        if (!c.agents.defaults.models["github-copilot/*"]) c.agents.defaults.models["github-copilot/*"] = {};
         c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
         c.agents.defaults.memorySearch.provider = "github-copilot";
         if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
@@ -435,11 +428,8 @@ fi
 # discovers provider catalogs at boot, so the login must exist BEFORE `docker
 # compose up` — otherwise the gateway boots token-less and never lists Copilot
 # models. So we block here until the user signs in (via the dashboard panel)
-# rather than restarting the gateway afterwards. COPILOT_GITHUB_TOKEN skips the
-# wait; otherwise poll the auth store with a throwaway openclaw container.
+# rather than restarting the gateway afterwards.
 if [[ "$ENABLE_COPILOT" == "1" ]]; then
-  COPILOT_TOKEN="$(get_env COPILOT_GITHUB_TOKEN)"
-
   # Run an openclaw CLI command against the shared auth store without the gateway.
   # The plugins mount is required: openclaw validates the full config (including
   # plugins.load.paths) before any subcommand.
@@ -456,9 +446,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
   }
   copilot_authed() { copilot_cli models auth list 2>/dev/null | grep -qi github-copilot; }
 
-  if [[ -n "$COPILOT_TOKEN" ]]; then
-    echo "GitHub Copilot: COPILOT_GITHUB_TOKEN set in .env — skipping interactive sign-in."
-  elif copilot_authed; then
+  if copilot_authed; then
     echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
   else
     # Emit the marker the dashboard watches for (opens the Copilot sign-in panel),
@@ -467,8 +455,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
     echo ""
     echo "========================= GITHUB COPILOT SIGN-IN NEEDED ========================="
     echo "OpenClaw is set to use GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1) but isn't"
-    echo "authenticated yet. Sign in via the dashboard's 'GitHub Copilot sign-in' panel"
-    echo "(or set COPILOT_GITHUB_TOKEN in .env for headless auth)."
+    echo "authenticated yet. Sign in via the dashboard's 'GitHub Copilot sign-in' panel."
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 

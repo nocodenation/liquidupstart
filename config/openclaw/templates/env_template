@@ -45,11 +45,6 @@
 # MINIMAX_API_KEY=...
 # SYNTHETIC_API_KEY=...
 
-# GitHub Copilot (built-in github-copilot provider): a GitHub token from an
-# account with an active Copilot plan. Resolved as COPILOT_GITHUB_TOKEN ->
-# GH_TOKEN -> GITHUB_TOKEN. Use model id github-copilot/<model>.
-# COPILOT_GITHUB_TOKEN=...
-
 # -----------------------------------------------------------------------------
 # Channels (only set what you enable)
 # -----------------------------------------------------------------------------

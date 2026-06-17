@@ -1,10 +1,11 @@
 <script>
-  import { invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import TaskRunner from '$lib/components/TaskRunner.svelte';
 
   let { data } = $props();
   let started = $state(false);
   let busy = $state(false);
+  let authPending = $state(false);
 </script>
 
 <main>
@@ -29,9 +30,15 @@
       numbered={data.needBuild}
       showRebuild={!data.needBuild}
       bind:busy
+      bind:authPending
       onchange={(task) => {
-        if (task === 'start') started = true;
-        // Refresh load data so Finish navigates with current state.
+        if (task === 'start') {
+          started = true;
+          if (!authPending) {
+            goto('/');
+            return;
+          }
+        }
         invalidateAll();
       }}
     />

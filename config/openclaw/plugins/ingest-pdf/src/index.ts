@@ -321,7 +321,7 @@ async function embedViaCopilotGateway(url: string, texts: string[], log: Logger)
             const txt = await r.text().catch(() => "")
             if (r.status === 401 || r.status === 403) {
                 throw new Error(
-                    `copilot gateway HTTP ${r.status}: ${txt}. The github-copilot provider is not authenticated, or the gateway rejected the request. Sign in via the dashboard's GitHub Copilot panel (or set COPILOT_GITHUB_TOKEN), ensure OPENCLAW_ENABLE_COPILOT=1, and restart OpenClaw.`,
+                    `copilot gateway HTTP ${r.status}: ${txt}. The github-copilot provider is not authenticated, or the gateway rejected the request. Sign in via the dashboard's GitHub Copilot panel, ensure OPENCLAW_ENABLE_COPILOT=1, and restart OpenClaw.`,
                 )
             }
             if (r.status === 404 || r.status === 400) {

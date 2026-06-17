@@ -15,6 +15,7 @@
     // Bindable mirror of the in-flight task ('' when idle), so the parent can
     // react while a task runs — e.g. hide service tiles during a teardown.
     activeTask = $bindable(''),
+    authPending = $bindable(false),
     onchange
   } = $props();
 
@@ -81,6 +82,8 @@
   $effect(() => {
     busy = runningTask !== '' || authRunning || copilotRunning;
     activeTask = runningTask;
+    authPending =
+      (needClaudeAuth && !authOk) || (needCopilotAuth && !copilotOk) || authRunning || copilotRunning;
   });
 
   $effect(() => {
