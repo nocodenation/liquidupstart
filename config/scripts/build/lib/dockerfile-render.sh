@@ -110,8 +110,7 @@ render_dockerfile() {
         packages_str="${__trimmed[*]}"
     fi
 
-    # Redirect (O_TRUNC), not cp (O_CREAT|O_EXCL): cp's exclusive create races
-    # the stale stat cache on Docker Desktop/macOS bind mounts and fails EEXIST.
+    mkdir -p "$(dirname "$output")"
     cat "$template" > "$output"
 
     # Determine sed in-place flag for GNU vs BSD (macOS).
