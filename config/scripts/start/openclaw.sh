@@ -238,7 +238,7 @@ else
         c.agents.defaults = c.agents.defaults || {};
         c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
         c.agents.defaults.memorySearch.provider = "github-copilot";
-        c.agents.defaults.memorySearch.model = "text-embedding-3-large";
+        if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
       }
 
       // Model picker allowlist: add a `provider/*` wildcard per credentialed
