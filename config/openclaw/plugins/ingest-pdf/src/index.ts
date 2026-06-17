@@ -5,7 +5,7 @@
  * binary-quantizes at index time, so we store the raw float vector).
  *
  * Backends (resolveBackend): copilot (OpenClaw's github-copilot auth via the
- * gateway, text-embedding-3-large 3072-dim padded to 4096), self_hosted
+ * gateway, text-embedding-3-small 1536-dim padded to 4096), self_hosted
  * (4096-dim native), openai and openrouter (text-embedding-3-large, 3072-dim
  * padded to 4096). With one configured it is used; with >1 (copilot included)
  * the tool asks the user to pick via embedding_backend.
@@ -48,7 +48,7 @@ const OPENAI_BATCH = 64 // OpenAI/OpenRouter accept an input array; batch to cut
 const COPILOT_EMBEDDINGS_URL = process.env.OPENCLAW_GATEWAY_EMBEDDINGS_URL || "http://127.0.0.1:18789/v1/embeddings"
 const COPILOT_GATEWAY_MODEL = "openclaw"
 const COPILOT_FORWARDED_USER = "user@nocodenation.org"
-const DEFAULT_COPILOT_MODEL = "text-embedding-3-large"
+const DEFAULT_COPILOT_MODEL = "text-embedding-3-small"
 const COPILOT_BATCH = 16 // endpoint caps: 128 inputs / 8192 chars each / 65536 total
 
 type Backend = "copilot" | "self_hosted" | "openai" | "openrouter"
@@ -383,7 +383,7 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
         available.push({
             backend: "copilot",
             cfg: { backend: "copilot", model: DEFAULT_COPILOT_MODEL, url: COPILOT_EMBEDDINGS_URL },
-            label: `copilot: ${DEFAULT_COPILOT_MODEL} via OpenClaw's github-copilot auth (3072-dim, zero-padded to 4096; no extra key)`,
+            label: `copilot: ${DEFAULT_COPILOT_MODEL} via OpenClaw's github-copilot auth (1536-dim, zero-padded to 4096; no extra key)`,
         })
     }
     if (embedHost && embedModel) {
@@ -773,7 +773,7 @@ const IngestPdfParams = Type.Object(
                 ],
                 {
                     description:
-                        "Which embedding backend to use. copilot = OpenClaw's github-copilot auth via the gateway (text-embedding-3-large, 3072-dim padded to 4096; needs OPENCLAW_ENABLE_COPILOT=1 and a signed-in provider). self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured (copilot included) the tool asks the user to pick — set this and re-run.",
+                        "Which embedding backend to use. copilot = OpenClaw's github-copilot auth via the gateway (text-embedding-3-small, 1536-dim padded to 4096; needs OPENCLAW_ENABLE_COPILOT=1 and a signed-in provider). self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured (copilot included) the tool asks the user to pick — set this and re-run.",
                 },
             ),
         ),

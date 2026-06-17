@@ -100,7 +100,7 @@ searching:
 curl -s "http://proxy:8888/rag_documents?select=metadata&order=id.asc&limit=1" \
   -H "Host: postgrest.localhost:8888" \
   | jq -r '.[0].metadata | "\(.embed_backend)\t\(.embed_model)"'
-# e.g. "copilot  text-embedding-3-large"  or  "self_hosted  llama-embed-nemotron-8b"
+# e.g. "copilot  text-embedding-3-small"  or  "self_hosted  llama-embed-nemotron-8b"
 ```
 
 Then embed the query with THAT backend/model and **right-pad to 4096** (no-op for a
@@ -123,7 +123,7 @@ VEC=$(curl -s -X POST "$EMBED_URL" \
 For the **copilot** backend (available when `OPENCLAW_ENABLE_COPILOT=1`),
 embed through the OpenClaw gateway — it reuses the github-copilot auth, so no API
 key. Send `model: "openclaw"` plus the gateway `X-Forwarded-User` identity; the
-result is `text-embedding-3-large` (3072-dim), padded to 4096 by the same jq:
+result is `text-embedding-3-small` (1536-dim), padded to 4096 by the same jq:
 
 ```bash
 VEC=$(curl -s -X POST "http://127.0.0.1:18789/v1/embeddings" \
