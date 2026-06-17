@@ -1,12 +1,8 @@
-// Runs the project's build/start/down scripts (scripts/linux/) on the user's
-// system, streaming the combined output as a plain-text response the page
-// renders live.
-//
-// The scripts are executed inside the project's "toolbox" helper container
-// (config/win/Dockerfile.toolbox — bash + GNU userland + docker CLI), spawned
-// as a sibling container against the host engine, exactly like the Windows
-// .bat wrappers do. That requires run.sh to mount the docker socket and
-// to mount the project at its real host path (ENV_DIR), so bind mounts that
+// Runs the project's build/start/down scripts, streaming combined output as a
+// plain-text response the page renders live. Scripts run inside the "toolbox"
+// helper container (bash + docker CLI) spawned as a sibling against the host
+// engine, like the Windows .bat wrappers. Requires mounting the docker socket
+// and the project at its real host path (ENV_DIR) so bind mounts that
 // compose.yml and the scripts create resolve identically on the engine side.
 
 import { appendFileSync } from 'node:fs';
@@ -24,7 +20,7 @@ const TASKS: Record<string, string> = {
   build: './scripts/linux/build.sh',
   start: './scripts/linux/start.sh',
   down: './scripts/linux/down.sh',
-  // Stop the stack, then rebuild every image — for picking up a pulled update.
+  // Stop the stack, then rebuild every image — picks up a pulled update.
   rebuild: './scripts/linux/rebuild.sh'
 };
 
@@ -50,8 +46,7 @@ function run(
 
 export async function POST({ request }) {
   // Defense in depth on top of SvelteKit's CSRF protection: this endpoint
-  // effectively executes commands on the host, so only accept calls from the
-  // installer's own page.
+  // executes commands on the host, so only accept calls from the installer page.
   const origin = request.headers.get('origin');
   if (process.env.ORIGIN && origin !== process.env.ORIGIN) {
     return new Response('Forbidden', { status: 403 });
@@ -79,10 +74,9 @@ export async function POST({ request }) {
         const probe = await run(['image', 'inspect', TOOLBOX], () => {}, track);
         if (probe !== 0) {
           write('Helper toolbox image not found - building it (one time only)...\n\n');
-          // Prefer BuildKit via buildx (the legacy builder is deprecated and will
-          // be removed). `--load` is required so the result lands in the local
-          // image store, where the `image inspect` probe above can find it on the
-          // next run. Fall back to the classic builder on hosts without buildx.
+          // Prefer buildx (legacy builder is deprecated). `--load` puts the
+          // result in the local image store so the `image inspect` probe finds
+          // it next run. Fall back to the classic builder without buildx.
           const hasBuildx = (await run(['buildx', 'version'], () => {}, track)) === 0;
           const buildArgs = hasBuildx
             ? ['buildx', 'build', '--load', '-t', TOOLBOX, '-f', 'config/win/Dockerfile.toolbox', 'config/win']
@@ -95,8 +89,8 @@ export async function POST({ request }) {
           write('\n');
         }
 
-        // Named per task+installation; a lingering container from a cancelled
-        // run is cleared first so the name can never block the next task.
+        // Clear any lingering container from a cancelled run first so its name
+        // can never block the next task.
         const containerName = `aiw-toolbox-${task}-${appId()}`;
         await run(['rm', '-f', containerName], () => {});
 
@@ -139,8 +133,8 @@ export async function POST({ request }) {
       }
     },
     cancel() {
-      // Tab closed mid-run: stop streaming. Note the docker CLI being killed
-      // does not stop a container already running the script.
+      // Tab closed mid-run: stop streaming. Killing the docker CLI does not
+      // stop a container already running the script.
       activeChild?.kill();
       running = false;
     }

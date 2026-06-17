@@ -1,14 +1,8 @@
 /**
- * Custom CSS for the All-in-Wonder Nextcloud instance.
- *
- * Loaded ADDITIVELY, after Nextcloud's own stylesheets (see
- * lib/private/Template/ResourceLocator.php: doFindTheme() runs after
- * doFind()), so rules here override the defaults by cascade order.
- *
- * Modern Nextcloud is driven by CSS custom properties. The Theming app
- * injects them into <head> with high specificity, so when you redefine a
- * variable that the Theming app also controls, scope it tightly (body /
- * :root body) and/or keep your changes to variables the app does not set.
+ * Custom CSS for All-in-Wonder Nextcloud. Loaded additively after Nextcloud's
+ * stylesheets (doFindTheme runs after doFind), so it overrides by cascade.
+ * Theming app injects CSS custom properties with high specificity, so scope
+ * redefinitions tightly (body / :root body) or only touch vars it doesn't set.
  */
 
 /* ---------------------------------------------------------------------------
@@ -62,13 +56,9 @@
 /* ---------------------------------------------------------------------------
  * Logo
  *
- * Modern Nextcloud sets logos via CSS custom properties (--image-logoheader,
- * --image-logo) injected by the Theming app into :root. The header element
- * is #header #nextcloud .logo (specificity 0,2,1). We use !important on
- * background-image to bypass the variable system regardless of load order.
- *
- * User pages: <a id="nextcloud"><div class="logo logo-icon"></div></a>
- * Login page: <div id="header" class="header-guest"><div class="logo"></div>
+ * Logos come from CSS vars (--image-logoheader/--image-logo) injected on :root;
+ * !important on background-image bypasses the variable system regardless of
+ * load order. User pages use #header #nextcloud .logo; login uses .header-guest.
  * ------------------------------------------------------------------------- */
 
 /* Header icon (small, all authenticated pages) */

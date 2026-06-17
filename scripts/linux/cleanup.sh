@@ -49,9 +49,8 @@ for template in "${NIFI_TEMPLATES_DIR}"/*; do
   echo "Removed: config/nifi/${filename}"
 done
 
-# Map a template basename to the filename it renders to. Most templates render
-# to a same-named file (e.g. Dockerfile -> Dockerfile), but env_template renders
-# to .env (see config/scripts/start/{hermes,openclaw}.sh).
+# Map a template basename to its rendered filename. Most are same-named, but
+# env_template renders to .env.
 rendered_name() {
   case "$1" in
     env_template) echo ".env" ;;

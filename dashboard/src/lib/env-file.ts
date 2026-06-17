@@ -1,11 +1,8 @@
-// Parse and re-render the project's .env / .env.example.
-//
-// .env.example is the schema source of truth: `# ===` banner blocks delimit
-// sections, comment runs become section docs or per-field help, and the
-// values are the defaults. .env only contributes current values. Saving
-// re-renders the .env.example text with the user's values substituted, so
-// comments, ordering and quoting are preserved; keys that exist only in .env
-// are appended verbatim at the end.
+// Parse and re-render the project's .env / .env.example. .env.example is the
+// schema (banner blocks = sections, comment runs = docs/help, values =
+// defaults); .env contributes current values. Saving re-renders .env.example
+// with values substituted so comments/ordering/quoting are preserved; .env-only
+// keys are appended verbatim at the end.
 
 import { sectionModeFromTitle, type SectionMode } from './env-meta';
 
@@ -85,9 +82,8 @@ export function parseExample(text: string): Section[] {
     const line = lines[i];
 
     if (BANNER_RE.test(line)) {
-      // A section header is a banner line, one or more comment lines, and a
-      // closing banner line. A banner not in that shape (e.g. the decorative
-      // line closing the file intro) is just a separator.
+      // A section header is banner / comment line(s) / closing banner. A banner
+      // not in that shape (e.g. the file intro's closing line) is a separator.
       let j = i + 1;
       const titleLines: string[] = [];
       while (j < lines.length && lines[j].startsWith('#') && !BANNER_RE.test(lines[j])) {
@@ -108,8 +104,8 @@ export function parseExample(text: string): Section[] {
     }
 
     if (DASH_LINE_RE.test(line)) {
-      // An all-dash comment underlines the single pending comment line as a
-      // heading; otherwise it just separates paragraphs.
+      // An all-dash comment underlines a single pending comment line as a
+      // heading; otherwise it separates paragraphs.
       if (pending.length === 1) {
         cur.items.push({ kind: 'subheading', text: pending[0].trim() });
         pending = [];
@@ -147,7 +143,7 @@ export function parseExample(text: string): Section[] {
       continue;
     }
 
-    // Anything else (unexpected) is treated as a paragraph separator.
+    // Anything unexpected: treat as a paragraph separator.
     flushParagraph();
   }
 

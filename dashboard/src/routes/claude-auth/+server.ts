@@ -1,13 +1,10 @@
-// Interactive Claude Code sign-in for the OpenClaw claude-cli backend — the
-// web equivalent of start.sh's login_with_masked_paste:
-//
-//   POST {action:'start'} — spawns `openclaw-claude auth login --claudeai` in
-//     a throwaway container (same invocation as config/scripts/start/
-//     openclaw.sh's claude_cli helper) with the credential volume mounted,
-//     and streams its output. claude prints the sign-in URL and then waits
-//     on stdin for the authorization code — no TTY needed.
+// Interactive Claude Code sign-in for the OpenClaw claude-cli backend — web
+// equivalent of start.sh's login_with_masked_paste.
+//   POST {action:'start'} — spawns `openclaw-claude auth login --claudeai` in a
+//     throwaway container (credential volume mounted) and streams its output.
+//     claude prints the sign-in URL then waits on stdin for the auth code (no
+//     TTY needed).
 //   POST {action:'code', code} — writes the pasted code to that stdin.
-//
 // Login persists in volumes/_openclaw-claude; the gateway picks it up on the
 // next claude invocation, so nothing needs restarting.
 
@@ -16,10 +13,11 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { json } from '@sveltejs/kit';
 import { parseEnvValues } from '$lib/env-file';
+import { appId } from '$lib/server/project';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const CLAUDE_DIR = join(ENV_DIR, 'volumes', '_openclaw-claude');
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? 'all-in-wonder/openclaw:latest';
+const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? `all-in-wonder/openclaw:${appId()}`;
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
 const PROBE_TIMEOUT_MS = 30_000;
 
@@ -43,8 +41,8 @@ function claudeArgs(interactive: boolean, ...args: string[]): string[] {
   ];
 }
 
-// Same as openclaw.sh: pre-create the credential dir so the engine doesn't
-// create the bind-mount source root-owned under rootless docker.
+// Pre-create the credential dir (like openclaw.sh) so the engine doesn't create
+// the bind-mount source root-owned under rootless docker.
 function ensureClaudeDir() {
   try {
     mkdirSync(CLAUDE_DIR, { recursive: true });
@@ -69,13 +67,12 @@ function dockerExitCode(args: string[], timeoutMs: number): Promise<number> {
   });
 }
 
-// Probe whether a Claude sign-in is needed — the same checks start.sh runs
-// before deciding to prompt: claude-cli backend on, no long-lived token, and
-// `auth status` failing. Gated on OpenClaw actually being set up: the image
-// built AND openclaw.json rendered (start.sh's openclaw.sh does that), so the
-// sign-in is only offered once claude-cli is properly configured — not ahead
-// of a pending Build/Start. During a first Start the panel appears via the
-// page's mid-stream ACTION REQUIRED detection instead.
+// Probe whether a Claude sign-in is needed, mirroring start.sh's checks:
+// claude-cli backend on, no long-lived token, and `auth status` failing. Also
+// gated on OpenClaw being set up (image built AND openclaw.json rendered) so the
+// sign-in is only offered once claude-cli is configured, not ahead of a pending
+// Build/Start. During a first Start the panel appears via the page's mid-stream
+// ACTION REQUIRED detection instead.
 export async function GET() {
   const envFile = join(ENV_DIR, '.env');
   if (!existsSync(envFile)) return json({ needed: false });
@@ -147,8 +144,8 @@ export async function POST({ request }) {
           finish();
           return;
         }
-        // Mirror start.sh: a non-zero login exit may still have stored valid
-        // credentials — trust `auth status` as the source of truth.
+        // A non-zero login exit may still have stored valid credentials — trust
+        // `auth status` as the source of truth (mirrors start.sh).
         const probe = spawn('docker', claudeArgs(false, 'auth', 'status'), { cwd: ENV_DIR });
         probe.on('close', (s) => {
           write(s === 0 ? '\n[auth succeeded]\n' : `\n[auth failed with exit code ${code}]\n`);

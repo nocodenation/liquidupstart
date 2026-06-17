@@ -13,6 +13,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+APP_ID=$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)
+IMAGE="all-in-wonder/nifi:${APP_ID:-0}"
 NIFI_USERNAME=$(grep '^NIFI_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d "'\"")
 NIFI_PASSWORD=$(grep '^NIFI_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d "'\"")
 
@@ -44,13 +46,12 @@ else
     mkdir -p "$STATE_DIR"
     chmod 777 "$STATE_DIR"
 
-    # Run a temporary container to copy directories
     docker run --rm \
         -e "SINGLE_USER_CREDENTIALS_USERNAME=${NIFI_USERNAME}" \
         -e "SINGLE_USER_CREDENTIALS_PASSWORD=${NIFI_PASSWORD}" \
         -v "${STATE_DIR}":/target \
         --entrypoint /bin/bash \
-        all-in-wonder/nifi:latest \
+        "$IMAGE" \
         -c "cp -r /opt/nifi/nifi-current/conf /target/ && \
             cp -r /opt/nifi/nifi-current/database_repository /target/ && \
             cp -r /opt/nifi/nifi-current/flowfile_repository /target/ && \

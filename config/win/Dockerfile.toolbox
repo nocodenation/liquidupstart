@@ -1,12 +1,7 @@
-# Helper "toolbox" image for running the project's existing bash orchestration
-# scripts (build.sh / start.sh / down.sh / cleanup.sh and the helpers under
-# config/scripts/) on hosts that have no Unix shell — i.e. Windows.
-#
-# It carries the same GNU userland those scripts assume (bash, GNU sed/grep,
-# gawk, coreutils), plus openssl and keytool (for the NiFi cert/keystore steps)
-# and the Docker CLI + Compose plugin. It does NOT run its own Docker engine:
-# the Windows wrapper bind-mounts the host's Docker socket into it, so it
-# orchestrates containers against Docker Desktop's engine — no docker-in-docker.
+# "Toolbox" image: runs the project's bash orchestration scripts on Windows hosts.
+# Carries the GNU userland those scripts assume (bash, sed/grep, gawk, coreutils),
+# openssl + keytool (NiFi cert/keystore steps), and the Docker CLI + Compose plugin.
+# No docker-in-docker: the Windows wrapper bind-mounts the host's Docker socket.
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

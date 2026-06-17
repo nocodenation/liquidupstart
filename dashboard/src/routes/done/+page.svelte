@@ -1,10 +1,11 @@
 <script>
-  import { invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import TaskRunner from '$lib/components/TaskRunner.svelte';
 
   let { data } = $props();
   let started = $state(false);
   let busy = $state(false);
+  let authPending = $state(false);
 </script>
 
 <main>
@@ -27,10 +28,17 @@
     <TaskRunner
       needBuild={data.needBuild}
       numbered={data.needBuild}
+      showRebuild={!data.needBuild}
       bind:busy
+      bind:authPending
       onchange={(task) => {
-        if (task === 'start') started = true;
-        // Refresh load data so navigating away (Finish) sees current state.
+        if (task === 'start') {
+          started = true;
+          if (!authPending) {
+            goto('/');
+            return;
+          }
+        }
         invalidateAll();
       }}
     />
@@ -49,8 +57,8 @@
 
     <div class="actions">
       <a href="/config" class="back">← Back to the configuration</a>
-      <!-- Disabled while a task or sign-in is in flight: navigating away
-           mid-run would lose the live log (the task itself keeps running). -->
+      <!-- Disabled mid-run: navigating away would lose the live log (the task
+           itself keeps running). -->
       <a
         href={busy ? null : '/'}
         class="save finishlink"

@@ -110,8 +110,8 @@ render_dockerfile() {
         packages_str="${__trimmed[*]}"
     fi
 
-    # Start from a fresh copy of the template.
-    cp "$template" "$output"
+    mkdir -p "$(dirname "$output")"
+    cat "$template" > "$output"
 
     # Determine sed in-place flag for GNU vs BSD (macOS).
     local sed_inplace

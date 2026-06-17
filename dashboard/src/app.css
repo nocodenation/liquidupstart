@@ -89,8 +89,7 @@ details.collapsible[open] > summary {
   margin-bottom: 0.75rem;
 }
 
-/* Short what's-inside hint; shown while the card is collapsed, dropped once
-   open (the full docs are right below it then). */
+/* What's-inside hint; shown while collapsed, hidden when open. */
 .sectdesc {
   color: var(--dim);
   font-size: 0.85rem;
@@ -564,6 +563,13 @@ button.save.rebuild:hover {
 }
 .errbox p {
   margin: 0;
+}
+
+.devicecode {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  padding: 0.15rem 0.5rem;
 }
 
 .porthint {

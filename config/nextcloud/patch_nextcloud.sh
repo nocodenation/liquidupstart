@@ -1,9 +1,8 @@
 #!/usr/bin/sh
 
-# Inject SSO login handler into base.php if not already applied.
-# Strategy: rename the original handleLogin → handleLoginBase, then append
-# a new handleLogin at the end of the OC class that does SSO first and
-# falls back to handleLoginBase. This is resilient to upstream code changes.
+# Inject SSO login handler into base.php: rename original handleLogin →
+# handleLoginBase, append a new handleLogin that tries SSO then falls back.
+# Resilient to upstream code changes.
 if ! grep -q 'handleLoginBase' /var/www/html/lib/base.php; then
     awk '
     { sub(/public static function handleLogin\(/, "public static function handleLoginBase(") }

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# docker compose resolves compose.yml from the cwd - run from the project root
-# regardless of where the script is invoked from.
+# docker compose resolves compose.yml from the cwd, so run from the project root.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_DIR}"

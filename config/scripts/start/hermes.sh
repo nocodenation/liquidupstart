@@ -18,19 +18,16 @@ sed_inplace() {
   fi
 }
 
-# Read a KEY=value from the project-root .env (empty string if unset/missing).
-# `|| true`: a missing key makes grep exit 1, which under `set -o pipefail` +
-# `set -e` would otherwise abort the whole script.
+# Read KEY=value from the root .env. `|| true`: a missing key makes grep exit 1,
+# which under pipefail + set -e would abort the script.
 get_env() {
   grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
 
-# Render config/hermes/.env from the template, then inject the model-provider
-# keys from the project-root .env. The template is the contract: only keys it
-# already declares (as a commented `# KEY=` line) are supported by Hermes — any
-# other keys in the root .env are ignored. For a supported key with a non-empty
-# value we uncomment its line and substitute the value; empty keys stay
-# commented so Hermes falls back to its other auth sources.
+# Render config/hermes/.env from the template, then inject model-provider keys
+# from the root .env. The template is the contract: only keys it already declares
+# (as a commented `# KEY=` line) are supported; empty keys stay commented so
+# Hermes falls back to its other auth sources.
 HERMES_DIR="${PROJECT_DIR}/config/hermes"
 HERMES_ENV_TEMPLATE="${HERMES_DIR}/templates/env_template"
 HERMES_ENV="${HERMES_DIR}/.env"
@@ -50,9 +47,8 @@ for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
   grep -qE "^#[[:space:]]*${key}=" "$HERMES_ENV" || continue
   value="$(get_env "$key")"
   [[ -z "$value" ]] && continue
-  # Match the commented template line `# KEY=...` (anchored on `KEY=` so the
-  # variant names are not touched) and replace it with the uncommented
-  # assignment. `|` delimiter avoids clashing with key characters.
+  # Uncomment the template line and substitute the value (anchored on `KEY=` so
+  # variant names are not touched).
   sed_inplace -E "s|^#[[:space:]]*${key}=.*|${key}=${value}|" "$HERMES_ENV"
   echo "  set ${key} (uncommented from root .env)"
 done

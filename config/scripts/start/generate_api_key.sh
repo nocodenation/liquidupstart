@@ -31,7 +31,7 @@ signature=$(printf '%s.%s' "$header" "$payload" \
 
 token="${header}.${payload}.${signature}"
 
-# Update API_KEY in .env (handle GNU vs BSD sed)
+# Handle GNU vs BSD sed.
 sed_inplace() {
   if sed --version >/dev/null 2>&1; then
     sed -i "$@"

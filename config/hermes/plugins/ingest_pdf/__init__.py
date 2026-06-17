@@ -15,9 +15,7 @@ import json
 
 from .ingest import run_ingest
 
-# The schema is what the LLM sees — the description fields steer when/how the
-# model invokes the tool, so they intentionally spell out path conventions and
-# the embedding-backend behaviour.
+# The description fields are what the LLM sees and steer when/how it invokes the tool.
 INGEST_PDF_SCHEMA = {
     "name": "ingest_pdf",
     "description": (

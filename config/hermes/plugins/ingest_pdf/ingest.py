@@ -39,8 +39,7 @@ from urllib.parse import quote
 
 import requests
 
-# tiktoken is baked into the image (cache pre-warmed at build time). Fall back to
-# char-based chunking if it is somehow unavailable, matching the original script.
+# tiktoken is baked into the image; fall back to char-based chunking if unavailable.
 try:
     import tiktoken
 
@@ -52,26 +51,23 @@ except Exception:  # pragma: no cover - defensive
 
 # --- Config ---------------------------------------------------------------
 
-DEFAULT_POSTGREST = "http://postgrest_app:3000"  # docker service URL (in-network)
+DEFAULT_POSTGREST = "http://postgrest_app:3000"  # in-network docker service URL
 OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 DEFAULT_OPENAI_MODEL = "text-embedding-3-large"
-# OpenRouter exposes the same OpenAI-compatible /embeddings shape; models are
-# provider-prefixed (e.g. openai/text-embedding-3-large, 3072-dim).
+# OpenRouter uses the same OpenAI-compatible /embeddings shape; provider-prefixed models.
 OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
 DEFAULT_OPENROUTER_MODEL = "openai/text-embedding-3-large"
 
-# RAG schema column is vector(4096): the self-hosted llama-embed-nemotron-8b emits
-# 4096 dims natively; OpenAI's largest model is 3072-dim, so OpenAI vectors are
-# right-padded with zeros up to this width to share the same column (the zero
-# tail doesn't affect cosine / inner-product ranking within an all-OpenAI table).
+# Column is vector(4096): self-hosted nemotron is 4096-dim native; OpenAI's 3072-dim
+# vectors are right-padded with zeros to share it (zero tail doesn't affect ranking).
 EMBED_DIMS = 4096
 
 CHUNK_TOKENS = 400
 CHUNK_OVERLAP = 50
 
 OPENAI_BATCH = 64       # OpenAI accepts arrays; batch to cut round-trips
-SELF_HOSTED_BATCH = 1   # match the documented single-input self-hosted usage
-# rag_chunks insert batch — keep request bodies small (each 4096-dim row is ~37 KB).
+SELF_HOSTED_BATCH = 1   # self-hosted endpoint is documented single-input
+# rag_chunks insert batch — keep bodies small (each 4096-dim row is ~37 KB).
 PGREST_INSERT_BATCH_HIDIM = 10
 PGREST_INSERT_BATCH_LODIM = 50
 
@@ -79,7 +75,7 @@ MAX_RETRIES = 6
 INITIAL_BACKOFF_S = 2.0
 MAX_BACKOFF_S = 60.0
 
-# OpenAI embedding catalog (for the optional cost estimate / dims default).
+# OpenAI embedding catalog (for the optional cost estimate).
 EMBED_MODELS = {
     "text-embedding-3-small": {"native_dims": 1536, "configurable": True, "price_per_1m_usd": 0.02},
     "text-embedding-3-large": {"native_dims": 3072, "configurable": True, "price_per_1m_usd": 0.13},
@@ -97,7 +93,6 @@ class BackendChoiceRequired(Exception):
     asking the user to choose, rather than silently defaulting to one backend."""
 
     def __init__(self, backends: dict[str, str]):
-        # backends: {backend_name: human-readable label}
         self.backends = backends
         super().__init__("embedding backend choice required")
 
@@ -143,7 +138,7 @@ def _chunk_text(text: str, chunk_size: int = CHUNK_TOKENS, overlap: int = CHUNK_
             if start + chunk_size >= len(toks):
                 break
         return chunks
-    # Fallback: char-based (1 token ~ 4 chars for English)
+    # Fallback: char-based (~4 chars/token for English)
     char_size = chunk_size * 4
     char_overlap = overlap * 4
     if len(text) <= char_size:
@@ -375,13 +370,13 @@ def _table_exists(session: requests.Session, base: str, table: str) -> bool:
     try:
         r = session.get(f"{base}/{table}?limit=0", timeout=30)
     except requests.RequestException:
-        # Can't tell — assume present and let the real insert surface the error.
+        # Can't tell — assume present; the real insert will surface any error.
         return True
     return r.status_code == 200
 
 
 def _expected_dims(backend: str | None, cfg: dict) -> int:
-    # Both backends store vector(4096): self-hosted natively, OpenAI zero-padded.
+    # All backends store vector(4096): self-hosted native, OpenAI zero-padded.
     return EMBED_DIMS
 
 
@@ -467,9 +462,8 @@ def _available_backends(args: dict) -> dict:
     backend fills vector(4096)."""
     embed_host = os.environ.get("OPENCODE_EMBEDDING_HOST", "").strip()
     embed_model_env = os.environ.get("OPENCODE_EMBEDDING_MODEL", "").strip()
-    # Hermes loads config/hermes/.env into the process env at startup
-    # (load_hermes_dotenv, override=true), so the API-key backends read the
-    # provider-native names that already live in that file — no OPENCODE_* aliases.
+    # API-key backends read the provider-native names Hermes loads from config/hermes/.env
+    # (no OPENCODE_* aliases).
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
 
@@ -507,7 +501,6 @@ def _resolve_backend(args: dict) -> tuple[str, dict]:
             return requested, available[requested]["cfg"]
         raise IngestError(f"embedding_backend={requested} requires {_BACKEND_NEED.get(requested, 'its configuration')}")
 
-    # auto
     if not available:
         raise IngestError(
             "no embedding backend configured: set OPENCODE_EMBEDDING_HOST + "
@@ -517,7 +510,7 @@ def _resolve_backend(args: dict) -> tuple[str, dict]:
     if len(available) == 1:
         name = next(iter(available))
         return name, available[name]["cfg"]
-    # More than one available and no explicit choice: ask the user.
+    # Multiple available and no explicit choice: ask the user.
     raise BackendChoiceRequired({k: v["label"] for k, v in available.items()})
 
 
@@ -547,8 +540,8 @@ def _resolve_pinned_backend(args: dict, pinned: dict) -> tuple[str, dict]:
 
     cfg = dict(available[want_backend]["cfg"])
     if want_backend == "self_hosted":
-        # The self-hosted endpoint serves whatever OPENCODE_EMBEDDING_MODEL names;
-        # if that differs from the pinned model the vectors would be incompatible.
+        # Endpoint serves whatever OPENCODE_EMBEDDING_MODEL names; a different model
+        # would yield incompatible vectors.
         current_model = cfg.get("model")
         if current_model != want_model:
             raise IngestError(
@@ -557,8 +550,8 @@ def _resolve_pinned_backend(args: dict, pinned: dict) -> tuple[str, dict]:
                 f"OPENCODE_EMBEDDING_MODEL='{want_model}', or ingest into a fresh corpus."
             )
     else:
-        # openai / openrouter: call the exact pinned model (a model-not-found error
-        # from the API surfaces at embed time and tells the user it's unavailable).
+        # openai / openrouter: force the exact pinned model (a model-not-found error
+        # surfaces at embed time).
         cfg["model"] = want_model
     return want_backend, cfg
 
@@ -616,10 +609,9 @@ def run_ingest(args: dict) -> dict:
     needs_embed = not (dry_run or estimate_only)
     needs_pgrest = not (dry_run or estimate_only)
 
-    # Resolve embedding backend. For a REAL ingest we resolve AFTER the preflight
-    # + pin lookup below, so an existing corpus forces its original (backend,
-    # model) and we never mix incompatible vector spaces. For dry-run /
-    # estimate-only (no embedding) resolve now, best-effort, just for the report.
+    # A real ingest resolves the backend AFTER the preflight + pin lookup below so an
+    # existing corpus forces its original (backend, model). dry-run / estimate-only
+    # (no embedding) resolve now, best-effort, just for the report.
     backend = None
     cfg: dict = {}
     if not needs_embed:
@@ -630,15 +622,13 @@ def run_ingest(args: dict) -> dict:
         except IngestError as e:
             log(f"note: {e}")
 
-    # PostgREST config
     postgrest_url = (os.environ.get("POSTGREST_URL") or DEFAULT_POSTGREST).rstrip("/")
     api_key = (os.environ.get("POSTGREST_API_KEY") or os.environ.get("API_KEY") or "").strip()
     if needs_pgrest and not api_key:
         return done({"success": False, "error": "POSTGREST_API_KEY not set"})
 
-    # Preflight: for a real ingest, make sure the destination tables exist BEFORE
-    # doing the expensive work (reading PDFs + embedding). If they're missing,
-    # hand the LLM the exact schema to create so it can set things up and re-run.
+    # Preflight: verify destination tables exist before the expensive work (read +
+    # embed). If missing, hand the LLM the exact schema to create, then re-run.
     if needs_pgrest:
         pf = requests.Session()
         pf.headers.update({"Authorization": f"Bearer {api_key}"})
@@ -662,9 +652,8 @@ def run_ingest(args: dict) -> dict:
                 }
             )
 
-        # Tables exist. For a real ingest, pin to the corpus's existing embedding
-        # identity (if any) so subsequent ingests reuse the SAME model — openai /
-        # nemotron / etc. vectors live in different spaces and must not be mixed.
+        # Pin to the corpus's existing embedding identity (if any) so ingests reuse
+        # the SAME model — vectors from different models must not be mixed.
         if needs_embed:
             pinned = _pinned_identity(pf, postgrest_url, log)
             try:
@@ -691,7 +680,6 @@ def run_ingest(args: dict) -> dict:
             except IngestError as e:
                 return done({"success": False, "error": str(e)})
 
-    # Resolve input into a list of PDFs
     input_path = _resolve_input(raw_input)
     if input_path.is_file():
         pdf_paths = [input_path]

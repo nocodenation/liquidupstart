@@ -1,38 +1,17 @@
 /**
- * OpenClaw tool plugin — PDF ingester for the All-In-Wonder RAG store.
+ * OpenClaw tool plugin — PDF ingester for the All-In-Wonder RAG store. Extracts
+ * text, chunks (~400 tokens / 50 overlap), embeds each chunk, and inserts into
+ * rag_documents / rag_chunks via PostgREST (column `vector(4096)`; pgvector
+ * binary-quantizes at index time, so we store the raw float vector).
  *
- * Ported from the OpenCode tool (config/opencode/tools/ingest_pdf.ts). The
- * business logic (unpdf text extraction, js-tiktoken chunking, embedding,
- * PostgREST inserts) is unchanged; only the tool wrapper differs: OpenCode's
- * `tool()` is replaced by OpenClaw's `defineToolPlugin` + typebox schema.
+ * Backends (resolveBackend): copilot (OpenClaw's github-copilot auth via the
+ * gateway, text-embedding-3-small 1536-dim padded to 4096), self_hosted
+ * (4096-dim native), openai and openrouter (text-embedding-3-large, 3072-dim
+ * padded to 4096). With one configured it is used; with >1 (copilot included)
+ * the tool asks the user to pick via embedding_backend.
  *
- * Reads a PDF (or a folder of PDFs), extracts text page-by-page, chunks at
- * ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows into
- * rag_documents / rag_chunks via PostgREST. The chunk embedding column is
- * `vector(4096)`; pgvector's binary-quantization HNSW index handles the
- * 2000-dim HNSW limit at index time, so we store the raw float vector and let
- * the index/queries do the quantization.
- *
- * Embedding backends (see resolveBackend): self_hosted ($OPENCODE_EMBEDDING_HOST
- * + $OPENCODE_EMBEDDING_MODEL, 4096-dim), openai ($OPENAI_API_KEY,
- * text-embedding-3-large) or openrouter ($OPENROUTER_API_KEY,
- * openai/text-embedding-3-large) — the latter two are 3072-dim zero-padded to
- * 4096. The API-key backends use the provider-native names already in
- * config/openclaw/.env (no OPENCODE_* aliases). Only one configured => used
- * automatically; more than one => the tool asks the user to pick via the
- * embedding_backend arg; none => it does no work and explains why.
- *
- * Runs inside the openclaw-gateway container. PostgREST is reached at the docker
- * service URL; auth comes from $POSTGREST_API_KEY. No .env file is read — all
- * config comes from process.env (already exported to the container in compose.yml).
- *
- * Tool surface (ingest_pdf):
- *   input             string   PDF file or folder (non-recursive)
- *   title?            string   override (single-file only)
- *   dry_run?          bool     parse+chunk only, no API/DB
- *   estimate_only?    bool     report chunk + token totals, no API/DB
- *   skip_existing?    bool     dedup against rag_documents by filename
- *   collision_policy? enum     fingerprint | skip | ingest | fail
+ * Tool surface: input (PDF file/folder), title? (single-file), dry_run?,
+ * estimate_only?, skip_existing?, collision_policy?, embedding_backend?.
  */
 
 import { Type, type Static } from "typebox"
@@ -52,21 +31,27 @@ const MAX_RETRIES = 6
 const INITIAL_BACKOFF_S = 2.0
 const MAX_BACKOFF_S = 60.0
 
-// OpenAI-compatible embedding backends (openai, openrouter). The largest
-// hosted model, text-embedding-3-large, is 3072-dim (the `dimensions` param can
-// only shrink below that, never reach 4096), so each vector is right-padded
-// with zeros to EMBED_DIMS and shares the same vector(4096) column as the
-// self-hosted backend; the zero tail does not affect cosine / inner-product
-// ranking within a single-backend table.
+// text-embedding-3-large is 3072-dim (max), so vectors are right-padded to
+// EMBED_DIMS to share the vector(4096) column; the zero tail does not affect
+// cosine/inner-product ranking within a single-backend table.
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 const DEFAULT_OPENAI_MODEL = "text-embedding-3-large"
-// OpenRouter exposes the same OpenAI-compatible /embeddings shape; models are
-// provider-prefixed (e.g. openai/text-embedding-3-large, 3072-dim).
+// OpenRouter exposes the same /embeddings shape; models are provider-prefixed.
 const OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
 const DEFAULT_OPENROUTER_MODEL = "openai/text-embedding-3-large"
 const OPENAI_BATCH = 64 // OpenAI/OpenRouter accept an input array; batch to cut round-trips
 
-type Backend = "self_hosted" | "openai" | "openrouter"
+// Copilot embeddings go through the gateway's /v1/embeddings on loopback, reusing
+// github-copilot auth (token exchange happens gateway-side). model:"openclaw" is
+// required; the real provider/model come from memorySearch config (set by
+// openclaw.sh). trusted-proxy auth needs the nginx X-Forwarded-User.
+const COPILOT_EMBEDDINGS_URL = process.env.OPENCLAW_GATEWAY_EMBEDDINGS_URL || "http://127.0.0.1:18789/v1/embeddings"
+const COPILOT_GATEWAY_MODEL = "openclaw"
+const COPILOT_FORWARDED_USER = "user@nocodenation.org"
+const DEFAULT_COPILOT_MODEL = "text-embedding-3-small"
+const COPILOT_BATCH = 16 // endpoint caps: 128 inputs / 8192 chars each / 65536 total
+
+type Backend = "copilot" | "self_hosted" | "openai" | "openrouter"
 type BackendConfig = { backend: Backend; model: string; host?: string; apiKey?: string; url?: string }
 
 const enc = getEncoding("cl100k_base")
@@ -164,7 +149,7 @@ async function embedText(host: string, model: string, text: string, log: Logger)
                 body: JSON.stringify({ model, input: text }),
             })
         } catch (e) {
-            // Network-level error (DNS, refused, reset). Treat as transient.
+            // Network-level error (DNS, refused, reset) — treat as transient.
             attempt++
             if (attempt > MAX_RETRIES) throw e
             const msg = (e as { message?: string })?.message ?? String(e)
@@ -175,7 +160,7 @@ async function embedText(host: string, model: string, text: string, log: Logger)
         }
         if (r.ok) {
             const body = (await r.json()) as EmbeddingResponse
-            // Accept both OpenAI-style (data[0].embedding) and llama.cpp-native (embedding).
+            // Accept OpenAI-style (data[0].embedding) and llama.cpp-native (embedding).
             const vec = body.data?.[0]?.embedding ?? body.embedding
             if (!Array.isArray(vec)) {
                 throw new Error("embedding response missing 'data[0].embedding' or 'embedding'")
@@ -214,9 +199,8 @@ async function embedAll(
     texts: string[],
     log: Logger,
 ): Promise<number[][]> {
-    // The instructions.md example posts a single string per request. Some
-    // OpenAI-compatible servers accept an array, but to match the documented
-    // usage exactly, embed sequentially.
+    // Embed sequentially (one string per request) to match the documented
+    // instructions.md usage, even though some servers accept an array.
     const out: number[][] = []
     const total = texts.length
     for (let i = 0; i < total; i++) {
@@ -229,16 +213,14 @@ async function embedAll(
 }
 
 // === Embedding via OpenAI-compatible endpoints (openai, openrouter) ===
-// Right-pad a vector with zeros up to `dims`. The largest hosted model is
-// 3072-dim, so its vectors are padded to the project's 4096-dim column.
+// Right-pad with zeros up to `dims`: 3072-dim hosted models -> 4096-dim column.
 function padToDims(vec: number[], dims: number): number[] {
     if (vec.length === dims) return vec
     if (vec.length > dims) throw new Error(`embedding has ${vec.length} dims, more than the ${dims}-dim column`)
     return vec.concat(new Array(dims - vec.length).fill(0))
 }
 
-// Embed via an OpenAI-compatible /v1/embeddings endpoint (OpenAI or OpenRouter).
-// `label` is used only in log/error messages.
+// Embed via an OpenAI-compatible /v1/embeddings endpoint (`label` for logs).
 async function embedOpenAICompat(
     url: string,
     apiKey: string,
@@ -281,7 +263,7 @@ async function embedOpenAICompat(
             try {
                 code = (JSON.parse(txt) as { error?: { code?: string } })?.error?.code
             } catch {
-                /* non-JSON body */
+                // non-JSON body
             }
             if (code === "insufficient_quota") throw new Error(`${label} insufficient_quota — fix billing and retry`)
             const retryable = [408, 425, 429, 500, 502, 503, 504].includes(r.status)
@@ -303,17 +285,82 @@ async function embedOpenAICompat(
     return out
 }
 
+// Embed via the gateway's /v1/embeddings (github-copilot auth, padded to EMBED_DIMS).
+async function embedViaCopilotGateway(url: string, texts: string[], log: Logger): Promise<number[][]> {
+    const out: number[][] = []
+    const total = texts.length
+    for (let i = 0; i < total; i += COPILOT_BATCH) {
+        const batch = texts.slice(i, i + COPILOT_BATCH)
+        let attempt = 0
+        let backoff = INITIAL_BACKOFF_S
+        while (true) {
+            let r: Response
+            try {
+                r = await fetch(url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-Forwarded-User": COPILOT_FORWARDED_USER,
+                    },
+                    body: JSON.stringify({ model: COPILOT_GATEWAY_MODEL, input: batch }),
+                })
+            } catch (e) {
+                attempt++
+                if (attempt > MAX_RETRIES) throw e
+                const msg = (e as { message?: string })?.message ?? String(e)
+                log(`  transient network error contacting copilot gateway ${url}: ${msg}, retry ${attempt}/${MAX_RETRIES} in ${backoff.toFixed(1)}s`)
+                await sleep(backoff * 1000)
+                backoff = Math.min(backoff * 2, MAX_BACKOFF_S)
+                continue
+            }
+            if (r.ok) {
+                const body = (await r.json()) as { data?: Array<{ embedding: number[] }> }
+                for (const d of body.data ?? []) out.push(padToDims(d.embedding, EMBED_DIMS))
+                break
+            }
+            const txt = await r.text().catch(() => "")
+            if (r.status === 401 || r.status === 403) {
+                throw new Error(
+                    `copilot gateway HTTP ${r.status}: ${txt}. The github-copilot provider is not authenticated, or the gateway rejected the request. Sign in via the dashboard's GitHub Copilot panel, ensure OPENCLAW_ENABLE_COPILOT=1, and restart OpenClaw.`,
+                )
+            }
+            if (r.status === 404 || r.status === 400) {
+                throw new Error(
+                    `copilot gateway HTTP ${r.status}: ${txt}. The gateway /v1/embeddings endpoint or memorySearch provider is not configured. Confirm OPENCLAW_ENABLE_COPILOT=1 and restart so openclaw.sh enables chatCompletions and sets memorySearch.provider=github-copilot.`,
+                )
+            }
+            const retryable = [408, 425, 429, 500, 502, 503, 504].includes(r.status)
+            if (!retryable) throw new Error(`copilot gateway HTTP ${r.status}: ${txt}`)
+            attempt++
+            if (attempt > MAX_RETRIES) throw new Error(`copilot gateway HTTP ${r.status} after ${MAX_RETRIES} retries: ${txt}`)
+            let wait = backoff
+            const ra = r.headers.get("retry-after")
+            if (ra) {
+                const n = parseFloat(ra)
+                if (Number.isFinite(n)) wait = Math.max(wait, n)
+            }
+            log(`  transient HTTP ${r.status} from copilot gateway, retry ${attempt}/${MAX_RETRIES} in ${wait.toFixed(1)}s`)
+            await sleep(wait * 1000)
+            backoff = Math.min(backoff * 2, MAX_BACKOFF_S)
+        }
+        log(`  embedded ${Math.min(i + COPILOT_BATCH, total)}/${total}`)
+    }
+    return out
+}
+
 // Dispatch to the selected embedding backend.
 async function embedChunks(cfg: BackendConfig, texts: string[], log: Logger): Promise<number[][]> {
     if (cfg.backend === "self_hosted") return embedAll(cfg.host!, cfg.model, texts, log)
+    if (cfg.backend === "copilot") return embedViaCopilotGateway(cfg.url!, texts, log)
     return embedOpenAICompat(cfg.url!, cfg.apiKey!, cfg.model, texts, log, cfg.backend)
 }
 
 // === Backend resolution ===
 type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message: string }
 
-// Env var(s) a backend needs, for "not configured" messages.
+// Env var(s) each backend needs, for "not configured" messages.
 const BACKEND_NEED: Record<string, string> = {
+    copilot: "OPENCLAW_ENABLE_COPILOT=1 with the github-copilot provider signed in",
     self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
     openai: "OPENAI_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
@@ -321,18 +368,24 @@ const BACKEND_NEED: Record<string, string> = {
 
 type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
 
-// The configured backends, in priority order. The OpenAI/OpenRouter vectors are
-// zero-padded to EMBED_DIMS so every backend fills vector(4096). The API-key
-// backends read the provider-native names that already live in config/openclaw/.env
-// (loaded via the gateway's env_file) — no OPENCODE_* aliases. OPENROUTER_API_KEY
-// there is also OpenClaw's own chat-model key.
+// The configured backends, in priority order. OpenAI/OpenRouter vectors are
+// zero-padded to EMBED_DIMS so every backend fills vector(4096).
 function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
+    const copilotEnabled = (env.OPENCLAW_ENABLE_COPILOT ?? "").trim() === "1"
     const embedHost = (env.OPENCODE_EMBEDDING_HOST ?? "").trim()
     const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
     const openaiKey = (env.OPENAI_API_KEY ?? "").trim()
     const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
 
     const available: AvailBackend[] = []
+    // Copilot, gated on OPENCLAW_ENABLE_COPILOT=1.
+    if (copilotEnabled) {
+        available.push({
+            backend: "copilot",
+            cfg: { backend: "copilot", model: DEFAULT_COPILOT_MODEL, url: COPILOT_EMBEDDINGS_URL },
+            label: `copilot: ${DEFAULT_COPILOT_MODEL} via OpenClaw's github-copilot auth (1536-dim, zero-padded to 4096; no extra key)`,
+        })
+    }
     if (embedHost && embedModel) {
         available.push({
             backend: "self_hosted",
@@ -357,11 +410,9 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     return available
 }
 
-// Decide which embedding backend to use for a FRESH corpus from env + the
-// optional explicit `embedding_backend` arg. When MORE THAN ONE backend is
-// configured and no explicit choice was made, returns ok:false with a message
-// asking the agent to have the user choose. Existing corpora go through
-// resolvePinnedBackend instead.
+// Pick the backend for a FRESH corpus from env + optional `embedding_backend`.
+// With >1 configured and no explicit choice, returns ok:false asking the user
+// to choose. Existing corpora go through resolvePinnedBackend instead.
 function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): BackendResolution {
     const available = availableBackends(env)
 
@@ -377,7 +428,7 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
         return {
             ok: false,
             message:
-                "error: no embedding backend configured. Set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENAI_API_KEY (OpenAI), or OPENROUTER_API_KEY (OpenRouter), then re-run.",
+                "error: no embedding backend configured. Enable GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1, signed in), or set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENAI_API_KEY (OpenAI), or OPENROUTER_API_KEY (OpenRouter), then re-run.",
         }
     }
     if (available.length === 1) return { ok: true, cfg: available[0].cfg }
@@ -391,9 +442,8 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
 }
 
 // Resolve the backend for a corpus that already has embeddings, forcing the SAME
-// (backend, model) that produced them — openai/nemotron/etc. vectors live in
-// different spaces and must never be mixed in one rag_chunks table. Returns
-// ok:false (telling the user) when that backend/model is no longer usable.
+// (backend, model) that produced them — different models = different vector
+// spaces and must never be mixed in one rag_chunks table. ok:false if unusable.
 function resolvePinnedBackend(
     pinned: { backend: string; model: string },
     requested: string | undefined,
@@ -427,15 +477,15 @@ function resolvePinnedBackend(
             }
         }
     } else {
-        // openai / openrouter: call the exact pinned model (a model-not-found error
-        // surfaces at embed time and tells the user it's unavailable).
+        // openai / openrouter: call the exact pinned model; a model-not-found
+        // error surfaces at embed time.
         cfg.model = wantModel
     }
     return { ok: true, cfg }
 }
 
 // The (backend, model) the corpus was first embedded with, from the earliest
-// rag_documents row's metadata. null for a fresh/unknown corpus.
+// rag_documents row. null for a fresh/unknown corpus.
 async function pinnedIdentity(base: string, apiKey: string): Promise<{ backend: string; model: string } | null> {
     try {
         const r = await fetch(`${base}/rag_documents?select=metadata&order=id.asc&limit=1`, {
@@ -463,7 +513,7 @@ async function fileFingerprint(filePath: string): Promise<Fingerprint> {
     h.update(buf)
     return {
         file_size: st.size,
-        mtime: st.mtimeMs / 1000, // seconds, to align with anything written from python-side scripts
+        mtime: st.mtimeMs / 1000, // seconds, to align with python-side scripts
         sha256: h.digest("hex"),
     }
 }
@@ -533,8 +583,8 @@ async function pgrestInsert(
 
 // === Schema preflight ===
 async function pgrestTableExists(base: string, apiKey: string, table: string): Promise<boolean> {
-    // 200 for a limit=0 select means the table exists; a missing table returns 404
-    // (PGRST205). On a network error, assume present and let the real insert surface it.
+    // limit=0 select: 200 = exists, 404 (PGRST205) = missing. On network error
+    // assume present and let the real insert surface it.
     try {
         const r = await fetch(`${base}/${table}?limit=0`, {
             headers: { Authorization: `Bearer ${apiKey}` },
@@ -546,8 +596,8 @@ async function pgrestTableExists(base: string, apiKey: string, table: string): P
 }
 
 function requiredSchemaMessage(missing: string[], dims: number): string {
-    // Hand the LLM the exact tables + structure this tool writes to, so it can
-    // create them and re-run, instead of failing only after the expensive work.
+    // Hand the LLM the exact tables this tool writes to so it can create them
+    // and re-run, instead of failing only after the expensive work.
     return [
         `error: required table(s) missing: ${missing.join(", ")}.`,
         "Create the RAG schema before ingesting, then call ingest_pdf again with the same arguments.",
@@ -637,9 +687,8 @@ async function ingestOne(
     log(`      document_id=${docId}`)
 
     log(`[5/5] inserting rag_chunks (${chunks.length} rows)`)
-    // Each row serializes ~4096 floats at 7-decimal precision (~37 KB) plus
-    // content; 10 rows per request stays under the nginx proxy's default
-    // 1 MB request limit.
+    // Each row is ~37 KB (4096 floats at 7-decimal precision + content); 10 rows
+    // per request stays under the nginx proxy's default 1 MB limit.
     const BATCH = 10
     for (let i = 0; i < chunks.length; i += BATCH) {
         const batchChunks = chunks.slice(i, i + BATCH)
@@ -716,10 +765,15 @@ const IngestPdfParams = Type.Object(
         ),
         embedding_backend: Type.Optional(
             Type.Union(
-                [Type.Literal("self_hosted"), Type.Literal("openai"), Type.Literal("openrouter")],
+                [
+                    Type.Literal("copilot"),
+                    Type.Literal("self_hosted"),
+                    Type.Literal("openai"),
+                    Type.Literal("openrouter"),
+                ],
                 {
                     description:
-                        "Which embedding backend to use. self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
+                        "Which embedding backend to use. copilot = OpenClaw's github-copilot auth via the gateway (text-embedding-3-small, 1536-dim padded to 4096; needs OPENCLAW_ENABLE_COPILOT=1 and a signed-in provider). self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured (copilot included) the tool asks the user to pick — set this and re-run.",
                 },
             ),
         ),
@@ -742,8 +796,8 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
     const estimateOnly = !!args.estimate_only
     const skipExisting = !!args.skip_existing
 
-    // Resolve input against the workspace dir (OpenClaw runs the gateway from /,
-    // so prefer the configured workspace over process.cwd()).
+    // Resolve input against the workspace dir (gateway runs from /, so prefer it
+    // over process.cwd()).
     const baseDir = process.env.OPENCLAW_WORKSPACE_DIR || process.cwd()
     const inputPath = path.isAbsolute(args.input) ? args.input : path.resolve(baseDir, args.input)
 
@@ -768,7 +822,7 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
         return `error: cannot stat ${inputPath}: ${msg}`
     }
 
-    // Env / config — all from process.env (no .env file inside the container).
+    // Env / config — all from process.env (no .env file in the container).
     const apiKey = process.env.POSTGREST_API_KEY ?? ""
     const postgrestUrl = process.env.POSTGREST_URL ?? DEFAULT_POSTGREST
 
@@ -777,9 +831,8 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
 
     if (needsPgrest && !apiKey) return "error: POSTGREST_API_KEY not set"
 
-    // Preflight: for a real ingest, make sure the destination tables exist BEFORE
-    // the expensive work (reading PDFs + embedding). If missing, return the exact
-    // required schema so the agent can create the tables and re-run.
+    // Preflight: verify destination tables exist BEFORE the expensive work
+    // (reading PDFs + embedding); if missing, return the required schema.
     if (needsPgrest) {
         const missing: string[] = []
         for (const t of ["rag_documents", "rag_chunks"]) {
@@ -788,10 +841,9 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
         if (missing.length) return requiredSchemaMessage(missing, EMBED_DIMS)
     }
 
-    // Resolve the embedding backend — only for a real ingest (dry-run /
-    // estimate-only never embed). If the corpus already has documents, PIN to the
-    // model that produced them (different models = incompatible vector spaces).
-    // Otherwise resolve freely (asking the user when ambiguous).
+    // Resolve the embedding backend (real ingest only). If the corpus already
+    // has documents, PIN to the model that produced them (different models =
+    // incompatible vector spaces); otherwise resolve freely.
     let backend: BackendConfig | null = null
     if (needsEmbed) {
         const pinned = await pinnedIdentity(postgrestUrl, apiKey)
@@ -1014,7 +1066,7 @@ export default defineToolPlugin({
         tool({
             name: "ingest_pdf",
             description:
-                "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if more than one is configured, the tool asks you to choose via embedding_backend.",
+                "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is GitHub Copilot (reusing OpenClaw's github-copilot auth; needs OPENCLAW_ENABLE_COPILOT=1), the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if one backend is configured it is used, and if more than one is configured (Copilot included) the tool asks you to choose via embedding_backend.",
             parameters: IngestPdfParams,
             execute: async (args: IngestPdfArgs) => runIngest(args),
         }),

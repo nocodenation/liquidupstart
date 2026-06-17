@@ -6,8 +6,7 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 LOGS_DIR="${PROJECT_DIR}/volumes/logs"
 DATA_DIR="${PROJECT_DIR}/volumes/data"
 
-# 5. Ensure log directories exist and are writable by containers that
-#    run as non-root (pgadmin_db, postgrest, nginx workers).
+# Log dirs must be writable by containers that run as non-root.
 for svc in postgres pgadmin_db pgadmin proxy swagger; do
   mkdir -p "${LOGS_DIR}/${svc}"
   chmod 0777 "${LOGS_DIR}/${svc}"
