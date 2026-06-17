@@ -14,7 +14,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('run', 'build', 'start', 'down', 'cleanup')]
+  [ValidateSet('run', 'build', 'start', 'down', 'cleanup', 'wipe')]
   [string]$Action,
 
   [Parameter(ValueFromRemainingArguments = $true)]
@@ -98,6 +98,7 @@ $script = switch ($Action) {
   'start'   { './scripts/linux/start.sh' }
   'down'    { './scripts/linux/down.sh' }
   'cleanup' { './scripts/linux/cleanup.sh' }
+  'wipe'    { './cleanup.sh' }
 }
 
 # --- 'run' action: open the dashboard in the default browser once it is up ---
