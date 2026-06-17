@@ -47,7 +47,7 @@ cp "$OPENCLAW_ENV_TEMPLATE" "$OPENCLAW_ENV"
 for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
            GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
            TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY \
-           GITHUB_COPILOT_TOKEN; do
+           COPILOT_GITHUB_TOKEN; do
   # Skip keys the template does not declare — OpenClaw doesn't support them.
   grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
   value="$(get_env "$key")"
@@ -86,8 +86,8 @@ CLAUDE_CLI_MODEL="$(get_env OPENCLAW_CLAUDE_CLI_MODEL)"
 ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
 [[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
 # A provided token implies Copilot is enabled (headless auth).
-if [[ -n "$(get_env GITHUB_COPILOT_TOKEN)" && "$ENABLE_COPILOT" != "1" ]]; then
-  echo "GitHub Copilot: GITHUB_COPILOT_TOKEN present — enabling Copilot (OPENCLAW_COPILOT_MODEL becomes primary)."
+if [[ -n "$(get_env COPILOT_GITHUB_TOKEN)" && "$ENABLE_COPILOT" != "1" ]]; then
+  echo "GitHub Copilot: COPILOT_GITHUB_TOKEN present — enabling Copilot (OPENCLAW_COPILOT_MODEL becomes primary)."
   ENABLE_COPILOT=1
 fi
 COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
@@ -143,7 +143,7 @@ for _tp in \
   "SYNTHETIC_API_KEY:synthetic" \
   "TOKENHUB_API_KEY:tokenhub" \
   "LKEAP_API_KEY:lkeap" \
-  "GITHUB_COPILOT_TOKEN:github-copilot"; do
+  "COPILOT_GITHUB_TOKEN:github-copilot"; do
   if [[ -n "$(get_env "${_tp%%:*}")" ]]; then
     MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_tp##*:}/*"
   fi
@@ -221,7 +221,7 @@ else
         c.agents.defaults.model = c.agents.defaults.model || {};
         c.agents.defaults.model.primary = COPILOT_MODEL;
         // Keep the github-copilot catalog selectable under device-flow auth (no
-        // GITHUB_COPILOT_TOKEN, so MODEL_WILDCARDS below would not include it).
+        // COPILOT_GITHUB_TOKEN, so MODEL_WILDCARDS below would not include it).
         c.agents.defaults.models = c.agents.defaults.models || {};
         if (!c.agents.defaults.models["github-copilot/*"]) c.agents.defaults.models["github-copilot/*"] = {};
       } else if (process.env.PRIMARY_MODEL) {
@@ -435,10 +435,10 @@ fi
 # discovers provider catalogs at boot, so the login must exist BEFORE `docker
 # compose up` — otherwise the gateway boots token-less and never lists Copilot
 # models. So we block here until the user signs in (via the dashboard panel)
-# rather than restarting the gateway afterwards. GITHUB_COPILOT_TOKEN skips the
+# rather than restarting the gateway afterwards. COPILOT_GITHUB_TOKEN skips the
 # wait; otherwise poll the auth store with a throwaway openclaw container.
 if [[ "$ENABLE_COPILOT" == "1" ]]; then
-  COPILOT_TOKEN="$(get_env GITHUB_COPILOT_TOKEN)"
+  COPILOT_TOKEN="$(get_env COPILOT_GITHUB_TOKEN)"
 
   # Run an openclaw CLI command against the shared auth store without the gateway.
   # The plugins mount is required: openclaw validates the full config (including
@@ -457,7 +457,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
   copilot_authed() { copilot_cli models auth list 2>/dev/null | grep -qi github-copilot; }
 
   if [[ -n "$COPILOT_TOKEN" ]]; then
-    echo "GitHub Copilot: GITHUB_COPILOT_TOKEN set in .env — skipping interactive sign-in."
+    echo "GitHub Copilot: COPILOT_GITHUB_TOKEN set in .env — skipping interactive sign-in."
   elif copilot_authed; then
     echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
   else
@@ -468,7 +468,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
     echo "========================= GITHUB COPILOT SIGN-IN NEEDED ========================="
     echo "OpenClaw is set to use GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1) but isn't"
     echo "authenticated yet. Sign in via the dashboard's 'GitHub Copilot sign-in' panel"
-    echo "(or set GITHUB_COPILOT_TOKEN in .env for headless auth)."
+    echo "(or set COPILOT_GITHUB_TOKEN in .env for headless auth)."
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 

@@ -91,7 +91,7 @@ export async function GET() {
   if (!existsSync(envFile)) return json({ needed: false });
   const env = parseEnvValues(readFileSync(envFile, 'utf8'));
   if (env.get('OPENCLAW_ENABLE_COPILOT')?.value !== '1') return json({ needed: false });
-  if (env.get('GITHUB_COPILOT_TOKEN')?.value) return json({ needed: false });
+  if (env.get('COPILOT_GITHUB_TOKEN')?.value) return json({ needed: false });
   if (!existsSync(join(STATE_DIR, 'openclaw.json'))) return json({ needed: false });
   return json({ needed: !(await copilotAuthed()) });
 }
