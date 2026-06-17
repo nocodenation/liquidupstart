@@ -1,21 +1,15 @@
 #!/usr/bin/env bash
-# Build the ingest-pdf Claude Code MCP server into a single self-contained ESM
-# bundle (dist/index.mjs).
-#
-# Why a bundle: the server is mounted read-only into openclaw-gateway (see
-# compose.yml) and started with `node dist/index.mjs`. Bundling inlines every
-# dependency (@modelcontextprotocol/sdk, unpdf, js-tiktoken) so it needs no
-# node_modules at runtime and no network/build step on the container. The
-# produced dist/index.mjs is committed to the repo. Rebuild after editing
-# src/index.ts (which is regenerated from the OpenClaw plugin by transform.mjs).
+# Build the ingest-pdf MCP server into a self-contained ESM bundle (dist/index.mjs).
+# Why bundle: the server is mounted read-only and run with `node dist/index.mjs`;
+# inlining all deps means no node_modules / network / build step at runtime.
+# dist/index.mjs is committed. Rebuild after editing src/index.ts.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMG="${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}"
 
-# --network host: the throwaway container needs npm registry access to fetch the
-# bundler + deps. --user 0:0: write dist/ back to the bind mount under
-# rootless/userns-remapped Docker (see compose.yml for the same pattern).
+# --network host: throwaway container needs npm registry access. --user 0:0:
+# write dist/ back to the bind mount under rootless/userns-remapped Docker.
 docker run --rm --network host --user 0:0 \
   -v "${SCRIPT_DIR}:/tool" \
   --entrypoint sh "$IMG" -c '

@@ -30,7 +30,7 @@
       bind:busy
       onchange={(task) => {
         if (task === 'start') started = true;
-        // Refresh load data so navigating away (Finish) sees current state.
+        // Refresh load data so Finish navigates with current state.
         invalidateAll();
       }}
     />
@@ -49,8 +49,8 @@
 
     <div class="actions">
       <a href="/config" class="back">← Back to the configuration</a>
-      <!-- Disabled while a task or sign-in is in flight: navigating away
-           mid-run would lose the live log (the task itself keeps running). -->
+      <!-- Disabled mid-run: navigating away would lose the live log (the task
+           itself keeps running). -->
       <a
         href={busy ? null : '/'}
         class="save finishlink"

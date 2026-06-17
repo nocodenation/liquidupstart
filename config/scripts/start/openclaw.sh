@@ -18,19 +18,17 @@ sed_inplace() {
   fi
 }
 
-# Read a KEY=value from the project-root .env (empty string if unset/missing).
-# `|| true`: a missing key makes grep exit 1, which under `set -o pipefail` +
-# `set -e` would otherwise abort the whole script.
+# Read a KEY=value from the project-root .env (empty if unset).
+# `|| true`: a missing key makes grep exit 1, aborting under set -e/pipefail.
 get_env() {
   grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
 
-# Render config/openclaw/.env from the template, then inject the model-provider
-# keys from the project-root .env. The template is the contract: only keys it
-# already declares (as a commented `# KEY=` line) are supported by OpenClaw —
-# any other keys in the root .env are ignored. For a supported key with a
-# non-empty value we uncomment its line and substitute the value; empty keys
-# stay commented so OpenClaw falls back to its other auth sources.
+# Render config/openclaw/.env from the template, then inject model-provider keys
+# from the root .env. The template is the contract: only keys it already declares
+# (as a commented `# KEY=` line) are supported; others are ignored. A supported
+# key with a non-empty value gets uncommented; empty keys stay commented so
+# OpenClaw falls back to its other auth sources.
 OPENCLAW_DIR="${PROJECT_DIR}/config/openclaw"
 OPENCLAW_ENV_TEMPLATE="${OPENCLAW_DIR}/templates/env_template"
 OPENCLAW_ENV="${OPENCLAW_DIR}/.env"
@@ -47,29 +45,25 @@ for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
            GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
            TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY \
            COPILOT_GITHUB_TOKEN; do
-  # Skip keys the template does not declare — OpenClaw does not support them.
+  # Skip keys the template does not declare — OpenClaw doesn't support them.
   grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
   value="$(get_env "$key")"
   [[ -z "$value" ]] && continue
-  # Match the commented template line `# KEY=...` (anchored on `KEY=` so the
-  # `_1`/`_KEYS`/`LIVE_*` variants are not touched) and replace it with the
-  # uncommented assignment. `|` delimiter avoids clashing with key characters.
+  # Uncomment the template line `# KEY=...`, anchored on `KEY=` so `_1`/`_KEYS`/
+  # `LIVE_*` variants aren't touched. `|` delimiter avoids clashing with key chars.
   sed_inplace -E "s|^#[[:space:]]*${key}=.*|${key}=${value}|" "$OPENCLAW_ENV"
   echo "  set ${key} (uncommented from root .env)"
 done
 
-# OpenClaw bind-mounts these host dirs into the gateway/CLI containers
-# (see compose.yml). Create them up front so that under rootless/userns-remapped
-# Docker they map back to the host UID that owns them, instead of letting the
-# daemon create them root-owned, which causes EACCES on first write to
-# /home/node/.openclaw/state.
+# Pre-create the host dirs OpenClaw bind-mounts (see compose.yml): under
+# rootless/userns-remapped Docker they then map to the host UID that owns them,
+# instead of the daemon creating them root-owned (EACCES on first write).
 STATE_DIR="${PROJECT_DIR}/volumes/_openclaw"
 WORKSPACE_DIR="${STATE_DIR}/workspace"
 SECRETS_DIR="${PROJECT_DIR}/volumes/_openclaw-auth-profile-secrets"
-# Persists the Claude Code CLI login (mounted at /home/node/.claude via
-# $CLAUDE_CONFIG_DIR; see compose.yml) so it survives container recreation.
-# Created unconditionally so the bind mount is never root-created; only used
-# when OPENCLAW_ENABLE_CLAUDE_CLI=1.
+# Persists the Claude Code CLI login (mounted at /home/node/.claude). Created
+# unconditionally so the bind mount is never root-created; only used when
+# OPENCLAW_ENABLE_CLAUDE_CLI=1.
 CLAUDE_DIR="${PROJECT_DIR}/volumes/_openclaw-claude"
 
 for dir in "${STATE_DIR}" "${WORKSPACE_DIR}" "${SECRETS_DIR}" "${CLAUDE_DIR}"; do
@@ -77,32 +71,25 @@ for dir in "${STATE_DIR}" "${WORKSPACE_DIR}" "${SECRETS_DIR}" "${CLAUDE_DIR}"; d
   chmod 777 "$dir"
 done
 
-# Build/start control flag (read directly from the root .env, like
-# OPENCLAW_PRIMARY_MODEL below). When 1, OpenClaw is pointed at the Claude Code
-# CLI backend and OPENCLAW_PRIMARY_MODEL is ignored.
+# When 1, OpenClaw uses the Claude Code CLI backend and OPENCLAW_PRIMARY_MODEL
+# is ignored.
 ENABLE_CLAUDE_CLI="$(get_env OPENCLAW_ENABLE_CLAUDE_CLI)"
 [[ -z "$ENABLE_CLAUDE_CLI" ]] && ENABLE_CLAUDE_CLI=0
 CLAUDE_CLI_MODEL="$(get_env OPENCLAW_CLAUDE_CLI_MODEL)"
 [[ -z "$CLAUDE_CLI_MODEL" ]] && CLAUDE_CLI_MODEL="anthropic/claude-opus-4-8"
 
-# GitHub Copilot backend toggle (sibling of OPENCLAW_ENABLE_CLAUDE_CLI). When 1,
-# OPENCLAW_COPILOT_MODEL becomes the primary and OPENCLAW_PRIMARY_MODEL is
-# ignored. Precedence when more than one is set: claude-cli > copilot > primary.
+# When 1, OPENCLAW_COPILOT_MODEL becomes primary (OPENCLAW_PRIMARY_MODEL ignored).
+# Precedence when several are set: claude-cli > copilot > primary.
 ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
 [[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
 COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
 [[ -z "$COPILOT_MODEL" ]] && COPILOT_MODEL="github-copilot/gpt-4.1"
 
-# Bootstrap baseline OpenClaw config + workspace inside the state volume.
-# `setup` (without --wizard) is non-interactive: it only creates the config,
-# workspace, and session folders. The openclaw-cli service shares the gateway's
-# network namespace (network_mode: service:openclaw-gateway), so Compose starts
-# openclaw-gateway as a dependency automatically.
-#
-# Only bootstrap when openclaw.json is missing. On subsequent starts the config
-# already exists (and may carry user edits), so re-running `setup` is unnecessary.
-# The model patch further below still runs every start, keeping .env's
-# OPENCLAW_PRIMARY_MODEL the source of truth for agents.defaults.model.primary.
+# Bootstrap baseline config + workspace in the state volume, only when
+# openclaw.json is missing (subsequent starts may carry user edits). `setup`
+# (no --wizard) is non-interactive. openclaw-cli shares the gateway's netns, so
+# Compose starts openclaw-gateway as a dependency. The model patch below still
+# runs every start, keeping .env the source of truth for the primary model.
 CONFIG_JSON="${STATE_DIR}/openclaw.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
   cd "${PROJECT_DIR}"
@@ -112,46 +99,28 @@ else
 fi
 
 # Patch openclaw.json on every start so the gateway works behind the proxy:
-#
-#   1. gateway.auth (trusted-proxy mode) — auth is delegated to nginx so the
-#      dashboard needs no token/password in the browser. mode:"none" is impossible
-#      here (the gateway fail-closes on a non-loopback "lan" bind without auth, with
-#      no override), so instead the gateway trusts the X-Forwarded-User header that
-#      nginx injects, but only from trusted proxy IPs (gateway.trustedProxies). We
-#      list the private Docker subnets plus loopback, and allow loopback so the
-#      openclaw-cli (shared netns → 127.0.0.1) keeps working. This is why the
-#      gateway must never publish host ports — the header is only trustworthy
-#      because nothing but the proxy/CLI can reach the gateway.
-#
-#   2. gateway.controlUi.allowedOrigins — the dashboard's browser WebSocket origin
-#      is rejected ("Browser origin not allowed") unless allowlisted. We set ["*"]
-#      (any origin) so it stays correct regardless of host/port; the origin check is
-#      only a CSRF-style guard. No env var exists — it must live in the config.
-#
-#   3. gateway.controlUi.dangerouslyDisableDeviceAuth — disables the per-browser
-#      device-pairing check. Behind the proxy the gateway sees the proxy container's
-#      IP, not localhost, so the milder allowInsecureAuth (localhost only) does not
+#   1. gateway.auth (trusted-proxy) — auth delegated to nginx; the gateway trusts
+#      the X-Forwarded-User header only from trusted proxy IPs (private Docker
+#      subnets + loopback; loopback keeps the shared-netns openclaw-cli working).
+#      mode:"none" isn't possible (gateway fail-closes on a non-loopback bind).
+#      This is why the gateway must never publish host ports — the header is only
+#      trustworthy because nothing but the proxy/CLI can reach the gateway.
+#   2. gateway.controlUi.allowedOrigins=["*"] — otherwise the dashboard's WebSocket
+#      origin is rejected. Safe (only a CSRF-style guard); no env var exists.
+#   3. gateway.controlUi.dangerouslyDisableDeviceAuth — behind the proxy the gateway
+#      sees the proxy IP not localhost, so allowInsecureAuth (localhost-only) can't
 #      apply and every browser would otherwise be forced to pair.
+#   4. agents.defaults.model.primary — overrides `setup`'s placeholder.
+#      Precedence: claude-cli > copilot > OPENCLAW_PRIMARY_MODEL.
 #
-#   4. agents.defaults.model.primary — `setup` writes a placeholder
-#      ("openclaw-default"). Precedence: OPENCLAW_ENABLE_CLAUDE_CLI=1 forces
-#      OPENCLAW_CLAUDE_CLI_MODEL on the claude-cli runtime; else
-#      OPENCLAW_ENABLE_COPILOT=1 forces OPENCLAW_COPILOT_MODEL on github-copilot;
-#      else OPENCLAW_PRIMARY_MODEL when set. The first two ignore
-#      OPENCLAW_PRIMARY_MODEL.
-#
-# `|| true`: when a key is absent grep exits 1, which under `set -o pipefail`
-# + `set -e` would abort the whole script (and stop start.sh before it brings
-# the stack up). Tolerate a missing key and fall through to the guard below.
+# `|| true`: a missing key makes grep exit 1, aborting under set -e/pipefail;
+# tolerate it and fall through to the guard below.
 PRIMARY_MODEL="$(grep -E '^OPENCLAW_PRIMARY_MODEL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d "'\"" || true)"
 
-# Build a `provider/*` wildcard allowlist from the model-provider tokens that are
-# set, so OpenClaw's model picker shows every model from every credentialed
-# provider — not just the primary. `agents.defaults.models` is an allowlist when
-# set, and bundled providers publish their own catalogs once auth is present, so
-# a wildcard per provider is enough. Maps each token to its OpenClaw provider id;
-# GEMINI_API_KEY and GOOGLE_API_KEY both map to "google" (the node patch dedupes
-# by object key). No associative arrays, for bash 3.2 (macOS) compatibility.
+# Build a `provider/*` wildcard allowlist from the provider tokens that are set,
+# so the model picker shows every credentialed provider's models, not just the
+# primary. Maps each token to its OpenClaw provider id (GEMINI/GOOGLE both map to
+# "google"; node patch dedupes by key). Plain loop for bash 3.2 (macOS) compat.
 MODEL_WILDCARDS=""
 for _tp in \
   "ANTHROPIC_API_KEY:anthropic" \
@@ -177,8 +146,8 @@ else
   if [[ -z "$PRIMARY_MODEL" ]]; then
     echo "Note: OPENCLAW_PRIMARY_MODEL not set in ${ENV_FILE}; leaving openclaw.json model untouched." >&2
   fi
-  # Patch the JSON with the image's bundled node (no host jq/node dependency, and
-  # no gateway needed — a throwaway container mounting only the state dir).
+  # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
+  # a throwaway container mounting only the state dir).
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
     -e PRIMARY_MODEL="${PRIMARY_MODEL}" \
@@ -197,10 +166,8 @@ else
 
       c.gateway = c.gateway || {};
 
-      // Delegate auth to the nginx proxy: the browser presents no token/password.
-      // nginx sets X-Forwarded-User; the gateway trusts it only from these proxy
-      // IPs (private Docker subnets + loopback). allowLoopback keeps openclaw-cli
-      // (shared netns → 127.0.0.1) working.
+      // Delegate auth to nginx (sets X-Forwarded-User); trust it only from these
+      // proxy IPs. allowLoopback keeps the shared-netns openclaw-cli working.
       c.gateway.auth = c.gateway.auth || {};
       c.gateway.auth.mode = "trusted-proxy";
       c.gateway.auth.trustedProxy = c.gateway.auth.trustedProxy || {};
@@ -208,20 +175,16 @@ else
       c.gateway.auth.trustedProxy.allowLoopback = true;
       c.gateway.trustedProxies = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 
-      // Allow any browser origin (the dashboard is proxied; the proxy now guards
-      // access). Keeps working regardless of host/port.
+      // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};
       c.gateway.controlUi.allowedOrigins = ["*"];
 
-      // Disable per-browser device pairing (see header comment). allowInsecureAuth
-      // is localhost-only and useless behind the proxy, so use the break-glass key.
+      // Disable per-browser device pairing (see header comment): allowInsecureAuth
+      // is localhost-only and useless behind the proxy.
       c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
 
-      // Model selection. Precedence: claude-cli > copilot > OPENCLAW_PRIMARY_MODEL.
-      // claude-cli forces OPENCLAW_CLAUDE_CLI_MODEL on the claude-cli runtime;
-      // copilot forces OPENCLAW_COPILOT_MODEL on the github-copilot provider; both
-      // ignore OPENCLAW_PRIMARY_MODEL. Otherwise set the primary from PRIMARY_MODEL
-      // when provided (an empty value leaves the placeholder/manual choice).
+      // Model selection. Precedence: claude-cli > copilot > OPENCLAW_PRIMARY_MODEL
+      // (the first two ignore PRIMARY_MODEL; an empty value leaves the placeholder).
       const enableClaudeCli = process.env.ENABLE_CLAUDE_CLI === "1";
       const enableCopilot = process.env.ENABLE_COPILOT === "1";
       if (enableClaudeCli && enableCopilot) {
@@ -238,10 +201,8 @@ else
         c.agents.defaults.models = c.agents.defaults.models || {};
         c.agents.defaults.models[CLAUDE_CLI_MODEL] = c.agents.defaults.models[CLAUDE_CLI_MODEL] || {};
         c.agents.defaults.models[CLAUDE_CLI_MODEL].agentRuntime = { id: "claude-cli" };
-        // Run the CLI through our wrapper (see config/openclaw/openclaw-claude.sh):
-        // it re-injects CLAUDE_CONFIG_DIR (persist login in the volume), IS_SANDBOX
-        // (allow --dangerously-skip-permissions as root), and an optional OAuth
-        // token — all of which OpenClaw otherwise strips from the child env.
+        // Run the CLI through our wrapper, which re-injects CLAUDE_CONFIG_DIR,
+        // IS_SANDBOX, and an optional OAuth token that OpenClaw otherwise strips.
         c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
         c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
         c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
@@ -250,9 +211,8 @@ else
         c.agents.defaults = c.agents.defaults || {};
         c.agents.defaults.model = c.agents.defaults.model || {};
         c.agents.defaults.model.primary = COPILOT_MODEL;
-        // Ensure the github-copilot catalog is selectable even when auth comes
-        // from the device-flow sign-in (no COPILOT_GITHUB_TOKEN in env, so the
-        // MODEL_WILDCARDS list below would not include it).
+        // Keep the github-copilot catalog selectable under device-flow auth (no
+        // COPILOT_GITHUB_TOKEN, so MODEL_WILDCARDS below would not include it).
         c.agents.defaults.models = c.agents.defaults.models || {};
         if (!c.agents.defaults.models["github-copilot/*"]) c.agents.defaults.models["github-copilot/*"] = {};
       } else if (process.env.PRIMARY_MODEL) {
@@ -262,12 +222,24 @@ else
         c.agents.defaults.model.primary = process.env.PRIMARY_MODEL;
       }
 
-      // Model picker allowlist. `agents.defaults.models` is an allowlist when set,
-      // so without this only the primary (plus the claude-cli ref) would show.
-      // Add a `provider/*` wildcard for every provider whose token is present
-      // (built in MODEL_WILDCARDS by the start script), so the picker offers every
-      // model from every credentialed provider. Idempotent and additive: existing
-      // entries (e.g. the claude-cli model ref with its runtime) are preserved.
+      // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
+      // memorySearch at github-copilot. Independent of the chat-model precedence.
+      if (enableCopilot) {
+        c.gateway = c.gateway || {};
+        c.gateway.http = c.gateway.http || {};
+        c.gateway.http.endpoints = c.gateway.http.endpoints || {};
+        c.gateway.http.endpoints.chatCompletions = c.gateway.http.endpoints.chatCompletions || {};
+        c.gateway.http.endpoints.chatCompletions.enabled = true;
+        c.agents = c.agents || {};
+        c.agents.defaults = c.agents.defaults || {};
+        c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
+        c.agents.defaults.memorySearch.provider = "github-copilot";
+        if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
+      }
+
+      // Model picker allowlist: add a `provider/*` wildcard per credentialed
+      // provider (from MODEL_WILDCARDS) so the picker is not limited to the primary.
+      // Idempotent and additive: existing entries (e.g. the claude-cli ref) survive.
       const modelWildcards = (process.env.MODEL_WILDCARDS || "")
         .split(",").map((s) => s.trim()).filter(Boolean);
       if (modelWildcards.length) {
@@ -279,20 +251,16 @@ else
         }
       }
 
-      // Register local plugin dirs (idempotent add). A plugin loaded from
-      // plugins.load.paths resolves its imports from its own location; our
-      // plugins ship a self-contained dist/*.mjs bundle (see config/openclaw/
-      // plugins/<id>/build.sh), so no node_modules is needed at runtime.
+      // Register local plugin dirs. Our plugins ship a self-contained dist/*.mjs
+      // bundle, so no node_modules is needed at runtime.
       const pluginPaths = (process.env.PLUGIN_PATHS || "")
         .split(",").map((s) => s.trim()).filter(Boolean);
       if (pluginPaths.length) {
         c.plugins = c.plugins || {};
         c.plugins.load = c.plugins.load || {};
-        // Authoritative: the start script owns this list, so REPLACE it instead of
-        // appending. Stale entries must be dropped because OpenClaw validates every
-        // load.path at startup and aborts if one is missing — e.g. an old
-        // /home/node/.openclaw/plugins/ingest-pdf left in a persisted openclaw.json
-        // (that dir is now a tmpfs and intentionally empty).
+        // REPLACE, not append: the start script owns this list. OpenClaw validates
+        // every load.path at startup and aborts if one is missing, so stale entries
+        // (e.g. an old path persisted in openclaw.json) must be dropped.
         c.plugins.load.paths = pluginPaths;
       }
 
@@ -313,27 +281,23 @@ else
       } else if (process.env.PRIMARY_MODEL) {
         console.log("openclaw.json: set agents.defaults.model.primary =", process.env.PRIMARY_MODEL);
       }
+      if (enableCopilot) {
+        console.log("openclaw.json: enabled gateway /v1/embeddings + memorySearch.provider = github-copilot (model", c.agents.defaults.memorySearch.model + ") for RAG embeddings");
+      }
     '
 fi
 
-# When the Claude CLI backend is enabled, OpenClaw drives `claude -p` inside the
-# container (through /usr/local/bin/openclaw-claude), which needs a Claude Code
-# login. The wrapper pins CLAUDE_CONFIG_DIR to /home/node/.claude, so all state
-# (.claude.json + .credentials.json) lands in ${CLAUDE_DIR}. If not yet
-# authenticated, we run the interactive sign-in for the user — but only when a
-# terminal is attached (a non-interactive start, e.g. CI, falls back to printing
-# the command). A long-lived token in CLAUDE_CODE_OAUTH_TOKEN (from
-# `claude setup-token`) skips login entirely; it is forwarded to the CLI via
-# OPENCLAW_CLAUDE_OAUTH_TOKEN.
+# The Claude CLI backend needs a Claude Code login. The wrapper pins
+# CLAUDE_CONFIG_DIR to /home/node/.claude, so login state lands in ${CLAUDE_DIR}.
+# If not authenticated, run interactive sign-in — but only with a terminal
+# attached (CI falls back to printing the command). A long-lived
+# CLAUDE_CODE_OAUTH_TOKEN skips login and is forwarded to the CLI.
 if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   OAUTH_TOKEN="$(get_env CLAUDE_CODE_OAUTH_TOKEN)"
 
-  # Make instructions.md available to Claude Code as its global instructions at
-  # ~/.claude/CLAUDE.md. Copied into the credential volume (host-side) rather than
-  # bind-mounted: a nested single-FILE mount inside the .claude volume fails on
-  # Docker Desktop / macOS ("mountpoint ... is outside of rootfs"). Re-copied each
-  # start so edits to instructions.md propagate. (Skills are a nested DIRECTORY
-  # mount in compose.yml, which works fine.)
+  # Install instructions.md as Claude Code's global ~/.claude/CLAUDE.md. Copied
+  # (not bind-mounted) because a nested single-FILE mount in the .claude volume
+  # fails on Docker Desktop/macOS. Re-copied each start so edits propagate.
   INSTRUCTIONS_SRC="${PROJECT_DIR}/config/agents/instructions.md"
   if [[ -f "$INSTRUCTIONS_SRC" ]]; then
     cp -f "$INSTRUCTIONS_SRC" "${CLAUDE_DIR}/CLAUDE.md"
@@ -342,20 +306,17 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "Warning: ${INSTRUCTIONS_SRC} not found; Claude Code will have no global CLAUDE.md." >&2
   fi
 
-  # Clear stale config backups left by aborted/previous runs. Claude Code
-  # fails hard ("config file not found, but a backup exists") when the main
-  # .claude.json is gone yet a backup remains — which is exactly the state a
-  # failed first run leaves behind. Only clear when there is no live login.
+  # Clear stale config backups from aborted runs: Claude Code fails hard when
+  # .claude.json is gone but a backup remains. Only when there's no live login.
   if [[ ! -f "${CLAUDE_DIR}/.credentials.json" && ! -f "${CLAUDE_DIR}/.claude.json" \
         && -d "${CLAUDE_DIR}/backups" ]]; then
     echo "Claude CLI: clearing stale config backups in ${CLAUDE_DIR}/backups (no live login present)."
     rm -rf "${CLAUDE_DIR}/backups"
   fi
 
-  # Run the image's bundled claude (through the wrapper, so CLAUDE_CONFIG_DIR /
-  # IS_SANDBOX match runtime) in a throwaway container with the credential volume
-  # mounted — no running gateway required. First arg is extra `docker run` flags
-  # (e.g. "-it"); the rest are passed to claude.
+  # Run the bundled claude through the wrapper in a throwaway container with the
+  # credential volume mounted (no gateway needed). First arg is extra `docker run`
+  # flags (e.g. "-it"); the rest are passed to claude.
   claude_cli() {
     local docker_flags="$1"; shift
     docker run --rm ${docker_flags} --user 0:0 \
@@ -377,10 +338,9 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "  ourselves and show one '*' per character. Press Enter when done."
     echo "  Login persists in ${CLAUDE_DIR}."
 
-    # Read a secret from the controlling terminal, echoing a '*' per character so a
-    # paste is visibly confirmed even when the underlying prompt doesn't echo.
-    # Reads/writes /dev/tty directly (so it's independent of the terminal's echo
-    # state) and handles backspace plus a trailing CR from a Windows-style paste.
+    # Read a secret from /dev/tty, echoing a '*' per char so a paste is visibly
+    # confirmed even when the underlying prompt doesn't echo. Uses /dev/tty
+    # directly (independent of echo state); handles backspace and a trailing CR.
     read_masked() {  # $1=prompt  $2=output-var-name
       local __p="$1" __out="$2" ch acc=""
       printf '%s' "$__p" > /dev/tty
@@ -396,19 +356,17 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       printf -v "$__out" '%s' "$acc"
     }
 
-    # Drive `claude auth login` but supply the pasted code ourselves so we control
-    # the echo. claude prints its URL/prompt to the terminal (we leave stdout/err
-    # alone); its stdin is a FIFO we fill from read_masked once the user has the
-    # code. `-i` only: `-t` can't combine with a non-tty (FIFO) stdin. Opening the
-    # FIFO read-write (3<>) avoids the open() blocking if claude bails early.
+    # Drive `claude auth login` but feed the pasted code ourselves (via a FIFO on
+    # stdin) so we control the echo. `-i` only: `-t` can't combine with FIFO stdin.
+    # Open the FIFO read-write (3<>) so open() doesn't block if claude bails early.
     login_with_masked_paste() {
       local fifo code rc=0
       fifo="$(mktemp -u)"; mkfifo "$fifo"
       claude_cli "-i" auth login --claudeai < "$fifo" &
       local pid=$!
       exec 3<> "$fifo"
-      # Give claude a moment to start; if it exited immediately it likely needs a
-      # real TTY — bail so the caller can fall back to the plain interactive login.
+      # If claude exits immediately it likely needs a real TTY — bail so the
+      # caller falls back to the plain interactive login.
       sleep 1
       if ! kill -0 "$pid" 2>/dev/null; then
         exec 3>&-; rm -f "$fifo"; return 1
@@ -424,8 +382,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     if login_with_masked_paste || claude_cli "" auth status >/dev/null 2>&1; then
       echo "Claude CLI: login complete."
     elif claude_cli "-it" auth login --claudeai; then
-      # Fallback: the masked-paste path didn't complete (e.g. claude insisted on a
-      # real TTY); run claude's own interactive login directly.
+      # Fallback when masked-paste didn't complete: run claude's own login directly.
       echo "Claude CLI: login complete."
     else
       echo "Warning: Claude Code sign-in did not complete; OpenClaw requests will fail until you authenticate." >&2
@@ -435,7 +392,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       echo "    docker compose exec -it openclaw-gateway openclaw-claude setup-token" >&2
     fi
   else
-    # No terminal attached — cannot prompt; tell the user how to do it manually.
+    # No terminal attached — tell the user how to authenticate manually.
     echo "" >&2
     echo "=============================== ACTION REQUIRED ===============================" >&2
     echo "OpenClaw is set to use the Claude Code CLI, but it is not authenticated yet" >&2
@@ -451,15 +408,11 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "" >&2
   fi
 
-  # Register the Claude-native ingest_pdf tool (a stdio MCP server, the Claude
-  # Code port of the OpenClaw ingest-pdf plugin) at user scope, so every
-  # claude-cli invocation can call it. The server bundle is mounted read-only at
-  # /home/node/.claude-tools/ingest-pdf (see compose.yml) and inherits the
-  # PostgREST/embedding env from the claude process. Written to the user config
-  # in CLAUDE_CONFIG_DIR (the credential volume), so it persists. remove+add
-  # makes the command/path idempotent across restarts. This is the right channel
-  # only while the claude-cli backend is NOT in bundleMcp mode (the default); a
-  # bundleMcp backend forces --strict-mcp-config and would ignore user scope.
+  # Register the ingest_pdf stdio MCP server at user scope so every claude-cli
+  # invocation can call it; written to CLAUDE_CONFIG_DIR so it persists. remove+add
+  # keeps it idempotent across restarts. Works only while the claude-cli backend
+  # is NOT in bundleMcp mode (default); bundleMcp forces --strict-mcp-config and
+  # ignores user scope.
   CLAUDE_MCP_JSON='{"type":"stdio","command":"node","args":["/home/node/.claude-tools/ingest-pdf/dist/index.mjs"]}'
   claude_cli "" mcp remove -s user ingest-pdf >/dev/null 2>&1 || true
   if claude_cli "" mcp add-json -s user ingest-pdf "$CLAUDE_MCP_JSON" >/dev/null 2>&1; then
@@ -469,24 +422,18 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   fi
 fi
 
-# When the GitHub Copilot backend is enabled, OpenClaw's native github-copilot
-# provider needs a login in the agent's auth store. The gateway discovers each
-# provider's catalog at boot, so the login must be in place BEFORE `docker
-# compose up` (back in start.sh) — otherwise the gateway boots token-less and
-# never lists the Copilot models. So here, before that, we block until the user
-# has signed in (via the dashboard's Copilot panel), instead of restarting the
-# gateway afterwards.
-#
-# COPILOT_GITHUB_TOKEN (a gho_/ghu_ OAuth token) skips the wait. Otherwise we
-# check/poll the auth store with a throwaway openclaw container that mounts the
-# same state/secrets/plugins the gateway uses (no running gateway required); the
-# dashboard performs the actual device-flow login the same way.
+# The github-copilot provider needs a login in the auth store. The gateway
+# discovers provider catalogs at boot, so the login must exist BEFORE `docker
+# compose up` — otherwise the gateway boots token-less and never lists Copilot
+# models. So we block here until the user signs in (via the dashboard panel)
+# rather than restarting the gateway afterwards. COPILOT_GITHUB_TOKEN skips the
+# wait; otherwise poll the auth store with a throwaway openclaw container.
 if [[ "$ENABLE_COPILOT" == "1" ]]; then
   COPILOT_TOKEN="$(get_env COPILOT_GITHUB_TOKEN)"
 
   # Run an openclaw CLI command against the shared auth store without the gateway.
   # The plugins mount is required: openclaw validates the full config (including
-  # plugins.load.paths) before running any subcommand.
+  # plugins.load.paths) before any subcommand.
   copilot_cli() {
     docker run --rm --user 0:0 --entrypoint openclaw \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
@@ -505,8 +452,8 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
   elif copilot_authed; then
     echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
   else
-    # Emit the marker the dashboard watches for (it opens the Copilot sign-in
-    # panel), plus a human-readable note for terminal/CI runs.
+    # Emit the marker the dashboard watches for (opens the Copilot sign-in panel),
+    # plus a human-readable note for terminal/CI runs.
     echo "::aiw-copilot-auth-required::"
     echo ""
     echo "========================= GITHUB COPILOT SIGN-IN NEEDED ========================="

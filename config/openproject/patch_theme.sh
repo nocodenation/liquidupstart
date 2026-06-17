@@ -2,19 +2,15 @@
 #
 # Injects a custom stylesheet <link> into OpenProject's rendered <head>.
 #
-# OpenProject's built-in theming (colors/logo) is gated behind an Enterprise
-# token (apply_custom_styles? -> EnterpriseToken.allows_to?(:define_custom_style)).
-# To theme the Community edition we bypass that path entirely: we append an
-# external stylesheet link to the head partial, and nginx serves the CSS as a
-# static file at /custom-theme/style.css.
+# Built-in theming is gated behind an Enterprise token, so for the Community
+# edition we bypass it: append a stylesheet link to the head partial (nginx
+# serves the CSS at /custom-theme/style.css).
 #
-# _common_head.html.erb is rendered inside <head> by BOTH base.html.erb (main
-# app) and only_logo.html.erb (login / error pages), so patching it once covers
-# every server-rendered page. The link is appended at the end of the partial so
-# it loads after OpenProject's own stylesheets and wins the cascade.
+# _common_head.html.erb is rendered by both base.html.erb and only_logo.html.erb,
+# so patching it once covers every page. Appended last so it wins the cascade.
 #
-# Runs on every container start (the image's /app is not volume-mounted, so the
-# ERB resets each recreate). The grep guard makes re-runs a no-op.
+# Runs every start (/app isn't volume-mounted, so the ERB resets each recreate);
+# the grep guard makes re-runs a no-op.
 set -eu
 
 HEAD_PARTIAL="/app/app/views/layouts/_common_head.html.erb"

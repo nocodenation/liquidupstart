@@ -1,15 +1,9 @@
-// Interactive GitHub Copilot sign-in for OpenClaw's native github-copilot
-// provider (OPENCLAW_ENABLE_COPILOT=1).
+// Interactive GitHub Copilot sign-in for OpenClaw's github-copilot provider.
 //
-// The login runs in a THROWAWAY openclaw container (not the gateway): during a
-// start, config/scripts/start/openclaw.sh blocks BEFORE `docker compose up`
-// waiting for this sign-in, so the gateway isn't running yet — and it must boot
-// already-authenticated so it discovers the Copilot catalog (no restart). The
-// throwaway mounts the same state/secrets/plugins the gateway uses, so it
-// reads/writes the same per-agent auth store. `openclaw models auth
-// login-github-copilot` needs a TTY, so we allocate one with `-t`; it prints a
-// github.com/login/device URL + code, then polls and exits 0 once the user
-// authorizes — no code is pasted back.
+// Runs in a THROWAWAY container, not the gateway: openclaw.sh blocks here BEFORE
+// `docker compose up`, so the gateway can boot already-authenticated and discover
+// the Copilot catalog. The throwaway mounts the gateway's state/secrets, hitting
+// the same per-agent auth store.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -22,15 +16,14 @@ const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? 'all-in-wonder/openclaw:lat
 const STATE_DIR = join(ENV_DIR, 'volumes', '_openclaw');
 const SECRETS_DIR = join(ENV_DIR, 'volumes', '_openclaw-auth-profile-secrets');
 const PLUGINS_DIR = join(ENV_DIR, 'config', 'openclaw', 'plugins');
-const LOGIN_TIMEOUT_MS = 15 * 60_000; // GitHub device codes expire in 15 minutes
+const LOGIN_TIMEOUT_MS = 15 * 60_000; // GitHub device codes expire in 15 min
 const PROBE_TIMEOUT_MS = 60_000;
 
 let child: ReturnType<typeof spawn> | null = null;
 
-// Throwaway openclaw invocation that targets the same auth store as the gateway.
-// Mounts mirror the gateway (state, auth-profile secrets) plus the plugins dir
-// the gateway copies in at boot — openclaw validates the full config (incl.
-// plugins.load.paths) before running ANY subcommand, so that mount is required.
+// The plugins mount is required (not just state/secrets): openclaw validates the
+// full config, incl. plugins.load.paths, before running ANY subcommand.
+// TTY (`-t`) is allocated because login-github-copilot requires one.
 function openclawArgs(tty: boolean, ...args: string[]): string[] {
   return [
     'run',
@@ -86,16 +79,12 @@ function dockerCapture(args: string[], timeoutMs: number): Promise<{ code: numbe
   });
 }
 
-// A github-copilot auth profile present for agent "main" means we're signed in.
 async function copilotAuthed(): Promise<boolean> {
   const { out } = await dockerCapture(openclawArgs(false, 'models', 'auth', 'list'), PROBE_TIMEOUT_MS);
   return /github-copilot/i.test(out);
 }
 
-// Probe whether a Copilot sign-in is needed: the provider is enabled, no headless
-// token is set, OpenClaw is set up (openclaw.json rendered by openclaw.sh), and
-// no github-copilot profile exists yet. No gateway-running check — the sign-in
-// runs while the stack is still starting (gateway down).
+// No gateway-running check here: the sign-in runs while the stack is starting.
 export async function GET() {
   const envFile = join(ENV_DIR, '.env');
   if (!existsSync(envFile)) return json({ needed: false });
@@ -151,9 +140,8 @@ export async function POST({ request }) {
       c.on('close', async (code) => {
         clearTimeout(timeout);
         child = null;
-        // A non-zero/killed exit may still have stored a valid profile — trust
-        // the auth list as the source of truth, like the Claude flow does. No
-        // restart needed: openclaw.sh waits for this before booting the gateway.
+        // A non-zero/killed exit may still have stored a valid profile, so trust
+        // the auth list as the source of truth (like the Claude flow does).
         const ok = code === 0 || (await copilotAuthed());
         write(ok ? '\n[auth succeeded]\n' : `\n[auth failed with exit code ${code}]\n`);
         finish();

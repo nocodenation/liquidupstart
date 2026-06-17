@@ -61,10 +61,9 @@ openssl pkcs12 -export \
 
 echo "Generating NiFi truststore (PKCS12)..."
 rm -f "${CERTS_DIR}/nifi.truststore.p12"
-# keytool is a Java tool: it decodes file paths/argv with the locale's charset
-# (sun.jnu.encoding). On a non-UTF-8 locale - the toolbox's Debian default is
-# ANSI_X3.4-1968 - a non-ASCII project path (e.g. ".../Geschäft/...") is mangled
-# to "?" and keytool can't find the cert. Force a UTF-8 locale so paths survive.
+# keytool decodes paths with the locale charset; on a non-UTF-8 locale (the
+# toolbox's Debian default) a non-ASCII project path is mangled to "?" and the
+# cert is not found. Force a UTF-8 locale so paths survive.
 if command -v keytool &>/dev/null; then
     LC_ALL=C.UTF-8 keytool -importcert -trustcacerts \
         -alias "nifi-ingress" \

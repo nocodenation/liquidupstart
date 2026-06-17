@@ -1,19 +1,9 @@
 /**
- * Custom theme for the All-in-Wonder OpenProject instance.
- *
- * Served statically by nginx at /custom-theme/style.css and injected into the
- * <head> of every OpenProject page by config/openproject/patch_theme.sh.
- * Because this link is appended last in <head>, these rules load after
- * OpenProject's own stylesheets.
- *
- * OpenProject is built on GitHub Primer. Brand colors flow through a small set
- * of CSS custom properties (see app/views/custom_styles/_inline_css.erb and
- * _primer_color_mapping.erb in the OpenProject source). Redefining them on
- * :root recolors the app the same way the Enterprise "Design" admin would —
- * without needing an Enterprise token.
- *
- * Bump the ?v= query in patch_theme.sh when you change this file to bust the
- * browser cache.
+ * Custom theme for All-in-Wonder OpenProject. Served by nginx and injected last
+ * into <head> by patch_theme.sh, so it loads after OpenProject's stylesheets.
+ * OpenProject uses GitHub Primer; redefining its brand CSS vars on :root
+ * recolors the app like the Enterprise "Design" admin, without a token.
+ * Bump the ?v= query in patch_theme.sh on change to bust the browser cache.
  */
 
 :root {
@@ -37,8 +27,7 @@
 	--headers-color: #2B79BB;
 }
 
-/* Primer maps the accent color inside themed scopes with !important, so mirror
-   it here to guarantee links/controls pick up the brand color. */
+/* Primer maps accent inside themed scopes with !important; mirror it here. */
 [data-color-mode][data-light-theme="light"],
 [data-color-mode][data-dark-theme="dark"] {
 	/*--fgColor-accent: var(--accent-color) !important;*/

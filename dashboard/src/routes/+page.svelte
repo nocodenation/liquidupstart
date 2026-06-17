@@ -4,9 +4,9 @@
 
   let { data } = $props();
 
-  // Both Stop and Rebuild bring the stack down before they finish (the page
-  // only re-queries running state on success). Hide the now-stale service tiles
-  // as soon as either starts, instead of leaving dead URLs on screen.
+  // Stop and Rebuild both bring the stack down, but running state is only
+  // re-queried on success — hide the stale service tiles the moment either
+  // starts rather than leaving dead URLs on screen.
   let activeTask = $state('');
   let tearingDown = $derived(activeTask === 'down' || activeTask === 'rebuild');
 </script>

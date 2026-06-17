@@ -1,5 +1,5 @@
-// "Finish" button target: reply, then stop the server so the installer
-// container (run with --rm by run.sh) exits and the script continues.
+// "Finish" button target: reply, then exit so the installer container (--rm)
+// exits and run.sh continues.
 export function POST() {
   setTimeout(() => process.exit(0), 250);
   return new Response(

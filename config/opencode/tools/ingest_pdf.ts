@@ -1,35 +1,14 @@
 /**
- * Custom OpenCode tool — PDF ingester for the All-In-Wonder RAG store.
+ * OpenCode tool — PDF ingester for the All-In-Wonder RAG store. Extracts text,
+ * chunks (~400 tokens / 50 overlap), embeds each chunk, and inserts into
+ * rag_documents / rag_chunks via PostgREST (column `vector(4096)`).
  *
- * Reads a PDF (or a folder of PDFs), extracts text page-by-page, chunks at
- * ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows into
- * rag_documents / rag_chunks via PostgREST. The chunk embedding column is
- * `vector(4096)`; pgvector's binary-quantization HNSW index handles the
- * 2000-dim HNSW limit at index time, so we store the raw float vector and let
- * the index/queries do the quantization.
+ * Backends (resolveBackend): self_hosted (4096-dim native), openai and
+ * openrouter (text-embedding-3-large, 3072-dim zero-padded to 4096). Auto-picks
+ * the only one configured; with >1 it asks the user via embedding_backend.
  *
- * Embedding backends (see resolveBackend):
- *   - self_hosted: $OPENCODE_EMBEDDING_HOST + $OPENCODE_EMBEDDING_MODEL
- *     (4096-dim, OpenAI-compatible /v1/embeddings).
- *   - openai:      $OPENAI_API_KEY (text-embedding-3-large, 3072-dim
- *     zero-padded to 4096 to share the same column).
- *   - openrouter:  $OPENROUTER_API_KEY (openai/text-embedding-3-large via
- *     OpenRouter's OpenAI-compatible endpoint, same 3072->4096 padding).
- * If only one is configured it is used automatically; if more than one is, the
- * tool asks the user to pick via the embedding_backend arg; if none is, it does
- * no work and explains why.
- *
- * Runs inside the opencode container. PostgREST is reached at the docker
- * service URL; auth comes from $POSTGREST_API_KEY. No .env file is read.
- *
- * Tool surface:
- *   input              string   PDF file or folder (non-recursive)
- *   title?             string   override (single-file only)
- *   dry_run?           bool     parse+chunk only, no API/DB
- *   estimate_only?     bool     report chunk + token totals, no API/DB
- *   skip_existing?     bool     dedup against rag_documents by filename
- *   collision_policy?  enum     fingerprint | skip | ingest | fail
- *   embedding_backend? enum     self_hosted | openai | openrouter (pick when >1 configured)
+ * Tool surface: input (PDF file/folder), title? (single-file), dry_run?,
+ * estimate_only?, skip_existing?, collision_policy?, embedding_backend?.
  */
 
 import { tool } from "@opencode-ai/plugin"
@@ -41,26 +20,22 @@ import { extractText, getDocumentProxy } from "unpdf"
 
 // === Config ===
 const DEFAULT_POSTGREST = "http://postgrest_app:3000"
-const EMBED_DIMS = 4096 // RAG schema vector(4096): self-hosted emits this natively; OpenAI is zero-padded up to it
+const EMBED_DIMS = 4096 // vector(4096): self-hosted emits this natively; OpenAI is zero-padded up to it
 const CHUNK_TOKENS = 400
 const CHUNK_OVERLAP = 50
 const MAX_RETRIES = 6
 const INITIAL_BACKOFF_S = 2.0
 const MAX_BACKOFF_S = 60.0
 
-// OpenAI-compatible embedding backends (openai, openrouter). The largest
-// hosted model, text-embedding-3-large, is 3072-dim (the `dimensions` param can
-// only shrink below that, never reach 4096), so each vector is right-padded
-// with zeros to EMBED_DIMS and shares the same vector(4096) column as the
-// self-hosted backend; the zero tail does not affect cosine / inner-product
-// ranking within a single-backend table.
+// text-embedding-3-large is 3072-dim (max), so vectors are right-padded to
+// EMBED_DIMS to share the vector(4096) column; the zero tail does not affect
+// cosine/inner-product ranking within a single-backend table.
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 const DEFAULT_OPENAI_MODEL = "text-embedding-3-large"
-// OpenRouter exposes the same OpenAI-compatible /embeddings shape; models are
-// provider-prefixed (e.g. openai/text-embedding-3-large, 3072-dim).
+// OpenRouter exposes the same /embeddings shape; models are provider-prefixed.
 const OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
 const DEFAULT_OPENROUTER_MODEL = "openai/text-embedding-3-large"
-const OPENAI_BATCH = 64 // OpenAI/OpenRouter accept an input array; batch to cut round-trips
+const OPENAI_BATCH = 64 // accepts an input array; batch to cut round-trips
 
 type Backend = "self_hosted" | "openai" | "openrouter"
 type BackendConfig = { backend: Backend; model: string; host?: string; apiKey?: string; url?: string }
@@ -160,7 +135,7 @@ async function embedText(host: string, model: string, text: string, log: Logger)
                 body: JSON.stringify({ model, input: text }),
             })
         } catch (e) {
-            // Network-level error (DNS, refused, reset). Treat as transient.
+            // Network-level error (DNS, refused, reset) — treat as transient.
             attempt++
             if (attempt > MAX_RETRIES) throw e
             const msg = (e as { message?: string })?.message ?? String(e)
@@ -171,7 +146,7 @@ async function embedText(host: string, model: string, text: string, log: Logger)
         }
         if (r.ok) {
             const body = (await r.json()) as EmbeddingResponse
-            // Accept both OpenAI-style (data[0].embedding) and llama.cpp-native (embedding).
+            // Accept OpenAI-style (data[0].embedding) and llama.cpp-native (embedding).
             const vec = body.data?.[0]?.embedding ?? body.embedding
             if (!Array.isArray(vec)) {
                 throw new Error("embedding response missing 'data[0].embedding' or 'embedding'")
@@ -210,9 +185,8 @@ async function embedAll(
     texts: string[],
     log: Logger,
 ): Promise<number[][]> {
-    // The instructions.md example posts a single string per request. Some
-    // OpenAI-compatible servers accept an array, but to match the documented
-    // usage exactly, embed sequentially.
+    // Embed sequentially (one string per request) to match the documented
+    // instructions.md usage, even though some servers accept an array.
     const out: number[][] = []
     const total = texts.length
     for (let i = 0; i < total; i++) {
@@ -225,16 +199,14 @@ async function embedAll(
 }
 
 // === Embedding via OpenAI-compatible endpoints (openai, openrouter) ===
-// Right-pad a vector with zeros up to `dims`. The largest hosted model is
-// 3072-dim, so its vectors are padded to the project's 4096-dim column.
+// Right-pad with zeros up to `dims`: 3072-dim hosted models -> 4096-dim column.
 function padToDims(vec: number[], dims: number): number[] {
     if (vec.length === dims) return vec
     if (vec.length > dims) throw new Error(`embedding has ${vec.length} dims, more than the ${dims}-dim column`)
     return vec.concat(new Array(dims - vec.length).fill(0))
 }
 
-// Embed via an OpenAI-compatible /v1/embeddings endpoint (OpenAI or OpenRouter).
-// `label` is used only in log/error messages.
+// Embed via an OpenAI-compatible /v1/embeddings endpoint (`label` for logs).
 async function embedOpenAICompat(
     url: string,
     apiKey: string,
@@ -277,7 +249,7 @@ async function embedOpenAICompat(
             try {
                 code = (JSON.parse(txt) as { error?: { code?: string } })?.error?.code
             } catch {
-                /* non-JSON body */
+                // non-JSON body
             }
             if (code === "insufficient_quota") throw new Error(`${label} insufficient_quota — fix billing and retry`)
             const retryable = [408, 425, 429, 500, 502, 503, 504].includes(r.status)
@@ -308,7 +280,7 @@ async function embedChunks(cfg: BackendConfig, texts: string[], log: Logger): Pr
 // === Backend resolution ===
 type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message: string }
 
-// Env var(s) a backend needs, for "not configured" messages.
+// Env var(s) each backend needs, for "not configured" messages.
 const BACKEND_NEED: Record<string, string> = {
     self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
     openai: "OPENAI_API_KEY",
@@ -317,13 +289,12 @@ const BACKEND_NEED: Record<string, string> = {
 
 type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
 
-// The configured backends, in priority order. The OpenAI/OpenRouter vectors are
-// zero-padded to EMBED_DIMS so every backend fills vector(4096).
+// The configured backends, in priority order.
 function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     const embedHost = (env.OPENCODE_EMBEDDING_HOST ?? "").trim()
     const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
-    // `||` (not `??`): a present-but-empty var (compose sets `KEY: ${KEY:-}` to "")
-    // still falls through to the next source instead of shadowing it.
+    // `||` not `??`: a present-but-empty var (compose's `KEY: ${KEY:-}` -> "")
+    // falls through to the next source instead of shadowing it.
     const openaiKey = (env.OPENAI_API_KEY || "").trim()
     const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
 
@@ -352,11 +323,9 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     return available
 }
 
-// Decide which embedding backend to use for a FRESH corpus from env + the
-// optional explicit `embedding_backend` arg. When MORE THAN ONE backend is
-// configured and no explicit choice was made, returns ok:false with a message
-// asking the agent to have the user choose. Existing corpora go through
-// resolvePinnedBackend instead.
+// Pick the backend for a FRESH corpus from env + optional `embedding_backend`.
+// With >1 configured and no explicit choice, returns ok:false asking the user
+// to choose. Existing corpora go through resolvePinnedBackend instead.
 function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): BackendResolution {
     const available = availableBackends(env)
 
@@ -386,9 +355,8 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
 }
 
 // Resolve the backend for a corpus that already has embeddings, forcing the SAME
-// (backend, model) that produced them — openai/nemotron/etc. vectors live in
-// different spaces and must never be mixed in one rag_chunks table. Returns
-// ok:false (telling the user) when that backend/model is no longer usable.
+// (backend, model) that produced them — different models = different vector
+// spaces and must never be mixed in one rag_chunks table. ok:false if unusable.
 function resolvePinnedBackend(
     pinned: { backend: string; model: string },
     requested: string | undefined,
@@ -422,15 +390,15 @@ function resolvePinnedBackend(
             }
         }
     } else {
-        // openai / openrouter: call the exact pinned model (a model-not-found error
-        // surfaces at embed time and tells the user it's unavailable).
+        // openai / openrouter: call the exact pinned model; a model-not-found
+        // error surfaces at embed time.
         cfg.model = wantModel
     }
     return { ok: true, cfg }
 }
 
 // The (backend, model) the corpus was first embedded with, from the earliest
-// rag_documents row's metadata. null for a fresh/unknown corpus.
+// rag_documents row. null for a fresh/unknown corpus.
 async function pinnedIdentity(base: string, apiKey: string): Promise<{ backend: string; model: string } | null> {
     try {
         const r = await fetch(`${base}/rag_documents?select=metadata&order=id.asc&limit=1`, {
@@ -458,7 +426,7 @@ async function fileFingerprint(filePath: string): Promise<Fingerprint> {
     h.update(buf)
     return {
         file_size: st.size,
-        mtime: st.mtimeMs / 1000, // seconds, to align with anything written from python-side scripts
+        mtime: st.mtimeMs / 1000, // seconds, to align with python-side scripts
         sha256: h.digest("hex"),
     }
 }
@@ -528,8 +496,8 @@ async function pgrestInsert(
 
 // === Schema preflight ===
 async function pgrestTableExists(base: string, apiKey: string, table: string): Promise<boolean> {
-    // 200 for a limit=0 select means the table exists; a missing table returns 404
-    // (PGRST205). On a network error, assume present and let the real insert surface it.
+    // limit=0 select: 200 = exists, 404 (PGRST205) = missing. On network error
+    // assume present and let the real insert surface it.
     try {
         const r = await fetch(`${base}/${table}?limit=0`, {
             headers: { Authorization: `Bearer ${apiKey}` },
@@ -541,8 +509,8 @@ async function pgrestTableExists(base: string, apiKey: string, table: string): P
 }
 
 function requiredSchemaMessage(missing: string[], dims: number): string {
-    // Hand the LLM the exact tables + structure this tool writes to, so it can
-    // create them and re-run, instead of failing only after the expensive work.
+    // Hand the LLM the exact tables this tool writes to so it can create them
+    // and re-run, instead of failing only after the expensive work.
     return [
         `error: required table(s) missing: ${missing.join(", ")}.`,
         "Create the RAG schema before ingesting, then call ingest_pdf again with the same arguments.",
@@ -632,9 +600,8 @@ async function ingestOne(
     log(`      document_id=${docId}`)
 
     log(`[5/5] inserting rag_chunks (${chunks.length} rows)`)
-    // Each row serializes ~4096 floats at 7-decimal precision (~37 KB) plus
-    // content; 10 rows per request stays under the nginx proxy's default
-    // 1 MB request limit.
+    // Each row is ~37 KB (4096 floats at 7-decimal precision + content); 10 rows
+    // per request stays under the nginx proxy's default 1 MB limit.
     const BATCH = 10
     for (let i = 0; i < chunks.length; i += BATCH) {
         const batchChunks = chunks.slice(i, i + BATCH)
@@ -717,7 +684,7 @@ export default tool({
         const estimateOnly = !!args.estimate_only
         const skipExisting = !!args.skip_existing
 
-        // Resolve input against the session working directory / worktree
+        // Resolve input against the session working directory / worktree.
         const baseDir = context.directory ?? context.worktree ?? process.cwd()
         const inputPath = path.isAbsolute(args.input) ? args.input : path.resolve(baseDir, args.input)
 
@@ -742,7 +709,7 @@ export default tool({
             return `error: cannot stat ${inputPath}: ${msg}`
         }
 
-        // Env / config — all from process.env (no .env file inside the container).
+        // Env / config — all from process.env (no .env file in the container).
         const apiKey = process.env.POSTGREST_API_KEY ?? ""
         const postgrestUrl = process.env.POSTGREST_URL ?? DEFAULT_POSTGREST
 
@@ -751,9 +718,8 @@ export default tool({
 
         if (needsPgrest && !apiKey) return "error: POSTGREST_API_KEY not set"
 
-        // Preflight: for a real ingest, make sure the destination tables exist BEFORE
-        // the expensive work (reading PDFs + embedding). If missing, return the exact
-        // required schema so the agent can create the tables and re-run.
+        // Preflight: verify destination tables exist BEFORE the expensive work
+        // (reading PDFs + embedding); if missing, return the required schema.
         if (needsPgrest) {
             const missing: string[] = []
             for (const t of ["rag_documents", "rag_chunks"]) {
@@ -762,10 +728,9 @@ export default tool({
             if (missing.length) return requiredSchemaMessage(missing, EMBED_DIMS)
         }
 
-        // Resolve the embedding backend — only for a real ingest (dry-run /
-        // estimate-only never embed). If the corpus already has documents, PIN to
-        // the model that produced them (different models = incompatible vector
-        // spaces). Otherwise resolve freely (asking the user when ambiguous).
+        // Resolve the embedding backend (real ingest only). If the corpus already
+        // has documents, PIN to the model that produced them (different models =
+        // incompatible vector spaces); otherwise resolve freely.
         let backend: BackendConfig | null = null
         if (needsEmbed) {
             const pinned = await pinnedIdentity(postgrestUrl, apiKey)
@@ -780,7 +745,7 @@ export default tool({
             )
         }
 
-        // Phase 1: parse + chunk + fingerprint each PDF
+        // Phase 1: parse + chunk + fingerprint each PDF.
         type Prepared = {
             path: string
             pages: string[]

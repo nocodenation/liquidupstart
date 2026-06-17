@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Seed the Hermes config from a mounted default if the persistent volume
-# doesn't already have one. /root/.hermes is a volume, so this only copies
-# on first run (or after the volume is reset).
+# Seed config from the mounted default only on first run; /root/.hermes is a volume.
 if [ -f /opt/config.yaml ] && [ ! -f /root/.hermes/config.yaml ]; then
     mkdir -p /root/.hermes
     cp /opt/config.yaml /root/.hermes/config.yaml
@@ -14,11 +12,9 @@ cp /opt/SOUL.md /root/.hermes/SOUL.md
 mkdir -p /root/.hermes/plugins
 cp -r /opt/plugins/ingest_pdf /root/.hermes/plugins/ingest_pdf
 
-# curl hard-codes *.localhost -> 127.0.0.1 (RFC 6761), so inside this container
-# names like nextcloud.localhost never reach the proxy. Route any request to the
-# system HTTP/HTTPS ports through the proxy container instead, keeping the
-# original Host header so nginx vhost routing still works. Scoped to the ports,
-# so external traffic is untouched. Rewritten each start so it tracks the env.
+# curl hard-codes *.localhost -> 127.0.0.1 (RFC 6761), so route system HTTP/HTTPS
+# ports through the proxy container, preserving Host so nginx vhost routing works.
+# Scoped to those ports; rewritten each start to track the env.
 SYSTEM_HTTP_PORT="${SYSTEM_HTTP_PORT:-8888}"
 SYSTEM_HTTPS_PORT="${SYSTEM_HTTPS_PORT:-8833}"
 {
@@ -26,13 +22,9 @@ SYSTEM_HTTPS_PORT="${SYSTEM_HTTPS_PORT:-8833}"
     printf 'connect-to = ":%s:proxy:%s"\n' "$SYSTEM_HTTPS_PORT" "$SYSTEM_HTTPS_PORT"
 } > /root/.curlrc
 
-# This image is not s6-supervised, so `gateway run` won't auto-spawn the
-# dashboard for us, and `hermes dashboard` doesn't read the HERMES_DASHBOARD*
-# env vars on its own. Start both ourselves: the dashboard (web UI) in the
-# background, and the API gateway in the foreground. The gateway reads the
-# API_SERVER_* env vars (API_SERVER_ENABLED / API_SERVER_HOST / API_SERVER_KEY
-# / API_SERVER_CORS_ORIGINS) and brings up the OpenAI-compatible API server on
-# 0.0.0.0:8642 (API_SERVER_HOST + the gateway's DEFAULT_PORT).
+# Not s6-supervised, so start both ourselves: dashboard (background) + API gateway
+# (foreground). Gateway reads API_SERVER_* env and serves the OpenAI-compatible API
+# on 0.0.0.0:8642.
 
 dashboard_pid=""
 gateway_pid=""
@@ -52,10 +44,9 @@ is_truthy() {
     esac
 }
 
-# Dashboard (background), configured entirely from the HERMES_DASHBOARD* env
-# vars so it can be tuned from compose without editing this script:
-#   HERMES_DASHBOARD          gate — only start the dashboard when truthy
-#   HERMES_DASHBOARD_HOST     bind host (default 0.0.0.0 for container access)
+# Dashboard (background), configured from HERMES_DASHBOARD* env:
+#   HERMES_DASHBOARD          gate — only start when truthy
+#   HERMES_DASHBOARD_HOST     bind host (default 0.0.0.0)
 #   HERMES_DASHBOARD_PORT     listen port (default 9119)
 #   HERMES_DASHBOARD_INSECURE pass --insecure to allow non-localhost binding
 if is_truthy "${HERMES_DASHBOARD:-}"; then
@@ -73,9 +64,8 @@ else
     echo "HERMES_DASHBOARD not truthy; skipping dashboard startup." >&2
 fi
 
-# API gateway (background, but treated as the primary process). Honour any
-# command passed from compose (e.g. ["gateway", "run"]); fall back to the
-# default gateway invocation otherwise.
+# API gateway (primary process). Honour any command passed from compose,
+# else the default gateway invocation.
 if [ "$#" -gt 0 ]; then
     hermes "$@" &
 else
@@ -83,8 +73,7 @@ else
 fi
 gateway_pid=$!
 
-# Exit as soon as any running service dies so the container (and Docker's
-# restart policy) reflects an unhealthy state instead of silently losing one.
+# Exit as soon as any service dies so Docker's restart policy can react.
 wait_pids=()
 [ -n "$dashboard_pid" ] && wait_pids+=("$dashboard_pid")
 [ -n "$gateway_pid" ] && wait_pids+=("$gateway_pid")

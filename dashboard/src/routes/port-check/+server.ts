@@ -1,19 +1,15 @@
 // Checks whether a host port is free and, if not, finds the next free one.
-//
-// The dashboard runs in a container, so it can't bind host ports directly to
-// test them — but it can ask the Docker engine to publish them, exactly like
-// run.sh does when it picks the dashboard's own port. The bind happens on the
-// real host (works on Docker Desktop for macOS/Windows and on Linux), so a
-// "port is already allocated" error means the port is taken by *anything* on
-// the host — another container or a native process — not just our stack.
+// The dashboard runs in a container and can't bind host ports directly, so it
+// asks the Docker engine to publish them (like run.sh does for its own port).
+// The bind happens on the real host, so a "port already allocated" error means
+// the port is taken by anything on the host, not just our stack.
 
 import { json } from '@sveltejs/kit';
 import { spawn } from 'node:child_process';
 import { appId } from '$lib/server/project';
 
-// Throwaway probe container. The dashboard image is always present (we're
-// running from it), and being alpine-based it has `true`, which exits at once
-// so the published port is released immediately.
+// Throwaway probe container: the dashboard image is always present and has
+// `true`, which exits at once so the published port is released immediately.
 const PROBE_IMAGE = 'all-in-wonder/dashboard:latest';
 // How far above the requested port to look before giving up.
 const SEARCH_SPAN = 200;
@@ -30,7 +26,7 @@ function docker(args: string[]): Promise<{ code: number; out: string }> {
 }
 
 // true = free, false = taken; throws if the probe itself fails (e.g. no engine)
-// so the caller can report "couldn't check" rather than mislabel the port.
+// so the caller reports "couldn't check" rather than mislabel the port.
 async function isFree(port: number): Promise<boolean> {
   const { code, out } = await docker([
     'run',
@@ -45,10 +41,10 @@ async function isFree(port: number): Promise<boolean> {
   throw new Error(out.trim() || `port probe failed (exit ${code})`);
 }
 
-// Host ports currently published by THIS project's own containers (named
+// Host ports published by THIS project's own containers (named
 // `<service>-<APP_ID>`). A port held only by our own stack isn't a real
-// conflict for our own config — e.g. checking 8888 while the proxy is up — so
-// we treat it as available rather than flagging and switching away from it.
+// conflict (e.g. checking 8888 while the proxy is up), so treat it as available
+// rather than switching away from it.
 async function ourPublishedPorts(): Promise<Set<number>> {
   const ports = new Set<number>();
   const { code, out } = await docker(['ps', '--filter', `name=-${appId()}`, '--format', '{{.Ports}}']);
@@ -59,8 +55,8 @@ async function ourPublishedPorts(): Promise<Set<number>> {
 
 export async function GET({ url }) {
   const requested = Number(url.searchParams.get('port'));
-  // Ports to treat as taken regardless of probe (e.g. the value the other port
-  // field already settled on, so HTTP and HTTPS never collide).
+  // Ports to treat as taken regardless of probe (e.g. the other port field's
+  // value, so HTTP and HTTPS never collide).
   const exclude = new Set(
     (url.searchParams.get('exclude') ?? '')
       .split(',')
@@ -78,14 +74,13 @@ export async function GET({ url }) {
     let suggestion: number | null = null;
     for (let p = requested; p <= limit; p++) {
       if (exclude.has(p)) continue;
-      // Our own stack holding the port doesn't count as a conflict.
       if (ours.has(p) || (await isFree(p))) {
         suggestion = p;
         break;
       }
     }
-    // free = the requested port itself is the one we'd use (available and not
-    // excluded); otherwise suggestion is the next usable port, or null if none.
+    // free = the requested port is itself usable; otherwise suggestion is the
+    // next usable port, or null if none.
     return json({ requested, suggestion, free: suggestion === requested });
   } catch (e) {
     return json({ requested, error: e instanceof Error ? e.message : String(e) });

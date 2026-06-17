@@ -135,7 +135,7 @@ services:
         condition: service_started
       openclaw-gateway:
         condition: service_healthy
-      # hermes disabled: removed from depends_on (else compose errors on undefined service)
+      # hermes disabled: omitted here too (else compose errors on undefined service)
 #       hermes:
 #         condition: service_started
       nextcloud:
@@ -384,7 +384,7 @@ services:
       POSTGRES_STATEMENT_TIMEOUT: "120000"
       OPENPROJECT_LOG__LEVEL: "warn"
       SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE}
-      # set to true to enable the email receiving feature. See ./docker/cron for more options
+      # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
       OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
@@ -431,7 +431,7 @@ services:
       POSTGRES_STATEMENT_TIMEOUT: "120000"
       OPENPROJECT_LOG__LEVEL: "warn"
       SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE}
-      # set to true to enable the email receiving feature. See ./docker/cron for more options
+      # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
       OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
@@ -465,7 +465,7 @@ services:
       POSTGRES_STATEMENT_TIMEOUT: "120000"
       OPENPROJECT_LOG__LEVEL: "warn"
       SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE}
-      # set to true to enable the email receiving feature. See ./docker/cron for more options
+      # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
       OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
@@ -499,7 +499,7 @@ services:
       POSTGRES_STATEMENT_TIMEOUT: "120000"
       OPENPROJECT_LOG__LEVEL: "warn"
       SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE}
-      # set to true to enable the email receiving feature. See ./docker/cron for more options
+      # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
       OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
@@ -541,10 +541,10 @@ services:
     volumes:
       - ./volumes/nextcloud_redis/data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"] # Check if Redis responds to PING
-      interval: 5s # Check every 5 seconds
-      timeout: 3s # Allow 3 seconds for the command to complete
-      retries: 5 # Consider unhealthy after 5 consecutive failures
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
       start_period: 10s
     command: redis-server --requirepass ${NEXTCLOUD_REDIS_PASSWORD}
     networks:
@@ -587,8 +587,7 @@ services:
       - ./config/nextcloud/lc_logout_redirect.php:/tmp/lc_logout_redirect.php
       - ./config/nextcloud/session_security_block.php:/tmp/session_security_block.php
       - ./config/nextcloud/pre_install.sh:/docker-entrypoint-hooks.d/pre-installation/pre_install.sh
-      # before-starting hooks run in name order: install first (recovers a
-      # half-installed volume; no-op when installed), then patch, then config.
+      # before-starting hooks run in name order: install (recovers a half-installed volume), then patch, then config.
       - ./config/nextcloud/install_nextcloud.sh:/docker-entrypoint-hooks.d/before-starting/install_nextcloud.sh
       - ./config/nextcloud/patch_nextcloud.sh:/docker-entrypoint-hooks.d/before-starting/patch_nextcloud.sh
       - ./config/nextcloud/set_trusted_proxies.sh:/docker-entrypoint-hooks.d/before-starting/set_trusted_proxies.sh
@@ -640,7 +639,7 @@ services:
     networks:
       nocodenation_all_in_wonder_network:
 
-  # --- hermes disabled: commented out so it is neither built nor started ---
+  # hermes disabled: commented out so it is neither built nor started
 #   hermes:
 #     image: all-in-wonder/hermes:latest
 #     container_name: hermes-${APP_ID:-0}
@@ -724,6 +723,7 @@ services:
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
+      OPENCLAW_ENABLE_COPILOT: ${OPENCLAW_ENABLE_COPILOT:-}
       NIFI_USERNAME: ${NIFI_USERNAME:-}
       NIFI_PASSWORD: ${NIFI_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
@@ -755,16 +755,12 @@ services:
     init: true
     restart: unless-stopped
     tmpfs:
-      # Shadow the state plugins dir with an in-container tmpfs (normal perms, NOT
-      # the Docker Desktop 777 file share). Neither this gateway nor openclaw-cli
-      # can then persist a world-writable plugin here for OpenClaw's loader to
-      # block. ingest-pdf is loaded from /home/node/openclaw-plugins (see command).
+      # Shadow state plugins dir with tmpfs (normal perms, not the Docker Desktop 777 share)
+      # so neither service persists a world-writable plugin OpenClaw's loader would block.
       - /home/node/.openclaw/plugins
-    # Windows/Docker-Desktop fix: the host plugins bind mount is presented mode 777,
-    # and OpenClaw refuses to load a world-writable plugin. So plugins are mounted
-    # read-only at /opt/plugins and copied at startup into a container-local dir
-    # with normal perms (off the file share) before the gateway launches.
-    # plugins.load.paths points at /home/node/openclaw-plugins (see openclaw.sh).
+    # Docker-Desktop fix: host plugins bind mount is mode 777 and OpenClaw refuses world-writable
+    # plugins, so they're mounted read-only at /opt/plugins and copied at startup to a container-local
+    # dir with normal perms; plugins.load.paths points at /home/node/openclaw-plugins (see openclaw.sh).
     command:
       - /bin/sh
       - -lc
@@ -820,6 +816,7 @@ services:
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
+      OPENCLAW_ENABLE_COPILOT: ${OPENCLAW_ENABLE_COPILOT:-}
       NIFI_USERNAME: ${NIFI_USERNAME:-}
       NIFI_PASSWORD: ${NIFI_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
@@ -842,9 +839,8 @@ services:
     tty: true
     init: true
     tmpfs:
-      # See openclaw-gateway: keep the state plugins dir off the 777 file share so
-      # `openclaw setup` doesn't persist a world-writable plugin into the shared
-      # state volume that the gateway would then refuse to load.
+      # See openclaw-gateway: keep state plugins dir off the 777 share so `openclaw setup`
+      # doesn't persist a world-writable plugin the gateway would then refuse to load.
       - /home/node/.openclaw/plugins
     entrypoint: ["node", "dist/index.js"]
     depends_on:

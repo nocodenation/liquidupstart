@@ -4,16 +4,15 @@
 
   let { data, form } = $props();
   let revealed = $state({});
-  // Live values of password fields the user has typed into (see the comment
-  // at the password input). Port fields use this overlay too, so an autofilled
-  // free port replaces what's shown and is what gets submitted.
+  // Overlay for typed values (see comment at the password input). Port fields
+  // use it too, so an autofilled free port replaces what's shown and submitted.
   let edits = $state({});
 
-  // The host-published ports we availability-check. Other *_PORT keys are
-  // internal container ports and aren't bound on the host, so we leave them be.
+  // Host-published ports we availability-check. Other *_PORT keys are internal
+  // container ports, not bound on the host, so we leave them be.
   const PORT_KEYS = Object.keys(SYSTEM_PORT_DEFAULTS);
-  // Once the install is configured the ports are locked: Nextcloud and other
-  // services were set up against them, so changing them would break the stack.
+  // Locked once configured: services were set up against these ports, so
+  // changing them would break the stack.
   const portsLocked = data.configured;
   // key -> { state: 'checking'|'ok'|'changed'|'error', message }
   let portStatus = $state({});
@@ -27,8 +26,8 @@
     return field.value;
   }
 
-  // Initial .env values for the port fields, found by walking the section tree
-  // (fields can be nested inside collapsed groups).
+  // Initial .env values for the port fields; walk the section tree since
+  // fields can be nested inside collapsed groups.
   const initialPorts = $derived.by(() => {
     const out = {};
     const visit = (items) => {
@@ -80,10 +79,9 @@
     }
   }
 
-  // First setup only: seed empty port fields with their defaults, then check
-  // availability (autofilling the next free port if a default is taken). HTTP
-  // first, then HTTPS excluding HTTP's settled value so they can't collide.
-  // When locked there's nothing to do — the ports are fixed.
+  // First setup only: seed empty port fields with defaults, then check
+  // availability (autofilling the next free port if taken). HTTPS excludes
+  // HTTP's settled value so they can't collide. Locked = nothing to do.
   onMount(async () => {
     if (portsLocked) return;
     for (const key of PORT_KEYS) {
@@ -152,12 +150,12 @@
           />
         {:else if item.type === 'number' && PORT_KEYS.includes(item.key)}
           {#if portsLocked}
-            <!-- Locked after initial setup: readonly so it still submits the
-                 fixed value, and the server pins it regardless. -->
+            <!-- readonly so it still submits the fixed value; the server pins
+                 it regardless. -->
             <input type="number" id={item.key} name={item.key} value={fieldValue(item)} readonly />
           {:else}
-            <!-- First setup: value flows through `edits` so a probed free port
-                 can replace it; the button re-checks after manual edits. -->
+            <!-- Value flows through `edits` so a probed free port can replace
+                 it; the button re-checks after manual edits. -->
             <input
               type="number"
               id={item.key}
@@ -181,11 +179,10 @@
           <input type="number" id={item.key} name={item.key} value={fieldValue(item)} />
         {:else if item.type === 'password' || section.autogen}
           <!-- Track edits in state: the dynamic `type` shares one template
-               effect with the other attributes, so a Show/Hide toggle
-               re-assigns `value` — without the edits overlay that would reset
-               the field to the initial server value, wiping typed input.
-               Non-secret autogen fields (e.g. APP_ID) take this branch too,
-               as plain text: still readonly + Generate, just never masked. -->
+               effect with `value`, so a Show/Hide toggle re-assigns `value` —
+               without the overlay that would wipe typed input back to the
+               server value. Non-secret autogen fields take this branch as
+               plain text: readonly + Generate, just never masked. -->
           <input
             type={item.type === 'password' ? (revealed[item.key] ? 'text' : 'password') : 'text'}
             id={item.key}
@@ -262,8 +259,7 @@
 
   <form method="POST" action="?/save">
     {#each data.sections as section}
-      <!-- The autogen section reopens after a Generate round-trip so the
-           just-generated value stays visible. -->
+      <!-- Reopens after a Generate round-trip so the new value stays visible. -->
       <details
         class="card collapsible"
         open={section.autogen ? !!form?.values : !section.collapsed}

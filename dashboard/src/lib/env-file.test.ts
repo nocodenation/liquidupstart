@@ -92,7 +92,7 @@ describe('parseExample', () => {
     const fields = listFields(sections);
     const jwt = fields.find((f) => f.field.key === 'JWT_SECRET');
     expect(jwt?.field.help).toEqual(['Multi-line help:', 'spans two comment lines.']);
-    // DATABASE_PASSWORD follows a subheading, not a help comment
+    // follows a subheading, not a help comment
     const db = fields.find((f) => f.field.key === 'DATABASE_PASSWORD');
     expect(db?.field.help).toEqual([]);
   });
@@ -149,7 +149,6 @@ describe('renderEnv', () => {
     expect(out).toContain('SYSTEM_HTTP_PORT=9000');
     expect(out).toContain('# CUSTOM KEYS');
     expect(out).toContain('MY_CUSTOM=kept verbatim # with comment');
-    // untouched keys keep their defaults
     expect(out).toContain('NIFI_USERNAME="nifi"');
   });
 
@@ -222,8 +221,8 @@ describe('env-meta', () => {
   });
 });
 
-// When running on the host (not in the docker build context), also validate
-// the real .env.example so parser regressions surface against the live file.
+// On the host (not the docker build context) the real .env.example exists;
+// validate it too so parser regressions surface against the live file.
 const realExample = join(import.meta.dir, '../../../.env.example');
 if (existsSync(realExample)) {
   describe('real .env.example', () => {

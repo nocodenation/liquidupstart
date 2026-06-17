@@ -5,25 +5,19 @@ OCC="/var/www/html/occ"
 PHP_BIN="php"
 CONFIG_DIR="/var/www/html/config"
 
-# Nothing to do once installed (the normal case: the official entrypoint
-# auto-installs on a pristine html volume before before-starting hooks run).
+# Nothing to do once installed (normal case: the entrypoint auto-installs first).
 if ${PHP_BIN} -f "${OCC}" status --output=json 2>/dev/null | grep -q '"installed":true'; then
   echo "Nextcloud already installed"
   exit 0
 fi
 
-# The official entrypoint only auto-installs when the html volume carries no
-# version.php at all. A single failed/interrupted first install leaves
-# version.php + config/CAN_INSTALL behind — after which the entrypoint skips
-# installation forever and defers to the web installer, and the occ calls in
-# the other before-starting hooks crash the container, wedging the whole
-# stack start. Run the installation here instead, with the same env the
-# entrypoint would use, so the first successful start always ends installed.
+# The entrypoint auto-installs only when no version.php exists; an interrupted
+# first install leaves version.php behind and it then skips install forever,
+# wedging later occ hooks. Install here (same env) so the first start completes.
 echo "Nextcloud is not installed yet - running maintenance:install..."
 
-# Normally written by the pre-installation hook (config/nextcloud/
-# pre_install.sh), which the entrypoint only runs on its own install path —
-# ensure it is in place so no user gets default skeleton files.
+# Normally written by pre_install.sh (only run on the entrypoint's install
+# path); place it here so no user gets default skeleton files.
 if [ ! -f "${CONFIG_DIR}/no_skeleton.config.php" ] && [ -f /tmp/no_skeleton.config.php ]; then
   cp /tmp/no_skeleton.config.php "${CONFIG_DIR}/no_skeleton.config.php"
   chmod 644 "${CONFIG_DIR}/no_skeleton.config.php"
@@ -38,12 +32,10 @@ ${PHP_BIN} -f "${OCC}" maintenance:install \
   --admin-user "${NEXTCLOUD_ADMIN_USER}" \
   --admin-pass "${NEXTCLOUD_ADMIN_PASSWORD}"
 
-# The web-installer marker must not survive a completed installation (it
-# triggers a security warning in the admin panel).
+# CAN_INSTALL must not survive install — it triggers an admin security warning.
 rm -f "${CONFIG_DIR}/CAN_INSTALL"
 
-# The entrypoint registers NEXTCLOUD_TRUSTED_DOMAINS only on its own install
-# path; replicate it (index 0 is localhost, written by maintenance:install).
+# Replicate NEXTCLOUD_TRUSTED_DOMAINS (index 0 = localhost from maintenance:install).
 if [ -n "${NEXTCLOUD_TRUSTED_DOMAINS:-}" ]; then
   idx=1
   for domain in ${NEXTCLOUD_TRUSTED_DOMAINS}; do

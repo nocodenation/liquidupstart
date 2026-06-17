@@ -16,13 +16,10 @@ fi
 "${PROJECT_DIR}/scripts/linux/down.sh"
 
 # --- Pre-flight: the host ports the proxy publishes must be free -------------
-# If SYSTEM_HTTP_PORT / SYSTEM_HTTPS_PORT are already taken, `docker compose up`
-# fails part-way and leaves a half-started stack. Probe each one up front by
-# asking the engine to publish it on a throwaway container: the bind happens on
-# the real host, so this also works from inside the Windows/macOS toolbox. Our
-# own proxy was just stopped by down.sh, so a conflict here is some *other*
-# process. The check keys only on the engine's bind error, so it doesn't matter
-# what the probe container does.
+# If SYSTEM_HTTP_PORT / SYSTEM_HTTPS_PORT are taken, `docker compose up` leaves
+# a half-started stack. Probe each via a throwaway container: the bind happens
+# on the real host, so this works from inside the Windows/macOS toolbox too. Our
+# proxy was just stopped by down.sh, so a conflict here is some other process.
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTP_PORT="${HTTP_PORT:-8888}"
 HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
@@ -36,7 +33,7 @@ for _img in nginx:latest all-in-wonder/nifi:latest all-in-wonder/openclaw:latest
 done
 
 port_taken() {
-  # 0 = taken, 1 = free (or couldn't determine — never block on that).
+  # 0 = taken, 1 = free (or undeterminable — never block on that).
   local port="$1" out rc
   set +e
   out="$(docker run --rm --entrypoint true -p "${port}:1" "$PROBE_IMAGE" 2>&1)"
@@ -64,8 +61,7 @@ if [[ -n "$PROBE_IMAGE" ]]; then
     echo "Another program — or another copy of this stack — is holding the port(s) above," >&2
     echo "so the services can't start. Stop whatever is using them and start again. These" >&2
     echo "ports are fixed after the initial setup, so the stack must use them." >&2
-    # Machine-readable marker: the dashboard turns ::aiw-error:: lines into an
-    # on-screen error banner (and hides the marker line itself from the log).
+    # ::aiw-error:: lines: the dashboard turns these into an on-screen error banner.
     echo "::aiw-error::Ports already in use: ${_taken}. Another program — or another copy of this stack — is holding them. Stop whatever is using those ports and start again; the ports are fixed after initial setup." >&2
     exit 1
   fi

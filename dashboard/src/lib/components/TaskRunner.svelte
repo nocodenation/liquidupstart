@@ -2,28 +2,17 @@
   /**
    * Build / Start / Stop controls with a live log pane and the Claude Code
    * sign-in panel. Used by the dashboard (/) and the post-save page (/done).
-   *
-   * Props:
-   *   needBuild — Build is required before Start (missing images or
-   *               build-affecting .env change)
-   *   showStop  — offer a Stop button (dashboard, when the stack runs)
-   *   numbered  — prefix Build/Start labels with "1."/"2." (done page)
-   *   busy      — bindable; true while a task or sign-in is in flight
-   *   onchange  — called after a task finishes successfully, so the parent
-   *               can refresh its state (e.g. re-query running containers)
    */
   let {
     needBuild = false,
     showStart = true,
     showStop = false,
-    // Rebuild = stop the stack + rebuild all images (to pick up a pulled update).
     showRebuild = false,
     numbered = false,
-    // 'Restart' on the dashboard's running view — start.sh begins with
-    // down.sh, so the start task is a restart when the stack is up.
+    // 'Restart' on the dashboard's running view — start.sh begins with down.sh.
     startLabel = 'Start',
     busy = $bindable(false),
-    // Bindable mirror of the in-flight task ('' when idle). Lets the parent
+    // Bindable mirror of the in-flight task ('' when idle), so the parent can
     // react while a task runs — e.g. hide service tiles during a teardown.
     activeTask = $bindable(''),
     onchange
@@ -35,12 +24,12 @@
   let buildOk = $state(false);
   let startOk = $state(false);
   let logEl = $state(null);
-  // Set to the task name when a run fails, so we show a prominent error banner
-  // rather than leaving the reason buried in the streamed log.
+  // Task name when a run fails, so we show a banner instead of leaving the
+  // reason buried in the streamed log.
   let failedTask = $state('');
 
-  // Scripts emit `::aiw-error::<message>` lines to raise a UI banner. Pull those
-  // out for the banner and hide the raw marker lines from the log pane.
+  // Scripts emit `::aiw-error::<message>` lines to raise a UI banner; pull
+  // those out and hide the raw markers from the log pane.
   const MARKER = '::aiw-error::';
   let errors = $derived(
     log
@@ -48,8 +37,8 @@
       .filter((l) => l.startsWith(MARKER))
       .map((l) => l.slice(MARKER.length).trim())
   );
-  // Hide all `::aiw-*::` control markers (error banners, copilot-auth signal)
-  // from the visible log — they drive UI state, not user-facing output.
+  // Hide all `::aiw-*::` control markers from the visible log — they drive UI
+  // state, not user-facing output.
   let displayLog = $derived(
     log
       .split('\n')
@@ -77,8 +66,8 @@
   let authLogEl = $state(null);
 
   // GitHub Copilot sign-in (OpenClaw native github-copilot provider). Device
-  // flow: show a URL + code, the CLI polls and completes when the user
-  // authorizes — no code is pasted back.
+  // flow: show a URL + code; the CLI polls and completes on authorize — no
+  // code is pasted back.
   let needCopilotAuth = $state(false);
   let copilotLog = $state('');
   let copilotRunning = $state(false);
@@ -87,8 +76,8 @@
   let copilotUrl = $derived(copilotLog.match(/https:\/\/github\.com\/login\/device/)?.[0] ?? '');
   let copilotCode = $derived(copilotLog.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1] ?? '');
 
-  // Mirror the in-flight state out to the parent (bind:busy), e.g. to keep
-  // navigation like the Finish button disabled while a task runs.
+  // Mirror in-flight state out to the parent (bind:busy), e.g. to keep the
+  // Finish button disabled while a task runs.
   $effect(() => {
     busy = runningTask !== '' || authRunning || copilotRunning;
     activeTask = runningTask;
@@ -107,12 +96,10 @@
     if (copilotLogEl) copilotLogEl.scrollTop = copilotLogEl.scrollHeight;
   });
 
-  // Proactive check, like the terminal start.sh: claude-cli backend on, no
-  // token, OpenClaw configured, `auth status` failing → offer the sign-in
-  // without waiting for a Start run to print the ACTION REQUIRED banner.
-  // Skipped while a required Build is still pending: sign-in belongs after
-  // the stack is set up, and the mid-stream banner detection during Start
-  // surfaces it at exactly the right moment on a first install.
+  // Proactively offer sign-in (like terminal start.sh) without waiting for a
+  // Start run to print the ACTION REQUIRED banner. Skipped while a required
+  // Build is pending: sign-in belongs after setup, and mid-stream banner
+  // detection during Start surfaces it at the right moment on a first install.
   async function probeClaudeAuth() {
     if (authOk || (needBuild && !buildOk)) return;
     try {
@@ -122,7 +109,7 @@
         if (needed) needClaudeAuth = true;
       }
     } catch {
-      // probe is best-effort; the in-log banner detection still applies
+      // best-effort; in-log banner detection still applies
     }
   }
 
@@ -130,8 +117,7 @@
     probeClaudeAuth();
   });
 
-  // Same idea as probeClaudeAuth, for the native Copilot provider: copilot on,
-  // no headless token, OpenClaw set up, gateway up, no github-copilot profile.
+  // Same idea as probeClaudeAuth, for the native Copilot provider.
   async function probeCopilotAuth() {
     if (copilotOk || (needBuild && !buildOk)) return;
     try {
@@ -149,8 +135,8 @@
     probeCopilotAuth();
   });
 
-  // Device-flow sign-in: stream the login, show the URL + code; the CLI polls
-  // and exits 0 once the user authorizes in the browser.
+  // Device-flow sign-in: stream the login (URL + code); the CLI polls and
+  // exits 0 once the user authorizes in the browser.
   async function startCopilotAuth() {
     if (copilotRunning) return;
     copilotRunning = true;
@@ -207,20 +193,19 @@
         const { done, value } = await reader.read();
         if (done) break;
         log += decoder.decode(value, { stream: true });
-        // start.sh prints this banner when the claude-cli backend is on but
-        // not yet authenticated and no terminal was attached (our case).
-        // Detected mid-stream so the sign-in panel appears right away, while
-        // the rest of the start keeps running.
+        // Detected mid-stream so the sign-in panel appears right away while the
+        // rest of the start keeps running. start.sh prints this when claude-cli
+        // is on but unauthenticated with no terminal attached (our case).
         if (!authOk && log.includes('ACTION REQUIRED')) needClaudeAuth = true;
-        // openclaw.sh emits this marker and then BLOCKS the start until the
-        // Copilot sign-in completes, so the gateway boots authenticated.
+        // openclaw.sh emits this marker and then BLOCKS the start until Copilot
+        // sign-in completes, so the gateway boots authenticated.
         if (!copilotOk && log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
       }
       if (log.includes(`[${task} succeeded]`)) {
         if (task === 'build') buildOk = true;
         if (task === 'start') startOk = true;
         if (task === 'down') startOk = false;
-        // Rebuild leaves images fresh but the stack stopped — like build, then down.
+        // Rebuild leaves images fresh but the stack stopped.
         if (task === 'rebuild') {
           buildOk = true;
           startOk = false;
@@ -229,8 +214,8 @@
       } else if (log.includes(`[${task} failed`)) {
         failedTask = task;
       }
-      // Re-probe once the task is done: a build may have just produced the
-      // OpenClaw image, a start may have just rendered openclaw.json.
+      // Re-probe once done: a build may have produced the OpenClaw image, a
+      // start may have rendered openclaw.json.
       probeClaudeAuth();
       probeCopilotAuth();
     } catch (e) {
@@ -291,7 +276,6 @@
     }
   }
 
-  // The sign-in URL claude prints, surfaced as a clickable link.
   let authUrl = $derived(authLog.match(/https:\/\/\S+/)?.[0] ?? '');
 </script>
 
@@ -365,8 +349,8 @@
 {/if}
 
 {#if runningTask}
-  <!-- Heartbeat under the log: long steps (image pulls, healthchecks) can go
-       minutes without printing a line, and a frozen pane looks like a hang. -->
+  <!-- Heartbeat: long steps (image pulls, healthchecks) can go minutes without
+       printing, and a frozen pane looks like a hang. -->
   <div class="liveline">
     <span class="livespinner"></span>
     {TASK_LABELS[runningTask] ?? runningTask} in progress… {formatElapsed(elapsed)}

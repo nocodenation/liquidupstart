@@ -8,7 +8,7 @@ OPENCODE_OLLAMA_URL="${OPENCODE_OLLAMA_HOST:-http://ollama:11434}"
 _TIMEOUT="${OPENCODE_TIMEOUT:-600000}"
 _CHUNK_TIMEOUT="${OPENCODE_CHUNK_TIMEOUT:-120000}"
 
-# Parse model: if it contains '/', use as-is (provider/model); otherwise assume ollama
+# Model with '/' is provider/model; otherwise assume ollama.
 _MODEL_RAW="${OPENCODE_MODEL:-llama3.1:8b}"
 case "$_MODEL_RAW" in
     */*)

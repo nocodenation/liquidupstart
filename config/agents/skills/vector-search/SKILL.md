@@ -100,7 +100,7 @@ searching:
 curl -s "http://proxy:8888/rag_documents?select=metadata&order=id.asc&limit=1" \
   -H "Host: postgrest.localhost:8888" \
   | jq -r '.[0].metadata | "\(.embed_backend)\t\(.embed_model)"'
-# e.g. "openrouter   openai/text-embedding-3-large"  or  "self_hosted  llama-embed-nemotron-8b"
+# e.g. "copilot  text-embedding-3-small"  or  "self_hosted  llama-embed-nemotron-8b"
 ```
 
 Then embed the query with THAT backend/model and **right-pad to 4096** (no-op for a
@@ -108,12 +108,28 @@ Then embed the query with THAT backend/model and **right-pad to 4096** (no-op fo
 filter below pads automatically:
 
 ```bash
+# copilot:     http://127.0.0.1:18789/v1/embeddings (OpenClaw gateway, github-copilot auth)
 # self_hosted: $OPENCODE_EMBEDDING_HOST + $OPENCODE_EMBEDDING_MODEL
 # openai:      https://api.openai.com/v1/embeddings  (Authorization: Bearer <openai key>)
 # openrouter:  https://openrouter.ai/api/v1/embeddings (Authorization: Bearer <openrouter key>)
 VEC=$(curl -s -X POST "$EMBED_URL" \
   -H "Content-Type: application/json" ${AUTH:+-H "Authorization: Bearer $AUTH"} \
   -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"query text\"}" \
+  | jq -r '(.data[0].embedding // .embedding) as $e
+           | ($e + [range(4096 - ($e|length)) | 0])
+           | "[" + (map(tostring) | join(",")) + "]"')
+```
+
+For the **copilot** backend (highest priority when `OPENCLAW_ENABLE_COPILOT=1`),
+embed through the OpenClaw gateway — it reuses the github-copilot auth, so no API
+key. Send `model: "openclaw"` plus the gateway `X-Forwarded-User` identity; the
+result is `text-embedding-3-small` (1536-dim), padded to 4096 by the same jq:
+
+```bash
+VEC=$(curl -s -X POST "http://127.0.0.1:18789/v1/embeddings" \
+  -H "Content-Type: application/json" \
+  -H "X-Forwarded-User: user@nocodenation.org" \
+  -d '{"model": "openclaw", "input": "query text"}' \
   | jq -r '(.data[0].embedding // .embedding) as $e
            | ($e + [range(4096 - ($e|length)) | 0])
            | "[" + (map(tostring) | join(",")) + "]"')
@@ -181,7 +197,8 @@ similar). The embedding column is omitted from the response.
 
 For "import these books/PDFs to RAG", don't hand-roll embedding loops — use the
 `ingest_pdf` tool. It parses, chunks (~400 tok, 50 overlap), embeds via the
-self-hosted endpoint, and inserts rows.
+configured backend (copilot when enabled, else self-hosted/openai/openrouter), and
+inserts rows.
 
 End-to-end flow that works (verified):
 
@@ -191,8 +208,11 @@ End-to-end flow that works (verified):
 2. **Download each PDF into `/data/<name>.pdf`** over WebDAV (it's the staging mount
    `ingest_pdf` can read). Verify with `head -c 5 file` → `%PDF-`.
 3. **Call `ingest_pdf`** with `skip_existing=true` (so re-runs don't duplicate).
+   - When GitHub Copilot is enabled (`OPENCLAW_ENABLE_COPILOT=1`) the tool
+     auto-selects the `copilot` backend (highest priority) and does NOT prompt.
    - **If the tool returns `needs_backend_choice` / a `NEEDS USER INPUT` message**
-     (more than one embedding backend configured), it did NO work on purpose. You
+     (Copilot off and more than one other backend configured), it did NO work on
+     purpose. You
      MUST stop and ask the user which backend to use: present the listed options
      and wait for their reply. Do NOT pick one yourself, and do NOT re-call
      `ingest_pdf` until they answer — then re-run with `embedding_backend` set to

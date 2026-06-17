@@ -33,8 +33,7 @@ logger = logging.getLogger(__name__)
 
 class WebserverModule(PgAdminModule):
     def register(self, app, options):
-        # Do not look for the sub_modules,
-        # instead call blueprint.register(...) directly
+        # Skip sub_module discovery; register the blueprint directly.
         super().register(app, options)
 
     def get_exposed_url_endpoints(self):
@@ -75,7 +74,6 @@ def copy_file(username, from_path, to_name):
         to_name
     )
 
-    # copy file from from_path to local_json_path
     if from_path and os.path.exists(from_path):
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         shutil.copyfile(from_path, local_path)
@@ -118,7 +116,7 @@ class WebserverAuthentication(BaseAuthentication):
     def get_user(self):
         username = request.environ.get(config.WEBSERVER_REMOTE_USER)
         if not username:
-            # One more try to get the Remote User from the hearders
+            # Fall back to the Remote User from the headers.
             username = request.headers.get(config.WEBSERVER_REMOTE_USER)
         return username
 
@@ -148,9 +146,8 @@ class WebserverAuthentication(BaseAuthentication):
             current_app.logger.info(
                 "Webserver user {0} logged in.".format(username))
 
-            # After first login for webserver auth method, the user does not have email set
-            # Since we are using email as the username, we need to update the user with proper email
-            # This is also an opportunity to import server configurations for the user when he logs in first time
+            # First webserver login: email is unset, so set it from the username (used
+            # as email) and import the user's server configurations.
             if not user.email:
                 update_success, update_msg = update_user(user.id, {'email': username})
                 if update_success:
@@ -164,12 +161,10 @@ class WebserverAuthentication(BaseAuthentication):
                     file_path = "servers.json"
 
                     if file_path and os.path.exists(file_path):
-                        # Load the server configurations for the newly created user
                         current_app.logger.info(
                             "Importing server configurations for user {0} from {1}".format(
                                 username, file_path))
 
-                        # Import server configurations
                         import_success, import_msg = load_database_servers(
                             file_path, None, load_user=user)
 

@@ -33,9 +33,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "No .env found - created one from .env.example."
 fi
 
-# APP_ID identifies this installation (creation timestamp of the .env) and is
-# appended to every container name so checkouts don't collide. Stamp it when
-# the .env was just created — or backfill it into a pre-existing .env.
+# APP_ID (the .env creation timestamp) is appended to every container name so
+# checkouts don't collide. Stamp it now, or backfill into a pre-existing .env.
 APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
 if [[ -z "$APP_ID" ]]; then
   APP_ID="$(date +%Y%m%d%H%M%S)"
@@ -56,9 +55,8 @@ if [[ -n "$(docker ps -q --filter "name=^${CONTAINER}$")" ]]; then
 fi
 
 # Host-side docker socket path (differs under rootless docker). The UI's
-# Build/Start buttons spawn the toolbox helper container, which needs the
-# socket and the project mounted at its real host path so that nested bind
-# mounts (compose.yml, build contexts) resolve identically on the engine.
+# Build/Start buttons spawn the toolbox container, which needs the socket and
+# the project at its real host path so nested bind mounts resolve on the engine.
 DOCKER_SOCK="${DOCKER_HOST:-}"
 if [[ -z "$DOCKER_SOCK" ]]; then
   DOCKER_SOCK="$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || true)"
@@ -74,18 +72,15 @@ rm -f "$RESULT_FILE" "$PORT_FILE"
 cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -f "$PORT_FILE"; }
 trap cleanup INT TERM
 
-# Find a free port by simply trying to publish it: the bind happens on the
-# docker engine (i.e. the real host), so this also works when run.sh itself
-# executes inside the Windows toolbox container, where probing host ports
-# directly is impossible. A port taken by another dashboard instance (another
-# checkout) or any other process makes `docker run` fail with a bind error —
-# then try the next one.
+# Find a free port by trying to publish it: the bind happens on the docker
+# engine (the real host), so this also works from inside the Windows toolbox
+# container where probing host ports directly is impossible. A taken port makes
+# `docker run` fail with a bind error — then try the next one.
 MAX_PORT=$((PORT + 100))
 while :; do
   URL="http://localhost:${PORT}"
-  # ORIGIN must match the URL in the browser: SvelteKit rejects form posts
-  # from any other origin, which keeps random websites from writing into .env
-  # (or triggering builds) while the dashboard is up.
+  # ORIGIN must match the browser URL: SvelteKit rejects cross-origin form
+  # posts, blocking random sites from writing .env or triggering builds.
   set +e
   RUN_ERR="$(docker run -d --rm --name "$CONTAINER" \
     -p "127.0.0.1:${PORT}:3000" \
@@ -113,8 +108,7 @@ while :; do
   exit 1
 done
 
-# Read by the Windows-side browser watcher (run.ps1), which cannot know which
-# port the scan above settled on.
+# Read by the Windows browser watcher (run.ps1), which can't know the chosen port.
 echo "$PORT" > "$PORT_FILE"
 
 echo ""
@@ -123,8 +117,7 @@ echo "Manage the stack from there (configure / build / start / stop)."
 echo "Ctrl-C here, or the app's Quit button, stops the dashboard (not the stack)."
 echo ""
 
-# Best-effort browser open; on Windows (toolbox container) neither exists and
-# the printed URL is the instruction.
+# Best-effort browser open; on Windows neither exists, so the printed URL serves.
 if command -v xdg-open >/dev/null 2>&1; then
   (sleep 1; xdg-open "$URL" >/dev/null 2>&1) &
 elif command -v open >/dev/null 2>&1; then
