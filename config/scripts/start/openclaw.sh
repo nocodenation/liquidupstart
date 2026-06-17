@@ -24,6 +24,9 @@ get_env() {
   grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
 
+APP_ID="$(get_env APP_ID)"; [[ -z "$APP_ID" ]] && APP_ID=0
+OPENCLAW_IMAGE="all-in-wonder/openclaw:${APP_ID}"
+
 # Render config/openclaw/.env from the template, then inject model-provider keys
 # from the root .env. The template is the contract: only keys it already declares
 # (as a commented `# KEY=` line) are supported; others are ignored. A supported
@@ -235,7 +238,7 @@ else
         c.agents.defaults = c.agents.defaults || {};
         c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
         c.agents.defaults.memorySearch.provider = "github-copilot";
-        if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
+        c.agents.defaults.memorySearch.model = "text-embedding-3-large";
       }
 
       // Model picker allowlist: add a `provider/*` wildcard per credentialed
@@ -324,7 +327,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       -e HOME=/home/node \
       -v "${CLAUDE_DIR}:/home/node/.claude" \
       --entrypoint /usr/local/bin/openclaw-claude \
-      all-in-wonder/openclaw:latest "$@"
+      "${OPENCLAW_IMAGE}" "$@"
   }
 
   if [[ -n "$OAUTH_TOKEN" ]]; then
@@ -444,7 +447,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
       -v "${STATE_DIR}:/home/node/.openclaw" \
       -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-      all-in-wonder/openclaw:latest "$@"
+      "${OPENCLAW_IMAGE}" "$@"
   }
   copilot_authed() { copilot_cli models auth list 2>/dev/null | grep -qi github-copilot; }
 

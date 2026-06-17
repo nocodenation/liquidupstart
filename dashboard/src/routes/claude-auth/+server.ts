@@ -13,10 +13,11 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { json } from '@sveltejs/kit';
 import { parseEnvValues } from '$lib/env-file';
+import { appId } from '$lib/server/project';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const CLAUDE_DIR = join(ENV_DIR, 'volumes', '_openclaw-claude');
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? 'all-in-wonder/openclaw:latest';
+const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? `all-in-wonder/openclaw:${appId()}`;
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
 const PROBE_TIMEOUT_MS = 30_000;
 

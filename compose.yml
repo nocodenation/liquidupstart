@@ -270,7 +270,7 @@ services:
       - nocodenation_all_in_wonder_network
 
   opencode:
-    image: all-in-wonder/opencode:latest
+    image: all-in-wonder/opencode:${APP_ID:-0}
     container_name: opencode-${APP_ID:-0}
     restart: unless-stopped
     extra_hosts:
@@ -321,7 +321,7 @@ services:
       - nocodenation_all_in_wonder_network
 
   bun_runner:
-    image: all-in-wonder/bun-runner:latest
+    image: all-in-wonder/bun-runner:${APP_ID:-0}
     container_name: bun_runner-${APP_ID:-0}
     restart: unless-stopped
     volumes:
@@ -615,7 +615,7 @@ services:
       - nocodenation_all_in_wonder_network
 
   nifi:
-    image: all-in-wonder/nifi:latest
+    image: all-in-wonder/nifi:${APP_ID:-0}
     container_name: nifi-${APP_ID:-0}
     restart: unless-stopped
     environment:
@@ -690,7 +690,7 @@ services:
 #       - nocodenation_all_in_wonder_network
 
   openclaw-gateway:
-    image: all-in-wonder/openclaw:latest
+    image: all-in-wonder/openclaw:${APP_ID:-0}
     build: .
     user: "0:0"
     container_name: openclaw-gateway-${APP_ID:-0}
@@ -785,7 +785,7 @@ services:
       nocodenation_all_in_wonder_network:
 
   openclaw-cli:
-    image: all-in-wonder/openclaw:latest
+    image: all-in-wonder/openclaw:${APP_ID:-0}
     network_mode: "service:openclaw-gateway"
     user: "0:0"
     container_name: openclaw-cli-${APP_ID:-0}

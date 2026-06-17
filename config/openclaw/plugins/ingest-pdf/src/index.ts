@@ -4,11 +4,11 @@
  * rag_documents / rag_chunks via PostgREST (column `vector(4096)`; pgvector
  * binary-quantizes at index time, so we store the raw float vector).
  *
- * Backends (resolveBackend), priority order: copilot (OpenClaw's github-copilot
- * auth via the gateway, text-embedding-3-small 1536-dim padded to 4096, highest
- * priority), self_hosted (4096-dim native), openai and openrouter
- * (text-embedding-3-large, 3072-dim padded to 4096). Copilot auto-wins; else the
- * only configured one is used; with >1 of the rest it asks via embedding_backend.
+ * Backends (resolveBackend): copilot (OpenClaw's github-copilot auth via the
+ * gateway, text-embedding-3-large 3072-dim padded to 4096), self_hosted
+ * (4096-dim native), openai and openrouter (text-embedding-3-large, 3072-dim
+ * padded to 4096). With one configured it is used; with >1 (copilot included)
+ * the tool asks the user to pick via embedding_backend.
  *
  * Tool surface: input (PDF file/folder), title? (single-file), dry_run?,
  * estimate_only?, skip_existing?, collision_policy?, embedding_backend?.
@@ -48,7 +48,7 @@ const OPENAI_BATCH = 64 // OpenAI/OpenRouter accept an input array; batch to cut
 const COPILOT_EMBEDDINGS_URL = process.env.OPENCLAW_GATEWAY_EMBEDDINGS_URL || "http://127.0.0.1:18789/v1/embeddings"
 const COPILOT_GATEWAY_MODEL = "openclaw"
 const COPILOT_FORWARDED_USER = "user@nocodenation.org"
-const DEFAULT_COPILOT_MODEL = "text-embedding-3-small"
+const DEFAULT_COPILOT_MODEL = "text-embedding-3-large"
 const COPILOT_BATCH = 16 // endpoint caps: 128 inputs / 8192 chars each / 65536 total
 
 type Backend = "copilot" | "self_hosted" | "openai" | "openrouter"
@@ -378,12 +378,12 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
 
     const available: AvailBackend[] = []
-    // Copilot first = highest priority; gated on OPENCLAW_ENABLE_COPILOT=1.
+    // Copilot, gated on OPENCLAW_ENABLE_COPILOT=1.
     if (copilotEnabled) {
         available.push({
             backend: "copilot",
             cfg: { backend: "copilot", model: DEFAULT_COPILOT_MODEL, url: COPILOT_EMBEDDINGS_URL },
-            label: `copilot: ${DEFAULT_COPILOT_MODEL} via OpenClaw's github-copilot auth (1536-dim, zero-padded to 4096; no extra key)`,
+            label: `copilot: ${DEFAULT_COPILOT_MODEL} via OpenClaw's github-copilot auth (3072-dim, zero-padded to 4096; no extra key)`,
         })
     }
     if (embedHost && embedModel) {
@@ -431,8 +431,6 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
                 "error: no embedding backend configured. Enable GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1, signed in), or set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENAI_API_KEY (OpenAI), or OPENROUTER_API_KEY (OpenRouter), then re-run.",
         }
     }
-    // Copilot is highest priority: auto-select even when others are configured.
-    if (available[0].backend === "copilot") return { ok: true, cfg: available[0].cfg }
     if (available.length === 1) return { ok: true, cfg: available[0].cfg }
     return {
         ok: false,
@@ -775,7 +773,7 @@ const IngestPdfParams = Type.Object(
                 ],
                 {
                     description:
-                        "Which embedding backend to use. copilot = OpenClaw's github-copilot auth via the gateway (text-embedding-3-small, 1536-dim padded to 4096; needs OPENCLAW_ENABLE_COPILOT=1 and a signed-in provider). self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select: copilot wins when available (highest priority); otherwise the only configured backend is used, and if MORE THAN ONE non-copilot backend is configured the tool asks the user to pick — set this and re-run.",
+                        "Which embedding backend to use. copilot = OpenClaw's github-copilot auth via the gateway (text-embedding-3-large, 3072-dim padded to 4096; needs OPENCLAW_ENABLE_COPILOT=1 and a signed-in provider). self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured (copilot included) the tool asks the user to pick — set this and re-run.",
                 },
             ),
         ),
@@ -1068,7 +1066,7 @@ export default defineToolPlugin({
         tool({
             name: "ingest_pdf",
             description:
-                "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is GitHub Copilot (reusing OpenClaw's github-copilot auth; highest priority when OPENCLAW_ENABLE_COPILOT=1), the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); Copilot is auto-selected when available, otherwise if more than one of the rest is configured the tool asks you to choose via embedding_backend.",
+                "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is GitHub Copilot (reusing OpenClaw's github-copilot auth; needs OPENCLAW_ENABLE_COPILOT=1), the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if one backend is configured it is used, and if more than one is configured (Copilot included) the tool asks you to choose via embedding_backend.",
             parameters: IngestPdfParams,
             execute: async (args: IngestPdfArgs) => runIngest(args),
         }),

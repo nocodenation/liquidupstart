@@ -100,7 +100,7 @@ searching:
 curl -s "http://proxy:8888/rag_documents?select=metadata&order=id.asc&limit=1" \
   -H "Host: postgrest.localhost:8888" \
   | jq -r '.[0].metadata | "\(.embed_backend)\t\(.embed_model)"'
-# e.g. "copilot  text-embedding-3-small"  or  "self_hosted  llama-embed-nemotron-8b"
+# e.g. "copilot  text-embedding-3-large"  or  "self_hosted  llama-embed-nemotron-8b"
 ```
 
 Then embed the query with THAT backend/model and **right-pad to 4096** (no-op for a
@@ -120,10 +120,10 @@ VEC=$(curl -s -X POST "$EMBED_URL" \
            | "[" + (map(tostring) | join(",")) + "]"')
 ```
 
-For the **copilot** backend (highest priority when `OPENCLAW_ENABLE_COPILOT=1`),
+For the **copilot** backend (available when `OPENCLAW_ENABLE_COPILOT=1`),
 embed through the OpenClaw gateway — it reuses the github-copilot auth, so no API
 key. Send `model: "openclaw"` plus the gateway `X-Forwarded-User` identity; the
-result is `text-embedding-3-small` (1536-dim), padded to 4096 by the same jq:
+result is `text-embedding-3-large` (3072-dim), padded to 4096 by the same jq:
 
 ```bash
 VEC=$(curl -s -X POST "http://127.0.0.1:18789/v1/embeddings" \
@@ -197,8 +197,7 @@ similar). The embedding column is omitted from the response.
 
 For "import these books/PDFs to RAG", don't hand-roll embedding loops — use the
 `ingest_pdf` tool. It parses, chunks (~400 tok, 50 overlap), embeds via the
-configured backend (copilot when enabled, else self-hosted/openai/openrouter), and
-inserts rows.
+chosen backend (copilot/self-hosted/openai/openrouter), and inserts rows.
 
 End-to-end flow that works (verified):
 
@@ -208,10 +207,9 @@ End-to-end flow that works (verified):
 2. **Download each PDF into `/data/<name>.pdf`** over WebDAV (it's the staging mount
    `ingest_pdf` can read). Verify with `head -c 5 file` → `%PDF-`.
 3. **Call `ingest_pdf`** with `skip_existing=true` (so re-runs don't duplicate).
-   - When GitHub Copilot is enabled (`OPENCLAW_ENABLE_COPILOT=1`) the tool
-     auto-selects the `copilot` backend (highest priority) and does NOT prompt.
+   - When only one backend is configured the tool uses it automatically.
    - **If the tool returns `needs_backend_choice` / a `NEEDS USER INPUT` message**
-     (Copilot off and more than one other backend configured), it did NO work on
+     (more than one backend configured — Copilot included), it did NO work on
      purpose. You
      MUST stop and ask the user which backend to use: present the listed options
      and wait for their reply. Do NOT pick one yourself, and do NOT re-call

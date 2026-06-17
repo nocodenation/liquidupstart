@@ -53,6 +53,7 @@ if [ "${OPENCLAW_ENABLE_CLAUDE_CLI:-0}" = "1" ]; then
     sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${CONFIG_DIR}/Dockerfile"
 fi
 
-docker image rm "all-in-wonder/openclaw:latest" >/dev/null 2>&1 || true
-echo "Building all-in-wonder/openclaw:latest from ${CONFIG_DIR}..."
-docker build ${NO_CACHE:+--no-cache} --progress=plain -t "all-in-wonder/openclaw:latest" "${CONFIG_DIR}"
+IMAGE="all-in-wonder/openclaw:${APP_ID:-0}"
+docker image rm "$IMAGE" >/dev/null 2>&1 || true
+echo "Building $IMAGE from ${CONFIG_DIR}..."
+docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" "${CONFIG_DIR}"

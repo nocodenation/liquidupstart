@@ -25,9 +25,11 @@ HTTP_PORT="${HTTP_PORT:-8888}"
 HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTPS_PORT="${HTTPS_PORT:-8833}"
 
+APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
+APP_ID="${APP_ID:-0}"
 PROBE_IMAGE=""
-for _img in nginx:latest all-in-wonder/nifi:latest all-in-wonder/openclaw:latest \
-            all-in-wonder/bun-runner:latest all-in-wonder/opencode:latest \
+for _img in nginx:latest "all-in-wonder/nifi:${APP_ID}" "all-in-wonder/openclaw:${APP_ID}" \
+            "all-in-wonder/bun-runner:${APP_ID}" "all-in-wonder/opencode:${APP_ID}" \
             all-in-wonder/toolbox:latest; do
   if docker image inspect "$_img" >/dev/null 2>&1; then PROBE_IMAGE="$_img"; break; fi
 done

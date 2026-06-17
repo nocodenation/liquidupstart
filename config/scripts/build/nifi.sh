@@ -34,9 +34,7 @@ resolve_image_settings "NIFI"
 # Render the Dockerfile from the template, injecting the deps/commands.
 render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${CONFIG_DIR}/Dockerfile"
 
-# Remove existing image if it exists
-# Suppress error if the image doesn't exist and silence output
-docker image rm "all-in-wonder/nifi:latest" >/dev/null 2>&1 || true
-
-echo "Building all-in-wonder/nifi:latest from ${PROJECT_DIR}/config/nifi..."
-docker build ${NO_CACHE:+--no-cache} --progress=plain -t "all-in-wonder/nifi:latest" "${PROJECT_DIR}/config/nifi"
+IMAGE="all-in-wonder/nifi:${APP_ID:-0}"
+docker image rm "$IMAGE" >/dev/null 2>&1 || true
+echo "Building $IMAGE from ${PROJECT_DIR}/config/nifi..."
+docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" "${PROJECT_DIR}/config/nifi"

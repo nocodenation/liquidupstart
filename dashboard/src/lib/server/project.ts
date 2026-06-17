@@ -13,9 +13,10 @@ export const RESULT_FILE = join(ENV_DIR, '.install-result');
 
 // Images produced by build.sh; all must exist for a start to succeed.
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
-export const BUILT_IMAGES = ['opencode', 'bun-runner', 'nifi', 'openclaw'].map(
-  (n) => `all-in-wonder/${n}:latest`
-);
+export function builtImages(): string[] {
+  const tag = appId();
+  return ['opencode', 'bun-runner', 'nifi', 'openclaw'].map((n) => `all-in-wonder/${n}:${tag}`);
+}
 
 export function readEnvFile() {
   const exampleText = readFileSync(EXAMPLE_FILE, 'utf8');
@@ -77,7 +78,7 @@ export function appId(): string {
 export async function stackState(): Promise<{ running: boolean; needBuild: boolean }> {
   const [proxy, images] = await Promise.all([
     dockerOutput(['ps', '-q', '--filter', `name=^proxy-${appId()}$`, '--filter', 'status=running']),
-    dockerExitCode(['image', 'inspect', ...BUILT_IMAGES])
+    dockerExitCode(['image', 'inspect', ...builtImages()])
   ]);
   return { running: proxy.trim() !== '', needBuild: images !== 0 };
 }
