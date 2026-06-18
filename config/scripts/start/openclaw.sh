@@ -73,6 +73,26 @@ for dir in "${STATE_DIR}" "${WORKSPACE_DIR}" "${SECRETS_DIR}" "${CLAUDE_DIR}"; d
   chmod 777 "$dir"
 done
 
+# Git credentials so the agent can push to Gitea (http://gitea:3000) without
+# embedding tokens in remote URLs. GIT_CONFIG_GLOBAL points git here (see
+# compose.yml). Regenerated each start from .env.
+GIT_CFG_DIR="${STATE_DIR}/git"
+mkdir -p "$GIT_CFG_DIR"; chmod 777 "$GIT_CFG_DIR"
+GITEA_USER="$(get_env GITEA_ADMIN_USER)";   [[ -z "$GITEA_USER" ]]  && GITEA_USER="aiw-admin"
+GITEA_EMAIL="$(get_env GITEA_ADMIN_EMAIL)"; [[ -z "$GITEA_EMAIL" ]] && GITEA_EMAIL="user@nocodenation.org"
+GITEA_TOKEN="$(get_env GITEA_OPENCLAW_TOKEN)"
+{
+  printf '[user]\n\tname = %s\n\temail = %s\n' "$GITEA_USER" "$GITEA_EMAIL"
+  printf '[init]\n\tdefaultBranch = main\n'
+  printf '[safe]\n\tdirectory = *\n'
+  printf '[credential]\n\thelper = store --file=/home/node/.openclaw/git/credentials\n'
+} > "${GIT_CFG_DIR}/gitconfig"
+if [[ -n "$GITEA_TOKEN" && "$GITEA_TOKEN" != generate_this_with_shell_script ]]; then
+  printf 'http://%s:%s@gitea:3000\n' "$GITEA_USER" "$GITEA_TOKEN" > "${GIT_CFG_DIR}/credentials"
+  chmod 600 "${GIT_CFG_DIR}/credentials"
+  echo "Wrote Gitea git credentials to ${GIT_CFG_DIR} (agent can push to http://gitea:3000)."
+fi
+
 # When 1, OpenClaw uses the Claude Code CLI backend and OPENCLAW_PRIMARY_MODEL
 # is ignored.
 ENABLE_CLAUDE_CLI="$(get_env OPENCLAW_ENABLE_CLAUDE_CLI)"
