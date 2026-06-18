@@ -140,10 +140,13 @@ services:
 #         condition: service_started
       nextcloud:
         condition: service_healthy
+      gitea:
+        condition: service_healthy
     networks:
       nocodenation_all_in_wonder_network:
         aliases:
           - pgadmin.localhost
+          - git.localhost
           - postgrest.localhost
           - swagger.localhost
           - opencode.localhost
@@ -611,6 +614,32 @@ services:
     volumes:
       - ./volumes/collabora/fonts:/usr/share/fonts/truetype/custom
       - ./volumes/collabora/fonts:/opt/cool/systemplate/usr/share/fonts/truetype/custom
+    networks:
+      - nocodenation_all_in_wonder_network
+
+  gitea:
+    image: gitea/gitea:1
+    container_name: gitea-${APP_ID:-0}
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__server__DOMAIN: git.localhost
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__ROOT_URL: "http://git.localhost:${SYSTEM_HTTP_PORT:-8888}/"
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
+    volumes:
+      - ./volumes/_gitea/data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     networks:
       - nocodenation_all_in_wonder_network
 
