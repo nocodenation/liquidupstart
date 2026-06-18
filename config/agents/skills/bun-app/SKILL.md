@@ -247,9 +247,20 @@ the URL does **not** need any further configuration. The correct version substit
 `http://app.localhost:PORT` for every `http://bun_runner:3000` and removes the hedging
 sentence entirely.
 
+## Commit your work (when versioning is on)
+
+When `GIT_VERSION_BUN_APP=1` (check with `echo $GIT_VERSION_BUN_APP`), finish by
+committing `/bun_app` **yourself** with a meaningful message — don't leave it to the
+background auto-snapshot, which only makes generic `snapshot <time>` commits and
+clutters history. After the final `package.json` bump, run the commit/push from the
+**publish-to-git** skill with a message describing the change, e.g.
+`git commit -m "Add bookshelf grid and PDF reader"`. One commit per build or update.
+
 ## Rules
 
 - SSR React only — don't introduce a different framework.
+- If `GIT_VERSION_BUN_APP=1`, end by committing `/bun_app` with a meaningful message
+  (see publish-to-git) — one commit per build, don't rely on the auto-snapshot.
 - One bump per edit on `version` in `/bun_app/package.json`.
 - Last write into `/bun_app` is always `/bun_app/package.json` (copy from `/tmp/package.json`).
 - Before writing an app that uses user files, list those files from Nextcloud

@@ -16,6 +16,8 @@
     // react while a task runs — e.g. hide service tiles during a teardown.
     activeTask = $bindable(''),
     authPending = $bindable(false),
+    controlsAtBottom = false,
+    backHref = null,
     onchange
   } = $props();
 
@@ -282,7 +284,7 @@
   let authUrl = $derived(authLog.match(/https:\/\/\S+/)?.[0] ?? '');
 </script>
 
-<div class="runbar">
+{#snippet controls()}
   {#if needBuild}
     <button
       type="button"
@@ -330,7 +332,13 @@
       {runningTask === 'rebuild' ? 'Rebuilding…' : 'Rebuild'}
     </button>
   {/if}
-</div>
+{/snippet}
+
+{#if !controlsAtBottom}
+  <div class="runbar">
+    {@render controls()}
+  </div>
+{/if}
 
 {#if failedTask && runningTask === ''}
   <div class="errbox" role="alert">
@@ -444,4 +452,15 @@
       {/if}
     {/if}
   </section>
+{/if}
+
+{#if controlsAtBottom}
+  <div class="actions">
+    {#if backHref}
+      <a href={backHref} class="back">← Back to the configuration</a>
+    {/if}
+    <div class="runbar">
+      {@render controls()}
+    </div>
+  </div>
 {/if}

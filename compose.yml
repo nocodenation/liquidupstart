@@ -139,7 +139,7 @@ services:
       opencode:
         condition: service_healthy
       bun_runner:
-        condition: service_healthy
+        condition: service_started
       openclaw-gateway:
         condition: service_healthy
       # hermes disabled: omitted here too (else compose errors on undefined service)
@@ -653,6 +653,10 @@ services:
       GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
       GITEA__repository__ENABLE_PUSH_CREATE_USER: "true"
       GITEA__repository__ENABLE_PUSH_CREATE_ORG: "true"
+      GITEA__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"
+      GITEA__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "true"
+      GITEA__security__REVERSE_PROXY_AUTHENTICATION_USER: "X-WEBAUTH-USER"
+      GITEA__security__REVERSE_PROXY_TRUSTED_PROXIES: "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     volumes:
       - ./volumes/_gitea/data:/data
     healthcheck:
@@ -674,10 +678,20 @@ services:
       GITEA_EMAIL: ${GITEA_ADMIN_EMAIL:-user@nocodenation.org}
       GITEA_OPENCLAW_TOKEN: ${GITEA_OPENCLAW_TOKEN:-}
       GIT_SNAPSHOT_INTERVAL: ${GIT_SNAPSHOT_INTERVAL:-300}
+      GIT_SNAPSHOT_DEBOUNCE: ${GIT_SNAPSHOT_DEBOUNCE:-30}
+      GIT_VERSION_BUN_APP: ${GIT_VERSION_BUN_APP:-0}
+      GIT_VERSION_DATA: ${GIT_VERSION_DATA:-0}
+      GIT_VERSION_PYTHON_EXTENSIONS: ${GIT_VERSION_PYTHON_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS: ${GIT_VERSION_NAR_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS_SRC: ${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}
     volumes:
       - ./config/git-snapshot/snapshot.sh:/snapshot.sh:ro
-      - ./volumes/_openclaw/workspace:/repos/workspace
       - ./volumes/bun_app:/repos/bun_app
+      - ./volumes/data:/repos/data
+      - ./volumes/python_extensions:/repos/python_extensions
+      - ./volumes/nar_extensions:/repos/nar_extensions
+      - ./volumes/nar_extensions_src:/repos/nar_extensions_src
+      - ./volumes/_git-snapshot:/git
     depends_on:
       gitea:
         condition: service_healthy
@@ -804,6 +818,11 @@ services:
       GITEA_USER: ${GITEA_ADMIN_USER:-aiw-admin}
       GITEA_OPENCLAW_TOKEN: ${GITEA_OPENCLAW_TOKEN:-}
       GIT_CONFIG_GLOBAL: /home/node/.openclaw/git/gitconfig
+      GIT_VERSION_BUN_APP: ${GIT_VERSION_BUN_APP:-0}
+      GIT_VERSION_DATA: ${GIT_VERSION_DATA:-0}
+      GIT_VERSION_PYTHON_EXTENSIONS: ${GIT_VERSION_PYTHON_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS: ${GIT_VERSION_NAR_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS_SRC: ${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ./volumes/_openclaw:/home/node/.openclaw
@@ -818,6 +837,7 @@ services:
       - ./volumes/bun_app:/bun_app
       - ./volumes/python_extensions:/opt/python_extensions
       - ./volumes/nar_extensions:/opt/nar_extensions
+      - ./volumes/nar_extensions_src:/opt/nar_extensions_src
     cap_drop:
       - NET_RAW
       - NET_ADMIN
@@ -901,6 +921,11 @@ services:
       GITEA_USER: ${GITEA_ADMIN_USER:-aiw-admin}
       GITEA_OPENCLAW_TOKEN: ${GITEA_OPENCLAW_TOKEN:-}
       GIT_CONFIG_GLOBAL: /home/node/.openclaw/git/gitconfig
+      GIT_VERSION_BUN_APP: ${GIT_VERSION_BUN_APP:-0}
+      GIT_VERSION_DATA: ${GIT_VERSION_DATA:-0}
+      GIT_VERSION_PYTHON_EXTENSIONS: ${GIT_VERSION_PYTHON_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS: ${GIT_VERSION_NAR_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS_SRC: ${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}
     volumes:
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace

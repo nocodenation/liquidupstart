@@ -54,9 +54,15 @@ Most images are pulled; four are built locally as `all-in-wonder/{opencode,bun-r
 
 ## Writing into files
 
-Do not put comments into code that you generate. Add a short comment only if it is required
-to explain difficult things. In general treat a person who reads the code - that he will understand
-most of the things on a Senior developer level.
+**Write code with ZERO comments by default.** This applies everywhere — new files, edits,
+config (compose.yml, .env, YAML), shell scripts, and subtle one-off workarounds. Do NOT add:
+- explanatory or "why" comments, even a single line;
+- multi-line rationale blocks above tricky code;
+- section headers, banners, or "what this does" notes.
+
+Assume a senior developer reads the code and understands it without hand-holding. If
+something is genuinely non-obvious, explain it in the chat reply — never in the file. Add a
+comment ONLY when the user explicitly asks for one. When in doubt, no comment.
 
 ## GIT
 

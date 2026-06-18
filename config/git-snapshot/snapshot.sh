@@ -12,21 +12,85 @@ if [ -n "${GITEA_OPENCLAW_TOKEN:-}" ] && [ "${GITEA_OPENCLAW_TOKEN}" != "generat
   chmod 600 /root/.git-credentials
 fi
 
-INTERVAL="${GIT_SNAPSHOT_INTERVAL:-300}"
-echo "git-snapshot: snapshotting dirty repos under /repos every ${INTERVAL}s"
+DEBOUNCE="${GIT_SNAPSHOT_DEBOUNCE:-30}"
+FALLBACK="${GIT_SNAPSHOT_INTERVAL:-300}"
 
-while true; do
-  for gitdir in $(find /repos -maxdepth 4 -type d -name .git 2>/dev/null); do
-    repo=$(dirname "$gitdir")
-    cd "$repo" || continue
-    git add -A 2>/dev/null || true
-    if ! git diff --cached --quiet 2>/dev/null; then
-      ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-      git commit -m "snapshot ${ts}" >/dev/null 2>&1 || true
-      echo "git-snapshot: committed ${repo} @ ${ts}"
-    fi
-    # No-op when the repo has no remote/upstream yet; the agent sets that up.
-    git push >/dev/null 2>&1 || true
+AREAS="bun_app:${GIT_VERSION_BUN_APP:-0}
+data:${GIT_VERSION_DATA:-0}
+python_extensions:${GIT_VERSION_PYTHON_EXTENSIONS:-0}
+nar_extensions:${GIT_VERSION_NAR_EXTENSIONS:-0}
+nar_extensions_src:${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}"
+
+ENABLED=$(echo "$AREAS" | awk -F: '$2==1{print $1}')
+
+write_default_gitignore() {
+  case "$1" in
+    bun_app)            extra='node_modules/\ndist/\n' ;;
+    python_extensions)  extra='__pycache__/\n*.pyc\n.venv/\n' ;;
+    nar_extensions_src) extra='target/\nbuild/\n' ;;
+    *)                  extra='' ;;
+  esac
+  printf ".env\n*.token\n*.key\n.DS_Store\n${extra}" > .gitignore
+}
+
+snapshot_area() {
+  area="$1"
+  dir="/repos/$area"
+  [ -d "$dir" ] || return 0
+  cd "$dir" || return 0
+  if [ ! -e "$dir/.git" ]; then
+    git init -q
+    [ -f .gitignore ] || write_default_gitignore "$area"
+    echo "git-snapshot: initialized repo for ${area}"
+  fi
+  git remote get-url origin >/dev/null 2>&1 || \
+    git remote add origin "http://gitea:3000/${GITEA_USER}/${area}.git"
+  git add -A 2>/dev/null || true
+  if ! git diff --cached --quiet 2>/dev/null; then
+    ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    git commit -m "snapshot ${ts}" >/dev/null 2>&1 || true
+    echo "git-snapshot: committed ${area} @ ${ts}"
+  fi
+  git push -u origin HEAD >/dev/null 2>&1 || true
+}
+
+sweep() {
+  for area in $ENABLED; do
+    snapshot_area "$area"
   done
-  sleep "${INTERVAL}"
+}
+
+WATCH=""
+for area in $ENABLED; do
+  [ -d "/repos/$area" ] && WATCH="$WATCH /repos/$area"
 done
+
+echo "git-snapshot: enabled areas:$(for a in $ENABLED; do printf ' %s' "$a"; done)"
+sweep
+
+if [ -z "$WATCH" ]; then
+  echo "git-snapshot: no enabled areas; idling."
+  while true; do sleep "$FALLBACK"; done
+fi
+
+command -v inotifywait >/dev/null 2>&1 || apk add --no-cache inotify-tools >/dev/null 2>&1 || true
+
+if command -v inotifywait >/dev/null 2>&1; then
+  echo "git-snapshot: watching for changes (debounce ${DEBOUNCE}s, fallback ${FALLBACK}s)"
+  while true; do
+    if inotifywait -r -q -t "$FALLBACK" --exclude '(^|/)(\.git|node_modules)(/|$)' \
+         -e close_write,create,delete,move $WATCH >/dev/null 2>&1; then
+      while inotifywait -r -q -t "$DEBOUNCE" --exclude '(^|/)(\.git|node_modules)(/|$)' \
+              -e close_write,create,delete,move $WATCH >/dev/null 2>&1; do
+        :
+      done
+    fi
+    sweep
+  done
+else
+  echo "git-snapshot: inotify-tools unavailable; polling every ${FALLBACK}s"
+  while true; do
+    sleep "$FALLBACK"
+    sweep
+  done
+fi
