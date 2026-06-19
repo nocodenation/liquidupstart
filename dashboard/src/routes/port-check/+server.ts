@@ -10,7 +10,7 @@ import { appId } from '$lib/server/project';
 
 // Throwaway probe container: the dashboard image is always present and has
 // `true`, which exits at once so the published port is released immediately.
-const PROBE_IMAGE = 'all-in-wonder/dashboard:latest';
+const PROBE_IMAGE = 'liquidupstart/dashboard:latest';
 // How far above the requested port to look before giving up.
 const SEARCH_SPAN = 200;
 

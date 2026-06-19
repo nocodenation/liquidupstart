@@ -34,41 +34,41 @@ render_template() {
 CERTS_DIR="${PROJECT_DIR}/volumes/nginx/certs"
 mkdir -p "$CERTS_DIR"
 
-if [[ -f "${CERTS_DIR}/nifi.localhost.crt" && -f "${CERTS_DIR}/nifi.localhost.key" ]]; then
-    rm "${CERTS_DIR}/nifi.localhost.crt"
-    rm "${CERTS_DIR}/nifi.localhost.key"
+if [[ -f "${CERTS_DIR}/liquid.localhost.crt" && -f "${CERTS_DIR}/liquid.localhost.key" ]]; then
+    rm "${CERTS_DIR}/liquid.localhost.crt"
+    rm "${CERTS_DIR}/liquid.localhost.key"
     echo "Removed old certificates"
 fi
-echo "Generating self-signed TLS certificate for nifi.localhost..."
+echo "Generating self-signed TLS certificate for liquid.localhost..."
 openssl req -x509 -newkey rsa:4096 -nodes \
-    -keyout "${CERTS_DIR}/nifi.localhost.key" \
-    -out "${CERTS_DIR}/nifi.localhost.crt" \
+    -keyout "${CERTS_DIR}/liquid.localhost.key" \
+    -out "${CERTS_DIR}/liquid.localhost.crt" \
     -days 3650 \
-    -subj "/CN=nifi.localhost" \
-    -addext "subjectAltName=DNS:nifi.localhost,DNS:*.nifi.localhost"
+    -subj "/CN=liquid.localhost" \
+    -addext "subjectAltName=DNS:liquid.localhost,DNS:*.liquid.localhost"
 echo "Certificate generated at ${CERTS_DIR}."
 
-STORE_PASSWORD="$(grep -E '^NIFI_KEYSTORE_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+STORE_PASSWORD="$(grep -E '^LIQUID_KEYSTORE_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
-echo "Generating NiFi keystore (PKCS12)..."
-rm -f "${CERTS_DIR}/nifi.keystore.p12"
+echo "Generating Liquid keystore (PKCS12)..."
+rm -f "${CERTS_DIR}/liquid.keystore.p12"
 openssl pkcs12 -export \
-    -in "${CERTS_DIR}/nifi.localhost.crt" \
-    -inkey "${CERTS_DIR}/nifi.localhost.key" \
-    -out "${CERTS_DIR}/nifi.keystore.p12" \
-    -name "nifi-ingress" \
+    -in "${CERTS_DIR}/liquid.localhost.crt" \
+    -inkey "${CERTS_DIR}/liquid.localhost.key" \
+    -out "${CERTS_DIR}/liquid.keystore.p12" \
+    -name "liquid-ingress" \
     -passout "pass:${STORE_PASSWORD}"
 
-echo "Generating NiFi truststore (PKCS12)..."
-rm -f "${CERTS_DIR}/nifi.truststore.p12"
+echo "Generating Liquid truststore (PKCS12)..."
+rm -f "${CERTS_DIR}/liquid.truststore.p12"
 # keytool decodes paths with the locale charset; on a non-UTF-8 locale (the
 # toolbox's Debian default) a non-ASCII project path is mangled to "?" and the
 # cert is not found. Force a UTF-8 locale so paths survive.
 if command -v keytool &>/dev/null; then
     LC_ALL=C.UTF-8 keytool -importcert -trustcacerts \
-        -alias "nifi-ingress" \
-        -file "${CERTS_DIR}/nifi.localhost.crt" \
-        -keystore "${CERTS_DIR}/nifi.truststore.p12" \
+        -alias "liquid-ingress" \
+        -file "${CERTS_DIR}/liquid.localhost.crt" \
+        -keystore "${CERTS_DIR}/liquid.truststore.p12" \
         -storetype PKCS12 \
         -storepass "${STORE_PASSWORD}" \
         -noprompt
@@ -79,14 +79,14 @@ else
         -v "${CERTS_DIR}:/certs" \
         eclipse-temurin:17-jre-jammy \
         keytool -importcert -trustcacerts \
-            -alias "nifi-ingress" \
-            -file "/certs/nifi.localhost.crt" \
-            -keystore "/certs/nifi.truststore.p12" \
+            -alias "liquid-ingress" \
+            -file "/certs/liquid.localhost.crt" \
+            -keystore "/certs/liquid.truststore.p12" \
             -storetype PKCS12 \
             -storepass "${STORE_PASSWORD}" \
             -noprompt
 fi
-chmod 644 "${CERTS_DIR}/nifi.keystore.p12" "${CERTS_DIR}/nifi.truststore.p12"
+chmod 644 "${CERTS_DIR}/liquid.keystore.p12" "${CERTS_DIR}/liquid.truststore.p12"
 echo "Keystore/truststore generated. Password: ${STORE_PASSWORD}"
 
 
@@ -113,7 +113,7 @@ done
 NGINX_CONF="${CONFIG_DIR}/nginx.conf"
 
 if [[ -f "$NGINX_CONF" ]]; then
-    echo "Generating NiFi ingress server blocks in nginx config..."
+    echo "Generating Liquid ingress server blocks in nginx config..."
 
     ingress_blocks=$(mktemp)
 
@@ -123,14 +123,14 @@ if [[ -f "$NGINX_CONF" ]]; then
 server {
     listen ${HTTPS_PORT} ssl;
 
-    server_name ${port}.nifi.localhost;
+    server_name ${port}.liquid.localhost;
 
-    ssl_certificate     /etc/nginx/certs/nifi.localhost.crt;
-    ssl_certificate_key /etc/nginx/certs/nifi.localhost.key;
+    ssl_certificate     /etc/nginx/certs/liquid.localhost.crt;
+    ssl_certificate_key /etc/nginx/certs/liquid.localhost.key;
     ssl_protocols       TLSv1.3;
 
     location / {
-        proxy_pass https://nifi:${port};
+        proxy_pass https://liquid:${port};
         proxy_ssl_verify off;
         proxy_ssl_server_name on;
         proxy_ssl_name \$host;
@@ -159,5 +159,5 @@ EOF
     ' "$NGINX_CONF" > "${NGINX_CONF}.tmp" && mv "${NGINX_CONF}.tmp" "$NGINX_CONF"
 
     rm -f "$ingress_blocks"
-    echo "NiFi ingress server blocks generated."
+    echo "Liquid ingress server blocks generated."
 fi

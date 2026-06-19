@@ -80,7 +80,7 @@ const SECTION_DESCRIPTIONS: [RegExp, string][] = [
   [/LLM PROVIDER API KEYS/i, 'API keys of LLM providers, used by the AI services (optional).'],
   [/OPENCLAW CONFIGURATION/i, 'Model & backend selection for OpenClaw, the recommended AI harness.'],
   [/OPENCODE CONFIGURATION/i, 'Model, Ollama endpoint and timeout settings for the OpenCode web UI.'],
-  [/NIFI AUTHENTICATION/i, 'Login and TLS keystore credentials for NiFi.'],
+  [/LIQUID AUTHENTICATION/i, 'Login and TLS keystore credentials for Liquid.'],
   [/IMAGE BUILD CONFIGURATION/i, 'Extra packages & commands baked into the Docker images by build.sh.']
 ];
 

@@ -28,9 +28,9 @@ HTTPS_PORT="${HTTPS_PORT:-8833}"
 APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
 APP_ID="${APP_ID:-0}"
 PROBE_IMAGE=""
-for _img in nginx:latest "all-in-wonder/nifi:${APP_ID}" "all-in-wonder/openclaw:${APP_ID}" \
-            "all-in-wonder/bun-runner:${APP_ID}" "all-in-wonder/opencode:${APP_ID}" \
-            all-in-wonder/toolbox:latest; do
+for _img in nginx:latest "liquidupstart/liquid:${APP_ID}" "liquidupstart/openclaw:${APP_ID}" \
+            "liquidupstart/bun-runner:${APP_ID}" "liquidupstart/opencode:${APP_ID}" \
+            liquidupstart/toolbox:latest; do
   if docker image inspect "$_img" >/dev/null 2>&1; then PROBE_IMAGE="$_img"; break; fi
 done
 
@@ -75,7 +75,7 @@ fi
 "${PROJECT_DIR}/config/scripts/start/opencode.sh"
 "${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
 "${PROJECT_DIR}/config/scripts/start/nginx.sh"
-"${PROJECT_DIR}/config/scripts/start/nifi.sh"
+"${PROJECT_DIR}/config/scripts/start/liquid.sh"
 # hermes disabled: not started
 # "${PROJECT_DIR}/config/scripts/start/hermes.sh"
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
@@ -88,8 +88,8 @@ echo "Starting containers..."
 docker compose up -d
 
 PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-NIFI_USERNAME="$(grep -E '^NIFI_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-NIFI_PASSWORD="$(grep -E '^NIFI_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+LIQUID_USERNAME="$(grep -E '^LIQUID_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+LIQUID_PASSWORD="$(grep -E '^LIQUID_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 # hermes disabled: HERMES_API_KEY="$(grep -E '^HERMES_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
 # Colors only when stdout is a terminal (stays plain when piped/redirected).
@@ -114,7 +114,7 @@ url_line "REST API"    "http://postgrest.localhost:${HTTP_PORT}"
 url_line "Swagger UI"  "http://swagger.localhost:${HTTP_PORT}"
 echo ""
 echo "${HDR}=== Web interfaces = Applications ================================${RST}"
-url_line "NiFi"        "https://nifi.localhost:${HTTPS_PORT}"
+url_line "Liquid"        "https://liquid.localhost:${HTTPS_PORT}"
 url_line "Node app"    "http://app.localhost:${HTTP_PORT}        - build an app using OpenClaw first"
 url_line "OpenProject" "http://openproject.localhost:${HTTP_PORT}"
 echo ""
@@ -126,13 +126,13 @@ echo ""
 echo "${HDR}=== Logins, passwords & tokens ===================================${RST}"
 # hermes disabled: echo "  Hermes API/Webhooks token:  ${CRED}${HERMES_API_KEY}${RST}"
 echo "  NextCloud admin password:   ${CRED}${PGADMIN_DEFAULT_EMAIL}${RST}"
-echo "  NiFi username:              ${CRED}${NIFI_USERNAME}${RST}"
-echo "  NiFi password:              ${CRED}${NIFI_PASSWORD}${RST}"
+echo "  Liquid username:              ${CRED}${LIQUID_USERNAME}${RST}"
+echo "  Liquid password:              ${CRED}${LIQUID_PASSWORD}${RST}"
 echo ""
 echo "${HDR}=== Additional endpoints =========================================${RST}"
 # hermes disabled: echo "  ${DIM}Hermes API:                 ${URL}http://api.hermes.localhost:${HTTP_PORT}${RST}"
 # hermes disabled: echo "  ${DIM}Hermes webhooks:            ${URL}http://webhooks.hermes.localhost:${HTTP_PORT}${RST}"
-echo "  ${DIM}NiFi ingresses: ports 8900-8999, served on https://PORT.nifi.localhost:${HTTPS_PORT}${RST}"
+echo "  ${DIM}Liquid ingresses: ports 8900-8999, served on https://PORT.liquid.localhost:${HTTPS_PORT}${RST}"
 echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost:${HTTP_PORT}${RST}"
 echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
 echo ""

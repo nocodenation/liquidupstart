@@ -1,6 +1,6 @@
 # ingest-pdf — Claude Code MCP server
 
-PDF → RAG ingester for the All-In-Wonder stack, exposed as a Model Context
+PDF → RAG ingester for the Liquid Upstart stack, exposed as a Model Context
 Protocol stdio tool (`ingest_pdf`) so the OpenClaw **claude-cli** backend can use
 it. It is the Claude Code port of the OpenClaw plugin in
 `config/openclaw/plugins/ingest-pdf` — identical business logic (unpdf text

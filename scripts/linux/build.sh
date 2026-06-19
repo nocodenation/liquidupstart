@@ -9,7 +9,7 @@ cd "${PROJECT_DIR}"
 # under `set -u` treats an empty "${ARR[@]}" as unbound, while "$@" is safe.
 "${PROJECT_DIR}/config/scripts/build/opencode.sh" "$@"
 "${PROJECT_DIR}/config/scripts/build/bun-runner.sh" "$@"
-"${PROJECT_DIR}/config/scripts/build/nifi.sh" "$@"
+"${PROJECT_DIR}/config/scripts/build/liquid.sh" "$@"
 # hermes disabled: not built (re-enable here + start.sh + compose.yml + nginx template + dashboard)
 # "${PROJECT_DIR}/config/scripts/build/hermes.sh" "$@"
 "${PROJECT_DIR}/config/scripts/build/openclaw.sh" "$@"

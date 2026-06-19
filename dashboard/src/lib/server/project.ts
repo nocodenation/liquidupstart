@@ -15,7 +15,7 @@ export const RESULT_FILE = join(ENV_DIR, '.install-result');
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
 export function builtImages(): string[] {
   const tag = appId();
-  return ['opencode', 'bun-runner', 'nifi', 'openclaw'].map((n) => `all-in-wonder/${n}:${tag}`);
+  return ['opencode', 'bun-runner', 'liquid', 'openclaw'].map((n) => `liquidupstart/${n}:${tag}`);
 }
 
 export function readEnvFile() {

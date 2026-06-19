@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "OpenClaw tool plugin: ingest PDFs into the All-In-Wonder RAG store",
+  "description": "OpenClaw tool plugin: ingest PDFs into the Liquid Upstart RAG store",
   "scripts": {
     "build": "./build.sh"
   },

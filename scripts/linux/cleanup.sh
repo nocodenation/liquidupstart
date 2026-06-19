@@ -8,8 +8,8 @@ PGADMIN_TEMPLATES_DIR="${PROJECT_DIR}/config/pgadmin/templates"
 PGADMIN_OUTPUT_DIR="${PROJECT_DIR}/config/pgadmin"
 NGINX_TEMPLATES_DIR="${PROJECT_DIR}/config/nginx/templates"
 NGINX_OUTPUT_DIR="${PROJECT_DIR}/config/nginx"
-NIFI_TEMPLATES_DIR="${PROJECT_DIR}/config/nifi/templates"
-NIFI_OUTPUT_DIR="${PROJECT_DIR}/config/nifi"
+LIQUID_TEMPLATES_DIR="${PROJECT_DIR}/config/liquid/templates"
+LIQUID_OUTPUT_DIR="${PROJECT_DIR}/config/liquid"
 NEXTCLOUD_TEMPLATES_DIR="${PROJECT_DIR}/config/nextcloud/templates"
 NEXTCLOUD_OUTPUT_DIR="${PROJECT_DIR}/config/nextcloud"
 HERMES_TEMPLATES_DIR="${PROJECT_DIR}/config/hermes/templates"
@@ -41,12 +41,12 @@ for template in "${NEXTCLOUD_TEMPLATES_DIR}"/*; do
   echo "Removed: config/nextcloud/${filename}"
 done
 
-# Remove rendered nifi config files
-for template in "${NIFI_TEMPLATES_DIR}"/*; do
+# Remove rendered liquid config files
+for template in "${LIQUID_TEMPLATES_DIR}"/*; do
   [[ -f "$template" ]] || continue
   filename="$(basename "$template")"
-  rm -rf "${NIFI_OUTPUT_DIR}/${filename}"
-  echo "Removed: config/nifi/${filename}"
+  rm -rf "${LIQUID_OUTPUT_DIR}/${filename}"
+  echo "Removed: config/liquid/${filename}"
 done
 
 # Map a template basename to its rendered filename. Most are same-named, but

@@ -5,10 +5,10 @@ export function POST() {
   return new Response(
     `<!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8" /><title>All-In-Wonder Dashboard</title></head>
+  <head><meta charset="utf-8" /><title>Liquid Upstart Dashboard</title></head>
   <body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto;">
     <h1>Dashboard stopped</h1>
-    <p>The All-In-Wonder Dashboard has stopped — you can close this tab and return to the terminal. The service stack itself keeps running if it was up.</p>
+    <p>The Liquid Upstart Dashboard has stopped — you can close this tab and return to the terminal. The service stack itself keeps running if it was up.</p>
   </body>
 </html>`,
     { headers: { 'content-type': 'text/html' } }

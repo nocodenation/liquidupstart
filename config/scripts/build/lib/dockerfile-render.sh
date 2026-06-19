@@ -3,7 +3,7 @@
 # SYSTEM_DEPENDENCIES and POST_INSTALLATION_COMMANDS values from the
 # environment (loaded from .env by the calling build script).
 #
-# This mirrors the behaviour of config/scripts/build/nifi.sh so that the
+# This mirrors the behaviour of config/scripts/build/liquid.sh so that the
 # opencode, openclaw and hermes images consume the exact same two .env
 # variables in the same way.
 #
@@ -30,7 +30,7 @@ print_warning() {
 
 # Combine a generic value with a per-image value according to a mode.
 #   $1 = generic value (e.g. SYSTEM_DEPENDENCIES)
-#   $2 = per-image value (e.g. NIFI_SYSTEM_DEPENDENCIES)
+#   $2 = per-image value (e.g. LIQUID_SYSTEM_DEPENDENCIES)
 #   $3 = mode: "add" (or empty/unset, the default) appends the per-image value
 #        to the generic one; "override" uses only the per-image value (ignoring
 #        the generic one, which means an empty per-image value installs/runs

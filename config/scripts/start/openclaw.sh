@@ -25,7 +25,7 @@ get_env() {
 }
 
 APP_ID="$(get_env APP_ID)"; [[ -z "$APP_ID" ]] && APP_ID=0
-OPENCLAW_IMAGE="all-in-wonder/openclaw:${APP_ID}"
+OPENCLAW_IMAGE="liquidupstart/openclaw:${APP_ID}"
 
 # Render config/openclaw/.env from the template, then inject model-provider keys
 # from the root .env. The template is the contract: only keys it already declares

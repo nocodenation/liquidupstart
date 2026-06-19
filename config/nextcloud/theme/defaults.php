@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Custom theme for the All-in-Wonder Nextcloud instance.
+ * Custom theme for the Liquid Upstart Nextcloud instance.
  *
  * This file is loaded when config.php contains 'theme' => 'aiw'.
  * It overrides branding strings and base colors. CSS lives in
@@ -20,19 +20,19 @@ class OC_Theme {
 	}
 
 	public function getTitle(): string {
-		return 'All-in-Wonder';
+		return 'Liquid Upstart';
 	}
 
 	public function getName(): string {
-		return 'All-in-Wonder';
+		return 'Liquid Upstart';
 	}
 
 	public function getHTMLName(): string {
-		return 'All-in-Wonder';
+		return 'Liquid Upstart';
 	}
 
 	public function getEntity(): string {
-		return 'All-in-Wonder';
+		return 'Liquid Upstart';
 	}
 
 	public function getSlogan(): string {

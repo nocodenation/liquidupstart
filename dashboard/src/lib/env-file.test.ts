@@ -62,8 +62,8 @@ SYSTEM_DEPENDENCIES=""
 # -----------------------------------------------------------------------------
 # PER-IMAGE OVERRIDES
 # -----------------------------------------------------------------------------
-NIFI_SYSTEM_DEPENDENCIES_MODE="add" # add | override
-NIFI_USERNAME="nifi"
+LIQUID_SYSTEM_DEPENDENCIES_MODE="add" # add | override
+LIQUID_USERNAME="liquid"
 `;
 
 describe('parseExample', () => {
@@ -116,7 +116,7 @@ describe('parseExample', () => {
     const get = (key: string) => fields.find((f) => f.field.key === key)!.field;
     expect(get('SYSTEM_HTTP_PORT')).toMatchObject({ defaultValue: '8888', quoted: false });
     expect(get('SYSTEM_DEPENDENCIES')).toMatchObject({ defaultValue: '', quoted: true });
-    expect(get('NIFI_SYSTEM_DEPENDENCIES_MODE')).toMatchObject({ defaultValue: 'add', quoted: true });
+    expect(get('LIQUID_SYSTEM_DEPENDENCIES_MODE')).toMatchObject({ defaultValue: 'add', quoted: true });
   });
 });
 
@@ -149,13 +149,13 @@ describe('renderEnv', () => {
     expect(out).toContain('SYSTEM_HTTP_PORT=9000');
     expect(out).toContain('# CUSTOM KEYS');
     expect(out).toContain('MY_CUSTOM=kept verbatim # with comment');
-    expect(out).toContain('NIFI_USERNAME="nifi"');
+    expect(out).toContain('LIQUID_USERNAME="liquid"');
   });
 
   test('keeps inline comments on substituted lines', () => {
-    const values = new Map([['NIFI_SYSTEM_DEPENDENCIES_MODE', { value: 'override', quoted: true }]]);
+    const values = new Map([['LIQUID_SYSTEM_DEPENDENCIES_MODE', { value: 'override', quoted: true }]]);
     expect(renderEnv(FIXTURE, values, [])).toContain(
-      'NIFI_SYSTEM_DEPENDENCIES_MODE="override" # add | override'
+      'LIQUID_SYSTEM_DEPENDENCIES_MODE="override" # add | override'
     );
   });
 });
@@ -181,10 +181,10 @@ describe('env-meta', () => {
 
   test('picks input widgets', () => {
     expect(inputType('OPENCLAW_ENABLE_CLAUDE_CLI')).toBe('checkbox');
-    expect(inputType('NIFI_SYSTEM_DEPENDENCIES_MODE')).toBe('select-mode');
+    expect(inputType('LIQUID_SYSTEM_DEPENDENCIES_MODE')).toBe('select-mode');
     expect(inputType('SYSTEM_HTTP_PORT')).toBe('number');
     expect(inputType('OPENCODE_TIMEOUT')).toBe('number');
-    expect(inputType('NIFI_PASSWORD')).toBe('password');
+    expect(inputType('LIQUID_PASSWORD')).toBe('password');
     expect(inputType('POSTGREST_JWT_SECTET')).toBe('password');
     expect(inputType('OPENCODE_MODEL')).toBe('text');
   });

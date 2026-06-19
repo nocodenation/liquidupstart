@@ -7,7 +7,7 @@ rem The wipe runs inside the toolbox container, so it can't remove its own image
 rem Now that the toolbox container has exited (--rm), remove it from the host and
 rem clear any leftover build cache.
 echo Removing toolbox image and build cache...
-docker rmi --force all-in-wonder/toolbox:latest 2>nul
+docker rmi --force liquidupstart/toolbox:latest 2>nul
 docker builder prune --force 2>nul
 
 echo.

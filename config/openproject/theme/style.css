@@ -1,5 +1,5 @@
 /**
- * Custom theme for All-in-Wonder OpenProject. Served by nginx and injected last
+ * Custom theme for Liquid Upstart OpenProject. Served by nginx and injected last
  * into <head> by patch_theme.sh, so it loads after OpenProject's stylesheets.
  * OpenProject uses GitHub Primer; redefining its brand CSS vars on :root
  * recolors the app like the Enterprise "Design" admin, without a token.

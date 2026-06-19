@@ -28,7 +28,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -60,7 +60,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   pgadmin:
     image: dpage/pgadmin4
@@ -90,7 +90,7 @@ services:
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
       PGADMIN_PASSFILE_PATH: /pgadmin4/pgpass
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   postgrest_app:
     image: postgrest/postgrest
@@ -106,7 +106,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   proxy:
     image: nginx:latest
@@ -141,7 +141,7 @@ services:
       nextcloud:
         condition: service_healthy
     networks:
-      nocodenation_all_in_wonder_network:
+      nocodenation_liquid_upstart_network:
         aliases:
           - pgadmin.localhost
           - postgrest.localhost
@@ -153,107 +153,107 @@ services:
           - app.localhost
           - openproject.localhost
           - nextcloud.localhost
-          - nifi.localhost
-          - 8900.nifi.localhost
-          - 8901.nifi.localhost
-          - 8902.nifi.localhost
-          - 8903.nifi.localhost
-          - 8904.nifi.localhost
-          - 8905.nifi.localhost
-          - 8906.nifi.localhost
-          - 8907.nifi.localhost
-          - 8908.nifi.localhost
-          - 8909.nifi.localhost
-          - 8910.nifi.localhost
-          - 8911.nifi.localhost
-          - 8912.nifi.localhost
-          - 8913.nifi.localhost
-          - 8914.nifi.localhost
-          - 8915.nifi.localhost
-          - 8916.nifi.localhost
-          - 8917.nifi.localhost
-          - 8918.nifi.localhost
-          - 8919.nifi.localhost
-          - 8920.nifi.localhost
-          - 8921.nifi.localhost
-          - 8922.nifi.localhost
-          - 8923.nifi.localhost
-          - 8924.nifi.localhost
-          - 8925.nifi.localhost
-          - 8926.nifi.localhost
-          - 8927.nifi.localhost
-          - 8928.nifi.localhost
-          - 8929.nifi.localhost
-          - 8930.nifi.localhost
-          - 8931.nifi.localhost
-          - 8932.nifi.localhost
-          - 8933.nifi.localhost
-          - 8934.nifi.localhost
-          - 8935.nifi.localhost
-          - 8936.nifi.localhost
-          - 8937.nifi.localhost
-          - 8938.nifi.localhost
-          - 8939.nifi.localhost
-          - 8940.nifi.localhost
-          - 8941.nifi.localhost
-          - 8942.nifi.localhost
-          - 8943.nifi.localhost
-          - 8944.nifi.localhost
-          - 8945.nifi.localhost
-          - 8946.nifi.localhost
-          - 8947.nifi.localhost
-          - 8948.nifi.localhost
-          - 8949.nifi.localhost
-          - 8950.nifi.localhost
-          - 8951.nifi.localhost
-          - 8952.nifi.localhost
-          - 8953.nifi.localhost
-          - 8954.nifi.localhost
-          - 8955.nifi.localhost
-          - 8956.nifi.localhost
-          - 8957.nifi.localhost
-          - 8958.nifi.localhost
-          - 8959.nifi.localhost
-          - 8960.nifi.localhost
-          - 8961.nifi.localhost
-          - 8962.nifi.localhost
-          - 8963.nifi.localhost
-          - 8964.nifi.localhost
-          - 8965.nifi.localhost
-          - 8966.nifi.localhost
-          - 8967.nifi.localhost
-          - 8968.nifi.localhost
-          - 8969.nifi.localhost
-          - 8970.nifi.localhost
-          - 8971.nifi.localhost
-          - 8972.nifi.localhost
-          - 8973.nifi.localhost
-          - 8974.nifi.localhost
-          - 8975.nifi.localhost
-          - 8976.nifi.localhost
-          - 8977.nifi.localhost
-          - 8978.nifi.localhost
-          - 8979.nifi.localhost
-          - 8980.nifi.localhost
-          - 8981.nifi.localhost
-          - 8982.nifi.localhost
-          - 8983.nifi.localhost
-          - 8984.nifi.localhost
-          - 8985.nifi.localhost
-          - 8986.nifi.localhost
-          - 8987.nifi.localhost
-          - 8988.nifi.localhost
-          - 8989.nifi.localhost
-          - 8990.nifi.localhost
-          - 8991.nifi.localhost
-          - 8992.nifi.localhost
-          - 8993.nifi.localhost
-          - 8994.nifi.localhost
-          - 8995.nifi.localhost
-          - 8996.nifi.localhost
-          - 8997.nifi.localhost
-          - 8998.nifi.localhost
-          - 8999.nifi.localhost
+          - liquid.localhost
+          - 8900.liquid.localhost
+          - 8901.liquid.localhost
+          - 8902.liquid.localhost
+          - 8903.liquid.localhost
+          - 8904.liquid.localhost
+          - 8905.liquid.localhost
+          - 8906.liquid.localhost
+          - 8907.liquid.localhost
+          - 8908.liquid.localhost
+          - 8909.liquid.localhost
+          - 8910.liquid.localhost
+          - 8911.liquid.localhost
+          - 8912.liquid.localhost
+          - 8913.liquid.localhost
+          - 8914.liquid.localhost
+          - 8915.liquid.localhost
+          - 8916.liquid.localhost
+          - 8917.liquid.localhost
+          - 8918.liquid.localhost
+          - 8919.liquid.localhost
+          - 8920.liquid.localhost
+          - 8921.liquid.localhost
+          - 8922.liquid.localhost
+          - 8923.liquid.localhost
+          - 8924.liquid.localhost
+          - 8925.liquid.localhost
+          - 8926.liquid.localhost
+          - 8927.liquid.localhost
+          - 8928.liquid.localhost
+          - 8929.liquid.localhost
+          - 8930.liquid.localhost
+          - 8931.liquid.localhost
+          - 8932.liquid.localhost
+          - 8933.liquid.localhost
+          - 8934.liquid.localhost
+          - 8935.liquid.localhost
+          - 8936.liquid.localhost
+          - 8937.liquid.localhost
+          - 8938.liquid.localhost
+          - 8939.liquid.localhost
+          - 8940.liquid.localhost
+          - 8941.liquid.localhost
+          - 8942.liquid.localhost
+          - 8943.liquid.localhost
+          - 8944.liquid.localhost
+          - 8945.liquid.localhost
+          - 8946.liquid.localhost
+          - 8947.liquid.localhost
+          - 8948.liquid.localhost
+          - 8949.liquid.localhost
+          - 8950.liquid.localhost
+          - 8951.liquid.localhost
+          - 8952.liquid.localhost
+          - 8953.liquid.localhost
+          - 8954.liquid.localhost
+          - 8955.liquid.localhost
+          - 8956.liquid.localhost
+          - 8957.liquid.localhost
+          - 8958.liquid.localhost
+          - 8959.liquid.localhost
+          - 8960.liquid.localhost
+          - 8961.liquid.localhost
+          - 8962.liquid.localhost
+          - 8963.liquid.localhost
+          - 8964.liquid.localhost
+          - 8965.liquid.localhost
+          - 8966.liquid.localhost
+          - 8967.liquid.localhost
+          - 8968.liquid.localhost
+          - 8969.liquid.localhost
+          - 8970.liquid.localhost
+          - 8971.liquid.localhost
+          - 8972.liquid.localhost
+          - 8973.liquid.localhost
+          - 8974.liquid.localhost
+          - 8975.liquid.localhost
+          - 8976.liquid.localhost
+          - 8977.liquid.localhost
+          - 8978.liquid.localhost
+          - 8979.liquid.localhost
+          - 8980.liquid.localhost
+          - 8981.liquid.localhost
+          - 8982.liquid.localhost
+          - 8983.liquid.localhost
+          - 8984.liquid.localhost
+          - 8985.liquid.localhost
+          - 8986.liquid.localhost
+          - 8987.liquid.localhost
+          - 8988.liquid.localhost
+          - 8989.liquid.localhost
+          - 8990.liquid.localhost
+          - 8991.liquid.localhost
+          - 8992.liquid.localhost
+          - 8993.liquid.localhost
+          - 8994.liquid.localhost
+          - 8995.liquid.localhost
+          - 8996.liquid.localhost
+          - 8997.liquid.localhost
+          - 8998.liquid.localhost
+          - 8999.liquid.localhost
 #           - hermes.localhost
 #           - api.hermes.localhost
 #           - webhooks.hermes.localhost
@@ -267,10 +267,10 @@ services:
     volumes:
       - ./volumes/logs/swagger:/var/log/nginx:z
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   opencode:
-    image: all-in-wonder/opencode:${APP_ID:-0}
+    image: liquidupstart/opencode:${APP_ID:-0}
     container_name: opencode-${APP_ID:-0}
     restart: unless-stopped
     extra_hosts:
@@ -297,11 +297,11 @@ services:
       OPENCODE_CHUNK_TIMEOUT: ${OPENCODE_CHUNK_TIMEOUT:-120000}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-}
       POSTGREST_API_KEY: ${API_KEY:-}
-      NIFI_USERNAME: ${NIFI_USERNAME:-}
-      NIFI_PASSWORD: ${NIFI_PASSWORD:-}
+      LIQUID_USERNAME: ${LIQUID_USERNAME:-}
+      LIQUID_PASSWORD: ${LIQUID_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
-      NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
+      LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
     volumes:
       - ./config/agents/instructions.md:/opencode/instructions.md:ro
       - ./config/agents/skills:/root/.config/opencode/skills
@@ -318,10 +318,10 @@ services:
       - ./volumes/python_extensions:/opt/python_extensions
       - ./volumes/nar_extensions:/opt/nar_extensions
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   bun_runner:
-    image: all-in-wonder/bun-runner:${APP_ID:-0}
+    image: liquidupstart/bun-runner:${APP_ID:-0}
     container_name: bun_runner-${APP_ID:-0}
     restart: unless-stopped
     volumes:
@@ -338,7 +338,7 @@ services:
       retries: 10
       start_period: 5m
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   openproject-db:
     image: postgres:17
@@ -356,7 +356,7 @@ services:
       retries: 3
       start_period: 20s
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   openproject-cache:
     image: memcached:1.6-alpine
@@ -368,7 +368,7 @@ services:
       timeout: 5s
       retries: 3
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   openproject-web:
     image: openproject/openproject:17-slim
@@ -387,7 +387,7 @@ services:
       # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
-      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
+      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "LIQUID_UPSTART_USER"
       OPENPROJECT_DISABLE__PASSWORD__LOGIN: "true"
     volumes:
       - ./volumes/openproject:/var/openproject/assets
@@ -415,7 +415,7 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   openproject-worker:
     image: openproject/openproject:17-slim
@@ -434,7 +434,7 @@ services:
       # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
-      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
+      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "LIQUID_UPSTART_USER"
       OPENPROJECT_DISABLE__PASSWORD__LOGIN: "true"
     volumes:
       - ./volumes/openproject:/var/openproject/assets
@@ -449,7 +449,7 @@ services:
         condition: service_completed_successfully
     command: "./docker/prod/worker"
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   openproject-cron:
     image: openproject/openproject:17-slim
@@ -468,7 +468,7 @@ services:
       # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
-      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
+      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "LIQUID_UPSTART_USER"
       OPENPROJECT_DISABLE__PASSWORD__LOGIN: "true"
     volumes:
       - ./volumes/openproject:/var/openproject/assets
@@ -483,7 +483,7 @@ services:
         condition: service_completed_successfully
     command: "./docker/prod/cron"
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   openproject-seeder:
     image: openproject/openproject:17-slim
@@ -502,7 +502,7 @@ services:
       # enable to receive email; see ./docker/cron for options
       IMAP_ENABLED: "false"
       OPENPROJECT_AUTH__SOURCE__SSO_HEADER: "X-OpenProject-User"
-      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "ALL_IN_WONDER_USER"
+      OPENPROJECT_AUTH__SOURCE__SSO_SECRET: "LIQUID_UPSTART_USER"
       OPENPROJECT_DISABLE__PASSWORD__LOGIN: "true"
     volumes:
       - ./volumes/openproject:/var/openproject/assets
@@ -513,7 +513,7 @@ services:
           condition: service_healthy
     command: "./docker/prod/seeder"
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   nextcloud-db:
     image: postgres:17
@@ -532,7 +532,7 @@ services:
     volumes:
       - ./volumes/nextcloud_db:/var/lib/postgresql/data
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   nextcloud-redis:
     image: redis:8
@@ -548,7 +548,7 @@ services:
       start_period: 10s
     command: redis-server --requirepass ${NEXTCLOUD_REDIS_PASSWORD}
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   nextcloud:
     image: nextcloud:stable
@@ -592,7 +592,7 @@ services:
       - ./config/nextcloud/patch_nextcloud.sh:/docker-entrypoint-hooks.d/before-starting/patch_nextcloud.sh
       - ./config/nextcloud/set_trusted_proxies.sh:/docker-entrypoint-hooks.d/before-starting/set_trusted_proxies.sh
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
   collabora:
     image: collabora/code
@@ -612,36 +612,36 @@ services:
       - ./volumes/collabora/fonts:/usr/share/fonts/truetype/custom
       - ./volumes/collabora/fonts:/opt/cool/systemplate/usr/share/fonts/truetype/custom
     networks:
-      - nocodenation_all_in_wonder_network
+      - nocodenation_liquid_upstart_network
 
-  nifi:
-    image: all-in-wonder/nifi:${APP_ID:-0}
-    container_name: nifi-${APP_ID:-0}
+  liquid:
+    image: liquidupstart/liquid:${APP_ID:-0}
+    container_name: liquid-${APP_ID:-0}
     restart: unless-stopped
     environment:
-      SINGLE_USER_CREDENTIALS_USERNAME: ${NIFI_USERNAME}
-      SINGLE_USER_CREDENTIALS_PASSWORD: ${NIFI_PASSWORD}
-      NIFI_WEB_PROXY_HOST: "nifi.localhost:${SYSTEM_HTTPS_PORT:-8833}"
+      SINGLE_USER_CREDENTIALS_USERNAME: ${LIQUID_USERNAME}
+      SINGLE_USER_CREDENTIALS_PASSWORD: ${LIQUID_PASSWORD}
+      NIFI_WEB_PROXY_HOST: "liquid.localhost:${SYSTEM_HTTPS_PORT:-8833}"
       NIFI_WEB_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       NIFI_WEB_HTTPS_HOST: "0.0.0.0"
     volumes:
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/nifi/nifi-current/python_extensions
       - ./volumes/nar_extensions:/opt/nifi/nifi-current/nar_extensions
-      - ./volumes/nifi/conf:/opt/nifi/nifi-current/conf
-      - ./volumes/nifi/database_repository:/opt/nifi/nifi-current/database_repository
-      - ./volumes/nifi/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
-      - ./volumes/nifi/content_repository:/opt/nifi/nifi-current/content_repository
-      - ./volumes/nifi/provenance_repository:/opt/nifi/nifi-current/provenance_repository
-      - ./volumes/nifi/state:/opt/nifi/nifi-current/state
-      - ./volumes/nifi/logs:/opt/nifi/nifi-current/logs
+      - ./volumes/liquid/conf:/opt/nifi/nifi-current/conf
+      - ./volumes/liquid/database_repository:/opt/nifi/nifi-current/database_repository
+      - ./volumes/liquid/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
+      - ./volumes/liquid/content_repository:/opt/nifi/nifi-current/content_repository
+      - ./volumes/liquid/provenance_repository:/opt/nifi/nifi-current/provenance_repository
+      - ./volumes/liquid/state:/opt/nifi/nifi-current/state
+      - ./volumes/liquid/logs:/opt/nifi/nifi-current/logs
       - ./volumes/nginx/certs:/certs:ro
     networks:
-      nocodenation_all_in_wonder_network:
+      nocodenation_liquid_upstart_network:
 
   # hermes disabled: commented out so it is neither built nor started
 #   hermes:
-#     image: all-in-wonder/hermes:latest
+#     image: liquidupstart/hermes:latest
 #     container_name: hermes-${APP_ID:-0}
 #     restart: unless-stopped
 #     extra_hosts:
@@ -679,18 +679,18 @@ services:
 #       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
 #       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
 #       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
-#       NIFI_USERNAME: ${NIFI_USERNAME:-}
-#       NIFI_PASSWORD: ${NIFI_PASSWORD:-}
+#       LIQUID_USERNAME: ${LIQUID_USERNAME:-}
+#       LIQUID_PASSWORD: ${LIQUID_PASSWORD:-}
 #       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
 #       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
-#       NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
+#       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
 #       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
 #     command: ["gateway", "run"]
 #     networks:
-#       - nocodenation_all_in_wonder_network
+#       - nocodenation_liquid_upstart_network
 
   openclaw-gateway:
-    image: all-in-wonder/openclaw:${APP_ID:-0}
+    image: liquidupstart/openclaw:${APP_ID:-0}
     build: .
     user: "0:0"
     container_name: openclaw-gateway-${APP_ID:-0}
@@ -724,11 +724,11 @@ services:
       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
       OPENCLAW_ENABLE_COPILOT: ${OPENCLAW_ENABLE_COPILOT:-}
-      NIFI_USERNAME: ${NIFI_USERNAME:-}
-      NIFI_PASSWORD: ${NIFI_PASSWORD:-}
+      LIQUID_USERNAME: ${LIQUID_USERNAME:-}
+      LIQUID_PASSWORD: ${LIQUID_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
-      NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
+      LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
@@ -782,10 +782,10 @@ services:
       retries: 5
       start_period: 20s
     networks:
-      nocodenation_all_in_wonder_network:
+      nocodenation_liquid_upstart_network:
 
   openclaw-cli:
-    image: all-in-wonder/openclaw:${APP_ID:-0}
+    image: liquidupstart/openclaw:${APP_ID:-0}
     network_mode: "service:openclaw-gateway"
     user: "0:0"
     container_name: openclaw-cli-${APP_ID:-0}
@@ -817,11 +817,11 @@ services:
       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
       OPENCLAW_ENABLE_COPILOT: ${OPENCLAW_ENABLE_COPILOT:-}
-      NIFI_USERNAME: ${NIFI_USERNAME:-}
-      NIFI_PASSWORD: ${NIFI_PASSWORD:-}
+      LIQUID_USERNAME: ${LIQUID_USERNAME:-}
+      LIQUID_PASSWORD: ${LIQUID_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
-      NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
+      LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
     volumes:
       - ./volumes/_openclaw:/home/node/.openclaw
@@ -847,5 +847,5 @@ services:
       - openclaw-gateway
 
 networks:
-  nocodenation_all_in_wonder_network:
-    name: nocodenation_all_in_wonder_network_${SYSTEM_HTTP_PORT:-8888}
+  nocodenation_liquid_upstart_network:
+    name: nocodenation_liquid_upstart_network_${SYSTEM_HTTP_PORT:-8888}

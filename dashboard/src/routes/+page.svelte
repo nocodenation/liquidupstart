@@ -13,7 +13,7 @@
 
 <main>
   <header class="intro dashhead">
-    <h1>All-In-Wonder Dashboard</h1>
+    <h1>Liquid Upstart Dashboard</h1>
     <a href="/config" class="aux configlink">⚙ Configuration</a>
   </header>
 
@@ -44,8 +44,8 @@
         </div>
       {/each}
 
-      <details class="docs extras">
-        <summary>Additional endpoints</summary>
+      <div class="docs extras">
+        <p class="extras-heading">Additional endpoints</p>
         <ul>
           {#each data.extras as extra}
             <li>
@@ -57,7 +57,7 @@
             </li>
           {/each}
         </ul>
-      </details>
+      </div>
     {/if}
 
     <section class="card">

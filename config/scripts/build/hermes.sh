@@ -33,6 +33,6 @@ resolve_image_settings "HERMES"
 # Render the Dockerfile from the template, injecting the deps/commands.
 render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${CONFIG_DIR}/Dockerfile"
 
-docker image rm "all-in-wonder/hermes:latest" >/dev/null 2>&1 || true
-echo "Building all-in-wonder/hermes:latest from ${CONFIG_DIR}..."
-docker build ${NO_CACHE:+--no-cache} --progress=plain -t "all-in-wonder/hermes:latest" "${CONFIG_DIR}"
+docker image rm "liquidupstart/hermes:latest" >/dev/null 2>&1 || true
+echo "Building liquidupstart/hermes:latest from ${CONFIG_DIR}..."
+docker build ${NO_CACHE:+--no-cache} --progress=plain -t "liquidupstart/hermes:latest" "${CONFIG_DIR}"

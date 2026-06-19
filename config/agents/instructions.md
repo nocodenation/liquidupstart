@@ -1,7 +1,7 @@
 # Project Instructions
 
-This is the **All-In-Wonder** — a Docker Compose environment on the
-`nocodenation_all_in_wonder_network`. The `X.localhost:PORT` service URLs below are
+This is the **Liquid Upstart** — a Docker Compose environment on the
+`nocodenation_liquid_upstart_network`. The `X.localhost:PORT` service URLs below are
 **user-facing** — they resolve in the user's browser. They do **not** resolve
 reliably from inside these containers, so your own network calls (curl, server-side
 `fetch`, a processor's HTTP request) must go through the nginx `proxy` with a `Host:`
@@ -46,7 +46,7 @@ containing the literal text `PORT`, `HTTPS_PORT`, `${SYSTEM_HTTP_PORT}`, or
 | `bun_runner` | `http://app.localhost:PORT` | SSR React app runner (serves `/bun_app`) |
 | `openproject-web` | `http://openproject.localhost:PORT` | OpenProject — work packages, projects, wikis, time tracking |
 | `nextcloud` | `http://nextcloud.localhost:PORT` | Nextcloud file storage |
-| `nifi` | `https://nifi.localhost:HTTPS_PORT` | Apache NiFi — data flow automation, pipelines, ingress on subdomains `https://{port}.nifi.localhost:HTTPS_PORT` (ports 8900–8999) |
+| `liquid` | `https://liquid.localhost:HTTPS_PORT` | Liquid — data flow automation, pipelines, ingress on subdomains `https://{port}.liquid.localhost:HTTPS_PORT` (ports 8900–8999) |
 
 ---
 
@@ -74,7 +74,7 @@ There are two contexts, and they use two different forms. Get this right every t
 ### A. User-facing — the `X.localhost:PORT` form
 
 Any URL you **show the user**, and any **client-side / browser** code in a Bun app,
-uses the `X.localhost:PORT` (or `https://nifi.localhost:HTTPS_PORT`) URLs from the
+uses the `X.localhost:PORT` (or `https://liquid.localhost:HTTPS_PORT`) URLs from the
 Services table. These resolve in the user's browser via the host port mapping. Every
 URL you put in a response to the user must be one of these.
 
@@ -82,14 +82,14 @@ URL you put in a response to the user must be one of these.
 
 Any request that is **not** rendered to the user and **not** run in the browser — a
 `curl` in a tool/shell call, a server-side `fetch()` in a Bun app, an LLM tool fetch,
-a NiFi processor's HTTP call — must **not** target the `X.localhost` names directly:
+a Liquid processor's HTTP call — must **not** target the `X.localhost` names directly:
 they do not resolve reliably from inside the containers. Instead connect to the nginx
 `proxy` container and carry the service name in a `Host:` header:
 
 | To reach | Connect to | Add header |
 |---|---|---|
 | any HTTP service | `http://proxy:PORT` | `Host: <service>.localhost:PORT` |
-| NiFi (HTTPS) | `https://proxy:HTTPS_PORT` (with `-k`) | `Host: nifi.localhost:HTTPS_PORT` |
+| Liquid (HTTPS) | `https://proxy:HTTPS_PORT` (with `-k`) | `Host: liquid.localhost:HTTPS_PORT` |
 
 `PORT` = `$SYSTEM_HTTP_PORT` (default 8888), `HTTPS_PORT` = `$SYSTEM_HTTPS_PORT`
 (default 8833) — the proxy listens on those same ports internally.
@@ -109,10 +109,10 @@ curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \
   "http://proxy:${SYSTEM_HTTP_PORT}/remote.php/dav/files/$PGADMIN_DEFAULT_EMAIL/"
 
-# NiFi — self-signed cert, so -k
+# Liquid — self-signed cert, so -k
 curl -sk https://proxy:${SYSTEM_HTTPS_PORT}/nifi-api/flow/status \
-  -H "Host: nifi.localhost:${SYSTEM_HTTPS_PORT}" \
-  -H "Authorization: Bearer $NIFI_TOKEN"
+  -H "Host: liquid.localhost:${SYSTEM_HTTPS_PORT}" \
+  -H "Authorization: Bearer $LIQUID_TOKEN"
 ```
 
 - **Never show the `proxy:PORT` address or the `Host:` header trick to the user** — it
@@ -137,10 +137,10 @@ values back in responses or logs.
 | `$PGADMIN_DEFAULT_EMAIL` | Nextcloud WebDAV username (also pgAdmin SSO email) |
 | `$OPENCODE_EMBEDDING_HOST` | Base URL of the OpenAI-compatible embedding server |
 | `$OPENCODE_EMBEDDING_MODEL` | Embedding model name |
-| `$NIFI_USERNAME` | NiFi single-user login — use to generate an API bearer token |
-| `$NIFI_PASSWORD` | NiFi single-user password — use to generate an API bearer token |
+| `$LIQUID_USERNAME` | Liquid single-user login — use to generate an API bearer token |
+| `$LIQUID_PASSWORD` | Liquid single-user password — use to generate an API bearer token |
 | `$SYSTEM_HTTP_PORT` | External HTTP port — resolve with `echo $SYSTEM_HTTP_PORT`; use the result as `PORT` in every URL |
-| `$SYSTEM_HTTPS_PORT` | External HTTPS port — resolve with `echo $SYSTEM_HTTPS_PORT`; use the result as `HTTPS_PORT` in every NiFi URL |
+| `$SYSTEM_HTTPS_PORT` | External HTTPS port — resolve with `echo $SYSTEM_HTTPS_PORT`; use the result as `HTTPS_PORT` in every Liquid URL |
 
 ---
 
@@ -174,5 +174,5 @@ from memory.
 | `nextcloud-webdav` | You're reading, writing, listing, or deleting a file in Nextcloud |
 | `nextcloud-user-link` | You need to give the user a link to a Nextcloud file/folder, or embed a Nextcloud reference in a chat reply or a work package |
 | `bun-app` | You're creating or modifying the SSR React app in `/bun_app` |
-| `nifi-api` | You need the NiFi REST API mechanics — auth token, CRUD calls, starting/stopping processors, setting up an HTTP ingress, routing data between services, or the user-facing canvas/ingress links |
-| `nifi` | You're **designing or building** a NiFi flow — laying out processors/funnels/connections, termination & cleanup rules, visual layout standards, or building and deploying a custom processor / NAR (pairs with `nifi-api` for the actual calls) |
+| `liquid-api` | You need the Liquid REST API mechanics — auth token, CRUD calls, starting/stopping processors, setting up an HTTP ingress, routing data between services, or the user-facing canvas/ingress links |
+| `liquid` | You're **designing or building** a Liquid flow — laying out processors/funnels/connections, termination & cleanup rules, visual layout standards, or building and deploying a custom processor / NAR (pairs with `liquid-api` for the actual calls) |

@@ -1,5 +1,5 @@
 /**
- * Custom CSS for All-in-Wonder Nextcloud. Loaded additively after Nextcloud's
+ * Custom CSS for Liquid Upstart Nextcloud. Loaded additively after Nextcloud's
  * stylesheets (doFindTheme runs after doFind), so it overrides by cascade.
  * Theming app injects CSS custom properties with high specificity, so scope
  * redefinitions tightly (body / :root body) or only touch vars it doesn't set.

@@ -28,24 +28,24 @@ echo "Removing .env..."
 rm -f "${PROJECT_DIR}/.env"
 
 # Remove project-built images.
-echo "Removing all-in-wonder/* images..."
+echo "Removing liquidupstart/* images..."
 # The toolbox image (Windows helper) may be in use when this runs inside it, so
 # tolerate a removal failure rather than aborting.
-images="$(docker images --filter "reference=all-in-wonder/*" --quiet | sort -u)"
+images="$(docker images --filter "reference=liquidupstart/*" --quiet | sort -u)"
 if [[ -n "${images}" ]]; then
   for image in ${images}; do
     docker rmi --force "${image}" || true
   done
 else
-  echo "No all-in-wonder/* images found."
+  echo "No liquidupstart/* images found."
 fi
 
 # Remove every other image referenced in compose.yml (skips commented-out and
-# already-handled all-in-wonder/* lines).
+# already-handled liquidupstart/* lines).
 echo "Removing base images referenced in compose.yml..."
 grep -E '^[[:space:]]*image:' "${PROJECT_DIR}/compose.yml" \
   | awk '{print $2}' \
-  | grep -v 'all-in-wonder/' \
+  | grep -v 'liquidupstart/' \
   | sort -u \
   | while read -r image; do
       [[ -n "${image}" ]] || continue

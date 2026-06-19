@@ -1,7 +1,7 @@
 # Project Instructions
 
-This is the **All-In-Wonder** — a Docker Compose environment on the
-`nocodenation_all_in_wonder_network`. All `X.localhost:PORT` service URLs resolve
+This is the **Liquid Upstart** — a Docker Compose environment on the
+`nocodenation_liquid_upstart_network`. All `X.localhost:PORT` service URLs resolve
 from within this container and from the user's browser — use them everywhere.
 
 Detailed how-tos live in skills under `~/.config/opencode/skills/`. This file is the
@@ -43,7 +43,7 @@ containing the literal text `PORT`, `HTTPS_PORT`, `${SYSTEM_HTTP_PORT}`, or
 | `bun_runner` | `http://app.localhost:PORT` | SSR React app runner (serves `/bun_app`) |
 | `openproject-web` | `http://openproject.localhost:PORT` | OpenProject — work packages, projects, wikis, time tracking |
 | `nextcloud` | `http://nextcloud.localhost:PORT` | Nextcloud file storage |
-| `nifi` | `https://nifi.localhost:HTTPS_PORT` | Apache NiFi — data flow automation, pipelines, ingress on subdomains `https://{port}.nifi.localhost:HTTPS_PORT` (ports 8900–8999) |
+| `liquid` | `https://liquid.localhost:HTTPS_PORT` | Liquid — data flow automation, pipelines, ingress on subdomains `https://{port}.liquid.localhost:HTTPS_PORT` (ports 8900–8999) |
 
 ---
 
@@ -93,10 +93,10 @@ values back in responses or logs.
 | `$PGADMIN_DEFAULT_EMAIL` | Nextcloud WebDAV username (also pgAdmin SSO email) |
 | `$OPENCODE_EMBEDDING_HOST` | Base URL of the OpenAI-compatible embedding server |
 | `$OPENCODE_EMBEDDING_MODEL` | Embedding model name |
-| `$NIFI_USERNAME` | NiFi single-user login — use to generate an API bearer token |
-| `$NIFI_PASSWORD` | NiFi single-user password — use to generate an API bearer token |
+| `$LIQUID_USERNAME` | Liquid single-user login — use to generate an API bearer token |
+| `$LIQUID_PASSWORD` | Liquid single-user password — use to generate an API bearer token |
 | `$SYSTEM_HTTP_PORT` | External HTTP port — resolve with `echo $SYSTEM_HTTP_PORT`; use the result as `PORT` in every URL |
-| `$SYSTEM_HTTPS_PORT` | External HTTPS port — resolve with `echo $SYSTEM_HTTPS_PORT`; use the result as `HTTPS_PORT` in every NiFi URL |
+| `$SYSTEM_HTTPS_PORT` | External HTTPS port — resolve with `echo $SYSTEM_HTTPS_PORT`; use the result as `HTTPS_PORT` in every Liquid URL |
 
 ---
 
@@ -130,4 +130,4 @@ from memory.
 | `nextcloud-webdav` | You're reading, writing, listing, or deleting a file in Nextcloud |
 | `nextcloud-user-link` | You need to give the user a link to a Nextcloud file/folder, or embed a Nextcloud reference in a chat reply or a work package |
 | `bun-app` | You're creating or modifying the SSR React app in `/bun_app` |
-| `nifi-api` | You're building or managing a NiFi data flow, starting/stopping processors, setting up an HTTP ingress, or routing data between services |
+| `liquid-api` | You're building or managing a Liquid data flow, starting/stopping processors, setting up an HTTP ingress, or routing data between services |

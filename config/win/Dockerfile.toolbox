@@ -1,6 +1,6 @@
 # "Toolbox" image: runs the project's bash orchestration scripts on Windows hosts.
 # Carries the GNU userland those scripts assume (bash, sed/grep, gawk, coreutils),
-# openssl + keytool (NiFi cert/keystore steps), and the Docker CLI + Compose plugin.
+# openssl + keytool (Liquid cert/keystore steps), and the Docker CLI + Compose plugin.
 # No docker-in-docker: the Windows wrapper bind-mounts the host's Docker socket.
 FROM debian:bookworm-slim
 

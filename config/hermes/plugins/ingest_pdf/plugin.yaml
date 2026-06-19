@@ -6,7 +6,7 @@ description: >-
   chunks ~400 tokens (50 overlap), embeds each chunk via a self-hosted
   OpenAI-compatible endpoint or OpenAI, and inserts rows with the raw float
   vector. Python port of the OpenCode ingest_pdf tool.
-author: all-in-wonder
+author: liquidupstart
 kind: standalone
 provides_tools:
   - ingest_pdf

@@ -32,11 +32,11 @@ export const load: PageServerLoad = async () => {
       title: 'Applications',
       tiles: [
         {
-          name: 'NiFi',
-          url: `https://nifi.localhost:${https}`,
+          name: 'Liquid',
+          url: `https://liquid.localhost:${https}`,
           creds: [
-            { label: 'username', value: get('NIFI_USERNAME') },
-            { label: 'password', value: get('NIFI_PASSWORD') }
+            { label: 'username', value: get('LIQUID_USERNAME') },
+            { label: 'password', value: get('LIQUID_PASSWORD') }
           ]
         },
         {
@@ -67,8 +67,8 @@ export const load: PageServerLoad = async () => {
     // { name: 'Hermes API', url: `http://api.hermes.localhost:${http}` },
     // { name: 'Hermes webhooks', url: `http://webhooks.hermes.localhost:${http}` },
     {
-      name: 'NiFi ingresses',
-      note: `ports 8900-8999, served on https://PORT.nifi.localhost:${https}`
+      name: 'Liquid ingresses',
+      note: `ports 8900-8999, served on https://PORT.liquid.localhost:${https}`
     },
     { name: 'OpenClaw node bridge', url: `http://bridge.openclaw.localhost:${http}` },
     { name: 'OpenClaw MS Teams endpoint', url: `http://msteams.openclaw.localhost:${http}` }

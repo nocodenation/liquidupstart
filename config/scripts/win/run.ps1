@@ -83,7 +83,7 @@ $enginePath = "/run/desktop/mnt/host/$drive$tail"
 
 # --- ensure the toolbox image exists (build it once) --------------------------
 # `docker images -q` exits 0 either way — a clean presence probe with no stderr.
-$toolbox = 'all-in-wonder/toolbox:latest'
+$toolbox = 'liquidupstart/toolbox:latest'
 $imageId = (& docker images -q $toolbox 2>$null)
 if ([string]::IsNullOrWhiteSpace($imageId)) {
   Write-Host "Building helper toolbox image ($toolbox) - one time only..." -ForegroundColor Cyan
@@ -107,8 +107,8 @@ $script = switch ($Action) {
 # Invoke-WebRequest, which routes through IE/system proxy and can fail for
 # localhost) — a fixed delay won't do since a first build can take minutes — and
 # exits once this script's process is gone so it never lingers.
-$runnerName = "all-in-wonder-dashboard-runner-$appId"
-$dashboardName = "all-in-wonder-dashboard-$appId"
+$runnerName = "liquidupstart-dashboard-runner-$appId"
+$dashboardName = "liquidupstart-dashboard-$appId"
 if ($Action -eq 'run') {
   # run.sh writes the free port it settled on to .dashboard-port; the watcher
   # reads it, waits for the port, and opens the browser.

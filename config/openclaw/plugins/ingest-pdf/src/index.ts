@@ -1,5 +1,5 @@
 /**
- * OpenClaw tool plugin — PDF ingester for the All-In-Wonder RAG store. Extracts
+ * OpenClaw tool plugin — PDF ingester for the Liquid Upstart RAG store. Extracts
  * text, chunks (~400 tokens / 50 overlap), embeds each chunk, and inserts into
  * rag_documents / rag_chunks via PostgREST (column `vector(4096)`; pgvector
  * binary-quantizes at index time, so we store the raw float vector).
@@ -1061,12 +1061,12 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
 export default defineToolPlugin({
     id: "ingest-pdf",
     name: "PDF Ingester",
-    description: "Ingest PDFs into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST.",
+    description: "Ingest PDFs into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST.",
     tools: (tool) => [
         tool({
             name: "ingest_pdf",
             description:
-                "Ingest a PDF (or folder of PDFs) into the All-In-Wonder RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is GitHub Copilot (reusing OpenClaw's github-copilot auth; needs OPENCLAW_ENABLE_COPILOT=1), the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if one backend is configured it is used, and if more than one is configured (Copilot included) the tool asks you to choose via embedding_backend.",
+                "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is GitHub Copilot (reusing OpenClaw's github-copilot auth; needs OPENCLAW_ENABLE_COPILOT=1), the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if one backend is configured it is used, and if more than one is configured (Copilot included) the tool asks you to choose via embedding_backend.",
             parameters: IngestPdfParams,
             execute: async (args: IngestPdfArgs) => runIngest(args),
         }),

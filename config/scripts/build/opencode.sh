@@ -33,7 +33,7 @@ resolve_image_settings "OPENCODE"
 # Render the Dockerfile from the template, injecting the deps/commands.
 render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${CONFIG_DIR}/Dockerfile"
 
-IMAGE="all-in-wonder/opencode:${APP_ID:-0}"
+IMAGE="liquidupstart/opencode:${APP_ID:-0}"
 docker image rm "$IMAGE" >/dev/null 2>&1 || true
 echo "Building $IMAGE from ${CONFIG_DIR}..."
 docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" "${CONFIG_DIR}"

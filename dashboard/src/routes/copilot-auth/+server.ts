@@ -13,7 +13,7 @@ import { parseEnvValues } from '$lib/env-file';
 import { appId } from '$lib/server/project';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? `all-in-wonder/openclaw:${appId()}`;
+const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? `liquidupstart/openclaw:${appId()}`;
 const STATE_DIR = join(ENV_DIR, 'volumes', '_openclaw');
 const SECRETS_DIR = join(ENV_DIR, 'volumes', '_openclaw-auth-profile-secrets');
 const PLUGINS_DIR = join(ENV_DIR, 'config', 'openclaw', 'plugins');

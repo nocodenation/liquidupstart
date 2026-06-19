@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 RESULT_FILE="${SCRIPT_DIR}/.install-result"
-IMAGE="all-in-wonder/dashboard:latest"
+IMAGE="liquidupstart/dashboard:latest"
 PORT=7777
 PORT_FILE="${SCRIPT_DIR}/.dashboard-port"
 
@@ -46,7 +46,7 @@ if [[ -z "$APP_ID" ]]; then
   echo "Stamped APP_ID=${APP_ID} into .env."
 fi
 
-CONTAINER="all-in-wonder-dashboard-${APP_ID}"
+CONTAINER="liquidupstart-dashboard-${APP_ID}"
 
 if [[ -n "$(docker ps -q --filter "name=^${CONTAINER}$")" ]]; then
   echo "Error: the dashboard is already running. Stop it first with:" >&2
@@ -112,7 +112,7 @@ done
 echo "$PORT" > "$PORT_FILE"
 
 echo ""
-echo "All-In-Wonder dashboard is running:  ${URL}"
+echo "Liquid Upstart dashboard is running:  ${URL}"
 echo "Manage the stack from there (configure / build / start / stop)."
 echo "Ctrl-C here, or the app's Quit button, stops the dashboard (not the stack)."
 echo ""

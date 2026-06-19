@@ -14,7 +14,7 @@ const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const RESULT_FILE = join(ENV_DIR, '.install-result');
 // Host-side socket path, for the toolbox container's own docker access.
 const HOST_DOCKER_SOCK = process.env.HOST_DOCKER_SOCK ?? '/var/run/docker.sock';
-const TOOLBOX = 'all-in-wonder/toolbox:latest';
+const TOOLBOX = 'liquidupstart/toolbox:latest';
 
 const TASKS: Record<string, string> = {
   build: './scripts/linux/build.sh',

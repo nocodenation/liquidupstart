@@ -1,0 +1,28 @@
+Liquid Upstart
+Copyright 2026 Nocodenation
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository is an orchestration layer. It does not bundle or redistribute
+the source code or binaries of the third-party software it deploys; those
+components are pulled as container images on the end user's machine, and each
+is governed by its own license. Running this stack means accepting the licenses
+of the software it deploys.
+
+Third-party software deployed by this stack:
+
+  PostgreSQL              PostgreSQL License
+  pgvector                PostgreSQL License
+  pgAdmin 4               PostgreSQL License
+  PostgREST               MIT
+  Swagger UI              Apache-2.0
+  nginx                   BSD-2-Clause
+  Apache NiFi (Liquid)    Apache-2.0
+  OpenProject             GPL-3.0
+  Nextcloud               AGPL-3.0
+  Collabora Online (CODE) MPL-2.0
+  OpenCode                MIT
+  OpenClaw                MIT
+  Bun                     MIT
+  Node.js                 MIT
+  Svelte / SvelteKit / Vite   MIT
