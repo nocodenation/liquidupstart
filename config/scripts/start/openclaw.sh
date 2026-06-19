@@ -46,7 +46,8 @@ cp "$OPENCLAW_ENV_TEMPLATE" "$OPENCLAW_ENV"
 
 for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
            GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
-           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY; do
+           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY \
+           MAMMOUTH_API_KEY; do
   # Skip keys the template does not declare — OpenClaw doesn't support them.
   grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
   value="$(get_env "$key")"
@@ -106,6 +107,14 @@ ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
 [[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
 COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
 [[ -z "$COPILOT_MODEL" ]] && COPILOT_MODEL="github-copilot/gpt-4.1"
+
+MAMMOUTH_ENABLED=0
+[[ -n "$(get_env MAMMOUTH_API_KEY)" ]] && MAMMOUTH_ENABLED=1
+MAMMOUTH_MODEL="$(get_env OPENCLAW_PRIMARY_MODEL)"
+case "$MAMMOUTH_MODEL" in
+  mammouth/*) MAMMOUTH_MODEL="${MAMMOUTH_MODEL#mammouth/}" ;;
+  *)          MAMMOUTH_MODEL="claude-sonnet-4-6" ;;
+esac
 
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `setup`
@@ -179,6 +188,8 @@ else
     -e COPILOT_MODEL="${COPILOT_MODEL}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
+    -e MAMMOUTH_ENABLED="${MAMMOUTH_ENABLED}" \
+    -e MAMMOUTH_MODEL="${MAMMOUTH_MODEL}" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
     -e '
@@ -271,6 +282,23 @@ else
         for (const w of modelWildcards) {
           if (!c.agents.defaults.models[w]) c.agents.defaults.models[w] = {};
         }
+      }
+
+      if (process.env.MAMMOUTH_ENABLED === "1") {
+        const id = process.env.MAMMOUTH_MODEL;
+        c.models = c.models || {};
+        c.models.providers = c.models.providers || {};
+        c.models.providers.mammouth = {
+          baseUrl: "https://api.mammouth.ai",
+          apiKey: "${MAMMOUTH_API_KEY}",
+          api: "openai-completions",
+          models: [{ id, name: "mammouth: " + id }],
+        };
+        c.agents = c.agents || {};
+        c.agents.defaults = c.agents.defaults || {};
+        c.agents.defaults.models = c.agents.defaults.models || {};
+        if (!c.agents.defaults.models["mammouth/" + id]) c.agents.defaults.models["mammouth/" + id] = {};
+        console.log("openclaw.json: registered mammouth provider (model mammouth/" + id + ")");
       }
 
       // Register local plugin dirs. Our plugins ship a self-contained dist/*.mjs

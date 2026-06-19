@@ -28,11 +28,7 @@ export const load: PageServerLoad = async () => {
         { name: 'Swagger UI', url: `http://swagger.localhost:${http}` },
         {
           name: 'Gitea',
-          url: `http://git.localhost:${http}`,
-          creds: [
-            { label: 'username', value: get('GITEA_ADMIN_USER') },
-            { label: 'password', value: get('GITEA_ADMIN_PASSWORD') }
-          ]
+          url: `http://git.localhost:${http}`
         }
       ]
     },

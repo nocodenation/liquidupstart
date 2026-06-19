@@ -249,18 +249,20 @@ sentence entirely.
 
 ## Commit your work (when versioning is on)
 
-When `GIT_VERSION_BUN_APP=1` (check with `echo $GIT_VERSION_BUN_APP`), finish by
-committing `/bun_app` **yourself** with a meaningful message — don't leave it to the
-background auto-snapshot, which only makes generic `snapshot <time>` commits and
-clutters history. After the final `package.json` bump, run the commit/push from the
-**publish-to-git** skill with a message describing the change, e.g.
-`git commit -m "Add bookshelf grid and PDF reader"`. One commit per build or update.
+`/bun_app` is **not** covered by the background auto-snapshot — committing it is your job.
+When `GIT_VERSION_BUN_APP=1` (check with `echo $GIT_VERSION_BUN_APP`), finish every build
+or update by committing **and pushing** `/bun_app` yourself with a meaningful message. Do
+this after the final `package.json` bump, using the commit/push flow from the
+**publish-to-git** skill (`git init`/`.gitignore`/`remote add` on first run), e.g.
+`git commit -m "Add bookshelf grid and PDF reader"`. One commit per build or update. If
+`GIT_VERSION_BUN_APP` is not `1`, do not init/commit/push `/bun_app` at all.
 
 ## Rules
 
 - SSR React only — don't introduce a different framework.
-- If `GIT_VERSION_BUN_APP=1`, end by committing `/bun_app` with a meaningful message
-  (see publish-to-git) — one commit per build, don't rely on the auto-snapshot.
+- If `GIT_VERSION_BUN_APP=1`, end by committing **and pushing** `/bun_app` with a
+  meaningful message (see publish-to-git) — one commit per build. `/bun_app` has no
+  auto-snapshot, so an uncommitted build is unversioned.
 - One bump per edit on `version` in `/bun_app/package.json`.
 - Last write into `/bun_app` is always `/bun_app/package.json` (copy from `/tmp/package.json`).
 - Before writing an app that uses user files, list those files from Nextcloud

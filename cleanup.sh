@@ -4,6 +4,14 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${PROJECT_DIR}"
 
+KEEP_IMAGES=0
+for arg in "$@"; do
+  case "${arg}" in
+    --keep-images) KEEP_IMAGES=1 ;;
+    *) echo "Unknown option: ${arg}" >&2; exit 1 ;;
+  esac
+done
+
 # Stop and remove containers.
 "${PROJECT_DIR}/scripts/linux/down.sh"
 
@@ -26,6 +34,12 @@ fi
 # Remove the generated environment file.
 echo "Removing .env..."
 rm -f "${PROJECT_DIR}/.env"
+
+if [[ "${KEEP_IMAGES}" -eq 1 ]]; then
+  echo "Keeping images and build cache (--keep-images)."
+  echo "Cleanup complete."
+  exit 0
+fi
 
 # Remove project-built images.
 echo "Removing all-in-wonder/* images..."

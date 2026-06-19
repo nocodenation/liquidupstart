@@ -75,10 +75,11 @@ Tokens, passwords, and API keys go in `.gitignore`, never in a commit.
 ## Auto-snapshots are a safety net, not a substitute
 
 A background sidecar commits and pushes any **dirty repo** in these areas every few
-minutes, so work is never lost between your commits. Still make your own meaningful
-commits (clear messages, one logical change each) when changes settle — the snapshots are
-only a backstop. If your push races a snapshot and is rejected, run `git pull --rebase`
-and push again.
+minutes, so work is never lost between your commits — **except `/bun_app`**, which the
+sidecar does not touch. You are solely responsible for committing and pushing `/bun_app`
+(see **bun-app**). Still make your own meaningful commits (clear messages, one logical
+change each) when changes settle — for the other areas the snapshots are only a backstop.
+If your push races a snapshot and is rejected, run `git pull --rebase` and push again.
 
 ## Mirror to GitHub / GitLab (optional)
 

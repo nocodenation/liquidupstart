@@ -133,6 +133,29 @@ if [ -n "${SYNTHETIC_API_KEY}" ]; then
     }"
 fi
 
+case "$_MODEL_RAW" in
+    mammouth/*) _MAMMOUTH_MODEL="${_MODEL_RAW#mammouth/}" ;;
+    *)          _MAMMOUTH_MODEL="claude-sonnet-4-6" ;;
+esac
+if [ -n "${MAMMOUTH_API_KEY}" ]; then
+    _PROVIDERS="${_PROVIDERS},
+    \"mammouth\": {
+      \"npm\": \"@ai-sdk/openai-compatible\",
+      \"name\": \"mammouth\",
+      \"options\": {
+        \"baseURL\": \"https://api.mammouth.ai/v1\",
+        \"apiKey\": \"${MAMMOUTH_API_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      },
+      \"models\": {
+        \"${_MAMMOUTH_MODEL}\": {
+          \"name\": \"mammouth: ${_MAMMOUTH_MODEL}\"
+        }
+      }
+    }"
+fi
+
 printf '{
   "model": "%s",
   "instructions": ["/opencode/instructions.md"],

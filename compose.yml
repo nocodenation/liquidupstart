@@ -312,6 +312,7 @@ services:
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       SYNTHETIC_API_KEY: ${SYNTHETIC_API_KEY:-}
+      MAMMOUTH_API_KEY: ${MAMMOUTH_API_KEY:-}
       OPENCODE_OLLAMA_HOST: ${OPENCODE_OLLAMA_HOST:-}
       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
@@ -679,14 +680,12 @@ services:
       GITEA_OPENCLAW_TOKEN: ${GITEA_OPENCLAW_TOKEN:-}
       GIT_SNAPSHOT_INTERVAL: ${GIT_SNAPSHOT_INTERVAL:-300}
       GIT_SNAPSHOT_DEBOUNCE: ${GIT_SNAPSHOT_DEBOUNCE:-30}
-      GIT_VERSION_BUN_APP: ${GIT_VERSION_BUN_APP:-0}
       GIT_VERSION_DATA: ${GIT_VERSION_DATA:-0}
       GIT_VERSION_PYTHON_EXTENSIONS: ${GIT_VERSION_PYTHON_EXTENSIONS:-0}
       GIT_VERSION_NAR_EXTENSIONS: ${GIT_VERSION_NAR_EXTENSIONS:-0}
       GIT_VERSION_NAR_EXTENSIONS_SRC: ${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}
     volumes:
       - ./config/git-snapshot/snapshot.sh:/snapshot.sh:ro
-      - ./volumes/bun_app:/repos/bun_app
       - ./volumes/data:/repos/data
       - ./volumes/python_extensions:/repos/python_extensions
       - ./volumes/nar_extensions:/repos/nar_extensions
