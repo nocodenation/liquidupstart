@@ -66,6 +66,12 @@ services:
     image: dpage/pgadmin4
     container_name: pgadmin-${APP_ID:-0}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/misc/ping >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
     user: "0:0"
     volumes:
       - ./volumes/pgadmin:/var/lib/pgadmin:z
@@ -121,16 +127,17 @@ services:
       - ./volumes/logs/proxy:/var/log/nginx:z
       - ./volumes/nginx/certs:/etc/nginx/certs:ro
     depends_on:
+      # distroless image (no shell/curl/wget), so it can't expose a healthcheck.
       postgrest_app:
         condition: service_started
       pgadmin:
-        condition: service_started
+        condition: service_healthy
       openproject-web:
-        condition: service_started
+        condition: service_healthy
       swagger:
-        condition: service_started
+        condition: service_healthy
       opencode:
-        condition: service_started
+        condition: service_healthy
       bun_runner:
         condition: service_started
       openclaw-gateway:
@@ -140,10 +147,13 @@ services:
 #         condition: service_started
       nextcloud:
         condition: service_healthy
+      gitea:
+        condition: service_healthy
     networks:
       nocodenation_all_in_wonder_network:
         aliases:
           - pgadmin.localhost
+          - git.localhost
           - postgrest.localhost
           - swagger.localhost
           - opencode.localhost
@@ -262,6 +272,12 @@ services:
     image: swaggerapi/swagger-ui
     container_name: swagger-${APP_ID:-0}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     environment:
       API_URL: http://postgrest.localhost:${SYSTEM_HTTP_PORT:-8888}/
     volumes:
@@ -273,6 +289,12 @@ services:
     image: all-in-wonder/opencode:${APP_ID:-0}
     container_name: opencode-${APP_ID:-0}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null http://localhost:4096/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     extra_hosts:
       - "dgx_spark:${OPENCODE_OLLAMA_HOST_IP:-127.0.0.1}"
       - "embedding_host:${OPENCODE_EMBEDDING_HOST_IP:-127.0.0.1}"
@@ -290,6 +312,7 @@ services:
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       SYNTHETIC_API_KEY: ${SYNTHETIC_API_KEY:-}
+      MAMMOUTH_API_KEY: ${MAMMOUTH_API_KEY:-}
       OPENCODE_OLLAMA_HOST: ${OPENCODE_OLLAMA_HOST:-}
       OPENCODE_EMBEDDING_HOST: ${OPENCODE_EMBEDDING_HOST:-}
       OPENCODE_EMBEDDING_MODEL: ${OPENCODE_EMBEDDING_MODEL:-}
@@ -614,6 +637,66 @@ services:
     networks:
       - nocodenation_all_in_wonder_network
 
+  gitea:
+    image: gitea/gitea:1
+    container_name: gitea-${APP_ID:-0}
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__server__DOMAIN: git.localhost
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__ROOT_URL: "http://git.localhost:${SYSTEM_HTTP_PORT:-8888}/"
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
+      GITEA__repository__ENABLE_PUSH_CREATE_USER: "true"
+      GITEA__repository__ENABLE_PUSH_CREATE_ORG: "true"
+      GITEA__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"
+      GITEA__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "true"
+      GITEA__security__REVERSE_PROXY_AUTHENTICATION_USER: "X-WEBAUTH-USER"
+      GITEA__security__REVERSE_PROXY_TRUSTED_PROXIES: "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    volumes:
+      - ./volumes/_gitea/data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - nocodenation_all_in_wonder_network
+
+  git-snapshot:
+    image: alpine/git
+    container_name: git-snapshot-${APP_ID:-0}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/snapshot.sh"]
+    environment:
+      GITEA_USER: ${GITEA_ADMIN_USER:-aiw-admin}
+      GITEA_EMAIL: ${GITEA_ADMIN_EMAIL:-user@nocodenation.org}
+      GITEA_OPENCLAW_TOKEN: ${GITEA_OPENCLAW_TOKEN:-}
+      GIT_SNAPSHOT_INTERVAL: ${GIT_SNAPSHOT_INTERVAL:-300}
+      GIT_SNAPSHOT_DEBOUNCE: ${GIT_SNAPSHOT_DEBOUNCE:-30}
+      GIT_VERSION_DATA: ${GIT_VERSION_DATA:-0}
+      GIT_VERSION_PYTHON_EXTENSIONS: ${GIT_VERSION_PYTHON_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS: ${GIT_VERSION_NAR_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS_SRC: ${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}
+    volumes:
+      - ./config/git-snapshot/snapshot.sh:/snapshot.sh:ro
+      - ./volumes/data:/repos/data
+      - ./volumes/python_extensions:/repos/python_extensions
+      - ./volumes/nar_extensions:/repos/nar_extensions
+      - ./volumes/nar_extensions_src:/repos/nar_extensions_src
+      - ./volumes/_git-snapshot:/git
+    depends_on:
+      gitea:
+        condition: service_healthy
+    networks:
+      - nocodenation_all_in_wonder_network
+
   nifi:
     image: all-in-wonder/nifi:${APP_ID:-0}
     container_name: nifi-${APP_ID:-0}
@@ -730,6 +813,15 @@ services:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      GITEA_URL: http://gitea:3000
+      GITEA_USER: ${GITEA_ADMIN_USER:-aiw-admin}
+      GITEA_OPENCLAW_TOKEN: ${GITEA_OPENCLAW_TOKEN:-}
+      GIT_CONFIG_GLOBAL: /home/node/.openclaw/git/gitconfig
+      GIT_VERSION_BUN_APP: ${GIT_VERSION_BUN_APP:-0}
+      GIT_VERSION_DATA: ${GIT_VERSION_DATA:-0}
+      GIT_VERSION_PYTHON_EXTENSIONS: ${GIT_VERSION_PYTHON_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS: ${GIT_VERSION_NAR_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS_SRC: ${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ./volumes/_openclaw:/home/node/.openclaw
@@ -744,6 +836,7 @@ services:
       - ./volumes/bun_app:/bun_app
       - ./volumes/python_extensions:/opt/python_extensions
       - ./volumes/nar_extensions:/opt/nar_extensions
+      - ./volumes/nar_extensions_src:/opt/nar_extensions_src
     cap_drop:
       - NET_RAW
       - NET_ADMIN
@@ -823,6 +916,15 @@ services:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       NIFI_KEYSTORE_PASSWORD: ${NIFI_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      GITEA_URL: http://gitea:3000
+      GITEA_USER: ${GITEA_ADMIN_USER:-aiw-admin}
+      GITEA_OPENCLAW_TOKEN: ${GITEA_OPENCLAW_TOKEN:-}
+      GIT_CONFIG_GLOBAL: /home/node/.openclaw/git/gitconfig
+      GIT_VERSION_BUN_APP: ${GIT_VERSION_BUN_APP:-0}
+      GIT_VERSION_DATA: ${GIT_VERSION_DATA:-0}
+      GIT_VERSION_PYTHON_EXTENSIONS: ${GIT_VERSION_PYTHON_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS: ${GIT_VERSION_NAR_EXTENSIONS:-0}
+      GIT_VERSION_NAR_EXTENSIONS_SRC: ${GIT_VERSION_NAR_EXTENSIONS_SRC:-0}
     volumes:
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace

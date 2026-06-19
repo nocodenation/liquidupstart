@@ -46,7 +46,8 @@ cp "$OPENCLAW_ENV_TEMPLATE" "$OPENCLAW_ENV"
 
 for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
            GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
-           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY; do
+           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY \
+           MAMMOUTH_API_KEY; do
   # Skip keys the template does not declare — OpenClaw doesn't support them.
   grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
   value="$(get_env "$key")"
@@ -73,6 +74,26 @@ for dir in "${STATE_DIR}" "${WORKSPACE_DIR}" "${SECRETS_DIR}" "${CLAUDE_DIR}"; d
   chmod 777 "$dir"
 done
 
+# Git credentials so the agent can push to Gitea (http://gitea:3000) without
+# embedding tokens in remote URLs. GIT_CONFIG_GLOBAL points git here (see
+# compose.yml). Regenerated each start from .env.
+GIT_CFG_DIR="${STATE_DIR}/git"
+mkdir -p "$GIT_CFG_DIR"; chmod 777 "$GIT_CFG_DIR"
+GITEA_USER="$(get_env GITEA_ADMIN_USER)";   [[ -z "$GITEA_USER" ]]  && GITEA_USER="aiw-admin"
+GITEA_EMAIL="$(get_env GITEA_ADMIN_EMAIL)"; [[ -z "$GITEA_EMAIL" ]] && GITEA_EMAIL="user@nocodenation.org"
+GITEA_TOKEN="$(get_env GITEA_OPENCLAW_TOKEN)"
+{
+  printf '[user]\n\tname = %s\n\temail = %s\n' "$GITEA_USER" "$GITEA_EMAIL"
+  printf '[init]\n\tdefaultBranch = main\n'
+  printf '[safe]\n\tdirectory = *\n'
+  printf '[credential]\n\thelper = store --file=/home/node/.openclaw/git/credentials\n'
+} > "${GIT_CFG_DIR}/gitconfig"
+if [[ -n "$GITEA_TOKEN" && "$GITEA_TOKEN" != generate_this_with_shell_script ]]; then
+  printf 'http://%s:%s@gitea:3000\n' "$GITEA_USER" "$GITEA_TOKEN" > "${GIT_CFG_DIR}/credentials"
+  chmod 600 "${GIT_CFG_DIR}/credentials"
+  echo "Wrote Gitea git credentials to ${GIT_CFG_DIR} (agent can push to http://gitea:3000)."
+fi
+
 # When 1, OpenClaw uses the Claude Code CLI backend and OPENCLAW_PRIMARY_MODEL
 # is ignored.
 ENABLE_CLAUDE_CLI="$(get_env OPENCLAW_ENABLE_CLAUDE_CLI)"
@@ -86,6 +107,23 @@ ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
 [[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
 COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
 [[ -z "$COPILOT_MODEL" ]] && COPILOT_MODEL="github-copilot/gpt-4.1"
+
+MAMMOUTH_ENABLED=0
+[[ -n "$(get_env MAMMOUTH_API_KEY)" ]] && MAMMOUTH_ENABLED=1
+MAMMOUTH_MODEL="$(get_env OPENCLAW_PRIMARY_MODEL)"
+case "$MAMMOUTH_MODEL" in
+  mammouth/*) MAMMOUTH_MODEL="${MAMMOUTH_MODEL#mammouth/}" ;;
+  *)          MAMMOUTH_MODEL="claude-sonnet-4-6" ;;
+esac
+MAMMOUTH_MODELS="$MAMMOUTH_MODEL"
+if [[ "$MAMMOUTH_ENABLED" == "1" ]]; then
+  _fetched="$(docker run --rm --user 0:0 \
+    -e MAMMOUTH_API_KEY="$(get_env MAMMOUTH_API_KEY)" \
+    --entrypoint sh "${OPENCLAW_IMAGE}" -c \
+    'curl -fsS --max-time 15 -H "Authorization: Bearer ${MAMMOUTH_API_KEY}" https://api.mammouth.ai/public/models 2>/dev/null | jq -r "[.data[].id] | join(\",\")" 2>/dev/null' \
+    2>/dev/null || true)"
+  [[ -n "$_fetched" && "$_fetched" != "null" ]] && MAMMOUTH_MODELS="$_fetched"
+fi
 
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `setup`
@@ -159,6 +197,8 @@ else
     -e COPILOT_MODEL="${COPILOT_MODEL}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
+    -e MAMMOUTH_ENABLED="${MAMMOUTH_ENABLED}" \
+    -e MAMMOUTH_MODELS="${MAMMOUTH_MODELS}" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
     -e '
@@ -251,6 +291,26 @@ else
         for (const w of modelWildcards) {
           if (!c.agents.defaults.models[w]) c.agents.defaults.models[w] = {};
         }
+      }
+
+      if (process.env.MAMMOUTH_ENABLED === "1") {
+        const ids = (process.env.MAMMOUTH_MODELS || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
+        c.models = c.models || {};
+        c.models.providers = c.models.providers || {};
+        c.models.providers.mammouth = {
+          baseUrl: "https://api.mammouth.ai",
+          apiKey: "${MAMMOUTH_API_KEY}",
+          api: "openai-completions",
+          models: ids.map((id) => ({ id, name: "mammouth: " + id })),
+        };
+        c.agents = c.agents || {};
+        c.agents.defaults = c.agents.defaults || {};
+        c.agents.defaults.models = c.agents.defaults.models || {};
+        for (const id of ids) {
+          if (!c.agents.defaults.models["mammouth/" + id]) c.agents.defaults.models["mammouth/" + id] = {};
+        }
+        console.log("openclaw.json: registered mammouth provider with", ids.length, "models");
       }
 
       // Register local plugin dirs. Our plugins ship a self-contained dist/*.mjs

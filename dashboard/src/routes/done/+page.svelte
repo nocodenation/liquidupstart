@@ -25,10 +25,23 @@
       </p>
     {/if}
 
+    {#if started}
+      <p class="okmsg">
+        All services are up — head to the <a href="/">dashboard</a> for every URL and credential.
+      </p>
+    {/if}
+
+    <details class="docs">
+      <summary>Prefer the terminal instead?</summary>
+      <pre>{data.needBuild ? './scripts/linux/build.sh   (Windows: scripts\\windows\\build.bat)\n' : ''}./scripts/linux/start.sh   (Windows: scripts\windows\start.bat)</pre>
+    </details>
+
     <TaskRunner
       needBuild={data.needBuild}
       numbered={data.needBuild}
       showRebuild={!data.needBuild}
+      controlsAtBottom={true}
+      backHref="/config"
       bind:busy
       bind:authPending
       onchange={(task) => {
@@ -42,32 +55,5 @@
         invalidateAll();
       }}
     />
-
-    {#if started}
-      <p class="okmsg">
-        All services are up — see the dashboard for every URL and credential, or check the end of
-        the log above.
-      </p>
-    {/if}
-
-    <details class="docs">
-      <summary>Prefer the terminal instead?</summary>
-      <pre>{data.needBuild ? './scripts/linux/build.sh   (Windows: scripts\\windows\\build.bat)\n' : ''}./scripts/linux/start.sh   (Windows: scripts\windows\start.bat)</pre>
-    </details>
-
-    <div class="actions">
-      <a href="/config" class="back">← Back to the configuration</a>
-      <!-- Disabled mid-run: navigating away would lose the live log (the task
-           itself keeps running). -->
-      <a
-        href={busy ? null : '/'}
-        class="save finishlink"
-        class:disabled={busy}
-        aria-disabled={busy}
-        title={busy ? 'Wait for the running task to finish' : null}
-      >
-        Finish
-      </a>
-    </div>
   </section>
 </main>

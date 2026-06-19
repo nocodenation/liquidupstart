@@ -25,7 +25,11 @@ export const load: PageServerLoad = async () => {
         },
         { name: 'pgAdmin', url: `http://pgadmin.localhost:${http}` },
         { name: 'REST API', url: `http://postgrest.localhost:${http}` },
-        { name: 'Swagger UI', url: `http://swagger.localhost:${http}` }
+        { name: 'Swagger UI', url: `http://swagger.localhost:${http}` },
+        {
+          name: 'Gitea',
+          url: `http://git.localhost:${http}`
+        }
       ]
     },
     {

@@ -141,13 +141,17 @@
             {/each}
           </select>
         {:else if item.type === 'checkbox'}
-          <input
-            type="checkbox"
-            id={item.key}
-            name={item.key}
-            value="1"
-            checked={fieldValue(item) === '1'}
-          />
+          <label class="switch">
+            <input
+              type="checkbox"
+              id={item.key}
+              name={item.key}
+              value="1"
+              checked={fieldValue(item) === '1'}
+            />
+            <span class="slider"></span>
+            <span class="switch-state"></span>
+          </label>
         {:else if item.type === 'number' && PORT_KEYS.includes(item.key)}
           {#if portsLocked}
             <!-- readonly so it still submits the fixed value; the server pins

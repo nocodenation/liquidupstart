@@ -133,6 +133,31 @@ if [ -n "${SYNTHETIC_API_KEY}" ]; then
     }"
 fi
 
+case "$_MODEL_RAW" in
+    mammouth/*) _MAMMOUTH_MODEL="${_MODEL_RAW#mammouth/}" ;;
+    *)          _MAMMOUTH_MODEL="claude-sonnet-4-6" ;;
+esac
+if [ -n "${MAMMOUTH_API_KEY}" ]; then
+    _MAMMOUTH_MODELS="$(curl -fsS --max-time 15 -H "Authorization: Bearer ${MAMMOUTH_API_KEY}" https://api.mammouth.ai/public/models 2>/dev/null \
+      | jq -c 'reduce .data[] as $m ({}; . + {($m.id): {name: ("mammouth: " + $m.id)}})' 2>/dev/null || true)"
+    case "$_MAMMOUTH_MODELS" in
+        '{'?*'}') ;;
+        *) _MAMMOUTH_MODELS="{\"${_MAMMOUTH_MODEL}\":{\"name\":\"mammouth: ${_MAMMOUTH_MODEL}\"}}" ;;
+    esac
+    _PROVIDERS="${_PROVIDERS},
+    \"mammouth\": {
+      \"npm\": \"@ai-sdk/openai-compatible\",
+      \"name\": \"mammouth\",
+      \"options\": {
+        \"baseURL\": \"https://api.mammouth.ai/v1\",
+        \"apiKey\": \"${MAMMOUTH_API_KEY}\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      },
+      \"models\": ${_MAMMOUTH_MODELS}
+    }"
+fi
+
 printf '{
   "model": "%s",
   "instructions": ["/opencode/instructions.md"],
