@@ -554,6 +554,13 @@ a.configlink:hover {
   flex-wrap: wrap;
 }
 
+.tilesubtitle {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--dim);
+  margin-top: -0.675rem;
+}
+
 a.tileurl {
   color: var(--accent);
   text-decoration: none;

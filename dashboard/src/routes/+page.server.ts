@@ -32,7 +32,8 @@ export const load: PageServerLoad = async () => {
       title: 'Applications',
       tiles: [
         {
-          name: 'Liquid',
+          name: 'Liquid.MX',
+          subtitle: 'powered by NiFi',
           url: `https://liquid.localhost:${https}`,
           creds: [
             { label: 'username', value: get('LIQUID_USERNAME') },

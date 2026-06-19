@@ -28,6 +28,7 @@
                 {tile.name}
                 {#if tile.note}<span class="sectdesc">{tile.note}</span>{/if}
               </div>
+              {#if tile.subtitle}<div class="tilesubtitle">{tile.subtitle}</div>{/if}
               <a href={tile.url} target="_blank" rel="noopener noreferrer" class="tileurl">
                 {tile.url}
               </a>
