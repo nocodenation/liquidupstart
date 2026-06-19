@@ -115,6 +115,15 @@ case "$MAMMOUTH_MODEL" in
   mammouth/*) MAMMOUTH_MODEL="${MAMMOUTH_MODEL#mammouth/}" ;;
   *)          MAMMOUTH_MODEL="claude-sonnet-4-6" ;;
 esac
+MAMMOUTH_MODELS="$MAMMOUTH_MODEL"
+if [[ "$MAMMOUTH_ENABLED" == "1" ]]; then
+  _fetched="$(docker run --rm --user 0:0 \
+    -e MAMMOUTH_API_KEY="$(get_env MAMMOUTH_API_KEY)" \
+    --entrypoint sh "${OPENCLAW_IMAGE}" -c \
+    'curl -fsS --max-time 15 -H "Authorization: Bearer ${MAMMOUTH_API_KEY}" https://api.mammouth.ai/public/models 2>/dev/null | jq -r "[.data[].id] | join(\",\")" 2>/dev/null' \
+    2>/dev/null || true)"
+  [[ -n "$_fetched" && "$_fetched" != "null" ]] && MAMMOUTH_MODELS="$_fetched"
+fi
 
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `setup`
@@ -189,7 +198,7 @@ else
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
     -e MAMMOUTH_ENABLED="${MAMMOUTH_ENABLED}" \
-    -e MAMMOUTH_MODEL="${MAMMOUTH_MODEL}" \
+    -e MAMMOUTH_MODELS="${MAMMOUTH_MODELS}" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
     -e '
@@ -285,20 +294,23 @@ else
       }
 
       if (process.env.MAMMOUTH_ENABLED === "1") {
-        const id = process.env.MAMMOUTH_MODEL;
+        const ids = (process.env.MAMMOUTH_MODELS || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
         c.models = c.models || {};
         c.models.providers = c.models.providers || {};
         c.models.providers.mammouth = {
           baseUrl: "https://api.mammouth.ai",
           apiKey: "${MAMMOUTH_API_KEY}",
           api: "openai-completions",
-          models: [{ id, name: "mammouth: " + id }],
+          models: ids.map((id) => ({ id, name: "mammouth: " + id })),
         };
         c.agents = c.agents || {};
         c.agents.defaults = c.agents.defaults || {};
         c.agents.defaults.models = c.agents.defaults.models || {};
-        if (!c.agents.defaults.models["mammouth/" + id]) c.agents.defaults.models["mammouth/" + id] = {};
-        console.log("openclaw.json: registered mammouth provider (model mammouth/" + id + ")");
+        for (const id of ids) {
+          if (!c.agents.defaults.models["mammouth/" + id]) c.agents.defaults.models["mammouth/" + id] = {};
+        }
+        console.log("openclaw.json: registered mammouth provider with", ids.length, "models");
       }
 
       // Register local plugin dirs. Our plugins ship a self-contained dist/*.mjs
