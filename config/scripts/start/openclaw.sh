@@ -529,7 +529,7 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
     echo "OpenAI Codex: not authenticated — starting interactive ChatGPT/Codex sign-in."
     echo "  A sign-in URL appears below. Open it in your browser and authorize; sign-in"
     echo "  completes automatically. Login persists in ${STATE_DIR}."
-    if codex_cli "-it --network host" models auth login --provider openai && codex_authed; then
+    if codex_cli "-it -p 127.0.0.1:1455:1455" models auth login --provider openai && codex_authed; then
       echo "OpenAI Codex: login complete."
     elif codex_authed; then
       echo "OpenAI Codex: login complete."
