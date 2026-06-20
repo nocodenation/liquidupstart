@@ -108,10 +108,17 @@ Then embed the query with THAT backend/model and **right-pad to 4096** (no-op fo
 filter below pads automatically:
 
 ```bash
-# copilot:     http://127.0.0.1:18789/v1/embeddings (OpenClaw gateway, github-copilot auth)
+# All of these use the SAME OpenAI shape ({"model","input"} -> .data[0].embedding),
+# so the jq below works for every one (minimax is the exception — see note).
+# copilot:     http://127.0.0.1:18789/v1/embeddings (OpenClaw gateway, github-copilot auth; model "openclaw")
 # self_hosted: $OPENCODE_EMBEDDING_HOST + $OPENCODE_EMBEDDING_MODEL
-# openai:      https://api.openai.com/v1/embeddings  (Authorization: Bearer <openai key>)
-# openrouter:  https://openrouter.ai/api/v1/embeddings (Authorization: Bearer <openrouter key>)
+# openai:      https://api.openai.com/v1/embeddings                        (Bearer $OPENAI_API_KEY)
+# openrouter:  https://openrouter.ai/api/v1/embeddings                     (Bearer $OPENROUTER_API_KEY)
+# google:      https://generativelanguage.googleapis.com/v1beta/openai/embeddings (Bearer $GEMINI_API_KEY / $GOOGLE_API_KEY)
+# zai:         https://api.z.ai/api/paas/v4/embeddings                     (Bearer $ZAI_API_KEY)
+# vercel:      https://ai-gateway.vercel.sh/v1/embeddings                  (Bearer $AI_GATEWAY_API_KEY)
+# synthetic:   https://api.synthetic.new/openai/v1/embeddings              (Bearer $SYNTHETIC_API_KEY)
+# lkeap:       https://api.lkeap.cloud.tencent.com/v1/embeddings           (Bearer $LKEAP_API_KEY)
 VEC=$(curl -s -X POST "$EMBED_URL" \
   -H "Content-Type: application/json" ${AUTH:+-H "Authorization: Bearer $AUTH"} \
   -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"query text\"}" \
@@ -135,10 +142,23 @@ VEC=$(curl -s -X POST "http://127.0.0.1:18789/v1/embeddings" \
            | "[" + (map(tostring) | join(",")) + "]"')
 ```
 
-Use the API-key env var that matches your runtime (provider-native
-`OPENAI_API_KEY` / `OPENROUTER_API_KEY`, or the `OPENCODE_*` equivalents — whichever
-is present). If the corpus's model is no longer available, say so rather than
-silently embedding the query with a different model.
+For the **minimax** backend the shape differs: POST
+`https://api.minimax.io/v1/embeddings` (Bearer `$MINIMAX_API_KEY`, plus
+`?GroupId=$MINIMAX_GROUP_ID` if your account needs it) with body
+`{"model":"embo-01","type":"query","texts":["query text"]}` (use `type:"query"`
+for searches, `type:"db"` for stored docs), and read the vector from `.vectors[0]`,
+then right-pad to 4096:
+
+```bash
+VEC=$(curl -s -X POST "https://api.minimax.io/v1/embeddings${MINIMAX_GROUP_ID:+?GroupId=$MINIMAX_GROUP_ID}" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $MINIMAX_API_KEY" \
+  -d '{"model": "embo-01", "type": "query", "texts": ["query text"]}' \
+  | jq -r '.vectors[0] as $e | ($e + [range(4096 - ($e|length)) | 0]) | "[" + (map(tostring) | join(",")) + "]"')
+```
+
+Use the credential that matches the corpus's backend. If the corpus's model is no
+longer available, say so rather than silently embedding the query with a different
+model (a different model = a different vector space).
 
 ## End-to-end workflow
 
@@ -197,7 +217,8 @@ similar). The embedding column is omitted from the response.
 
 For "import these books/PDFs to RAG", don't hand-roll embedding loops — use the
 `ingest_pdf` tool. It parses, chunks (~400 tok, 50 overlap), embeds via the
-chosen backend (copilot/self-hosted/openai/openrouter), and inserts rows.
+chosen backend (copilot, self-hosted, or any configured provider — openai,
+openrouter, google, zai, vercel, synthetic, lkeap, minimax), and inserts rows.
 
 End-to-end flow that works (verified):
 

@@ -73,24 +73,19 @@ for dir in "${STATE_DIR}" "${WORKSPACE_DIR}" "${SECRETS_DIR}" "${CLAUDE_DIR}"; d
   chmod 777 "$dir"
 done
 
-# When 1, OpenClaw uses the Claude Code CLI backend and OPENCLAW_PRIMARY_MODEL
-# is ignored.
+# Each ENABLE flag wires its provider/runtime and adds provider/* to OpenClaw's
+# model picker; the model is chosen there, not pinned here.
 ENABLE_CLAUDE_CLI="$(get_env OPENCLAW_ENABLE_CLAUDE_CLI)"
 [[ -z "$ENABLE_CLAUDE_CLI" ]] && ENABLE_CLAUDE_CLI=0
-CLAUDE_CLI_MODEL="$(get_env OPENCLAW_CLAUDE_CLI_MODEL)"
-[[ -z "$CLAUDE_CLI_MODEL" ]] && CLAUDE_CLI_MODEL="anthropic/claude-opus-4-8"
 
-# When 1, OPENCLAW_COPILOT_MODEL becomes primary (OPENCLAW_PRIMARY_MODEL ignored).
-# Precedence when several are set: claude-cli > copilot > primary.
 ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
 [[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
-COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
-[[ -z "$COPILOT_MODEL" ]] && COPILOT_MODEL="github-copilot/gpt-4.1"
 
 ENABLE_CODEX="$(get_env OPENCLAW_ENABLE_CODEX)"
 [[ -z "$ENABLE_CODEX" ]] && ENABLE_CODEX=0
-CODEX_MODEL="$(get_env OPENCLAW_CODEX_MODEL)"
-[[ -z "$CODEX_MODEL" ]] && CODEX_MODEL="openai/gpt-5.5"
+
+ENABLE_GROK="$(get_env OPENCLAW_ENABLE_GROK)"
+[[ -z "$ENABLE_GROK" ]] && ENABLE_GROK=0
 
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `setup`
@@ -118,17 +113,14 @@ fi
 #   3. gateway.controlUi.dangerouslyDisableDeviceAuth — behind the proxy the gateway
 #      sees the proxy IP not localhost, so allowInsecureAuth (localhost-only) can't
 #      apply and every browser would otherwise be forced to pair.
-#   4. agents.defaults.model.primary — overrides `setup`'s placeholder.
-#      Precedence: claude-cli > copilot > OPENCLAW_PRIMARY_MODEL.
-#
-# `|| true`: a missing key makes grep exit 1, aborting under set -e/pipefail;
-# tolerate it and fall through to the guard below.
-PRIMARY_MODEL="$(grep -E '^OPENCLAW_PRIMARY_MODEL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d "'\"" || true)"
+#   4. per-backend provider/runtime wiring — each enabled backend routes its
+#      provider/* through the right runtime and adds it to the picker. No primary
+#      model is pinned; the user chooses the model in OpenClaw's UI.
 
 # Build a `provider/*` wildcard allowlist from the provider tokens that are set,
-# so the model picker shows every credentialed provider's models, not just the
-# primary. Maps each token to its OpenClaw provider id (GEMINI/GOOGLE both map to
-# "google"; node patch dedupes by key). Plain loop for bash 3.2 (macOS) compat.
+# so the model picker shows every credentialed provider's models. Maps each token
+# to its OpenClaw provider id (GEMINI/GOOGLE both map to "google"; node patch
+# dedupes by key). Plain loop for bash 3.2 (macOS) compat.
 MODEL_WILDCARDS=""
 for _tp in \
   "ANTHROPIC_API_KEY:anthropic" \
@@ -147,27 +139,27 @@ for _tp in \
   fi
 done
 
-if [[ "$ENABLE_CODEX" == "1" && ",${MODEL_WILDCARDS}," != *",openai/*,"* ]]; then
-  MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}openai/*"
-fi
+for _bw in \
+  "${ENABLE_CLAUDE_CLI}:anthropic/*" \
+  "${ENABLE_COPILOT}:github-copilot/*" \
+  "${ENABLE_CODEX}:openai/*" \
+  "${ENABLE_GROK}:xai/*"; do
+  if [[ "${_bw%%:*}" == "1" && ",${MODEL_WILDCARDS}," != *",${_bw##*:},"* ]]; then
+    MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_bw##*:}"
+  fi
+done
 
 if [[ ! -f "$CONFIG_JSON" ]]; then
   echo "Warning: ${CONFIG_JSON} not found after setup; cannot patch config." >&2
 else
-  if [[ -z "$PRIMARY_MODEL" ]]; then
-    echo "Note: OPENCLAW_PRIMARY_MODEL not set in ${ENV_FILE}; leaving openclaw.json model untouched." >&2
-  fi
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
-    -e PRIMARY_MODEL="${PRIMARY_MODEL}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
-    -e CLAUDE_CLI_MODEL="${CLAUDE_CLI_MODEL}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
-    -e COPILOT_MODEL="${COPILOT_MODEL}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
-    -e CODEX_MODEL="${CODEX_MODEL}" \
+    -e ENABLE_GROK="${ENABLE_GROK}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
     --entrypoint node \
@@ -196,65 +188,45 @@ else
       // is localhost-only and useless behind the proxy.
       c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
 
-      // Model selection. Precedence: claude-cli > copilot > OPENCLAW_PRIMARY_MODEL
-      // (the first two ignore PRIMARY_MODEL; an empty value leaves the placeholder).
+      // Per-backend provider/runtime wiring. No primary model is pinned; each
+      // enabled backend routes its provider/* through the right runtime and the
+      // user picks the concrete model in the OpenClaw model picker.
       const enableClaudeCli = process.env.ENABLE_CLAUDE_CLI === "1";
       const enableCopilot = process.env.ENABLE_COPILOT === "1";
       const enableCodex = process.env.ENABLE_CODEX === "1";
-      if (enableClaudeCli && enableCopilot) {
-        console.log("openclaw.json: both claude-cli and copilot enabled — using claude-cli (copilot ignored).");
-      }
-      const CLAUDE_CLI_MODEL = process.env.CLAUDE_CLI_MODEL || "anthropic/claude-opus-4-8";
-      const COPILOT_MODEL = process.env.COPILOT_MODEL || "github-copilot/gpt-4.1";
-      const CODEX_MODEL = process.env.CODEX_MODEL || "openai/gpt-5.5";
+      const enableGrok = process.env.ENABLE_GROK === "1";
+      c.agents = c.agents || {};
+      c.agents.defaults = c.agents.defaults || {};
+      c.agents.defaults.models = c.agents.defaults.models || {};
+
       if (enableClaudeCli) {
-        c.agents = c.agents || {};
-        c.agents.defaults = c.agents.defaults || {};
-        c.agents.defaults.model = c.agents.defaults.model || {};
-        c.agents.defaults.model.primary = CLAUDE_CLI_MODEL;
-        // Attach the claude-cli runtime to that model ref.
-        c.agents.defaults.models = c.agents.defaults.models || {};
-        c.agents.defaults.models[CLAUDE_CLI_MODEL] = c.agents.defaults.models[CLAUDE_CLI_MODEL] || {};
-        c.agents.defaults.models[CLAUDE_CLI_MODEL].agentRuntime = { id: "claude-cli" };
+        c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
+        c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
         // Run the CLI through our wrapper, which re-injects CLAUDE_CONFIG_DIR,
         // IS_SANDBOX, and an optional OAuth token that OpenClaw otherwise strips.
         c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
         c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
         c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
-      } else if (enableCopilot) {
-        c.agents = c.agents || {};
-        c.agents.defaults = c.agents.defaults || {};
-        c.agents.defaults.model = c.agents.defaults.model || {};
-        c.agents.defaults.model.primary = COPILOT_MODEL;
-      } else if (enableCodex) {
-        c.agents = c.agents || {};
-        c.agents.defaults = c.agents.defaults || {};
-        c.agents.defaults.model = c.agents.defaults.model || {};
-        c.agents.defaults.model.primary = CODEX_MODEL;
-        c.agents.defaults.models = c.agents.defaults.models || {};
-        c.agents.defaults.models[CODEX_MODEL] = c.agents.defaults.models[CODEX_MODEL] || {};
-        c.agents.defaults.models[CODEX_MODEL].agentRuntime = { id: "codex" };
-      } else if (process.env.PRIMARY_MODEL) {
-        c.agents = c.agents || {};
-        c.agents.defaults = c.agents.defaults || {};
-        c.agents.defaults.model = c.agents.defaults.model || {};
-        c.agents.defaults.model.primary = process.env.PRIMARY_MODEL;
+      }
+
+      if (enableCopilot) {
+        c.agents.defaults.models["github-copilot/*"] = c.agents.defaults.models["github-copilot/*"] || {};
+        c.agents.defaults.models["github-copilot/*"].agentRuntime = { id: "copilot" };
+      }
+
+      if (enableCodex) {
+        c.agents.defaults.models["openai/*"] = c.agents.defaults.models["openai/*"] || {};
+        c.agents.defaults.models["openai/*"].agentRuntime = { id: "codex" };
       }
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
-      // memorySearch at github-copilot. Independent of the chat-model precedence.
+      // memorySearch at github-copilot.
       if (enableCopilot) {
         c.gateway = c.gateway || {};
         c.gateway.http = c.gateway.http || {};
         c.gateway.http.endpoints = c.gateway.http.endpoints || {};
         c.gateway.http.endpoints.chatCompletions = c.gateway.http.endpoints.chatCompletions || {};
         c.gateway.http.endpoints.chatCompletions.enabled = true;
-        c.agents = c.agents || {};
-        c.agents.defaults = c.agents.defaults || {};
-        // Keep the github-copilot catalog selectable whenever Copilot is enabled,
-        // even when claude-cli is the primary model.
-        c.agents.defaults.models = c.agents.defaults.models || {};
-        if (!c.agents.defaults.models["github-copilot/*"]) c.agents.defaults.models["github-copilot/*"] = {};
         c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
         c.agents.defaults.memorySearch.provider = "github-copilot";
         if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
@@ -267,6 +239,16 @@ else
         c.plugins.entries.codex.enabled = true;
         if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("codex")) {
           c.plugins.allow.push("codex");
+        }
+      }
+
+      if (enableGrok) {
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        c.plugins.entries.xai = c.plugins.entries.xai || {};
+        c.plugins.entries.xai.enabled = true;
+        if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("xai")) {
+          c.plugins.allow.push("xai");
         }
       }
 
@@ -308,19 +290,22 @@ else
         console.log("openclaw.json: model allowlist wildcards =", JSON.stringify(modelWildcards));
       }
       if (enableClaudeCli) {
-        console.log("openclaw.json: set agents.defaults.model.primary =", CLAUDE_CLI_MODEL, "(claude-cli runtime; OPENCLAW_PRIMARY_MODEL ignored)");
-      } else if (enableCopilot) {
-        console.log("openclaw.json: set agents.defaults.model.primary =", COPILOT_MODEL, "(github-copilot; OPENCLAW_PRIMARY_MODEL ignored)");
-      } else if (enableCodex) {
-        console.log("openclaw.json: set agents.defaults.model.primary =", CODEX_MODEL, "(codex harness; OPENCLAW_PRIMARY_MODEL ignored)");
-      } else if (process.env.PRIMARY_MODEL) {
-        console.log("openclaw.json: set agents.defaults.model.primary =", process.env.PRIMARY_MODEL);
+        console.log("openclaw.json: routed anthropic/* through the claude-cli runtime");
+      }
+      if (enableCopilot) {
+        console.log("openclaw.json: routed github-copilot/* through the copilot runtime");
+      }
+      if (enableCodex) {
+        console.log("openclaw.json: routed openai/* through the codex runtime");
       }
       if (enableCopilot) {
         console.log("openclaw.json: enabled gateway /v1/embeddings + memorySearch.provider = github-copilot (model", c.agents.defaults.memorySearch.model + ") for RAG embeddings");
       }
       if (enableCodex) {
         console.log("openclaw.json: enabled bundled codex plugin (ChatGPT/Codex subscription harness for openai/* turns)");
+      }
+      if (enableGrok) {
+        console.log("openclaw.json: enabled bundled xai plugin (Grok subscription provider for xai/* turns)");
       }
     '
 fi
@@ -559,5 +544,59 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
       sleep 8
     done
     codex_authed && echo "OpenAI Codex: sign-in detected — continuing startup."
+  fi
+fi
+
+if [[ "$ENABLE_GROK" == "1" ]]; then
+  grok_cli() {
+    local docker_flags="$1"; shift
+    docker run --rm ${docker_flags} --user 0:0 \
+      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
+      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
+      -v "${STATE_DIR}:/home/node/.openclaw" \
+      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
+      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
+      "${OPENCLAW_IMAGE}" "$@"
+  }
+  grok_authed() { grok_cli "--entrypoint openclaw" models auth list --provider xai 2>/dev/null | grep -qi oauth; }
+
+  if grok_authed; then
+    echo "xAI Grok: already authenticated (Grok login persists in ${STATE_DIR})."
+  elif [[ -t 0 && -t 1 ]]; then
+    echo "xAI Grok: not authenticated — starting interactive Grok sign-in."
+    echo "  A sign-in URL appears below. Open it in your browser and authorize; sign-in"
+    echo "  completes automatically. Login persists in ${STATE_DIR}."
+    if grok_cli "-it -p 127.0.0.1:56121:56122 --entrypoint sh" \
+         -c 'socat TCP4-LISTEN:56122,fork,reuseaddr TCP4:127.0.0.1:56121 & exec openclaw models auth login --provider xai --method oauth' \
+         && grok_authed; then
+      echo "xAI Grok: login complete."
+    elif grok_authed; then
+      echo "xAI Grok: login complete."
+    else
+      echo "Warning: Grok sign-in did not complete; xAI requests will fail until you authenticate." >&2
+      echo "  Retry interactively:" >&2
+      echo "    docker compose exec -it openclaw-gateway openclaw models auth login --provider xai --method oauth" >&2
+    fi
+  else
+    echo "::aiw-grok-auth-required::"
+    echo ""
+    echo "============================ XAI GROK SIGN-IN NEEDED ============================="
+    echo "OpenClaw is set to use Grok (OPENCLAW_ENABLE_GROK=1) but isn't authenticated yet."
+    echo "Sign in via the dashboard's 'Sign in with Grok' panel."
+    echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
+    echo "================================================================================="
+
+    _deadline=$(( $(date +%s) + 900 ))
+    until grok_authed; do
+      if (( $(date +%s) >= _deadline )); then
+        echo "Warning: Grok sign-in not completed in time; starting without it." >&2
+        echo "  Grok models won't be listed until you sign in and start again." >&2
+        break
+      fi
+      sleep 8
+    done
+    grok_authed && echo "xAI Grok: sign-in detected — continuing startup."
   fi
 fi

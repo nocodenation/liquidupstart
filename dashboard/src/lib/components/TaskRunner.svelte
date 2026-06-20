@@ -87,18 +87,29 @@
   let codexUrl = $derived(codexLog.match(/::codex-url::(\S+)/)?.[1] ?? '');
   let codexFailed = $derived(/\[auth failed/.test(codexLog));
 
+  let needGrokAuth = $state(false);
+  let grokLog = $state('');
+  let grokRunning = $state(false);
+  let grokOk = $state(false);
+  let grokCode = $state('');
+  let grokCodeSent = $state(false);
+  let grokUrl = $derived(grokLog.match(/::grok-url::(\S+)/)?.[1] ?? '');
+  let grokFailed = $derived(/\[auth failed/.test(grokLog));
+
   // Mirror in-flight state out to the parent (bind:busy), e.g. to keep the
   // Finish button disabled while a task runs.
   $effect(() => {
-    busy = runningTask !== '' || authRunning || copilotRunning || codexRunning;
+    busy = runningTask !== '' || authRunning || copilotRunning || codexRunning || grokRunning;
     activeTask = runningTask;
     authPending =
       (needClaudeAuth && !authOk) ||
       (needCopilotAuth && !copilotOk) ||
       (needCodexAuth && !codexOk) ||
+      (needGrokAuth && !grokOk) ||
       authRunning ||
       copilotRunning ||
-      codexRunning;
+      codexRunning ||
+      grokRunning;
   });
 
   $effect(() => {
@@ -169,6 +180,23 @@
     probeCodexAuth();
   });
 
+  async function probeGrokAuth() {
+    if (grokOk || !running) return;
+    try {
+      const res = await fetch('/grok-auth');
+      if (res.ok) {
+        const { needed } = await res.json();
+        if (needed) needGrokAuth = true;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  $effect(() => {
+    probeGrokAuth();
+  });
+
   // Device-flow sign-in: stream the login (URL + code); the CLI polls and
   // exits 0 once the user authorizes in the browser.
   async function startCopilotAuth() {
@@ -235,6 +263,7 @@
         // sign-in completes, so the gateway boots authenticated.
         if (!copilotOk && log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
         if (!codexOk && log.includes('::aiw-codex-auth-required::')) needCodexAuth = true;
+        if (!grokOk && log.includes('::aiw-grok-auth-required::')) needGrokAuth = true;
       }
       if (log.includes(`[${task} succeeded]`)) {
         if (task === 'build') buildOk = true;
@@ -254,6 +283,7 @@
       probeClaudeAuth();
       probeCopilotAuth();
       probeCodexAuth();
+      probeGrokAuth();
     } catch (e) {
       log += `\n[connection lost: ${e.message}]\n`;
       failedTask = task;
@@ -360,6 +390,55 @@
       codexCode = '';
     } else {
       codexLog += `\n[could not submit URL: ${res.status} ${await res.text()}]\n`;
+    }
+  }
+
+  async function startGrokAuth() {
+    if (grokRunning) return;
+    grokRunning = true;
+    grokLog = '';
+    grokCode = '';
+    grokCodeSent = false;
+    try {
+      const res = await fetch('/grok-auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+      });
+      if (!res.ok || !res.body) {
+        grokLog = `Could not start sign-in: ${res.status} ${await res.text()}\n`;
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        grokLog += decoder.decode(value, { stream: true });
+      }
+      if (grokLog.includes('[auth succeeded]')) {
+        grokOk = true;
+        needGrokAuth = false;
+      }
+    } catch (e) {
+      grokLog += `\n[connection lost: ${e.message}]\n`;
+    } finally {
+      grokRunning = false;
+    }
+  }
+
+  async function sendGrokCode() {
+    if (!grokCode.trim()) return;
+    const res = await fetch('/grok-auth', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'code', code: grokCode })
+    });
+    if (res.status === 204) {
+      grokCodeSent = true;
+      grokCode = '';
+    } else {
+      grokLog += `\n[could not submit URL: ${res.status} ${await res.text()}]\n`;
     }
   }
 </script>
@@ -580,6 +659,63 @@
       {/if}
       {#if codexFailed}
         <p class="dim">Sign-in didn’t complete. Click “Sign in with ChatGPT” to try again.</p>
+      {/if}
+    {/if}
+  </section>
+{/if}
+
+{#if needGrokAuth || grokRunning || grokOk}
+  <section class="authbox">
+    <h2>Sign in with Grok</h2>
+    {#if grokOk}
+      <p class="okmsg">
+        Your SuperGrok/X Premium subscription is authenticated — the login persists in
+        <code>volumes/_openclaw</code>, and the startup continues now that you're signed in.
+      </p>
+    {:else}
+      <p>
+        OpenClaw is set to use Grok (<code>OPENCLAW_ENABLE_GROK=1</code>) with a paid SuperGrok or X
+        Premium subscription — no xAI API key needed. Click below, then open the sign-in link and
+        authorize. Sign-in completes here automatically once you approve.
+      </p>
+      <div class="runbar">
+        <button type="button" class="save" disabled={grokRunning} onclick={startGrokAuth}>
+          {grokRunning ? 'Waiting for sign-in…' : 'Sign in with Grok'}
+        </button>
+        {#if grokUrl && grokRunning}
+          <a href={grokUrl} target="_blank" rel="noopener noreferrer" class="back">
+            Open sign-in link ↗
+          </a>
+        {/if}
+      </div>
+      {#if grokRunning && !grokUrl}
+        <p class="dim">Preparing the sign-in link…</p>
+      {/if}
+      {#if grokRunning && grokUrl}
+        <p class="dim">
+          Waiting for you to authorize in the browser… If the browser shows
+          “unable to connect to 127.0.0.1:56121” after you approve, copy that page’s full URL and
+          paste it below.
+        </p>
+        <div class="runbar">
+          <input
+            type="text"
+            placeholder="Fallback: paste the 127.0.0.1:56121 redirect URL here"
+            bind:value={grokCode}
+            onkeydown={(e) => e.key === 'Enter' && sendGrokCode()}
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="save" disabled={!grokCode.trim()} onclick={sendGrokCode}>
+            Submit URL
+          </button>
+          {#if grokCodeSent}
+            <span class="dim">URL sent — waiting for xAI to confirm…</span>
+          {/if}
+        </div>
+      {/if}
+      {#if grokFailed}
+        <p class="dim">Sign-in didn’t complete. Click “Sign in with Grok” to try again.</p>
       {/if}
     {/if}
   </section>

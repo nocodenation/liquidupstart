@@ -1,4 +1,4 @@
-# Embedding Service Verification — Self-Hosted Endpoint
+# Embedding Service — Backends & Self-Hosted Verification
 
 ## Endpoint Details
 
@@ -32,12 +32,29 @@ curl -s -X POST "$OPENCODE_EMBEDDING_HOST/v1/embeddings" \
 
 ## Integration with RAG Pipeline
 
-The `ingest_pdf` tool has three embedding backends:
-- **self_hosted** — this endpoint (`OPENCODE_EMBEDDING_HOST` + `OPENCODE_EMBEDDING_MODEL`), 4096-dim.
-- **openai** — `OPENAI_API_KEY` (`text-embedding-3-large`, 3072-dim, zero-padded to 4096 to share the same `vector(4096)` column).
-- **openrouter** — `OPENROUTER_API_KEY` (`openai/text-embedding-3-large` via OpenRouter's OpenAI-compatible `/v1/embeddings`, same 3072→4096 padding).
+The `ingest_pdf` tool auto-selects an embedding backend from whatever is configured.
+Every non-self-hosted vector is zero-padded to fill the shared `vector(4096)` column:
 
-Selection: if only one is configured it is used automatically; if **more than one** is configured the tool asks you to choose (pass `embedding_backend: self_hosted | openai | openrouter` and re-run); if none is configured it does no work and explains why.
+| Backend | Credential | Default model (native dims) | Endpoint |
+|---------|-----------|------------------------------|----------|
+| **self_hosted** | `OPENCODE_EMBEDDING_HOST` + `OPENCODE_EMBEDDING_MODEL` | host model (4096) | `$OPENCODE_EMBEDDING_HOST/v1/embeddings` |
+| **copilot** | `OPENCLAW_ENABLE_COPILOT=1` (signed in) | text-embedding-3-small (1536) | OpenClaw gateway `/v1/embeddings` |
+| **openai** | `OPENAI_API_KEY` | text-embedding-3-large (3072) | api.openai.com/v1/embeddings |
+| **openrouter** | `OPENROUTER_API_KEY` | openai/text-embedding-3-large (3072) | openrouter.ai/api/v1/embeddings |
+| **google** | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | gemini-embedding-001 (3072) | generativelanguage.googleapis.com/v1beta/openai/embeddings |
+| **zai** | `ZAI_API_KEY` | embedding-3 (2048) | api.z.ai/api/paas/v4/embeddings |
+| **vercel** | `AI_GATEWAY_API_KEY` | openai/text-embedding-3-large (3072) | ai-gateway.vercel.sh/v1/embeddings |
+| **synthetic** | `SYNTHETIC_API_KEY` | hf:nomic-ai/nomic-embed-text-v1.5 (768) | api.synthetic.new/openai/v1/embeddings |
+| **lkeap** | `LKEAP_API_KEY` | adp-text-embedding-0.5b | api.lkeap.cloud.tencent.com/v1/embeddings |
+| **minimax** | `MINIMAX_API_KEY` (+ `MINIMAX_GROUP_ID`) | embo-01 (1536) | api.minimax.io/v1/embeddings (non-OpenAI shape) |
+
+All except `minimax` are OpenAI-compatible (`{"model","input"}` → `data[].embedding`,
+`Authorization: Bearer`). `minimax` uses `{"model","type","texts"}` → `vectors[]` with an
+optional `?GroupId=`.
+
+Selection: if only one is configured it is used automatically; if **more than one** is
+configured the tool asks you to choose (pass `embedding_backend` set to one of the names
+above and re-run); if none is configured it does no work and explains why.
 
 When the self-hosted backend is used it handles:
 1. PDF text extraction (page-by-page)
