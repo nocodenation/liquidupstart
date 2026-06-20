@@ -511,7 +511,7 @@ fi
 if [[ "$ENABLE_CODEX" == "1" ]]; then
   codex_cli() {
     local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} --user 0:0 --entrypoint openclaw \
+    docker run --rm ${docker_flags} --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -521,7 +521,7 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  codex_authed() { codex_cli "" models auth list --provider openai 2>/dev/null | grep -qi oauth; }
+  codex_authed() { codex_cli "--entrypoint openclaw" models auth list --provider openai 2>/dev/null | grep -qi oauth; }
 
   if codex_authed; then
     echo "OpenAI Codex: already authenticated (ChatGPT/Codex login persists in ${STATE_DIR})."
@@ -529,7 +529,9 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
     echo "OpenAI Codex: not authenticated — starting interactive ChatGPT/Codex sign-in."
     echo "  A sign-in URL appears below. Open it in your browser and authorize; sign-in"
     echo "  completes automatically. Login persists in ${STATE_DIR}."
-    if codex_cli "-it -p 127.0.0.1:1455:1455" models auth login --provider openai && codex_authed; then
+    if codex_cli "-it -p 127.0.0.1:1455:1456 -e OPENCLAW_OAUTH_CALLBACK_HOST=127.0.0.1 --entrypoint sh" \
+         -c 'socat TCP-LISTEN:1456,fork,reuseaddr TCP:127.0.0.1:1455 & exec openclaw models auth login --provider openai' \
+         && codex_authed; then
       echo "OpenAI Codex: login complete."
     elif codex_authed; then
       echo "OpenAI Codex: login complete."

@@ -56,17 +56,19 @@ function loginPtyCommand(): string {
     '-i',
     '-t',
     '-p',
-    '127.0.0.1:1455:1455',
+    '127.0.0.1:1455:1456',
     '--user',
     '0:0',
     '--entrypoint',
-    'openclaw',
+    'sh',
     '-e',
     'HOME=/home/node',
     '-e',
     'COLUMNS=1000',
     '-e',
     'OPENCLAW_HOME=/home/node',
+    '-e',
+    'OPENCLAW_OAUTH_CALLBACK_HOST=127.0.0.1',
     '-e',
     'OPENCLAW_STATE_DIR=/home/node/.openclaw',
     '-e',
@@ -80,11 +82,8 @@ function loginPtyCommand(): string {
     '-v',
     `${PLUGINS_DIR}:/home/node/openclaw-plugins:ro`,
     OPENCLAW_IMAGE,
-    'models',
-    'auth',
-    'login',
-    '--provider',
-    'openai'
+    '-c',
+    'socat TCP-LISTEN:1456,fork,reuseaddr TCP:127.0.0.1:1455 & exec openclaw models auth login --provider openai'
   ];
   return ['docker', ...args].map(sh).join(' ');
 }
