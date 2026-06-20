@@ -38,7 +38,14 @@ Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-r
   resolve in the user's browser. Server-side calls (curl, fetch, Liquid processors) must hit
   the nginx `proxy` with a `Host:` header instead.
 - **Persist on host disk** — all state lives in browsable `./volumes/` bind mounts; never
-  use named Docker volumes.
+  use named Docker volumes. **One exception:** NextCloud's `/var/www/html` uses the
+  `nextcloud_html` named volume. That tree is regenerable image content (not user state),
+  and the official image extracts ~30k tiny files into it on first boot — on Windows/macOS
+  a `./volumes/` bind mount routes that through the slow WSL↔host filesystem bridge and the
+  install times out. The named volume keeps it on the Docker VM's native fs (fast, one-time
+  extraction). User state (`config`, `data`, `custom_apps`) stays on `./volumes/` bind
+  mounts. A full NextCloud reset therefore needs `docker compose down -v`, not just deleting
+  `volumes/nextcloud/`.
 - **Rootless Docker** — the host user maps to container root, so containers run as root;
   don't add `--user $(id -u)` (it breaks bind mounts).
 - **Minimal code comments** — match the surrounding density; don't over-explain.
