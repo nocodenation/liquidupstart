@@ -31,7 +31,9 @@ POST_INSTALLATION_COMMANDS="${POST_INSTALLATION_COMMANDS:-}"
 resolve_image_settings "OPENCLAW"
 
 # Render the Dockerfile from the template, injecting the deps/commands.
-render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${CONFIG_DIR}/Dockerfile"
+DOCKERFILE="$(mktemp)"
+trap 'rm -f "${DOCKERFILE}"' EXIT
+render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${DOCKERFILE}"
 
 # Optionally install the Claude Code CLI into the image. When
 # OPENCLAW_ENABLE_CLAUDE_CLI=1 the "# CLAUDE_CLI_INSTALL" marker in the rendered
@@ -50,10 +52,10 @@ sed_inplace() {
 
 if [ "${OPENCLAW_ENABLE_CLAUDE_CLI:-0}" = "1" ]; then
     echo "OPENCLAW_ENABLE_CLAUDE_CLI=1: installing Claude Code CLI into the image."
-    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${CONFIG_DIR}/Dockerfile"
+    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${DOCKERFILE}"
 fi
 
 IMAGE="liquidupstart/openclaw:${APP_ID:-0}"
 docker image rm "$IMAGE" >/dev/null 2>&1 || true
 echo "Building $IMAGE from ${CONFIG_DIR}..."
-docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" "${CONFIG_DIR}"
+docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" -f "${DOCKERFILE}" "${CONFIG_DIR}"

@@ -63,6 +63,7 @@
 
     <section class="card">
       <TaskRunner
+        running
         startLabel="Restart"
         showStop
         showRebuild

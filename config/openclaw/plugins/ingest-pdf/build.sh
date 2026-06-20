@@ -24,6 +24,9 @@ docker run --rm --network host --user 0:0 \
       || { echo "npm install failed:"; tail -20 /tmp/build.log; exit 1; }
 
     mkdir -p /plugin/dist
+    # The image ships openclaw as the app at /app (not node_modules/openclaw), so
+    # expose it under its package name for esbuild to resolve `openclaw/...`.
+    ln -sf /app /tmp/node_modules/openclaw
     echo "bundling src/index.ts -> dist/index.mjs ..."
     # openclaw + typebox from the image; unpdf/js-tiktoken/esbuild from the temp install.
     NODE_PATH=/app/node_modules:/tmp/node_modules \

@@ -4,9 +4,10 @@
  * page, chunks ~400 tokens / 50 overlap, embeds, inserts into rag_documents /
  * rag_chunks via PostgREST. Config comes from process.env only.
  *
- * Embedding backends: self_hosted (OPENCODE_EMBEDDING_HOST/MODEL, 4096-dim),
- * openai (OPENAI_API_KEY, text-embedding-3-large), openrouter (OPENROUTER_API_KEY,
- * openai/text-embedding-3-large) — the latter two are 3072-dim zero-padded to 4096.
+ * Embedding backends: self_hosted (OPENCODE_EMBEDDING_HOST/MODEL, 4096-dim native)
+ * plus any configured provider key — openai, openrouter, google (Gemini), zai,
+ * vercel (AI Gateway), synthetic, lkeap (all OpenAI-compatible) and minimax (native
+ * shape). Non-self-hosted vectors are zero-padded to 4096.
  *
  * Tool surface (ingest_pdf):
  *   input             string   PDF file or folder (non-recursive)
@@ -45,8 +46,37 @@ const OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings"
 const DEFAULT_OPENROUTER_MODEL = "openai/text-embedding-3-large"
 const OPENAI_BATCH = 64 // OpenAI/OpenRouter accept an input array; batch to cut round-trips
 
-type Backend = "self_hosted" | "openai" | "openrouter"
-type BackendConfig = { backend: Backend; model: string; host?: string; apiKey?: string; url?: string }
+// Additional OpenAI-compatible /embeddings endpoints (same {model,input} body and
+// data[].embedding response; all default models are <=4096-dim so they share the
+// vector(4096) column via padToDims).
+const GEMINI_EMBEDDINGS_URL = "https://generativelanguage.googleapis.com/v1beta/openai/embeddings"
+const DEFAULT_GEMINI_MODEL = "gemini-embedding-001" // 3072-dim
+const ZAI_EMBEDDINGS_URL = "https://api.z.ai/api/paas/v4/embeddings"
+const DEFAULT_ZAI_MODEL = "embedding-3" // 2048-dim
+const VERCEL_EMBEDDINGS_URL = "https://ai-gateway.vercel.sh/v1/embeddings"
+const DEFAULT_VERCEL_MODEL = "openai/text-embedding-3-large" // 3072-dim
+const SYNTHETIC_EMBEDDINGS_URL = "https://api.synthetic.new/openai/v1/embeddings"
+const DEFAULT_SYNTHETIC_MODEL = "hf:nomic-ai/nomic-embed-text-v1.5" // 768-dim
+const LKEAP_EMBEDDINGS_URL = "https://api.lkeap.cloud.tencent.com/v1/embeddings"
+const DEFAULT_LKEAP_MODEL = "adp-text-embedding-0.5b"
+
+// MiniMax uses a non-OpenAI shape: body {model,type,texts}, response vectors[],
+// optional ?GroupId=, and a base_resp.status_code error channel on HTTP 200.
+const MINIMAX_EMBEDDINGS_URL = "https://api.minimax.io/v1/embeddings"
+const DEFAULT_MINIMAX_MODEL = "embo-01" // 1536-dim
+const MINIMAX_BATCH = 32
+
+type Backend =
+    | "self_hosted"
+    | "openai"
+    | "openrouter"
+    | "google"
+    | "zai"
+    | "vercel"
+    | "synthetic"
+    | "lkeap"
+    | "minimax"
+type BackendConfig = { backend: Backend; model: string; host?: string; apiKey?: string; url?: string; groupId?: string }
 
 const enc = getEncoding("cl100k_base")
 
@@ -278,8 +308,75 @@ async function embedOpenAICompat(
     return out
 }
 
+// Embed via MiniMax (non-OpenAI shape: texts[] in, vectors[] out, optional GroupId).
+async function embedViaMinimax(
+    apiKey: string,
+    groupId: string | undefined,
+    model: string,
+    texts: string[],
+    log: Logger,
+): Promise<number[][]> {
+    const url = groupId ? `${MINIMAX_EMBEDDINGS_URL}?GroupId=${encodeURIComponent(groupId)}` : MINIMAX_EMBEDDINGS_URL
+    const out: number[][] = []
+    const total = texts.length
+    for (let i = 0; i < total; i += MINIMAX_BATCH) {
+        const batch = texts.slice(i, i + MINIMAX_BATCH)
+        let attempt = 0
+        let backoff = INITIAL_BACKOFF_S
+        while (true) {
+            let r: Response
+            try {
+                r = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+                    body: JSON.stringify({ model, type: "db", texts: batch }),
+                })
+            } catch (e) {
+                attempt++
+                if (attempt > MAX_RETRIES) throw e
+                const msg = (e as { message?: string })?.message ?? String(e)
+                log(`  transient network error contacting minimax: ${msg}, retry ${attempt}/${MAX_RETRIES} in ${backoff.toFixed(1)}s`)
+                await sleep(backoff * 1000)
+                backoff = Math.min(backoff * 2, MAX_BACKOFF_S)
+                continue
+            }
+            if (r.ok) {
+                const body = (await r.json()) as {
+                    vectors?: number[][]
+                    base_resp?: { status_code?: number; status_msg?: string }
+                }
+                const sc = body.base_resp?.status_code
+                if (sc) {
+                    const hint = groupId ? "" : " (this endpoint may require a group id — set MINIMAX_GROUP_ID)"
+                    throw new Error(`minimax error ${sc}: ${body.base_resp?.status_msg ?? ""}${hint}`)
+                }
+                if (!Array.isArray(body.vectors)) throw new Error("minimax response missing 'vectors'")
+                for (const v of body.vectors) out.push(padToDims(v, EMBED_DIMS))
+                break
+            }
+            const txt = await r.text().catch(() => "")
+            const retryable = [408, 425, 429, 500, 502, 503, 504].includes(r.status)
+            if (!retryable) throw new Error(`minimax HTTP ${r.status}: ${txt}`)
+            attempt++
+            if (attempt > MAX_RETRIES) throw new Error(`minimax HTTP ${r.status} after ${MAX_RETRIES} retries: ${txt}`)
+            let wait = backoff
+            const ra = r.headers.get("retry-after")
+            if (ra) {
+                const n = parseFloat(ra)
+                if (Number.isFinite(n)) wait = Math.max(wait, n)
+            }
+            log(`  transient HTTP ${r.status} from minimax, retry ${attempt}/${MAX_RETRIES} in ${wait.toFixed(1)}s`)
+            await sleep(wait * 1000)
+            backoff = Math.min(backoff * 2, MAX_BACKOFF_S)
+        }
+        log(`  embedded ${Math.min(i + MINIMAX_BATCH, total)}/${total}`)
+    }
+    return out
+}
+
 async function embedChunks(cfg: BackendConfig, texts: string[], log: Logger): Promise<number[][]> {
     if (cfg.backend === "self_hosted") return embedAll(cfg.host!, cfg.model, texts, log)
+    if (cfg.backend === "minimax") return embedViaMinimax(cfg.apiKey!, cfg.groupId, cfg.model, texts, log)
     return embedOpenAICompat(cfg.url!, cfg.apiKey!, cfg.model, texts, log, cfg.backend)
 }
 
@@ -291,6 +388,12 @@ const BACKEND_NEED: Record<string, string> = {
     self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
     openai: "OPENAI_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
+    google: "GEMINI_API_KEY or GOOGLE_API_KEY",
+    zai: "ZAI_API_KEY",
+    vercel: "AI_GATEWAY_API_KEY",
+    synthetic: "SYNTHETIC_API_KEY",
+    lkeap: "LKEAP_API_KEY",
+    minimax: "MINIMAX_API_KEY (optionally MINIMAX_GROUP_ID)",
 }
 
 type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
@@ -302,6 +405,13 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
     const openaiKey = (env.OPENAI_API_KEY ?? "").trim()
     const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
+    const geminiKey = ((env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY) ?? "").trim()
+    const zaiKey = (env.ZAI_API_KEY ?? "").trim()
+    const vercelKey = (env.AI_GATEWAY_API_KEY ?? "").trim()
+    const syntheticKey = (env.SYNTHETIC_API_KEY ?? "").trim()
+    const lkeapKey = (env.LKEAP_API_KEY ?? "").trim()
+    const minimaxKey = (env.MINIMAX_API_KEY ?? "").trim()
+    const minimaxGroup = (env.MINIMAX_GROUP_ID ?? "").trim()
 
     const available: AvailBackend[] = []
     if (embedHost && embedModel) {
@@ -325,6 +435,48 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
             label: `openrouter: ${DEFAULT_OPENROUTER_MODEL} (3072-dim, zero-padded to 4096; uses the OpenRouter key/quota)`,
         })
     }
+    if (geminiKey) {
+        available.push({
+            backend: "google",
+            cfg: { backend: "google", apiKey: geminiKey, model: DEFAULT_GEMINI_MODEL, url: GEMINI_EMBEDDINGS_URL },
+            label: `google: ${DEFAULT_GEMINI_MODEL} (3072-dim, zero-padded to 4096; uses the Gemini/Google key)`,
+        })
+    }
+    if (zaiKey) {
+        available.push({
+            backend: "zai",
+            cfg: { backend: "zai", apiKey: zaiKey, model: DEFAULT_ZAI_MODEL, url: ZAI_EMBEDDINGS_URL },
+            label: `zai: ${DEFAULT_ZAI_MODEL} (2048-dim, zero-padded to 4096; uses the Z.AI key/quota)`,
+        })
+    }
+    if (vercelKey) {
+        available.push({
+            backend: "vercel",
+            cfg: { backend: "vercel", apiKey: vercelKey, model: DEFAULT_VERCEL_MODEL, url: VERCEL_EMBEDDINGS_URL },
+            label: `vercel: ${DEFAULT_VERCEL_MODEL} via Vercel AI Gateway (3072-dim, zero-padded to 4096)`,
+        })
+    }
+    if (syntheticKey) {
+        available.push({
+            backend: "synthetic",
+            cfg: { backend: "synthetic", apiKey: syntheticKey, model: DEFAULT_SYNTHETIC_MODEL, url: SYNTHETIC_EMBEDDINGS_URL },
+            label: `synthetic: ${DEFAULT_SYNTHETIC_MODEL} (768-dim, zero-padded to 4096; uses the Synthetic key)`,
+        })
+    }
+    if (lkeapKey) {
+        available.push({
+            backend: "lkeap",
+            cfg: { backend: "lkeap", apiKey: lkeapKey, model: DEFAULT_LKEAP_MODEL, url: LKEAP_EMBEDDINGS_URL },
+            label: `lkeap: ${DEFAULT_LKEAP_MODEL} via Tencent LKEAP (zero-padded to 4096; uses the LKEAP key)`,
+        })
+    }
+    if (minimaxKey) {
+        available.push({
+            backend: "minimax",
+            cfg: { backend: "minimax", apiKey: minimaxKey, model: DEFAULT_MINIMAX_MODEL, groupId: minimaxGroup || undefined },
+            label: `minimax: ${DEFAULT_MINIMAX_MODEL} (1536-dim, zero-padded to 4096; uses the MiniMax key${minimaxGroup ? "" : ", MINIMAX_GROUP_ID unset"})`,
+        })
+    }
     return available
 }
 
@@ -346,7 +498,7 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
         return {
             ok: false,
             message:
-                "error: no embedding backend configured. Set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENAI_API_KEY (OpenAI), or OPENROUTER_API_KEY (OpenRouter), then re-run.",
+                "error: no embedding backend configured. Set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), or any of these provider keys: OPENAI_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY/GOOGLE_API_KEY, ZAI_API_KEY, AI_GATEWAY_API_KEY, SYNTHETIC_API_KEY, LKEAP_API_KEY, MINIMAX_API_KEY; then re-run.",
         }
     }
     if (available.length === 1) return { ok: true, cfg: available[0].cfg }
@@ -671,9 +823,9 @@ const INGEST_PDF_INPUT_SCHEMA = {
         },
         embedding_backend: {
             type: "string",
-            enum: ["self_hosted", "openai", "openrouter"],
+            enum: ["self_hosted", "openai", "openrouter", "google", "zai", "vercel", "synthetic", "lkeap", "minimax"],
             description:
-                "Which embedding backend to use. self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
+                "Which embedding backend to use. Each is available only when its credential is set: self_hosted (OPENCODE_EMBEDDING_HOST/MODEL, 4096-dim), openai (OPENAI_API_KEY, text-embedding-3-large), openrouter (OPENROUTER_API_KEY), google (GEMINI_API_KEY/GOOGLE_API_KEY, gemini-embedding-001), zai (ZAI_API_KEY, embedding-3), vercel (AI_GATEWAY_API_KEY, openai/text-embedding-3-large), synthetic (SYNTHETIC_API_KEY, nomic-embed-text), lkeap (LKEAP_API_KEY), minimax (MINIMAX_API_KEY, embo-01; optional MINIMAX_GROUP_ID). All non-self-hosted vectors are zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
         },
     },
 }
@@ -685,7 +837,16 @@ type IngestPdfArgs = {
     estimate_only?: boolean
     skip_existing?: boolean
     collision_policy?: "fingerprint" | "skip" | "ingest" | "fail"
-    embedding_backend?: "self_hosted" | "openai" | "openrouter"
+    embedding_backend?:
+        | "self_hosted"
+        | "openai"
+        | "openrouter"
+        | "google"
+        | "zai"
+        | "vercel"
+        | "synthetic"
+        | "lkeap"
+        | "minimax"
 }
 
 async function runIngest(args: IngestPdfArgs): Promise<string> {
@@ -961,7 +1122,7 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
 
 // === MCP server ===
 const TOOL_DESCRIPTION =
-    "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if more than one is configured, the tool asks you to choose via embedding_backend."
+    "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is auto-selected from whatever is configured: a self-hosted OPENCODE_EMBEDDING_HOST endpoint, or any provider key that supports embeddings — OpenAI, OpenRouter, Google Gemini, Z.AI, Vercel AI Gateway, Synthetic, Tencent LKEAP, or MiniMax. If exactly one is configured it is used; if more than one is configured the tool asks you to choose via embedding_backend."
 
 const server = new Server({ name: "ingest-pdf", version: "0.1.0" }, { capabilities: { tools: {} } })
 

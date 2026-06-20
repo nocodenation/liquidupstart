@@ -5,6 +5,7 @@
    */
   let {
     needBuild = false,
+    running = false,
     showStart = true,
     showStop = false,
     showRebuild = false,
@@ -77,13 +78,38 @@
   let copilotUrl = $derived(copilotLog.match(/https:\/\/github\.com\/login\/device/)?.[0] ?? '');
   let copilotCode = $derived(copilotLog.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1] ?? '');
 
+  let needCodexAuth = $state(false);
+  let codexLog = $state('');
+  let codexRunning = $state(false);
+  let codexOk = $state(false);
+  let codexCode = $state('');
+  let codexCodeSent = $state(false);
+  let codexUrl = $derived(codexLog.match(/::codex-url::(\S+)/)?.[1] ?? '');
+  let codexFailed = $derived(/\[auth failed/.test(codexLog));
+
+  let needGrokAuth = $state(false);
+  let grokLog = $state('');
+  let grokRunning = $state(false);
+  let grokOk = $state(false);
+  let grokCode = $state('');
+  let grokCodeSent = $state(false);
+  let grokUrl = $derived(grokLog.match(/::grok-url::(\S+)/)?.[1] ?? '');
+  let grokFailed = $derived(/\[auth failed/.test(grokLog));
+
   // Mirror in-flight state out to the parent (bind:busy), e.g. to keep the
   // Finish button disabled while a task runs.
   $effect(() => {
-    busy = runningTask !== '' || authRunning || copilotRunning;
+    busy = runningTask !== '' || authRunning || copilotRunning || codexRunning || grokRunning;
     activeTask = runningTask;
     authPending =
-      (needClaudeAuth && !authOk) || (needCopilotAuth && !copilotOk) || authRunning || copilotRunning;
+      (needClaudeAuth && !authOk) ||
+      (needCopilotAuth && !copilotOk) ||
+      (needCodexAuth && !codexOk) ||
+      (needGrokAuth && !grokOk) ||
+      authRunning ||
+      copilotRunning ||
+      codexRunning ||
+      grokRunning;
   });
 
   $effect(() => {
@@ -99,12 +125,11 @@
     if (copilotLogEl) copilotLogEl.scrollTop = copilotLogEl.scrollHeight;
   });
 
-  // Proactively offer sign-in (like terminal start.sh) without waiting for a
-  // Start run to print the ACTION REQUIRED banner. Skipped while a required
-  // Build is pending: sign-in belongs after setup, and mid-stream banner
-  // detection during Start surfaces it at the right moment on a first install.
+  // Proactively offer sign-in only once the stack is running. Before that —
+  // fresh dashboard open, build done but not started yet — sign-in surfaces
+  // through the Start run's ACTION REQUIRED banner, not on page load.
   async function probeClaudeAuth() {
-    if (authOk || (needBuild && !buildOk)) return;
+    if (authOk || !running) return;
     try {
       const res = await fetch('/claude-auth');
       if (res.ok) {
@@ -122,7 +147,7 @@
 
   // Same idea as probeClaudeAuth, for the native Copilot provider.
   async function probeCopilotAuth() {
-    if (copilotOk || (needBuild && !buildOk)) return;
+    if (copilotOk || !running) return;
     try {
       const res = await fetch('/copilot-auth');
       if (res.ok) {
@@ -136,6 +161,40 @@
 
   $effect(() => {
     probeCopilotAuth();
+  });
+
+  async function probeCodexAuth() {
+    if (codexOk || !running) return;
+    try {
+      const res = await fetch('/codex-auth');
+      if (res.ok) {
+        const { needed } = await res.json();
+        if (needed) needCodexAuth = true;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  $effect(() => {
+    probeCodexAuth();
+  });
+
+  async function probeGrokAuth() {
+    if (grokOk || !running) return;
+    try {
+      const res = await fetch('/grok-auth');
+      if (res.ok) {
+        const { needed } = await res.json();
+        if (needed) needGrokAuth = true;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  $effect(() => {
+    probeGrokAuth();
   });
 
   // Device-flow sign-in: stream the login (URL + code); the CLI polls and
@@ -203,6 +262,8 @@
         // openclaw.sh emits this marker and then BLOCKS the start until Copilot
         // sign-in completes, so the gateway boots authenticated.
         if (!copilotOk && log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
+        if (!codexOk && log.includes('::aiw-codex-auth-required::')) needCodexAuth = true;
+        if (!grokOk && log.includes('::aiw-grok-auth-required::')) needGrokAuth = true;
       }
       if (log.includes(`[${task} succeeded]`)) {
         if (task === 'build') buildOk = true;
@@ -221,6 +282,8 @@
       // start may have rendered openclaw.json.
       probeClaudeAuth();
       probeCopilotAuth();
+      probeCodexAuth();
+      probeGrokAuth();
     } catch (e) {
       log += `\n[connection lost: ${e.message}]\n`;
       failedTask = task;
@@ -280,6 +343,104 @@
   }
 
   let authUrl = $derived(authLog.match(/https:\/\/\S+/)?.[0] ?? '');
+
+  async function startCodexAuth() {
+    if (codexRunning) return;
+    codexRunning = true;
+    codexLog = '';
+    codexCode = '';
+    codexCodeSent = false;
+    try {
+      const res = await fetch('/codex-auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+      });
+      if (!res.ok || !res.body) {
+        codexLog = `Could not start sign-in: ${res.status} ${await res.text()}\n`;
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        codexLog += decoder.decode(value, { stream: true });
+      }
+      if (codexLog.includes('[auth succeeded]')) {
+        codexOk = true;
+        needCodexAuth = false;
+      }
+    } catch (e) {
+      codexLog += `\n[connection lost: ${e.message}]\n`;
+    } finally {
+      codexRunning = false;
+    }
+  }
+
+  async function sendCodexCode() {
+    if (!codexCode.trim()) return;
+    const res = await fetch('/codex-auth', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'code', code: codexCode })
+    });
+    if (res.status === 204) {
+      codexCodeSent = true;
+      codexCode = '';
+    } else {
+      codexLog += `\n[could not submit URL: ${res.status} ${await res.text()}]\n`;
+    }
+  }
+
+  async function startGrokAuth() {
+    if (grokRunning) return;
+    grokRunning = true;
+    grokLog = '';
+    grokCode = '';
+    grokCodeSent = false;
+    try {
+      const res = await fetch('/grok-auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+      });
+      if (!res.ok || !res.body) {
+        grokLog = `Could not start sign-in: ${res.status} ${await res.text()}\n`;
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        grokLog += decoder.decode(value, { stream: true });
+      }
+      if (grokLog.includes('[auth succeeded]')) {
+        grokOk = true;
+        needGrokAuth = false;
+      }
+    } catch (e) {
+      grokLog += `\n[connection lost: ${e.message}]\n`;
+    } finally {
+      grokRunning = false;
+    }
+  }
+
+  async function sendGrokCode() {
+    if (!grokCode.trim()) return;
+    const res = await fetch('/grok-auth', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'code', code: grokCode })
+    });
+    if (res.status === 204) {
+      grokCodeSent = true;
+      grokCode = '';
+    } else {
+      grokLog += `\n[could not submit URL: ${res.status} ${await res.text()}]\n`;
+    }
+  }
 </script>
 
 <div class="runbar">
@@ -441,6 +602,120 @@
       {/if}
       {#if copilotLog}
         <pre class="runlog" bind:this={copilotLogEl}>{copilotLog}</pre>
+      {/if}
+    {/if}
+  </section>
+{/if}
+
+{#if needCodexAuth || codexRunning || codexOk}
+  <section class="authbox">
+    <h2>Sign in with ChatGPT</h2>
+    {#if codexOk}
+      <p class="okmsg">
+        Your ChatGPT/Codex subscription is authenticated — the login persists in
+        <code>volumes/_openclaw</code>, and the startup continues now that you're signed in.
+      </p>
+    {:else}
+      <p>
+        OpenClaw is set to use the Codex harness (<code>OPENCLAW_ENABLE_CODEX=1</code>) with a paid
+        ChatGPT/Codex subscription — no OpenAI API key needed. Click below, then open the sign-in
+        link and authorize. Sign-in completes here automatically once you approve.
+      </p>
+      <div class="runbar">
+        <button type="button" class="save" disabled={codexRunning} onclick={startCodexAuth}>
+          {codexRunning ? 'Waiting for sign-in…' : 'Sign in with ChatGPT'}
+        </button>
+        {#if codexUrl && codexRunning}
+          <a href={codexUrl} target="_blank" rel="noopener noreferrer" class="back">
+            Open sign-in link ↗
+          </a>
+        {/if}
+      </div>
+      {#if codexRunning && !codexUrl}
+        <p class="dim">Preparing the sign-in link…</p>
+      {/if}
+      {#if codexRunning && codexUrl}
+        <p class="dim">
+          Waiting for you to authorize in the browser… If the browser shows
+          “unable to connect to localhost:1455” after you approve, copy that page’s full URL and
+          paste it below.
+        </p>
+        <div class="runbar">
+          <input
+            type="text"
+            placeholder="Fallback: paste the localhost:1455 redirect URL here"
+            bind:value={codexCode}
+            onkeydown={(e) => e.key === 'Enter' && sendCodexCode()}
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="save" disabled={!codexCode.trim()} onclick={sendCodexCode}>
+            Submit URL
+          </button>
+          {#if codexCodeSent}
+            <span class="dim">URL sent — waiting for OpenAI to confirm…</span>
+          {/if}
+        </div>
+      {/if}
+      {#if codexFailed}
+        <p class="dim">Sign-in didn’t complete. Click “Sign in with ChatGPT” to try again.</p>
+      {/if}
+    {/if}
+  </section>
+{/if}
+
+{#if needGrokAuth || grokRunning || grokOk}
+  <section class="authbox">
+    <h2>Sign in with Grok</h2>
+    {#if grokOk}
+      <p class="okmsg">
+        Your SuperGrok/X Premium subscription is authenticated — the login persists in
+        <code>volumes/_openclaw</code>, and the startup continues now that you're signed in.
+      </p>
+    {:else}
+      <p>
+        OpenClaw is set to use Grok (<code>OPENCLAW_ENABLE_GROK=1</code>) with a paid SuperGrok or X
+        Premium subscription — no xAI API key needed. Click below, then open the sign-in link and
+        authorize. Sign-in completes here automatically once you approve.
+      </p>
+      <div class="runbar">
+        <button type="button" class="save" disabled={grokRunning} onclick={startGrokAuth}>
+          {grokRunning ? 'Waiting for sign-in…' : 'Sign in with Grok'}
+        </button>
+        {#if grokUrl && grokRunning}
+          <a href={grokUrl} target="_blank" rel="noopener noreferrer" class="back">
+            Open sign-in link ↗
+          </a>
+        {/if}
+      </div>
+      {#if grokRunning && !grokUrl}
+        <p class="dim">Preparing the sign-in link…</p>
+      {/if}
+      {#if grokRunning && grokUrl}
+        <p class="dim">
+          Waiting for you to authorize in the browser… If the browser shows
+          “unable to connect to 127.0.0.1:56121” after you approve, copy that page’s full URL and
+          paste it below.
+        </p>
+        <div class="runbar">
+          <input
+            type="text"
+            placeholder="Fallback: paste the 127.0.0.1:56121 redirect URL here"
+            bind:value={grokCode}
+            onkeydown={(e) => e.key === 'Enter' && sendGrokCode()}
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="save" disabled={!grokCode.trim()} onclick={sendGrokCode}>
+            Submit URL
+          </button>
+          {#if grokCodeSent}
+            <span class="dim">URL sent — waiting for xAI to confirm…</span>
+          {/if}
+        </div>
+      {/if}
+      {#if grokFailed}
+        <p class="dim">Sign-in didn’t complete. Click “Sign in with Grok” to try again.</p>
       {/if}
     {/if}
   </section>
