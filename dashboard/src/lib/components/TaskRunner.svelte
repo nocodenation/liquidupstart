@@ -77,13 +77,27 @@
   let copilotUrl = $derived(copilotLog.match(/https:\/\/github\.com\/login\/device/)?.[0] ?? '');
   let copilotCode = $derived(copilotLog.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1] ?? '');
 
+  let needCodexAuth = $state(false);
+  let codexLog = $state('');
+  let codexRunning = $state(false);
+  let codexOk = $state(false);
+  let codexCode = $state('');
+  let codexCodeSent = $state(false);
+  let codexUrl = $derived(codexLog.match(/::codex-url::(\S+)/)?.[1] ?? '');
+  let codexFailed = $derived(/\[auth failed/.test(codexLog));
+
   // Mirror in-flight state out to the parent (bind:busy), e.g. to keep the
   // Finish button disabled while a task runs.
   $effect(() => {
-    busy = runningTask !== '' || authRunning || copilotRunning;
+    busy = runningTask !== '' || authRunning || copilotRunning || codexRunning;
     activeTask = runningTask;
     authPending =
-      (needClaudeAuth && !authOk) || (needCopilotAuth && !copilotOk) || authRunning || copilotRunning;
+      (needClaudeAuth && !authOk) ||
+      (needCopilotAuth && !copilotOk) ||
+      (needCodexAuth && !codexOk) ||
+      authRunning ||
+      copilotRunning ||
+      codexRunning;
   });
 
   $effect(() => {
@@ -136,6 +150,23 @@
 
   $effect(() => {
     probeCopilotAuth();
+  });
+
+  async function probeCodexAuth() {
+    if (codexOk || (needBuild && !buildOk)) return;
+    try {
+      const res = await fetch('/codex-auth');
+      if (res.ok) {
+        const { needed } = await res.json();
+        if (needed) needCodexAuth = true;
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  $effect(() => {
+    probeCodexAuth();
   });
 
   // Device-flow sign-in: stream the login (URL + code); the CLI polls and
@@ -203,6 +234,7 @@
         // openclaw.sh emits this marker and then BLOCKS the start until Copilot
         // sign-in completes, so the gateway boots authenticated.
         if (!copilotOk && log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
+        if (!codexOk && log.includes('::aiw-codex-auth-required::')) needCodexAuth = true;
       }
       if (log.includes(`[${task} succeeded]`)) {
         if (task === 'build') buildOk = true;
@@ -221,6 +253,7 @@
       // start may have rendered openclaw.json.
       probeClaudeAuth();
       probeCopilotAuth();
+      probeCodexAuth();
     } catch (e) {
       log += `\n[connection lost: ${e.message}]\n`;
       failedTask = task;
@@ -280,6 +313,55 @@
   }
 
   let authUrl = $derived(authLog.match(/https:\/\/\S+/)?.[0] ?? '');
+
+  async function startCodexAuth() {
+    if (codexRunning) return;
+    codexRunning = true;
+    codexLog = '';
+    codexCode = '';
+    codexCodeSent = false;
+    try {
+      const res = await fetch('/codex-auth', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'start' })
+      });
+      if (!res.ok || !res.body) {
+        codexLog = `Could not start sign-in: ${res.status} ${await res.text()}\n`;
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        codexLog += decoder.decode(value, { stream: true });
+      }
+      if (codexLog.includes('[auth succeeded]')) {
+        codexOk = true;
+        needCodexAuth = false;
+      }
+    } catch (e) {
+      codexLog += `\n[connection lost: ${e.message}]\n`;
+    } finally {
+      codexRunning = false;
+    }
+  }
+
+  async function sendCodexCode() {
+    if (!codexCode.trim()) return;
+    const res = await fetch('/codex-auth', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'code', code: codexCode })
+    });
+    if (res.status === 204) {
+      codexCodeSent = true;
+      codexCode = '';
+    } else {
+      codexLog += `\n[could not submit URL: ${res.status} ${await res.text()}]\n`;
+    }
+  }
 </script>
 
 <div class="runbar">
@@ -441,6 +523,63 @@
       {/if}
       {#if copilotLog}
         <pre class="runlog" bind:this={copilotLogEl}>{copilotLog}</pre>
+      {/if}
+    {/if}
+  </section>
+{/if}
+
+{#if needCodexAuth || codexRunning || codexOk}
+  <section class="authbox">
+    <h2>Sign in with ChatGPT</h2>
+    {#if codexOk}
+      <p class="okmsg">
+        Your ChatGPT/Codex subscription is authenticated — the login persists in
+        <code>volumes/_openclaw</code>, and the startup continues now that you're signed in.
+      </p>
+    {:else}
+      <p>
+        OpenClaw is set to use the Codex harness (<code>OPENCLAW_ENABLE_CODEX=1</code>) with a paid
+        ChatGPT/Codex subscription — no OpenAI API key needed. Click below, then open the sign-in
+        link and authorize. Sign-in completes here automatically once you approve.
+      </p>
+      <div class="runbar">
+        <button type="button" class="save" disabled={codexRunning} onclick={startCodexAuth}>
+          {codexRunning ? 'Waiting for sign-in…' : 'Sign in with ChatGPT'}
+        </button>
+        {#if codexUrl && codexRunning}
+          <a href={codexUrl} target="_blank" rel="noopener noreferrer" class="back">
+            Open sign-in link ↗
+          </a>
+        {/if}
+      </div>
+      {#if codexRunning && !codexUrl}
+        <p class="dim">Preparing the sign-in link…</p>
+      {/if}
+      {#if codexRunning && codexUrl}
+        <p class="dim">
+          Waiting for you to authorize in the browser… If the browser shows
+          “unable to connect to localhost:1455” after you approve, copy that page’s full URL and
+          paste it below.
+        </p>
+        <div class="runbar">
+          <input
+            type="text"
+            placeholder="Fallback: paste the localhost:1455 redirect URL here"
+            bind:value={codexCode}
+            onkeydown={(e) => e.key === 'Enter' && sendCodexCode()}
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="save" disabled={!codexCode.trim()} onclick={sendCodexCode}>
+            Submit URL
+          </button>
+          {#if codexCodeSent}
+            <span class="dim">URL sent — waiting for OpenAI to confirm…</span>
+          {/if}
+        </div>
+      {/if}
+      {#if codexFailed}
+        <p class="dim">Sign-in didn’t complete. Click “Sign in with ChatGPT” to try again.</p>
       {/if}
     {/if}
   </section>

@@ -87,6 +87,11 @@ ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
 COPILOT_MODEL="$(get_env OPENCLAW_COPILOT_MODEL)"
 [[ -z "$COPILOT_MODEL" ]] && COPILOT_MODEL="github-copilot/gpt-4.1"
 
+ENABLE_CODEX="$(get_env OPENCLAW_ENABLE_CODEX)"
+[[ -z "$ENABLE_CODEX" ]] && ENABLE_CODEX=0
+CODEX_MODEL="$(get_env OPENCLAW_CODEX_MODEL)"
+[[ -z "$CODEX_MODEL" ]] && CODEX_MODEL="openai/gpt-5.5"
+
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `setup`
 # (no --wizard) is non-interactive. openclaw-cli shares the gateway's netns, so
@@ -142,6 +147,10 @@ for _tp in \
   fi
 done
 
+if [[ "$ENABLE_CODEX" == "1" && ",${MODEL_WILDCARDS}," != *",openai/*,"* ]]; then
+  MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}openai/*"
+fi
+
 if [[ ! -f "$CONFIG_JSON" ]]; then
   echo "Warning: ${CONFIG_JSON} not found after setup; cannot patch config." >&2
 else
@@ -157,6 +166,8 @@ else
     -e CLAUDE_CLI_MODEL="${CLAUDE_CLI_MODEL}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e COPILOT_MODEL="${COPILOT_MODEL}" \
+    -e ENABLE_CODEX="${ENABLE_CODEX}" \
+    -e CODEX_MODEL="${CODEX_MODEL}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
     --entrypoint node \
@@ -189,11 +200,13 @@ else
       // (the first two ignore PRIMARY_MODEL; an empty value leaves the placeholder).
       const enableClaudeCli = process.env.ENABLE_CLAUDE_CLI === "1";
       const enableCopilot = process.env.ENABLE_COPILOT === "1";
+      const enableCodex = process.env.ENABLE_CODEX === "1";
       if (enableClaudeCli && enableCopilot) {
         console.log("openclaw.json: both claude-cli and copilot enabled — using claude-cli (copilot ignored).");
       }
       const CLAUDE_CLI_MODEL = process.env.CLAUDE_CLI_MODEL || "anthropic/claude-opus-4-8";
       const COPILOT_MODEL = process.env.COPILOT_MODEL || "github-copilot/gpt-4.1";
+      const CODEX_MODEL = process.env.CODEX_MODEL || "openai/gpt-5.5";
       if (enableClaudeCli) {
         c.agents = c.agents || {};
         c.agents.defaults = c.agents.defaults || {};
@@ -213,6 +226,14 @@ else
         c.agents.defaults = c.agents.defaults || {};
         c.agents.defaults.model = c.agents.defaults.model || {};
         c.agents.defaults.model.primary = COPILOT_MODEL;
+      } else if (enableCodex) {
+        c.agents = c.agents || {};
+        c.agents.defaults = c.agents.defaults || {};
+        c.agents.defaults.model = c.agents.defaults.model || {};
+        c.agents.defaults.model.primary = CODEX_MODEL;
+        c.agents.defaults.models = c.agents.defaults.models || {};
+        c.agents.defaults.models[CODEX_MODEL] = c.agents.defaults.models[CODEX_MODEL] || {};
+        c.agents.defaults.models[CODEX_MODEL].agentRuntime = { id: "codex" };
       } else if (process.env.PRIMARY_MODEL) {
         c.agents = c.agents || {};
         c.agents.defaults = c.agents.defaults || {};
@@ -237,6 +258,16 @@ else
         c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
         c.agents.defaults.memorySearch.provider = "github-copilot";
         if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
+      }
+
+      if (enableCodex) {
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        c.plugins.entries.codex = c.plugins.entries.codex || {};
+        c.plugins.entries.codex.enabled = true;
+        if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("codex")) {
+          c.plugins.allow.push("codex");
+        }
       }
 
       // Model picker allowlist: add a `provider/*` wildcard per credentialed
@@ -280,11 +311,16 @@ else
         console.log("openclaw.json: set agents.defaults.model.primary =", CLAUDE_CLI_MODEL, "(claude-cli runtime; OPENCLAW_PRIMARY_MODEL ignored)");
       } else if (enableCopilot) {
         console.log("openclaw.json: set agents.defaults.model.primary =", COPILOT_MODEL, "(github-copilot; OPENCLAW_PRIMARY_MODEL ignored)");
+      } else if (enableCodex) {
+        console.log("openclaw.json: set agents.defaults.model.primary =", CODEX_MODEL, "(codex harness; OPENCLAW_PRIMARY_MODEL ignored)");
       } else if (process.env.PRIMARY_MODEL) {
         console.log("openclaw.json: set agents.defaults.model.primary =", process.env.PRIMARY_MODEL);
       }
       if (enableCopilot) {
         console.log("openclaw.json: enabled gateway /v1/embeddings + memorySearch.provider = github-copilot (model", c.agents.defaults.memorySearch.model + ") for RAG embeddings");
+      }
+      if (enableCodex) {
+        console.log("openclaw.json: enabled bundled codex plugin (ChatGPT/Codex subscription harness for openai/* turns)");
       }
     '
 fi
@@ -469,5 +505,57 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
       sleep 8
     done
     copilot_authed && echo "GitHub Copilot: sign-in detected — continuing startup."
+  fi
+fi
+
+if [[ "$ENABLE_CODEX" == "1" ]]; then
+  codex_cli() {
+    local docker_flags="$1"; shift
+    docker run --rm ${docker_flags} --user 0:0 --entrypoint openclaw \
+      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
+      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
+      -v "${STATE_DIR}:/home/node/.openclaw" \
+      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
+      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
+      "${OPENCLAW_IMAGE}" "$@"
+  }
+  codex_authed() { codex_cli "" models auth list --provider openai 2>/dev/null | grep -qi oauth; }
+
+  if codex_authed; then
+    echo "OpenAI Codex: already authenticated (ChatGPT/Codex login persists in ${STATE_DIR})."
+  elif [[ -t 0 && -t 1 ]]; then
+    echo "OpenAI Codex: not authenticated — starting interactive ChatGPT/Codex sign-in."
+    echo "  A sign-in URL appears below. Open it in your browser and authorize; sign-in"
+    echo "  completes automatically. Login persists in ${STATE_DIR}."
+    if codex_cli "-it --network host" models auth login --provider openai && codex_authed; then
+      echo "OpenAI Codex: login complete."
+    elif codex_authed; then
+      echo "OpenAI Codex: login complete."
+    else
+      echo "Warning: ChatGPT/Codex sign-in did not complete; OpenAI requests will fail until you authenticate." >&2
+      echo "  Retry interactively:" >&2
+      echo "    docker compose exec -it openclaw-gateway openclaw models auth login --provider openai" >&2
+    fi
+  else
+    echo "::aiw-codex-auth-required::"
+    echo ""
+    echo "========================= OPENAI CODEX SIGN-IN NEEDED ==========================="
+    echo "OpenClaw is set to use the Codex harness (OPENCLAW_ENABLE_CODEX=1) but isn't"
+    echo "authenticated yet. Sign in via the dashboard's 'Sign in with ChatGPT' panel."
+    echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
+    echo "================================================================================="
+
+    _deadline=$(( $(date +%s) + 900 ))
+    until codex_authed; do
+      if (( $(date +%s) >= _deadline )); then
+        echo "Warning: ChatGPT/Codex sign-in not completed in time; starting without it." >&2
+        echo "  OpenAI models won't be listed until you sign in and start again." >&2
+        break
+      fi
+      sleep 8
+    done
+    codex_authed && echo "OpenAI Codex: sign-in detected — continuing startup."
   fi
 fi
