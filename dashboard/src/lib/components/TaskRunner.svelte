@@ -5,6 +5,7 @@
    */
   let {
     needBuild = false,
+    running = false,
     showStart = true,
     showStop = false,
     showRebuild = false,
@@ -113,12 +114,11 @@
     if (copilotLogEl) copilotLogEl.scrollTop = copilotLogEl.scrollHeight;
   });
 
-  // Proactively offer sign-in (like terminal start.sh) without waiting for a
-  // Start run to print the ACTION REQUIRED banner. Skipped while a required
-  // Build is pending: sign-in belongs after setup, and mid-stream banner
-  // detection during Start surfaces it at the right moment on a first install.
+  // Proactively offer sign-in only once the stack is running. Before that —
+  // fresh dashboard open, build done but not started yet — sign-in surfaces
+  // through the Start run's ACTION REQUIRED banner, not on page load.
   async function probeClaudeAuth() {
-    if (authOk || (needBuild && !buildOk)) return;
+    if (authOk || !running) return;
     try {
       const res = await fetch('/claude-auth');
       if (res.ok) {
@@ -136,7 +136,7 @@
 
   // Same idea as probeClaudeAuth, for the native Copilot provider.
   async function probeCopilotAuth() {
-    if (copilotOk || (needBuild && !buildOk)) return;
+    if (copilotOk || !running) return;
     try {
       const res = await fetch('/copilot-auth');
       if (res.ok) {
@@ -153,7 +153,7 @@
   });
 
   async function probeCodexAuth() {
-    if (codexOk || (needBuild && !buildOk)) return;
+    if (codexOk || !running) return;
     try {
       const res = await fetch('/codex-auth');
       if (res.ok) {
