@@ -140,7 +140,7 @@ for _tp in \
 done
 
 for _bw in \
-  "${ENABLE_CLAUDE_CLI}:anthropic/*" \
+  "${ENABLE_CLAUDE_CLI}:claude-cli/*" \
   "${ENABLE_COPILOT}:github-copilot/*" \
   "${ENABLE_CODEX}:openai/*" \
   "${ENABLE_GROK}:xai/*"; do
@@ -200,8 +200,8 @@ else
       c.agents.defaults.models = c.agents.defaults.models || {};
 
       if (enableClaudeCli) {
-        c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
-        c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
+        c.agents.defaults.models["claude-cli/*"] = c.agents.defaults.models["claude-cli/*"] || {};
+        c.agents.defaults.models["claude-cli/*"].agentRuntime = { id: "claude-cli" };
         // Run the CLI through our wrapper, which re-injects CLAUDE_CONFIG_DIR,
         // IS_SANDBOX, and an optional OAuth token that OpenClaw otherwise strips.
         c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
