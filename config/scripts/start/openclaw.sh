@@ -142,7 +142,7 @@ done
 for _bw in \
   "${ENABLE_CLAUDE_CLI}:claude-cli/*" \
   "${ENABLE_COPILOT}:github-copilot/*" \
-  "${ENABLE_CODEX}:openai/*" \
+  "${ENABLE_CODEX}:codex/*" \
   "${ENABLE_GROK}:xai/*"; do
   if [[ "${_bw%%:*}" == "1" && ",${MODEL_WILDCARDS}," != *",${_bw##*:},"* ]]; then
     MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_bw##*:}"
@@ -215,8 +215,8 @@ else
       }
 
       if (enableCodex) {
-        c.agents.defaults.models["openai/*"] = c.agents.defaults.models["openai/*"] || {};
-        c.agents.defaults.models["openai/*"].agentRuntime = { id: "codex" };
+        c.agents.defaults.models["codex/*"] = c.agents.defaults.models["codex/*"] || {};
+        c.agents.defaults.models["codex/*"].agentRuntime = { id: "codex" };
       }
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
@@ -294,14 +294,10 @@ else
       }
       if (enableCopilot) {
         console.log("openclaw.json: routed github-copilot/* through the copilot runtime");
-      }
-      if (enableCodex) {
-        console.log("openclaw.json: routed openai/* through the codex runtime");
-      }
-      if (enableCopilot) {
         console.log("openclaw.json: enabled gateway /v1/embeddings + memorySearch.provider = github-copilot (model", c.agents.defaults.memorySearch.model + ") for RAG embeddings");
       }
       if (enableCodex) {
+        console.log("openclaw.json: routed codex/* through the codex runtime");
         console.log("openclaw.json: enabled bundled codex plugin (ChatGPT/Codex subscription harness for openai/* turns)");
       }
       if (enableGrok) {
