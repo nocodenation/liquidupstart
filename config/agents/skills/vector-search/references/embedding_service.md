@@ -4,28 +4,34 @@
 
 | Property | Value |
 |----------|-------|
-| Base URL | `$OPENCODE_EMBEDDING_HOST` (e.g., `http://embedding_host:8801`) |
+| Base URL | `$LOCAL_LLM_API_BASE` (e.g., `http://local_llm:8080`) |
 | Endpoint | `/v1/embeddings` (OpenAI-compatible) |
-| Model | `llama-embed-nemotron-8b` (from `$OPENCODE_EMBEDDING_MODEL`) |
-| Output dimension | 4096 |
+| Model | discovered from `$LOCAL_LLM_API_BASE/v1/models` (the id matching `embed`) |
+| Output dimension | 2560 |
 | Response format | OpenAI-style: `{ "data": [{ "embedding": [...] }] }` |
 
 ## Verified Working Curl
 
 ```bash
-curl -s -X POST "$OPENCODE_EMBEDDING_HOST/v1/embeddings" \
+# discover the embedding model id from /v1/models (the id matching "embed")
+EMBED_MODEL=$(curl -s -H "Authorization: Bearer $LOCAL_LLM_API_KEY" "$LOCAL_LLM_API_BASE/v1/models" | jq -r '.data[].id | select(test("embed";"i"))' | head -1)
+curl -s -X POST "$LOCAL_LLM_API_BASE/v1/embeddings" \
+  -H "Authorization: Bearer $LOCAL_LLM_API_KEY" \
   -H "Content-Type: application/json" \
-  -d "{\"model\": \"$OPENCODE_EMBEDDING_MODEL\", \"input\": \"test query\"}" \
+  -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"test query\"}" \
   | jq '.data[0].embedding | length'
-# Returns: 4096
+# Returns: 2560
 ```
 
 ## Generating Pgvector Literal for Storage
 
 ```bash
-curl -s -X POST "$OPENCODE_EMBEDDING_HOST/v1/embeddings" \
+# discover the embedding model id from /v1/models (the id matching "embed")
+EMBED_MODEL=$(curl -s -H "Authorization: Bearer $LOCAL_LLM_API_KEY" "$LOCAL_LLM_API_BASE/v1/models" | jq -r '.data[].id | select(test("embed";"i"))' | head -1)
+curl -s -X POST "$LOCAL_LLM_API_BASE/v1/embeddings" \
+  -H "Authorization: Bearer $LOCAL_LLM_API_KEY" \
   -H "Content-Type: application/json" \
-  -d "{\"model\": \"$OPENCODE_EMBEDDING_MODEL\", \"input\": \"text to embed\"}" \
+  -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"text to embed\"}" \
   | jq -r '(.data[0].embedding // .embedding) | "[" + (map(tostring) | join(",")) + "]"'
 # Output: "[0.0123,-0.0456,...,0.0789]"
 ```
@@ -33,11 +39,11 @@ curl -s -X POST "$OPENCODE_EMBEDDING_HOST/v1/embeddings" \
 ## Integration with RAG Pipeline
 
 The `ingest_pdf` tool auto-selects an embedding backend from whatever is configured.
-Every non-self-hosted vector is zero-padded to fill the shared `vector(4096)` column:
+Every non-self-hosted vector is zero-padded to fill the shared `vector(2560)` column:
 
 | Backend | Credential | Default model (native dims) | Endpoint |
 |---------|-----------|------------------------------|----------|
-| **self_hosted** | `OPENCODE_EMBEDDING_HOST` + `OPENCODE_EMBEDDING_MODEL` | host model (4096) | `$OPENCODE_EMBEDDING_HOST/v1/embeddings` |
+| **self_hosted** | `LOCAL_LLM_API_BASE` (model from `/v1/models`) | host model (2560) | `$LOCAL_LLM_API_BASE/v1/embeddings` |
 | **copilot** | `OPENCLAW_ENABLE_COPILOT=1` (signed in) | text-embedding-3-small (1536) | OpenClaw gateway `/v1/embeddings` |
 | **openai** | `OPENAI_API_KEY` | text-embedding-3-large (3072) | api.openai.com/v1/embeddings |
 | **openrouter** | `OPENROUTER_API_KEY` | openai/text-embedding-3-large (3072) | openrouter.ai/api/v1/embeddings |
@@ -60,7 +66,7 @@ When the self-hosted backend is used it handles:
 1. PDF text extraction (page-by-page)
 2. Chunking (~400 tokens, 50-token overlap)
 3. Embedding each chunk via this endpoint
-4. Insert into `rag_chunks` with the raw `vector(4096)` embedding (NOT bit — bit is index-only; see SKILL.md)
+4. Insert into `rag_chunks` with the raw `vector(2560)` embedding (NOT bit — bit is index-only; see SKILL.md)
 
 ## Performance Notes
 

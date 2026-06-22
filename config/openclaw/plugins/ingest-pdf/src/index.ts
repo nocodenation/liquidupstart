@@ -1,14 +1,14 @@
 /**
  * OpenClaw tool plugin — PDF ingester for the Liquid Upstart RAG store. Extracts
  * text, chunks (~400 tokens / 50 overlap), embeds each chunk, and inserts into
- * rag_documents / rag_chunks via PostgREST (column `vector(4096)`; pgvector
+ * rag_documents / rag_chunks via PostgREST (column `vector(2560)`; pgvector
  * binary-quantizes at index time, so we store the raw float vector).
  *
  * Backends (resolveBackend): copilot (github-copilot via the gateway), self_hosted
- * (OPENCODE_EMBEDDING_HOST/MODEL, 4096-dim native), and any configured provider key
+ * (LOCAL_LLM_API_BASE/MODEL, 2560-dim native), and any configured provider key
  * that supports embeddings — openai, openrouter, google (Gemini), zai, vercel (AI
  * Gateway), synthetic, lkeap (all OpenAI-compatible) and minimax (native shape).
- * Non-self-hosted vectors are zero-padded to 4096. With one configured it is used;
+ * Non-self-hosted vectors are truncated to 2560. With one configured it is used;
  * with >1 the tool asks the user to pick via embedding_backend.
  *
  * Tool surface: input (PDF file/folder), title? (single-file), dry_run?,
@@ -25,7 +25,7 @@ import { extractText, getDocumentProxy } from "unpdf"
 
 // === Config ===
 const DEFAULT_POSTGREST = "http://postgrest_app:3000"
-const EMBED_DIMS = 4096 // RAG schema vector(4096): self-hosted emits this natively; OpenAI is zero-padded up to it
+const EMBED_DIMS = 2560 // RAG schema vector(2560): self-hosted emits this natively; OpenAI is zero-padded/truncated to it
 const CHUNK_TOKENS = 400
 const CHUNK_OVERLAP = 50
 const MAX_RETRIES = 6
@@ -33,7 +33,7 @@ const INITIAL_BACKOFF_S = 2.0
 const MAX_BACKOFF_S = 60.0
 
 // text-embedding-3-large is 3072-dim (max), so vectors are right-padded to
-// EMBED_DIMS to share the vector(4096) column; the zero tail does not affect
+// EMBED_DIMS to share the vector(2560) column; the zero tail does not affect
 // cosine/inner-product ranking within a single-backend table.
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 const DEFAULT_OPENAI_MODEL = "text-embedding-3-large"
@@ -53,8 +53,8 @@ const DEFAULT_COPILOT_MODEL = "text-embedding-3-small"
 const COPILOT_BATCH = 16 // endpoint caps: 128 inputs / 8192 chars each / 65536 total
 
 // Additional OpenAI-compatible /embeddings endpoints (same {model,input} body and
-// data[].embedding response as openai/openrouter; all default models are <=4096-dim
-// so they share the vector(4096) column via padToDims).
+// data[].embedding response as openai/openrouter; all default models are <=2560-dim
+// so they share the vector(2560) column via padToDims).
 const GEMINI_EMBEDDINGS_URL = "https://generativelanguage.googleapis.com/v1beta/openai/embeddings"
 const DEFAULT_GEMINI_MODEL = "gemini-embedding-001" // 3072-dim
 const ZAI_EMBEDDINGS_URL = "https://api.z.ai/api/paas/v4/embeddings"
@@ -167,8 +167,10 @@ function vectorLiteral(vec: number[]): string {
     return "[" + vec.map((x) => x.toFixed(7)).join(",") + "]"
 }
 
-async function embedText(host: string, model: string, text: string, log: Logger): Promise<number[]> {
+async function embedText(host: string, model: string, text: string, log: Logger, apiKey?: string): Promise<number[]> {
     const url = `${host.replace(/\/$/, "")}/v1/embeddings`
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
     let attempt = 0
     let backoff = INITIAL_BACKOFF_S
     while (true) {
@@ -176,7 +178,7 @@ async function embedText(host: string, model: string, text: string, log: Logger)
         try {
             r = await fetch(url, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({ model, input: text }),
             })
         } catch (e) {
@@ -229,13 +231,14 @@ async function embedAll(
     model: string,
     texts: string[],
     log: Logger,
+    apiKey?: string,
 ): Promise<number[][]> {
     // Embed sequentially (one string per request) to match the documented
     // instructions.md usage, even though some servers accept an array.
     const out: number[][] = []
     const total = texts.length
     for (let i = 0; i < total; i++) {
-        out.push(await embedText(host, model, texts[i], log))
+        out.push(await embedText(host, model, texts[i], log, apiKey))
         if ((i + 1) % 10 === 0 || i + 1 === total) {
             log(`  embedded ${i + 1}/${total}`)
         }
@@ -244,10 +247,33 @@ async function embedAll(
 }
 
 // === Embedding via OpenAI-compatible endpoints (openai, openrouter) ===
-// Right-pad with zeros up to `dims`: 3072-dim hosted models -> 4096-dim column.
+// Fit a hosted vector to the column: pad short vectors, truncate longer ones (3072 -> 2560).
+async function discoverEmbeddingModel(host: string, apiKey: string | undefined, log: Logger): Promise<string> {
+    const url = `${host.replace(/\/$/, "")}/v1/models`
+    const headers: Record<string, string> = {}
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+    const r = await fetch(url, { headers })
+    if (!r.ok) throw new Error(`could not list models at ${url}: HTTP ${r.status}`)
+    const body = (await r.json()) as { data?: Array<{ id?: string }> }
+    const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => !!x)
+    const embeds = ids.filter((id) => /embed/i.test(id))
+    if (embeds.length === 1) {
+        log(`  auto-detected embedding model: ${embeds[0]}`)
+        return embeds[0]
+    }
+    if (embeds.length > 1) {
+        throw new Error(`multiple embedding models at ${url} (${embeds.join(", ")}); the gateway must serve exactly one embedding model (an id containing "embed")`)
+    }
+    if (ids.length === 1) {
+        log(`  using the only model reported by ${url}: ${ids[0]}`)
+        return ids[0]
+    }
+    throw new Error(`could not auto-detect an embedding model from ${url} (${ids.join(", ") || "no models reported"}); the gateway must serve an embedding model (an id containing "embed")`)
+}
+
 function padToDims(vec: number[], dims: number): number[] {
     if (vec.length === dims) return vec
-    if (vec.length > dims) throw new Error(`embedding has ${vec.length} dims, more than the ${dims}-dim column`)
+    if (vec.length > dims) return vec.slice(0, dims)
     return vec.concat(new Array(dims - vec.length).fill(0))
 }
 
@@ -447,7 +473,7 @@ async function embedViaMinimax(
 
 // Dispatch to the selected embedding backend.
 async function embedChunks(cfg: BackendConfig, texts: string[], log: Logger): Promise<number[][]> {
-    if (cfg.backend === "self_hosted") return embedAll(cfg.host!, cfg.model, texts, log)
+    if (cfg.backend === "self_hosted") return embedAll(cfg.host!, cfg.model, texts, log, cfg.apiKey)
     if (cfg.backend === "copilot") return embedViaCopilotGateway(cfg.url!, texts, log)
     if (cfg.backend === "minimax") return embedViaMinimax(cfg.apiKey!, cfg.groupId, cfg.model, texts, log)
     return embedOpenAICompat(cfg.url!, cfg.apiKey!, cfg.model, texts, log, cfg.backend)
@@ -459,7 +485,7 @@ type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message
 // Env var(s) each backend needs, for "not configured" messages.
 const BACKEND_NEED: Record<string, string> = {
     copilot: "OPENCLAW_ENABLE_COPILOT=1 with the github-copilot provider signed in",
-    self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
+    self_hosted: "LOCAL_LLM_API_BASE",
     openai: "OPENAI_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
     google: "GEMINI_API_KEY or GOOGLE_API_KEY",
@@ -473,11 +499,11 @@ const BACKEND_NEED: Record<string, string> = {
 type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
 
 // The configured backends, in priority order. OpenAI/OpenRouter vectors are
-// zero-padded to EMBED_DIMS so every backend fills vector(4096).
+// zero-padded to EMBED_DIMS so every backend fills vector(2560).
 function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     const copilotEnabled = (env.OPENCLAW_ENABLE_COPILOT ?? "").trim() === "1"
-    const embedHost = (env.OPENCODE_EMBEDDING_HOST ?? "").trim()
-    const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
+    const embedHost = (env.LOCAL_LLM_API_BASE ?? "").trim()
+    const embedKey = (env.LOCAL_LLM_API_KEY ?? "").trim()
     const openaiKey = (env.OPENAI_API_KEY ?? "").trim()
     const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
     const geminiKey = ((env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY) ?? "").trim()
@@ -494,70 +520,70 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
         available.push({
             backend: "copilot",
             cfg: { backend: "copilot", model: DEFAULT_COPILOT_MODEL, url: COPILOT_EMBEDDINGS_URL },
-            label: `copilot: ${DEFAULT_COPILOT_MODEL} via OpenClaw's github-copilot auth (1536-dim, zero-padded to 4096; no extra key)`,
+            label: `copilot: ${DEFAULT_COPILOT_MODEL} via OpenClaw's github-copilot auth (1536-dim, truncated to 2560; no extra key)`,
         })
     }
-    if (embedHost && embedModel) {
+    if (embedHost) {
         available.push({
             backend: "self_hosted",
-            cfg: { backend: "self_hosted", host: embedHost, model: embedModel },
-            label: `self_hosted: ${embedModel} via ${embedHost} (4096-dim, no API cost)`,
+            cfg: { backend: "self_hosted", host: embedHost, model: "", apiKey: embedKey || undefined },
+            label: `self_hosted: auto-detect via ${embedHost}/v1/models (2560-dim, no API cost)`,
         })
     }
     if (openaiKey) {
         available.push({
             backend: "openai",
             cfg: { backend: "openai", apiKey: openaiKey, model: DEFAULT_OPENAI_MODEL, url: OPENAI_EMBEDDINGS_URL },
-            label: `openai: ${DEFAULT_OPENAI_MODEL} (3072-dim, zero-padded to 4096; uses the OpenAI key/quota)`,
+            label: `openai: ${DEFAULT_OPENAI_MODEL} (3072-dim, truncated to 2560; uses the OpenAI key/quota)`,
         })
     }
     if (openrouterKey) {
         available.push({
             backend: "openrouter",
             cfg: { backend: "openrouter", apiKey: openrouterKey, model: DEFAULT_OPENROUTER_MODEL, url: OPENROUTER_EMBEDDINGS_URL },
-            label: `openrouter: ${DEFAULT_OPENROUTER_MODEL} (3072-dim, zero-padded to 4096; uses the OpenRouter key/quota)`,
+            label: `openrouter: ${DEFAULT_OPENROUTER_MODEL} (3072-dim, truncated to 2560; uses the OpenRouter key/quota)`,
         })
     }
     if (geminiKey) {
         available.push({
             backend: "google",
             cfg: { backend: "google", apiKey: geminiKey, model: DEFAULT_GEMINI_MODEL, url: GEMINI_EMBEDDINGS_URL },
-            label: `google: ${DEFAULT_GEMINI_MODEL} (3072-dim, zero-padded to 4096; uses the Gemini/Google key)`,
+            label: `google: ${DEFAULT_GEMINI_MODEL} (3072-dim, truncated to 2560; uses the Gemini/Google key)`,
         })
     }
     if (zaiKey) {
         available.push({
             backend: "zai",
             cfg: { backend: "zai", apiKey: zaiKey, model: DEFAULT_ZAI_MODEL, url: ZAI_EMBEDDINGS_URL },
-            label: `zai: ${DEFAULT_ZAI_MODEL} (2048-dim, zero-padded to 4096; uses the Z.AI key/quota)`,
+            label: `zai: ${DEFAULT_ZAI_MODEL} (2048-dim, truncated to 2560; uses the Z.AI key/quota)`,
         })
     }
     if (vercelKey) {
         available.push({
             backend: "vercel",
             cfg: { backend: "vercel", apiKey: vercelKey, model: DEFAULT_VERCEL_MODEL, url: VERCEL_EMBEDDINGS_URL },
-            label: `vercel: ${DEFAULT_VERCEL_MODEL} via Vercel AI Gateway (3072-dim, zero-padded to 4096)`,
+            label: `vercel: ${DEFAULT_VERCEL_MODEL} via Vercel AI Gateway (3072-dim, truncated to 2560)`,
         })
     }
     if (syntheticKey) {
         available.push({
             backend: "synthetic",
             cfg: { backend: "synthetic", apiKey: syntheticKey, model: DEFAULT_SYNTHETIC_MODEL, url: SYNTHETIC_EMBEDDINGS_URL },
-            label: `synthetic: ${DEFAULT_SYNTHETIC_MODEL} (768-dim, zero-padded to 4096; uses the Synthetic key)`,
+            label: `synthetic: ${DEFAULT_SYNTHETIC_MODEL} (768-dim, truncated to 2560; uses the Synthetic key)`,
         })
     }
     if (lkeapKey) {
         available.push({
             backend: "lkeap",
             cfg: { backend: "lkeap", apiKey: lkeapKey, model: DEFAULT_LKEAP_MODEL, url: LKEAP_EMBEDDINGS_URL },
-            label: `lkeap: ${DEFAULT_LKEAP_MODEL} via Tencent LKEAP (zero-padded to 4096; uses the LKEAP key)`,
+            label: `lkeap: ${DEFAULT_LKEAP_MODEL} via Tencent LKEAP (truncated to 2560; uses the LKEAP key)`,
         })
     }
     if (minimaxKey) {
         available.push({
             backend: "minimax",
             cfg: { backend: "minimax", apiKey: minimaxKey, model: DEFAULT_MINIMAX_MODEL, groupId: minimaxGroup || undefined },
-            label: `minimax: ${DEFAULT_MINIMAX_MODEL} (1536-dim, zero-padded to 4096; uses the MiniMax key${minimaxGroup ? "" : ", MINIMAX_GROUP_ID unset"})`,
+            label: `minimax: ${DEFAULT_MINIMAX_MODEL} (1536-dim, truncated to 2560; uses the MiniMax key${minimaxGroup ? "" : ", MINIMAX_GROUP_ID unset"})`,
         })
     }
     return available
@@ -581,7 +607,7 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
         return {
             ok: false,
             message:
-                "error: no embedding backend configured. Enable GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1, signed in), or set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), or any of these provider keys: OPENAI_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY/GOOGLE_API_KEY, ZAI_API_KEY, AI_GATEWAY_API_KEY, SYNTHETIC_API_KEY, LKEAP_API_KEY, MINIMAX_API_KEY; then re-run.",
+                "error: no embedding backend configured. Enable GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1, signed in), or set LOCAL_LLM_API_BASE (self-hosted), or any of these provider keys: OPENAI_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY/GOOGLE_API_KEY, ZAI_API_KEY, AI_GATEWAY_API_KEY, SYNTHETIC_API_KEY, LKEAP_API_KEY, MINIMAX_API_KEY; then re-run.",
         }
     }
     if (available.length === 1) return { ok: true, cfg: available[0].cfg }
@@ -623,10 +649,10 @@ function resolvePinnedBackend(
 
     const cfg = { ...found.cfg }
     if (wantBackend === "self_hosted") {
-        if (cfg.model !== wantModel) {
+        if (cfg.model && cfg.model !== wantModel) {
             return {
                 ok: false,
-                message: `error: this RAG corpus was embedded with the self-hosted model '${wantModel}', but the endpoint is now configured for '${cfg.model}'. These are incompatible — restore OPENCODE_EMBEDDING_MODEL='${wantModel}', or ingest into a fresh corpus.`,
+                message: `error: this RAG corpus was embedded with the self-hosted model '${wantModel}', but the endpoint is now configured for '${cfg.model}'. These are incompatible — point LOCAL_LLM_API_BASE at a gateway serving '${wantModel}', or ingest into a fresh corpus.`,
             }
         }
     } else {
@@ -840,7 +866,7 @@ async function ingestOne(
     log(`      document_id=${docId}`)
 
     log(`[5/5] inserting rag_chunks (${chunks.length} rows)`)
-    // Each row is ~37 KB (4096 floats at 7-decimal precision + content); 10 rows
+    // Each row is ~37 KB (2560 floats at 7-decimal precision + content); 10 rows
     // per request stays under the nginx proxy's default 1 MB limit.
     const BATCH = 10
     for (let i = 0; i < chunks.length; i += BATCH) {
@@ -932,7 +958,7 @@ const IngestPdfParams = Type.Object(
                 ],
                 {
                     description:
-                        "Which embedding backend to use. Each is available only when its credential is set: copilot (OPENCLAW_ENABLE_COPILOT=1, signed in; text-embedding-3-small), self_hosted (OPENCODE_EMBEDDING_HOST/MODEL, 4096-dim), openai (OPENAI_API_KEY, text-embedding-3-large), openrouter (OPENROUTER_API_KEY), google (GEMINI_API_KEY/GOOGLE_API_KEY, gemini-embedding-001), zai (ZAI_API_KEY, embedding-3), vercel (AI_GATEWAY_API_KEY, openai/text-embedding-3-large), synthetic (SYNTHETIC_API_KEY, nomic-embed-text), lkeap (LKEAP_API_KEY), minimax (MINIMAX_API_KEY, embo-01; optional MINIMAX_GROUP_ID). All non-self-hosted vectors are zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool asks the user to pick — set this and re-run.",
+                        "Which embedding backend to use. Each is available only when its credential is set: copilot (OPENCLAW_ENABLE_COPILOT=1, signed in; text-embedding-3-small), self_hosted (LOCAL_LLM_API_BASE/MODEL, 2560-dim), openai (OPENAI_API_KEY, text-embedding-3-large), openrouter (OPENROUTER_API_KEY), google (GEMINI_API_KEY/GOOGLE_API_KEY, gemini-embedding-001), zai (ZAI_API_KEY, embedding-3), vercel (AI_GATEWAY_API_KEY, openai/text-embedding-3-large), synthetic (SYNTHETIC_API_KEY, nomic-embed-text), lkeap (LKEAP_API_KEY), minimax (MINIMAX_API_KEY, embo-01; optional MINIMAX_GROUP_ID). All non-self-hosted vectors are truncated to 2560. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool asks the user to pick — set this and re-run.",
                 },
             ),
         ),
@@ -1011,6 +1037,16 @@ async function runIngest(args: IngestPdfArgs): Promise<string> {
             : resolveBackend(args.embedding_backend, process.env)
         if (!res.ok) return res.message
         backend = res.cfg
+        if (backend.backend === "self_hosted" && !backend.model) {
+            try {
+                backend.model = await discoverEmbeddingModel(backend.host!, backend.apiKey, log)
+            } catch (e) {
+                return (e as { message?: string })?.message ?? String(e)
+            }
+        }
+        if (pinned && pinned.backend === "self_hosted" && backend.model !== pinned.model) {
+            return `error: this RAG corpus was embedded with the self-hosted model '${pinned.model}', but the endpoint now resolves to '${backend.model}'. The gateway must serve the embedding model '${pinned.model}', or ingest into a fresh corpus.`
+        }
         log(
             `embedding backend: ${backend.backend} (model=${backend.model}, dims=${EMBED_DIMS})` +
                 (pinned ? " [pinned to existing corpus]" : ""),
@@ -1225,7 +1261,7 @@ export default defineToolPlugin({
         tool({
             name: "ingest_pdf",
             description:
-                "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is auto-selected from whatever is configured: GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1), a self-hosted OPENCODE_EMBEDDING_HOST endpoint, or any provider key that supports embeddings — OpenAI, OpenRouter, Google Gemini, Z.AI, Vercel AI Gateway, Synthetic, Tencent LKEAP, or MiniMax. If exactly one is configured it is used; if more than one is configured the tool asks you to choose via embedding_backend.",
+                "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 2560-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is auto-selected from whatever is configured: GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1), a self-hosted LOCAL_LLM_API_BASE endpoint, or any provider key that supports embeddings — OpenAI, OpenRouter, Google Gemini, Z.AI, Vercel AI Gateway, Synthetic, Tencent LKEAP, or MiniMax. If exactly one is configured it is used; if more than one is configured the tool asks you to choose via embedding_backend.",
             parameters: IngestPdfParams,
             execute: async (args: IngestPdfArgs) => runIngest(args),
         }),

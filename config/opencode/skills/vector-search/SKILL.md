@@ -4,41 +4,42 @@ description: Embed text and run K-nearest-neighbour similarity search over pgvec
 ---
 
 End-to-end vector workflow: generate embeddings, store them, index them, search them.
-Embeddings are 4096-dim floats from a local model reached via an OpenAI-compatible
-API; storage uses `vector(4096)`; indexing uses an HNSW index on the binary-quantized
+Embeddings are 2560-dim floats from a local model reached via an OpenAI-compatible
+API; storage uses `vector(2560)`; indexing uses an HNSW index on the binary-quantized
 form (Hamming distance) for speed; search reranks the binary candidates with exact
 cosine distance for precision.
 
 ## Env vars
 
 ```bash
-echo $OPENCODE_EMBEDDING_HOST    # e.g. http://embedding_host:8801
-echo $OPENCODE_EMBEDDING_MODEL   # e.g. llama-embed-nemotron-8b
+echo $LOCAL_LLM_API_BASE    # e.g. http://local_llm:8080
+EMBED_MODEL=$(curl -s -H "Authorization: Bearer $LOCAL_LLM_API_KEY" "$LOCAL_LLM_API_BASE/v1/models" | jq -r '.data[].id | select(test("embed";"i"))' | head -1)   # discover the embedding model from /v1/models
 ```
 
 ## Generate an embedding
 
-The model returns a 4096-dim float vector. Convert it to a pgvector literal in one
+The model returns a 2560-dim float vector. Convert it to a pgvector literal in one
 shot:
 
 ```bash
-curl -s -X POST "$OPENCODE_EMBEDDING_HOST/v1/embeddings" \
+curl -s -X POST "$LOCAL_LLM_API_BASE/v1/embeddings" \
+  -H "Authorization: Bearer $LOCAL_LLM_API_KEY" \
   -H "Content-Type: application/json" \
-  -d "{\"model\": \"$OPENCODE_EMBEDDING_MODEL\", \"input\": \"text to embed\"}" \
+  -d "{\"model\": \"$EMBED_MODEL\", \"input\": \"text to embed\"}" \
   | jq -r '(.data[0].embedding // .embedding) | "[" + (map(tostring) | join(",")) + "]"'
 ```
 
-This prints `"[v1,v2,...,v4096]"` — store it directly in a `vector` column. The
+This prints `"[v1,v2,...,v2560]"` — store it directly in a `vector` column. The
 `(.data[0].embedding // .embedding)` filter accepts both the OpenAI-style
 (`/v1/embeddings`) and llama.cpp-native (`/embedding`) response shapes. **Do not**
 binarize on the client side — pgvector does that at index time.
 
 ## Match the corpus's embedding model (CRITICAL for search)
 
-Embeddings from different models are NOT comparable (e.g. `llama-embed-nemotron-8b`
-4096-dim vs OpenAI `text-embedding-3-large` 3072-dim zero-padded to 4096). A query
+Embeddings from different models are NOT comparable (e.g. `the embedding model reported by /v1/models`
+2560-dim vs OpenAI `text-embedding-3-large` 3072-dim fit (padded/truncated) to 2560). A query
 MUST be embedded with the SAME backend+model the corpus was built with, and padded
-to 4096 the same way — otherwise search returns garbage.
+to 2560 the same way — otherwise search returns garbage.
 
 `ingest_pdf` records this per document. Read it before searching:
 
@@ -48,14 +49,14 @@ curl -s "http://postgrest_app:3000/rag_documents?select=metadata&order=id.asc&li
   | jq -r '.[0].metadata | "\(.embed_backend)\t\(.embed_model)"'
 ```
 
-Embed the query with that backend/model (self_hosted: `$OPENCODE_EMBEDDING_HOST`;
+Embed the query with that backend/model (self_hosted: `$LOCAL_LLM_API_BASE`;
 openai: `https://api.openai.com/v1/embeddings`; openrouter:
 `https://openrouter.ai/api/v1/embeddings`, with the matching API key) and right-pad
-to 4096 — the jq filter does it automatically:
+to 2560 — the jq filter does it automatically:
 
 ```bash
 ... | jq -r '(.data[0].embedding // .embedding) as $e
-             | ($e + [range(4096 - ($e|length)) | 0])
+             | (($e[:2560]) + [range(2560 - ($e[:2560]|length)) | 0])
              | "[" + (map(tostring) | join(",")) + "]"'
 ```
 
@@ -66,7 +67,7 @@ with a different model.
 
 ### 1. Create a table with a vector column
 
-(See **create-table**.) Map `vector` → `vector(4096)`:
+(See **create-table**.) Map `vector` → `vector(2560)`:
 
 ```json
 {
@@ -90,7 +91,7 @@ curl -s -X POST http://postgrest_app:3000/rpc/create_vector_index \
   -d '{"p_table_name": "docs", "p_embedding_column_name": "embedding"}'
 ```
 
-This indexes `binary_quantize(embedding)::bit(4096)` with `bit_hamming_ops`, sidestepping
+This indexes `binary_quantize(embedding)::bit(2560)` with `bit_hamming_ops`, sidestepping
 HNSW's 2000-dim limit on the `vector` type (the `bit` type supports up to 64000 dims).
 
 ### 4. Search
@@ -123,8 +124,8 @@ similar). The embedding column is omitted from the response.
   `embedding_backend` set.
 - One corpus = one embedding model. Embed queries with the SAME backend+model the
   corpus was built with (read `rag_documents.metadata.embed_backend`/`embed_model`)
-  and pad to 4096. Never mix models in a table; if the model is unavailable, say so.
-- Vectors are always 4096-dim — anything else won't fit `vector(4096)` or the index.
+  and pad to 2560. Never mix models in a table; if the model is unavailable, say so.
+- Vectors are always 2560-dim — anything else won't fit `vector(2560)` or the index.
   If the model dimension changes, the schema needs to change too.
 - Never binary-quantize on the client side. The index does it.
 - Prefer "load then index" for sizeable batches — building the index after data is

@@ -32,7 +32,7 @@ curl -s -X POST http://postgrest_app:3000/rpc/create_table \
 | `string` | `text` | |
 | `number` | `numeric` | |
 | `datetime` | `timestamp` | |
-| `vector` | `vector(4096)` | 4096-dim pgvector column; see **vector-search** skill |
+| `vector` | `vector(2560)` | 2560-dim pgvector column; see **vector-search** skill |
 | `seqnumber` | `numeric` + auto-increment sequence | Use for primary-key IDs |
 
 ## After creating

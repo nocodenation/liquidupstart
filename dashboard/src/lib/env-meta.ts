@@ -61,7 +61,7 @@ export function inputType(key: string): InputType {
 // Sections rendered collapsed by default (matched against the full banner
 // title); the autogenerate-marked section is collapsed independently.
 export function isCollapsedSection(title: string): boolean {
-  return /OPENCODE CONFIGURATION/i.test(title);
+  return false;
 }
 
 // Subheadings that fold the rest of their section into a nested collapsible.
@@ -79,7 +79,7 @@ const SECTION_DESCRIPTIONS: [RegExp, string][] = [
   [/USER CAN CHANGE ON FIRST RUN/i, 'Credentials you may want to set yourself before the first start.'],
   [/LLM PROVIDER API KEYS/i, 'API keys of LLM providers, used by the AI services (optional).'],
   [/OPENCLAW CONFIGURATION/i, 'Model & backend selection for OpenClaw, the recommended AI harness.'],
-  [/OPENCODE CONFIGURATION/i, 'Model, Ollama endpoint and timeout settings for the OpenCode web UI.'],
+  [/OPENCODE CONFIGURATION/i, 'Self-hosted local LLM endpoint, shared by OpenCode and OpenClaw.'],
   [/LIQUID AUTHENTICATION/i, 'Login and TLS keystore credentials for Liquid.'],
   [/IMAGE BUILD CONFIGURATION/i, 'Extra packages & commands baked into the Docker images by build.sh.']
 ];

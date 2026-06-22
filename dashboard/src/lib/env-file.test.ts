@@ -183,15 +183,14 @@ describe('env-meta', () => {
     expect(inputType('OPENCLAW_ENABLE_CLAUDE_CLI')).toBe('checkbox');
     expect(inputType('LIQUID_SYSTEM_DEPENDENCIES_MODE')).toBe('select-mode');
     expect(inputType('SYSTEM_HTTP_PORT')).toBe('number');
-    expect(inputType('OPENCODE_TIMEOUT')).toBe('number');
     expect(inputType('LIQUID_PASSWORD')).toBe('password');
     expect(inputType('POSTGREST_JWT_SECTET')).toBe('password');
-    expect(inputType('OPENCODE_MODEL')).toBe('text');
+    expect(inputType('LOCAL_LLM_API_BASE')).toBe('text');
   });
 
-  test('collapse defaults: OPENCODE section and PER-IMAGE OVERRIDES subheading', () => {
-    expect(isCollapsedSection('7. OPENCODE CONFIGURATION')).toBe(true);
-    expect(isCollapsedSection('6. OPENCLAW CONFIGURATION')).toBe(false);
+  test('collapse defaults: no collapsed sections; PER-IMAGE OVERRIDES subheading collapses', () => {
+    expect(isCollapsedSection('6. SELF-HOSTED LOCAL LLM + OPENCODE CONFIGURATION')).toBe(false);
+    expect(isCollapsedSection('7. OPENCLAW CONFIGURATION')).toBe(false);
     expect(isCollapsedSubheading('PER-IMAGE OVERRIDES')).toBe(true);
     expect(isCollapsedSubheading('SYSTEM_DEPENDENCIES')).toBe(false);
   });

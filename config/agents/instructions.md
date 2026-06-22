@@ -135,8 +135,10 @@ values back in responses or logs.
 | Var | Purpose |
 |---|---|
 | `$PGADMIN_DEFAULT_EMAIL` | Nextcloud WebDAV username (also pgAdmin SSO email) |
-| `$OPENCODE_EMBEDDING_HOST` | Base URL of the OpenAI-compatible embedding server |
-| `$OPENCODE_EMBEDDING_MODEL` | Embedding model name |
+| `$LOCAL_LLM_API_BASE` | Base URL of the OpenAI-compatible LLM/embedding server (no `/v1` suffix) |
+| `$LOCAL_LLM_API_KEY` | Bearer token for that server (send as `Authorization: Bearer`) |
+
+The embedding model is **not** configured — discover it from `$LOCAL_LLM_API_BASE/v1/models` (the id matching `embed`).
 | `$LIQUID_USERNAME` | Liquid single-user login — use to generate an API bearer token |
 | `$LIQUID_PASSWORD` | Liquid single-user password — use to generate an API bearer token |
 | `$SYSTEM_HTTP_PORT` | External HTTP port — resolve with `echo $SYSTEM_HTTP_PORT`; use the result as `PORT` in every URL |

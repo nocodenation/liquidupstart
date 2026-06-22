@@ -72,7 +72,7 @@ SELECT key, value FROM json_each_text(v_columns)
     WHEN 'string'     THEN v_pgtype := 'text';
 WHEN 'number'     THEN v_pgtype := 'numeric';
 WHEN 'datetime'   THEN v_pgtype := 'timestamp';
-WHEN 'vector'     THEN v_pgtype := 'vector(4096)';
+WHEN 'vector'     THEN v_pgtype := 'vector(2560)';
 WHEN 'seqnumber'  THEN v_pgtype := 'numeric';
 WHEN 'jsonb'      THEN v_pgtype := 'jsonb';
 ELSE RAISE EXCEPTION 'Unsupported type "%" for column "%". Supported: string, number, datetime, vector, seqnumber, jsonb', v_val, v_key;
@@ -145,12 +145,12 @@ BEGIN
       JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE c.relname = v_idx_name AND n.nspname = v_schema
   ) THEN
-      -- Binary-quantized HNSW index: the column stays vector(4096) (which
+      -- Binary-quantized HNSW index: the column stays vector(2560) (which
       -- HNSW can't index directly because of the 2000-dim limit), but the
-      -- binary_quantize() expression projects to bit(4096) which HNSW supports
+      -- binary_quantize() expression projects to bit(2560) which HNSW supports
       -- up to 64000 dims. Queries must use the same expression to hit the index.
       EXECUTE format(
-          'CREATE INDEX %I ON %I.%I USING hnsw ((binary_quantize(%I)::bit(4096)) bit_hamming_ops) WITH (m = 4, ef_construction = 10)',
+          'CREATE INDEX %I ON %I.%I USING hnsw ((binary_quantize(%I)::bit(2560)) bit_hamming_ops) WITH (m = 4, ef_construction = 10)',
           v_idx_name, v_schema, p_table_name, p_embedding_column_name
       );
 END IF;
@@ -236,11 +236,11 @@ CREATE EXTENSION vector;
 
 
 -- Function: find_closest_vectors
--- Two-stage K-nearest-neighbour search over any table with a vector(4096) column:
+-- Two-stage K-nearest-neighbour search over any table with a vector(2560) column:
 --   1. Use the binary-quantized HNSW index to pull (p_k * p_rerank_factor) candidates
 --      by Hamming distance (very fast, slightly noisy).
 --   2. Rerank those candidates by exact cosine distance, return the top p_k.
--- p_query is a pgvector literal string: "[v1,v2,...,v4096]" of 4096 floats.
+-- p_query is a pgvector literal string: "[v1,v2,...,v2560]" of 2560 floats.
 -- Returns a JSONB array of the p_k nearest rows, ordered closest-first: the
 -- embedding column is omitted and a "distance" field (cosine, lower = more
 -- similar) is added.
@@ -266,13 +266,13 @@ BEGIN
                 || jsonb_build_object(''distance'', reranked.d) AS obj,
                 reranked.d
            FROM (
-             SELECT cand.*, (cand.%I <=> $1::vector(4096)) AS d
+             SELECT cand.*, (cand.%I <=> $1::vector(2560)) AS d
                FROM (
                  SELECT *
                    FROM %I
                   WHERE %I IS NOT NULL
-                  ORDER BY binary_quantize(%I)::bit(4096)
-                           <~> binary_quantize($1::vector(4096))
+                  ORDER BY binary_quantize(%I)::bit(2560)
+                           <~> binary_quantize($1::vector(2560))
                   LIMIT $2
                ) cand
               ORDER BY d

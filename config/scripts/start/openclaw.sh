@@ -87,6 +87,12 @@ ENABLE_CODEX="$(get_env OPENCLAW_ENABLE_CODEX)"
 ENABLE_GROK="$(get_env OPENCLAW_ENABLE_GROK)"
 [[ -z "$ENABLE_GROK" ]] && ENABLE_GROK=0
 
+LOCAL_LLM_API_BASE="$(get_env LOCAL_LLM_API_BASE)"
+LOCAL_LLM_API_KEY="$(get_env LOCAL_LLM_API_KEY)"
+# The self-hosted local provider is enabled whenever an endpoint is configured.
+ENABLE_LOCAL=0
+[[ -n "$LOCAL_LLM_API_BASE" ]] && ENABLE_LOCAL=1
+
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `setup`
 # (no --wizard) is non-interactive. openclaw-cli shares the gateway's netns, so
@@ -143,7 +149,8 @@ for _bw in \
   "${ENABLE_CLAUDE_CLI}:claude-cli/*" \
   "${ENABLE_COPILOT}:github-copilot/*" \
   "${ENABLE_CODEX}:codex/*" \
-  "${ENABLE_GROK}:xai/*"; do
+  "${ENABLE_GROK}:xai/*" \
+  "${ENABLE_LOCAL}:local/*"; do
   if [[ "${_bw%%:*}" == "1" && ",${MODEL_WILDCARDS}," != *",${_bw##*:},"* ]]; then
     MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_bw##*:}"
   fi
@@ -152,6 +159,37 @@ done
 if [[ ! -f "$CONFIG_JSON" ]]; then
   echo "Warning: ${CONFIG_JSON} not found after setup; cannot patch config." >&2
 else
+  LOCAL_LLM_MODELS_JSON="[]"
+  if [[ "$ENABLE_LOCAL" == "1" ]]; then
+    LOCAL_LLM_HOST_IP="$(get_env LOCAL_LLM_HOST_IP)"
+    _llm_host="${LOCAL_LLM_API_BASE#*://}"; _llm_host="${_llm_host%%[:/]*}"
+    _addhost=()
+    [[ -n "$_llm_host" && -n "$LOCAL_LLM_HOST_IP" ]] && _addhost=(--add-host "${_llm_host}:${LOCAL_LLM_HOST_IP}")
+    LOCAL_LLM_MODELS_JSON="$(docker run --rm ${_addhost[@]+"${_addhost[@]}"} \
+      -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
+      -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
+      --entrypoint node \
+      ghcr.io/openclaw/openclaw:latest \
+      -e '
+        (async () => {
+          const base = process.env.LOCAL_LLM_API_BASE.replace(/\/+$/, "");
+          const key = process.env.LOCAL_LLM_API_KEY;
+          const headers = key ? { Authorization: "Bearer " + key } : {};
+          try {
+            const res = await fetch(base + "/v1/models", { headers });
+            if (!res.ok) { process.stderr.write("local models discovery: HTTP " + res.status + "\n"); process.stdout.write("[]"); return; }
+            const j = await res.json();
+            process.stdout.write(JSON.stringify((j.data || []).map((m) => m.id).filter(Boolean)));
+          } catch (e) {
+            process.stderr.write("local models discovery failed: " + e.message + "\n");
+            process.stdout.write("[]");
+          }
+        })();
+      ' || true)"
+    [[ -z "$LOCAL_LLM_MODELS_JSON" ]] && LOCAL_LLM_MODELS_JSON="[]"
+    echo "openclaw: discovered local models from ${LOCAL_LLM_API_BASE}/v1/models -> ${LOCAL_LLM_MODELS_JSON}" >&2
+  fi
+
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
   docker run --rm --user 0:0 \
@@ -160,6 +198,10 @@ else
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
     -e ENABLE_GROK="${ENABLE_GROK}" \
+    -e ENABLE_LOCAL="${ENABLE_LOCAL}" \
+    -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
+    -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
+    -e LOCAL_LLM_MODELS_JSON="${LOCAL_LLM_MODELS_JSON}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
     --entrypoint node \
@@ -195,6 +237,7 @@ else
       const enableCopilot = process.env.ENABLE_COPILOT === "1";
       const enableCodex = process.env.ENABLE_CODEX === "1";
       const enableGrok = process.env.ENABLE_GROK === "1";
+      const enableLocal = process.env.ENABLE_LOCAL === "1";
       c.agents = c.agents || {};
       c.agents.defaults = c.agents.defaults || {};
       c.agents.defaults.models = c.agents.defaults.models || {};
@@ -252,6 +295,24 @@ else
         }
       }
 
+      if (enableLocal && process.env.LOCAL_LLM_API_BASE) {
+        c.models = c.models || {};
+        c.models.providers = c.models.providers || {};
+        c.models.providers.local = c.models.providers.local || {};
+        c.models.providers.local.baseUrl = process.env.LOCAL_LLM_API_BASE.replace(/\/+$/, "") + "/v1";
+        c.models.providers.local.api = "openai-completions";
+        c.models.providers.local.apiKey = process.env.LOCAL_LLM_API_KEY || "local-no-auth";
+        c.models.providers.local.auth = "api-key";
+        let discovered = [];
+        try { discovered = JSON.parse(process.env.LOCAL_LLM_MODELS_JSON || "[]"); } catch (e) {}
+        const chatModels = discovered.filter((id) => !/embed/i.test(id));
+        if (chatModels.length) {
+          c.models.providers.local.models = chatModels.map((id) => ({ id, name: id }));
+        } else {
+          delete c.models.providers.local;
+        }
+      }
+
       // Model picker allowlist: add a `provider/*` wildcard per credentialed
       // provider (from MODEL_WILDCARDS) so the picker is not limited to the primary.
       // Idempotent and additive: existing entries (e.g. the claude-cli ref) survive.
@@ -302,6 +363,11 @@ else
       }
       if (enableGrok) {
         console.log("openclaw.json: enabled bundled xai plugin (Grok subscription provider for xai/* turns)");
+      }
+      if (enableLocal && c.models && c.models.providers && c.models.providers.local) {
+        console.log("openclaw.json: registered self-hosted local provider (" + c.models.providers.local.baseUrl + ") with models [" + c.models.providers.local.models.map((m) => m.id).join(", ") + "] and allowlisted local/*");
+      } else if (enableLocal && process.env.LOCAL_LLM_API_BASE) {
+        console.log("openclaw.json: local provider NOT registered — no chat models discovered from " + process.env.LOCAL_LLM_API_BASE + "/v1/models (is the endpoint up and reachable from containers?)");
       }
     '
 fi
