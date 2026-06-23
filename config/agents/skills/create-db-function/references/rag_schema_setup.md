@@ -11,9 +11,9 @@ It is a **historical record**, not a recipe to copy.
 > genuinely can't express what you need — and make it generic, not table-specific. See
 > the **create-db-function** and **vector-search** skills.
 
-> **Data-type correction (important).** The embedding **column** is `vector(4096)` (raw
-> floats), **not** `bit(4096)`. `bit(4096)` only appears as an *index/query* projection
-> `binary_quantize(embedding)::bit(4096)`, and the bit HNSW opclass is **`bit_hamming_ops`**
+> **Data-type correction (important).** The embedding **column** is `vector(2560)` (raw
+> floats), **not** `bit(2560)`. `bit(2560)` only appears as an *index/query* projection
+> `binary_quantize(embedding)::bit(2560)`, and the bit HNSW opclass is **`bit_hamming_ops`**
 > — pgvector has no `bit_cosine_ops`, and `vector_cosine_ops` is invalid on a bit column.
 > Cosine is applied only when reranking the raw `vector` column. Declaring `embedding` as
 > `bit` breaks `find_closest_vectors` (it calls `binary_quantize(col)`, which needs a
@@ -38,7 +38,7 @@ id              bigserial PRIMARY KEY
 document_id     bigint REFERENCES rag_documents(id) ON DELETE CASCADE
 chunk_index     int NOT NULL
 content         text NOT NULL
-embedding       vector(4096)    -- raw float embedding; bit(4096) is index-only
+embedding       vector(2560)    -- raw float embedding; bit(2560) is index-only
 token_count     int
 created_at      timestamptz DEFAULT now()
 ```
@@ -62,7 +62,7 @@ BEGIN
     document_id bigint REFERENCES rag_documents(id) ON DELETE CASCADE,
     chunk_index int NOT NULL,
     content text NOT NULL,
-    embedding vector(4096),
+    embedding vector(2560),
     token_count int,
     created_at timestamptz DEFAULT now()
   );
@@ -72,12 +72,12 @@ END;
 
 ### `create_rag_vector_index()` → `jsonb`
 Creates an HNSW index over the binary-quantized form of `rag_chunks.embedding`
-(`vector(4096)` column → `bit(4096)` projection, Hamming ops).
+(`vector(2560)` column → `bit(2560)` projection, Hamming ops).
 
 ```plpgsql
 BEGIN
   CREATE INDEX IF NOT EXISTS rag_chunks_embedding_hnsw_idx
-    ON rag_chunks USING hnsw ((binary_quantize(embedding)::bit(4096)) bit_hamming_ops)
+    ON rag_chunks USING hnsw ((binary_quantize(embedding)::bit(2560)) bit_hamming_ops)
     WITH (m = 16, ef_construction = 64);
   RETURN jsonb_build_object('status', 'done', 'index', 'rag_chunks_embedding_hnsw_idx');
 END;
@@ -89,7 +89,7 @@ Generic version for any table/column.
 ```plpgsql
 BEGIN
   EXECUTE format(
-    'CREATE INDEX IF NOT EXISTS %I ON %I USING hnsw ((binary_quantize(%I)::bit(4096)) bit_hamming_ops) WITH (m = 16, ef_construction = 64)',
+    'CREATE INDEX IF NOT EXISTS %I ON %I USING hnsw ((binary_quantize(%I)::bit(2560)) bit_hamming_ops) WITH (m = 16, ef_construction = 64)',
     p_table_name || '_' || p_embedding_column_name || '_hnsw_idx',
     p_table_name,
     p_embedding_column_name
@@ -108,9 +108,9 @@ END;
 | Document ID | 1 |
 | Filename | `$100M_Offers-How_To_Make_Offers_So_Good_People_Feel_Stupid_Saying_No.pdf` |
 | Chunks created | 157 (each ~400 tokens, 50-token overlap) |
-| Embedding model | `llama-embed-nemotron-8b` via `$OPENCODE_EMBEDDING_HOST` |
-| Vector dimension | 4096 (stored as `vector(4096)`; index projects to `bit(4096)`) |
-| Index type | HNSW on `binary_quantize(embedding)::bit(4096)` with `bit_hamming_ops` |
+| Embedding model | `the embedding model reported by /v1/models` via `$LOCAL_LLM_API_BASE` |
+| Vector dimension | 2560 (stored as `vector(2560)`; index projects to `bit(2560)`) |
+| Index type | HNSW on `binary_quantize(embedding)::bit(2560)` with `bit_hamming_ops` |
 
 ## Verification Queries
 
@@ -125,7 +125,7 @@ curl -s "http://proxy:8888/rag_chunks?document_id=eq.1&select=id,chunk_index,tok
 curl -s -X POST http://proxy:8888/rpc/find_closest_vectors \
   -H "Host: postgrest.localhost:8888" \
   -H "Content-Type: application/json" \
-  -d '{"p_table_name": "rag_chunks", "p_embedding_column": "embedding", "p_query": "[...4096 floats...]", "p_k": 5, "p_rerank_factor": 4}'
+  -d '{"p_table_name": "rag_chunks", "p_embedding_column": "embedding", "p_query": "[...2560 floats...]", "p_k": 5, "p_rerank_factor": 4}'
 ```
 
 ## Test Search Results

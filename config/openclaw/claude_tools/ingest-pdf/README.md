@@ -15,7 +15,7 @@ extraction, js-tiktoken chunking, embedding, PostgREST inserts into
   when `OPENCLAW_ENABLE_CLAUDE_CLI=1`:
   `claude mcp add-json -s user ingest-pdf '{"type":"stdio","command":"node","args":["/home/node/.claude-tools/ingest-pdf/dist/index.mjs"]}'`.
 - Runs inside the gateway, inheriting `POSTGREST_API_KEY`, `POSTGREST_URL`,
-  `OPENCODE_EMBEDDING_HOST`/`MODEL`, `OPENCLAW_WORKSPACE_DIR`, and any configured
+  `LOCAL_LLM_API_BASE`/`MODEL`, `OPENCLAW_WORKSPACE_DIR`, and any configured
   embedding-provider key (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`/
   `GOOGLE_API_KEY`, `ZAI_API_KEY`, `AI_GATEWAY_API_KEY`, `SYNTHETIC_API_KEY`,
   `LKEAP_API_KEY`, `MINIMAX_API_KEY` + `MINIMAX_GROUP_ID`) from the `claude` process env.

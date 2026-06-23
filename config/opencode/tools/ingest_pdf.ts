@@ -1,10 +1,10 @@
 /**
  * OpenCode tool — PDF ingester for the Liquid Upstart RAG store. Extracts text,
  * chunks (~400 tokens / 50 overlap), embeds each chunk, and inserts into
- * rag_documents / rag_chunks via PostgREST (column `vector(4096)`).
+ * rag_documents / rag_chunks via PostgREST (column `vector(2560)`).
  *
- * Backends (resolveBackend): self_hosted (4096-dim native), openai and
- * openrouter (text-embedding-3-large, 3072-dim zero-padded to 4096). Auto-picks
+ * Backends (resolveBackend): self_hosted (2560-dim native), openai and
+ * openrouter (text-embedding-3-large, 3072-dim truncated to 2560). Auto-picks
  * the only one configured; with >1 it asks the user via embedding_backend.
  *
  * Tool surface: input (PDF file/folder), title? (single-file), dry_run?,
@@ -20,15 +20,15 @@ import { extractText, getDocumentProxy } from "unpdf"
 
 // === Config ===
 const DEFAULT_POSTGREST = "http://postgrest_app:3000"
-const EMBED_DIMS = 4096 // vector(4096): self-hosted emits this natively; OpenAI is zero-padded up to it
+const EMBED_DIMS = 2560 // vector(2560): self-hosted emits this natively; OpenAI is zero-padded/truncated to it
 const CHUNK_TOKENS = 400
 const CHUNK_OVERLAP = 50
 const MAX_RETRIES = 6
 const INITIAL_BACKOFF_S = 2.0
 const MAX_BACKOFF_S = 60.0
 
-// text-embedding-3-large is 3072-dim (max), so vectors are right-padded to
-// EMBED_DIMS to share the vector(4096) column; the zero tail does not affect
+// text-embedding-3-large is 3072-dim (max), so vectors are fit to EMBED_DIMS
+// to share the vector(2560) column; truncation/padding does not affect
 // cosine/inner-product ranking within a single-backend table.
 const OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 const DEFAULT_OPENAI_MODEL = "text-embedding-3-large"
@@ -122,8 +122,10 @@ function vectorLiteral(vec: number[]): string {
     return "[" + vec.map((x) => x.toFixed(7)).join(",") + "]"
 }
 
-async function embedText(host: string, model: string, text: string, log: Logger): Promise<number[]> {
+async function embedText(host: string, model: string, text: string, log: Logger, apiKey?: string): Promise<number[]> {
     const url = `${host.replace(/\/$/, "")}/v1/embeddings`
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
     let attempt = 0
     let backoff = INITIAL_BACKOFF_S
     while (true) {
@@ -131,7 +133,7 @@ async function embedText(host: string, model: string, text: string, log: Logger)
         try {
             r = await fetch(url, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers,
                 body: JSON.stringify({ model, input: text }),
             })
         } catch (e) {
@@ -184,13 +186,14 @@ async function embedAll(
     model: string,
     texts: string[],
     log: Logger,
+    apiKey?: string,
 ): Promise<number[][]> {
     // Embed sequentially (one string per request) to match the documented
     // instructions.md usage, even though some servers accept an array.
     const out: number[][] = []
     const total = texts.length
     for (let i = 0; i < total; i++) {
-        out.push(await embedText(host, model, texts[i], log))
+        out.push(await embedText(host, model, texts[i], log, apiKey))
         if ((i + 1) % 10 === 0 || i + 1 === total) {
             log(`  embedded ${i + 1}/${total}`)
         }
@@ -199,10 +202,34 @@ async function embedAll(
 }
 
 // === Embedding via OpenAI-compatible endpoints (openai, openrouter) ===
-// Right-pad with zeros up to `dims`: 3072-dim hosted models -> 4096-dim column.
+// Fit a hosted vector to the column width: right-pad short vectors with zeros,
+// truncate longer ones (e.g. 3072-dim text-embedding-3-large -> 2560).
+async function discoverEmbeddingModel(host: string, apiKey: string | undefined, log: Logger): Promise<string> {
+    const url = `${host.replace(/\/$/, "")}/v1/models`
+    const headers: Record<string, string> = {}
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`
+    const r = await fetch(url, { headers })
+    if (!r.ok) throw new Error(`could not list models at ${url}: HTTP ${r.status}`)
+    const body = (await r.json()) as { data?: Array<{ id?: string }> }
+    const ids = (body.data ?? []).map((m) => m.id).filter((x): x is string => !!x)
+    const embeds = ids.filter((id) => /embed/i.test(id))
+    if (embeds.length === 1) {
+        log(`  auto-detected embedding model: ${embeds[0]}`)
+        return embeds[0]
+    }
+    if (embeds.length > 1) {
+        throw new Error(`multiple embedding models at ${url} (${embeds.join(", ")}); the gateway must serve exactly one embedding model (an id containing "embed")`)
+    }
+    if (ids.length === 1) {
+        log(`  using the only model reported by ${url}: ${ids[0]}`)
+        return ids[0]
+    }
+    throw new Error(`could not auto-detect an embedding model from ${url} (${ids.join(", ") || "no models reported"}); the gateway must serve an embedding model (an id containing "embed")`)
+}
+
 function padToDims(vec: number[], dims: number): number[] {
     if (vec.length === dims) return vec
-    if (vec.length > dims) throw new Error(`embedding has ${vec.length} dims, more than the ${dims}-dim column`)
+    if (vec.length > dims) return vec.slice(0, dims)
     return vec.concat(new Array(dims - vec.length).fill(0))
 }
 
@@ -273,7 +300,7 @@ async function embedOpenAICompat(
 
 // Dispatch to the selected embedding backend.
 async function embedChunks(cfg: BackendConfig, texts: string[], log: Logger): Promise<number[][]> {
-    if (cfg.backend === "self_hosted") return embedAll(cfg.host!, cfg.model, texts, log)
+    if (cfg.backend === "self_hosted") return embedAll(cfg.host!, cfg.model, texts, log, cfg.apiKey)
     return embedOpenAICompat(cfg.url!, cfg.apiKey!, cfg.model, texts, log, cfg.backend)
 }
 
@@ -282,7 +309,7 @@ type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message
 
 // Env var(s) each backend needs, for "not configured" messages.
 const BACKEND_NEED: Record<string, string> = {
-    self_hosted: "OPENCODE_EMBEDDING_HOST and OPENCODE_EMBEDDING_MODEL",
+    self_hosted: "LOCAL_LLM_API_BASE",
     openai: "OPENAI_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
 }
@@ -291,33 +318,33 @@ type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
 
 // The configured backends, in priority order.
 function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
-    const embedHost = (env.OPENCODE_EMBEDDING_HOST ?? "").trim()
-    const embedModel = (env.OPENCODE_EMBEDDING_MODEL ?? "").trim()
+    const embedHost = (env.LOCAL_LLM_API_BASE ?? "").trim()
+    const embedKey = (env.LOCAL_LLM_API_KEY ?? "").trim()
     // `||` not `??`: a present-but-empty var (compose's `KEY: ${KEY:-}` -> "")
     // falls through to the next source instead of shadowing it.
     const openaiKey = (env.OPENAI_API_KEY || "").trim()
     const openrouterKey = (env.OPENROUTER_API_KEY ?? "").trim()
 
     const available: AvailBackend[] = []
-    if (embedHost && embedModel) {
+    if (embedHost) {
         available.push({
             backend: "self_hosted",
-            cfg: { backend: "self_hosted", host: embedHost, model: embedModel },
-            label: `self_hosted: ${embedModel} via ${embedHost} (4096-dim, no API cost)`,
+            cfg: { backend: "self_hosted", host: embedHost, model: "", apiKey: embedKey || undefined },
+            label: `self_hosted: auto-detect via ${embedHost}/v1/models (2560-dim, no API cost)`,
         })
     }
     if (openaiKey) {
         available.push({
             backend: "openai",
             cfg: { backend: "openai", apiKey: openaiKey, model: DEFAULT_OPENAI_MODEL, url: OPENAI_EMBEDDINGS_URL },
-            label: `openai: ${DEFAULT_OPENAI_MODEL} (3072-dim, zero-padded to 4096; uses the OpenAI key/quota)`,
+            label: `openai: ${DEFAULT_OPENAI_MODEL} (3072-dim, truncated to 2560; uses the OpenAI key/quota)`,
         })
     }
     if (openrouterKey) {
         available.push({
             backend: "openrouter",
             cfg: { backend: "openrouter", apiKey: openrouterKey, model: DEFAULT_OPENROUTER_MODEL, url: OPENROUTER_EMBEDDINGS_URL },
-            label: `openrouter: ${DEFAULT_OPENROUTER_MODEL} (3072-dim, zero-padded to 4096; uses the OpenRouter key/quota)`,
+            label: `openrouter: ${DEFAULT_OPENROUTER_MODEL} (3072-dim, truncated to 2560; uses the OpenRouter key/quota)`,
         })
     }
     return available
@@ -341,7 +368,7 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
         return {
             ok: false,
             message:
-                "error: no embedding backend configured. Set OPENCODE_EMBEDDING_HOST + OPENCODE_EMBEDDING_MODEL (self-hosted), OPENAI_API_KEY (OpenAI), or OPENROUTER_API_KEY (OpenRouter), then re-run.",
+                "error: no embedding backend configured. Set LOCAL_LLM_API_BASE (self-hosted), OPENAI_API_KEY (OpenAI), or OPENROUTER_API_KEY (OpenRouter), then re-run.",
         }
     }
     if (available.length === 1) return { ok: true, cfg: available[0].cfg }
@@ -383,10 +410,10 @@ function resolvePinnedBackend(
 
     const cfg = { ...found.cfg }
     if (wantBackend === "self_hosted") {
-        if (cfg.model !== wantModel) {
+        if (cfg.model && cfg.model !== wantModel) {
             return {
                 ok: false,
-                message: `error: this RAG corpus was embedded with the self-hosted model '${wantModel}', but the endpoint is now configured for '${cfg.model}'. These are incompatible — restore OPENCODE_EMBEDDING_MODEL='${wantModel}', or ingest into a fresh corpus.`,
+                message: `error: this RAG corpus was embedded with the self-hosted model '${wantModel}', but the endpoint is now configured for '${cfg.model}'. These are incompatible — point LOCAL_LLM_API_BASE at a gateway serving '${wantModel}', or ingest into a fresh corpus.`,
             }
         }
     } else {
@@ -600,7 +627,7 @@ async function ingestOne(
     log(`      document_id=${docId}`)
 
     log(`[5/5] inserting rag_chunks (${chunks.length} rows)`)
-    // Each row is ~37 KB (4096 floats at 7-decimal precision + content); 10 rows
+    // Each row is ~23 KB (2560 floats at 7-decimal precision + content); 10 rows
     // per request stays under the nginx proxy's default 1 MB limit.
     const BATCH = 10
     for (let i = 0; i < chunks.length; i += BATCH) {
@@ -637,7 +664,7 @@ async function findPdfs(folder: string, log: Logger): Promise<string[]> {
 // === Tool definition ===
 export default tool({
     description:
-        "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 4096-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is the self-hosted OPENCODE_EMBEDDING_HOST endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if more than one is configured, the tool asks you to choose via embedding_backend.",
+        "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 2560-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is the self-hosted LOCAL_LLM_API_BASE endpoint, OpenAI (OPENAI_API_KEY), or OpenRouter (OPENROUTER_API_KEY); if more than one is configured, the tool asks you to choose via embedding_backend.",
     args: {
         input: tool.schema
             .string()
@@ -668,7 +695,7 @@ export default tool({
             .enum(["self_hosted", "openai", "openrouter"])
             .optional()
             .describe(
-                "Which embedding backend to use. self_hosted = OPENCODE_EMBEDDING_HOST/MODEL (4096-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, zero-padded to 4096. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
+                "Which embedding backend to use. self_hosted = LOCAL_LLM_API_BASE/MODEL (2560-dim). openai = OPENAI_API_KEY (text-embedding-3-large). openrouter = OPENROUTER_API_KEY (openai/text-embedding-3-large). The OpenAI/OpenRouter vectors are 3072-dim, truncated to 2560. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool returns a prompt asking the user to pick — set this and re-run.",
             ),
     },
     async execute(args, context) {
@@ -739,6 +766,16 @@ export default tool({
                 : resolveBackend(args.embedding_backend, process.env)
             if (!res.ok) return res.message
             backend = res.cfg
+            if (backend.backend === "self_hosted" && !backend.model) {
+                try {
+                    backend.model = await discoverEmbeddingModel(backend.host!, backend.apiKey, log)
+                } catch (e) {
+                    return (e as { message?: string })?.message ?? String(e)
+                }
+            }
+            if (pinned && pinned.backend === "self_hosted" && backend.model !== pinned.model) {
+                return `error: this RAG corpus was embedded with the self-hosted model '${pinned.model}', but the endpoint now resolves to '${backend.model}'. The gateway must serve the embedding model '${pinned.model}', or ingest into a fresh corpus.`
+            }
             log(
                 `embedding backend: ${backend.backend} (model=${backend.model}, dims=${EMBED_DIMS})` +
                     (pinned ? " [pinned to existing corpus]" : ""),

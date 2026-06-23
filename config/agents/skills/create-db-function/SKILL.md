@@ -13,7 +13,7 @@ Built-in functions:
 - `create_table(p_table_name, p_columns, p_primary_keys)` — create a table. Types:
   `string`, `number`, `datetime`, `jsonb`, `vector`, `seqnumber`. See **create-table**.
 - `create_vector_index(p_table_name, p_embedding_column_name)` — HNSW index for a
-  `vector(4096)` embedding column. See **vector-search**.
+  `vector(2560)` embedding column. See **vector-search**.
 - `find_closest_vectors(p_table_name, p_embedding_column, p_query, p_k, p_rerank_factor)`
   — two-stage KNN vector search. See **vector-search**.
 - `deploy_function(...)` — deploy a genuinely new function (this skill).
@@ -108,4 +108,4 @@ curl -s -X POST http://proxy:8888/rpc/<function_name> \
 
 - **Do not recreate these one-off RAG functions.** They were deployed here historically and are now superseded by the built-ins — recreating them is the anti-pattern this skill warns against:
   - `setup_rag_schema()` → instead build `rag_documents` / `rag_chunks` with the **`create_table`** RPC (use `jsonb` for `metadata`, `vector` for `embedding`).
-  - `create_rag_vector_index()` → instead call the built-in **`create_vector_index(p_table_name, p_embedding_column_name)`** on the `vector(4096)` column.
+  - `create_rag_vector_index()` → instead call the built-in **`create_vector_index(p_table_name, p_embedding_column_name)`** on the `vector(2560)` column.

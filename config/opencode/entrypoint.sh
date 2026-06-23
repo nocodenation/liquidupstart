@@ -4,40 +4,77 @@ set -e
 mkdir -p "/root/.config/opencode"
 
 OPENCODE_PORT="${OPENCODE_SERVER_PORT:-4096}"
-OPENCODE_OLLAMA_URL="${OPENCODE_OLLAMA_HOST:-http://ollama:11434}"
-_TIMEOUT="${OPENCODE_TIMEOUT:-600000}"
-_CHUNK_TIMEOUT="${OPENCODE_CHUNK_TIMEOUT:-120000}"
+OPENCODE_OLLAMA_URL="${LOCAL_LLM_API_BASE:-http://ollama:11434}"
+_TIMEOUT=21600000
+_CHUNK_TIMEOUT=3600000
 
-# Model with '/' is provider/model; otherwise assume ollama.
-_MODEL_RAW="${OPENCODE_MODEL:-llama3.1:8b}"
-case "$_MODEL_RAW" in
-    */*)
-        OPENCODE_FULL_MODEL="$_MODEL_RAW"
-        OPENCODE_OLLAMA_MODEL="${_MODEL_RAW#ollama/}"
-        ;;
-    *)
-        OPENCODE_FULL_MODEL="ollama/$_MODEL_RAW"
-        OPENCODE_OLLAMA_MODEL="$_MODEL_RAW"
-        ;;
-esac
+_LLM_KEY_FIELD=""
+if [ -n "${LOCAL_LLM_API_KEY:-}" ]; then
+    _LLM_KEY_FIELD="
+        \"apiKey\": \"${LOCAL_LLM_API_KEY}\","
+fi
 
-# Build providers JSON block — ollama is always included
-_PROVIDERS="    \"llamacpp\": {
-      \"npm\": \"@ai-sdk/openai-compatible\",
-      \"name\": \"llamacpp\",
-      \"options\": {
-        \"baseURL\": \"${OPENCODE_OLLAMA_URL}/v1\",
-        \"timeout\": ${_TIMEOUT},
-        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
-      },
-      \"models\": {
-        \"${OPENCODE_OLLAMA_MODEL}\": {
-          \"name\": \"llamacpp: ${OPENCODE_OLLAMA_MODEL}\",
+# Discover models from the gateway's OpenAI-compatible /v1/models. Chat models are
+# every id that doesn't look like an embedding model; the first becomes the default.
+# The probe also reveals whether the endpoint requires a token (401/403).
+_MODELS_URL="${OPENCODE_OLLAMA_URL}/v1/models"
+_BODY=/tmp/llm_models.json
+_fetch_models() {
+    if [ -n "${LOCAL_LLM_API_KEY:-}" ]; then
+        curl -s -o "$_BODY" -w '%{http_code}' -H "Authorization: Bearer ${LOCAL_LLM_API_KEY}" "$_MODELS_URL" 2>/dev/null || true
+    else
+        curl -s -o "$_BODY" -w '%{http_code}' "$_MODELS_URL" 2>/dev/null || true
+    fi
+}
+_MODELS_JSON=""
+_code=000
+_try=0
+while [ "$_try" -lt 10 ]; do
+    _code="$(_fetch_models)"
+    [ "$_code" = "200" ] && { _MODELS_JSON="$(cat "$_BODY" 2>/dev/null || true)"; break; }
+    if [ "$_code" = "401" ] || [ "$_code" = "403" ]; then
+        if [ -n "${LOCAL_LLM_API_KEY:-}" ]; then
+            echo "WARNING: ${_MODELS_URL} rejected LOCAL_LLM_API_KEY (HTTP ${_code}) — check the token." >&2
+        else
+            echo "WARNING: ${_MODELS_URL} requires authentication (HTTP ${_code}) — set LOCAL_LLM_API_KEY." >&2
+        fi
+        break
+    fi
+    _try=$((_try + 1)); sleep 3
+done
+
+_CHAT_IDS="$(printf '%s' "$_MODELS_JSON" | jq -r '.data[].id | select(test("embed";"i") | not)' 2>/dev/null || true)"
+[ -z "$_CHAT_IDS" ] && echo "WARNING: no chat models discovered at ${OPENCODE_OLLAMA_URL}/v1/models — OpenCode will start without a model." >&2
+
+# Build the provider's models map from every discovered chat model.
+_MODELS_MAP=""
+for _m in $_CHAT_IDS; do
+    [ -z "$_MODELS_MAP" ] || _MODELS_MAP="${_MODELS_MAP},"
+    _MODELS_MAP="${_MODELS_MAP}
+        \"${_m}\": {
+          \"name\": \"llamacpp: ${_m}\",
           \"modalities\": {
             \"input\": [\"text\", \"image\"],
             \"output\": [\"text\"]
           }
-        }
+        }"
+done
+
+_DEFAULT_MODEL="$(printf '%s\n' $_CHAT_IDS | head -n1)"
+_MODEL_FIELD=""
+[ -n "$_DEFAULT_MODEL" ] && _MODEL_FIELD="
+  \"model\": \"llamacpp/${_DEFAULT_MODEL}\","
+
+# Build providers JSON block — the self-hosted llamacpp provider is always included
+_PROVIDERS="    \"llamacpp\": {
+      \"npm\": \"@ai-sdk/openai-compatible\",
+      \"name\": \"llamacpp\",
+      \"options\": {
+        \"baseURL\": \"${OPENCODE_OLLAMA_URL}/v1\",${_LLM_KEY_FIELD}
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      },
+      \"models\": {${_MODELS_MAP}
       }
     }"
 
@@ -133,8 +170,7 @@ if [ -n "${SYNTHETIC_API_KEY}" ]; then
     }"
 fi
 
-printf '{
-  "model": "%s",
+printf '{%s
   "instructions": ["/opencode/instructions.md"],
   "provider": {
 %s
@@ -144,7 +180,7 @@ printf '{
     "hostname": "0.0.0.0",
     "mdns": false
   }
-}\n' "$OPENCODE_FULL_MODEL" "$_PROVIDERS" "$OPENCODE_PORT" > "/root/.config/opencode/opencode.json"
+}\n' "$_MODEL_FIELD" "$_PROVIDERS" "$OPENCODE_PORT" > "/root/.config/opencode/opencode.json"
 
-echo "Starting opencode web on port $OPENCODE_PORT (model: $OPENCODE_FULL_MODEL)"
+echo "Starting opencode web on port $OPENCODE_PORT (model: ${_DEFAULT_MODEL:-<none discovered>})"
 exec opencode web

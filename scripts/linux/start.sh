@@ -27,6 +27,11 @@ HTTPS_PORT="${HTTPS_PORT:-8833}"
 
 APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
 APP_ID="${APP_ID:-0}"
+
+LOCAL_LLM_API_BASE="$(grep -E '^LOCAL_LLM_API_BASE=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"' || true)"
+LOCAL_LLM_HOST="${LOCAL_LLM_API_BASE#*://}"
+LOCAL_LLM_HOST="${LOCAL_LLM_HOST%%[:/]*}"
+export LOCAL_LLM_HOST="${LOCAL_LLM_HOST:-local_llm}"
 PROBE_IMAGE=""
 for _img in nginx:latest "liquidupstart/liquid:${APP_ID}" "liquidupstart/openclaw:${APP_ID}" \
             "liquidupstart/bun-runner:${APP_ID}" "liquidupstart/opencode:${APP_ID}" \
