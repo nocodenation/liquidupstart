@@ -261,16 +261,9 @@ EOF
   cat <<EOF
 
 ------------------------------------------------------------------
-Done. Three notes:
+Done.
 
-  1. Open a new shell (or: source your ~/.bashrc) so DOCKER_HOST
-     is set in your environment.
-
-  2. cgroup delegation takes full effect after a WSL restart.
-     From Windows PowerShell:  wsl --shutdown
-     Until then, --cpus / --memory limits may not be enforced.
-
-  3. The repository is at ${clone_dir}. Enter it with:
+  The Liquid Upstart is at ${clone_dir}. Enter it with:
        cd ${clone_dir}
 ------------------------------------------------------------------
 EOF
