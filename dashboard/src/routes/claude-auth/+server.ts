@@ -77,7 +77,7 @@ export async function GET() {
   const envFile = join(ENV_DIR, '.env');
   if (!existsSync(envFile)) return json({ needed: false });
   const env = parseEnvValues(readFileSync(envFile, 'utf8'));
-  if (env.get('OPENCLAW_ENABLE_CLAUDE_CLI')?.value !== '1') return json({ needed: false });
+  if (env.get('ENABLE_ANTHROPIC_CLAUDE_CODE')?.value !== '1') return json({ needed: false });
   if (env.get('CLAUDE_CODE_OAUTH_TOKEN')?.value) return json({ needed: false });
   if (!existsSync(join(ENV_DIR, 'volumes', '_openclaw', 'openclaw.json'))) {
     return json({ needed: false });

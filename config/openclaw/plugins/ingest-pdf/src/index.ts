@@ -378,12 +378,12 @@ async function embedViaCopilotGateway(url: string, texts: string[], log: Logger)
             const txt = await r.text().catch(() => "")
             if (r.status === 401 || r.status === 403) {
                 throw new Error(
-                    `copilot gateway HTTP ${r.status}: ${txt}. The github-copilot provider is not authenticated, or the gateway rejected the request. Sign in via the dashboard's GitHub Copilot panel, ensure OPENCLAW_ENABLE_COPILOT=1, and restart OpenClaw.`,
+                    `copilot gateway HTTP ${r.status}: ${txt}. The github-copilot provider is not authenticated, or the gateway rejected the request. Sign in via the dashboard's GitHub Copilot panel, ensure ENABLE_GITHUB_COPILOT=1, and restart OpenClaw.`,
                 )
             }
             if (r.status === 404 || r.status === 400) {
                 throw new Error(
-                    `copilot gateway HTTP ${r.status}: ${txt}. The gateway /v1/embeddings endpoint or memorySearch provider is not configured. Confirm OPENCLAW_ENABLE_COPILOT=1 and restart so openclaw.sh enables chatCompletions and sets memorySearch.provider=github-copilot.`,
+                    `copilot gateway HTTP ${r.status}: ${txt}. The gateway /v1/embeddings endpoint or memorySearch provider is not configured. Confirm ENABLE_GITHUB_COPILOT=1 and restart so openclaw.sh enables chatCompletions and sets memorySearch.provider=github-copilot.`,
                 )
             }
             const retryable = [408, 425, 429, 500, 502, 503, 504].includes(r.status)
@@ -484,7 +484,7 @@ type BackendResolution = { ok: true; cfg: BackendConfig } | { ok: false; message
 
 // Env var(s) each backend needs, for "not configured" messages.
 const BACKEND_NEED: Record<string, string> = {
-    copilot: "OPENCLAW_ENABLE_COPILOT=1 with the github-copilot provider signed in",
+    copilot: "ENABLE_GITHUB_COPILOT=1 with the github-copilot provider signed in",
     self_hosted: "LOCAL_LLM_API_BASE",
     openai: "OPENAI_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
@@ -501,7 +501,7 @@ type AvailBackend = { backend: Backend; cfg: BackendConfig; label: string }
 // The configured backends, in priority order. OpenAI/OpenRouter vectors are
 // zero-padded to EMBED_DIMS so every backend fills vector(2560).
 function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
-    const copilotEnabled = (env.OPENCLAW_ENABLE_COPILOT ?? "").trim() === "1"
+    const copilotEnabled = (env.ENABLE_GITHUB_COPILOT ?? "").trim() === "1"
     const embedHost = (env.LOCAL_LLM_API_BASE ?? "").trim()
     const embedKey = (env.LOCAL_LLM_API_KEY ?? "").trim()
     const openaiKey = (env.OPENAI_API_KEY ?? "").trim()
@@ -515,7 +515,7 @@ function availableBackends(env: NodeJS.ProcessEnv): AvailBackend[] {
     const minimaxGroup = (env.MINIMAX_GROUP_ID ?? "").trim()
 
     const available: AvailBackend[] = []
-    // Copilot, gated on OPENCLAW_ENABLE_COPILOT=1.
+    // Copilot, gated on ENABLE_GITHUB_COPILOT=1.
     if (copilotEnabled) {
         available.push({
             backend: "copilot",
@@ -607,7 +607,7 @@ function resolveBackend(requested: string | undefined, env: NodeJS.ProcessEnv): 
         return {
             ok: false,
             message:
-                "error: no embedding backend configured. Enable GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1, signed in), or set LOCAL_LLM_API_BASE (self-hosted), or any of these provider keys: OPENAI_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY/GOOGLE_API_KEY, ZAI_API_KEY, AI_GATEWAY_API_KEY, SYNTHETIC_API_KEY, LKEAP_API_KEY, MINIMAX_API_KEY; then re-run.",
+                "error: no embedding backend configured. Enable GitHub Copilot (ENABLE_GITHUB_COPILOT=1, signed in), or set LOCAL_LLM_API_BASE (self-hosted), or any of these provider keys: OPENAI_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY/GOOGLE_API_KEY, ZAI_API_KEY, AI_GATEWAY_API_KEY, SYNTHETIC_API_KEY, LKEAP_API_KEY, MINIMAX_API_KEY; then re-run.",
         }
     }
     if (available.length === 1) return { ok: true, cfg: available[0].cfg }
@@ -958,7 +958,7 @@ const IngestPdfParams = Type.Object(
                 ],
                 {
                     description:
-                        "Which embedding backend to use. Each is available only when its credential is set: copilot (OPENCLAW_ENABLE_COPILOT=1, signed in; text-embedding-3-small), self_hosted (LOCAL_LLM_API_BASE/MODEL, 2560-dim), openai (OPENAI_API_KEY, text-embedding-3-large), openrouter (OPENROUTER_API_KEY), google (GEMINI_API_KEY/GOOGLE_API_KEY, gemini-embedding-001), zai (ZAI_API_KEY, embedding-3), vercel (AI_GATEWAY_API_KEY, openai/text-embedding-3-large), synthetic (SYNTHETIC_API_KEY, nomic-embed-text), lkeap (LKEAP_API_KEY), minimax (MINIMAX_API_KEY, embo-01; optional MINIMAX_GROUP_ID). All non-self-hosted vectors are truncated to 2560. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool asks the user to pick — set this and re-run.",
+                        "Which embedding backend to use. Each is available only when its credential is set: copilot (ENABLE_GITHUB_COPILOT=1, signed in; text-embedding-3-small), self_hosted (LOCAL_LLM_API_BASE/MODEL, 2560-dim), openai (OPENAI_API_KEY, text-embedding-3-large), openrouter (OPENROUTER_API_KEY), google (GEMINI_API_KEY/GOOGLE_API_KEY, gemini-embedding-001), zai (ZAI_API_KEY, embedding-3), vercel (AI_GATEWAY_API_KEY, openai/text-embedding-3-large), synthetic (SYNTHETIC_API_KEY, nomic-embed-text), lkeap (LKEAP_API_KEY), minimax (MINIMAX_API_KEY, embo-01; optional MINIMAX_GROUP_ID). All non-self-hosted vectors are truncated to 2560. Leave unset to auto-select the only configured backend; if MORE THAN ONE is configured the tool asks the user to pick — set this and re-run.",
                 },
             ),
         ),
@@ -1261,7 +1261,7 @@ export default defineToolPlugin({
         tool({
             name: "ingest_pdf",
             description:
-                "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 2560-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is auto-selected from whatever is configured: GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1), a self-hosted LOCAL_LLM_API_BASE endpoint, or any provider key that supports embeddings — OpenAI, OpenRouter, Google Gemini, Z.AI, Vercel AI Gateway, Synthetic, Tencent LKEAP, or MiniMax. If exactly one is configured it is used; if more than one is configured the tool asks you to choose via embedding_backend.",
+                "Ingest a PDF (or folder of PDFs) into the Liquid Upstart RAG store (rag_documents, rag_chunks) via PostgREST. Extracts text, chunks ~400 tokens with 50-token overlap, embeds each chunk, and inserts rows with a raw 2560-dim float vector (binary quantization is applied at index time by pgvector). The embedding backend is auto-selected from whatever is configured: GitHub Copilot (ENABLE_GITHUB_COPILOT=1), a self-hosted LOCAL_LLM_API_BASE endpoint, or any provider key that supports embeddings — OpenAI, OpenRouter, Google Gemini, Z.AI, Vercel AI Gateway, Synthetic, Tencent LKEAP, or MiniMax. If exactly one is configured it is used; if more than one is configured the tool asks you to choose via embedding_backend.",
             parameters: IngestPdfParams,
             execute: async (args: IngestPdfArgs) => runIngest(args),
         }),
