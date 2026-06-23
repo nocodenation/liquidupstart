@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
-# install.sh — Rootless Docker Engine on WSL2 (systemd-enabled)
+# install.sh — Docker bootstrap for Liquid Upstart
 #
-# Supports Debian/Ubuntu, Fedora/RHEL, Arch, and openSUSE families.
+# Linux/WSL2: rootless Docker Engine (systemd-enabled). Supports Debian/Ubuntu,
+#   Fedora/RHEL, Arch, and openSUSE families.
+# macOS: reuses an already-running Docker (Desktop/Colima/OrbStack); otherwise
+#   installs Colima or Docker Desktop via Homebrew.
 #
-# Run as your NORMAL user (not root, not via sudo). The script invokes sudo
-# only for the steps that need it; the rootless setup tool must run unprivileged.
+# Run as your NORMAL user (not root, not via sudo). On Linux the script invokes
+# sudo only for the steps that need it; the rootless setup tool must run unprivileged.
 #
 #   chmod +x install.sh && ./install.sh
 #
@@ -126,9 +129,117 @@ install_suse() {
 }
 
 # ----------------------------------------------------------------------------
-# main
+# macOS: reuse a running Docker, else install Colima or Docker Desktop
 # ----------------------------------------------------------------------------
-main() {
+ensure_homebrew() {
+  if command -v brew >/dev/null 2>&1; then
+    ok "Homebrew present"
+    return
+  fi
+  log "Homebrew not found — installing"
+  NONINTERACTIVE=1 /bin/bash -c \
+    "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$p" ] && eval "$("$p" shellenv)" && break
+  done
+  command -v brew >/dev/null 2>&1 || die "Homebrew install failed."
+  ok "Homebrew installed"
+}
+
+choose_runtime() {
+  command -v colima >/dev/null 2>&1 && { echo colima; return; }
+  [ -d /Applications/Docker.app ] && { echo desktop; return; }
+  local ans=""
+  if [ -r /dev/tty ]; then
+    {
+      printf '\nNo Docker runtime found. Which should I install?\n'
+      printf '  1) Colima         — CLI-only, lightweight (recommended)\n'
+      printf '  2) Docker Desktop — GUI app\n'
+      printf 'Enter 1 or 2 [1]: '
+    } >/dev/tty
+    read -r ans </dev/tty || ans=""
+  fi
+  case "$ans" in
+    2|d|desktop|Desktop|DESKTOP) echo desktop ;;
+    *)                           echo colima ;;
+  esac
+}
+
+setup_colima() {
+  if command -v colima >/dev/null 2>&1; then
+    ok "Colima already installed"
+  else
+    log "Installing Colima + Docker CLI via Homebrew"
+    brew install colima docker docker-compose
+    ok "Colima installed"
+  fi
+  mkdir -p "${HOME}/.docker/cli-plugins"
+  ln -sfn "$(brew --prefix)/opt/docker-compose/bin/docker-compose" \
+    "${HOME}/.docker/cli-plugins/docker-compose" 2>/dev/null || true
+  log "Starting Colima"
+  colima status >/dev/null 2>&1 || colima start
+  ok "Colima started"
+}
+
+setup_desktop() {
+  if [ -d /Applications/Docker.app ]; then
+    ok "Docker Desktop already installed"
+  else
+    log "Installing Docker Desktop via Homebrew"
+    brew install --cask docker
+    ok "Docker Desktop installed"
+  fi
+  log "Launching Docker Desktop"
+  open -a Docker
+  warn "Docker Desktop is starting — first launch can take a minute."
+}
+
+wait_for_docker() {
+  local tries=0
+  until docker info >/dev/null 2>&1; do
+    tries=$((tries + 1))
+    [ "$tries" -gt 90 ] && return 1
+    sleep 2
+  done
+}
+
+run_macos() {
+  log "macOS detected"
+
+  if docker info >/dev/null 2>&1; then
+    ok "Docker already running ($(docker version --format '{{.Server.Version}}' 2>/dev/null || echo up)) — skipping install"
+    return
+  fi
+  command -v docker >/dev/null 2>&1 \
+    && warn "docker CLI found but engine not responding — will try to start a runtime"
+
+  ensure_homebrew
+
+  case "$(choose_runtime)" in
+    colima)  setup_colima ;;
+    desktop) setup_desktop ;;
+  esac
+
+  log "Waiting for the Docker engine to come up"
+  if wait_for_docker; then
+    ok "Docker engine is up"
+  else
+    warn "Docker engine did not come up in time. Start it manually, then re-run."
+    return
+  fi
+
+  echo
+  if docker run --rm hello-world >/dev/null 2>&1; then
+    ok "hello-world ran successfully — Docker is working."
+  else
+    warn "hello-world did not run. Open a NEW shell and retry: docker run --rm hello-world"
+  fi
+}
+
+# ----------------------------------------------------------------------------
+# Linux/WSL2: rootless Docker Engine
+# ----------------------------------------------------------------------------
+run_linux() {
   TARGET_USER="$(id -un)"
 
   # --- Preflight checks ---
@@ -246,7 +357,12 @@ EOF
     warn "    docker run --rm hello-world"
   fi
 
-  # --- 9. Clone the repository ---
+}
+
+# ----------------------------------------------------------------------------
+# Shared: clone the repository
+# ----------------------------------------------------------------------------
+clone_repo() {
   local repo_url clone_dir
   repo_url="https://github.com/nocodenation/liquidupstart"
   clone_dir="$(pwd)/liquidupstart"
@@ -263,10 +379,23 @@ EOF
 ------------------------------------------------------------------
 Done.
 
-  The Liquid Upstart is at ${clone_dir}. Enter it with:
-       cd ${clone_dir}
+The Liquid Upstart is at ${clone_dir}. Enter it with:
+
+cd ${clone_dir}
 ------------------------------------------------------------------
 EOF
+}
+
+# ----------------------------------------------------------------------------
+# main — dispatch by OS
+# ----------------------------------------------------------------------------
+main() {
+  case "$(uname -s)" in
+    Darwin) run_macos ;;
+    Linux)  run_linux ;;
+    *)      die "Unsupported OS: $(uname -s). This installer supports Linux/WSL2 and macOS." ;;
+  esac
+  clone_repo
 }
 
 main "$@"

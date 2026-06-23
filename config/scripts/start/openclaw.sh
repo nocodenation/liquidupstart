@@ -477,20 +477,36 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       echo "    docker compose exec -it openclaw-gateway openclaw-claude setup-token" >&2
     fi
   else
-    # No terminal attached — tell the user how to authenticate manually.
+    # No terminal attached (e.g. the dashboard Start run) — emit the ACTION
+    # REQUIRED banner the dashboard watches for, then block until sign-in
+    # completes, so the auth-profile registration below runs against a live login
+    # (mirrors the Copilot/Codex/Grok branches).
     echo "" >&2
     echo "=============================== ACTION REQUIRED ===============================" >&2
     echo "OpenClaw is set to use the Claude Code CLI, but it is not authenticated yet" >&2
     echo "and this start run has no terminal attached for interactive sign-in." >&2
-    echo "Authenticate once (login persists in ${CLAUDE_DIR}):" >&2
+    echo "Sign in via the dashboard's Claude panel, or authenticate once (login" >&2
+    echo "persists in ${CLAUDE_DIR}):" >&2
     echo "" >&2
     echo "    docker compose exec -it openclaw-gateway openclaw-claude auth login --claudeai" >&2
     echo "" >&2
     echo "Headless alternative — generate a long-lived token:" >&2
     echo "    docker compose exec -it openclaw-gateway openclaw-claude setup-token" >&2
     echo "then put it in .env as CLAUDE_CODE_OAUTH_TOKEN and restart OpenClaw." >&2
+    echo "Waiting for sign-in (up to 15 minutes) before continuing…" >&2
     echo "===============================================================================" >&2
     echo "" >&2
+
+    _deadline=$(( $(date +%s) + 900 ))
+    until claude_cli "" auth status >/dev/null 2>&1; do
+      if (( $(date +%s) >= _deadline )); then
+        echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
+        echo "  Anthropic models won't be listed until you sign in and start again." >&2
+        break
+      fi
+      sleep 8
+    done
+    claude_cli "" auth status >/dev/null 2>&1 && echo "Claude CLI: sign-in detected — continuing startup."
   fi
 
   register_anthropic_cli_profile() {
