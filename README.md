@@ -67,6 +67,20 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 - **Linux / macOS:** Docker + Docker Compose.
 - **Windows:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (its installer sets up everything else for you). Nothing else to install.
 
+### Windows: install WSL2 + Ubuntu first
+
+If you're on Windows, set up WSL2 before anything else. In an **Administrator** PowerShell:
+
+```powershell
+wsl --install            # enable WSL2 (reboot when prompted)
+wsl --install -d Ubuntu  # install the Ubuntu distribution
+```
+
+`wsl --install` is supposed to install Ubuntu by default, but on some Windows builds it only
+enables the WSL2 feature and you have to install the distro explicitly — so run
+`wsl --install -d Ubuntu` to be sure (run `wsl --list --online` to see all available distros).
+After Ubuntu boots, set your Linux username/password and continue inside that Ubuntu shell.
+
 ### WSL2: one-line install
 
 On a fresh, systemd-enabled WSL2 distro (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE),
