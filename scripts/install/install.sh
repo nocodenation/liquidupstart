@@ -9,6 +9,9 @@
 #
 #   chmod +x install.sh && ./install.sh
 #
+# Also safe to pipe:
+#   curl -fsSL <raw-url>/install.sh | bash
+#
 set -euo pipefail
 
 # ----------------------------------------------------------------------------
@@ -19,36 +22,11 @@ ok()   { printf '\033[1;32m  ok\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m  ! \033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-# ----------------------------------------------------------------------------
-# Preflight checks
-# ----------------------------------------------------------------------------
-log "Preflight checks"
-
-[ "$(id -u)" -ne 0 ] || die "Do not run as root / sudo. Run as your normal user."
-
-grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
-  || warn "This doesn't look like WSL — continuing anyway."
-
-if ! pidof systemd >/dev/null 2>&1 && [ ! -d /run/systemd/system ]; then
-  die "systemd is not running as PID 1. Add the following to /etc/wsl.conf:
-
-    [boot]
-    systemd=true
-
-  then run 'wsl --shutdown' from PowerShell, reopen, and re-run this script."
-fi
-ok "systemd is active"
-
-[ -r /etc/os-release ] || die "Cannot read /etc/os-release — unable to detect distro."
-. /etc/os-release
-DISTRO_ID="${ID:-}"
-DISTRO_LIKE="${ID_LIKE:-}"
-
 detect_family() {
   case "$DISTRO_ID" in
     ubuntu|debian|linuxmint|pop|elementary|zorin|kali|raspbian) echo debian ;;
     fedora|rhel|centos|rocky|almalinux|ol)                      echo fedora ;;
-    arch|manjaro|endeavouros|cachyos|garuda|artix)              echo arch ;;
+    arch|manjaro|endeavouros|cachyos|garuda)                    echo arch ;;
     opensuse*|sles|sled)                                        echo suse ;;
     *)
       case " ${DISTRO_LIKE} " in
@@ -60,17 +38,9 @@ detect_family() {
       esac ;;
   esac
 }
-FAMILY="$(detect_family)"
-if [ "$FAMILY" = unknown ]; then
-  warn "Unsupported distribution: ${PRETTY_NAME:-${DISTRO_ID:-unknown}} (ID_LIKE=${DISTRO_LIKE:-none})."
-  warn "This installer supports the debian, fedora, arch, and suse families only."
-  warn "On WSL, install a supported image (e.g. Ubuntu) and re-run. Exiting without changes."
-  exit 0
-fi
-ok "Detected ${PRETTY_NAME:-$DISTRO_ID} — package family: ${FAMILY}"
 
 # ----------------------------------------------------------------------------
-# 1. Per-distro install (remove conflicts → prereqs → repo → Docker CE)
+# Per-distro install (remove conflicts → prereqs → repo → Docker CE)
 # ----------------------------------------------------------------------------
 install_debian() {
   export DEBIAN_FRONTEND=noninteractive
@@ -155,116 +125,140 @@ install_suse() {
     || warn "docker-rootless-extras unavailable; rootless setuptool may be missing."
 }
 
-case "$FAMILY" in
-  debian) install_debian ;;
-  fedora) install_fedora ;;
-  arch)   install_arch ;;
-  suse)   install_suse ;;
-esac
-ok "Docker installed"
+# ----------------------------------------------------------------------------
+# main
+# ----------------------------------------------------------------------------
+main() {
+  TARGET_USER="$(id -un)"
 
-command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1 \
-  || die "dockerd-rootless-setuptool.sh not found — rootless extras missing for ${FAMILY}."
+  # --- Preflight checks ---
+  log "Preflight checks"
 
-# ----------------------------------------------------------------------------
-# 2. Disable the system-wide rootful daemon
-# ----------------------------------------------------------------------------
-log "Disabling rootful system daemon"
-sudo systemctl disable --now docker.service docker.socket >/dev/null 2>&1 || true
-ok "Rootful daemon disabled"
+  [ "$(id -u)" -ne 0 ] || die "Do not run as root / sudo. Run as your normal user."
 
-# ----------------------------------------------------------------------------
-# 3. cgroup v2 controller delegation (needed for --cpus / --memory limits)
-# ----------------------------------------------------------------------------
-log "Setting up cgroup v2 delegation"
-sudo mkdir -p /etc/systemd/system/user@.service.d
-cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/delegate.conf >/dev/null
+  grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
+    || warn "This doesn't look like WSL — continuing anyway."
+
+  if ! pidof systemd >/dev/null 2>&1 && [ ! -d /run/systemd/system ]; then
+    die "systemd is not running as PID 1. Add the following to /etc/wsl.conf:
+
+    [boot]
+    systemd=true
+
+  then run 'wsl --shutdown' from PowerShell, reopen, and re-run this script."
+  fi
+  ok "systemd is active"
+
+  [ -r /etc/os-release ] || die "Cannot read /etc/os-release — unable to detect distro."
+  . /etc/os-release
+  DISTRO_ID="${ID:-}"
+  DISTRO_LIKE="${ID_LIKE:-}"
+
+  FAMILY="$(detect_family)"
+  if [ "$FAMILY" = unknown ]; then
+    warn "Unsupported distribution: ${PRETTY_NAME:-${DISTRO_ID:-unknown}} (ID_LIKE=${DISTRO_LIKE:-none})."
+    warn "This installer supports the debian, fedora, arch, and suse families only."
+    warn "On WSL, install a supported image (e.g. Ubuntu) and re-run. Exiting without changes."
+    exit 0
+  fi
+  ok "Detected ${PRETTY_NAME:-$DISTRO_ID} — package family: ${FAMILY}"
+
+  # --- 1. Per-distro install ---
+  case "$FAMILY" in
+    debian) install_debian ;;
+    fedora) install_fedora ;;
+    arch)   install_arch ;;
+    suse)   install_suse ;;
+  esac
+  ok "Docker installed"
+
+  command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1 \
+    || die "dockerd-rootless-setuptool.sh not found — rootless extras missing for ${FAMILY}."
+
+  # --- 2. Disable the system-wide rootful daemon ---
+  log "Disabling rootful system daemon"
+  sudo systemctl disable --now docker.service docker.socket >/dev/null 2>&1 || true
+  ok "Rootful daemon disabled"
+
+  # --- 3. cgroup v2 controller delegation (needed for --cpus / --memory limits) ---
+  log "Setting up cgroup v2 delegation"
+  sudo mkdir -p /etc/systemd/system/user@.service.d
+  cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/delegate.conf >/dev/null
 [Service]
 Delegate=cpu cpuset io memory pids
 EOF
-sudo systemctl daemon-reload
-ok "Delegation drop-in written (full effect after WSL restart)"
+  sudo systemctl daemon-reload
+  ok "Delegation drop-in written (full effect after WSL restart)"
 
-# ----------------------------------------------------------------------------
-# 4. Optional: unprivileged low ports + container ping
-# ----------------------------------------------------------------------------
-log "Applying rootless sysctl tweaks (low ports + ping)"
-cat <<'EOF' | sudo tee /etc/sysctl.d/99-rootless-docker.conf >/dev/null
+  # --- 4. Optional: unprivileged low ports + container ping ---
+  log "Applying rootless sysctl tweaks (low ports + ping)"
+  cat <<'EOF' | sudo tee /etc/sysctl.d/99-rootless-docker.conf >/dev/null
 # Allow rootless containers to bind ports >= 80
 net.ipv4.ip_unprivileged_port_start = 80
 # Allow ICMP (ping) from inside rootless containers
 net.ipv4.ping_group_range = 0 2147483647
 EOF
-sudo sysctl --quiet -p /etc/sysctl.d/99-rootless-docker.conf || true
-ok "sysctl tweaks applied"
+  sudo sysctl --quiet -p /etc/sysctl.d/99-rootless-docker.conf || true
+  ok "sysctl tweaks applied"
 
-# ----------------------------------------------------------------------------
-# 5. Run the rootless setup tool (UNPRIVILEGED — no sudo)
-# ----------------------------------------------------------------------------
-log "Running rootless setup tool as $USER"
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-dockerd-rootless-setuptool.sh install
-ok "Rootless daemon configured"
+  # --- 5. Run the rootless setup tool (UNPRIVILEGED — no sudo) ---
+  log "Running rootless setup tool as ${TARGET_USER}"
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+  dockerd-rootless-setuptool.sh install
+  ok "Rootless daemon configured"
 
-# ----------------------------------------------------------------------------
-# 6. Enable the user service + linger (survives shell/session exit in WSL)
-# ----------------------------------------------------------------------------
-log "Enabling user service and linger"
-systemctl --user enable --now docker
-sudo loginctl enable-linger "$USER"
-ok "Service enabled, linger on"
+  # --- 6. Enable the user service + linger (survives shell/session exit in WSL) ---
+  log "Enabling user service and linger"
+  systemctl --user enable --now docker
+  sudo loginctl enable-linger "$TARGET_USER"
+  ok "Service enabled, linger on"
 
-# ----------------------------------------------------------------------------
-# 7. Persist shell environment
-# ----------------------------------------------------------------------------
-log "Configuring shell environment"
-RC="${HOME}/.bashrc"
-[ -n "${ZSH_VERSION:-}" ] && RC="${HOME}/.zshrc"
-MARKER="# >>> rootless docker >>>"
-if ! grep -qF "$MARKER" "$RC" 2>/dev/null; then
-  cat >>"$RC" <<EOF
+  # --- 7. Persist shell environment ---
+  log "Configuring shell environment"
+  RC="${HOME}/.bashrc"
+  [ -n "${ZSH_VERSION:-}" ] && RC="${HOME}/.zshrc"
+  MARKER="# >>> rootless docker >>>"
+  if ! grep -qF "$MARKER" "$RC" 2>/dev/null; then
+    cat >>"$RC" <<EOF
 
 ${MARKER}
 export PATH=/usr/bin:\$PATH
 export DOCKER_HOST=unix:///run/user/\$(id -u)/docker.sock
 # <<< rootless docker <<<
 EOF
-  ok "Appended env block to $RC"
-else
-  ok "Env block already present in $RC"
-fi
-export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+    ok "Appended env block to $RC"
+  else
+    ok "Env block already present in $RC"
+  fi
+  export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
 
-# ----------------------------------------------------------------------------
-# 8. Verify
-# ----------------------------------------------------------------------------
-log "Verifying installation"
-docker context use rootless >/dev/null 2>&1 || true
-docker info --format '  Rootless: {{.SecurityOptions}}' 2>/dev/null || true
-docker info 2>/dev/null | grep -iE 'rootless|cgroup' || true
+  # --- 8. Verify ---
+  log "Verifying installation"
+  docker context use rootless >/dev/null 2>&1 || true
+  docker info --format '  Rootless: {{.SecurityOptions}}' 2>/dev/null || true
+  docker info 2>/dev/null | grep -iE 'rootless|cgroup' || true
 
-echo
-if docker run --rm hello-world >/dev/null 2>&1; then
-  ok "hello-world ran successfully — rootless Docker is working."
-else
-  warn "hello-world did not run yet. Open a NEW shell (to load DOCKER_HOST) and retry:"
-  warn "    docker run --rm hello-world"
-fi
+  echo
+  if docker run --rm hello-world >/dev/null 2>&1; then
+    ok "hello-world ran successfully — rootless Docker is working."
+  else
+    warn "hello-world did not run yet. Open a NEW shell (to load DOCKER_HOST) and retry:"
+    warn "    docker run --rm hello-world"
+  fi
 
-# ----------------------------------------------------------------------------
-# 9. Clone the repository
-# ----------------------------------------------------------------------------
-REPO_URL="https://github.com/nocodenation/liquidupstart"
-CLONE_DIR="$(pwd)/liquidupstart"
-log "Cloning ${REPO_URL}"
-if [ -d "$CLONE_DIR/.git" ]; then
-  ok "Repository already present at $CLONE_DIR"
-else
-  git clone --branch main "$REPO_URL" "$CLONE_DIR"
-  ok "Cloned into $CLONE_DIR"
-fi
+  # --- 9. Clone the repository ---
+  local repo_url clone_dir
+  repo_url="https://github.com/nocodenation/liquidupstart"
+  clone_dir="$(pwd)/liquidupstart"
+  log "Cloning ${repo_url}"
+  if [ -d "$clone_dir/.git" ]; then
+    ok "Repository already present at $clone_dir"
+  else
+    git clone --branch main "$repo_url" "$clone_dir"
+    ok "Cloned into $clone_dir"
+  fi
 
-cat <<EOF
+  cat <<EOF
 
 ------------------------------------------------------------------
 Done. Three notes:
@@ -276,7 +270,10 @@ Done. Three notes:
      From Windows PowerShell:  wsl --shutdown
      Until then, --cpus / --memory limits may not be enforced.
 
-  3. The repository is at ${CLONE_DIR}. Enter it with:
-       cd ${CLONE_DIR}
+  3. The repository is at ${clone_dir}. Enter it with:
+       cd ${clone_dir}
 ------------------------------------------------------------------
 EOF
+}
+
+main "$@"

@@ -67,6 +67,20 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 - **Linux / macOS:** Docker + Docker Compose.
 - **Windows:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (its installer sets up everything else for you). Nothing else to install.
 
+### WSL2: one-line install
+
+On a fresh, systemd-enabled WSL2 distro (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE),
+this bootstrap installs **rootless Docker**, applies the rootless tweaks, and clones the
+repo into the current directory:
+
+```bash
+curl -fsSL https://liquidupstart.com/install.sh | bash
+```
+
+Run it as your **normal user** (not root). When it finishes, `cd liquidupstart` and continue
+with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to
+`/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
+
 ## Quickstart
 
 1. **Run the dashboard:** `./run.sh` (Windows: double-click `run.bat`), then open the
