@@ -12,9 +12,9 @@ for arg in "$@"; do
   esac
 done
 
-# Stop and remove containers and named volumes (e.g. nextcloud_html). cleanup is
-# the full reset; down.sh stays non-destructive and is not used here.
-echo "Stopping existing containers and removing named volumes..."
+# Stop and remove containers. cleanup is the full reset; down.sh stays
+# non-destructive and is not used here.
+echo "Stopping existing containers..."
 docker compose down --volumes --remove-orphans
 
 # Remove rendered config files.

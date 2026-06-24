@@ -36,7 +36,7 @@ trap 'rm -f "${DOCKERFILE}"' EXIT
 render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${DOCKERFILE}"
 
 # Optionally install the Claude Code CLI into the image. When
-# OPENCLAW_ENABLE_CLAUDE_CLI=1 the "# CLAUDE_CLI_INSTALL" marker in the rendered
+# ENABLE_ANTHROPIC_CLAUDE_CODE=1 the "# CLAUDE_CLI_INSTALL" marker in the rendered
 # Dockerfile is turned into a `RUN npm install -g @anthropic-ai/claude-code`
 # step (still running as root, before the trailing `USER node`). The companion
 # start script (config/scripts/start/openclaw.sh) then points OpenClaw at the
@@ -50,8 +50,8 @@ sed_inplace() {
   fi
 }
 
-if [ "${OPENCLAW_ENABLE_CLAUDE_CLI:-0}" = "1" ]; then
-    echo "OPENCLAW_ENABLE_CLAUDE_CLI=1: installing Claude Code CLI into the image."
+if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
+    echo "ENABLE_ANTHROPIC_CLAUDE_CODE=1: installing Claude Code CLI into the image."
     sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${DOCKERFILE}"
 fi
 

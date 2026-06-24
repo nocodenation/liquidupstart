@@ -128,7 +128,7 @@ VEC=$(curl -s -X POST "$EMBED_URL" \
            | "[" + (map(tostring) | join(",")) + "]"')
 ```
 
-For the **copilot** backend (available when `OPENCLAW_ENABLE_COPILOT=1`),
+For the **copilot** backend (available when `ENABLE_GITHUB_COPILOT=1`),
 embed through the OpenClaw gateway — it reuses the github-copilot auth, so no API
 key. Send `model: "openclaw"` plus the gateway `X-Forwarded-User` identity; the
 result is `text-embedding-3-small` (1536-dim), padded to 2560 by the same jq:

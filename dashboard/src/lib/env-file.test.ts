@@ -175,12 +175,12 @@ describe('env-meta', () => {
   test('classifies build-affecting keys', () => {
     expect(isBuildAffecting('SYSTEM_DEPENDENCIES')).toBe(true);
     expect(isBuildAffecting('HERMES_POST_INSTALLATION_COMMANDS_MODE')).toBe(true);
-    expect(isBuildAffecting('OPENCLAW_ENABLE_CLAUDE_CLI')).toBe(true);
+    expect(isBuildAffecting('ENABLE_ANTHROPIC_CLAUDE_CODE')).toBe(true);
     expect(isBuildAffecting('DATABASE_PASSWORD')).toBe(false);
   });
 
   test('picks input widgets', () => {
-    expect(inputType('OPENCLAW_ENABLE_CLAUDE_CLI')).toBe('checkbox');
+    expect(inputType('ENABLE_ANTHROPIC_CLAUDE_CODE')).toBe('checkbox');
     expect(inputType('LIQUID_SYSTEM_DEPENDENCIES_MODE')).toBe('select-mode');
     expect(inputType('SYSTEM_HTTP_PORT')).toBe('number');
     expect(inputType('LIQUID_PASSWORD')).toBe('password');

@@ -532,7 +532,7 @@
       </p>
     {:else}
       <p>
-        OpenClaw is set to use the Claude Code CLI (<code>OPENCLAW_ENABLE_CLAUDE_CLI=1</code>),
+        OpenClaw is set to use the Claude Code CLI (<code>ENABLE_ANTHROPIC_CLAUDE_CODE=1</code>),
         which needs a one-time sign-in. Click below, open the sign-in link, authorize, then paste
         the code back here.
       </p>
@@ -581,7 +581,7 @@
       </p>
     {:else}
       <p>
-        OpenClaw is set to use GitHub Copilot (<code>OPENCLAW_ENABLE_COPILOT=1</code>), which needs
+        OpenClaw is set to use GitHub Copilot (<code>ENABLE_GITHUB_COPILOT=1</code>), which needs
         a one-time device sign-in. Click below, open the link, and enter the code shown — the page
         finishes on its own once you authorize. Requires an active GitHub Copilot plan.
       </p>
@@ -617,7 +617,7 @@
       </p>
     {:else}
       <p>
-        OpenClaw is set to use the Codex harness (<code>OPENCLAW_ENABLE_CODEX=1</code>) with a paid
+        OpenClaw is set to use the Codex harness (<code>ENABLE_OPENAI_CODEX=1</code>) with a paid
         ChatGPT/Codex subscription — no OpenAI API key needed. Click below, then open the sign-in
         link and authorize. Sign-in completes here automatically once you approve.
       </p>
@@ -674,7 +674,7 @@
       </p>
     {:else}
       <p>
-        OpenClaw is set to use Grok (<code>OPENCLAW_ENABLE_GROK=1</code>) with a paid SuperGrok or X
+        OpenClaw is set to use Grok (<code>ENABLE_XAI_GROK=1</code>) with a paid SuperGrok or X
         Premium subscription — no xAI API key needed. Click below, then open the sign-in link and
         authorize. Sign-in completes here automatically once you approve.
       </p>

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Wrapper used as OpenClaw's claude-cli backend command (see
-# config/scripts/start/openclaw.sh, gated on OPENCLAW_ENABLE_CLAUDE_CLI=1).
+# config/scripts/start/openclaw.sh, gated on ENABLE_ANTHROPIC_CLAUDE_CODE=1).
 #
 # OpenClaw strips Claude/Anthropic env vars before spawning the CLI
 # (CLAUDE_CLI_CLEAR_ENV), so compose `environment:` has no effect. Re-inject the

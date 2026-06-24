@@ -65,7 +65,7 @@ WORKSPACE_DIR="${STATE_DIR}/workspace"
 SECRETS_DIR="${PROJECT_DIR}/volumes/_openclaw-auth-profile-secrets"
 # Persists the Claude Code CLI login (mounted at /home/node/.claude). Created
 # unconditionally so the bind mount is never root-created; only used when
-# OPENCLAW_ENABLE_CLAUDE_CLI=1.
+# ENABLE_ANTHROPIC_CLAUDE_CODE=1.
 CLAUDE_DIR="${PROJECT_DIR}/volumes/_openclaw-claude"
 
 for dir in "${STATE_DIR}" "${WORKSPACE_DIR}" "${SECRETS_DIR}" "${CLAUDE_DIR}"; do
@@ -75,16 +75,16 @@ done
 
 # Each ENABLE flag wires its provider/runtime and adds provider/* to OpenClaw's
 # model picker; the model is chosen there, not pinned here.
-ENABLE_CLAUDE_CLI="$(get_env OPENCLAW_ENABLE_CLAUDE_CLI)"
+ENABLE_CLAUDE_CLI="$(get_env ENABLE_ANTHROPIC_CLAUDE_CODE)"
 [[ -z "$ENABLE_CLAUDE_CLI" ]] && ENABLE_CLAUDE_CLI=0
 
-ENABLE_COPILOT="$(get_env OPENCLAW_ENABLE_COPILOT)"
+ENABLE_COPILOT="$(get_env ENABLE_GITHUB_COPILOT)"
 [[ -z "$ENABLE_COPILOT" ]] && ENABLE_COPILOT=0
 
-ENABLE_CODEX="$(get_env OPENCLAW_ENABLE_CODEX)"
+ENABLE_CODEX="$(get_env ENABLE_OPENAI_CODEX)"
 [[ -z "$ENABLE_CODEX" ]] && ENABLE_CODEX=0
 
-ENABLE_GROK="$(get_env OPENCLAW_ENABLE_GROK)"
+ENABLE_GROK="$(get_env ENABLE_XAI_GROK)"
 [[ -z "$ENABLE_GROK" ]] && ENABLE_GROK=0
 
 LOCAL_LLM_API_BASE="$(get_env LOCAL_LLM_API_BASE)"
@@ -146,9 +146,9 @@ for _tp in \
 done
 
 for _bw in \
-  "${ENABLE_CLAUDE_CLI}:claude-cli/*" \
+  "${ENABLE_CLAUDE_CLI}:anthropic/*" \
   "${ENABLE_COPILOT}:github-copilot/*" \
-  "${ENABLE_CODEX}:codex/*" \
+  "${ENABLE_CODEX}:openai/*" \
   "${ENABLE_GROK}:xai/*" \
   "${ENABLE_LOCAL}:local/*"; do
   if [[ "${_bw%%:*}" == "1" && ",${MODEL_WILDCARDS}," != *",${_bw##*:},"* ]]; then
@@ -243,8 +243,8 @@ else
       c.agents.defaults.models = c.agents.defaults.models || {};
 
       if (enableClaudeCli) {
-        c.agents.defaults.models["claude-cli/*"] = c.agents.defaults.models["claude-cli/*"] || {};
-        c.agents.defaults.models["claude-cli/*"].agentRuntime = { id: "claude-cli" };
+        c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
+        c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
         // Run the CLI through our wrapper, which re-injects CLAUDE_CONFIG_DIR,
         // IS_SANDBOX, and an optional OAuth token that OpenClaw otherwise strips.
         c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
@@ -258,8 +258,8 @@ else
       }
 
       if (enableCodex) {
-        c.agents.defaults.models["codex/*"] = c.agents.defaults.models["codex/*"] || {};
-        c.agents.defaults.models["codex/*"].agentRuntime = { id: "codex" };
+        c.agents.defaults.models["openai/*"] = c.agents.defaults.models["openai/*"] || {};
+        c.agents.defaults.models["openai/*"].agentRuntime = { id: "codex" };
       }
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
@@ -358,7 +358,7 @@ else
         console.log("openclaw.json: enabled gateway /v1/embeddings + memorySearch.provider = github-copilot (model", c.agents.defaults.memorySearch.model + ") for RAG embeddings");
       }
       if (enableCodex) {
-        console.log("openclaw.json: routed codex/* through the codex runtime");
+        console.log("openclaw.json: routed openai/* through the codex runtime");
         console.log("openclaw.json: enabled bundled codex plugin (ChatGPT/Codex subscription harness for openai/* turns)");
       }
       if (enableGrok) {
@@ -477,20 +477,60 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       echo "    docker compose exec -it openclaw-gateway openclaw-claude setup-token" >&2
     fi
   else
-    # No terminal attached — tell the user how to authenticate manually.
+    # No terminal attached (e.g. the dashboard Start run) — emit the ACTION
+    # REQUIRED banner the dashboard watches for, then block until sign-in
+    # completes, so the auth-profile registration below runs against a live login
+    # (mirrors the Copilot/Codex/Grok branches).
     echo "" >&2
     echo "=============================== ACTION REQUIRED ===============================" >&2
     echo "OpenClaw is set to use the Claude Code CLI, but it is not authenticated yet" >&2
     echo "and this start run has no terminal attached for interactive sign-in." >&2
-    echo "Authenticate once (login persists in ${CLAUDE_DIR}):" >&2
+    echo "Sign in via the dashboard's Claude panel, or authenticate once (login" >&2
+    echo "persists in ${CLAUDE_DIR}):" >&2
     echo "" >&2
     echo "    docker compose exec -it openclaw-gateway openclaw-claude auth login --claudeai" >&2
     echo "" >&2
     echo "Headless alternative — generate a long-lived token:" >&2
     echo "    docker compose exec -it openclaw-gateway openclaw-claude setup-token" >&2
     echo "then put it in .env as CLAUDE_CODE_OAUTH_TOKEN and restart OpenClaw." >&2
+    echo "Waiting for sign-in (up to 15 minutes) before continuing…" >&2
     echo "===============================================================================" >&2
     echo "" >&2
+
+    _deadline=$(( $(date +%s) + 900 ))
+    until claude_cli "" auth status >/dev/null 2>&1; do
+      if (( $(date +%s) >= _deadline )); then
+        echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
+        echo "  Anthropic models won't be listed until you sign in and start again." >&2
+        break
+      fi
+      sleep 8
+    done
+    claude_cli "" auth status >/dev/null 2>&1 && echo "Claude CLI: sign-in detected — continuing startup."
+  fi
+
+  register_anthropic_cli_profile() {
+    docker run --rm --user 0:0 \
+      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
+      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
+      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
+      ${OAUTH_TOKEN:+-e OPENCLAW_CLAUDE_OAUTH_TOKEN="${OAUTH_TOKEN}"} \
+      -v "${STATE_DIR}:/home/node/.openclaw" \
+      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
+      -v "${CLAUDE_DIR}:/home/node/.claude" \
+      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
+      --entrypoint script \
+      "${OPENCLAW_IMAGE}" -qec \
+      'openclaw models auth login --provider anthropic --method cli' /dev/null
+  }
+
+  if [[ -n "$OAUTH_TOKEN" ]] || claude_cli "" auth status >/dev/null 2>&1; then
+    if register_anthropic_cli_profile >/dev/null 2>&1; then
+      echo "Claude CLI: registered Anthropic auth profile in OpenClaw (anthropic/* models now appear in the picker)."
+    else
+      echo "Warning: could not register the Anthropic auth profile in OpenClaw; Claude models may not appear in the picker." >&2
+    fi
   fi
 
   # Register the ingest_pdf stdio MCP server at user scope so every claude-cli
@@ -537,7 +577,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
     echo "::aiw-copilot-auth-required::"
     echo ""
     echo "========================= GITHUB COPILOT SIGN-IN NEEDED ========================="
-    echo "OpenClaw is set to use GitHub Copilot (OPENCLAW_ENABLE_COPILOT=1) but isn't"
+    echo "OpenClaw is set to use GitHub Copilot (ENABLE_GITHUB_COPILOT=1) but isn't"
     echo "authenticated yet. Sign in via the dashboard's 'GitHub Copilot sign-in' panel."
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
@@ -591,7 +631,7 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
     echo "::aiw-codex-auth-required::"
     echo ""
     echo "========================= OPENAI CODEX SIGN-IN NEEDED ==========================="
-    echo "OpenClaw is set to use the Codex harness (OPENCLAW_ENABLE_CODEX=1) but isn't"
+    echo "OpenClaw is set to use the Codex harness (ENABLE_OPENAI_CODEX=1) but isn't"
     echo "authenticated yet. Sign in via the dashboard's 'Sign in with ChatGPT' panel."
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
@@ -645,7 +685,7 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
     echo "::aiw-grok-auth-required::"
     echo ""
     echo "============================ XAI GROK SIGN-IN NEEDED ============================="
-    echo "OpenClaw is set to use Grok (OPENCLAW_ENABLE_GROK=1) but isn't authenticated yet."
+    echo "OpenClaw is set to use Grok (ENABLE_XAI_GROK=1) but isn't authenticated yet."
     echo "Sign in via the dashboard's 'Sign in with Grok' panel."
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="

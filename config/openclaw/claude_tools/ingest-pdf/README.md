@@ -12,7 +12,7 @@ extraction, js-tiktoken chunking, embedding, PostgREST inserts into
 - Mounted read-only into `openclaw-gateway` / `openclaw-cli` at
   `/home/node/.claude-tools/ingest-pdf` (see `compose.yml`).
 - Registered for Claude Code at user scope by `config/scripts/start/openclaw.sh`
-  when `OPENCLAW_ENABLE_CLAUDE_CLI=1`:
+  when `ENABLE_ANTHROPIC_CLAUDE_CODE=1`:
   `claude mcp add-json -s user ingest-pdf '{"type":"stdio","command":"node","args":["/home/node/.claude-tools/ingest-pdf/dist/index.mjs"]}'`.
 - Runs inside the gateway, inheriting `POSTGREST_API_KEY`, `POSTGREST_URL`,
   `LOCAL_LLM_API_BASE`/`MODEL`, `OPENCLAW_WORKSPACE_DIR`, and any configured

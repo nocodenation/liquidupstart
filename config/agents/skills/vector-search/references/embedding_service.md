@@ -44,7 +44,7 @@ Every non-self-hosted vector is zero-padded to fill the shared `vector(2560)` co
 | Backend | Credential | Default model (native dims) | Endpoint |
 |---------|-----------|------------------------------|----------|
 | **self_hosted** | `LOCAL_LLM_API_BASE` (model from `/v1/models`) | host model (2560) | `$LOCAL_LLM_API_BASE/v1/embeddings` |
-| **copilot** | `OPENCLAW_ENABLE_COPILOT=1` (signed in) | text-embedding-3-small (1536) | OpenClaw gateway `/v1/embeddings` |
+| **copilot** | `ENABLE_GITHUB_COPILOT=1` (signed in) | text-embedding-3-small (1536) | OpenClaw gateway `/v1/embeddings` |
 | **openai** | `OPENAI_API_KEY` | text-embedding-3-large (3072) | api.openai.com/v1/embeddings |
 | **openrouter** | `OPENROUTER_API_KEY` | openai/text-embedding-3-large (3072) | openrouter.ai/api/v1/embeddings |
 | **google** | `GEMINI_API_KEY` / `GOOGLE_API_KEY` | gemini-embedding-001 (3072) | generativelanguage.googleapis.com/v1beta/openai/embeddings |

@@ -27,7 +27,7 @@ rules by hand. Liquid Upstart does that wiring for you:
 - **Everything on one network, one proxy** — services live at predictable `*.localhost` subdomains.
 - **AI agents that know the stack** — OpenClaw / OpenCode ship with skills for the database,
   REST API, data flows, and file storage, so an agent can build against the platform out of the box.
-- **Runs anywhere** — Linux, macOS, and Windows (no WSL or terminal required on Windows).
+- **Runs anywhere** — Linux, macOS, and Windows (via WSL2).
 
 It's aimed at developers, data tinkerers, and self-hosters who want a batteries-included
 sandbox they can spin up, throw away, and spin up again.
@@ -39,7 +39,7 @@ sandbox they can spin up, throw away, and spin up again.
 - 🧩 **Batteries included** — Postgres + pgvector, PostgREST, Swagger, pgAdmin, OpenProject,
   Nextcloud + Collabora, Liquid (data flows), and AI agents.
 - 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
-- 🪟 **Windows without WSL** — `.bat` files run the same shell scripts inside a toolbox container.
+- 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro. (The legacy `.bat` toolbox wrappers are **deprecated**.)
 - 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
 - 🔁 **Multi-checkout safe** — container names are suffixed with a per-checkout `APP_ID`.
 
@@ -65,11 +65,41 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 ## Prerequisites
 
 - **Linux / macOS:** Docker + Docker Compose.
-- **Windows:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (its installer sets up everything else for you). Nothing else to install.
+- **Windows:** WSL2 with a Linux distro (Ubuntu recommended) and Docker running **inside** WSL2.
+  Follow the WSL2 setup below — everything then runs as on Linux. This avoids the filesystem
+  IO issues of running off the Windows filesystem.
+
+### Windows: install WSL2 + Ubuntu first
+
+If you're on Windows, set up WSL2 before anything else. In an **Administrator** PowerShell:
+
+```powershell
+wsl --install            # enable WSL2 (reboot when prompted)
+wsl --install -d Ubuntu  # install the Ubuntu distribution
+```
+
+`wsl --install` is supposed to install Ubuntu by default, but on some Windows builds it only
+enables the WSL2 feature and you have to install the distro explicitly — so run
+`wsl --install -d Ubuntu` to be sure (run `wsl --list --online` to see all available distros).
+After Ubuntu boots, set your Linux username/password and continue inside that Ubuntu shell.
+
+### WSL2: one-line install
+
+On a fresh, systemd-enabled WSL2 distro (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE),
+this bootstrap installs **rootless Docker**, applies the rootless tweaks, and clones the
+repo into the current directory:
+
+```bash
+curl -fsSL https://liquidupstart.com/install.sh | bash
+```
+
+Run it as your **normal user** (not root). When it finishes, `cd liquidupstart` and continue
+with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to
+`/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
 
 ## Quickstart
 
-1. **Run the dashboard:** `./run.sh` (Windows: double-click `run.bat`), then open the
+1. **Run the dashboard:** `./run.sh` (on Windows, run it inside your WSL2 shell), then open the
    printed URL (first free port from `7777` up). On the first run it shows the configuration
    form (secrets left empty are generated for you); afterwards it shows the service dashboard:
    tiles with every URL & credential when the stack runs, **Build** / **Start** / **Stop**
@@ -81,11 +111,13 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 
    | | Build | Start | Stop | Clean rendered config |
    |---|---|---|---|---|
-   | **Linux / macOS** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/cleanup.sh` |
-   | **Windows** | double-click `scripts\windows\build.bat` | double-click `scripts\windows\start.bat` | `scripts\windows\stop.bat` | `scripts\windows\cleanup.bat` |
+   | **Linux / macOS / Windows (WSL2)** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/cleanup.sh` |
 
-   `./scripts/linux/rebuild.sh` rebuilds the custom images from scratch. `start.sh` / `start.bat`
-   print the full list of service URLs and credentials when they finish.
+   On Windows, run these inside your WSL2 shell. The legacy `scripts\windows\*.bat` wrappers
+   are **deprecated** — prefer WSL2.
+
+   `./scripts/linux/rebuild.sh` rebuilds the custom images from scratch. `start.sh`
+   prints the full list of service URLs and credentials when it finishes.
 
 ## Services
 
@@ -153,13 +185,16 @@ Both ship with **skills** that encode how to use this environment:
 
 Add at least one LLM provider key (section 5) to enable the agents.
 
-## How the Windows wrappers work
+## How the Windows wrappers work (deprecated)
+
+> **Deprecated.** The `.bat` wrappers are no longer the recommended way to run on Windows —
+> use WSL2 (see [Prerequisites](#prerequisites)) to avoid filesystem IO issues. They are kept
+> for now but may be removed in a future release.
 
 The `.bat` files run the exact same `.sh` scripts as Linux — no separate Windows codebase
 to maintain. On first use they build a small helper "toolbox" container
 (`config/win/Dockerfile.toolbox`) that has bash + the tools the scripts expect, and run the
-scripts inside it against Docker Desktop's engine. You never need to open WSL or a terminal;
-double-clicking the `.bat` is enough.
+scripts inside it against the Docker engine.
 
 ## Data & persistence
 

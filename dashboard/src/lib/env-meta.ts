@@ -37,7 +37,7 @@ export function sectionModeFromTitle(title: string): { mode: SectionMode; displa
 // knobs consumed by build.sh, plus the OpenClaw build switch).
 export function isBuildAffecting(key: string): boolean {
   return (
-    key === 'OPENCLAW_ENABLE_CLAUDE_CLI' ||
+    key === 'ENABLE_ANTHROPIC_CLAUDE_CODE' ||
     /SYSTEM_DEPENDENCIES(_MODE)?$/.test(key) ||
     /POST_INSTALLATION_COMMANDS(_MODE)?$/.test(key)
   );
@@ -50,8 +50,8 @@ export function looksSecret(key: string): boolean {
 export type InputType = 'text' | 'password' | 'number' | 'checkbox' | 'select-mode';
 
 export function inputType(key: string): InputType {
-  // OPENCLAW_ENABLE_* toggles are 0/1 flags — render as checkboxes.
-  if (/^OPENCLAW_ENABLE_/.test(key)) return 'checkbox';
+  // ENABLE_* provider toggles are 0/1 flags — render as checkboxes.
+  if (/^ENABLE_/.test(key)) return 'checkbox';
   if (/_MODE$/.test(key)) return 'select-mode';
   if (/PORT$|TIMEOUT$/.test(key)) return 'number';
   if (looksSecret(key)) return 'password';

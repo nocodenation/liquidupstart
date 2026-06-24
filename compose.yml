@@ -572,7 +572,7 @@ services:
       nextcloud-redis:
         condition: service_healthy
     volumes:
-      - nextcloud_html:/var/www/html
+      - ./volumes/nextcloud/html:/var/www/html
       - ./volumes/nextcloud/config:/var/www/html/config
       - ./volumes/nextcloud/data:/var/www/html/data
       - ./volumes/nextcloud/custom_apps:/var/www/html/custom_apps
@@ -718,7 +718,7 @@ services:
       LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
       MINIMAX_GROUP_ID: ${MINIMAX_GROUP_ID:-}
-      OPENCLAW_ENABLE_COPILOT: ${OPENCLAW_ENABLE_COPILOT:-}
+      ENABLE_GITHUB_COPILOT: ${ENABLE_GITHUB_COPILOT:-}
       LIQUID_USERNAME: ${LIQUID_USERNAME:-}
       LIQUID_PASSWORD: ${LIQUID_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
@@ -812,7 +812,7 @@ services:
       LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
       MINIMAX_GROUP_ID: ${MINIMAX_GROUP_ID:-}
-      OPENCLAW_ENABLE_COPILOT: ${OPENCLAW_ENABLE_COPILOT:-}
+      ENABLE_GITHUB_COPILOT: ${ENABLE_GITHUB_COPILOT:-}
       LIQUID_USERNAME: ${LIQUID_USERNAME:-}
       LIQUID_PASSWORD: ${LIQUID_PASSWORD:-}
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
@@ -845,7 +845,3 @@ services:
 networks:
   nocodenation_liquid_upstart_network:
     name: nocodenation_liquid_upstart_network_${SYSTEM_HTTP_PORT:-8888}
-
-volumes:
-  nextcloud_html:
-    name: nextcloud_html_${APP_ID:-0}
