@@ -24,12 +24,10 @@ let child: ReturnType<typeof spawn> | null = null;
 
 // The plugins mount is required (not just state/secrets): openclaw validates the
 // full config, incl. plugins.load.paths, before running ANY subcommand.
-// TTY (`-t`) is allocated because login-github-copilot requires one.
-function openclawArgs(tty: boolean, ...args: string[]): string[] {
+function openclawArgs(...args: string[]): string[] {
   return [
     'run',
     '--rm',
-    ...(tty ? ['-t'] : []),
     '--user',
     '0:0',
     '--entrypoint',
@@ -52,6 +50,38 @@ function openclawArgs(tty: boolean, ...args: string[]): string[] {
     `${PLUGINS_DIR}:/home/node/openclaw-plugins:ro`,
     OPENCLAW_IMAGE,
     ...args
+  ];
+}
+
+function loginArgs(): string[] {
+  return [
+    'run',
+    '--rm',
+    '-i',
+    '--user',
+    '0:0',
+    '--entrypoint',
+    'script',
+    '-e',
+    'HOME=/home/node',
+    '-e',
+    'OPENCLAW_HOME=/home/node',
+    '-e',
+    'OPENCLAW_STATE_DIR=/home/node/.openclaw',
+    '-e',
+    'OPENCLAW_CONFIG_DIR=/home/node/.openclaw',
+    '-e',
+    'OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json',
+    '-v',
+    `${STATE_DIR}:/home/node/.openclaw`,
+    '-v',
+    `${SECRETS_DIR}:/home/node/.config/openclaw`,
+    '-v',
+    `${PLUGINS_DIR}:/home/node/openclaw-plugins:ro`,
+    OPENCLAW_IMAGE,
+    '-qec',
+    'openclaw models auth login-github-copilot --yes',
+    '/dev/null'
   ];
 }
 
@@ -81,7 +111,7 @@ function dockerCapture(args: string[], timeoutMs: number): Promise<{ code: numbe
 }
 
 async function copilotAuthed(): Promise<boolean> {
-  const { out } = await dockerCapture(openclawArgs(false, 'models', 'auth', 'list'), PROBE_TIMEOUT_MS);
+  const { out } = await dockerCapture(openclawArgs('models', 'auth', 'list'), PROBE_TIMEOUT_MS);
   return /github-copilot/i.test(out);
 }
 
@@ -126,16 +156,34 @@ export async function POST({ request }) {
         }
       };
 
-      const c = spawn(
-        'docker',
-        openclawArgs(true, 'models', 'auth', 'login-github-copilot', '--yes'),
-        { cwd: ENV_DIR }
-      );
+      const c = spawn('docker', loginArgs(), { cwd: ENV_DIR });
       child = c;
       const timeout = setTimeout(() => c.kill(), LOGIN_TIMEOUT_MS);
 
-      c.stdout.on('data', (d) => write(stripAnsi(d.toString())));
-      c.stderr.on('data', (d) => write(stripAnsi(d.toString())));
+      let confirmed = false;
+      let acc = '';
+      const driveConfirm = (s: string) => {
+        if (confirmed) return;
+        acc = (acc + s).slice(-6000);
+        if (!/rerunlogin|alreadyexists/.test(acc.replace(/[^a-z]/gi, '').toLowerCase())) return;
+        confirmed = true;
+        try {
+          c.stdin?.write('\x1b[D\r');
+        } catch {
+          // child already gone
+        }
+      };
+
+      c.stdout.on('data', (d) => {
+        const s = stripAnsi(d.toString());
+        driveConfirm(s);
+        write(s);
+      });
+      c.stderr.on('data', (d) => {
+        const s = stripAnsi(d.toString());
+        driveConfirm(s);
+        write(s);
+      });
       c.on('error', (err) => write(`\n${err.message}\n`));
       c.on('close', async (code) => {
         clearTimeout(timeout);

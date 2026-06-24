@@ -567,7 +567,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  copilot_authed() { copilot_cli models auth list 2>/dev/null | grep -qi github-copilot; }
+  copilot_authed() { local out; out="$(copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
 
   if copilot_authed; then
     echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
@@ -608,7 +608,7 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  codex_authed() { codex_cli "--entrypoint openclaw" models auth list --provider openai 2>/dev/null | grep -qi oauth; }
+  codex_authed() { local out; out="$(codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if codex_authed; then
     echo "OpenAI Codex: already authenticated (ChatGPT/Codex login persists in ${STATE_DIR})."
@@ -662,7 +662,7 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  grok_authed() { grok_cli "--entrypoint openclaw" models auth list --provider xai 2>/dev/null | grep -qi oauth; }
+  grok_authed() { local out; out="$(grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if grok_authed; then
     echo "xAI Grok: already authenticated (Grok login persists in ${STATE_DIR})."
