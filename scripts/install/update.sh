@@ -109,6 +109,21 @@ remove_legacy() {
   docker image prune --force >/dev/null 2>&1 || true
 }
 
+# Pull the registry (non-built) base images referenced in compose.yml. Skips the
+# four liquidupstart/* images, which are built locally and aren't in a registry.
+pull_base_images() {
+  local img
+  log "Pulling latest base images"
+  grep -E '^[[:space:]]*image:' "${DEST}/compose.yml" \
+    | awk '{print $2}' \
+    | grep -v '^liquidupstart/' \
+    | sort -u \
+    | while read -r img; do
+        [ -n "$img" ] || continue
+        docker pull "$img" || warn "Could not pull ${img}; continuing."
+      done
+}
+
 main() {
   local installed tag tmp extracted
 
@@ -136,11 +151,6 @@ main() {
   log "Stopping the stack"
   docker compose down --remove-orphans || warn "docker compose down reported an issue; continuing."
 
-  # --ignore-pull-failures: the four liquidupstart/* images are built locally and
-  # aren't in any registry, so pulling them fails harmlessly; base images update.
-  log "Pulling latest base images"
-  docker compose pull --ignore-pull-failures || warn "docker compose pull reported an issue; continuing."
-
   remove_legacy
 
   : > "$REBUILD_MARKER"
@@ -159,6 +169,8 @@ main() {
   cp -a "${extracted}/." "${DEST}/"
   printf '%s\n' "$tag" > "$VERSION_FILE"
   rm -rf "$tmp"
+
+  pull_base_images
 
   cat <<EOF
 
