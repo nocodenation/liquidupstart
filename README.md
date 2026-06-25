@@ -87,7 +87,7 @@ After Ubuntu boots, set your Linux username/password and continue inside that Ub
 
 On a fresh, systemd-enabled WSL2 distro (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE),
 this bootstrap installs **rootless Docker**, applies the rootless tweaks, and downloads the
-latest release into a `liquidupstart/` folder in the current directory:
+latest release into `~/.liquidupstart`:
 
 ```bash
 curl -fsSL https://liquidupstart.com/install.sh | bash
@@ -101,7 +101,8 @@ curl -fsSL https://liquidupstart.com/install.sh | bash -s -- 1.2.3
 
 (Or, if you downloaded the script: `./install.sh 1.2.3`.)
 
-Run it as your **normal user** (not root). When it finishes, `cd liquidupstart` and continue
+Run it as your **normal user** for rootless Docker (recommended), or as **root** to install
+the system (rootful) daemon. When it finishes, `cd ~/.liquidupstart` and continue
 with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to
 `/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
 

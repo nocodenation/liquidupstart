@@ -2,13 +2,14 @@
 #
 # install.sh — Docker bootstrap for Liquid Upstart
 #
-# Linux/WSL2: rootless Docker Engine (systemd-enabled). Supports Debian/Ubuntu,
+# Linux/WSL2: as a normal user it sets up a rootless Docker Engine (systemd-enabled);
+#   as root it installs the system (rootful) Docker daemon. Supports Debian/Ubuntu,
 #   Fedora/RHEL, Arch, and openSUSE families.
 # macOS: reuses an already-running Docker (Desktop/Colima/OrbStack); otherwise
 #   installs Colima or Docker Desktop via Homebrew.
 #
-# Run as your NORMAL user (not root, not via sudo). On Linux the script invokes
-# sudo only for the steps that need it; the rootless setup tool must run unprivileged.
+# Run as your normal user for rootless Docker (recommended), or as root for the
+# system daemon. As a normal user the script invokes sudo only where needed.
 #
 #   chmod +x install.sh && ./install.sh [version]
 #
@@ -240,13 +241,102 @@ run_macos() {
 # ----------------------------------------------------------------------------
 # Linux/WSL2: rootless Docker Engine
 # ----------------------------------------------------------------------------
+configure_rootless() {
+  command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1 \
+    || die "dockerd-rootless-setuptool.sh not found — rootless extras missing for ${FAMILY}."
+
+  # --- Disable the system-wide rootful daemon ---
+  log "Disabling rootful system daemon"
+  sudo systemctl disable --now docker.service docker.socket >/dev/null 2>&1 || true
+  ok "Rootful daemon disabled"
+
+  # --- cgroup v2 controller delegation (needed for --cpus / --memory limits) ---
+  log "Setting up cgroup v2 delegation"
+  sudo mkdir -p /etc/systemd/system/user@.service.d
+  cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/delegate.conf >/dev/null
+[Service]
+Delegate=cpu cpuset io memory pids
+EOF
+  sudo systemctl daemon-reload
+  ok "Delegation drop-in written (full effect after WSL restart)"
+
+  # --- Optional: unprivileged low ports + container ping ---
+  log "Applying rootless sysctl tweaks (low ports + ping)"
+  cat <<'EOF' | sudo tee /etc/sysctl.d/99-rootless-docker.conf >/dev/null
+# Allow rootless containers to bind ports >= 80
+net.ipv4.ip_unprivileged_port_start = 80
+# Allow ICMP (ping) from inside rootless containers
+net.ipv4.ping_group_range = 0 2147483647
+EOF
+  sudo sysctl --quiet -p /etc/sysctl.d/99-rootless-docker.conf || true
+  ok "sysctl tweaks applied"
+
+  # --- Run the rootless setup tool (UNPRIVILEGED — no sudo) ---
+  log "Running rootless setup tool as ${TARGET_USER}"
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+  dockerd-rootless-setuptool.sh install
+  ok "Rootless daemon configured"
+
+  # --- Enable the user service + linger (survives shell/session exit in WSL) ---
+  log "Enabling user service and linger"
+  systemctl --user enable --now docker
+  sudo loginctl enable-linger "$TARGET_USER"
+  ok "Service enabled, linger on"
+
+  # --- Persist shell environment ---
+  log "Configuring shell environment"
+  RC="${HOME}/.bashrc"
+  [ -n "${ZSH_VERSION:-}" ] && RC="${HOME}/.zshrc"
+  MARKER="# >>> rootless docker >>>"
+  if ! grep -qF "$MARKER" "$RC" 2>/dev/null; then
+    cat >>"$RC" <<EOF
+
+${MARKER}
+export PATH=/usr/bin:\$PATH
+export DOCKER_HOST=unix:///run/user/\$(id -u)/docker.sock
+# <<< rootless docker <<<
+EOF
+    ok "Appended env block to $RC"
+  else
+    ok "Env block already present in $RC"
+  fi
+  export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+}
+
+configure_rootful() {
+  log "Enabling the system Docker daemon"
+  sudo systemctl enable --now docker.service
+  ok "Docker daemon enabled and started"
+}
+
+verify_docker() {
+  log "Verifying installation"
+  [ "$IS_ROOT" -eq 1 ] || docker context use rootless >/dev/null 2>&1 || true
+  docker info 2>/dev/null | grep -iE 'rootless|cgroup' || true
+
+  echo
+  if docker run --rm hello-world >/dev/null 2>&1; then
+    ok "hello-world ran successfully — Docker is working."
+  elif [ "$IS_ROOT" -eq 1 ]; then
+    warn "hello-world did not run yet. Check the daemon with: systemctl status docker"
+  else
+    warn "hello-world did not run yet. Open a NEW shell (to load DOCKER_HOST) and retry:"
+    warn "    docker run --rm hello-world"
+  fi
+}
+
 run_linux() {
   TARGET_USER="$(id -un)"
+  IS_ROOT=0
+  [ "$(id -u)" -eq 0 ] && IS_ROOT=1
 
   # --- Preflight checks ---
   log "Preflight checks"
 
-  [ "$(id -u)" -ne 0 ] || die "Do not run as root / sudo. Run as your normal user."
+  if [ "$IS_ROOT" -eq 1 ]; then
+    sudo() { "$@"; }
+    warn "Running as root — installing the system (rootful) Docker daemon, not rootless."
+  fi
 
   grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
     || warn "This doesn't look like WSL — continuing anyway."
@@ -275,7 +365,7 @@ run_linux() {
   fi
   ok "Detected ${PRETTY_NAME:-$DISTRO_ID} — package family: ${FAMILY}"
 
-  # --- 1. Per-distro install ---
+  # --- Per-distro install ---
   case "$FAMILY" in
     debian) install_debian ;;
     fedora) install_fedora ;;
@@ -284,80 +374,13 @@ run_linux() {
   esac
   ok "Docker installed"
 
-  command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1 \
-    || die "dockerd-rootless-setuptool.sh not found — rootless extras missing for ${FAMILY}."
-
-  # --- 2. Disable the system-wide rootful daemon ---
-  log "Disabling rootful system daemon"
-  sudo systemctl disable --now docker.service docker.socket >/dev/null 2>&1 || true
-  ok "Rootful daemon disabled"
-
-  # --- 3. cgroup v2 controller delegation (needed for --cpus / --memory limits) ---
-  log "Setting up cgroup v2 delegation"
-  sudo mkdir -p /etc/systemd/system/user@.service.d
-  cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/delegate.conf >/dev/null
-[Service]
-Delegate=cpu cpuset io memory pids
-EOF
-  sudo systemctl daemon-reload
-  ok "Delegation drop-in written (full effect after WSL restart)"
-
-  # --- 4. Optional: unprivileged low ports + container ping ---
-  log "Applying rootless sysctl tweaks (low ports + ping)"
-  cat <<'EOF' | sudo tee /etc/sysctl.d/99-rootless-docker.conf >/dev/null
-# Allow rootless containers to bind ports >= 80
-net.ipv4.ip_unprivileged_port_start = 80
-# Allow ICMP (ping) from inside rootless containers
-net.ipv4.ping_group_range = 0 2147483647
-EOF
-  sudo sysctl --quiet -p /etc/sysctl.d/99-rootless-docker.conf || true
-  ok "sysctl tweaks applied"
-
-  # --- 5. Run the rootless setup tool (UNPRIVILEGED — no sudo) ---
-  log "Running rootless setup tool as ${TARGET_USER}"
-  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-  dockerd-rootless-setuptool.sh install
-  ok "Rootless daemon configured"
-
-  # --- 6. Enable the user service + linger (survives shell/session exit in WSL) ---
-  log "Enabling user service and linger"
-  systemctl --user enable --now docker
-  sudo loginctl enable-linger "$TARGET_USER"
-  ok "Service enabled, linger on"
-
-  # --- 7. Persist shell environment ---
-  log "Configuring shell environment"
-  RC="${HOME}/.bashrc"
-  [ -n "${ZSH_VERSION:-}" ] && RC="${HOME}/.zshrc"
-  MARKER="# >>> rootless docker >>>"
-  if ! grep -qF "$MARKER" "$RC" 2>/dev/null; then
-    cat >>"$RC" <<EOF
-
-${MARKER}
-export PATH=/usr/bin:\$PATH
-export DOCKER_HOST=unix:///run/user/\$(id -u)/docker.sock
-# <<< rootless docker <<<
-EOF
-    ok "Appended env block to $RC"
+  if [ "$IS_ROOT" -eq 1 ]; then
+    configure_rootful
   else
-    ok "Env block already present in $RC"
-  fi
-  export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
-
-  # --- 8. Verify ---
-  log "Verifying installation"
-  docker context use rootless >/dev/null 2>&1 || true
-  docker info --format '  Rootless: {{.SecurityOptions}}' 2>/dev/null || true
-  docker info 2>/dev/null | grep -iE 'rootless|cgroup' || true
-
-  echo
-  if docker run --rm hello-world >/dev/null 2>&1; then
-    ok "hello-world ran successfully — rootless Docker is working."
-  else
-    warn "hello-world did not run yet. Open a NEW shell (to load DOCKER_HOST) and retry:"
-    warn "    docker run --rm hello-world"
+    configure_rootless
   fi
 
+  verify_docker
 }
 
 # ----------------------------------------------------------------------------
@@ -366,7 +389,7 @@ EOF
 download_release() {
   local repo api tag asset url tmp dest extracted
   repo="nocodenation/liquidupstart"
-  dest="$(pwd)/liquidupstart"
+  dest="${HOME}/.liquidupstart"
   tag="${1:-}"
 
   if [ -d "$dest" ]; then
