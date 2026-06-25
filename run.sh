@@ -40,19 +40,15 @@ OPTIONS
   -h, --help      Show this help and exit.
 
 INSTALL LOCATION
-  This launcher lives at:
-    ${SCRIPT_DIR}/run.sh
-  The whole project (compose.yml, config/, volumes/, .env) is in that folder.
-  To work with it directly:
+  The project (compose.yml, config/, volumes/, .env) lives in:
+    ${SCRIPT_DIR}
+  cd into it to work with it directly:
     cd "${SCRIPT_DIR}"
-    ./run.sh                 # same as running '${me}'
-    ./scripts/linux/start.sh # start the stack from the CLI
-    ./scripts/linux/down.sh  # stop the stack from the CLI
 
 EXAMPLES
-  ${me}                      # launch the dashboard
-  ${me} --cleanup            # wipe everything and start fresh
-  ${me} --cleanup --keep-images
+  ${me}                          # launch the dashboard
+  ${me} --cleanup                # tear down and wipe everything (does not restart)
+  ${me} --cleanup --keep-images  # same, but keep images & build cache for a faster rebuild
 EOF
 }
 
