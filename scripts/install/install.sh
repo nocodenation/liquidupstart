@@ -17,6 +17,10 @@
 #   curl -fsSL <raw-url>/install.sh | bash
 #   curl -fsSL <raw-url>/install.sh | bash -s -- 1.2.3   # pin a version
 #
+# The installed version is recorded in ~/.liquidupstart/.liquidupstart-version.
+# Re-running upgrades in place (keeping .env and volumes/); it skips when the
+# target equals the installed version and refuses to downgrade.
+#
 set -euo pipefail
 
 # ----------------------------------------------------------------------------
@@ -384,54 +388,99 @@ run_linux() {
 }
 
 # ----------------------------------------------------------------------------
-# Shared: download the latest release
+# Shared: download a release (version-aware)
 # ----------------------------------------------------------------------------
-download_release() {
-  local repo api tag asset url tmp dest extracted
-  repo="nocodenation/liquidupstart"
-  dest="${HOME}/.liquidupstart"
-  tag="${1:-}"
-
-  if [ -d "$dest" ]; then
-    ok "Liquid Upstart already present at $dest — skipping download"
-  else
-    command -v unzip >/dev/null 2>&1 || die "unzip is required but not installed."
-
-    if [ -n "$tag" ]; then
-      log "Using requested release ${tag}"
-    else
-      log "Resolving latest release"
-      api="https://api.github.com/repos/${repo}/releases/latest"
-      tag="$(curl -fsSL "$api" | grep -m1 '"tag_name"' \
-        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-      [ -n "$tag" ] || die "Could not determine the latest release tag."
+# Compare two MAJOR.MINOR.PATCH versions (a leading 'v' and any pre-release
+# suffix are ignored). Echoes: gt if $1>$2, lt if $1<$2, eq if equal.
+ver_cmp() {
+  local a="${1#v}" b="${2#v}" i x y
+  local -a A B
+  IFS=. read -r -a A <<EOF
+$a
+EOF
+  IFS=. read -r -a B <<EOF
+$b
+EOF
+  for i in 0 1 2; do
+    x="${A[i]:-0}"; y="${B[i]:-0}"
+    x="${x%%[!0-9]*}"; y="${y%%[!0-9]*}"
+    x=$((10#${x:-0})); y=$((10#${y:-0}))
+    if   [ "$x" -gt "$y" ]; then echo gt; return
+    elif [ "$x" -lt "$y" ]; then echo lt; return
     fi
-    asset="liquidupstart-${tag}.zip"
-    url="https://github.com/${repo}/releases/download/${tag}/${asset}"
+  done
+  echo eq
+}
 
-    tmp="$(mktemp -d)"
-    log "Downloading ${asset}"
-    curl -fsSL "$url" -o "${tmp}/${asset}"
-    log "Extracting"
-    unzip -q "${tmp}/${asset}" -d "$tmp"
-    extracted="${tmp}/liquidupstart-${tag}"
-    [ -d "$extracted" ] \
-      || extracted="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-    mv "$extracted" "$dest"
-    rm -rf "$tmp"
-    ok "Installed ${tag} into $dest"
-  fi
-
+print_done() {
   cat <<EOF
 
 ------------------------------------------------------------------
 Done.
 
-The Liquid Upstart is at ${dest}. Enter it with:
+The Liquid Upstart is at ${1}. Enter it with:
 
-cd ${dest}
+cd ${1}
 ------------------------------------------------------------------
 EOF
+}
+
+download_release() {
+  local repo api tag asset url tmp dest extracted installed
+  repo="nocodenation/liquidupstart"
+  dest="${HOME}/.liquidupstart"
+  tag="${1:-}"
+
+  command -v unzip >/dev/null 2>&1 || die "unzip is required but not installed."
+
+  if [ -n "$tag" ]; then
+    log "Requested release ${tag}"
+  else
+    log "Resolving latest release"
+    api="https://api.github.com/repos/${repo}/releases/latest"
+    tag="$(curl -fsSL "$api" | grep -m1 '"tag_name"' \
+      | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+    [ -n "$tag" ] || die "Could not determine the latest release tag."
+  fi
+
+  installed=""
+  [ -f "${dest}/.liquidupstart-version" ] \
+    && installed="$(tr -d '[:space:]' < "${dest}/.liquidupstart-version")"
+
+  if [ -n "$installed" ]; then
+    case "$(ver_cmp "$tag" "$installed")" in
+      eq) ok "${installed#v} is already installed at ${dest} — nothing to do."
+          print_done "$dest"; return ;;
+      lt) die "Installed version ${installed#v} is newer than ${tag#v}. Refusing to downgrade.
+  Remove ${dest} first if you really want ${tag#v}." ;;
+      gt) log "Upgrading ${installed#v} → ${tag#v}" ;;
+    esac
+  fi
+
+  asset="liquidupstart-${tag}.zip"
+  url="https://github.com/${repo}/releases/download/${tag}/${asset}"
+
+  tmp="$(mktemp -d)"
+  log "Downloading ${asset}"
+  curl -fsSL "$url" -o "${tmp}/${asset}"
+  log "Extracting"
+  unzip -q "${tmp}/${asset}" -d "$tmp"
+  extracted="${tmp}/liquidupstart-${tag}"
+  [ -d "$extracted" ] \
+    || extracted="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+
+  if [ -d "$dest" ]; then
+    # Upgrade in place: overlay code, leaving .env and volumes/ untouched.
+    cp -a "${extracted}/." "${dest}/"
+  else
+    mkdir -p "$(dirname "$dest")"
+    mv "$extracted" "$dest"
+  fi
+  printf '%s\n' "$tag" > "${dest}/.liquidupstart-version"
+  rm -rf "$tmp"
+  ok "Installed ${tag#v} into $dest"
+
+  print_done "$dest"
 }
 
 # ----------------------------------------------------------------------------
