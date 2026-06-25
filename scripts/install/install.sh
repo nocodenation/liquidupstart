@@ -424,8 +424,6 @@ Liquid Upstart is installed at ${1}.
 Start it from anywhere with:
 
     liquidupstart
-
-(equivalently: cd ${1} && ./run.sh)
 ------------------------------------------------------------------
 EOF
 }

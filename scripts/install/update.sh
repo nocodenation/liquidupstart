@@ -23,6 +23,26 @@ DEST="${HOME}/.liquidupstart"
 VERSION_FILE="${DEST}/.liquidupstart-version"
 REBUILD_MARKER="${DEST}/.needs-rebuild"
 BUILT_IMAGES="opencode bun-runner liquid openclaw"
+LAUNCHER_DIR="/usr/local/bin"
+LAUNCHER="${LAUNCHER_DIR}/liquidupstart"
+
+# Ensure the 'liquidupstart' command exists on PATH. Older installs predate it,
+# so refresh it on every update too.
+link_launcher() {
+  local src="${DEST}/run.sh"
+  chmod +x "$src" 2>/dev/null || true
+  log "Linking the 'liquidupstart' command into ${LAUNCHER_DIR}"
+  if [ -d "$LAUNCHER_DIR" ] && [ -w "$LAUNCHER_DIR" ]; then
+    ln -sfn "$src" "$LAUNCHER"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p "$LAUNCHER_DIR" && sudo ln -sfn "$src" "$LAUNCHER"
+  else
+    warn "Cannot write ${LAUNCHER_DIR} and sudo is unavailable — skipping launcher."
+    return 0
+  fi
+  [ -L "$LAUNCHER" ] && ok "Run 'liquidupstart' from any directory" \
+    || warn "Could not create ${LAUNCHER}."
+}
 
 require() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed."; }
 
@@ -138,8 +158,8 @@ main() {
 
   if [ -n "$installed" ]; then
     case "$(ver_cmp "$tag" "$installed")" in
-      eq) ok "You already have the latest version (${installed#v}). Nothing to do."; exit 0 ;;
-      lt) ok "Your version (${installed#v}) is newer than the latest release (${tag#v}). Nothing to do."; exit 0 ;;
+      eq) link_launcher; ok "You already have the latest version (${installed#v}). Nothing to update — run 'liquidupstart' to start it."; exit 0 ;;
+      lt) link_launcher; ok "Your version (${installed#v}) is newer than the latest release (${tag#v}). Nothing to update — run 'liquidupstart' to start it."; exit 0 ;;
       gt) log "Updating ${installed#v} → ${tag#v}" ;;
     esac
   else
@@ -171,16 +191,18 @@ main() {
   rm -rf "$tmp"
 
   pull_base_images
+  link_launcher
 
   cat <<EOF
 
 ------------------------------------------------------------------
 Updated to ${tag#v}.
 
-The images need rebuilding. Start the dashboard and use Rebuild → Start:
+The images need rebuilding. Start the dashboard from anywhere with:
 
-cd ${DEST}
-./run.sh
+liquidupstart
+
+then use Rebuild → Start.
 ------------------------------------------------------------------
 EOF
 }
