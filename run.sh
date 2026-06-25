@@ -21,6 +21,7 @@ ${me} — Liquid Upstart launcher
 
 USAGE
   ${me}
+  ${me} --update
   ${me} --cleanup [--keep-images]
   ${me} --help
 
@@ -34,6 +35,10 @@ WHAT IT DOES
   NOT stop the stack — services keep running until you stop them.
 
 OPTIONS
+  -u, --update    Update Liquid Upstart to the latest release by re-running the
+                  hosted installer (curl https://liquidupstart.com/install.sh).
+                  Your .env and volumes/ are preserved; built images are
+                  refreshed, so the next start rebuilds.
   -c, --cleanup   Full reset instead of launching: stops the stack and removes
                   all containers, volumes/ (persisted data), .env, and built
                   images. Pass --keep-images to keep images and build cache.
@@ -47,6 +52,7 @@ INSTALL LOCATION
 
 EXAMPLES
   ${me}                          # launch the dashboard
+  ${me} --update                 # update to the latest release
   ${me} --cleanup                # tear down and wipe everything (does not restart)
   ${me} --cleanup --keep-images  # same, but keep images & build cache for a faster rebuild
 EOF
@@ -55,6 +61,9 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -c|--cleanup) shift; exec "${SCRIPT_DIR}/cleanup.sh" "$@" ;;
+    -u|--update)
+      command -v curl >/dev/null 2>&1 || { echo "Error: curl is required to update." >&2; exit 1; }
+      exec bash -c 'curl -fsSL https://liquidupstart.com/install.sh | bash' ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
   esac
