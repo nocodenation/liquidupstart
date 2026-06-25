@@ -1,4 +1,11 @@
 #!/usr/bin/sh
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# This script and the snippets it applies (sso_block.php, lc_logout_redirect.php,
+# session_security_block.php) modify Nextcloud (AGPL-3.0) in place at runtime.
+# The resulting patched files are a modified work of Nextcloud governed by
+# AGPL-3.0. See config/nextcloud/LICENSE.md. Corresponding source:
+# https://github.com/nocodenation/liquidupstart
 
 # Inject SSO login handler into base.php: rename original handleLogin →
 # handleLoginBase, append a new handleLogin that tries SSO then falls back.

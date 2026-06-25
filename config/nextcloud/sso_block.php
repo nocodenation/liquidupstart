@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Liquid Upstart modification to Nextcloud, injected into lib/base.php by
+// patch_nextcloud.sh. When applied this forms a modified work of Nextcloud
+// (AGPL-3.0). Corresponding source: https://github.com/nocodenation/liquidupstart
 public static function handleLogin(OCP\IRequest $request): bool {
 		if (!$request->getHeader('X-Nextcloud-Federation')) {
 			// Custom header-based SSO: auto-provision and auto-login

@@ -50,7 +50,11 @@ class OC_Theme {
 	}
 
 	public function getLongFooter(): string {
-		return $this->getShortFooter();
+		// AGPL-3.0 §13: this is a modified Nextcloud; offer its source to users.
+		$source = 'https://github.com/nocodenation/liquidupstart';
+		return $this->getShortFooter()
+			. '<br/>Powered by Nextcloud (AGPL-3.0). Source: '
+			. '<a href="' . $source . '" target="_blank" rel="noreferrer">' . $source . '</a>';
 	}
 
 	public function buildDocLinkToKey($key): string {
