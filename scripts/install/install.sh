@@ -18,8 +18,8 @@
 #   curl -fsSL <raw-url>/install.sh | bash -s -- 1.2.3   # pin a version
 #
 # The installed version is recorded in ~/.liquidupstart/.liquidupstart-version.
-# Re-running upgrades in place (keeping .env and volumes/); it skips when the
-# target equals the installed version and refuses to downgrade.
+# If an install already exists, this script hands off to the hosted updater
+# (https://liquidupstart.com/update.sh) instead of reinstalling.
 #
 set -euo pipefail
 
@@ -388,30 +388,8 @@ run_linux() {
 }
 
 # ----------------------------------------------------------------------------
-# Shared: download a release (version-aware)
+# Shared: download a release
 # ----------------------------------------------------------------------------
-# Compare two MAJOR.MINOR.PATCH versions (a leading 'v' and any pre-release
-# suffix are ignored). Echoes: gt if $1>$2, lt if $1<$2, eq if equal.
-ver_cmp() {
-  local a="${1#v}" b="${2#v}" i x y
-  local -a A B
-  IFS=. read -r -a A <<EOF
-$a
-EOF
-  IFS=. read -r -a B <<EOF
-$b
-EOF
-  for i in 0 1 2; do
-    x="${A[i]:-0}"; y="${B[i]:-0}"
-    x="${x%%[!0-9]*}"; y="${y%%[!0-9]*}"
-    x=$((10#${x:-0})); y=$((10#${y:-0}))
-    if   [ "$x" -gt "$y" ]; then echo gt; return
-    elif [ "$x" -lt "$y" ]; then echo lt; return
-    fi
-  done
-  echo eq
-}
-
 print_done() {
   cat <<EOF
 
@@ -429,6 +407,7 @@ EOF
 REPO="nocodenation/liquidupstart"
 DEST="${HOME}/.liquidupstart"
 VERSION_FILE="${DEST}/.liquidupstart-version"
+UPDATE_URL="https://liquidupstart.com/update.sh"
 
 # Echo the hex sha256 of a file using whichever tool is available.
 sha256_of() {
@@ -467,29 +446,19 @@ resolve_tag() {
   printf '%s\n' "$t"
 }
 
-# Decide what to do BEFORE any Docker work, based on the recorded version.
-# Sets TARGET to the tag to install; exits 0 when it's already installed and
-# dies on a downgrade. With no prior install it defers tag resolution to the
-# download step (curl may not exist yet on a fresh machine).
-gate_version() {
-  local arg="${1:-}" installed
-  installed=""
-  [ -f "$VERSION_FILE" ] && installed="$(tr -d '[:space:]' < "$VERSION_FILE")"
-
-  if [ -z "$installed" ]; then
-    TARGET="$arg"
-    return
-  fi
-
-  command -v curl >/dev/null 2>&1 || die "curl is required to check for updates."
-  TARGET="$(resolve_tag "$arg")"
-  case "$(ver_cmp "$TARGET" "$installed")" in
-    eq) ok "${installed#v} is already installed at ${DEST} — nothing to do."
-        print_done "$DEST"; exit 0 ;;
-    lt) die "Installed version ${installed#v} is newer than ${TARGET#v}. Refusing to downgrade.
-  Remove ${DEST} first if you really want ${TARGET#v}." ;;
-    gt) log "Upgrading ${installed#v} → ${TARGET#v}" ;;
-  esac
+# An install already exists — hand off to the hosted updater instead of
+# reinstalling, then exit with its status.
+run_update() {
+  local tmp rc
+  log "Liquid Upstart is already installed at ${DEST} — running the updater."
+  command -v curl >/dev/null 2>&1 || die "curl is required to run the updater."
+  tmp="$(mktemp)"
+  curl -fsSL "$UPDATE_URL" -o "$tmp" \
+    || die "Could not download the updater from ${UPDATE_URL}."
+  bash "$tmp"
+  rc=$?
+  rm -f "$tmp"
+  exit "$rc"
 }
 
 download_release() {
@@ -525,11 +494,10 @@ download_release() {
 }
 
 # ----------------------------------------------------------------------------
-# main — gate on version, then dispatch by OS
+# main — update if already installed, else install fresh
 # ----------------------------------------------------------------------------
 main() {
-  TARGET=""
-  gate_version "${1:-}"
+  [ -f "$VERSION_FILE" ] && run_update
 
   case "$(uname -s)" in
     Darwin) run_macos ;;
@@ -537,7 +505,7 @@ main() {
     *)      die "Unsupported OS: $(uname -s). This installer supports Linux/WSL2 and macOS." ;;
   esac
 
-  download_release "$TARGET"
+  download_release "${1:-}"
 }
 
 main "$@"
