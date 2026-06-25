@@ -100,6 +100,11 @@ curl -fsSL https://liquidupstart.com/install.sh | bash -s -- 1.2.3
 
 (Or, if you downloaded the script: `./install.sh 1.2.3`.)
 
+Re-running the installer **upgrades in place** — it downloads the newer release over
+`~/.liquidupstart` while leaving your `.env` and `volumes/` untouched. It records the
+installed version (in `~/.liquidupstart/.liquidupstart-version`), does nothing if you already
+have that version, and refuses to downgrade to an older one.
+
 Run it as your **normal user** for rootless Docker (recommended), or as **root** to install
 the system (rootful) daemon. When it finishes, `cd ~/.liquidupstart` and continue
 with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to
