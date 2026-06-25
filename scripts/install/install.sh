@@ -390,16 +390,42 @@ run_linux() {
 # ----------------------------------------------------------------------------
 # Shared: download a release
 # ----------------------------------------------------------------------------
+LAUNCHER_DIR="/usr/local/bin"
+LAUNCHER="${LAUNCHER_DIR}/liquidupstart"
+
+link_launcher() {
+  local src="${DEST}/run.sh"
+  chmod +x "$src" 2>/dev/null || true
+  log "Linking the 'liquidupstart' command into ${LAUNCHER_DIR}"
+  if [ -d "$LAUNCHER_DIR" ] && [ -w "$LAUNCHER_DIR" ]; then
+    ln -sfn "$src" "$LAUNCHER"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p "$LAUNCHER_DIR" && sudo ln -sfn "$src" "$LAUNCHER"
+  else
+    warn "Cannot write ${LAUNCHER_DIR} and sudo is unavailable — skipping launcher."
+    warn "Start the app with: ${src}"
+    return 0
+  fi
+  if [ -L "$LAUNCHER" ]; then
+    ok "Run 'liquidupstart' from any directory"
+  else
+    warn "Could not create ${LAUNCHER}; start the app with ${src}"
+  fi
+}
+
 print_done() {
   cat <<EOF
 
 ------------------------------------------------------------------
 Done.
 
-The Liquid Upstart is at ${1}. Enter it and start with:
+Liquid Upstart is installed at ${1}.
 
-cd ${1}
-./run.sh
+Start it from anywhere with:
+
+    liquidupstart
+
+(equivalently: cd ${1} && ./run.sh)
 ------------------------------------------------------------------
 EOF
 }
@@ -490,6 +516,7 @@ download_release() {
   rm -rf "$tmp"
   ok "Installed ${tag#v} into $DEST"
 
+  link_launcher
   print_done "$DEST"
 }
 

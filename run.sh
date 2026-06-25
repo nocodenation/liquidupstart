@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="${DIR}/${SOURCE}"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 RESULT_FILE="${SCRIPT_DIR}/.install-result"
 IMAGE="liquidupstart/dashboard:latest"
@@ -9,15 +15,50 @@ PORT=7777
 PORT_FILE="${SCRIPT_DIR}/.dashboard-port"
 
 usage() {
-  echo "Usage: $0 [--port N]"
-  echo "Runs the web dashboard: configure .env, build, start/stop the stack,"
-  echo "and see every service URL & credential. Starts looking for a free"
-  echo "port at ${PORT} (or N) and takes the first available one."
+  local me; me="$(basename "$0")"
+  cat <<EOF
+${me} — Liquid Upstart launcher
+
+USAGE
+  ${me}
+  ${me} --cleanup [--keep-images]
+  ${me} --help
+
+WHAT IT DOES
+  With no arguments, builds and runs the web dashboard, then opens it in your
+  browser. From the dashboard you configure .env, build images, and start/stop
+  the stack, and see every service URL & credential. It looks for a free port
+  starting at ${PORT} and takes the first available one.
+
+  Press Ctrl-C here, or click Quit in the app, to stop the dashboard. That does
+  NOT stop the stack — services keep running until you stop them.
+
+OPTIONS
+  -c, --cleanup   Full reset instead of launching: stops the stack and removes
+                  all containers, volumes/ (persisted data), .env, and built
+                  images. Pass --keep-images to keep images and build cache.
+  -h, --help      Show this help and exit.
+
+INSTALL LOCATION
+  This launcher lives at:
+    ${SCRIPT_DIR}/run.sh
+  The whole project (compose.yml, config/, volumes/, .env) is in that folder.
+  To work with it directly:
+    cd "${SCRIPT_DIR}"
+    ./run.sh                 # same as running '${me}'
+    ./scripts/linux/start.sh # start the stack from the CLI
+    ./scripts/linux/down.sh  # stop the stack from the CLI
+
+EXAMPLES
+  ${me}                      # launch the dashboard
+  ${me} --cleanup            # wipe everything and start fresh
+  ${me} --cleanup --keep-images
+EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --port) PORT="${2:?--port needs a value}"; shift 2 ;;
+    -c|--cleanup) shift; exec "${SCRIPT_DIR}/cleanup.sh" "$@" ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
   esac
