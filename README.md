@@ -109,9 +109,11 @@ If Liquid Upstart is already installed (`~/.liquidupstart`), re-running the inst
 automatically hands off to the **updater** below instead of reinstalling.
 
 Run it as your **normal user** for rootless Docker (recommended), or as **root** to install
-the system (rootful) daemon. When it finishes, `cd ~/.liquidupstart` and continue
-with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to
-`/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
+the system (rootful) daemon. The installer also adds a **`liquidupstart` command** to your
+`PATH` (a symlink in `/usr/local/bin`), so once it finishes you can launch the dashboard from
+any directory by running `liquidupstart` — no need to `cd` into the install folder. The
+project itself lives in `~/.liquidupstart`. WSL needs systemd enabled — add `[boot]\nsystemd=true`
+to `/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
 
 ### Updating
 
@@ -128,11 +130,13 @@ latest version it does nothing.
 
 ## Quickstart
 
-1. **Run the dashboard:** `./run.sh` (on Windows, run it inside your WSL2 shell), then open the
-   printed URL (first free port from `7777` up). On the first run it shows the configuration
-   form (secrets left empty are generated for you); afterwards it shows the service dashboard:
-   tiles with every URL & credential when the stack runs, **Build** / **Start** / **Stop**
-   buttons with a live log, and a **Configuration** button to change `.env` anytime.
+1. **Run the dashboard:** run `liquidupstart` from anywhere (if you installed via the
+   one-line installer), or `./run.sh` from inside the project folder (on Windows, run it inside
+   your WSL2 shell). Then open the printed URL (first free port from `7777` up). On the first
+   run it shows the configuration form (secrets left empty are generated for you); afterwards it
+   shows the service dashboard: tiles with every URL & credential when the stack runs,
+   **Build** / **Start** / **Stop** buttons with a live log, and a **Configuration** button to
+   change `.env` anytime. Run `liquidupstart --help` for all options.
 
    *(Manual alternative: copy `.env.example` to `.env`, edit it by hand, and use the CLI scripts below.)*
 
@@ -233,6 +237,9 @@ files, Liquid repositories, etc.) — there are no hidden named Docker volumes. 
 - `./scripts/linux/down.sh` — stop the stack (data preserved).
 - `./scripts/linux/cleanup.sh` — remove rendered config (templates are re-rendered on next build).
 - Delete the relevant `./volumes/<service>/` directory to wipe a service's data.
+- `liquidupstart --cleanup` (or `./cleanup.sh`) — **full reset:** stops the stack and removes all
+  containers, `volumes/`, `.env`, and the built images. Add `--keep-images` to keep images and
+  build cache.
 
 ## Troubleshooting
 
