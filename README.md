@@ -110,6 +110,19 @@ the system (rootful) daemon. When it finishes, `cd ~/.liquidupstart` and continu
 with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to
 `/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
 
+### Updating
+
+To move an existing install to the latest release:
+
+```bash
+curl -fsSL https://liquidupstart.com/update.sh | bash
+```
+
+It stops the stack, clears the built images and any leftovers from old versions, unpacks the
+new release over `~/.liquidupstart` (keeping your `.env` and `volumes/`), and flags a rebuild.
+On next start the dashboard prompts you to **Rebuild → Start**. If you're already on the
+latest version it does nothing.
+
 ## Quickstart
 
 1. **Run the dashboard:** `./run.sh` (on Windows, run it inside your WSL2 shell), then open the

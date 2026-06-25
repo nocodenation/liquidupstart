@@ -418,9 +418,10 @@ print_done() {
 ------------------------------------------------------------------
 Done.
 
-The Liquid Upstart is at ${1}. Enter it with:
+The Liquid Upstart is at ${1}. Enter it and start with:
 
 cd ${1}
+./run.sh
 ------------------------------------------------------------------
 EOF
 }

@@ -69,7 +69,7 @@ jobs:
             --notes-file release_notes.md \
             "${{ steps.artifacts.outputs.zip }}"
 
-      - name: Upload install.sh via SFTP
+      - name: Upload install.sh & update.sh via SFTP
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
           SFTP_PORT: ${{ secrets.SFTP_PORT }}
@@ -91,6 +91,7 @@ jobs:
             -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -b - "${SFTP_USER}@${SFTP_HOST}" <<'EOF'
           put scripts/install/install.sh /sites/liquidupstart.com/install.sh
+          put scripts/install/update.sh /sites/liquidupstart.com/update.sh
           EOF
 
           rm -f "$KEY_FILE"

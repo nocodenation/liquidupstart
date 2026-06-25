@@ -1,7 +1,7 @@
 // Shared server-side project facts: project-root paths, .env access, and
 // docker-based stack state.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { parseEnvValues } from '$lib/env-file';
@@ -10,6 +10,8 @@ export const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 export const ENV_FILE = join(ENV_DIR, '.env');
 export const EXAMPLE_FILE = join(ENV_DIR, '.env.example');
 export const RESULT_FILE = join(ENV_DIR, '.install-result');
+// Dropped by update.sh after pulling a new release to force a rebuild.
+export const REBUILD_MARKER = join(ENV_DIR, '.needs-rebuild');
 
 // Images produced by build.sh; all must exist for a start to succeed.
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
@@ -73,5 +75,17 @@ export async function stackState(): Promise<{ running: boolean; needBuild: boole
     dockerOutput(['ps', '-q', '--filter', 'name=^proxy$', '--filter', 'status=running']),
     dockerExitCode(['image', 'inspect', ...builtImages()])
   ]);
-  return { running: proxy.trim() !== '', needBuild: images !== 0 };
+  const imagesMissing = images !== 0;
+  // update.sh drops the rebuild marker (and the built images). Once the images
+  // are back the rebuild has happened, so clear it.
+  let flagged = existsSync(REBUILD_MARKER);
+  if (flagged && !imagesMissing) {
+    try {
+      rmSync(REBUILD_MARKER, { force: true });
+    } catch {
+      // best-effort; the marker is advisory
+    }
+    flagged = false;
+  }
+  return { running: proxy.trim() !== '', needBuild: imagesMissing || flagged };
 }
