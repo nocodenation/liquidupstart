@@ -36,7 +36,7 @@ DOCKERFILE="$(mktemp)"
 trap 'rm -f "${DOCKERFILE}"' EXIT
 render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${DOCKERFILE}"
 
-IMAGE="liquidupstart/liquid:${APP_ID:-0}"
+IMAGE="liquidupstart/liquid:latest"
 docker image rm "$IMAGE" >/dev/null 2>&1 || true
 echo "Building $IMAGE from ${PROJECT_DIR}/config/liquid..."
 docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" -f "${DOCKERFILE}" "${PROJECT_DIR}/config/liquid"

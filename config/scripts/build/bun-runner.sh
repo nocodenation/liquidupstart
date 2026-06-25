@@ -10,8 +10,7 @@ for arg in "$@"; do
     [ "$arg" = "--no-cache" ] && NO_CACHE="--no-cache"
 done
 
-APP_ID="$(grep -E '^APP_ID=' "${PROJECT_DIR}/.env" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
-IMAGE="liquidupstart/bun-runner:${APP_ID:-0}"
+IMAGE="liquidupstart/bun-runner:latest"
 docker image rm "$IMAGE" >/dev/null 2>&1 || true
 echo "Building $IMAGE from ${PROJECT_DIR}/config/bun_runner..."
 docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" "${PROJECT_DIR}/config/bun_runner"

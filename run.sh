@@ -33,20 +33,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "No .env found - created one from .env.example."
 fi
 
-# APP_ID (the .env creation timestamp) is appended to every container name so
-# checkouts don't collide. Stamp it now, or backfill into a pre-existing .env.
-APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
-if [[ -z "$APP_ID" ]]; then
-  APP_ID="$(date +%Y%m%d%H%M%S)"
-  if grep -qE '^APP_ID=' "$ENV_FILE"; then
-    sed -i.bak "s/^APP_ID=.*/APP_ID=${APP_ID}/" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
-  else
-    printf '\nAPP_ID=%s\n' "$APP_ID" >> "$ENV_FILE"
-  fi
-  echo "Stamped APP_ID=${APP_ID} into .env."
-fi
-
-CONTAINER="liquidupstart-dashboard-${APP_ID}"
+CONTAINER="liquidupstart-dashboard"
 
 if [[ -n "$(docker ps -q --filter "name=^${CONTAINER}$")" ]]; then
   echo "Error: the dashboard is already running. Stop it first with:" >&2

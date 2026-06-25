@@ -8,7 +8,6 @@
 import { appendFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { appId } from '$lib/server/project';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const RESULT_FILE = join(ENV_DIR, '.install-result');
@@ -91,7 +90,7 @@ export async function POST({ request }) {
 
         // Clear any lingering container from a cancelled run first so its name
         // can never block the next task.
-        const containerName = `aiw-toolbox-${task}-${appId()}`;
+        const containerName = `aiw-toolbox-${task}`;
         await run(['rm', '-f', containerName], () => {});
 
         write(`Running ${script} ...\n\n`);

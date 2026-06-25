@@ -41,7 +41,6 @@ sandbox they can spin up, throw away, and spin up again.
 - 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
 - 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro. (The legacy `.bat` toolbox wrappers are **deprecated**.)
 - 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
-- 🔁 **Multi-checkout safe** — container names are suffixed with a per-checkout `APP_ID`.
 
 ## Architecture
 

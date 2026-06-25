@@ -14,8 +14,7 @@ export const RESULT_FILE = join(ENV_DIR, '.install-result');
 // Images produced by build.sh; all must exist for a start to succeed.
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
 export function builtImages(): string[] {
-  const tag = appId();
-  return ['opencode', 'bun-runner', 'liquid', 'openclaw'].map((n) => `liquidupstart/${n}:${tag}`);
+  return ['opencode', 'bun-runner', 'liquid', 'openclaw'].map((n) => `liquidupstart/${n}:latest`);
 }
 
 export function readEnvFile() {
@@ -67,17 +66,11 @@ function dockerOutput(args: string[], timeoutMs = 30_000): Promise<string> {
   });
 }
 
-// Installation id appended to every container name; mirror compose.yml's
-// ${APP_ID:-0} default.
-export function appId(): string {
-  return envValues().get('APP_ID')?.value || '0';
-}
-
 // The nginx proxy depends on every service, so "proxy is running" is the best
 // single signal for "the stack is up".
 export async function stackState(): Promise<{ running: boolean; needBuild: boolean }> {
   const [proxy, images] = await Promise.all([
-    dockerOutput(['ps', '-q', '--filter', `name=^proxy-${appId()}$`, '--filter', 'status=running']),
+    dockerOutput(['ps', '-q', '--filter', 'name=^proxy$', '--filter', 'status=running']),
     dockerExitCode(['image', 'inspect', ...builtImages()])
   ]);
   return { running: proxy.trim() !== '', needBuild: images !== 0 };

@@ -6,7 +6,6 @@
 
 import { json } from '@sveltejs/kit';
 import { spawn } from 'node:child_process';
-import { appId } from '$lib/server/project';
 
 // Throwaway probe container: the dashboard image is always present and has
 // `true`, which exits at once so the published port is released immediately.
@@ -41,13 +40,19 @@ async function isFree(port: number): Promise<boolean> {
   throw new Error(out.trim() || `port probe failed (exit ${code})`);
 }
 
-// Host ports published by THIS project's own containers (named
-// `<service>-<APP_ID>`). A port held only by our own stack isn't a real
-// conflict (e.g. checking 8888 while the proxy is up), so treat it as available
-// rather than switching away from it.
+// Host ports published by THIS project's own containers (the `liquidupstart`
+// compose project). A port held only by our own stack isn't a real conflict
+// (e.g. checking 8888 while the proxy is up), so treat it as available rather
+// than switching away from it.
 async function ourPublishedPorts(): Promise<Set<number>> {
   const ports = new Set<number>();
-  const { code, out } = await docker(['ps', '--filter', `name=-${appId()}`, '--format', '{{.Ports}}']);
+  const { code, out } = await docker([
+    'ps',
+    '--filter',
+    'label=com.docker.compose.project=liquidupstart',
+    '--format',
+    '{{.Ports}}'
+  ]);
   if (code !== 0) return ports;
   for (const m of out.matchAll(/:(\d+)->/g)) ports.add(Number(m[1]));
   return ports;
