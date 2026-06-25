@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -75,23 +75,15 @@ jobs:
           SFTP_PORT: ${{ secrets.SFTP_PORT }}
           SFTP_USER: ${{ secrets.SFTP_USER }}
           SFTP_KEY_BASE64: ${{ secrets.SFTP_KEY_BASE64 }}
-          SFTP_KEY_PASSWORD: ${{ secrets.SFTP_KEY_PASSWORD }}
         run: |
           KEY_FILE="$(mktemp)"
-          ASKPASS="$(mktemp)"
           echo "$SFTP_KEY_BASE64" | base64 -d > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
 
-          printf '#!/bin/sh\nprintf %%s "$SFTP_KEY_PASSWORD"\n' > "$ASKPASS"
-          chmod 700 "$ASKPASS"
-
-          eval "$(ssh-agent -s)"
-          DISPLAY=:0 SSH_ASKPASS="$ASKPASS" SSH_ASKPASS_REQUIRE=force ssh-add "$KEY_FILE"
-
-          sftp -P "$SFTP_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          sftp -P "$SFTP_PORT" -i "$KEY_FILE" -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -b - "${SFTP_USER}@${SFTP_HOST}" <<'EOF'
           put scripts/install/install.sh /sites/liquidupstart.com/install.sh
           EOF
 
-          ssh-agent -k
-          rm -f "$KEY_FILE" "$ASKPASS"
+          rm -f "$KEY_FILE"
