@@ -70,17 +70,22 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 
 ### Windows: install WSL2 + Ubuntu first
 
-If you're on Windows, set up WSL2 before anything else. In an **Administrator** PowerShell:
+If you're on Windows, set up WSL2 before anything else. in a Terminal app:
 
 ```powershell
-wsl --install            # enable WSL2 (reboot when prompted)
-wsl --install -d Ubuntu  # install the Ubuntu distribution
+wsl --install
 ```
 
-`wsl --install` is supposed to install Ubuntu by default, but on some Windows builds it only
-enables the WSL2 feature and you have to install the distro explicitly — so run
-`wsl --install -d Ubuntu` to be sure (run `wsl --list --online` to see all available distros).
-After Ubuntu boots, set your Linux username/password and continue inside that Ubuntu shell.
+**Reboot your computer when prompted.** After the restart, open the Terminal app again and continue with:
+
+```powershell
+wsl --install -d Ubuntu 
+```
+
+> `wsl --install` is supposed to install Ubuntu by default, but on some Windows builds it only
+> enables the WSL2 feature and you have to install the distro explicitly — so run
+> `wsl --install -d Ubuntu` to be sure (run `wsl --list --online` to see all available distros).
+> After Ubuntu boots, set your Linux username/password and continue inside that Ubuntu shell.
 
 ### WSL2: one-line install
 
