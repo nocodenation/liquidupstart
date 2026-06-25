@@ -430,6 +430,31 @@ REPO="nocodenation/liquidupstart"
 DEST="${HOME}/.liquidupstart"
 VERSION_FILE="${DEST}/.liquidupstart-version"
 
+# Echo the hex sha256 of a file using whichever tool is available.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else return 1; fi
+}
+
+# Verify $1 against the sha256 published at $2. Releases predating this feature
+# have no checksum asset (curl 404s) — skip rather than fail those.
+verify_checksum() {
+  local file="$1" url="$2" expected actual
+  expected="$(curl -fsSL "$url" 2>/dev/null | awk 'NR==1{print $1}')"
+  if [ -z "$expected" ]; then
+    warn "No published checksum for this release — skipping integrity check."
+    return 0
+  fi
+  actual="$(sha256_of "$file")" \
+    || { warn "No sha256 tool found — skipping integrity check."; return 0; }
+  [ "$expected" = "$actual" ] || die "Checksum mismatch for $(basename "$file").
+  expected: ${expected}
+  actual:   ${actual}
+  The download may be corrupted or tampered with; aborting."
+  ok "Checksum verified (sha256)"
+}
+
 # Echo the target release tag: the explicit arg if given, else the latest
 # release resolved from the GitHub API.
 resolve_tag() {
@@ -478,6 +503,7 @@ download_release() {
   tmp="$(mktemp -d)"
   log "Downloading ${asset}"
   curl -fsSL "$url" -o "${tmp}/${asset}"
+  verify_checksum "${tmp}/${asset}" "${url}.sha256"
   log "Extracting"
   unzip -q "${tmp}/${asset}" -d "$tmp"
   extracted="${tmp}/liquidupstart-${tag}"

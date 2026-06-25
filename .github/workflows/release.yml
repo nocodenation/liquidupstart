@@ -24,7 +24,9 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           ZIP="liquidupstart-${TAG}.zip"
           git archive --format=zip --prefix="liquidupstart-${TAG}/" -o "$ZIP" "$TAG"
+          sha256sum "$ZIP" > "${ZIP}.sha256"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "sha=${ZIP}.sha256" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         id: notes
@@ -67,7 +69,8 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --notes-file release_notes.md \
-            "${{ steps.artifacts.outputs.zip }}"
+            "${{ steps.artifacts.outputs.zip }}" \
+            "${{ steps.artifacts.outputs.sha }}"
 
       - name: Upload install.sh & update.sh via SFTP
         env:
