@@ -84,6 +84,21 @@ grep -E '^[[:space:]]*image:' "${PROJECT_DIR}/compose.yml" \
       docker rmi --force "${image}" || true
     done
 
+# Remove the base images the custom images are built FROM. These aren't service
+# `image:` entries, so the compose.yml pass above never sees them (e.g.
+# ghcr.io/openclaw/openclaw, ghcr.io/nocodenation/liquid-nifi, node, oven/bun).
+echo "Removing build base images (Dockerfile FROM)..."
+grep -rhE '^FROM ' \
+    "${PROJECT_DIR}"/config/*/Dockerfile \
+    "${PROJECT_DIR}"/config/*/templates/Dockerfile 2>/dev/null \
+  | awk '{print $2}' \
+  | grep -v 'liquidupstart/' \
+  | sort -u \
+  | while read -r image; do
+      [[ -n "${image}" ]] || continue
+      docker rmi --force "${image}" || true
+    done
+
 # Remove dangling images left behind by old builds (here or in other folders),
 # then dangling layers and build cache.
 echo "Pruning dangling images..."
