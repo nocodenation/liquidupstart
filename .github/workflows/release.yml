@@ -80,7 +80,14 @@ jobs:
           echo "$SFTP_KEY_BASE64" | base64 -d > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
 
-          sftp -P "$SFTP_PORT" -i "$KEY_FILE" -o IdentitiesOnly=yes \
+          echo "::group::key diagnostics"
+          ssh-keygen -l -f "$KEY_FILE" || echo "FINGERPRINT FAILED — key did not parse"
+          echo "public key derived from this private key:"
+          ssh-keygen -y -f "$KEY_FILE" || echo "PUBKEY DERIVE FAILED"
+          echo "::endgroup::"
+
+          sftp -vvv -P "$SFTP_PORT" -i "$KEY_FILE" -o IdentitiesOnly=yes \
+            -o PreferredAuthentications=publickey \
             -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -b - "${SFTP_USER}@${SFTP_HOST}" <<'EOF'
           put scripts/install/install.sh /sites/liquidupstart.com/install.sh
