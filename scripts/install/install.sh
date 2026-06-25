@@ -425,40 +425,54 @@ cd ${1}
 EOF
 }
 
-download_release() {
-  local repo api tag asset url tmp dest extracted installed
-  repo="nocodenation/liquidupstart"
-  dest="${HOME}/.liquidupstart"
-  tag="${1:-}"
+REPO="nocodenation/liquidupstart"
+DEST="${HOME}/.liquidupstart"
+VERSION_FILE="${DEST}/.liquidupstart-version"
 
-  command -v unzip >/dev/null 2>&1 || die "unzip is required but not installed."
+# Echo the target release tag: the explicit arg if given, else the latest
+# release resolved from the GitHub API.
+resolve_tag() {
+  local t="${1:-}" api
+  if [ -n "$t" ]; then printf '%s\n' "$t"; return; fi
+  api="https://api.github.com/repos/${REPO}/releases/latest"
+  t="$(curl -fsSL "$api" | grep -m1 '"tag_name"' \
+    | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+  [ -n "$t" ] || die "Could not determine the latest release tag."
+  printf '%s\n' "$t"
+}
 
-  if [ -n "$tag" ]; then
-    log "Requested release ${tag}"
-  else
-    log "Resolving latest release"
-    api="https://api.github.com/repos/${repo}/releases/latest"
-    tag="$(curl -fsSL "$api" | grep -m1 '"tag_name"' \
-      | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-    [ -n "$tag" ] || die "Could not determine the latest release tag."
-  fi
-
+# Decide what to do BEFORE any Docker work, based on the recorded version.
+# Sets TARGET to the tag to install; exits 0 when it's already installed and
+# dies on a downgrade. With no prior install it defers tag resolution to the
+# download step (curl may not exist yet on a fresh machine).
+gate_version() {
+  local arg="${1:-}" installed
   installed=""
-  [ -f "${dest}/.liquidupstart-version" ] \
-    && installed="$(tr -d '[:space:]' < "${dest}/.liquidupstart-version")"
+  [ -f "$VERSION_FILE" ] && installed="$(tr -d '[:space:]' < "$VERSION_FILE")"
 
-  if [ -n "$installed" ]; then
-    case "$(ver_cmp "$tag" "$installed")" in
-      eq) ok "${installed#v} is already installed at ${dest} — nothing to do."
-          print_done "$dest"; return ;;
-      lt) die "Installed version ${installed#v} is newer than ${tag#v}. Refusing to downgrade.
-  Remove ${dest} first if you really want ${tag#v}." ;;
-      gt) log "Upgrading ${installed#v} → ${tag#v}" ;;
-    esac
+  if [ -z "$installed" ]; then
+    TARGET="$arg"
+    return
   fi
+
+  command -v curl >/dev/null 2>&1 || die "curl is required to check for updates."
+  TARGET="$(resolve_tag "$arg")"
+  case "$(ver_cmp "$TARGET" "$installed")" in
+    eq) ok "${installed#v} is already installed at ${DEST} — nothing to do."
+        print_done "$DEST"; exit 0 ;;
+    lt) die "Installed version ${installed#v} is newer than ${TARGET#v}. Refusing to downgrade.
+  Remove ${DEST} first if you really want ${TARGET#v}." ;;
+    gt) log "Upgrading ${installed#v} → ${TARGET#v}" ;;
+  esac
+}
+
+download_release() {
+  local tag="${1:-}" asset url tmp extracted
+  command -v unzip >/dev/null 2>&1 || die "unzip is required but not installed."
+  tag="$(resolve_tag "$tag")"
 
   asset="liquidupstart-${tag}.zip"
-  url="https://github.com/${repo}/releases/download/${tag}/${asset}"
+  url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
 
   tmp="$(mktemp -d)"
   log "Downloading ${asset}"
@@ -469,30 +483,34 @@ download_release() {
   [ -d "$extracted" ] \
     || extracted="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
 
-  if [ -d "$dest" ]; then
+  if [ -d "$DEST" ]; then
     # Upgrade in place: overlay code, leaving .env and volumes/ untouched.
-    cp -a "${extracted}/." "${dest}/"
+    cp -a "${extracted}/." "${DEST}/"
   else
-    mkdir -p "$(dirname "$dest")"
-    mv "$extracted" "$dest"
+    mkdir -p "$(dirname "$DEST")"
+    mv "$extracted" "$DEST"
   fi
-  printf '%s\n' "$tag" > "${dest}/.liquidupstart-version"
+  printf '%s\n' "$tag" > "$VERSION_FILE"
   rm -rf "$tmp"
-  ok "Installed ${tag#v} into $dest"
+  ok "Installed ${tag#v} into $DEST"
 
-  print_done "$dest"
+  print_done "$DEST"
 }
 
 # ----------------------------------------------------------------------------
-# main — dispatch by OS
+# main — gate on version, then dispatch by OS
 # ----------------------------------------------------------------------------
 main() {
+  TARGET=""
+  gate_version "${1:-}"
+
   case "$(uname -s)" in
     Darwin) run_macos ;;
     Linux)  run_linux ;;
     *)      die "Unsupported OS: $(uname -s). This installer supports Linux/WSL2 and macOS." ;;
   esac
-  download_release "${1:-}"
+
+  download_release "$TARGET"
 }
 
 main "$@"
