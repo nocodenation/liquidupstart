@@ -10,10 +10,11 @@
 # Run as your NORMAL user (not root, not via sudo). On Linux the script invokes
 # sudo only for the steps that need it; the rootless setup tool must run unprivileged.
 #
-#   chmod +x install.sh && ./install.sh
+#   chmod +x install.sh && ./install.sh [version]
 #
 # Also safe to pipe:
 #   curl -fsSL <raw-url>/install.sh | bash
+#   curl -fsSL <raw-url>/install.sh | bash -s -- 1.2.3   # pin a version
 #
 set -euo pipefail
 
@@ -62,7 +63,7 @@ install_debian() {
 
   log "Installing prerequisites"
   sudo apt-get update -qq
-  sudo apt-get install -y -qq ca-certificates curl git uidmap dbus-user-session slirp4netns
+  sudo apt-get install -y -qq ca-certificates curl unzip uidmap dbus-user-session slirp4netns
 
   log "Configuring Docker apt repository"
   sudo install -m 0755 -d /etc/apt/keyrings
@@ -95,7 +96,7 @@ install_fedora() {
     podman-docker runc >/dev/null 2>&1 || true
 
   log "Installing prerequisites"
-  sudo dnf -y install git curl ca-certificates dnf-plugins-core \
+  sudo dnf -y install curl unzip ca-certificates dnf-plugins-core \
     slirp4netns fuse-overlayfs shadow-utils
 
   log "Configuring Docker repository"
@@ -113,7 +114,7 @@ install_arch() {
   log "Installing Docker + rootless extras (official repos)"
   sudo pacman -Sy --needed --noconfirm \
     docker docker-buildx docker-compose \
-    git curl slirp4netns fuse-overlayfs
+    curl unzip slirp4netns fuse-overlayfs
 }
 
 install_suse() {
@@ -123,7 +124,7 @@ install_suse() {
   log "Installing Docker + prerequisites"
   sudo zypper --non-interactive install \
     docker docker-buildx docker-compose \
-    git curl slirp4netns fuse-overlayfs
+    curl unzip slirp4netns fuse-overlayfs
   sudo zypper --non-interactive install docker-rootless-extras \
     || warn "docker-rootless-extras unavailable; rootless setuptool may be missing."
 }
@@ -360,18 +361,42 @@ EOF
 }
 
 # ----------------------------------------------------------------------------
-# Shared: clone the repository
+# Shared: download the latest release
 # ----------------------------------------------------------------------------
-clone_repo() {
-  local repo_url clone_dir
-  repo_url="https://github.com/nocodenation/liquidupstart"
-  clone_dir="$(pwd)/liquidupstart"
-  log "Cloning ${repo_url}"
-  if [ -d "$clone_dir/.git" ]; then
-    ok "Repository already present at $clone_dir"
+download_release() {
+  local repo api tag asset url tmp dest extracted
+  repo="nocodenation/liquidupstart"
+  dest="$(pwd)/liquidupstart"
+  tag="${1:-}"
+
+  if [ -d "$dest" ]; then
+    ok "Liquid Upstart already present at $dest — skipping download"
   else
-    git clone --branch main "$repo_url" "$clone_dir"
-    ok "Cloned into $clone_dir"
+    command -v unzip >/dev/null 2>&1 || die "unzip is required but not installed."
+
+    if [ -n "$tag" ]; then
+      log "Using requested release ${tag}"
+    else
+      log "Resolving latest release"
+      api="https://api.github.com/repos/${repo}/releases/latest"
+      tag="$(curl -fsSL "$api" | grep -m1 '"tag_name"' \
+        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+      [ -n "$tag" ] || die "Could not determine the latest release tag."
+    fi
+    asset="liquidupstart-${tag}.zip"
+    url="https://github.com/${repo}/releases/download/${tag}/${asset}"
+
+    tmp="$(mktemp -d)"
+    log "Downloading ${asset}"
+    curl -fsSL "$url" -o "${tmp}/${asset}"
+    log "Extracting"
+    unzip -q "${tmp}/${asset}" -d "$tmp"
+    extracted="${tmp}/liquidupstart-${tag}"
+    [ -d "$extracted" ] \
+      || extracted="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+    mv "$extracted" "$dest"
+    rm -rf "$tmp"
+    ok "Installed ${tag} into $dest"
   fi
 
   cat <<EOF
@@ -379,9 +404,9 @@ clone_repo() {
 ------------------------------------------------------------------
 Done.
 
-The Liquid Upstart is at ${clone_dir}. Enter it with:
+The Liquid Upstart is at ${dest}. Enter it with:
 
-cd ${clone_dir}
+cd ${dest}
 ------------------------------------------------------------------
 EOF
 }
@@ -395,7 +420,7 @@ main() {
     Linux)  run_linux ;;
     *)      die "Unsupported OS: $(uname -s). This installer supports Linux/WSL2 and macOS." ;;
   esac
-  clone_repo
+  download_release "${1:-}"
 }
 
 main "$@"

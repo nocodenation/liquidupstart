@@ -86,12 +86,20 @@ After Ubuntu boots, set your Linux username/password and continue inside that Ub
 ### WSL2: one-line install
 
 On a fresh, systemd-enabled WSL2 distro (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE),
-this bootstrap installs **rootless Docker**, applies the rootless tweaks, and clones the
-repo into the current directory:
+this bootstrap installs **rootless Docker**, applies the rootless tweaks, and downloads the
+latest release into a `liquidupstart/` folder in the current directory:
 
 ```bash
 curl -fsSL https://liquidupstart.com/install.sh | bash
 ```
+
+To pin a specific version, pass it as an argument:
+
+```bash
+curl -fsSL https://liquidupstart.com/install.sh | bash -s -- 1.2.3
+```
+
+(Or, if you downloaded the script: `./install.sh 1.2.3`.)
 
 Run it as your **normal user** (not root). When it finishes, `cd liquidupstart` and continue
 with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to

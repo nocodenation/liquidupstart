@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build release artifacts
+        id: artifacts
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          ZIP="liquidupstart-${TAG}.zip"
+          git archive --format=zip --prefix="liquidupstart-${TAG}/" -o "$ZIP" "$TAG"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$PREV" ]; then
+            RANGE="${PREV}..${TAG}"
+          else
+            RANGE="$TAG"
+          fi
+
+          FEATURES="$(git log --no-merges --pretty=format:'%s' "$RANGE" | sed -n 's/^feat:[[:space:]]*/- /p')"
+          FIXES="$(git log --no-merges --pretty=format:'%s' "$RANGE" | sed -n 's/^fix:[[:space:]]*/- /p')"
+
+          {
+            echo "## Liquid Upstart ${TAG}"
+            echo
+            if [ -n "$FEATURES" ]; then
+              echo "### Features"
+              echo
+              echo "$FEATURES"
+              echo
+            fi
+            if [ -n "$FIXES" ]; then
+              echo "### Bugfixes"
+              echo
+              echo "$FIXES"
+              echo
+            fi
+            if [ -z "$FEATURES" ] && [ -z "$FIXES" ]; then
+              echo "No \`feat:\` or \`fix:\` commits in this release."
+            fi
+          } > release_notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release_notes.md \
+            "${{ steps.artifacts.outputs.zip }}"
+
+      - name: Upload install.sh via SFTP
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_KEY_BASE64: ${{ secrets.SFTP_KEY_BASE64 }}
+          SFTP_KEY_PASSWORD: ${{ secrets.SFTP_KEY_PASSWORD }}
+        run: |
+          KEY_FILE="$(mktemp)"
+          ASKPASS="$(mktemp)"
+          echo "$SFTP_KEY_BASE64" | base64 -d > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          printf '#!/bin/sh\nprintf %%s "$SFTP_KEY_PASSWORD"\n' > "$ASKPASS"
+          chmod 700 "$ASKPASS"
+
+          eval "$(ssh-agent -s)"
+          DISPLAY=:0 SSH_ASKPASS="$ASKPASS" SSH_ASKPASS_REQUIRE=force ssh-add "$KEY_FILE"
+
+          sftp -P "$SFTP_PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -b - "${SFTP_USER}@${SFTP_HOST}" <<'EOF'
+          put scripts/install/install.sh /sites/liquidupstart.com/install.sh
+          EOF
+
+          ssh-agent -k
+          rm -f "$KEY_FILE" "$ASKPASS"
