@@ -25,16 +25,13 @@ HTTP_PORT="${HTTP_PORT:-8888}"
 HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTPS_PORT="${HTTPS_PORT:-8833}"
 
-APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
-APP_ID="${APP_ID:-0}"
-
 LOCAL_LLM_API_BASE="$(grep -E '^LOCAL_LLM_API_BASE=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"' || true)"
 LOCAL_LLM_HOST="${LOCAL_LLM_API_BASE#*://}"
 LOCAL_LLM_HOST="${LOCAL_LLM_HOST%%[:/]*}"
 export LOCAL_LLM_HOST="${LOCAL_LLM_HOST:-local_llm}"
 PROBE_IMAGE=""
-for _img in nginx:latest "liquidupstart/liquid:${APP_ID}" "liquidupstart/openclaw:${APP_ID}" \
-            "liquidupstart/bun-runner:${APP_ID}" "liquidupstart/opencode:${APP_ID}" \
+for _img in nginx:latest liquidupstart/liquid:latest liquidupstart/openclaw:latest \
+            liquidupstart/bun-runner:latest liquidupstart/opencode:latest \
             liquidupstart/toolbox:latest; do
   if docker image inspect "$_img" >/dev/null 2>&1; then PROBE_IMAGE="$_img"; break; fi
 done

@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="${DIR}/${SOURCE}"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 RESULT_FILE="${SCRIPT_DIR}/.install-result"
 IMAGE="liquidupstart/dashboard:latest"
@@ -9,15 +15,60 @@ PORT=7777
 PORT_FILE="${SCRIPT_DIR}/.dashboard-port"
 
 usage() {
-  echo "Usage: $0 [--port N]"
-  echo "Runs the web dashboard: configure .env, build, start/stop the stack,"
-  echo "and see every service URL & credential. Starts looking for a free"
-  echo "port at ${PORT} (or N) and takes the first available one."
+  local me; me="$(basename "$0")"
+  cat <<EOF
+${me} — Liquid Upstart launcher
+
+USAGE
+  ${me}
+  ${me} --stop
+  ${me} --update
+  ${me} --cleanup [--keep-images]
+  ${me} --help
+
+WHAT IT DOES
+  With no arguments, builds and runs the web dashboard, then opens it in your
+  browser. From the dashboard you configure .env, build images, and start/stop
+  the stack, and see every service URL & credential. It looks for a free port
+  starting at ${PORT} and takes the first available one.
+
+  Press Ctrl-C here, or click Quit in the app, to stop the dashboard. That does
+  NOT stop the stack — services keep running until you stop them.
+
+OPTIONS
+  -s, --stop      Stop the stack (docker compose down), exactly like the Stop
+                  button in the dashboard. The dashboard itself is unaffected.
+  -u, --update    Update Liquid Upstart to the latest release by re-running the
+                  hosted installer (curl https://liquidupstart.com/install.sh).
+                  Your .env and volumes/ are preserved; built images are
+                  refreshed, so the next start rebuilds.
+  -c, --cleanup   Full reset instead of launching: stops the stack and removes
+                  all containers, volumes/ (persisted data), .env, and built
+                  images. Pass --keep-images to keep images and build cache.
+  -h, --help      Show this help and exit.
+
+INSTALL LOCATION
+  The project (compose.yml, config/, volumes/, .env) lives in:
+    ${SCRIPT_DIR}
+  cd into it to work with it directly:
+    cd "${SCRIPT_DIR}"
+
+EXAMPLES
+  ${me}                          # launch the dashboard
+  ${me} --stop                   # stop the stack (like the dashboard Stop button)
+  ${me} --update                 # update to the latest release
+  ${me} --cleanup                # tear down and wipe everything (does not restart)
+  ${me} --cleanup --keep-images  # same, but keep images & build cache for a faster rebuild
+EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --port) PORT="${2:?--port needs a value}"; shift 2 ;;
+    -c|--cleanup) shift; exec "${SCRIPT_DIR}/cleanup.sh" "$@" ;;
+    -s|--stop) exec "${SCRIPT_DIR}/scripts/linux/down.sh" ;;
+    -u|--update)
+      command -v curl >/dev/null 2>&1 || { echo "Error: curl is required to update." >&2; exit 1; }
+      exec bash -c 'curl -fsSL https://liquidupstart.com/install.sh | bash' ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
   esac
@@ -33,20 +84,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "No .env found - created one from .env.example."
 fi
 
-# APP_ID (the .env creation timestamp) is appended to every container name so
-# checkouts don't collide. Stamp it now, or backfill into a pre-existing .env.
-APP_ID="$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d '"' || true)"
-if [[ -z "$APP_ID" ]]; then
-  APP_ID="$(date +%Y%m%d%H%M%S)"
-  if grep -qE '^APP_ID=' "$ENV_FILE"; then
-    sed -i.bak "s/^APP_ID=.*/APP_ID=${APP_ID}/" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
-  else
-    printf '\nAPP_ID=%s\n' "$APP_ID" >> "$ENV_FILE"
-  fi
-  echo "Stamped APP_ID=${APP_ID} into .env."
-fi
-
-CONTAINER="liquidupstart-dashboard-${APP_ID}"
+CONTAINER="liquidupstart-dashboard"
 
 if [[ -n "$(docker ps -q --filter "name=^${CONTAINER}$")" ]]; then
   echo "Error: the dashboard is already running. Stop it first with:" >&2

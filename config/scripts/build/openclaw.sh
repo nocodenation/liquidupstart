@@ -55,7 +55,7 @@ if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
     sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${DOCKERFILE}"
 fi
 
-IMAGE="liquidupstart/openclaw:${APP_ID:-0}"
+IMAGE="liquidupstart/openclaw:latest"
 docker image rm "$IMAGE" >/dev/null 2>&1 || true
 echo "Building $IMAGE from ${CONFIG_DIR}..."
 docker build ${NO_CACHE:+--no-cache} --progress=plain -t "$IMAGE" -f "${DOCKERFILE}" "${CONFIG_DIR}"

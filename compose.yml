@@ -1,7 +1,9 @@
+name: liquidupstart
+
 services:
   pgadmin_db:
     image: postgres:17
-    container_name: pgadmin_db-${APP_ID:-0}
+    container_name: pgadmin_db
     restart: unless-stopped
     environment:
       POSTGRES_DB: postgres
@@ -32,7 +34,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: postgres-${APP_ID:-0}
+    container_name: postgres
     restart: unless-stopped
     user: "0:0"
     environment:
@@ -64,7 +66,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
-    container_name: pgadmin-${APP_ID:-0}
+    container_name: pgadmin
     restart: unless-stopped
     user: "0:0"
     volumes:
@@ -94,7 +96,7 @@ services:
 
   postgrest_app:
     image: postgrest/postgrest
-    container_name: postgrest_app-${APP_ID:-0}
+    container_name: postgrest_app
     restart: unless-stopped
     environment:
       PGRST_DB_URI: postgres://api_user:${DATABASE_PASSWORD}@postgres:5432/postgres
@@ -110,7 +112,7 @@ services:
 
   proxy:
     image: nginx:latest
-    container_name: proxy-${APP_ID:-0}
+    container_name: proxy
     restart: unless-stopped
     ports:
       - "${SYSTEM_HTTP_PORT:-8888}:${SYSTEM_HTTP_PORT:-8888}"
@@ -260,7 +262,7 @@ services:
 
   swagger:
     image: swaggerapi/swagger-ui
-    container_name: swagger-${APP_ID:-0}
+    container_name: swagger
     restart: unless-stopped
     environment:
       API_URL: http://postgrest.localhost:${SYSTEM_HTTP_PORT:-8888}/
@@ -270,8 +272,8 @@ services:
       - nocodenation_liquid_upstart_network
 
   opencode:
-    image: liquidupstart/opencode:${APP_ID:-0}
-    container_name: opencode-${APP_ID:-0}
+    image: liquidupstart/opencode:latest
+    container_name: opencode
     restart: unless-stopped
     extra_hosts:
       - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
@@ -316,8 +318,8 @@ services:
       - nocodenation_liquid_upstart_network
 
   bun_runner:
-    image: liquidupstart/bun-runner:${APP_ID:-0}
-    container_name: bun_runner-${APP_ID:-0}
+    image: liquidupstart/bun-runner:latest
+    container_name: bun_runner
     restart: unless-stopped
     volumes:
       - ./volumes/bun_app:/bun_app
@@ -337,7 +339,7 @@ services:
 
   openproject-db:
     image: postgres:17
-    container_name: openproject-db-${APP_ID:-0}
+    container_name: openproject-db
     restart: unless-stopped
     volumes:
       - ./volumes/openproject_db:/var/lib/postgresql/data
@@ -355,7 +357,7 @@ services:
 
   openproject-cache:
     image: memcached:1.6-alpine
-    container_name: openproject-cache-${APP_ID:-0}
+    container_name: openproject-cache
     restart: unless-stopped
     healthcheck:
       test: [ "CMD-SHELL", "echo stats | nc -w1 127.0.0.1 11211 | grep -q uptime" ]
@@ -368,7 +370,7 @@ services:
   openproject-web:
     image: openproject/openproject:17-slim
     restart: unless-stopped
-    container_name: openproject-web-${APP_ID:-0}
+    container_name: openproject-web
     environment:
       OPENPROJECT_HTTPS: "false"
       OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
@@ -415,7 +417,7 @@ services:
   openproject-worker:
     image: openproject/openproject:17-slim
     restart: unless-stopped
-    container_name: openproject-worker-${APP_ID:-0}
+    container_name: openproject-worker
     environment:
       OPENPROJECT_HTTPS: "false"
       OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
@@ -449,7 +451,7 @@ services:
   openproject-cron:
     image: openproject/openproject:17-slim
     restart: unless-stopped
-    container_name: openproject-cron-${APP_ID:-0}
+    container_name: openproject-cron
     environment:
       OPENPROJECT_HTTPS: "false"
       OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
@@ -483,7 +485,7 @@ services:
   openproject-seeder:
     image: openproject/openproject:17-slim
     restart: on-failure
-    container_name: openproject-seeder-${APP_ID:-0}
+    container_name: openproject-seeder
     environment:
       OPENPROJECT_HTTPS: "false"
       OPENPROJECT_HOST__NAME: "openproject.localhost:${SYSTEM_HTTP_PORT:-8888}"
@@ -512,7 +514,7 @@ services:
 
   nextcloud-db:
     image: postgres:17
-    container_name: nextcloud-db-${APP_ID:-0}
+    container_name: nextcloud-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: postgres
@@ -531,7 +533,7 @@ services:
 
   nextcloud-redis:
     image: redis:8
-    container_name: nextcloud-redis-${APP_ID:-0}
+    container_name: nextcloud-redis
     restart: unless-stopped
     volumes:
       - ./volumes/nextcloud_redis/data:/data
@@ -547,7 +549,7 @@ services:
 
   nextcloud:
     image: nextcloud:stable
-    container_name: nextcloud-${APP_ID:-0}
+    container_name: nextcloud
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost/status.php"]
@@ -590,7 +592,7 @@ services:
 
   collabora:
     image: collabora/code
-    container_name: collabora-${APP_ID:-0}
+    container_name: collabora
     restart: unless-stopped
     cap_add:
       - MKNOD
@@ -609,8 +611,8 @@ services:
       - nocodenation_liquid_upstart_network
 
   liquid:
-    image: liquidupstart/liquid:${APP_ID:-0}
-    container_name: liquid-${APP_ID:-0}
+    image: liquidupstart/liquid:latest
+    container_name: liquid
     restart: unless-stopped
     environment:
       SINGLE_USER_CREDENTIALS_USERNAME: ${LIQUID_USERNAME}
@@ -636,7 +638,7 @@ services:
   # hermes disabled: commented out so it is neither built nor started
 #   hermes:
 #     image: liquidupstart/hermes:latest
-#     container_name: hermes-${APP_ID:-0}
+#     container_name: hermes
 #     restart: unless-stopped
 #     extra_hosts:
 #       - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
@@ -684,10 +686,10 @@ services:
 #       - nocodenation_liquid_upstart_network
 
   openclaw-gateway:
-    image: liquidupstart/openclaw:${APP_ID:-0}
+    image: liquidupstart/openclaw:latest
     build: .
     user: "0:0"
-    container_name: openclaw-gateway-${APP_ID:-0}
+    container_name: openclaw-gateway
     env_file:
       - path: config/openclaw/.env
         required: false
@@ -780,10 +782,10 @@ services:
       nocodenation_liquid_upstart_network:
 
   openclaw-cli:
-    image: liquidupstart/openclaw:${APP_ID:-0}
+    image: liquidupstart/openclaw:latest
     network_mode: "service:openclaw-gateway"
     user: "0:0"
-    container_name: openclaw-cli-${APP_ID:-0}
+    container_name: openclaw-cli
     env_file:
       - path: config/openclaw/.env
         required: false

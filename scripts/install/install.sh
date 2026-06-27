@@ -2,18 +2,24 @@
 #
 # install.sh — Docker bootstrap for Liquid Upstart
 #
-# Linux/WSL2: rootless Docker Engine (systemd-enabled). Supports Debian/Ubuntu,
+# Linux/WSL2: as a normal user it sets up a rootless Docker Engine (systemd-enabled);
+#   as root it installs the system (rootful) Docker daemon. Supports Debian/Ubuntu,
 #   Fedora/RHEL, Arch, and openSUSE families.
 # macOS: reuses an already-running Docker (Desktop/Colima/OrbStack); otherwise
 #   installs Colima or Docker Desktop via Homebrew.
 #
-# Run as your NORMAL user (not root, not via sudo). On Linux the script invokes
-# sudo only for the steps that need it; the rootless setup tool must run unprivileged.
+# Run as your normal user for rootless Docker (recommended), or as root for the
+# system daemon. As a normal user the script invokes sudo only where needed.
 #
-#   chmod +x install.sh && ./install.sh
+#   chmod +x install.sh && ./install.sh [version]
 #
 # Also safe to pipe:
 #   curl -fsSL <raw-url>/install.sh | bash
+#   curl -fsSL <raw-url>/install.sh | bash -s -- 1.2.3   # pin a version
+#
+# The installed version is recorded in ~/.liquidupstart/.liquidupstart-version.
+# If an install already exists, this script hands off to the hosted updater
+# (https://liquidupstart.com/update.sh) instead of reinstalling.
 #
 set -euo pipefail
 
@@ -62,7 +68,7 @@ install_debian() {
 
   log "Installing prerequisites"
   sudo apt-get update -qq
-  sudo apt-get install -y -qq ca-certificates curl git uidmap dbus-user-session slirp4netns
+  sudo apt-get install -y -qq ca-certificates curl unzip uidmap dbus-user-session slirp4netns
 
   log "Configuring Docker apt repository"
   sudo install -m 0755 -d /etc/apt/keyrings
@@ -95,7 +101,7 @@ install_fedora() {
     podman-docker runc >/dev/null 2>&1 || true
 
   log "Installing prerequisites"
-  sudo dnf -y install git curl ca-certificates dnf-plugins-core \
+  sudo dnf -y install curl unzip ca-certificates dnf-plugins-core \
     slirp4netns fuse-overlayfs shadow-utils
 
   log "Configuring Docker repository"
@@ -113,7 +119,7 @@ install_arch() {
   log "Installing Docker + rootless extras (official repos)"
   sudo pacman -Sy --needed --noconfirm \
     docker docker-buildx docker-compose \
-    git curl slirp4netns fuse-overlayfs
+    curl unzip slirp4netns fuse-overlayfs
 }
 
 install_suse() {
@@ -123,7 +129,7 @@ install_suse() {
   log "Installing Docker + prerequisites"
   sudo zypper --non-interactive install \
     docker docker-buildx docker-compose \
-    git curl slirp4netns fuse-overlayfs
+    curl unzip slirp4netns fuse-overlayfs
   sudo zypper --non-interactive install docker-rootless-extras \
     || warn "docker-rootless-extras unavailable; rootless setuptool may be missing."
 }
@@ -239,13 +245,102 @@ run_macos() {
 # ----------------------------------------------------------------------------
 # Linux/WSL2: rootless Docker Engine
 # ----------------------------------------------------------------------------
+configure_rootless() {
+  command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1 \
+    || die "dockerd-rootless-setuptool.sh not found — rootless extras missing for ${FAMILY}."
+
+  # --- Disable the system-wide rootful daemon ---
+  log "Disabling rootful system daemon"
+  sudo systemctl disable --now docker.service docker.socket >/dev/null 2>&1 || true
+  ok "Rootful daemon disabled"
+
+  # --- cgroup v2 controller delegation (needed for --cpus / --memory limits) ---
+  log "Setting up cgroup v2 delegation"
+  sudo mkdir -p /etc/systemd/system/user@.service.d
+  cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/delegate.conf >/dev/null
+[Service]
+Delegate=cpu cpuset io memory pids
+EOF
+  sudo systemctl daemon-reload
+  ok "Delegation drop-in written (full effect after WSL restart)"
+
+  # --- Optional: unprivileged low ports + container ping ---
+  log "Applying rootless sysctl tweaks (low ports + ping)"
+  cat <<'EOF' | sudo tee /etc/sysctl.d/99-rootless-docker.conf >/dev/null
+# Allow rootless containers to bind ports >= 80
+net.ipv4.ip_unprivileged_port_start = 80
+# Allow ICMP (ping) from inside rootless containers
+net.ipv4.ping_group_range = 0 2147483647
+EOF
+  sudo sysctl --quiet -p /etc/sysctl.d/99-rootless-docker.conf || true
+  ok "sysctl tweaks applied"
+
+  # --- Run the rootless setup tool (UNPRIVILEGED — no sudo) ---
+  log "Running rootless setup tool as ${TARGET_USER}"
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+  dockerd-rootless-setuptool.sh install
+  ok "Rootless daemon configured"
+
+  # --- Enable the user service + linger (survives shell/session exit in WSL) ---
+  log "Enabling user service and linger"
+  systemctl --user enable --now docker
+  sudo loginctl enable-linger "$TARGET_USER"
+  ok "Service enabled, linger on"
+
+  # --- Persist shell environment ---
+  log "Configuring shell environment"
+  RC="${HOME}/.bashrc"
+  [ -n "${ZSH_VERSION:-}" ] && RC="${HOME}/.zshrc"
+  MARKER="# >>> rootless docker >>>"
+  if ! grep -qF "$MARKER" "$RC" 2>/dev/null; then
+    cat >>"$RC" <<EOF
+
+${MARKER}
+export PATH=/usr/bin:\$PATH
+export DOCKER_HOST=unix:///run/user/\$(id -u)/docker.sock
+# <<< rootless docker <<<
+EOF
+    ok "Appended env block to $RC"
+  else
+    ok "Env block already present in $RC"
+  fi
+  export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
+}
+
+configure_rootful() {
+  log "Enabling the system Docker daemon"
+  sudo systemctl enable --now docker.service
+  ok "Docker daemon enabled and started"
+}
+
+verify_docker() {
+  log "Verifying installation"
+  [ "$IS_ROOT" -eq 1 ] || docker context use rootless >/dev/null 2>&1 || true
+  docker info 2>/dev/null | grep -iE 'rootless|cgroup' || true
+
+  echo
+  if docker run --rm hello-world >/dev/null 2>&1; then
+    ok "hello-world ran successfully — Docker is working."
+  elif [ "$IS_ROOT" -eq 1 ]; then
+    warn "hello-world did not run yet. Check the daemon with: systemctl status docker"
+  else
+    warn "hello-world did not run yet. Open a NEW shell (to load DOCKER_HOST) and retry:"
+    warn "    docker run --rm hello-world"
+  fi
+}
+
 run_linux() {
   TARGET_USER="$(id -un)"
+  IS_ROOT=0
+  [ "$(id -u)" -eq 0 ] && IS_ROOT=1
 
   # --- Preflight checks ---
   log "Preflight checks"
 
-  [ "$(id -u)" -ne 0 ] || die "Do not run as root / sudo. Run as your normal user."
+  if [ "$IS_ROOT" -eq 1 ]; then
+    sudo() { "$@"; }
+    warn "Running as root — installing the system (rootful) Docker daemon, not rootless."
+  fi
 
   grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null \
     || warn "This doesn't look like WSL — continuing anyway."
@@ -274,7 +369,7 @@ run_linux() {
   fi
   ok "Detected ${PRETTY_NAME:-$DISTRO_ID} — package family: ${FAMILY}"
 
-  # --- 1. Per-distro install ---
+  # --- Per-distro install ---
   case "$FAMILY" in
     debian) install_debian ;;
     fedora) install_fedora ;;
@@ -283,119 +378,159 @@ run_linux() {
   esac
   ok "Docker installed"
 
-  command -v dockerd-rootless-setuptool.sh >/dev/null 2>&1 \
-    || die "dockerd-rootless-setuptool.sh not found — rootless extras missing for ${FAMILY}."
-
-  # --- 2. Disable the system-wide rootful daemon ---
-  log "Disabling rootful system daemon"
-  sudo systemctl disable --now docker.service docker.socket >/dev/null 2>&1 || true
-  ok "Rootful daemon disabled"
-
-  # --- 3. cgroup v2 controller delegation (needed for --cpus / --memory limits) ---
-  log "Setting up cgroup v2 delegation"
-  sudo mkdir -p /etc/systemd/system/user@.service.d
-  cat <<'EOF' | sudo tee /etc/systemd/system/user@.service.d/delegate.conf >/dev/null
-[Service]
-Delegate=cpu cpuset io memory pids
-EOF
-  sudo systemctl daemon-reload
-  ok "Delegation drop-in written (full effect after WSL restart)"
-
-  # --- 4. Optional: unprivileged low ports + container ping ---
-  log "Applying rootless sysctl tweaks (low ports + ping)"
-  cat <<'EOF' | sudo tee /etc/sysctl.d/99-rootless-docker.conf >/dev/null
-# Allow rootless containers to bind ports >= 80
-net.ipv4.ip_unprivileged_port_start = 80
-# Allow ICMP (ping) from inside rootless containers
-net.ipv4.ping_group_range = 0 2147483647
-EOF
-  sudo sysctl --quiet -p /etc/sysctl.d/99-rootless-docker.conf || true
-  ok "sysctl tweaks applied"
-
-  # --- 5. Run the rootless setup tool (UNPRIVILEGED — no sudo) ---
-  log "Running rootless setup tool as ${TARGET_USER}"
-  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-  dockerd-rootless-setuptool.sh install
-  ok "Rootless daemon configured"
-
-  # --- 6. Enable the user service + linger (survives shell/session exit in WSL) ---
-  log "Enabling user service and linger"
-  systemctl --user enable --now docker
-  sudo loginctl enable-linger "$TARGET_USER"
-  ok "Service enabled, linger on"
-
-  # --- 7. Persist shell environment ---
-  log "Configuring shell environment"
-  RC="${HOME}/.bashrc"
-  [ -n "${ZSH_VERSION:-}" ] && RC="${HOME}/.zshrc"
-  MARKER="# >>> rootless docker >>>"
-  if ! grep -qF "$MARKER" "$RC" 2>/dev/null; then
-    cat >>"$RC" <<EOF
-
-${MARKER}
-export PATH=/usr/bin:\$PATH
-export DOCKER_HOST=unix:///run/user/\$(id -u)/docker.sock
-# <<< rootless docker <<<
-EOF
-    ok "Appended env block to $RC"
+  if [ "$IS_ROOT" -eq 1 ]; then
+    configure_rootful
   else
-    ok "Env block already present in $RC"
-  fi
-  export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
-
-  # --- 8. Verify ---
-  log "Verifying installation"
-  docker context use rootless >/dev/null 2>&1 || true
-  docker info --format '  Rootless: {{.SecurityOptions}}' 2>/dev/null || true
-  docker info 2>/dev/null | grep -iE 'rootless|cgroup' || true
-
-  echo
-  if docker run --rm hello-world >/dev/null 2>&1; then
-    ok "hello-world ran successfully — rootless Docker is working."
-  else
-    warn "hello-world did not run yet. Open a NEW shell (to load DOCKER_HOST) and retry:"
-    warn "    docker run --rm hello-world"
+    configure_rootless
   fi
 
+  verify_docker
 }
 
 # ----------------------------------------------------------------------------
-# Shared: clone the repository
+# Shared: download a release
 # ----------------------------------------------------------------------------
-clone_repo() {
-  local repo_url clone_dir
-  repo_url="https://github.com/nocodenation/liquidupstart"
-  clone_dir="$(pwd)/liquidupstart"
-  log "Cloning ${repo_url}"
-  if [ -d "$clone_dir/.git" ]; then
-    ok "Repository already present at $clone_dir"
-  else
-    git clone --branch main "$repo_url" "$clone_dir"
-    ok "Cloned into $clone_dir"
-  fi
+LAUNCHER_DIR="/usr/local/bin"
+LAUNCHER="${LAUNCHER_DIR}/liquidupstart"
 
+link_launcher() {
+  local src="${DEST}/run.sh"
+  chmod +x "$src" 2>/dev/null || true
+  log "Linking the 'liquidupstart' command into ${LAUNCHER_DIR}"
+  if [ -d "$LAUNCHER_DIR" ] && [ -w "$LAUNCHER_DIR" ]; then
+    ln -sfn "$src" "$LAUNCHER"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo mkdir -p "$LAUNCHER_DIR" && sudo ln -sfn "$src" "$LAUNCHER"
+  else
+    warn "Cannot write ${LAUNCHER_DIR} and sudo is unavailable — skipping launcher."
+    warn "Start the app with: ${src}"
+    return 0
+  fi
+  if [ -L "$LAUNCHER" ]; then
+    ok "Run 'liquidupstart' from any directory"
+  else
+    warn "Could not create ${LAUNCHER}; start the app with ${src}"
+  fi
+}
+
+print_done() {
   cat <<EOF
 
 ------------------------------------------------------------------
 Done.
 
-The Liquid Upstart is at ${clone_dir}. Enter it with:
+Liquid Upstart is installed at ${1}.
 
-cd ${clone_dir}
+Start it from anywhere with:
+
+    liquidupstart
 ------------------------------------------------------------------
 EOF
 }
 
+REPO="nocodenation/liquidupstart"
+DEST="${HOME}/.liquidupstart"
+VERSION_FILE="${DEST}/.liquidupstart-version"
+UPDATE_URL="https://liquidupstart.com/update.sh"
+
+# Echo the hex sha256 of a file using whichever tool is available.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else return 1; fi
+}
+
+# Verify $1 against the sha256 published at $2. Releases predating this feature
+# have no checksum asset (curl 404s) — skip rather than fail those.
+verify_checksum() {
+  local file="$1" url="$2" expected actual
+  expected="$(curl -fsSL "$url" 2>/dev/null | awk 'NR==1{print $1}')"
+  if [ -z "$expected" ]; then
+    warn "No published checksum for this release — skipping integrity check."
+    return 0
+  fi
+  actual="$(sha256_of "$file")" \
+    || { warn "No sha256 tool found — skipping integrity check."; return 0; }
+  [ "$expected" = "$actual" ] || die "Checksum mismatch for $(basename "$file").
+  expected: ${expected}
+  actual:   ${actual}
+  The download may be corrupted or tampered with; aborting."
+  ok "Checksum verified (sha256)"
+}
+
+# Echo the target release tag: the explicit arg if given, else the latest
+# release resolved from the GitHub API.
+resolve_tag() {
+  local t="${1:-}" api
+  if [ -n "$t" ]; then printf '%s\n' "$t"; return; fi
+  api="https://api.github.com/repos/${REPO}/releases/latest"
+  t="$(curl -fsSL "$api" | grep -m1 '"tag_name"' \
+    | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+  [ -n "$t" ] || die "Could not determine the latest release tag."
+  printf '%s\n' "$t"
+}
+
+# An install already exists — hand off to the hosted updater instead of
+# reinstalling, then exit with its status.
+run_update() {
+  local tmp rc
+  log "Liquid Upstart is already installed at ${DEST} — running the updater."
+  command -v curl >/dev/null 2>&1 || die "curl is required to run the updater."
+  tmp="$(mktemp)"
+  curl -fsSL "$UPDATE_URL" -o "$tmp" \
+    || die "Could not download the updater from ${UPDATE_URL}."
+  bash "$tmp"
+  rc=$?
+  rm -f "$tmp"
+  exit "$rc"
+}
+
+download_release() {
+  local tag="${1:-}" asset url tmp extracted
+  command -v unzip >/dev/null 2>&1 || die "unzip is required but not installed."
+  tag="$(resolve_tag "$tag")"
+
+  asset="liquidupstart-${tag}.zip"
+  url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
+
+  tmp="$(mktemp -d)"
+  log "Downloading ${asset}"
+  curl -fsSL "$url" -o "${tmp}/${asset}"
+  verify_checksum "${tmp}/${asset}" "${url}.sha256"
+  log "Extracting"
+  unzip -q "${tmp}/${asset}" -d "$tmp"
+  extracted="${tmp}/liquidupstart-${tag}"
+  [ -d "$extracted" ] \
+    || extracted="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+
+  if [ -d "$DEST" ]; then
+    # Upgrade in place: overlay code, leaving .env and volumes/ untouched.
+    cp -a "${extracted}/." "${DEST}/"
+  else
+    mkdir -p "$(dirname "$DEST")"
+    mv "$extracted" "$DEST"
+  fi
+  printf '%s\n' "$tag" > "$VERSION_FILE"
+  rm -rf "$tmp"
+  ok "Installed ${tag#v} into $DEST"
+
+  link_launcher
+  print_done "$DEST"
+}
+
 # ----------------------------------------------------------------------------
-# main — dispatch by OS
+# main — update if already installed, else install fresh
 # ----------------------------------------------------------------------------
 main() {
+  [ -f "$VERSION_FILE" ] && run_update
+
   case "$(uname -s)" in
     Darwin) run_macos ;;
     Linux)  run_linux ;;
     *)      die "Unsupported OS: $(uname -s). This installer supports Linux/WSL2 and macOS." ;;
   esac
-  clone_repo
+
+  download_release "${1:-}"
 }
 
 main "$@"

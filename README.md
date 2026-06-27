@@ -41,7 +41,6 @@ sandbox they can spin up, throw away, and spin up again.
 - 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
 - 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro. (The legacy `.bat` toolbox wrappers are **deprecated**.)
 - 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
-- 🔁 **Multi-checkout safe** — container names are suffixed with a per-checkout `APP_ID`.
 
 ## Architecture
 
@@ -71,39 +70,73 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 
 ### Windows: install WSL2 + Ubuntu first
 
-If you're on Windows, set up WSL2 before anything else. In an **Administrator** PowerShell:
+If you're on Windows, set up WSL2 before anything else. in a Terminal app:
 
 ```powershell
-wsl --install            # enable WSL2 (reboot when prompted)
-wsl --install -d Ubuntu  # install the Ubuntu distribution
+wsl --install
 ```
 
-`wsl --install` is supposed to install Ubuntu by default, but on some Windows builds it only
-enables the WSL2 feature and you have to install the distro explicitly — so run
-`wsl --install -d Ubuntu` to be sure (run `wsl --list --online` to see all available distros).
-After Ubuntu boots, set your Linux username/password and continue inside that Ubuntu shell.
+**Reboot your computer when prompted.** After the restart, open the Terminal app again and continue with:
+
+```powershell
+wsl --install -d Ubuntu 
+```
+
+> `wsl --install` is supposed to install Ubuntu by default, but on some Windows builds it only
+> enables the WSL2 feature and you have to install the distro explicitly — so run
+> `wsl --install -d Ubuntu` to be sure (run `wsl --list --online` to see all available distros).
+> After Ubuntu boots, set your Linux username/password and continue inside that Ubuntu shell.
 
 ### WSL2: one-line install
 
 On a fresh, systemd-enabled WSL2 distro (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE),
-this bootstrap installs **rootless Docker**, applies the rootless tweaks, and clones the
-repo into the current directory:
+this bootstrap installs **rootless Docker**, applies the rootless tweaks, and downloads the
+latest release into `~/.liquidupstart`:
 
 ```bash
 curl -fsSL https://liquidupstart.com/install.sh | bash
 ```
 
-Run it as your **normal user** (not root). When it finishes, `cd liquidupstart` and continue
-with the Quickstart below. WSL needs systemd enabled — add `[boot]\nsystemd=true` to
-`/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
+To pin a specific version, pass it as an argument:
+
+```bash
+curl -fsSL https://liquidupstart.com/install.sh | bash -s -- 1.2.3
+```
+
+(Or, if you downloaded the script: `./install.sh 1.2.3`.)
+
+If Liquid Upstart is already installed (`~/.liquidupstart`), re-running the installer
+automatically hands off to the **updater** below instead of reinstalling.
+
+Run it as your **normal user** for rootless Docker (recommended), or as **root** to install
+the system (rootful) daemon. The installer also adds a **`liquidupstart` command** to your
+`PATH` (a symlink in `/usr/local/bin`), so once it finishes you can launch the dashboard from
+any directory by running `liquidupstart` — no need to `cd` into the install folder. The
+project itself lives in `~/.liquidupstart`. WSL needs systemd enabled — add `[boot]\nsystemd=true`
+to `/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
+
+### Updating
+
+To move an existing install to the latest release:
+
+```bash
+curl -fsSL https://liquidupstart.com/update.sh | bash
+```
+
+It stops the stack, clears the built images and any leftovers from old versions, unpacks the
+new release over `~/.liquidupstart` (keeping your `.env` and `volumes/`), and flags a rebuild.
+On next start the dashboard prompts you to **Rebuild → Start**. If you're already on the
+latest version it does nothing.
 
 ## Quickstart
 
-1. **Run the dashboard:** `./run.sh` (on Windows, run it inside your WSL2 shell), then open the
-   printed URL (first free port from `7777` up). On the first run it shows the configuration
-   form (secrets left empty are generated for you); afterwards it shows the service dashboard:
-   tiles with every URL & credential when the stack runs, **Build** / **Start** / **Stop**
-   buttons with a live log, and a **Configuration** button to change `.env` anytime.
+1. **Run the dashboard:** run `liquidupstart` from anywhere (if you installed via the
+   one-line installer), or `./run.sh` from inside the project folder (on Windows, run it inside
+   your WSL2 shell). Then open the printed URL (first free port from `7777` up). On the first
+   run it shows the configuration form (secrets left empty are generated for you); afterwards it
+   shows the service dashboard: tiles with every URL & credential when the stack runs,
+   **Build** / **Start** / **Stop** buttons with a live log, and a **Configuration** button to
+   change `.env` anytime. Run `liquidupstart --help` for all options.
 
    *(Manual alternative: copy `.env.example` to `.env`, edit it by hand, and use the CLI scripts below.)*
 
@@ -204,6 +237,9 @@ files, Liquid repositories, etc.) — there are no hidden named Docker volumes. 
 - `./scripts/linux/down.sh` — stop the stack (data preserved).
 - `./scripts/linux/cleanup.sh` — remove rendered config (templates are re-rendered on next build).
 - Delete the relevant `./volumes/<service>/` directory to wipe a service's data.
+- `liquidupstart --cleanup` (or `./cleanup.sh`) — **full reset:** stops the stack and removes all
+  containers, `volumes/`, `.env`, and the built images. Add `--keep-images` to keep images and
+  build cache.
 
 ## Troubleshooting
 

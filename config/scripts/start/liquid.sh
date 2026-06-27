@@ -13,8 +13,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-APP_ID=$(grep -E '^APP_ID=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)
-IMAGE="liquidupstart/liquid:${APP_ID:-0}"
+IMAGE="liquidupstart/liquid:latest"
 LIQUID_USERNAME=$(grep '^LIQUID_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d "'\"")
 LIQUID_PASSWORD=$(grep '^LIQUID_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d "'\"")
 

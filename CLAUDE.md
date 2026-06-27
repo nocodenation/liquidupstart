@@ -9,8 +9,8 @@ from the browser.
 
 ## Layout
 
-- `compose.yml` — all services. Container names are suffixed with `${APP_ID}` (a
-  timestamp) so multiple checkouts don't collide.
+- `compose.yml` — all services. The compose project is named `liquidupstart`; a single
+  instance of the stack runs per host (fixed container names, no suffixes).
 - `run.sh` / `run.bat` — build & launch the dashboard container (first free port from 7777).
 - `scripts/{linux,windows}/{build,start,down,cleanup}` — CLI alternative to the dashboard.
   Windows `.bat` files run the same `.sh` scripts inside a toolbox container.
@@ -22,7 +22,7 @@ from the browser.
 
 ## Services & images
 
-Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-runner,liquid,openclaw}:${APP_ID}`.
+Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-runner,liquid,openclaw}:latest`.
 `hermes` exists in config but is **disabled** (commented out in `compose.yml`, `build.sh`,
 `start.sh`). Service UIs are reached at `http://<name>.localhost:${SYSTEM_HTTP_PORT}`
 (HTTP default 8888; Liquid over HTTPS on `${SYSTEM_HTTPS_PORT}`, default 8833).

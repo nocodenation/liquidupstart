@@ -24,8 +24,7 @@ get_env() {
   grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
 
-APP_ID="$(get_env APP_ID)"; [[ -z "$APP_ID" ]] && APP_ID=0
-OPENCLAW_IMAGE="liquidupstart/openclaw:${APP_ID}"
+OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 
 # Render config/openclaw/.env from the template, then inject model-provider keys
 # from the root .env. The template is the contract: only keys it already declares
@@ -190,6 +189,32 @@ else
     echo "openclaw: discovered local models from ${LOCAL_LLM_API_BASE}/v1/models -> ${LOCAL_LLM_MODELS_JSON}" >&2
   fi
 
+  OPENROUTER_MODELS_JSON="[]"
+  OPENROUTER_KEY="$(get_env OPENROUTER_API_KEY)"
+  if [[ -n "$OPENROUTER_KEY" ]]; then
+    OPENROUTER_MODELS_JSON="$(docker run --rm \
+      -e OPENROUTER_API_KEY="${OPENROUTER_KEY}" \
+      --entrypoint node \
+      ghcr.io/openclaw/openclaw:latest \
+      -e '
+        (async () => {
+          try {
+            const res = await fetch("https://openrouter.ai/api/v1/models", { headers: { Authorization: "Bearer " + process.env.OPENROUTER_API_KEY } });
+            if (!res.ok) { process.stderr.write("openrouter models discovery: HTTP " + res.status + "\n"); process.stdout.write("[]"); return; }
+            const j = await res.json();
+            const ids = (j.data || []).map((m) => m.id).filter(Boolean);
+            process.stderr.write("openrouter models discovery: " + ids.length + " models\n");
+            process.stdout.write(JSON.stringify(ids));
+          } catch (e) {
+            process.stderr.write("openrouter models discovery failed: " + e.message + "\n");
+            process.stdout.write("[]");
+          }
+        })();
+      ' || true)"
+    [[ -z "$OPENROUTER_MODELS_JSON" ]] && OPENROUTER_MODELS_JSON="[]"
+    echo "openclaw: discovered OpenRouter models from https://openrouter.ai/api/v1/models" >&2
+  fi
+
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
   docker run --rm --user 0:0 \
@@ -204,6 +229,7 @@ else
     -e LOCAL_LLM_MODELS_JSON="${LOCAL_LLM_MODELS_JSON}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
+    -e OPENROUTER_MODELS_JSON="${OPENROUTER_MODELS_JSON}" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
     -e '
@@ -327,6 +353,18 @@ else
         }
       }
 
+      let openrouterModels = [];
+      try { openrouterModels = JSON.parse(process.env.OPENROUTER_MODELS_JSON || "[]"); } catch (e) {}
+      if (openrouterModels.length) {
+        c.agents = c.agents || {};
+        c.agents.defaults = c.agents.defaults || {};
+        c.agents.defaults.models = c.agents.defaults.models || {};
+        for (const id of openrouterModels) {
+          const ref = "openrouter/" + id;
+          if (!c.agents.defaults.models[ref]) c.agents.defaults.models[ref] = {};
+        }
+      }
+
       // Register local plugin dirs. Our plugins ship a self-contained dist/*.mjs
       // bundle, so no node_modules is needed at runtime.
       const pluginPaths = (process.env.PLUGIN_PATHS || "")
@@ -349,6 +387,9 @@ else
       }
       if (modelWildcards.length) {
         console.log("openclaw.json: model allowlist wildcards =", JSON.stringify(modelWildcards));
+      }
+      if (openrouterModels.length) {
+        console.log("openclaw.json: added " + openrouterModels.length + " OpenRouter models to the picker allowlist");
       }
       if (enableClaudeCli) {
         console.log("openclaw.json: routed anthropic/* through the claude-cli runtime");
