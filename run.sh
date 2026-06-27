@@ -21,6 +21,7 @@ ${me} — Liquid Upstart launcher
 
 USAGE
   ${me}
+  ${me} --stop
   ${me} --update
   ${me} --cleanup [--keep-images]
   ${me} --help
@@ -35,6 +36,8 @@ WHAT IT DOES
   NOT stop the stack — services keep running until you stop them.
 
 OPTIONS
+  -s, --stop      Stop the stack (docker compose down), exactly like the Stop
+                  button in the dashboard. The dashboard itself is unaffected.
   -u, --update    Update Liquid Upstart to the latest release by re-running the
                   hosted installer (curl https://liquidupstart.com/install.sh).
                   Your .env and volumes/ are preserved; built images are
@@ -52,6 +55,7 @@ INSTALL LOCATION
 
 EXAMPLES
   ${me}                          # launch the dashboard
+  ${me} --stop                   # stop the stack (like the dashboard Stop button)
   ${me} --update                 # update to the latest release
   ${me} --cleanup                # tear down and wipe everything (does not restart)
   ${me} --cleanup --keep-images  # same, but keep images & build cache for a faster rebuild
@@ -61,6 +65,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -c|--cleanup) shift; exec "${SCRIPT_DIR}/cleanup.sh" "$@" ;;
+    -s|--stop) exec "${SCRIPT_DIR}/scripts/linux/down.sh" ;;
     -u|--update)
       command -v curl >/dev/null 2>&1 || { echo "Error: curl is required to update." >&2; exit 1; }
       exec bash -c 'curl -fsSL https://liquidupstart.com/install.sh | bash' ;;
