@@ -21,7 +21,8 @@ sent to the cloud. When pseudonymization isn't enough, an opt-in **semantic** le
 
 - **Coverage:** everything — Anthropic-native `/v1/messages` **and** OpenAI-compatible
   `/v1/chat/completions`, all providers, across both agents.
-- **Languages:** multilingual, not English-only — at least the major European languages.
+- **Languages:** the major European (space-segmented) languages — **en/de/fr/es/it/pt** — not
+  English-only, and explicitly **not** CJK/Thai or other non-segmented scripts (out of scope).
   Each text field is language-detected, then run through that language's NER model; custom
   regex/secret recognizers run language-agnostically across all of them. (PII detection is
   language-specific: an English-only NER engine silently misses names/places in other
@@ -61,7 +62,7 @@ two interception modes, because the four OpenClaw backends do **not** all expose
 - **(A) Base-URL redirect (clean, preferred — v1).** For any client that honors a base-URL
   override: OpenCode's `anthropic`/`openai`/`xai`/`gemini` providers **and claude-cli (Claude
   Code) in both API-key and subscription-OAuth modes** (empirically verified 2026-06-24 — see
-  Risk #1). The client's base URL points at a gateway path that names the upstream; the gateway
+  *claude-cli OAuth — verified* below). The client's base URL points at a gateway path that names the upstream; the gateway
   rewrites the body and forwards, passing auth headers (`x-api-key`, `Authorization: Bearer`,
   `anthropic-version`, `anthropic-beta`) through **untouched** — it never needs the keys/tokens.
 - **(B) TLS-terminating interception (for the subscription plugins).** Copilot, Codex (ChatGPT),
@@ -84,6 +85,30 @@ two interception modes, because the four OpenClaw backends do **not** all expose
  OpenClaw Codex    (plugin)    ─┤B─►│  (TLS-MITM, CA in container)│   api.x.ai/v1
  OpenClaw Grok     (plugin)    ─┘   └───────────────────────────┘
 ```
+
+### claude-cli OAuth — verified (mode A)
+
+Empirically verified against the running stack (Claude Code 2.1.187, 2026-06-24): with a
+subscription `CLAUDE_CODE_OAUTH_TOKEN`, pointing `ANTHROPIC_BASE_URL` at a local proxy makes
+Claude Code `POST /v1/messages?beta=true` to that proxy with `Authorization: Bearer <oauth>`
+**and** `anthropic-beta: …,oauth-2025-04-20,…` intact — OAuth survives the base-URL override.
+(The earlier "custom base URL disables OAuth / #33330" finding was about `ANTHROPIC_AUTH_TOKEN`,
+a different code path.) So claude-cli uses **mode A**, not mode B — no TLS-MITM needed.
+
+- **Wiring:** set `ANTHROPIC_BASE_URL=http://privacy-gateway-${APP_ID}:<port>/anthropic` in
+  `config/openclaw/openclaw-claude.sh` before `exec claude` (the wrapper is the only place that
+  survives OpenClaw's `CLAUDE_CLI_CLEAR_ENV` stripping). The gateway forwards to
+  `api.anthropic.com` passing `Authorization`, `anthropic-version`, `anthropic-beta`,
+  `user-agent` **untouched**; only the JSON body is rewritten.
+- **Legality:** the traffic is genuine Claude Code using its own subscription OAuth (real UA +
+  beta headers); Anthropic sees a normal Claude Code request. The Jan-2026 block targets OAuth
+  tokens used *outside* Claude Code (lifted into custom SDKs/scripts) — we don't do that; we're
+  a transparent body-anonymizer, the same category as the gateways Anthropic supports via
+  `ANTHROPIC_BASE_URL`. Note also (per OpenClaw): when `ENABLE_ANTHROPIC_CLAUDE_CODE=1`, any
+  `ANTHROPIC_API_KEY` is ignored — the anthropic path *is* claude-cli OAuth.
+- **Two implementation gotchas from the capture:** Claude Code sends a `HEAD /` preflight
+  before the POST (the gateway must answer it), and the request path carries a query string
+  (`?beta=true`) the gateway must preserve.
 
 ### Routing / upstream map
 
@@ -126,9 +151,22 @@ both syntactic surrogates and (recorded) semantic generalizations can be reverse
 - `fwd: original → replacement` — keeps cross-turn / cross-tool-call consistency.
 - `rev: replacement → original` — de-anonymizes responses.
 - per-entry metadata: `transform_type` (`surrogate` | `generalization`), `cardinality`
-  (`one_to_one` | `many_to_one`), `entity_type`, session-stable id, and **`restorable: bool`**
-  (set `false` for many-to-one or detail-dropping generalizations — see *Reversibility*), plus an
+  (`one_to_one` | `many_to_one`), `entity_type`, `conversation_id`, session-stable id, and
+  **`restorable: bool`** (set `false` for many-to-one or detail-dropping generalizations **and for
+  surrogate types too short/structured to be made distinctive** — see *Reversibility*), plus an
   optional minimal semantic anchor to aid relocation.
+- **Collision-safety invariants.** Surrogates are generated so the literal-restore step
+  is safe. Each Faker draw is regenerated until it is **bijectively unique** — not equal to any
+  existing surrogate *or any stored original* — **not a sub/superstring** of an existing surrogate,
+  **not a common dictionary word**, and **not already present in the request's prompt text**; it is
+  type-consistent, made distinctive (≥4 chars, prefer multi-token) where the type allows, and
+  restricted to a **safe character set** (no quotes, backslashes, control, or regex metacharacters)
+  so single-pass substitution can't break a JSON tool-call envelope or the matcher. Uniqueness /
+  non-substring checks run against the **conversation-scoped** live set (TTL-bounded, so they stay
+  cheap); after K failed draws append a rare affix, else fail-closed. Literal matching is
+  **case-sensitive** (case-folding multiplies false restores). These invariants cover identifiers
+  the *prompt* carries — the model's *completion* is unknowable here and is defended only by
+  boundary matching, precision-first leave-as-surrogate, and the Milestone 7 outbound re-scan.
 
 The cloud only ever sees replacements (surrogates or generalizations). **Security nuance:**
 recording generalizations adds no new *originals* at rest (the vault already holds them), but the
@@ -137,14 +175,19 @@ minimal and under the same protection as the originals.
 
 - **Engine:** start from LangChain `PresidioReversibleAnonymizer(add_default_faker_operators=True, faker_seed=42)`
   for detection + Faker surrogates + the mapping; implement our **own** response
-  substitution (literal, longest-surrogate-first) over content, tool-call args, and
-  stream deltas.
+  substitution (literal, boundary-aware, longest-surrogate-first, single-pass) over content,
+  tool-call args, and stream deltas — **parse-aware** for structured payloads, restoring only
+  within JSON **string values** (`tool_use.input` / `tool_calls.arguments`), never keys, numbers,
+  or structure.
 - **Detectors (layered):** Presidio per-language NER + custom `PatternRecognizer`s for
   internal hostnames/ID formats + `detect-secrets` (pure-Python, in-process) for high-entropy
   secrets (optional `gitleaks`), **plus a local-LLM second pass** for implicit / quasi-
   identifiers — see *Detection & egress gating*.
-- **Scope:** single-user self-hosted → process-scoped vault, persisted encrypted
-  (AES-GCM) under `./volumes/privacy-gateway/` (host-disk convention), with TTL.
+- **Scope:** single-user self-hosted. The `fwd` consistency map can be process-wide for
+  cross-tool reuse, but **`rev` restore lookups are conversation-scoped** (keyed by
+  `conversation_id`) — a surrogate minted in one conversation must never restore inside another's
+  reply. Persisted encrypted (AES-GCM) under `./volumes/privacy-gateway/` (host-disk convention),
+  with TTL.
 - **Fail-closed:** any detection/anonymization error blocks the request; never forward
   unscanned. Gateway is the only egress; the vault is never exposed over HTTP.
 
@@ -255,10 +298,16 @@ Levenshtein/n-gram fuzzy matching that works for surrogates (which are corrupted
 key) breaks down; it needs embedding/alignment matching.
 
 **De-anon cascade (precision-first — a wrong restore is worse than a missed one):** literal exact
+(boundary-aware, single-pass longest-first; boundary guard unconditional — European
+space-segmented scope, no non-segmented-script case)
 → guarded fuzzy (high cutoff + length/word guards) → semantic/alignment (high cosine threshold,
 one-to-one Hungarian assignment, verified by AlignScore/entailment) → **leave-generalized
-fallback**. Entries the vault marks `restorable: false` (many-to-one / detail-dropped) are
-**never** restored. Realistic, type-consistent, session-stable surrogates still matter: they make
+fallback**. Entries the vault marks `restorable: false` are **never** restored — this covers
+many-to-one / detail-dropped generalizations **and surrogate types that can't be made distinctive**
+(dates, numeric IDs, ports, ages, short codes/initials): a fake date is still digits that would
+match arbitrary numbers in the reply, so we anonymize them outbound but never literal-restore them
+(precision-first — a surrogate date surviving in the reply is harmless; rewriting an unrelated
+number is corruption). Realistic, type-consistent, session-stable surrogates still matter: they make
 the tier-1 round-trip survive the model paraphrasing its reply (opaque tags like `<PERSON_14>`
 get mangled; Faker-style values are rewritten *around*).
 
@@ -319,13 +368,13 @@ Notes:
 
 | # | Deliverable | Mode |
 |---|---|---|
-| **0** | **Prototype (standalone).** `PresidioReversibleAnonymizer` round-trip on a real `/v1/messages` payload + custom recognizers + detect-secrets, **multilingual** (per-language NER + lingua), with the local-LLM second pass + sufficiency score. Validates surrogate quality, reversal, language coverage. | — |
-| **1** | **Native `/v1/messages` shim, non-streaming.** FastAPI `/anthropic/v1/messages`; anonymize `messages` + `tool_result` inbound; forward; de-anonymize `content` + `tool_use.input`. Vault + fail-closed. Dockerized; build + start scripts; `.env.example` keys. Wire `ANTHROPIC_BASE_URL` for OpenCode (add `"baseURL"` to the `anthropic` provider's `options` in `config/opencode/entrypoint.sh`, mirroring `llamacpp` at line 73) + **claude-cli** (Claude Code — API-key *and* subscription-OAuth) via `ANTHROPIC_BASE_URL` in `openclaw-claude.sh` (Risk #1, verified). | A |
+| **0** | **Prototype (standalone).** `PresidioReversibleAnonymizer` round-trip on a real `/v1/messages` payload + custom recognizers + detect-secrets, **European-language** (en/de/fr/es/it/pt, per-language NER + lingua), with the local-LLM second pass + sufficiency score. Validates surrogate quality, reversal, language coverage. **Collision acceptance bar:** on a labelled corpus of real payloads, **zero false restores** + ≥ target correct-restore rate, surrogate-regeneration rate logged. | — |
+| **1** | **Native `/v1/messages` shim, non-streaming.** FastAPI `/anthropic/v1/messages`; anonymize `messages` + `tool_result` inbound; forward; de-anonymize `content` + `tool_use.input`. Vault + fail-closed. Dockerized; build + start scripts; `.env.example` keys. Wire `ANTHROPIC_BASE_URL` for OpenCode (add `"baseURL"` to the `anthropic` provider's `options` in `config/opencode/entrypoint.sh`, mirroring `llamacpp` at line 73) + **claude-cli** (Claude Code — API-key *and* subscription-OAuth) via `ANTHROPIC_BASE_URL` in `openclaw-claude.sh` (verified — see *claude-cli OAuth — verified*). | A |
 | **2** | **Streaming SSE de-anon for `/v1/messages`** (the hard part). Iterate SSE, sliding-window buffer for surrogates split across chunks, de-anon `text_delta` + `input_json_delta`. | A |
 | **3** | **OpenAI Chat Completions path.** `/openai/v1/chat/completions` (+ `/xai`, gemini-compat), anonymize/de-anon incl. `tool_calls` + streaming. Wire `OPENAI_BASE_URL`/xai `baseURL` in OpenCode entrypoint. | A |
 | **4** | **Local-LLM detection + egress gating + semantic anonymization** (was deferred M6; now in scope). Second-pass detector merged as a recognizer; anonymization-sufficiency score; soft/hard user-decision gate; `.env` thresholds. **Opt-in semantic (abstractive) rewrite** via a rewrite→verify loop with a **faithfulness score** (separate-model judge + two-directional AlignScore) and truthful-generalization (entailment) constraint; reversibility limited to syntactic spans. Calls the stack's `LOCAL_LLM_API_BASE`. Split into sub-steps (detector → score/gate → semantic rewrite+faithfulness) if it gets large. | A/B |
 | **5** | **OpenAI Responses adapter.** Third schema adapter for `…/responses` (Codex uses it, not Chat Completions). Enables redirectable Responses traffic and is a prerequisite for Codex under mode B. | A/B |
-| **6** | **Mode-B TLS interception for the subscription plugins.** CA trusted inside the OpenClaw container; intercept + body-anonymize **Copilot** (`api.githubcopilot.com` + the `api.github.com` token-exchange), **Codex** (`chatgpt.com/backend-api/codex/responses`), **Grok** (`api.x.ai/v1`) — preserving identity-binding headers/origin. (claude-cli is **not** here — it's mode A, Risk #1.) Per-backend sub-steps; heavily risk-gated (Risks #8, #9). | B |
+| **6** | **Mode-B TLS interception for the subscription plugins.** CA trusted inside the OpenClaw container; intercept + body-anonymize **Copilot** (`api.githubcopilot.com` + the `api.github.com` token-exchange), **Codex** (`chatgpt.com/backend-api/codex/responses`), **Grok** (`api.x.ai/v1`) — preserving identity-binding headers/origin. (claude-cli is **not** here — it's mode A; see *claude-cli OAuth — verified*.) Per-backend sub-steps; heavily risk-gated (Risks #6, #7). | B |
 | **7** | **Harden.** Encrypt vault at rest; TTL/expiry; outbound re-scan backstop (LLM-Guard-`Sensitive` style) → hard-block on any secret leak; audit log of masked **types** (not values); allowlist flagging "can't-anonymize → keep local-only." | — |
 
 ## Stack-integration touch points
@@ -334,7 +383,7 @@ Notes:
 
 - **New service** in `compose.yml`: `privacy-gateway` (container `privacy-gateway-${APP_ID}`),
   on `nocodenation_liquid_upstart_network`, egress allowed. **Enable mechanism — open
-  decision (see Risk #7):** either a Compose `profiles:` gate (service only starts when
+  decision (see Risk #5):** either a Compose `profiles:` gate (service only starts when
   `PRIVACY_GATEWAY_ENABLE=1`) or always-defined-but-idle with the flag gating only the
   base-URL injection. The `hermes` precedent is source-comment toggling across 5 files
   (compose, `build.sh`, `start.sh`, proxy `depends_on`, proxy aliases) — but it's a
@@ -348,12 +397,12 @@ Notes:
   `"baseURL"` line to the relevant `options` blocks in `config/opencode/entrypoint.sh`
   (those blocks exist per-provider; only `llamacpp` currently sets `baseURL`). **OpenClaw
   claude-cli:** set `ANTHROPIC_BASE_URL` in `config/openclaw/openclaw-claude.sh` before
-  `exec claude` (mode A, verified — Risk #1); this *is* the anthropic path when
+  `exec claude` (mode A, verified — see *claude-cli OAuth — verified*); this *is* the anthropic path when
   `ENABLE_ANTHROPIC_CLAUDE_CODE=1` (the `ANTHROPIC_API_KEY` is ignored then). **OpenClaw
   API-key providers:** `openclaw.json` does carry a per-provider `baseUrl` (confirmed in the
   running config — `models.providers.<id>.baseUrl`), so an API-key anthropic/openai provider
   can be redirected via the `openclaw.json` patch in `config/scripts/start/openclaw.sh`
-  (Risk #6).
+  (Risk #4).
 - **`.env.example` (the contract — add keys here first):** `PRIVACY_GATEWAY_ENABLE=0`,
   internal port, fail-closed flag, vault key/TTL, the `ANTHROPIC_BASE_URL`/`OPENAI_BASE_URL`/etc.
   plumbing, plus the new detection/gating keys (`PRIVACY_GATEWAY_LOCAL_LLM_ENABLE`,
@@ -376,56 +425,47 @@ Notes:
 
 ## Risks / open decisions
 
-1. **Claude-CLI OAuth + custom base-URL — RESOLVED (mode A).** Empirically verified against the
-   running stack (Claude Code 2.1.187, 2026-06-24): with a subscription `CLAUDE_CODE_OAUTH_TOKEN`,
-   pointing `ANTHROPIC_BASE_URL` at a local proxy makes Claude Code `POST /v1/messages?beta=true`
-   to that proxy with `Authorization: Bearer <oauth>` **and** `anthropic-beta: …,oauth-2025-04-20,…`
-   intact — OAuth survives the base-URL override. (The earlier "custom base URL disables OAuth /
-   #33330" finding was about `ANTHROPIC_AUTH_TOKEN`, a different code path.) So claude-cli uses
-   **mode A**, not mode B — no TLS-MITM needed.
-   - **Wiring:** set `ANTHROPIC_BASE_URL=http://privacy-gateway-${APP_ID}:<port>/anthropic` in
-     `config/openclaw/openclaw-claude.sh` before `exec claude` (the wrapper is the only place that
-     survives OpenClaw's `CLAUDE_CLI_CLEAR_ENV` stripping). The gateway forwards to
-     `api.anthropic.com` passing `Authorization`, `anthropic-version`, `anthropic-beta`,
-     `user-agent` **untouched**; only the JSON body is rewritten.
-   - **Legality:** the traffic is genuine Claude Code using its own subscription OAuth (real UA +
-     beta headers); Anthropic sees a normal Claude Code request. The Jan-2026 block targets OAuth
-     tokens used *outside* Claude Code (lifted into custom SDKs/scripts) — we don't do that; we're
-     a transparent body-anonymizer, the same category as the gateways Anthropic supports via
-     `ANTHROPIC_BASE_URL`. Note also (per OpenClaw): when `ENABLE_ANTHROPIC_CLAUDE_CODE=1`, any
-     `ANTHROPIC_API_KEY` is ignored — the anthropic path *is* claude-cli OAuth.
-   - **Two implementation gotchas from the capture:** Claude Code sends a `HEAD /` preflight
-     before the POST (the gateway must answer it), and the request path carries a query string
-     (`?beta=true`) the gateway must preserve.
-2. **Surrogate collision.** Literal substring de-anon needs realistic, low-collision
-   surrogates + longest-first replacement. Faker values are reasonably safe; known edge.
-3. **System prompts & tool definitions** also carry sensitive data (internal tool
-   names/descriptions). V1 leaves them untouched (masking can break tool dispatch);
-   revisit later.
-4. **Latency budget.** Presidio-only keeps per-request overhead low; the local-LLM pass (M4)
+1. **System prompts & tool definitions carry sensitive data (internal tool names/descriptions).**
+   **V1** leaves tool schemas untouched — *opaque* masking measurably degrades dispatch (definition
+   names correlate with tool purpose and LLMs infer behaviour from them — naming effects
+   arXiv:2307.12488, ToolTweak arXiv:2510.02554). **V2** anonymizes them through the **M4 semantic
+   level**, not surrogate substitution: *generalize* internal identifiers while preserving function
+   (`query_acme_prod_db` → `query_customer_database`), gated by the same **truthful-generalization +
+   faithfulness** checks (faithfulness here = dispatch still works). Use **one-to-one** generalized
+   tool names (the *Reversibility* distinctiveness lever) so the returned `tool_use.name`
+   de-anonymizes as a clean round-trip; call arguments + results already flow through the normal
+   pipeline; system prompts get the same entity + semantic treatment. **Out of scope —
+   local-orchestrator delegation (PAPILLON / AirGapAgent):** having the local model
+   rewrite-and-reconstruct each call, or run the agent loop and delegate only sanitized sub-questions
+   to the cloud, keeps tool defs fully local but **breaks the transparent-proxy design** and is
+   bounded by local agentic capability (the gap Claude fills); PAPILLON is validated only single-turn,
+   no tool use. Credible future architecture, deliberately not V1/V2 (*Background → tool-definition
+   privacy & delegation*).
+2. **Latency budget.** Presidio-only keeps per-request overhead low; the local-LLM pass (M4)
    is the latency-heavy addition (a single field can cost seconds on a large local model —
    early local testing measured ~30 s/field on a dense 31B, `gemma4-31b`). Mitigations: run it only on free-text
    fields (skip short/structured ones), single low-temperature pass, gate self-consistency
    sampling on low confidence only, and consider making the second-pass detector and the
    score independently toggleable so users trade latency for assurance.
-5. **Pseudonymization ≠ GDPR exemption.** The vault is re-identifying info; treat as risk
+3. **Pseudonymization ≠ GDPR exemption.** The vault is re-identifying info; treat as risk
    reduction, keep it strictly local.
-6. **OpenClaw per-provider baseURL.** OpenClaw is itself an LLM gateway; its backends are
+4. **OpenClaw per-provider baseURL.** OpenClaw is itself an LLM gateway; its backends are
    wired by patching `openclaw.json` in `config/scripts/start/openclaw.sh`. Research clarified
    the split: the **subscription backends are bundled plugins/runtimes** (`copilot`/`codex`/
-   `xai`) with **no** base-URL hook — confirmed, hence mode B (Risks #8–#9). For the **API-key
+   `xai`) with **no** base-URL hook — confirmed, hence mode B (Risks #6–#7). For the **API-key
    anthropic** provider, whether OpenClaw's config (or a plain `ANTHROPIC_BASE_URL` env) can
    redirect the upstream is still the open M1 item. OpenCode is unaffected (its provider
    `options.baseURL` is a known, supported field). claude-cli reads `ANTHROPIC_BASE_URL` via the
-   `openclaw-claude.sh` wrapper — clean in **both** API-key and OAuth modes (Risk #1, verified).
+   `openclaw-claude.sh` wrapper — clean in **both** API-key and OAuth modes (verified — see
+   *claude-cli OAuth — verified*).
    Update: `openclaw.json` *does* carry `models.providers.<id>.baseUrl` (confirmed in the running
    config), so the API-key anthropic path is redirectable too — though it's unused whenever
    claude-cli is enabled.
-7. **Enable mechanism (Compose profiles vs. always-on).** A `profiles:` gate avoids running
+5. **Enable mechanism (Compose profiles vs. always-on).** A `profiles:` gate avoids running
    an idle container when disabled but adds a Compose feature the stack doesn't use elsewhere;
    always-defined-but-idle is simpler and keeps the toggle purely in the start-script
    injection. Decide before Milestone 1's Dockerization step.
-8. **Mode-B needs TLS-MITM with a CA trusted inside the OpenClaw container (Milestone 6).**
+6. **Mode-B needs TLS-MITM with a CA trusted inside the OpenClaw container (Milestone 6).**
    The subscription backends (Copilot/Codex/Grok) are OpenClaw **built-in plugins/runtimes with
    hardcoded upstreams** — research found **no** per-provider base-URL hook, so config redirect
    is impossible; transport interception is the only option. That means generating a local CA,
@@ -433,7 +473,7 @@ Notes:
    the gateway. Cost: CA lifecycle, breakage when a client pins TLS, and **ToS / anti-abuse
    exposure** for intercepting subscription traffic. Make mode B opt-in per backend; document
    the ToS risk; API-key/mode-A paths remain the safe default.
-9. **Subscription auth is host- and identity-bound — anonymize the body, not the envelope.**
+7. **Subscription auth is host- and identity-bound — anonymize the body, not the envelope.**
    Each subscription backend binds its token to its own host + an identity signal the anti-abuse
    layer checks: Codex needs `ChatGPT-Account-ID` + `originator` and must stay on
    `chatgpt.com/backend-api/codex/responses`; Copilot needs the IDE header allowlist
@@ -442,16 +482,16 @@ Notes:
    **untouched** and reach the real upstream — it can only scrub the JSON body, not the
    identity envelope. Copilot's two-host flow means interception must not break
    `api.github.com/copilot_internal/v2/token` (and must avoid hijacking unrelated `gh`/git).
-10. **Scoring calibration (Milestone 4).** LLM PII detectors **over-flag** (false positives
-    dominate — PAPILLON), verbalized confidence is better-calibrated than logits but still
-    imperfect, and there is **no universal risk threshold** (context-dependent). Keep a coarse
-    risk bucket separate from a fine 0–1 confidence, default thresholds conservative, offer a
-    "report false positive" path, and validate the scorer against a stronger adversary LLM.
-11. **User-decision fatigue.** Warning habituation sets in by the second exposure (Anderson/
-    Vance, MISQ 2018). Reserve the hard block for high risk; use light friction for medium;
-    explain *what* and *why*; remember decisions in the local vault — but avoid silent
-    persistent allowlists for high-risk categories.
-12. **Semantic anonymization is partially reversible and can distort the task (Milestone 4).**
+8. **Scoring calibration (Milestone 4).** LLM PII detectors **over-flag** (false positives
+   dominate — PAPILLON), verbalized confidence is better-calibrated than logits but still
+   imperfect, and there is **no universal risk threshold** (context-dependent). Keep a coarse
+   risk bucket separate from a fine 0–1 confidence, default thresholds conservative, offer a
+   "report false positive" path, and validate the scorer against a stronger adversary LLM.
+9. **User-decision fatigue.** Warning habituation sets in by the second exposure (Anderson/
+   Vance, MISQ 2018). Reserve the hard block for high risk; use light friction for medium;
+   explain *what* and *why*; remember decisions in the local vault — but avoid silent
+   persistent allowlists for high-risk categories.
+10. **Semantic anonymization is partially reversible and can distort the task (Milestone 4).**
     Abstractive rewriting has three failure modes: **over-generalization** ("cancer diagnosis" →
     "medical condition" destroys task meaning), **under-generalization** (leaves re-identifying
     cues), and **hallucination** (invented replacements). Mitigations: keep it strictly opt-in;
@@ -462,7 +502,7 @@ Notes:
     collapses are k-anonymity and **genuinely unrecoverable** — mark them `restorable: false`.
     De-anon must bias to precision: a **wrong restoration** (false semantic match) is worse than
     leaving content generalized, so the cascade always falls through to leave-generalized.
-13. **Faithfulness judge reliability (Milestone 4).** A model grading its own rewrite
+11. **Faithfulness judge reliability (Milestone 4).** A model grading its own rewrite
     over-rates it (self-preference, amplified inside refine loops — arXiv:2402.11436).
     **Resolved by the roster** (*Local model roster*): the judge (`gemma4-31b`) is a different
     family from the rewriter (`Qwen3.5-35B-A3B`). Still cross-check with a deterministic metric
@@ -489,6 +529,22 @@ Notes:
 - Casper (arXiv:2408.07004) — 3 local layers (regex → NER → topic LLM), asymmetric gating.
 - PAPILLON / PUPA (arXiv:2410.17127) — privacy-conscious delegation; LLM-judge leakage metric
   (~86% human agreement; false positives dominate). Hide-and-Seek (arXiv:2309.03057).
+
+**Tool-definition privacy & delegation** (the model for Risk #1)
+- AirGapAgent (CCS 2024, arXiv:2405.05175) — a local **data-minimizer** LLM decides, by contextual
+  integrity, what may be exposed to the third party before the capable model runs (protection
+  <35%→>85%). The model for "keep sensitive tool defs/data local, expose per-task."
+- PAPILLON (arXiv:2410.17127) reused as **delegation** (not just the leakage metric): local Prompt
+  Creator abstracts → cloud answers → local Aggregator reconstructs; 85.5% quality / 7.5% leakage,
+  but **single-turn, no tool use** — the agentic case is open.
+- Tool-dispatch sensitivity to names: definition names correlate with purpose and drive selection
+  accuracy, so opaque/shuffled renames degrade it (naming effects, arXiv:2307.12488) and tools can
+  be adversarially renamed to hijack selection (ToolTweak, arXiv:2510.02554) — hence
+  generalize-preserving-function, never opaquely mask.
+- Inference-time info-flow gate: PrivacyChecker / *Privacy in Action* (arXiv:2509.17488) — a
+  standalone mediator checks flows but reasons with the *same* cloud model (no local firewall).
+- Split inference (PFID arXiv:2406.12238, Split-and-Denoise arXiv:2310.09130) ships hidden states
+  not text — **inapplicable to closed API models** (can't run Claude's layers locally).
 
 **Residual re-identification risk scoring** (the model for the sufficiency score)
 - Staab et al., *Beyond Memorization* (ICLR 2024, arXiv:2310.07298) — adversarial LLM inference

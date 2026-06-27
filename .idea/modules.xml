@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/liquidupstart.iml" filepath="$PROJECT_DIR$/.idea/liquidupstart.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/privacy-gateway.iml" filepath="$PROJECT_DIR$/.idea/privacy-gateway.iml" />
     </modules>
   </component>
 </project>

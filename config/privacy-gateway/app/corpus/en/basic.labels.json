@@ -1,0 +1,9 @@
+{
+  "language": "en",
+  "restorable": [
+    "Alice Johnson",
+    "Berlin",
+    "alice.johnson@example.com"
+  ],
+  "non_restorable": []
+}

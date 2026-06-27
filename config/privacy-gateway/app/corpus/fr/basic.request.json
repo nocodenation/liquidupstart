@@ -1,0 +1,10 @@
+{
+  "model": "claude-test",
+  "max_tokens": 256,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Je m'appelle Marie Dupont et j'habite à Lyon depuis cinq ans."
+    }
+  ]
+}
