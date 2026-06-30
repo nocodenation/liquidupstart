@@ -78,6 +78,28 @@ class Vault:
         self._register(entry, conversation_id)
         return entry
 
+    def record_generalization(
+        self,
+        original: str,
+        replacement: str,
+        cardinality: str,
+        conversation_id: str,
+        session_id: str = "",
+    ) -> VaultEntry:
+        entry = VaultEntry(
+            original=original,
+            replacement=replacement,
+            entity_type="GENERALIZATION",
+            conversation_id=conversation_id,
+            session_id=session_id,
+            restorable=False,
+            transform_type="generalization",
+            cardinality=cardinality,
+            created_at=self._clock(),
+        )
+        self._register(entry, conversation_id)
+        return entry
+
     def reverse_map(self, conversation_id: str) -> dict[str, str]:
         return {r: e.original for r, e in self._rev[conversation_id].items()}
 

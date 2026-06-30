@@ -78,10 +78,14 @@ _PROVIDERS="    \"llamacpp\": {
       }
     }"
 
+_ANTHROPIC_BASEURL_FIELD=""
+[ -n "${PRIVACY_GATEWAY_ANTHROPIC_URL:-}" ] && _ANTHROPIC_BASEURL_FIELD="
+        \"baseURL\": \"${PRIVACY_GATEWAY_ANTHROPIC_URL}\","
+
 if [ -n "${ANTHROPIC_API_KEY}" ]; then
     _PROVIDERS="${_PROVIDERS},
     \"anthropic\": {
-      \"options\": {
+      \"options\": {${_ANTHROPIC_BASEURL_FIELD}
         \"apiKey\": \"${ANTHROPIC_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
@@ -89,10 +93,14 @@ if [ -n "${ANTHROPIC_API_KEY}" ]; then
     }"
 fi
 
+_OPENAI_BASEURL_FIELD=""
+[ -n "${PRIVACY_GATEWAY_OPENAI_URL:-}" ] && _OPENAI_BASEURL_FIELD="
+        \"baseURL\": \"${PRIVACY_GATEWAY_OPENAI_URL}\","
+
 if [ -n "${OPENAI_API_KEY}" ]; then
     _PROVIDERS="${_PROVIDERS},
     \"openai\": {
-      \"options\": {
+      \"options\": {${_OPENAI_BASEURL_FIELD}
         \"apiKey\": \"${OPENAI_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}

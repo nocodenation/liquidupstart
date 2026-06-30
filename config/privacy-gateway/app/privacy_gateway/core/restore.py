@@ -57,6 +57,10 @@ def restore_json(obj: Any, reverse_map: dict[str, str]) -> Any:
     return _walk(obj, build_buckets(reverse_map))
 
 
+def restore_json_with_buckets(obj: Any, buckets: Buckets) -> Any:
+    return _walk(obj, buckets)
+
+
 def _walk(obj: Any, buckets: Buckets) -> Any:
     if isinstance(obj, str):
         return restore_with_buckets(obj, buckets)

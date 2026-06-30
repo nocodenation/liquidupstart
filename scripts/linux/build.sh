@@ -14,4 +14,9 @@ cd "${PROJECT_DIR}"
 # "${PROJECT_DIR}/config/scripts/build/hermes.sh" "$@"
 "${PROJECT_DIR}/config/scripts/build/openclaw.sh" "$@"
 
+PRIVACY_GATEWAY_ENABLE="$(grep -E '^PRIVACY_GATEWAY_ENABLE=' "${PROJECT_DIR}/.env" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
+if [[ "${PRIVACY_GATEWAY_ENABLE:-0}" = 1 ]]; then
+  "${PROJECT_DIR}/config/scripts/build/privacy-gateway.sh" "$@"
+fi
+
 echo "Done."

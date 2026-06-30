@@ -55,9 +55,11 @@ class Session:
 
 
 class Gateway:
-    def __init__(self, detector, vault):
+    def __init__(self, detector, vault, base_detector=None, llm_client=None):
         self.detector = detector
         self.vault = vault
+        self.base_detector = base_detector or detector
+        self.llm_client = llm_client
 
     def new_session(self, conversation_id: str, session_id: str = "") -> Session:
         return Session(self, conversation_id, session_id)

@@ -63,3 +63,14 @@ class Detector:
         ]
         spans += scan_secrets(text, lang)
         return merge_spans(spans)
+
+
+class CompositeDetector:
+    def __init__(self, base: Detector, extra):
+        self.base = base
+        self._extra = extra
+
+    def detect(self, text: str) -> list[Span]:
+        spans = list(self.base.detect(text))
+        spans += self._extra.detect(text)
+        return merge_spans(spans)

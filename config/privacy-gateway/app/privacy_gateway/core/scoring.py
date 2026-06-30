@@ -63,6 +63,8 @@ def score_sufficiency(
     surrogates: set[str],
     client: LocalLLMClient | None = None,
     threshold: float = _FLOOR_THRESHOLD,
+    low: float = 0.8,
+    medium: float = 0.5,
 ) -> Sufficiency:
     reasons: list[str] = []
     floor = deterministic_floor(detector, anonymized_text, surrogates, threshold)
@@ -74,9 +76,9 @@ def score_sufficiency(
         reasons.append(f"llm_risk={llm_risk:.2f};confidence={confidence:.2f}")
     risk = max(floor, llm_risk)
     sufficiency = 1.0 - risk
-    if sufficiency >= 0.8:
+    if sufficiency >= low:
         bucket = "low"
-    elif sufficiency >= 0.5:
+    elif sufficiency >= medium:
         bucket = "medium"
     else:
         bucket = "high"
