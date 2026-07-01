@@ -11,6 +11,7 @@ from privacy_gateway.core.detection.presidio import SUPPORTED_LANGUAGES
 from privacy_gateway.core.gateway import Gateway
 from privacy_gateway.core.llm.client import OpenAICompatClient
 from privacy_gateway.core.llm.second_pass import SecondPassDetector
+from privacy_gateway.core.vault.persist import load, load_or_create_key
 from privacy_gateway.core.vault.store import Vault
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,26 @@ def build_detector(settings: Settings, base: Detector, client):
     return base
 
 
+def build_vault(settings: Settings):
+    ttl = settings.vault_ttl
+    if not settings.vault_dir:
+        return Vault(ttl_seconds=ttl), None, None
+    import base64
+    from pathlib import Path
+
+    vdir = Path(settings.vault_dir)
+    vdir.mkdir(parents=True, exist_ok=True)
+    key = (
+        base64.b64decode(settings.vault_key)
+        if settings.vault_key
+        else load_or_create_key(vdir / "vault.key")
+    )
+    path = vdir / "vault.enc"
+    vault = load(path, key, ttl_seconds=ttl)
+    logger.info("gateway: vault loaded from %s (%d convs)", path, len(vault._conv_entries))
+    return vault, path, key
+
+
 def build_gateway(settings: Settings) -> Gateway:
     logger.info("building gateway: loading NER models %s ...", SUPPORTED_LANGUAGES)
     base = Detector()
@@ -40,7 +61,23 @@ def build_gateway(settings: Settings) -> Gateway:
     detector = build_detector(settings, base, client)
     if isinstance(detector, CompositeDetector):
         logger.info("gateway: local-LLM second-pass detector enabled")
-    gateway = Gateway(detector, Vault(), base_detector=base, llm_client=client)
+    vault, path, key = build_vault(settings)
+    audit = None
+    if settings.vault_dir and settings.audit_enable:
+        from pathlib import Path
+
+        from privacy_gateway.core.audit import AuditLog
+
+        audit = AuditLog(Path(settings.vault_dir) / "audit.jsonl")
+    gateway = Gateway(
+        detector,
+        vault,
+        base_detector=base,
+        llm_client=client,
+        persist_path=path,
+        persist_key=key,
+        audit=audit,
+    )
     logger.info("gateway ready")
     return gateway
 

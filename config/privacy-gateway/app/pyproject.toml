@@ -15,6 +15,7 @@ dependencies = [
     "detect-secrets",
     "faker",
     "langchain-experimental",
+    "cryptography",
 ]
 
 [project.optional-dependencies]

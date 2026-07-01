@@ -3,6 +3,9 @@ from __future__ import annotations
 import logging
 
 import httpx
+from fastapi.responses import JSONResponse
+
+from privacy_gateway.core.backstop import scan_payload
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +14,16 @@ _SKIP_HEADERS = {"host", "content-length"}
 
 def forward_headers(headers) -> dict[str, str]:
     return {k: v for k, v in headers.items() if k.lower() not in _SKIP_HEADERS}
+
+
+def enforce_backstop(anonymized, settings, cid: str = "") -> JSONResponse | None:
+    leaked = scan_payload(anonymized, settings.backstop_mode)
+    if not leaked:
+        return None
+    logger.warning("conv=%s backstop: %d secret(s) survived -> blocked", cid, len(leaked))
+    return JSONResponse(
+        {"error": "secret_leak_blocked", "count": len(leaked)}, status_code=403
+    )
 
 
 class Upstream:

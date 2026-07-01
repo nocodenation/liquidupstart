@@ -718,6 +718,9 @@ services:
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
       OPENCLAW_CLAUDE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       PRIVACY_GATEWAY_ANTHROPIC_URL: ${PRIVACY_GATEWAY_ANTHROPIC_URL:-}
+      ENABLE_XAI_GROK: ${ENABLE_XAI_GROK:-0}
+      ENABLE_OPENAI_CODEX: ${ENABLE_OPENAI_CODEX:-0}
+      NODE_EXTRA_CA_CERTS: ${PRIVACY_GATEWAY_NODE_CA:-}
       POSTGREST_API_KEY: ${API_KEY:-}
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
       LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
@@ -740,6 +743,7 @@ services:
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
+      - ./volumes/privacy-gateway/ca:/pg-ca:ro
       - ./volumes/data:/data
       - ./volumes/bun_app:/bun_app
       - ./volumes/python_extensions:/opt/python_extensions
@@ -768,6 +772,16 @@ services:
         mkdir -p /home/node/openclaw-plugins
         cp -a /opt/plugins/. /home/node/openclaw-plugins/
         chmod -R go-w /home/node/openclaw-plugins
+        if [ -n "$${NODE_EXTRA_CA_CERTS:-}" ]; then
+          i=0; while [ ! -f "$$NODE_EXTRA_CA_CERTS" ] && [ "$$i" -lt 60 ]; do i=$$((i+1)); sleep 1; done
+          cp "$$NODE_EXTRA_CA_CERTS" /usr/local/share/ca-certificates/pg-ca.crt 2>/dev/null && update-ca-certificates >/dev/null 2>&1 || true
+          set -- $$(getent hosts privacy-gateway); gw="$${1:-}"
+          if [ -n "$$gw" ]; then
+            [ "$${ENABLE_XAI_GROK:-0}" != "0" ] && echo "$$gw api.x.ai" >> /etc/hosts
+            [ "$${ENABLE_GITHUB_COPILOT:-0}" != "0" ] && echo "$$gw api.githubcopilot.com" >> /etc/hosts
+            [ "$${ENABLE_OPENAI_CODEX:-0}" != "0" ] && echo "$$gw chatgpt.com" >> /etc/hosts
+          fi
+        fi
         exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test:
@@ -872,8 +886,18 @@ services:
       PRIVACY_GATEWAY_FAITHFULNESS_ACCEPT: ${PRIVACY_GATEWAY_FAITHFULNESS_ACCEPT:-0.85}
       PRIVACY_GATEWAY_FAITHFULNESS_SURFACE: ${PRIVACY_GATEWAY_FAITHFULNESS_SURFACE:-0.70}
       PRIVACY_GATEWAY_SEMANTIC_MAX_ROUNDS: ${PRIVACY_GATEWAY_SEMANTIC_MAX_ROUNDS:-5}
+      PRIVACY_GATEWAY_VAULT_DIR: /data
+      PRIVACY_GATEWAY_VAULT_KEY: ${PRIVACY_GATEWAY_VAULT_KEY:-}
+      PRIVACY_GATEWAY_VAULT_TTL: ${PRIVACY_GATEWAY_VAULT_TTL:-}
+      PRIVACY_GATEWAY_BACKSTOP_MODE: ${PRIVACY_GATEWAY_BACKSTOP_MODE:-block}
+      PRIVACY_GATEWAY_AUDIT_ENABLE: ${PRIVACY_GATEWAY_AUDIT_ENABLE:-1}
+      ENABLE_XAI_GROK: ${ENABLE_XAI_GROK:-0}
+      ENABLE_GITHUB_COPILOT: ${ENABLE_GITHUB_COPILOT:-0}
+      ENABLE_OPENAI_CODEX: ${ENABLE_OPENAI_CODEX:-0}
       LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+    volumes:
+      - ./volumes/privacy-gateway:/data
     networks:
       - nocodenation_liquid_upstart_network
 

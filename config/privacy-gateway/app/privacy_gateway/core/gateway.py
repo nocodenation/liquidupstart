@@ -55,14 +55,40 @@ class Session:
 
 
 class Gateway:
-    def __init__(self, detector, vault, base_detector=None, llm_client=None):
+    def __init__(
+        self,
+        detector,
+        vault,
+        base_detector=None,
+        llm_client=None,
+        persist_path=None,
+        persist_key=None,
+        audit=None,
+    ):
         self.detector = detector
         self.vault = vault
         self.base_detector = base_detector or detector
         self.llm_client = llm_client
+        self.persist_path = persist_path
+        self.persist_key = persist_key
+        self.audit = audit
 
     def new_session(self, conversation_id: str, session_id: str = "") -> Session:
         return Session(self, conversation_id, session_id)
 
     def metrics(self) -> Metrics:
         return self.vault.metrics()
+
+    def persist(self) -> None:
+        if self.persist_path is None or self.persist_key is None:
+            return
+        from privacy_gateway.core.vault.persist import save
+
+        save(self.vault, self.persist_path, self.persist_key)
+
+    def finalize(self, conversation_id: str, backstop: str | None = None) -> None:
+        if self.audit is not None:
+            self.audit.record(
+                conversation_id, self.vault.entries(conversation_id), backstop
+            )
+        self.persist()

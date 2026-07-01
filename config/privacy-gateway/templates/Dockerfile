@@ -17,5 +17,5 @@ RUN uv sync --frozen --no-dev --extra models-md
 
 # POST_INSTALL_COMMANDS
 
-EXPOSE 8080
-ENTRYPOINT ["/app/.venv/bin/uvicorn", "privacy_gateway.main:app", "--host", "0.0.0.0", "--port", "8080"]
+EXPOSE 8080 443
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "privacy_gateway.serve"]

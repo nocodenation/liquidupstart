@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from privacy_gateway.api.deps import get_gateway, get_upstream
-from privacy_gateway.api.upstream import forward_headers
+from privacy_gateway.api.upstream import enforce_backstop, forward_headers
 from privacy_gateway.core.adapters.anthropic_messages import (
     anonymize_request,
     deanonymize_response,
@@ -52,10 +52,16 @@ async def messages(request: Request) -> Response:
         logger.warning("conv=%s egress blocked: risk=%s", cid, gate.header)
         return JSONResponse({"error": "egress_blocked", "risk": gate.header}, status_code=403)
 
+    blocked = enforce_backstop(anonymized, request.app.state.settings, cid)
+    if blocked is not None:
+        gateway.finalize(session.conversation_id, "blocked")
+        return blocked
+
     if body.get("stream") is True:
         logger.info("conv=%s streaming", cid)
         resp = await _stream_response(request, upstream, session, anonymized, cid)
         _attach_risk(resp, gate.header)
+        gateway.finalize(session.conversation_id, "ok")
         return resp
 
     resp = await upstream.forward(
@@ -72,6 +78,7 @@ async def messages(request: Request) -> Response:
     logger.info("conv=%s done upstream=%d (%.0fms)", cid, resp.status_code, elapsed)
     out = JSONResponse(deanonymize_response(data, session), status_code=resp.status_code)
     _attach_risk(out, gate.header)
+    gateway.finalize(session.conversation_id, "ok")
     return out
 
 

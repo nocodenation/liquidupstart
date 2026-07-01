@@ -93,6 +93,11 @@ if [[ "${PRIVACY_GATEWAY_ENABLE:-0}" = 1 ]]; then
   export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-gateway"
   export PRIVACY_GATEWAY_ANTHROPIC_URL="http://privacy-gateway:${PG_PORT}/anthropic"
   export PRIVACY_GATEWAY_OPENAI_URL="http://privacy-gateway:${PG_PORT}/openai/v1"
+
+  env_flag() { grep -E "^$1=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true; }
+  if [[ "$(env_flag ENABLE_XAI_GROK)" = 1 || "$(env_flag ENABLE_GITHUB_COPILOT)" = 1 || "$(env_flag ENABLE_OPENAI_CODEX)" = 1 ]]; then
+    export PRIVACY_GATEWAY_NODE_CA="/pg-ca/ca.crt"
+  fi
 fi
 
 echo "Starting containers..."
