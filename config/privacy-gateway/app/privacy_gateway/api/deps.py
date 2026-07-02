@@ -49,7 +49,16 @@ def build_vault(settings: Settings):
         else load_or_create_key(vdir / "vault.key")
     )
     path = vdir / "vault.enc"
-    vault = load(path, key, ttl_seconds=ttl)
+    try:
+        vault = load(path, key, ttl_seconds=ttl)
+    except Exception:
+        aside = path.with_suffix(".enc.unreadable")
+        path.replace(aside)
+        logger.error(
+            "gateway: %s cannot be decrypted with the configured key; moved to %s, starting fresh",
+            path, aside,
+        )
+        vault = Vault(ttl_seconds=ttl)
     logger.info("gateway: vault loaded from %s (%d convs)", path, len(vault._conv_entries))
     return vault, path, key
 

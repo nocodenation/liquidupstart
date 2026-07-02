@@ -54,3 +54,33 @@ def test_adversarial_stops_on_high_confidence():
     risk, confidence = adversarial_risk(client, ANON)
     assert len(client.calls) == 1
     assert risk == 0.2
+
+
+def test_floor_ignores_shifted_span_over_secret_surrogate(detector):
+    anon = "My AWS key is HD1At5Q1DV1CxXDao0nhL9xK."
+    assert deterministic_floor(detector, anon, {"HD1At5Q1DV1CxXDao0nhL9xK"}) == 0.0
+
+
+def test_floor_fires_on_residual_street_name_next_to_surrogates(detector):
+    anon = "My address is Lindenstrasse 2015-08-09, 2004-02-10 Pombal."
+    assert deterministic_floor(detector, anon, {"2015-08-09", "2004-02-10", "Pombal"}) == 1.0
+
+
+def test_adversarial_skips_unparseable_samples():
+    client = FakeLocalLLMClient([
+        "no json here",
+        '```json\n{"risk": 0.3, "confidence": 0.9}\n```',
+    ])
+    risk, confidence = adversarial_risk(client, "text")
+    assert risk == 0.3
+    assert confidence == 0.9
+
+
+def test_adversarial_all_unparseable_raises():
+    import pytest
+
+    from privacy_gateway.core.errors import LLMUnavailable
+
+    client = FakeLocalLLMClient("no json here")
+    with pytest.raises(LLMUnavailable):
+        adversarial_risk(client, "text")

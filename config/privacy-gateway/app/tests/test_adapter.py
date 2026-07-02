@@ -51,3 +51,38 @@ def test_tool_use_input_leaves_anonymized_scalars_preserved(detector):
     assert "Bob Stone" not in inp["meta"]["contact"]
     assert inp["count"] == 3
     assert inp["flag"] is True
+
+
+def test_anthropic_tool_definition_description_anonymized(detector):
+    session = _session(detector)
+    payload = {
+        "model": "c", "max_tokens": 5,
+        "messages": [{"role": "user", "content": "hello there everyone"}],
+        "tools": [{
+            "name": "lookup_account",
+            "description": "Looks up the account of Hans Mueller (hans.mueller@example.de).",
+            "input_schema": {"type": "object", "properties": {
+                "note": {"type": "string", "description": "e.g. contact Sabine Vogel in Munich"}}},
+        }],
+    }
+    out = anonymize_request(payload, session)
+    tool = out["tools"][0]
+    assert tool["name"] == "lookup_account"
+    assert "Hans Mueller" not in tool["description"]
+    assert "hans.mueller@example.de" not in tool["description"]
+    assert "Sabine Vogel" not in tool["input_schema"]["properties"]["note"]["description"]
+
+
+def test_anthropic_clean_tool_definition_unchanged(detector):
+    session = _session(detector)
+    desc = "Read a file from the local filesystem and return its contents as text."
+    payload = {
+        "model": "c", "max_tokens": 5,
+        "messages": [{"role": "user", "content": "hello there everyone"}],
+        "tools": [{"name": "read_file", "description": desc,
+                   "input_schema": {"type": "object", "properties": {
+                       "path": {"type": "string", "description": "absolute path to the file"}}}}],
+    }
+    out = anonymize_request(payload, session)
+    assert out["tools"][0]["description"] == desc
+    assert out["tools"][0]["input_schema"]["properties"]["path"]["description"] == "absolute path to the file"

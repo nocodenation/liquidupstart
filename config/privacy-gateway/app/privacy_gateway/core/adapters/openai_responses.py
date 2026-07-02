@@ -4,7 +4,10 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from privacy_gateway.core.adapters.anthropic_messages import _map_leaves
+from privacy_gateway.core.adapters.anthropic_messages import (
+    _map_leaves,
+    anonymize_tool_defs,
+)
 from privacy_gateway.core.gateway import Session
 
 
@@ -54,6 +57,7 @@ def anonymize_request(payload: dict, session: Session) -> dict:
     elif isinstance(inp, list):
         for item in inp:
             _anon_item(item, session)
+    anonymize_tool_defs(out, session)
     return out
 
 

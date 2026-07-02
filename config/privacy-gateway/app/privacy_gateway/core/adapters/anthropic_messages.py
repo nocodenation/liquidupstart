@@ -17,6 +17,24 @@ def _map_leaves(obj: Any, fn: Callable[[str], str]) -> Any:
     return obj
 
 
+def anonymize_tool_defs(out: dict, session: Session) -> None:
+    tools = out.get("tools")
+    if not isinstance(tools, list):
+        return
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        for owner in (tool, tool.get("function")):
+            if not isinstance(owner, dict):
+                continue
+            if isinstance(owner.get("description"), str):
+                owner["description"] = session.anonymize_text(owner["description"])
+            for schema_key in ("parameters", "input_schema"):
+                schema = owner.get(schema_key)
+                if isinstance(schema, (dict, list)):
+                    owner[schema_key] = _map_leaves(schema, session.anonymize_text)
+
+
 def anonymize_request(payload: dict, session: Session) -> dict:
     out = deepcopy(payload)
     session.prompt_corpus = json.dumps(payload, ensure_ascii=False)
@@ -24,6 +42,7 @@ def anonymize_request(payload: dict, session: Session) -> dict:
     for msg in out.get("messages", []):
         if isinstance(msg, dict):
             _anon_content(msg.get("content"), msg, "content", session)
+    anonymize_tool_defs(out, session)
     return out
 
 

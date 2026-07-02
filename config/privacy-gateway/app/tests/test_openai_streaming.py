@@ -150,3 +150,30 @@ def test_openai_stream_route_end_to_end(make_app):
     assert "Alice Johnson" not in json.dumps(up.received)
     got, _ = _reconstruct(r.content)
     assert got[0] == content
+
+
+def _reasoning_delta(text: str, ci: int = 0) -> SSEFrame:
+    return _data_frame({"id": "c", "object": "chat.completion.chunk",
+                        "choices": [{"index": ci, "delta": {"reasoning_content": text},
+                                     "finish_reason": None}]})
+
+
+def test_reasoning_content_streamed_and_restored():
+    raw = _run_raw({"André Vicente": "Alice Johnson"}, [
+        _reasoning_delta("Thinking about André "),
+        _reasoning_delta("Vicente carefully."),
+        _content_delta("Hello André Vicente!"),
+        _done(),
+    ])
+    reasoning = ""
+    content = ""
+    for line in raw.split(b"\n"):
+        if not line.startswith(b"data:") or b"[DONE]" in line:
+            continue
+        chunk = json.loads(line[5:].strip())
+        for choice in chunk.get("choices", []):
+            delta = choice.get("delta") or {}
+            reasoning += delta.get("reasoning_content") or ""
+            content += delta.get("content") or ""
+    assert reasoning == "Thinking about Alice Johnson carefully."
+    assert content == "Hello Alice Johnson!"

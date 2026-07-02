@@ -50,3 +50,24 @@ def test_vault_persist_drops_expired_on_load(tmp_path):
     restored = load(path, key, clock=lambda: clock["t"], ttl_seconds=100)
     assert restored.reverse_map("c") == {}
     assert restored.entries("c") == []
+
+
+def test_build_vault_moves_aside_undecryptable_file(tmp_path):
+    import base64
+    import os
+
+    from privacy_gateway.api.deps import build_vault
+    from privacy_gateway.config import Settings
+
+    key_a = load_or_create_key(tmp_path / "vault.key")
+    path = tmp_path / "vault.enc"
+    save(_seed(), path, key_a)
+    os.remove(tmp_path / "vault.key")
+
+    key_b = base64.b64encode(b"B" * 32).decode()
+    settings = Settings(vault_dir=str(tmp_path), vault_key=key_b)
+    vault, out_path, out_key = build_vault(settings)
+
+    assert vault._conv_entries == {}
+    assert not path.exists()
+    assert (tmp_path / "vault.enc.unreadable").exists()

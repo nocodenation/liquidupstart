@@ -40,3 +40,37 @@ def test_second_pass_disabled_no_llm_call(detector):
     session.anonymize_text(TEXT)
 
     assert client.calls == []  # LLM never invoked when disabled
+
+
+def test_second_pass_garbage_output_raises_llm_unavailable():
+    import pytest
+
+    from privacy_gateway.core.errors import LLMUnavailable
+    from privacy_gateway.core.llm.second_pass import SecondPassDetector
+
+    client = FakeLocalLLMClient("thinking aloud with no json at all")
+    det = SecondPassDetector(client)
+    with pytest.raises(LLMUnavailable):
+        det.detect("Our colleague joined the Bluefin initiative last spring in Hamburg.")
+
+
+def test_route_returns_502_when_second_pass_unavailable(detector):
+    from fastapi.testclient import TestClient
+
+    from privacy_gateway.api.app import create_app
+    from privacy_gateway.core.llm.second_pass import SecondPassDetector
+
+    client = FakeLocalLLMClient("garbage no json")
+    composite = CompositeDetector(detector, SecondPassDetector(client))
+    app = create_app(
+        gateway=Gateway(composite, Vault(), base_detector=detector, llm_client=client),
+        upstream=object(),
+    )
+    tc = TestClient(app, raise_server_exceptions=False)
+    r = tc.post(
+        "/openai/v1/chat/completions",
+        json={"model": "m", "messages": [{"role": "user",
+              "content": "Our colleague joined the Bluefin initiative last spring in Hamburg."}]},
+        headers={"authorization": "Bearer k"},
+    )
+    assert r.status_code == 502

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from privacy_gateway.core.detection.language import is_short_or_structured
+from privacy_gateway.core.errors import LLMUnavailable
 from privacy_gateway.core.models import Span
 
 from .client import LocalLLMClient
@@ -29,7 +30,10 @@ class SecondPassDetector:
             [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": text}],
             temperature=self._temperature,
         )
-        data = extract_last_json(content)
+        try:
+            data = extract_last_json(content)
+        except ValueError as exc:
+            raise LLMUnavailable(f"second-pass output unparseable: {exc}") from exc
         spans: list[Span] = []
         for item in data.get("spans", []):
             if not isinstance(item, dict):

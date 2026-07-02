@@ -74,3 +74,22 @@ def test_retries_then_raises_llm_unavailable():
     with pytest.raises(LLMUnavailable):
         client.chat([{"role": "user", "content": "x"}])
     assert calls["n"] == 2
+
+
+def test_chat_disables_thinking_and_falls_back_to_reasoning():
+    import json as _json
+
+    seen = {}
+
+    def handler(request):
+        seen["payload"] = _json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": "", "reasoning_content": '{"spans": []}'}}]})
+
+    client = OpenAICompatClient(
+        "http://local", model="m", transport=httpx.MockTransport(handler)
+    )
+    out = client.chat([{"role": "user", "content": "x"}])
+    assert seen["payload"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert seen["payload"]["max_tokens"] == 4096
+    assert out == '{"spans": []}'

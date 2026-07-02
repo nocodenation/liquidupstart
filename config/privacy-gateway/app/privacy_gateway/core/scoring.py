@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import logging
+
+from privacy_gateway.core.errors import LLMUnavailable
 from privacy_gateway.core.llm.client import LocalLLMClient
 from privacy_gateway.core.llm.parse import extract_last_json
 from privacy_gateway.core.models import Sufficiency
 
+logger = logging.getLogger(__name__)
+
 _FLOOR_THRESHOLD = 0.85
 
 _JUDGE_SYSTEM = (
-    "You are an adversary trying to re-identify the person described in the TEXT, which "
-    "has already been anonymized. List each attribute you could still infer and estimate "
-    "how rare it is. Reason first, then output a single fenced JSON object: "
+    "You are a privacy auditor helping the owner of the TEXT check their anonymization "
+    "before sharing it. Assess how re-identifiable the person described in the TEXT still "
+    "is. List each attribute that could narrow identity and estimate how rare it is. "
+    "Reason first, then output a single fenced JSON object: "
     "{\"reasoning\": str, \"attributes\": [str], \"risk\": float (0-1, 1=uniquely "
     "identifiable), \"confidence\": float (0-1)}."
 )
@@ -25,10 +31,21 @@ def _clamp01(x) -> float:
 def deterministic_floor(
     detector, anonymized_text: str, surrogates: set[str], threshold: float = _FLOOR_THRESHOLD
 ) -> float:
+    occupied: list[tuple[int, int]] = []
+    for s in surrogates:
+        i = anonymized_text.find(s)
+        while i >= 0:
+            occupied.append((i, i + len(s)))
+            i = anonymized_text.find(s, i + 1)
     for span in detector.detect(anonymized_text):
+        if span.score < threshold:
+            continue
         value = anonymized_text[span.start : span.end]
-        if value not in surrogates and span.score >= threshold:
-            return 1.0
+        if value in surrogates:
+            continue
+        if any(span.start < e and b < span.end for b, e in occupied):
+            continue
+        return 1.0
     return 0.0
 
 
@@ -41,19 +58,24 @@ def adversarial_risk(
     risks: list[float] = []
     confidence = 1.0
     for _ in range(max_samples):
-        data = extract_last_json(
-            client.chat(
-                [
-                    {"role": "system", "content": _JUDGE_SYSTEM},
-                    {"role": "user", "content": anonymized_text},
-                ],
-                temperature=0.0,
-            )
+        raw = client.chat(
+            [
+                {"role": "system", "content": _JUDGE_SYSTEM},
+                {"role": "user", "content": anonymized_text},
+            ],
+            temperature=0.0,
         )
+        try:
+            data = extract_last_json(raw)
+        except ValueError:
+            logger.warning("judge sample unparseable: %.200s", raw)
+            continue
         risks.append(_clamp01(data.get("risk")))
         confidence = _clamp01(data.get("confidence"))
         if confidence >= low_confidence:
             break
+    if not risks:
+        raise LLMUnavailable("adversarial judge produced no parseable samples")
     return max(risks), confidence
 
 

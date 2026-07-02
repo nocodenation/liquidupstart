@@ -15,8 +15,8 @@ class OpenAIDeanonStreamer:
         self._active = bool(reverse_map)
         self._holdback = max((len(k) for k in reverse_map), default=0)
         self._env: dict = {}
-        self._content_buf: dict[int, str] = {}
-        self._content_emitted: dict[int, int] = {}
+        self._text_buf: dict[tuple[int, str], str] = {}
+        self._text_emitted: dict[tuple[int, str], int] = {}
         self._role_emitted: set[int] = set()
         self._tool_args: dict[tuple, str] = {}
         self._tool_order: list[tuple] = []
@@ -48,9 +48,11 @@ class OpenAIDeanonStreamer:
                 continue
             ci = choice.get("index", 0)
             delta = choice.get("delta") or {}
-            if isinstance(delta.get("content"), str):
-                self._content_buf[ci] = self._content_buf.get(ci, "") + delta["content"]
-                out += self._emit_content(ci, final=False)
+            for field in ("content", "reasoning_content"):
+                if isinstance(delta.get(field), str):
+                    key = (ci, field)
+                    self._text_buf[key] = self._text_buf.get(key, "") + delta[field]
+                    out += self._emit_text(ci, field, final=False)
             for tc in delta.get("tool_calls") or []:
                 out += self._handle_tool(ci, tc)
             if choice.get("finish_reason") is not None:
@@ -67,19 +69,19 @@ class OpenAIDeanonStreamer:
             env.update(extra)
         return serialize_frame(None, json.dumps(env, ensure_ascii=False))
 
-    def _emit_content(self, ci: int, final: bool) -> list[bytes]:
-        buf = self._content_buf.get(ci, "")
+    def _emit_text(self, ci: int, field: str, final: bool) -> list[bytes]:
+        key = (ci, field)
+        buf = self._text_buf.get(key, "")
         full, stable = stable_restored(buf, self._buckets, self._holdback, final)
-        emitted = self._content_emitted.get(ci, 0)
+        emitted = self._text_emitted.get(key, 0)
         if stable <= emitted:
             return []
         text = full[emitted:stable]
-        self._content_emitted[ci] = stable
+        self._text_emitted[key] = stable
+        delta = {field: text}
         if ci not in self._role_emitted:
             self._role_emitted.add(ci)
-            delta = {"role": "assistant", "content": text}
-        else:
-            delta = {"content": text}
+            delta = {"role": "assistant", **delta}
         return [self._chunk_bytes([{"index": ci, "delta": delta, "finish_reason": None}])]
 
     def _handle_tool(self, ci: int, tc) -> list[bytes]:
@@ -120,8 +122,8 @@ class OpenAIDeanonStreamer:
 
     def _flush(self) -> list[bytes]:
         out: list[bytes] = []
-        for ci in list(self._content_buf):
-            out += self._emit_content(ci, final=True)
+        for ci, field in list(self._text_buf):
+            out += self._emit_text(ci, field, final=True)
         for key in self._tool_order:
             ci, ti = key
             args = self._restore_args(self._tool_args.get(key, ""))

@@ -64,16 +64,18 @@ class OpenAICompatClient:
         raise LLMUnavailable(str(last))
 
     def chat(
-        self, messages: list[Message], temperature: float = 0.0, max_tokens: int = 1024
+        self, messages: list[Message], temperature: float = 0.0, max_tokens: int = 4096
     ) -> str:
         payload = {
             "model": self._model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "chat_template_kwargs": {"enable_thinking": False},
         }
         data = self._post("/chat/completions", payload)
-        return data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        return msg.get("content") or msg.get("reasoning_content") or ""
 
     def models(self) -> list[str]:
         with httpx.Client(timeout=self._timeout, transport=self._transport) as client:

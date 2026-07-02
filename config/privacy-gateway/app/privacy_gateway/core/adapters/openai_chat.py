@@ -4,7 +4,10 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from privacy_gateway.core.adapters.anthropic_messages import _map_leaves
+from privacy_gateway.core.adapters.anthropic_messages import (
+    _map_leaves,
+    anonymize_tool_defs,
+)
 from privacy_gateway.core.gateway import Session
 
 
@@ -18,6 +21,7 @@ def anonymize_request(payload: dict, session: Session) -> dict:
             msg["content"] = _anon_content(msg.get("content"), session)
         for tc in msg.get("tool_calls") or []:
             _anon_tool_call(tc, session)
+    anonymize_tool_defs(out, session)
     return out
 
 
@@ -62,6 +66,8 @@ def deanonymize_response(response: dict, session: Session) -> dict:
             for part in msg["content"]:
                 if isinstance(part, dict) and isinstance(part.get("text"), str):
                     part["text"] = session.restore_text(part["text"])
+        if isinstance(msg.get("reasoning_content"), str):
+            msg["reasoning_content"] = session.restore_text(msg["reasoning_content"])
         for tc in msg.get("tool_calls") or []:
             _deanon_tool_call(tc, session)
     return out

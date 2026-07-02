@@ -113,3 +113,22 @@ def test_responses_gate_blocks_high_risk(detector):
     r = TestClient(app).post("/openai/v1/responses", json=body, headers={"authorization": "Bearer x"})
     assert r.status_code == 403
     assert r.json()["error"] == "egress_blocked"
+
+
+def test_responses_tool_definition_description_anonymized(make_app):
+    up = ResponsesEcho(lambda b: {"id": "r", "object": "response", "output": []})
+    client = TestClient(make_app(up))
+    body = {
+        "model": "gpt-x",
+        "input": [{"type": "message", "role": "user",
+                   "content": [{"type": "input_text", "text": "call the tool please"}]}],
+        "tools": [{"type": "function", "name": "lookup",
+                   "description": "Look up Hans Mueller at hans.mueller@example.de",
+                   "parameters": {"type": "object", "properties": {}}}],
+    }
+    r = client.post("/openai/v1/responses", json=body, headers={"authorization": "Bearer k"})
+    assert r.status_code == 200
+    sent = json.dumps(up.received)
+    assert "Hans Mueller" not in sent
+    assert "hans.mueller@example.de" not in sent
+    assert up.received["tools"][0]["name"] == "lookup"

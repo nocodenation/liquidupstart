@@ -107,3 +107,64 @@ def test_openai_unknown_provider_404(make_app):
     r = client.post("/bogus/v1/chat/completions", json={"model": "m", "messages": []},
                     headers={"authorization": "Bearer k"})
     assert r.status_code == 404
+
+
+def test_openai_reasoning_content_restored(make_app):
+    def responder(body):
+        user = body["messages"][-1]["content"]
+        return {
+            "id": "c", "object": "chat.completion",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": f"Reply: {user}",
+                                     "reasoning_content": f"Thinking about {user}"}}],
+        }
+
+    up = OpenAIEcho(responder)
+    client = TestClient(make_app(up))
+    body = {
+        "model": "gpt-x",
+        "messages": [{"role": "user", "content": "I am Alice Johnson from Berlin"}],
+    }
+    r = client.post("/openai/v1/chat/completions", json=body,
+                    headers={"authorization": "Bearer k"})
+    assert r.status_code == 200
+    msg = r.json()["choices"][0]["message"]
+    assert "Alice Johnson" in msg["content"]
+    assert "Alice Johnson" in msg["reasoning_content"]
+
+
+def test_openai_tool_definition_description_anonymized(make_app):
+    up = OpenAIEcho(lambda b: {"id": "c", "object": "chat.completion",
+        "choices": [{"index": 0, "finish_reason": "stop",
+                     "message": {"role": "assistant", "content": "ok"}}]})
+    client = TestClient(make_app(up))
+    body = {"model": "gpt-x",
+        "messages": [{"role": "user", "content": "call the tool please"}],
+        "tools": [{"type": "function", "function": {
+            "name": "lookup",
+            "description": "Look up Hans Mueller at hans.mueller@example.de",
+            "parameters": {"type": "object", "properties": {}}}}]}
+    r = client.post("/openai/v1/chat/completions", json=body,
+                    headers={"authorization": "Bearer k"})
+    assert r.status_code == 200
+    sent = json.dumps(up.received)
+    assert "Hans Mueller" not in sent
+    assert "hans.mueller@example.de" not in sent
+    assert up.received["tools"][0]["function"]["name"] == "lookup"
+
+
+def test_openai_clean_tool_definition_unchanged(make_app):
+    up = OpenAIEcho(lambda b: {"id": "c", "object": "chat.completion",
+        "choices": [{"index": 0, "finish_reason": "stop",
+                     "message": {"role": "assistant", "content": "ok"}}]})
+    client = TestClient(make_app(up))
+    desc = "Execute a shell command and return its standard output."
+    body = {"model": "gpt-x",
+        "messages": [{"role": "user", "content": "hi there everyone"}],
+        "tools": [{"type": "function", "function": {
+            "name": "bash", "description": desc,
+            "parameters": {"type": "object", "properties": {}}}}]}
+    r = client.post("/openai/v1/chat/completions", json=body,
+                    headers={"authorization": "Bearer k"})
+    assert r.status_code == 200
+    assert up.received["tools"][0]["function"]["description"] == desc
