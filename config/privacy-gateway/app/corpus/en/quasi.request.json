@@ -1,0 +1,10 @@
+{
+  "model": "claude-test",
+  "max_tokens": 256,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Our 34-year-old lead engineer relocated from the Reykjavik office to Munich last quarter."
+    }
+  ]
+}

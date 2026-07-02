@@ -50,8 +50,9 @@ export function looksSecret(key: string): boolean {
 export type InputType = 'text' | 'password' | 'number' | 'checkbox' | 'select-mode';
 
 export function inputType(key: string): InputType {
-  // ENABLE_* provider toggles are 0/1 flags — render as checkboxes.
-  if (/^ENABLE_/.test(key)) return 'checkbox';
+  // 0/1 flags — ENABLE_* provider toggles and *_ENABLE settings (e.g. the
+  // PRIVACY_GATEWAY_* switches) — render as checkboxes.
+  if (/^ENABLE_|_ENABLE$/.test(key)) return 'checkbox';
   if (/_MODE$/.test(key)) return 'select-mode';
   if (/PORT$|TIMEOUT$/.test(key)) return 'number';
   if (looksSecret(key)) return 'password';
@@ -80,6 +81,7 @@ const SECTION_DESCRIPTIONS: [RegExp, string][] = [
   [/LLM PROVIDER API KEYS/i, 'API keys of LLM providers, used by the AI services (optional).'],
   [/OPENCLAW CONFIGURATION/i, 'Model & backend selection for OpenClaw, the recommended AI harness.'],
   [/OPENCODE CONFIGURATION/i, 'Self-hosted local LLM endpoint, shared by OpenCode and OpenClaw.'],
+  [/PRIVACY GATEWAY/i, 'Local anonymizing proxy — strips names/secrets/IDs before requests reach cloud AI, restores them in replies.'],
   [/LIQUID AUTHENTICATION/i, 'Login and TLS keystore credentials for Liquid.'],
   [/IMAGE BUILD CONFIGURATION/i, 'Extra packages & commands baked into the Docker images by build.sh.']
 ];

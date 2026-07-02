@@ -1,0 +1,10 @@
+{
+  "model": "claude-test",
+  "max_tokens": 256,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Chamo-me João Silva e moro em Lisboa há vários anos agora."
+    }
+  ]
+}

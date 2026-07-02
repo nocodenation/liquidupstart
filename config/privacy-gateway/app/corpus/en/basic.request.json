@@ -1,0 +1,10 @@
+{
+  "model": "claude-test",
+  "max_tokens": 256,
+  "messages": [
+    {
+      "role": "user",
+      "content": "My name is Alice Johnson, I live in Berlin, and my email is alice.johnson@example.com."
+    }
+  ]
+}

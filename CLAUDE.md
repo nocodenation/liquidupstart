@@ -7,6 +7,10 @@ engine based on Apache NiFi), and AI coding agents (OpenClaw, OpenCode) behind a
 **SvelteKit dashboard** (`dashboard/`) configures, builds, starts, and stops the stack
 from the browser.
 
+> **Active work:** the Privacy Gateway feature (branch `feature/privacy-gateway`) is mid-stream.
+> Read **`HANDOFF.md`** in the project root before continuing it — status (M0–M5 done, M6/M7 next),
+> the milestone LOOP workflow, conventions, and resume steps.
+
 ## Layout
 
 - `compose.yml` — all services. The compose project is named `liquidupstart`; a single

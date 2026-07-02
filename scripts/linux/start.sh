@@ -86,6 +86,20 @@ fi
 docker network inspect nocodenation_playground_network_${HTTP_PORT} >/dev/null 2>&1 \
   || docker network create nocodenation_playground_network_${HTTP_PORT}
 
+PRIVACY_GATEWAY_ENABLE="$(grep -E '^PRIVACY_GATEWAY_ENABLE=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
+if [[ "${PRIVACY_GATEWAY_ENABLE:-0}" = 1 ]]; then
+  PG_PORT="$(grep -E '^PRIVACY_GATEWAY_PORT=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"")"
+  PG_PORT="${PG_PORT:-8080}"
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-gateway"
+  export PRIVACY_GATEWAY_ANTHROPIC_URL="http://privacy-gateway:${PG_PORT}/anthropic"
+  export PRIVACY_GATEWAY_OPENAI_URL="http://privacy-gateway:${PG_PORT}/openai/v1"
+
+  env_flag() { grep -E "^$1=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true; }
+  if [[ "$(env_flag ENABLE_XAI_GROK)" = 1 || "$(env_flag ENABLE_GITHUB_COPILOT)" = 1 || "$(env_flag ENABLE_OPENAI_CODEX)" = 1 ]]; then
+    export PRIVACY_GATEWAY_NODE_CA="/pg-ca/ca.crt"
+  fi
+fi
+
 echo "Starting containers..."
 docker compose up -d
 
