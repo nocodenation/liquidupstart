@@ -1,7 +1,7 @@
 # Liquid Upstart
 
 A self-hosted **Docker Compose stack** ("WebDB Playground") that bundles a Postgres +
-PostgREST data layer, pgAdmin/Swagger, OpenProject, NextCloud + Collabora, Liquid (a data-flow
+PostgREST data layer, pgAdmin/Swagger, OpenProject, NextCloud + Euro-Office, Liquid (a data-flow
 engine based on Apache NiFi), and AI coding agents (OpenClaw, OpenCode) behind a single
 **nginx reverse proxy**. A
 **SvelteKit dashboard** (`dashboard/`) configures, builds, starts, and stops the stack

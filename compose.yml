@@ -155,6 +155,7 @@ services:
           - app.localhost
           - openproject.localhost
           - nextcloud.localhost
+          - eurooffice.localhost
           - liquid.localhost
           - 8900.liquid.localhost
           - 8901.liquid.localhost
@@ -548,7 +549,7 @@ services:
       - nocodenation_liquid_upstart_network
 
   nextcloud:
-    image: nextcloud:stable
+    image: nextcloud:34
     container_name: nextcloud
     restart: unless-stopped
     healthcheck:
@@ -590,23 +591,16 @@ services:
     networks:
       - nocodenation_liquid_upstart_network
 
-  collabora:
-    image: collabora/code
-    container_name: collabora
+  eurooffice:
+    image: ghcr.io/euro-office/documentserver:latest
+    container_name: eurooffice
     restart: unless-stopped
-    cap_add:
-      - MKNOD
+    entrypoint: ["sh", "-c", "chown ds:ds /var/lib/euro-office/documentserver && exec /entrypoint.sh"]
     environment:
-      aliasgroup1: "http://nextcloud.localhost:${SYSTEM_HTTP_PORT:-8888}"
-      extra_params: "--o:ssl.enable=false --o:ssl.termination=false --o:mount_jail_tree=false"
-      server_name: "nextcloud.localhost:${SYSTEM_HTTP_PORT:-8888}"
-      dictionaries: "de_DE en_GB en_US"
-      username: "collabora"
-      password: "collabora"
-      DONT_GEN_SSL_CERT: "true"
+      JWT_ENABLED: "true"
+      JWT_SECRET: "eurooffice-liquidupstart-local-jwt-secret-0123456789abcdef"
     volumes:
-      - ./volumes/collabora/fonts:/usr/share/fonts/truetype/custom
-      - ./volumes/collabora/fonts:/opt/cool/systemplate/usr/share/fonts/truetype/custom
+      - ./volumes/eurooffice:/var/lib/euro-office/documentserver
     networks:
       - nocodenation_liquid_upstart_network
 

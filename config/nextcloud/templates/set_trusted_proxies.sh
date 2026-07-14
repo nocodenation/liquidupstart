@@ -7,9 +7,9 @@ PHP_BIN="php"
 # Each `php -f occ` call is slow on Windows bind mounts (~7-10s). Settings below
 # are idempotent/persisted, so on success drop a marker and skip future starts.
 # Marker lives in the bind-mounted config dir to survive container recreation.
-MARKER="/var/www/html/config/.aiw_proxies_configured"
+MARKER="/var/www/html/config/.aiw_eurooffice_configured"
 if [ -f "${MARKER}" ]; then
-  echo "trusted_proxies/richdocuments already configured (marker present); skipping"
+  echo "trusted_proxies/eurooffice already configured (marker present); skipping"
   exit 0
 fi
 
@@ -21,13 +21,16 @@ ${PHP_BIN} -f "${OCC}" config:system:set overwriteprotocol --value="http"
 # Activate the custom filesystem theme (themes/aiw); CSS loads additively.
 ${PHP_BIN} -f "${OCC}" config:system:set theme --value="aiw"
 
-if ${PHP_BIN} -f "${OCC}" app:list --output=json | grep -q '"richdocuments"'; then
-  echo "Nextcloud Office already installed"
+if ${PHP_BIN} -f "${OCC}" app:list --output=json | grep -q '"eurooffice"'; then
+  echo "Euro-Office connector already installed"
+  INSTALLED=1
 else
-  echo "Installing Nextcloud Office..."
+  echo "Installing Euro-Office connector..."
+  INSTALLED=0
   for i in 1 2 3 4 5; do
-    if ${PHP_BIN} -f "${OCC}" app:install richdocuments; then
-      echo "Nextcloud Office installed"
+    if ${PHP_BIN} -f "${OCC}" app:install eurooffice; then
+      echo "Euro-Office connector installed"
+      INSTALLED=1
       break
     fi
     echo "Install failed, retrying in 10s... (attempt ${i}/5)"
@@ -35,21 +38,17 @@ else
   done
 fi
 
-# Collabora / richdocuments config.
-# wopi_url: internal address Nextcloud uses; public_wopi_url: browser address (via nginx).
-${PHP_BIN} -f "${OCC}" config:app:set richdocuments wopi_url        --value="http://collabora:9980"
-${PHP_BIN} -f "${OCC}" config:app:set richdocuments public_wopi_url  --value="http://nextcloud.localhost:SYSTEM_HTTP_PORT"
-${PHP_BIN} -f "${OCC}" config:app:set richdocuments wopi_allowlist   --value="172.0.0.0/8"
-${PHP_BIN} -f "${OCC}" config:app:set richdocuments doc_format       --value="ooxml"
-# WOPI discovery reaches out to Collabora; if it's unreachable the call hangs
-# and Apache never starts (502), and `|| true` can't catch a hang. Bound it with
-# a timeout; config above is persisted so activation can re-run later.
-if timeout 30 ${PHP_BIN} -f "${OCC}" richdocuments:activate-config; then
-  # Full success: skip this script on future starts.
+${PHP_BIN} -f "${OCC}" app:disable richdocuments 2>/dev/null || true
+
+${PHP_BIN} -f "${OCC}" config:app:set eurooffice DocumentServerUrl         --value="http://eurooffice.localhost:SYSTEM_HTTP_PORT/"
+${PHP_BIN} -f "${OCC}" config:app:set eurooffice DocumentServerInternalUrl --value="http://eurooffice:80/"
+${PHP_BIN} -f "${OCC}" config:app:set eurooffice StorageUrl                --value="http://nextcloud.localhost:SYSTEM_HTTP_PORT/"
+${PHP_BIN} -f "${OCC}" config:app:set eurooffice jwt_secret                --value="eurooffice-liquidupstart-local-jwt-secret-0123456789abcdef"
+
+if [ "${INSTALLED}" = "1" ]; then
   touch "${MARKER}"
 else
-  echo "WARNING: richdocuments:activate-config did not complete (Collabora unreachable/slow); continuing startup."
-  echo "Marker not written; configuration will re-run on next start."
+  echo "WARNING: eurooffice app install did not complete; configuration will re-run on next start."
 fi
 
-echo "trusted_proxies, overwriteprotocol, and richdocuments configured"
+echo "trusted_proxies, overwriteprotocol, and eurooffice configured"
