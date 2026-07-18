@@ -780,6 +780,9 @@ services:
     network_mode: "service:openclaw-gateway"
     user: "0:0"
     container_name: openclaw-cli
+    profiles:
+      - "cli"
+      - "full"
     env_file:
       - path: config/openclaw/.env
         required: false
