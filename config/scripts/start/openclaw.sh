@@ -94,13 +94,14 @@ ENABLE_LOCAL=0
 
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `onboard
-# --non-interactive --accept-risk` needs no TTY. openclaw-cli shares the gateway's netns, so
-# Compose starts openclaw-gateway as a dependency. The model patch below still
-# runs every start, keeping .env the source of truth for the primary model.
+# --non-interactive --accept-risk` needs no TTY; --skip-health drops the gateway
+# health probe (no gateway is listening yet at bootstrap — Compose brings the real
+# one up later). The model patch below still runs every start, keeping .env the
+# source of truth for the primary model.
 CONFIG_JSON="${STATE_DIR}/openclaw.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
   cd "${PROJECT_DIR}"
-  docker compose run --rm -T --user 0:0 openclaw-cli onboard --non-interactive --accept-risk
+  docker compose run --rm -T --user 0:0 openclaw-cli onboard --non-interactive --accept-risk --skip-health
   docker compose rm -sf openclaw-gateway >/dev/null 2>&1 || true
 else
   echo "OpenClaw config already present at ${CONFIG_JSON}; skipping setup."

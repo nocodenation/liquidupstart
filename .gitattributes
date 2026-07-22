@@ -1,8 +1,14 @@
-# Bash scripts are executed by bash — including inside Linux containers — so they
-# must keep LF endings even when checked out on a Windows machine. Without this a
-# Windows clone can rewrite them to CRLF and bash fails with "\r: command not found".
+# Normalize every text file to LF — in the repo and on checkout — regardless of
+# the host's core.autocrlf. A CRLF checkout (Windows autocrlf) otherwise breaks
+# parsers like the dashboard's .env reader and bash's "\r: command not found".
+# Binary files are auto-detected and left untouched.
+* text=auto eol=lf
+
+# Bash scripts run under bash (incl. Linux containers) — LF is mandatory. Kept
+# explicit though the default above already forces it.
 *.sh   text eol=lf
 
-# Windows wrappers. .bat in particular is parsed more reliably by cmd.exe with CRLF.
+# Windows wrappers are the deliberate exceptions to LF-only: cmd.exe parses .bat
+# more reliably with CRLF, and PowerShell prefers CRLF too.
 *.bat  text eol=crlf
 *.ps1  text eol=crlf

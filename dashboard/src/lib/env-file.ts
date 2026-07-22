@@ -77,7 +77,7 @@ export function parseExample(text: string): Section[] {
     if (cur.title !== '' || cur.items.length > 0) sections.push(cur);
   };
 
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
@@ -163,7 +163,7 @@ export function listFields(sections: Section[]): { section: Section; field: Fiel
 /** Last occurrence wins, like docker compose env parsing. */
 export function parseEnvValues(text: string): Map<string, ValueInfo> {
   const values = new Map<string, ValueInfo>();
-  for (const line of text.split('\n')) {
+  for (const line of text.split(/\r?\n/)) {
     const kv = line.match(KEY_RE);
     if (!kv) continue;
     const { value, quoted } = splitValue(kv[2]);
@@ -182,7 +182,7 @@ export function renderEnv(
   values: Map<string, { value: string; quoted: boolean }>,
   customRawLines: string[]
 ): string {
-  const lines = exampleText.split('\n').map((line) => {
+  const lines = exampleText.split(/\r?\n/).map((line) => {
     const kv = line.match(KEY_RE);
     if (!kv) return line;
     const v = values.get(kv[1]);

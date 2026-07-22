@@ -118,6 +118,15 @@ describe('parseExample', () => {
     expect(get('SYSTEM_DEPENDENCIES')).toMatchObject({ defaultValue: '', quoted: true });
     expect(get('LIQUID_SYSTEM_DEPENDENCIES_MODE')).toMatchObject({ defaultValue: 'add', quoted: true });
   });
+
+  test('parses a CRLF-terminated file identically to LF', () => {
+    const crlf = parseExample(FIXTURE.replace(/\n/g, '\r\n'));
+    expect(crlf.map((s) => s.displayTitle)).toEqual(sections.map((s) => s.displayTitle));
+    const keys = (list: typeof crlf) =>
+      listFields(list).map(({ field }) => `${field.key}=${field.defaultValue}`);
+    expect(keys(crlf)).toEqual(keys(sections));
+    expect(keys(crlf).length).toBeGreaterThan(0);
+  });
 });
 
 describe('parseEnvValues', () => {
@@ -157,6 +166,13 @@ describe('renderEnv', () => {
     expect(renderEnv(FIXTURE, values, [])).toContain(
       'LIQUID_SYSTEM_DEPENDENCIES_MODE="override" # add | override'
     );
+  });
+
+  test('substitutes values into a CRLF example and emits LF', () => {
+    const values = new Map([['SYSTEM_HTTP_PORT', { value: '9000', quoted: false }]]);
+    const out = renderEnv(FIXTURE.replace(/\n/g, '\r\n'), values, []);
+    expect(out).toContain('SYSTEM_HTTP_PORT=9000');
+    expect(out).not.toContain('\r');
   });
 });
 
