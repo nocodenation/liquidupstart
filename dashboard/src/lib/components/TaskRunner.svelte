@@ -3,6 +3,8 @@
    * Build / Start / Stop controls with a live log pane and the Claude Code
    * sign-in panel. Used by the dashboard (/) and the post-save page (/done).
    */
+  import { task, runTask as runSharedTask } from '$lib/task-state.svelte.js';
+
   let {
     needBuild = false,
     running = false,
@@ -20,21 +22,15 @@
     onchange
   } = $props();
 
-  let log = $state('');
-  let runningTask = $state('');
-  let elapsed = $state(0);
-  let buildOk = $state(false);
-  let startOk = $state(false);
+  // Run state lives in a shared module so the log pane survives navigating
+  // away (e.g. to /config) and back mid-build.
   let logEl = $state(null);
-  // Task name when a run fails, so we show a banner instead of leaving the
-  // reason buried in the streamed log.
-  let failedTask = $state('');
 
   // Scripts emit `::aiw-error::<message>` lines to raise a UI banner; pull
   // those out and hide the raw markers from the log pane.
   const MARKER = '::aiw-error::';
   let errors = $derived(
-    log
+    task.log
       .split('\n')
       .filter((l) => l.startsWith(MARKER))
       .map((l) => l.slice(MARKER.length).trim())
@@ -42,7 +38,7 @@
   // Hide all `::aiw-*::` control markers from the visible log — they drive UI
   // state, not user-facing output.
   let displayLog = $derived(
-    log
+    task.log
       .split('\n')
       .filter((l) => !l.startsWith('::aiw-'))
       .join('\n')
@@ -99,8 +95,8 @@
   // Mirror in-flight state out to the parent (bind:busy), e.g. to keep the
   // Finish button disabled while a task runs.
   $effect(() => {
-    busy = runningTask !== '' || authRunning || copilotRunning || codexRunning || grokRunning;
-    activeTask = runningTask;
+    busy = task.name !== '' || authRunning || copilotRunning || codexRunning || grokRunning;
+    activeTask = task.name;
     authPending =
       (needClaudeAuth && !authOk) ||
       (needCopilotAuth && !copilotOk) ||
@@ -113,8 +109,18 @@
   });
 
   $effect(() => {
-    log;
+    task.log;
     if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  });
+
+  // Detected mid-stream so the sign-in panels appear right away while the rest
+  // of the start keeps running; derived from the shared log so the banners
+  // reappear after navigating away and back.
+  $effect(() => {
+    if (!authOk && task.log.includes('ACTION REQUIRED')) needClaudeAuth = true;
+    if (!copilotOk && task.log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
+    if (!codexOk && task.log.includes('::aiw-codex-auth-required::')) needCodexAuth = true;
+    if (!grokOk && task.log.includes('::aiw-grok-auth-required::')) needGrokAuth = true;
   });
   $effect(() => {
     authLog;
@@ -231,66 +237,14 @@
     }
   }
 
-  async function runTask(task) {
-    if (runningTask) return;
-    runningTask = task;
-    log = '';
-    failedTask = '';
-    elapsed = 0;
-    const t0 = Date.now();
-    const ticker = setInterval(() => (elapsed = Math.floor((Date.now() - t0) / 1000)), 1000);
-    try {
-      const res = await fetch('/run', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ task })
-      });
-      if (!res.ok || !res.body) {
-        log = `Could not start ${task}: ${res.status} ${await res.text()}\n`;
-        return;
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        log += decoder.decode(value, { stream: true });
-        // Detected mid-stream so the sign-in panel appears right away while the
-        // rest of the start keeps running. start.sh prints this when claude-cli
-        // is on but unauthenticated with no terminal attached (our case).
-        if (!authOk && log.includes('ACTION REQUIRED')) needClaudeAuth = true;
-        // openclaw.sh emits this marker and then BLOCKS the start until Copilot
-        // sign-in completes, so the gateway boots authenticated.
-        if (!copilotOk && log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
-        if (!codexOk && log.includes('::aiw-codex-auth-required::')) needCodexAuth = true;
-        if (!grokOk && log.includes('::aiw-grok-auth-required::')) needGrokAuth = true;
-      }
-      if (log.includes(`[${task} succeeded]`)) {
-        if (task === 'build') buildOk = true;
-        if (task === 'start') startOk = true;
-        if (task === 'down') startOk = false;
-        // Rebuild leaves images fresh but the stack stopped.
-        if (task === 'rebuild') {
-          buildOk = true;
-          startOk = false;
-        }
-        onchange?.(task);
-      } else if (log.includes(`[${task} failed`)) {
-        failedTask = task;
-      }
-      // Re-probe once done: a build may have produced the OpenClaw image, a
-      // start may have rendered openclaw.json.
-      probeClaudeAuth();
-      probeCopilotAuth();
-      probeCodexAuth();
-      probeGrokAuth();
-    } catch (e) {
-      log += `\n[connection lost: ${e.message}]\n`;
-      failedTask = task;
-    } finally {
-      clearInterval(ticker);
-      runningTask = '';
-    }
+  async function runTask(name) {
+    await runSharedTask(name, onchange);
+    // Re-probe once done: a build may have produced the OpenClaw image, a
+    // start may have rendered openclaw.json.
+    probeClaudeAuth();
+    probeCopilotAuth();
+    probeCodexAuth();
+    probeGrokAuth();
   }
 
   async function startClaudeAuth() {
@@ -448,22 +402,22 @@
     <button
       type="button"
       class="save"
-      disabled={runningTask !== ''}
+      disabled={task.name !== ''}
       onclick={() => runTask('build')}
     >
-      {#if runningTask === 'build'}Building…{:else if buildOk}Build again{:else}{numbered ? '1. ' : ''}Build{/if}
+      {#if task.name === 'build'}Building…{:else if task.buildOk}Build again{:else}{numbered ? '1. ' : ''}Build{/if}
     </button>
   {/if}
   {#if showStart}
     <button
       type="button"
       class="save"
-      disabled={runningTask !== '' || (needBuild && !buildOk)}
+      disabled={task.name !== '' || (needBuild && !task.buildOk)}
       onclick={() => runTask('start')}
     >
-      {#if runningTask === 'start'}
+      {#if task.name === 'start'}
         {startLabel === 'Restart' ? 'Restarting…' : 'Starting…'}
-      {:else if startOk || startLabel === 'Restart'}
+      {:else if task.startOk || startLabel === 'Restart'}
         Restart
       {:else}
         {needBuild && numbered ? '2. ' : ''}Start
@@ -474,28 +428,28 @@
     <button
       type="button"
       class="save stop"
-      disabled={runningTask !== ''}
+      disabled={task.name !== ''}
       onclick={() => runTask('down')}
     >
-      {runningTask === 'down' ? 'Stopping…' : 'Stop'}
+      {task.name === 'down' ? 'Stopping…' : 'Stop'}
     </button>
   {/if}
   {#if showRebuild}
     <button
       type="button"
       class="save rebuild"
-      disabled={runningTask !== ''}
+      disabled={task.name !== ''}
       onclick={() => runTask('rebuild')}
       title="Stop the stack and rebuild all images — use after pulling a new version"
     >
-      {runningTask === 'rebuild' ? 'Rebuilding…' : 'Rebuild'}
+      {task.name === 'rebuild' ? 'Rebuilding…' : 'Rebuild'}
     </button>
   {/if}
 </div>
 
-{#if failedTask && runningTask === ''}
+{#if task.failedTask && task.name === ''}
   <div class="errbox" role="alert">
-    <strong>{TASK_LABELS[failedTask] ?? failedTask} failed</strong>
+    <strong>{TASK_LABELS[task.failedTask] ?? task.failedTask} failed</strong>
     {#if errors.length}
       <ul>
         {#each errors as e}
@@ -512,12 +466,12 @@
   <pre class="runlog" bind:this={logEl}>{displayLog}</pre>
 {/if}
 
-{#if runningTask}
+{#if task.name}
   <!-- Heartbeat: long steps (image pulls, healthchecks) can go minutes without
        printing, and a frozen pane looks like a hang. -->
   <div class="liveline">
     <span class="livespinner"></span>
-    {TASK_LABELS[runningTask] ?? runningTask} in progress… {formatElapsed(elapsed)}
+    {TASK_LABELS[task.name] ?? task.name} in progress… {formatElapsed(task.elapsed)}
     <span class="dim">— this can take a while, the log updates live</span>
   </div>
 {/if}
