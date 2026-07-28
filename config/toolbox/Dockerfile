@@ -1,7 +1,8 @@
-# "Toolbox" image: runs the project's bash orchestration scripts on Windows hosts.
+# "Toolbox" image: runs the project's bash orchestration scripts as a sibling
+# container, which is how the dashboard's Build/Start buttons invoke them.
 # Carries the GNU userland those scripts assume (bash, sed/grep, gawk, coreutils),
 # openssl + keytool (Liquid cert/keystore steps), and the Docker CLI + Compose plugin.
-# No docker-in-docker: the Windows wrapper bind-mounts the host's Docker socket.
+# No docker-in-docker: the caller bind-mounts the host's Docker socket.
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

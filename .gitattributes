@@ -7,8 +7,3 @@
 # Bash scripts run under bash (incl. Linux containers) — LF is mandatory. Kept
 # explicit though the default above already forces it.
 *.sh   text eol=lf
-
-# Windows wrappers are the deliberate exceptions to LF-only: cmd.exe parses .bat
-# more reliably with CRLF, and PowerShell prefers CRLF too.
-*.bat  text eol=crlf
-*.ps1  text eol=crlf

@@ -52,7 +52,7 @@
 
     <details class="docs">
       <summary>Prefer the terminal instead?</summary>
-      <pre>{data.needBuild ? './scripts/linux/build.sh   (Windows: scripts\\windows\\build.bat)\n' : ''}./scripts/linux/start.sh   (Windows: scripts\windows\start.bat)</pre>
+      <pre>{data.needBuild ? './scripts/linux/build.sh\n' : ''}./scripts/linux/start.sh   (on Windows, run these in WSL2)</pre>
     </details>
 
     <div class="actions">

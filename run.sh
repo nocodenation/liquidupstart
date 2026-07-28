@@ -12,7 +12,6 @@ ENV_FILE="${SCRIPT_DIR}/.env"
 RESULT_FILE="${SCRIPT_DIR}/.install-result"
 IMAGE="liquidupstart/dashboard:latest"
 PORT=7777
-PORT_FILE="${SCRIPT_DIR}/.dashboard-port"
 
 usage() {
   local me; me="$(basename "$0")"
@@ -105,13 +104,13 @@ DOCKER_SOCK="${DOCKER_SOCK#unix://}"
 echo "Building the dashboard image..."
 docker build -q -t "$IMAGE" "${SCRIPT_DIR}/dashboard" >/dev/null
 
-rm -f "$RESULT_FILE" "$PORT_FILE"
+rm -f "$RESULT_FILE"
 
-cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -f "$PORT_FILE"; }
+cleanup() { docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; }
 trap cleanup INT TERM
 
 # Find a free port by trying to publish it: the bind happens on the docker
-# engine (the real host), so this also works from inside the Windows toolbox
+# engine (the real host), so this also works from inside the toolbox
 # container where probing host ports directly is impossible. A taken port makes
 # `docker run` fail with a bind error — then try the next one.
 MAX_PORT=$((PORT + 100))
@@ -146,9 +145,6 @@ while :; do
   exit 1
 done
 
-# Read by the Windows browser watcher (run.ps1), which can't know the chosen port.
-echo "$PORT" > "$PORT_FILE"
-
 echo ""
 echo "Liquid Upstart dashboard is running:  ${URL}"
 echo "Manage the stack from there (configure / build / start / stop)."
@@ -164,7 +160,7 @@ fi
 
 docker wait "$CONTAINER" >/dev/null 2>&1 || true
 trap - INT TERM
-rm -f "$RESULT_FILE" "$PORT_FILE"
+rm -f "$RESULT_FILE"
 
 echo "Dashboard stopped. The stack keeps whatever state it was in"
 echo "(run ./run.sh again - or scripts/linux/{start,down}.sh - to manage it)."
