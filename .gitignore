@@ -7,4 +7,4 @@ dashboard/.svelte-kit/
 dashboard/build/
 .liquidupstart-version
 .liquidupstart-manifest
-
+*.pyc

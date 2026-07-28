@@ -31,3 +31,5 @@ for template in "${TEMPLATES_DIR}"/*; do
   rm -rf "$outfile"
   render_template "$template" > "$outfile"
 done
+
+chmod 600 "${CONFIG_DIR}/pgpass"
