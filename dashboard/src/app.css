@@ -686,3 +686,17 @@ button.save.rebuild:hover {
 .back:hover {
   text-decoration: underline;
 }
+
+footer.version {
+  max-width: 60rem;
+  margin: 0 auto;
+  /* clears the fixed .savebar on the config page */
+  padding: 0 1rem 5rem;
+  color: var(--dim);
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+footer.version code {
+  font-size: 0.85rem;
+}

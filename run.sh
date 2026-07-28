@@ -10,8 +10,21 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 RESULT_FILE="${SCRIPT_DIR}/.install-result"
+VERSION_FILE="${SCRIPT_DIR}/.liquidupstart-version"
 IMAGE="liquidupstart/dashboard:latest"
 PORT=7777
+
+version() {
+  local v=""
+  [ -r "$VERSION_FILE" ] && v="$(head -n1 "$VERSION_FILE" | tr -d '[:space:]')"
+  if [ -z "$v" ] && command -v git >/dev/null 2>&1 \
+     && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    v="checkout-$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    [ -n "$(git -C "$SCRIPT_DIR" status --porcelain 2>/dev/null)" ] && v="${v}-dirty"
+  fi
+  printf 'liquidupstart %s\n' "${v:-unknown}"
+  printf 'installed at %s\n' "$SCRIPT_DIR"
+}
 
 usage() {
   local me; me="$(basename "$0")"
@@ -23,6 +36,8 @@ USAGE
   ${me} --stop
   ${me} --update
   ${me} --cleanup [--keep-images]
+  ${me} --uninstall [--yes] [--keep-images]
+  ${me} --version
   ${me} --help
 
 WHAT IT DOES
@@ -44,6 +59,11 @@ OPTIONS
   -c, --cleanup   Full reset instead of launching: stops the stack and removes
                   all containers, volumes/ (persisted data), .env, and built
                   images. Pass --keep-images to keep images and build cache.
+  -U, --uninstall Everything --cleanup does, plus removing the 'liquidupstart'
+                  command and this whole install directory. Asks for
+                  confirmation; pass --yes to skip the prompt. Docker itself is
+                  left installed.
+  -v, --version   Print the installed version and location, then exit.
   -h, --help      Show this help and exit.
 
 INSTALL LOCATION
@@ -58,16 +78,19 @@ EXAMPLES
   ${me} --update                 # update to the latest release
   ${me} --cleanup                # tear down and wipe everything (does not restart)
   ${me} --cleanup --keep-images  # same, but keep images & build cache for a faster rebuild
+  ${me} --uninstall              # remove the stack, the command, and ${SCRIPT_DIR}
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -c|--cleanup) shift; exec "${SCRIPT_DIR}/cleanup.sh" "$@" ;;
+    -U|--uninstall) shift; exec "${SCRIPT_DIR}/scripts/uninstall.sh" "$@" ;;
     -s|--stop) exec "${SCRIPT_DIR}/scripts/linux/down.sh" ;;
     -u|--update)
       command -v curl >/dev/null 2>&1 || { echo "Error: curl is required to update." >&2; exit 1; }
       exec bash -c 'curl -fsSL https://liquidupstart.com/install.sh | bash' ;;
+    -v|--version) version; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
   esac

@@ -108,6 +108,27 @@ curl -fsSL https://liquidupstart.com/install.sh | bash -s -- 1.2.3
 If Liquid Upstart is already installed (`~/.liquidupstart`), re-running the installer
 automatically hands off to the **updater** below instead of reinstalling.
 
+To install from a checkout instead of a release — for development, or to try local changes —
+use `install-local.sh`. It does the same Docker bootstrap and adds the same `liquidupstart`
+command, but copies the working tree into `~/.liquidupstart`, skipping everything git ignores
+(`.env`, `volumes/`, rendered config, `node_modules`), so an existing install keeps its data:
+
+```bash
+./scripts/install/install-local.sh                 # working tree, including untracked files
+./scripts/install/install-local.sh --tracked-only  # git-tracked files only
+./scripts/install/install-local.sh --dest /tmp/lu  # install somewhere else
+```
+
+The version stamp becomes `local-<sha>` (plus `-dirty` when the tree has uncommitted changes),
+which distinguishes it from a released install.
+
+Re-installing **prunes stale files**: it records what it wrote in `.liquidupstart-manifest`, so
+the next run deletes files that a previous install created and the current source no longer has
+(a renamed script, a dropped config). Only files listed in that manifest are ever removed —
+`.env`, `volumes/`, rendered config, and anything you added by hand are never touched. Switching
+from the default to `--tracked-only` therefore prunes the untracked files the earlier run
+installed.
+
 Run it as your **normal user** for rootless Docker (recommended), or as **root** to install
 the system (rootful) daemon. The installer also adds a **`liquidupstart` command** to your
 `PATH` (a symlink in `/usr/local/bin`), so once it finishes you can launch the dashboard from
@@ -236,7 +257,11 @@ files, Liquid repositories, etc.) — there are no hidden named Docker volumes. 
 - Delete the relevant `./volumes/<service>/` directory to wipe a service's data.
 - `liquidupstart --cleanup` (or `./cleanup.sh`) — **full reset:** stops the stack and removes all
   containers, `volumes/`, `.env`, and the built images. Add `--keep-images` to keep images and
-  build cache.
+  build cache. The install itself stays in place.
+- `liquidupstart --uninstall` — everything `--cleanup` does, **plus** removing the
+  `liquidupstart` command and the whole install directory (`~/.liquidupstart`). Asks for
+  confirmation; add `--yes` to skip the prompt. Docker itself is left installed, as is the
+  `# >>> rootless docker >>>` block the installer added to your shell rc.
 
 ## Troubleshooting
 

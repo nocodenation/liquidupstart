@@ -780,4 +780,6 @@ main() {
   download_release "${1:-}"
 }
 
-main "$@"
+# install-local.sh sources this file for the Docker bootstrap and the launcher
+# helpers, and supplies its own copy step in place of download_release.
+[ -n "${LU_INSTALL_LIB:-}" ] || main "$@"
