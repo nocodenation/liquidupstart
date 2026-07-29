@@ -61,12 +61,32 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 > Calls made *between containers* (or server-side) must go through the proxy with a
 > `Host:` header, e.g. `curl http://proxy:8888 -H "Host: postgrest.localhost:8888"`.
 
+## Sandbox by design
+
+Liquid Upstart is a prototyping sandbox. All services bind to `localhost` on purpose:
+the stack is self-contained, and you can safely run agent tools inside it without
+exposing anything to your network. It is not meant to be a production system. When a
+prototype earns its keep, deploy it to [Liquid.PM](https://liquid.pm) — the managed
+platform that adds security, backups, and operations, in the cloud or on-premise.
+
+Running Liquid Upstart on a remote server anyway? Use an SSH tunnel instead of opening
+ports — forward the dashboard port (`7777`) and the stack port (`8888` by default):
+
+```bash
+ssh -L 7777:localhost:7777 -L 8888:localhost:8888 user@your-server
+```
+
+Then open `http://localhost:7777` on your local machine. Add `-L` flags for any other
+ports you use.
+
 ## Prerequisites
 
-- **Linux / macOS:** Docker + Docker Compose.
+- **Linux / macOS:** Docker + Docker Compose (the one-line installer sets this up if missing).
 - **Windows:** WSL2 with a Linux distro (Ubuntu recommended) and Docker running **inside** WSL2.
   Follow the WSL2 setup below — everything then runs as on Linux. This avoids the filesystem
   IO issues of running off the Windows filesystem.
+- **Memory:** 16 GB RAM on Linux/macOS; 32 GB on Windows, since WSL2 itself needs a large
+  share. Below these numbers the stack will not start reliably.
 
 ### Windows: install WSL2 + Ubuntu first
 
@@ -87,15 +107,21 @@ wsl --install -d Ubuntu
 > `wsl --install -d Ubuntu` to be sure (run `wsl --list --online` to see all available distros).
 > After Ubuntu boots, set your Linux username/password and continue inside that Ubuntu shell.
 
-### WSL2: one-line install
-
-On a fresh, systemd-enabled WSL2 distro (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE),
-this bootstrap installs **rootless Docker**, applies the rootless tweaks, and downloads the
-latest release into `~/.liquidupstart`:
+### One-line install (Linux / WSL2 / macOS)
 
 ```bash
 curl -fsSL https://liquidupstart.com/install.sh | bash
 ```
+
+The installer is deliberately boring and inspectable. What it does:
+
+1. Sets up Docker if you do not have it — **rootless Docker Engine** on Linux/WSL2
+   (Ubuntu/Debian, Fedora/RHEL, Arch, or openSUSE; systemd required), **Colima or
+   Docker Desktop** via Homebrew on macOS (it asks which one).
+2. Downloads the latest release into `~/.liquidupstart`.
+3. Links `/usr/local/bin/liquidupstart` to `~/.liquidupstart/run.sh`, so you can start
+   the dashboard from anywhere. Prefer no launcher? Skip it and run
+   `~/.liquidupstart/run.sh` directly.
 
 To pin a specific version, pass it as an argument:
 
@@ -108,33 +134,9 @@ curl -fsSL https://liquidupstart.com/install.sh | bash -s -- 1.2.3
 If Liquid Upstart is already installed (`~/.liquidupstart`), re-running the installer
 automatically hands off to the **updater** below instead of reinstalling.
 
-To install from a checkout instead of a release — for development, or to try local changes —
-use `install-local.sh`. It does the same Docker bootstrap and adds the same `liquidupstart`
-command, but copies the working tree into `~/.liquidupstart`, skipping everything git ignores
-(`.env`, `volumes/`, rendered config, `node_modules`), so an existing install keeps its data:
-
-```bash
-./scripts/install/install-local.sh                 # working tree, including untracked files
-./scripts/install/install-local.sh --tracked-only  # git-tracked files only
-./scripts/install/install-local.sh --dest /tmp/lu  # install somewhere else
-```
-
-The version stamp becomes `local-<sha>` (plus `-dirty` when the tree has uncommitted changes),
-which distinguishes it from a released install.
-
-Re-installing **prunes stale files**: it records what it wrote in `.liquidupstart-manifest`, so
-the next run deletes files that a previous install created and the current source no longer has
-(a renamed script, a dropped config). Only files listed in that manifest are ever removed —
-`.env`, `volumes/`, rendered config, and anything you added by hand are never touched. Switching
-from the default to `--tracked-only` therefore prunes the untracked files the earlier run
-installed.
-
 Run it as your **normal user** for rootless Docker (recommended), or as **root** to install
-the system (rootful) daemon. The installer also adds a **`liquidupstart` command** to your
-`PATH` (a symlink in `/usr/local/bin`), so once it finishes you can launch the dashboard from
-any directory by running `liquidupstart` — no need to `cd` into the install folder. The
-project itself lives in `~/.liquidupstart`. WSL needs systemd enabled — add `[boot]\nsystemd=true`
-to `/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
+the system (rootful) daemon. WSL needs systemd enabled (Ubuntu image has it enabled by default)
+— and run `wsl --shutdown` first if you haven't.
 
 ### Updating
 
@@ -238,14 +240,17 @@ Both ship with **skills** that encode how to use this environment:
 
 Add at least one LLM provider key (section 5) to enable the agents.
 
-## How the toolbox container works
+### Subscription login (OAuth) or API keys?
 
-There is a single set of scripts — the `.sh` files under `scripts/linux/` — used on every
-platform; on Windows you run them inside WSL2. The dashboard's Build/Start buttons don't run
-them directly either: it spawns a small helper "toolbox" container
-(`config/toolbox/`) that has bash + the tools the scripts expect, mounts the
-docker socket and the project at its real host path, and runs the unchanged scripts inside it
-against the host engine.
+- **Recommended: OAuth / subscription login.** If you already pay for a ChatGPT, Claude,
+  or similar subscription, log in with it inside the agent after the stack starts. Flat
+  monthly cost, no per-token surprises.
+- **API keys are for the gaps.** Use them where OAuth is not an option — for example
+  OpenAI's embeddings endpoint (needed for the `vector-search` / RAG skill, and cheap
+  even without a subscription), or providers like OpenRouter that are API-only.
+
+The `.env` section 5 configures API keys; the OAuth login happens inside the respective
+agent. Both can coexist.
 
 ## Data & persistence
 
