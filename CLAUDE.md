@@ -11,9 +11,9 @@ from the browser.
 
 - `compose.yml` — all services. The compose project is named `liquidupstart`; a single
   instance of the stack runs per host (fixed container names, no suffixes).
-- `run.sh` / `run.bat` — build & launch the dashboard container (first free port from 7777).
-- `scripts/{linux,windows}/{build,start,down,cleanup}` — CLI alternative to the dashboard.
-  Windows `.bat` files run the same `.sh` scripts inside a toolbox container.
+- `run.sh` — build & launch the dashboard container (first free port from 7777).
+- `scripts/linux/{build,start,down,cleanup}` — CLI alternative to the dashboard. Windows
+  users run these inside WSL2; there is no separate Windows script path.
 - `config/scripts/{build,start}/*.sh` — per-service build/prep steps invoked by the top
   scripts. Build steps render Dockerfiles via `config/scripts/build/lib/dockerfile-render.sh`.
 - `config/<service>/` — per-service config, templates, and (for agents) skills/plugins.

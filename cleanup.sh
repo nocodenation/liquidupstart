@@ -61,7 +61,7 @@ fi
 
 # Remove project-built images.
 echo "Removing liquidupstart/* images..."
-# The toolbox image (Windows helper) may be in use when this runs inside it, so
+# The toolbox image may be in use when this runs inside it, so
 # tolerate a removal failure rather than aborting.
 images="$(docker images --filter "reference=liquidupstart/*" --quiet | sort -u)"
 if [[ -n "${images}" ]]; then

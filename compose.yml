@@ -76,7 +76,9 @@ services:
       - ./config/pgadmin/config_local.py:/pgadmin4/config_local.py
       - ./config/pgadmin/webserver.py:/pgadmin4/pgadmin/authenticate/webserver.py
       - ./config/pgadmin/servers.json:/pgadmin4/servers.json
-      - ./config/pgadmin/pgpass:/pgadmin4/pgpass
+      - ./config/pgadmin/pgpass:/pgadmin4/pgpass:ro
+      - ./config/pgadmin/prepare-passfile.sh:/pgadmin4/prepare-passfile.sh:ro
+    entrypoint: ["/bin/sh", "/pgadmin4/prepare-passfile.sh"]
     depends_on:
         pgadmin_db:
           condition: service_healthy
@@ -88,9 +90,9 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
       PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
       PGADMIN_CONFIG_WTF_CSRF_ENABLED: "False"
       PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
-      PGADMIN_PASSFILE_PATH: /pgadmin4/pgpass
     networks:
       - nocodenation_liquid_upstart_network
 
@@ -780,6 +782,9 @@ services:
     network_mode: "service:openclaw-gateway"
     user: "0:0"
     container_name: openclaw-cli
+    profiles:
+      - "cli"
+      - "full"
     env_file:
       - path: config/openclaw/.env
         required: false

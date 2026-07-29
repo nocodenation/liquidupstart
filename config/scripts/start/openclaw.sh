@@ -93,14 +93,15 @@ ENABLE_LOCAL=0
 [[ -n "$LOCAL_LLM_API_BASE" ]] && ENABLE_LOCAL=1
 
 # Bootstrap baseline config + workspace in the state volume, only when
-# openclaw.json is missing (subsequent starts may carry user edits). `setup`
-# (no --wizard) is non-interactive. openclaw-cli shares the gateway's netns, so
-# Compose starts openclaw-gateway as a dependency. The model patch below still
-# runs every start, keeping .env the source of truth for the primary model.
+# openclaw.json is missing (subsequent starts may carry user edits). `onboard
+# --non-interactive --accept-risk` needs no TTY; --skip-health drops the gateway
+# health probe (no gateway is listening yet at bootstrap — Compose brings the real
+# one up later). The model patch below still runs every start, keeping .env the
+# source of truth for the primary model.
 CONFIG_JSON="${STATE_DIR}/openclaw.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
   cd "${PROJECT_DIR}"
-  docker compose run --rm --user 0:0 openclaw-cli setup
+  docker compose run --rm -T --user 0:0 openclaw-cli onboard --non-interactive --accept-risk --skip-health
   docker compose rm -sf openclaw-gateway >/dev/null 2>&1 || true
 else
   echo "OpenClaw config already present at ${CONFIG_JSON}; skipping setup."
@@ -243,6 +244,8 @@ else
       // proxy IPs. allowLoopback keeps the shared-netns openclaw-cli working.
       c.gateway.auth = c.gateway.auth || {};
       c.gateway.auth.mode = "trusted-proxy";
+      delete c.gateway.auth.token;
+      delete c.gateway.auth.tokenFile;
       c.gateway.auth.trustedProxy = c.gateway.auth.trustedProxy || {};
       c.gateway.auth.trustedProxy.userHeader = "x-forwarded-user";
       c.gateway.auth.trustedProxy.allowLoopback = true;

@@ -10,6 +10,9 @@ export const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 export const ENV_FILE = join(ENV_DIR, '.env');
 export const EXAMPLE_FILE = join(ENV_DIR, '.env.example');
 export const RESULT_FILE = join(ENV_DIR, '.install-result');
+// Written by install.sh (release tag) or install-local.sh (local-<sha>); absent
+// when the project is run straight from a checkout.
+export const VERSION_FILE = join(ENV_DIR, '.liquidupstart-version');
 // Dropped by update.sh after pulling a new release to force a rebuild.
 export const REBUILD_MARKER = join(ENV_DIR, '.needs-rebuild');
 
@@ -17,6 +20,15 @@ export const REBUILD_MARKER = join(ENV_DIR, '.needs-rebuild');
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
 export function builtImages(): string[] {
   return ['opencode', 'bun-runner', 'liquid', 'openclaw'].map((n) => `liquidupstart/${n}:latest`);
+}
+
+export function projectVersion(): string | null {
+  try {
+    const raw = readFileSync(VERSION_FILE, 'utf8').trim();
+    return raw === '' ? null : raw.split('\n')[0];
+  } catch {
+    return null;
+  }
 }
 
 export function readEnvFile() {

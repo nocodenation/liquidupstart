@@ -39,7 +39,7 @@ sandbox they can spin up, throw away, and spin up again.
 - 🧩 **Batteries included** — Postgres + pgvector, PostgREST, Swagger, pgAdmin, OpenProject,
   Nextcloud + Collabora, Liquid (data flows), and AI agents.
 - 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
-- 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro. (The legacy `.bat` toolbox wrappers are **deprecated**.)
+- 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro.
 - 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
 
 ## Architecture
@@ -135,8 +135,8 @@ If Liquid Upstart is already installed (`~/.liquidupstart`), re-running the inst
 automatically hands off to the **updater** below instead of reinstalling.
 
 Run it as your **normal user** for rootless Docker (recommended), or as **root** to install
-the system (rootful) daemon. WSL needs systemd enabled — add `[boot]\nsystemd=true`
-to `/etc/wsl.conf` and run `wsl --shutdown` first if you haven't.
+the system (rootful) daemon. WSL needs systemd enabled (Ubuntu image has it enabled by default)
+— and run `wsl --shutdown` first if you haven't.
 
 ### Updating
 
@@ -169,8 +169,7 @@ latest version it does nothing.
    |---|---|---|---|---|
    | **Linux / macOS / Windows (WSL2)** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/cleanup.sh` |
 
-   On Windows, run these inside your WSL2 shell. The legacy `scripts\windows\*.bat` wrappers
-   are **deprecated** — prefer WSL2.
+   On Windows, run these inside your WSL2 shell.
 
    `./scripts/linux/rebuild.sh` rebuilds the custom images from scratch. `start.sh`
    prints the full list of service URLs and credentials when it finishes.
@@ -253,17 +252,6 @@ Add at least one LLM provider key (section 5) to enable the agents.
 The `.env` section 5 configures API keys; the OAuth login happens inside the respective
 agent. Both can coexist.
 
-## How the Windows wrappers work (deprecated)
-
-> **Deprecated.** The `.bat` wrappers are no longer the recommended way to run on Windows —
-> use WSL2 (see [Prerequisites](#prerequisites)) to avoid filesystem IO issues. They are kept
-> for now but may be removed in a future release.
-
-The `.bat` files run the exact same `.sh` scripts as Linux — no separate Windows codebase
-to maintain. On first use they build a small helper "toolbox" container
-(`config/win/Dockerfile.toolbox`) that has bash + the tools the scripts expect, and run the
-scripts inside it against the Docker engine.
-
 ## Data & persistence
 
 All state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
@@ -274,7 +262,11 @@ files, Liquid repositories, etc.) — there are no hidden named Docker volumes. 
 - Delete the relevant `./volumes/<service>/` directory to wipe a service's data.
 - `liquidupstart --cleanup` (or `./cleanup.sh`) — **full reset:** stops the stack and removes all
   containers, `volumes/`, `.env`, and the built images. Add `--keep-images` to keep images and
-  build cache.
+  build cache. The install itself stays in place.
+- `liquidupstart --uninstall` — everything `--cleanup` does, **plus** removing the
+  `liquidupstart` command and the whole install directory (`~/.liquidupstart`). Asks for
+  confirmation; add `--yes` to skip the prompt. Docker itself is left installed, as is the
+  `# >>> rootless docker >>>` block the installer added to your shell rc.
 
 ## Troubleshooting
 

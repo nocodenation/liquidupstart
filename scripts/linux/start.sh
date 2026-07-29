@@ -18,7 +18,7 @@ fi
 # --- Pre-flight: the host ports the proxy publishes must be free -------------
 # If SYSTEM_HTTP_PORT / SYSTEM_HTTPS_PORT are taken, `docker compose up` leaves
 # a half-started stack. Probe each via a throwaway container: the bind happens
-# on the real host, so this works from inside the Windows/macOS toolbox too. Our
+# on the real host, so this works from inside the toolbox container too. Our
 # proxy was just stopped by down.sh, so a conflict here is some other process.
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTP_PORT="${HTTP_PORT:-8888}"
@@ -35,6 +35,66 @@ for _img in nginx:latest liquidupstart/liquid:latest liquidupstart/openclaw:late
             liquidupstart/toolbox:latest; do
   if docker image inspect "$_img" >/dev/null 2>&1; then PROBE_IMAGE="$_img"; break; fi
 done
+
+port_owner() {
+  local port="$1" line
+  if command -v ss >/dev/null 2>&1; then
+    line="$(ss -lptn "sport = :${port}" 2>/dev/null | tail -n +2 | head -1)"
+    [[ -n "$line" ]] || { printf 'unknown'; return; }
+    case "$line" in
+      *users:*) printf '%s' "$line" \
+        | sed -E 's/.*users:\(\("([^"]+)",pid=([0-9]+).*/\1 (pid \2), owned by you/' ;;
+      *) printf 'a process owned by another user' ;;
+    esac
+  elif command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null \
+      | awk 'NR==2 {print $1" (pid "$2"), owned by "$3; f=1} END {if (!f) print "unknown"}'
+  else
+    printf 'unknown'
+  fi
+}
+
+host_port_busy() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -lnt "sport = :${port}" 2>/dev/null | tail -n +2 | grep -q .
+  elif command -v lsof >/dev/null 2>&1 \
+       && lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+    return 0
+  elif command -v netstat >/dev/null 2>&1; then
+    # macOS/BSD netstat lists every listener regardless of owner.
+    netstat -an -p tcp 2>/dev/null | grep -qE "[.:]${port}[[:space:]]+.*LISTEN"
+  else
+    return 1
+  fi
+}
+
+port_probe_hint() {
+  if command -v ss >/dev/null 2>&1; then
+    printf "sudo ss -lptn 'sport = :%s'" "$1"
+  else
+    printf 'sudo lsof -nP -iTCP:%s -sTCP:LISTEN' "$1"
+  fi
+}
+
+describe_port_conflict() {
+  local pair port name owner
+  for pair in "SYSTEM_HTTP_PORT:${HTTP_PORT}" "SYSTEM_HTTPS_PORT:${HTTPS_PORT}"; do
+    port="${pair##*:}"; name="${pair%%:*}"
+    host_port_busy "$port" || continue
+    owner="$(port_owner "$port")"
+    if [[ "$owner" == unknown ]]; then
+      echo "  port ${port} (${name}) is already in use" >&2
+    else
+      echo "  port ${port} (${name}) is already in use — held by ${owner}" >&2
+    fi
+  done
+  echo "" >&2
+  echo "Docker here runs per user — rootless Docker on Linux, a per-user VM (Docker Desktop" >&2
+  echo "or Colima) on macOS — so another user's stack holding these ports will NOT show up" >&2
+  echo "in your 'docker ps'. To see the owner across all users:" >&2
+  echo "    $(port_probe_hint "${HTTP_PORT}")" >&2
+}
 
 port_taken() {
   # 0 = taken, 1 = free (or undeterminable — never block on that).
@@ -61,12 +121,13 @@ if [[ -n "$PROBE_IMAGE" ]]; then
     fi
   done
   if [[ -n "$_taken" ]]; then
+    describe_port_conflict
     echo "" >&2
-    echo "Another program — or another copy of this stack — is holding the port(s) above," >&2
-    echo "so the services can't start. Stop whatever is using them and start again. These" >&2
-    echo "ports are fixed after the initial setup, so the stack must use them." >&2
+    echo "Another program — or another user's copy of this stack — is holding the port(s)" >&2
+    echo "above, so the services can't start. Stop whatever is using them and start again." >&2
+    echo "These ports are fixed after the initial setup, so the stack must use them." >&2
     # ::aiw-error:: lines: the dashboard turns these into an on-screen error banner.
-    echo "::aiw-error::Ports already in use: ${_taken}. Another program — or another copy of this stack — is holding them. Stop whatever is using those ports and start again; the ports are fixed after initial setup." >&2
+    echo "::aiw-error::Ports already in use: ${_taken}. Another program — or another user's copy of this stack — is holding them. Docker runs per user (rootless on Linux, a per-user VM on macOS), so another user's containers won't appear in your 'docker ps'; check with: $(port_probe_hint "${HTTP_PORT}"). Stop whatever is using those ports and start again; the ports are fixed after initial setup." >&2
     exit 1
   fi
 fi
@@ -87,7 +148,23 @@ docker network inspect nocodenation_playground_network_${HTTP_PORT} >/dev/null 2
   || docker network create nocodenation_playground_network_${HTTP_PORT}
 
 echo "Starting containers..."
+set +e
 docker compose up -d
+UP_RC=$?
+set -e
+if [[ $UP_RC -ne 0 ]]; then
+  echo "" >&2
+  if ! docker compose ps --status running --services 2>/dev/null | grep -qx proxy \
+     && { host_port_busy "$HTTP_PORT" || host_port_busy "$HTTPS_PORT"; }; then
+    echo "Error: the proxy could not bind its host ports." >&2
+    describe_port_conflict
+    echo "::aiw-error::The proxy could not bind port ${HTTP_PORT}/${HTTPS_PORT} — they are already in use. Docker runs per user (rootless on Linux, a per-user VM on macOS), so another user's containers won't appear in your 'docker ps'; check with: $(port_probe_hint "${HTTP_PORT}")." >&2
+  else
+    echo "Error: 'docker compose up' failed — see the output above." >&2
+    echo "::aiw-error::Starting the stack failed. See the log above for the failing service." >&2
+  fi
+  exit $UP_RC
+fi
 
 PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 LIQUID_USERNAME="$(grep -E '^LIQUID_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"

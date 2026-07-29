@@ -1,7 +1,7 @@
 // Runs the project's build/start/down scripts, streaming combined output as a
 // plain-text response the page renders live. Scripts run inside the "toolbox"
 // helper container (bash + docker CLI) spawned as a sibling against the host
-// engine, like the Windows .bat wrappers. Requires mounting the docker socket
+// engine. Requires mounting the docker socket
 // and the project at its real host path (ENV_DIR) so bind mounts that
 // compose.yml and the scripts create resolve identically on the engine side.
 
@@ -78,8 +78,8 @@ export async function POST({ request }) {
           // it next run. Fall back to the classic builder without buildx.
           const hasBuildx = (await run(['buildx', 'version'], () => {}, track)) === 0;
           const buildArgs = hasBuildx
-            ? ['buildx', 'build', '--load', '-t', TOOLBOX, '-f', 'config/win/Dockerfile.toolbox', 'config/win']
-            : ['build', '-t', TOOLBOX, '-f', 'config/win/Dockerfile.toolbox', 'config/win'];
+            ? ['buildx', 'build', '--load', '-t', TOOLBOX, '-f', 'config/toolbox/Dockerfile', 'config/toolbox']
+            : ['build', '-t', TOOLBOX, '-f', 'config/toolbox/Dockerfile', 'config/toolbox'];
           const b = await run(buildArgs, write, track);
           if (b !== 0) {
             write(`\n[toolbox build failed with exit code ${b}]\n`);
