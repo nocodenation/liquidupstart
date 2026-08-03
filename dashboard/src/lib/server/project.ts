@@ -1,10 +1,10 @@
 // Shared server-side project facts: project-root paths, .env access, and
 // docker-based stack state.
 
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { parseEnvValues } from '$lib/env-file';
+import { parseEnvValues } from '../env-file';
 
 export const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 export const ENV_FILE = join(ENV_DIR, '.env');
@@ -15,6 +15,8 @@ export const RESULT_FILE = join(ENV_DIR, '.install-result');
 export const VERSION_FILE = join(ENV_DIR, '.liquidupstart-version');
 // Dropped by update.sh after pulling a new release to force a rebuild.
 export const REBUILD_MARKER = join(ENV_DIR, '.needs-rebuild');
+export const APP_PASSWORD_DIR = join(ENV_DIR, 'volumes', 'dashboard');
+export const APP_PASSWORD_FILE = join(APP_PASSWORD_DIR, '.app_password');
 
 // Images produced by build.sh; all must exist for a start to succeed.
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
@@ -39,6 +41,21 @@ export function readEnvFile() {
 
 export function envValues(): Map<string, { value: string }> {
   return existsSync(ENV_FILE) ? parseEnvValues(readFileSync(ENV_FILE, 'utf8')) : new Map();
+}
+
+export function readAppPassword(): string | null {
+  try {
+    const value = readFileSync(APP_PASSWORD_FILE, 'utf8').trim();
+    return value === '' ? null : value;
+  } catch {
+    return null;
+  }
+}
+
+export function writeAppPassword(value: string): void {
+  mkdirSync(APP_PASSWORD_DIR, { recursive: true });
+  writeFileSync(APP_PASSWORD_FILE, `${value.trim()}\n`, 'utf8');
+  chmodSync(APP_PASSWORD_FILE, 0o600);
 }
 
 // "Configured" = the form has been saved at least once. Saving fills every

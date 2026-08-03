@@ -68,7 +68,8 @@ Only call the OCS shares endpoint when the user has **explicitly** asked for a p
 
 > This will make the file viewable by anyone who has the link — proceed?
 
-After confirmation:
+After confirmation (`NC_APP_PASSWORD` comes from `/secrets/.app_password` — see the
+**nextcloud-webdav** skill, *Endpoint and authentication*):
 
 ```bash
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \

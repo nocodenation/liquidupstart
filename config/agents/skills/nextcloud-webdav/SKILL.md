@@ -44,26 +44,32 @@ will not contain user uploads.
 ## Endpoint and authentication
 
 The WebDAV username is injected as `$PGADMIN_DEFAULT_EMAIL` (e.g.
-`user@nocodenation.org`). The WebDAV **password** is *not* injected — you must ask the
-user for an app password. The first time you need to call Nextcloud in a session:
+`user@nocodenation.org`). The WebDAV **password** is the app password the user stored
+from the dashboard; it is mounted read-only at `/secrets/.app_password`. Load it once
+per session, before the first Nextcloud call:
 
-1. Run `echo $SYSTEM_HTTP_PORT` to get the actual port value (call it PORT).
-2. Ask the user with this wording, substituting PORT with the value you just read:
+```bash
+NC_APP_PASSWORD="$(cat /secrets/.app_password 2>/dev/null)"
+```
+
+Never echo it back in responses or logs, and never write to `/secrets` — the mount is
+read-only and the dashboard owns that file.
+
+If the value comes back empty (no password stored yet), ask the user with this wording,
+substituting PORT with the value of `echo $SYSTEM_HTTP_PORT`:
 
 > I need a Nextcloud app password to read/write your files over WebDAV.
-> Open your Security settings (you're already logged in):
-> **http://nextcloud.localhost:PORT/settings/user/security**
-> Scroll to **Devices & sessions**, enter a name (e.g. "OpenCode"), click **Create new
-> app password**, and paste the generated token here. I will keep it only for this
-> session.
+> Open the Liquid Upstart dashboard, find the **NextCloud** tile and click
+> **Add app password** — it opens
+> **http://nextcloud.localhost:PORT/settings/user/security**, where you scroll to
+> **Devices & sessions**, enter a name (e.g. "OpenCode") and click **Create new app
+> password**. Paste the generated token back into the dashboard tile and save. It is
+> stored once and every future session picks it up automatically.
 
-Once provided, hold it in memory for the rest of the session — never write it to disk
-and never echo it back in responses or logs. If you are running autonomously and the
-user is not available to ask, stop and report that a Nextcloud app password is
-required; do not attempt anonymous access.
+If you are running autonomously and the user is not available to ask, stop and report
+that a Nextcloud app password is required; do not attempt anonymous access.
 
-The examples below use `$NC_APP_PASSWORD` as a shell placeholder for the value the
-user pasted.
+The examples below use `$NC_APP_PASSWORD` as a shell placeholder for that value.
 
 The per-user WebDAV path, appended to the proxy URL (PORT = resolved `$SYSTEM_HTTP_PORT`):
 
@@ -175,11 +181,12 @@ skill (*Data the app reads or writes*) for the full flow.
 
 ## Errors
 
-- `401 Unauthorized` — the app password the user pasted is wrong, expired, or revoked
-  (or `$PGADMIN_DEFAULT_EMAIL` is unset). Re-ask the user for a fresh app password
-  using the prompt in **Endpoint and authentication** instead of retrying. Plain-
-  password Basic auth (`username == password`) is blocked server-side — only an
-  app-password token authenticates.
+- `401 Unauthorized` — the stored app password is wrong, expired, or revoked (or
+  `$PGADMIN_DEFAULT_EMAIL` is unset). Don't retry, and don't ask the user to paste a
+  replacement into the chat: it has to be replaced at the source, via **Change app
+  password** on the dashboard's NextCloud tile. Ask them to do that, then re-read
+  `/secrets/.app_password`. Plain-password Basic auth (`username == password`) is
+  blocked server-side — only an app-password token authenticates.
 - `404 Not Found` — path doesn't exist; PROPFIND the parent first.
 - `405 Method Not Allowed` on `MKCOL` — directory already exists; safe to proceed.
 - `409 Conflict` on `PUT` — parent directory missing; `MKCOL` it first.

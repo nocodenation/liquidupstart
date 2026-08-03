@@ -66,17 +66,20 @@ env var, a runtime config file the user has to set, or any place outside `/bun_a
   (*Authentication — ask the user for an API token*) to get the token, then embed it
   as a constant in the file that builds the `Authorization: Basic` header (literal
   username `apikey`, token as password).
-- For Nextcloud WebDAV calls — use the prompt in the **nextcloud-webdav** skill
-  (*Endpoint and authentication*) to get the app password. Embed both the username
-  (the current value of `$PGADMIN_DEFAULT_EMAIL` from this container — look it up
-  with `echo $PGADMIN_DEFAULT_EMAIL` and write the literal string into the app
-  source) and the app password the user pasted.
+- For Nextcloud WebDAV calls — read the stored app password with
+  `cat /secrets/.app_password` (see the **nextcloud-webdav** skill, *Endpoint and
+  authentication*, for the fallback when it is empty). Embed both the username (the
+  current value of `$PGADMIN_DEFAULT_EMAIL` from this container — look it up with
+  `echo $PGADMIN_DEFAULT_EMAIL` and write the literal string into the app source) and
+  that app password.
 
-When you do this, tell the user that the credential they pasted now lives inside the
-app's source code, and that they can revoke it any time from the same page they
-generated it on. Run `echo $SYSTEM_HTTP_PORT` to get PORT, then give them:
+When you do this, tell the user that the credential now lives inside the app's source
+code as well, and that they can revoke it any time from the page it was generated on.
+Run `echo $SYSTEM_HTTP_PORT` to get PORT, then give them:
 OpenProject **Access tokens** at `http://openproject.localhost:PORT/my/access_tokens`,
 or Nextcloud **Devices & sessions** at `http://nextcloud.localhost:PORT/settings/user/security`.
+Revoking a Nextcloud app password there also invalidates the one stored in the
+dashboard, so they need a fresh one via the tile's **Change app password**.
 
 ## Data the app reads or writes
 
@@ -106,10 +109,10 @@ Once you know which files the app will use, **ask the user** which mode to use:
 >
 > - **A** keeps the app self-contained but the files won't update if you change them
 >   in Nextcloud — I'd need to re-copy.
-> - **B** always sees the latest Nextcloud content, but I'll need to ask you for a
->   Nextcloud app password and embed it in the app's source code (for files the app
->   fetches on the server) and/or create public-share download URLs (for files the
->   browser loads directly).
+> - **B** always sees the latest Nextcloud content, but I'll need to embed your stored
+>   Nextcloud app password in the app's source code (for files the app fetches on the
+>   server) and/or create public-share download URLs (for files the browser loads
+>   directly).
 
 Then act on the choice:
 
@@ -127,8 +130,8 @@ Nextcloud UI**:
   `Host: nextcloud.localhost:PORT` header (the `X.localhost` name doesn't resolve in the
   Bun Runner container — see *URLs in app code*) and HTTP Basic auth, embedding the
   credentials directly in the app source (see *Credentials the app needs* above —
-  `$PGADMIN_DEFAULT_EMAIL` as the username, the user-pasted app password as the
-  password). The Bun app then `fetch()`es the raw file.
+  `$PGADMIN_DEFAULT_EMAIL` as the username, the app password from
+  `/secrets/.app_password` as the password). The Bun app then `fetch()`es the raw file.
 - For browser-side embedding (images, downloads, video sources, etc.): generate a
   public-share download URL via the OCS shares API (see the **nextcloud-user-link**
   skill — *When public shares are allowed*) and use the

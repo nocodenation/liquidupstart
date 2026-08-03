@@ -31,6 +31,9 @@ render_template() {
   printf '%s\n' "$content"
 }
 
+mkdir -p "${PROJECT_DIR}/volumes/dashboard"
+chmod 0755 "${PROJECT_DIR}/volumes/dashboard"
+
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTP_PORT="${HTTP_PORT:-8888}"
 

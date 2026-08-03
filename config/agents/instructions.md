@@ -103,7 +103,7 @@ omitted), so the host must be one of the service names in the table.
 curl -s http://proxy:8888/ -H "Host: postgrest.localhost:8888"
 curl -s http://proxy:8888/my_table -H "Host: postgrest.localhost:8888"
 
-# Nextcloud WebDAV
+# Nextcloud WebDAV — NC_APP_PASSWORD="$(cat /secrets/.app_password 2>/dev/null)"
 curl -s -u "$PGADMIN_DEFAULT_EMAIL:$NC_APP_PASSWORD" \
   -X PROPFIND -H "Depth: 1" \
   -H "Host: nextcloud.localhost:${SYSTEM_HTTP_PORT}" \

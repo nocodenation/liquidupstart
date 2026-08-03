@@ -1,6 +1,10 @@
 <script>
   import { invalidateAll } from '$app/navigation';
   import TaskRunner from '$lib/components/TaskRunner.svelte';
+  import NextcloudAppPassword from '$lib/components/NextcloudAppPassword.svelte';
+  import SecretValue from '$lib/components/SecretValue.svelte';
+
+  const SECRET_LABEL = /password|token|key|secret/i;
 
   let { data } = $props();
 
@@ -36,9 +40,21 @@
                 <dl class="tilecreds">
                   {#each tile.creds as cred}
                     <dt>{cred.label}</dt>
-                    <dd><code>{cred.value}</code></dd>
+                    <dd>
+                      {#if SECRET_LABEL.test(cred.label)}
+                        <SecretValue value={cred.value} label={cred.label} />
+                      {:else}
+                        <code>{cred.value}</code>
+                      {/if}
+                    </dd>
                   {/each}
                 </dl>
+              {/if}
+              {#if tile.kind === 'nextcloud'}
+                <NextcloudAppPassword
+                  password={tile.appPassword}
+                  securityUrl={tile.securityUrl}
+                />
               {/if}
             </div>
           {/each}

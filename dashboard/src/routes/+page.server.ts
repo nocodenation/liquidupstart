@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { envValues, isConfigured, stackState } from '$lib/server/project';
+import { envValues, isConfigured, readAppPassword, stackState } from '$lib/server/project';
 
 // The service catalog mirrors the URL/credential listing start.sh prints.
 export const load: PageServerLoad = async () => {
@@ -18,7 +18,10 @@ export const load: PageServerLoad = async () => {
       tiles: [
         {
           name: 'NextCloud',
+          kind: 'nextcloud',
           url: `http://nextcloud.localhost:${http}`,
+          securityUrl: `http://nextcloud.localhost:${http}/settings/user/security`,
+          appPassword: readAppPassword(),
           // Login is automatic; the password is only asked for administrative
           // confirmation prompts inside NextCloud.
           creds: [{ label: 'password', value: email }]
