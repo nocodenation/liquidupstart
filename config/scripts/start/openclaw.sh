@@ -271,6 +271,8 @@ else
       c.agents.defaults = c.agents.defaults || {};
       c.agents.defaults.models = c.agents.defaults.models || {};
 
+      let cliPinnedModels = [];
+
       if (enableClaudeCli) {
         c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
         c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
@@ -279,6 +281,52 @@ else
         c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
         c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
         c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
+
+        let anthropicCatalog = [];
+        try {
+          const manifest = JSON.parse(fs.readFileSync("/app/dist/extensions/anthropic/openclaw.plugin.json", "utf8"));
+          const collect = (node) => {
+            if (Array.isArray(node)) { node.forEach(collect); return; }
+            if (!node || typeof node !== "object") return;
+            if (typeof node.id === "string" && typeof node.contextWindow === "number") anthropicCatalog.push(node);
+            Object.values(node).forEach(collect);
+          };
+          collect(manifest);
+        } catch (e) {
+          console.log("openclaw.json: could not read the Anthropic model catalog (" + e.message + "); leaving claude-cli context windows at their defaults");
+        }
+
+        const CLI_DEFAULT_CONTEXT_WINDOW = 200000;
+        const cliServes = (id) => /^claude-(opus|sonnet|fable|mythos)-/.test(id);
+        const widest = new Map();
+        for (const m of anthropicCatalog) {
+          if (!cliServes(m.id) || m.contextWindow <= CLI_DEFAULT_CONTEXT_WINDOW) continue;
+          const prev = widest.get(m.id);
+          if (!prev || m.contextWindow > prev.contextWindow) widest.set(m.id, m);
+        }
+        const candidates = [...widest.values()];
+
+        if (candidates.length) {
+          c.models = c.models || {};
+          c.models.providers = c.models.providers || {};
+          c.models.providers["claude-cli"] = c.models.providers["claude-cli"] || {};
+          const cliModels = Array.isArray(c.models.providers["claude-cli"].models)
+            ? c.models.providers["claude-cli"].models
+            : [];
+          for (const model of candidates) {
+            if (cliModels.some((m) => m && m.id === model.id)) continue;
+            cliModels.push({
+              id: model.id,
+              name: (model.name || model.id).replace(/\s*\(Claude CLI\)\s*$/, "") + " (Claude CLI)",
+              reasoning: model.reasoning === true,
+              input: Array.isArray(model.input) ? model.input : ["text"],
+              contextWindow: model.contextWindow,
+              ...(typeof model.maxTokens === "number" ? { maxTokens: model.maxTokens } : {})
+            });
+            cliPinnedModels.push(model.id + "=" + model.contextWindow);
+          }
+          c.models.providers["claude-cli"].models = cliModels;
+        }
       }
 
       if (enableCopilot) {
@@ -396,6 +444,9 @@ else
       }
       if (enableClaudeCli) {
         console.log("openclaw.json: routed anthropic/* through the claude-cli runtime");
+        if (cliPinnedModels.length) {
+          console.log("openclaw.json: pinned claude-cli context windows [" + cliPinnedModels.join(", ") + "] (openclaw defaults them to 200k)");
+        }
       }
       if (enableCopilot) {
         console.log("openclaw.json: routed github-copilot/* through the copilot runtime");

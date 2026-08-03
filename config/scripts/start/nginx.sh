@@ -74,7 +74,6 @@ if command -v keytool &>/dev/null; then
         -noprompt
 else
     docker run --rm \
-        --user "$(id -u):$(id -g)" \
         -e LC_ALL=C.UTF-8 \
         -v "${CERTS_DIR}:/certs" \
         eclipse-temurin:17-jre-jammy \
