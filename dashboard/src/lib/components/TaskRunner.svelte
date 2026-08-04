@@ -90,6 +90,7 @@
   let grokCode = $state('');
   let grokCodeSent = $state(false);
   let grokUrl = $derived(grokLog.match(/::grok-url::(\S+)/)?.[1] ?? '');
+  let grokDeviceCode = $derived(grokLog.match(/::grok-code::(\S+)/)?.[1] ?? '');
   let grokFailed = $derived(/\[auth failed/.test(grokLog));
 
   // Mirror in-flight state out to the parent (bind:busy), e.g. to keep the
@@ -645,7 +646,15 @@
       {#if grokRunning && !grokUrl}
         <p class="dim">Preparing the sign-in link…</p>
       {/if}
-      {#if grokRunning && grokUrl}
+      {#if grokRunning && grokDeviceCode}
+        <p>
+          Enter this code at the link: <code class="devicecode">{grokDeviceCode}</code>
+        </p>
+        <p class="dim">
+          Waiting for you to authorize at accounts.x.ai… The code expires in 30 minutes.
+        </p>
+      {/if}
+      {#if grokRunning && grokUrl && !grokDeviceCode}
         <p class="dim">
           Waiting for you to authorize in the browser… If the browser shows
           “unable to connect to 127.0.0.1:56121” after you approve, copy that page’s full URL and

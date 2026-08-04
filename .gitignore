@@ -8,3 +8,4 @@ dashboard/build/
 .liquidupstart-version
 .liquidupstart-manifest
 *.pyc
+*.bak

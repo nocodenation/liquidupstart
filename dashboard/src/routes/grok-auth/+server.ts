@@ -181,6 +181,7 @@ export async function POST({ request }) {
       let settled = false;
       let raw = '';
       let urlSent = false;
+      let codeSent = false;
       let checking = false;
 
       const settle = (ok: boolean, code?: number) => {
@@ -213,11 +214,19 @@ export async function POST({ request }) {
 
       const onData = (d: Buffer) => {
         raw += d.toString();
+        const clean = stripAnsi(raw);
         if (!urlSent) {
-          const m = stripAnsi(raw).match(/https:\/\/auth\.x\.ai\/\S+/);
+          const m = clean.match(/https:\/\/(?:accounts|auth)\.x\.ai\/\S+?(?=\s)/);
           if (m) {
             urlSent = true;
             write(`::grok-url::${m[0]}\n`);
+          }
+        }
+        if (!codeSent) {
+          const m = clean.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/);
+          if (m) {
+            codeSent = true;
+            write(`::grok-code::${m[1]}\n`);
           }
         }
       };
