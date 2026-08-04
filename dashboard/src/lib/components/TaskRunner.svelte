@@ -62,6 +62,7 @@
   let authCode = $state('');
   let codeSent = $state(false);
   let authLogEl = $state(null);
+  let authProbe = $state('pending');
 
   // GitHub Copilot sign-in (OpenClaw native github-copilot provider). Device
   // flow: show a URL + code; the CLI polls and completes on authorize — no
@@ -71,6 +72,7 @@
   let copilotRunning = $state(false);
   let copilotOk = $state(false);
   let copilotLogEl = $state(null);
+  let copilotProbe = $state('pending');
   let copilotUrl = $derived(copilotLog.match(/https:\/\/github\.com\/login\/device/)?.[0] ?? '');
   let copilotCode = $derived(copilotLog.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1] ?? '');
 
@@ -80,6 +82,7 @@
   let codexOk = $state(false);
   let codexCode = $state('');
   let codexCodeSent = $state(false);
+  let codexProbe = $state('pending');
   let codexUrl = $derived(codexLog.match(/::codex-url::(\S+)/)?.[1] ?? '');
   let codexFailed = $derived(/\[auth failed/.test(codexLog));
 
@@ -89,6 +92,7 @@
   let grokOk = $state(false);
   let grokCode = $state('');
   let grokCodeSent = $state(false);
+  let grokProbe = $state('pending');
   let grokUrl = $derived(grokLog.match(/::grok-url::(\S+)/)?.[1] ?? '');
   let grokDeviceCode = $derived(grokLog.match(/::grok-code::(\S+)/)?.[1] ?? '');
   let grokFailed = $derived(/\[auth failed/.test(grokLog));
@@ -115,13 +119,19 @@
   });
 
   // Detected mid-stream so the sign-in panels appear right away while the rest
-  // of the start keeps running; derived from the shared log so the banners
-  // reappear after navigating away and back.
+  // of the start keeps running. The retained log still carries those markers
+  // after navigating away and back, so it only speaks for providers the live
+  // probe could not answer for — otherwise a finished sign-in would show up as
+  // "needed" again on every later visit.
   $effect(() => {
-    if (!authOk && task.log.includes('ACTION REQUIRED')) needClaudeAuth = true;
-    if (!copilotOk && task.log.includes('::aiw-copilot-auth-required::')) needCopilotAuth = true;
-    if (!codexOk && task.log.includes('::aiw-codex-auth-required::')) needCodexAuth = true;
-    if (!grokOk && task.log.includes('::aiw-grok-auth-required::')) needGrokAuth = true;
+    if (!authOk && authProbe === 'unknown' && task.log.includes('ACTION REQUIRED'))
+      needClaudeAuth = true;
+    if (!copilotOk && copilotProbe === 'unknown' && task.log.includes('::aiw-copilot-auth-required::'))
+      needCopilotAuth = true;
+    if (!codexOk && codexProbe === 'unknown' && task.log.includes('::aiw-codex-auth-required::'))
+      needCodexAuth = true;
+    if (!grokOk && grokProbe === 'unknown' && task.log.includes('::aiw-grok-auth-required::'))
+      needGrokAuth = true;
   });
   $effect(() => {
     authLog;
@@ -136,16 +146,23 @@
   // fresh dashboard open, build done but not started yet — sign-in surfaces
   // through the Start run's ACTION REQUIRED banner, not on page load.
   async function probeClaudeAuth() {
-    if (authOk || !running) return;
+    if (authOk) return;
+    if (!running) {
+      authProbe = 'unknown';
+      return;
+    }
     try {
       const res = await fetch('/claude-auth');
       if (res.ok) {
         const { needed } = await res.json();
-        if (needed) needClaudeAuth = true;
+        authProbe = needed ? 'needed' : 'ok';
+        needClaudeAuth = needed;
+        return;
       }
     } catch {
       // best-effort; in-log banner detection still applies
     }
+    authProbe = 'unknown';
   }
 
   $effect(() => {
@@ -154,16 +171,23 @@
 
   // Same idea as probeClaudeAuth, for the native Copilot provider.
   async function probeCopilotAuth() {
-    if (copilotOk || !running) return;
+    if (copilotOk) return;
+    if (!running) {
+      copilotProbe = 'unknown';
+      return;
+    }
     try {
       const res = await fetch('/copilot-auth');
       if (res.ok) {
         const { needed } = await res.json();
-        if (needed) needCopilotAuth = true;
+        copilotProbe = needed ? 'needed' : 'ok';
+        needCopilotAuth = needed;
+        return;
       }
     } catch {
       // best-effort
     }
+    copilotProbe = 'unknown';
   }
 
   $effect(() => {
@@ -171,16 +195,23 @@
   });
 
   async function probeCodexAuth() {
-    if (codexOk || !running) return;
+    if (codexOk) return;
+    if (!running) {
+      codexProbe = 'unknown';
+      return;
+    }
     try {
       const res = await fetch('/codex-auth');
       if (res.ok) {
         const { needed } = await res.json();
-        if (needed) needCodexAuth = true;
+        codexProbe = needed ? 'needed' : 'ok';
+        needCodexAuth = needed;
+        return;
       }
     } catch {
       // best-effort
     }
+    codexProbe = 'unknown';
   }
 
   $effect(() => {
@@ -188,16 +219,23 @@
   });
 
   async function probeGrokAuth() {
-    if (grokOk || !running) return;
+    if (grokOk) return;
+    if (!running) {
+      grokProbe = 'unknown';
+      return;
+    }
     try {
       const res = await fetch('/grok-auth');
       if (res.ok) {
         const { needed } = await res.json();
-        if (needed) needGrokAuth = true;
+        grokProbe = needed ? 'needed' : 'ok';
+        needGrokAuth = needed;
+        return;
       }
     } catch {
       // best-effort
     }
+    grokProbe = 'unknown';
   }
 
   $effect(() => {

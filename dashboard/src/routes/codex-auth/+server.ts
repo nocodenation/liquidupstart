@@ -216,7 +216,7 @@ export async function POST({ request }) {
       const onData = (d: Buffer) => {
         raw += d.toString();
         if (!urlSent) {
-          const m = stripAnsi(raw).match(/https:\/\/auth\.openai\.com\/\S+/);
+          const m = stripAnsi(raw).match(/https:\/\/auth\.openai\.com\/\S+?(?=\s)/);
           if (m) {
             urlSent = true;
             write(`::codex-url::${m[0]}\n`);
