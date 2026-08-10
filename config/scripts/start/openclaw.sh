@@ -67,9 +67,13 @@ SECRETS_DIR="${PROJECT_DIR}/volumes/_openclaw-auth-profile-secrets"
 # ENABLE_ANTHROPIC_CLAUDE_CODE=1.
 CLAUDE_DIR="${PROJECT_DIR}/volumes/_openclaw-claude"
 
-for dir in "${STATE_DIR}" "${WORKSPACE_DIR}" "${SECRETS_DIR}" "${CLAUDE_DIR}"; do
+for dir in "${STATE_DIR}" "${WORKSPACE_DIR}"; do
   mkdir -p "$dir"
   chmod 777 "$dir"
+done
+for dir in "${SECRETS_DIR}" "${CLAUDE_DIR}"; do
+  mkdir -p "$dir"
+  chmod 700 "$dir"
 done
 
 # Each ENABLE flag wires its provider/runtime and adds provider/* to OpenClaw's
@@ -92,6 +96,11 @@ LOCAL_LLM_API_KEY="$(get_env LOCAL_LLM_API_KEY)"
 ENABLE_LOCAL=0
 [[ -n "$LOCAL_LLM_API_BASE" ]] && ENABLE_LOCAL=1
 
+ENABLE_PRIVACY="$(get_env PRIVACY_PROXY_ENABLE)"
+[[ -z "$ENABLE_PRIVACY" ]] && ENABLE_PRIVACY=0
+PRIVACY_PROXY_PORT="$(get_env PRIVACY_PROXY_PORT)"
+PRIVACY_PROXY_URL="http://privacy-proxy:${PRIVACY_PROXY_PORT:-8080}"
+
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `onboard
 # --non-interactive --accept-risk` needs no TTY; --skip-health drops the gateway
@@ -105,6 +114,36 @@ if [[ ! -f "$CONFIG_JSON" ]]; then
   docker compose rm -sf openclaw-gateway >/dev/null 2>&1 || true
 else
   echo "OpenClaw config already present at ${CONFIG_JSON}; skipping setup."
+fi
+
+rm -f "${WORKSPACE_DIR}/BOOTSTRAP.md"
+
+IDENTITY_MD="${WORKSPACE_DIR}/IDENTITY.md"
+if [[ ! -f "$IDENTITY_MD" ]] || grep -q 'Fill this in during your first conversation' "$IDENTITY_MD"; then
+  cat > "$IDENTITY_MD" <<'IDENTITY_EOF'
+# IDENTITY.md - Who Am I?
+
+- **Name:** Assistant
+- **Creature:** AI assistant running in the Liquid Upstart stack
+- **Vibe:** direct and concise; gets on with the task
+
+Identity is already settled. Never open a session by asking who you are or who
+the user is — start on what they actually asked for. If they want any of this
+changed, they will say so, and you can update this file then.
+IDENTITY_EOF
+fi
+
+USER_MD="${WORKSPACE_DIR}/USER.md"
+if [[ ! -f "$USER_MD" ]] || grep -qE '^- \*\*Name:\*\*[[:space:]]*$' "$USER_MD"; then
+  cat > "$USER_MD" <<'USER_EOF'
+# USER.md - About Your Human
+
+Nothing recorded yet, and that is fine.
+
+Do not interview the user about themselves, and do not ask for a name, timezone
+or pronouns to get started. Pick these up from what they volunteer in the course
+of the work, and update this file when they do.
+USER_EOF
 fi
 
 # Patch openclaw.json on every start so the gateway works behind the proxy:
@@ -146,11 +185,11 @@ for _tp in \
 done
 
 for _bw in \
-  "${ENABLE_CLAUDE_CLI}:anthropic/*" \
   "${ENABLE_COPILOT}:github-copilot/*" \
   "${ENABLE_CODEX}:openai/*" \
   "${ENABLE_GROK}:xai/*" \
-  "${ENABLE_LOCAL}:local/*"; do
+  "${ENABLE_LOCAL}:local/*" \
+  "${ENABLE_PRIVACY}:privacy/*"; do
   if [[ "${_bw%%:*}" == "1" && ",${MODEL_WILDCARDS}," != *",${_bw##*:},"* ]]; then
     MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_bw##*:}"
   fi
@@ -225,6 +264,8 @@ else
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
     -e ENABLE_GROK="${ENABLE_GROK}" \
     -e ENABLE_LOCAL="${ENABLE_LOCAL}" \
+    -e ENABLE_PRIVACY="${ENABLE_PRIVACY}" \
+    -e PRIVACY_PROXY_URL="${PRIVACY_PROXY_URL}" \
     -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
     -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
     -e LOCAL_LLM_MODELS_JSON="${LOCAL_LLM_MODELS_JSON}" \
@@ -267,6 +308,7 @@ else
       const enableCodex = process.env.ENABLE_CODEX === "1";
       const enableGrok = process.env.ENABLE_GROK === "1";
       const enableLocal = process.env.ENABLE_LOCAL === "1";
+      const enablePrivacy = process.env.ENABLE_PRIVACY === "1";
       c.agents = c.agents || {};
       c.agents.defaults = c.agents.defaults || {};
       c.agents.defaults.models = c.agents.defaults.models || {};
@@ -390,6 +432,29 @@ else
         }
       }
 
+      if (enablePrivacy && process.env.PRIVACY_PROXY_URL) {
+        c.models = c.models || {};
+        c.models.providers = c.models.providers || {};
+        const privacyModels = [
+          { id: "private-default", name: "private-default" },
+          { id: "private-strict", name: "private-strict" },
+        ];
+        if (enableClaudeCli) {
+          for (const id of ["private-claude", "private-claude-opus",
+                            "private-claude-sonnet", "private-claude-fable"]) {
+            privacyModels.push({ id, name: id });
+          }
+        }
+        c.models.providers.privacy = {
+          baseUrl: process.env.PRIVACY_PROXY_URL.replace(/\/+$/, "") + "/v1",
+          api: "openai-completions",
+          apiKey: "local-no-auth",
+          auth: "api-key",
+          timeoutSeconds: 600,
+          models: privacyModels,
+        };
+      }
+
       // Model picker allowlist: add a `provider/*` wildcard per credentialed
       // provider (from MODEL_WILDCARDS) so the picker is not limited to the primary.
       // Idempotent and additive: existing entries (e.g. the claude-cli ref) survive.
@@ -427,6 +492,13 @@ else
         // every load.path at startup and aborts if one is missing, so stale entries
         // (e.g. an old path persisted in openclaw.json) must be dropped.
         c.plugins.load.paths = pluginPaths;
+        const baseAllow = ["anthropic","browser","canvas","codex","device-pair",
+          "file-transfer","memory-core","ollama","openai","openrouter",
+          "phone-control","talk-voice","ingest-pdf"];
+        if (enableGrok) baseAllow.push("xai");
+        const allow = new Set([...(c.plugins.allow || []), ...baseAllow]);
+        c.plugins.allow = [...allow];
+        c.tools = { profile: "full" };
       }
 
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
@@ -458,6 +530,9 @@ else
       }
       if (enableGrok) {
         console.log("openclaw.json: enabled bundled xai plugin (Grok subscription provider for xai/* turns)");
+      }
+      if (enablePrivacy && c.models && c.models.providers && c.models.providers.privacy) {
+        console.log("openclaw.json: registered privacy provider (" + c.models.providers.privacy.baseUrl + ") with models [" + c.models.providers.privacy.models.map((m) => m.id).join(", ") + "] and allowlisted privacy/*");
       }
       if (enableLocal && c.models && c.models.providers && c.models.providers.local) {
         console.log("openclaw.json: registered self-hosted local provider (" + c.models.providers.local.baseUrl + ") with models [" + c.models.providers.local.models.map((m) => m.id).join(", ") + "] and allowlisted local/*");

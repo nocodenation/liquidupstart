@@ -18,4 +18,5 @@ export IS_SANDBOX=1
 if [ -n "${OPENCLAW_CLAUDE_OAUTH_TOKEN:-}" ]; then
   export CLAUDE_CODE_OAUTH_TOKEN="$OPENCLAW_CLAUDE_OAUTH_TOKEN"
 fi
+
 exec claude "$@"

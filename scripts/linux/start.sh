@@ -147,6 +147,15 @@ fi
 docker network inspect nocodenation_playground_network_${HTTP_PORT} >/dev/null 2>&1 \
   || docker network create nocodenation_playground_network_${HTTP_PORT}
 
+PRIVACY_PROXY_ENABLE="$(grep -E '^PRIVACY_PROXY_ENABLE=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
+if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
+  PP_PORT="$(grep -E '^PRIVACY_PROXY_PORT=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"")"
+  PP_PORT="${PP_PORT:-8080}"
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
+  export PRIVACY_PROXY_URL="http://privacy-proxy:${PP_PORT}"
+  export PRIVACY_GATEWAY_ANTHROPIC_URL="http://privacy-proxy:${PP_PORT}"
+fi
+
 echo "Starting containers..."
 set +e
 docker compose up -d
@@ -215,3 +224,51 @@ echo "  ${DIM}Liquid ingresses: ports 8900-8999, served on https://PORT.liquid.l
 echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost:${HTTP_PORT}${RST}"
 echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
 echo ""
+
+_copilot_reauth() {
+  echo "  ${CRED}GitHub Copilot: $1.${RST}"
+  local cmd="docker exec -it openclaw-gateway openclaw infer model auth login --provider github-copilot"
+  if [[ -t 0 ]]; then
+    read -r -p "  Authorize GitHub Copilot now? [y/N] " ans
+    [[ "$ans" =~ ^[Yy]$ ]] && eval "$cmd"
+  else
+    echo "  ${DIM}To authorize, run:${RST} ${URL}${cmd}${RST}"
+  fi
+}
+
+check_copilot_auth() {
+  local enabled probe i=0
+  enabled="$(grep -E '^ENABLE_GITHUB_COPILOT=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"")"
+  [[ "${enabled:-0}" == "1" ]] || return 0
+  while ! docker exec openclaw-gateway true 2>/dev/null && [ "$i" -lt 30 ]; do i=$((i+1)); sleep 1; done
+  probe="$(docker exec -i openclaw-gateway node 2>/dev/null <<'NODE'
+const db=require('node:sqlite'),fs=require('fs'),cp=require('child_process');
+const base='/home/node/.openclaw/agents';
+let tok=null;
+try{for(const a of fs.readdirSync(base)){
+  const p=base+'/'+a+'/agent/openclaw-agent.sqlite';
+  if(!fs.existsSync(p))continue;
+  const d=new db.DatabaseSync(p,{readOnly:true});
+  for(const r of d.prepare('select * from auth_profile_store').all()){
+    const m=JSON.stringify(r).match(/ghu_[A-Za-z0-9]+/);if(m){tok=m[0];break}
+  }
+  if(tok)break;
+}}catch(e){}
+if(!tok){console.log('none');process.exit(0)}
+try{
+  const out=cp.execSync("curl -s -m 10 -o /dev/null -w '%{http_code}' -H 'authorization: token "+tok+"' https://api.github.com/copilot_internal/v2/token").toString().trim();
+  console.log(out==='200'?'valid':'invalid');
+}catch(e){console.log('unknown')}
+NODE
+)"
+  echo "${HDR}=== GitHub Copilot ===============================================${RST}"
+  case "${probe:-unknown}" in
+    valid)   echo "  ${SVC}GitHub Copilot:${RST} authorized" ;;
+    none)    _copilot_reauth "no saved login found" ;;
+    invalid) _copilot_reauth "saved token expired or revoked" ;;
+    *)       echo "  ${DIM}GitHub Copilot: auth check skipped (openclaw-gateway or GitHub unreachable)${RST}" ;;
+  esac
+  echo ""
+}
+
+check_copilot_auth

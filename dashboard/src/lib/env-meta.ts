@@ -49,13 +49,27 @@ export function looksSecret(key: string): boolean {
 
 export type InputType = 'text' | 'password' | 'number' | 'checkbox' | 'select-mode';
 
-export function inputType(key: string): InputType {
-  // ENABLE_* provider toggles are 0/1 flags — render as checkboxes.
-  if (/^ENABLE_/.test(key)) return 'checkbox';
-  if (/_MODE$/.test(key)) return 'select-mode';
+export function inputType(key: string, inlineComment = ''): InputType {
+  // 0/1 flags — ENABLE_* provider toggles and *_ENABLE settings (e.g. the
+  // PRIVACY_PROXY_* switches) — render as checkboxes.
+  if (/^ENABLE_|_ENABLE$/.test(key)) return 'checkbox';
+  // A key that declares its choices (see selectOptions) becomes a dropdown.
+  if (selectOptions(key, inlineComment).length) return 'select-mode';
   if (/PORT$|TIMEOUT$/.test(key)) return 'number';
   if (looksSecret(key)) return 'password';
   return 'text';
+}
+
+// Dropdown choices for a field, taken from the key's inline
+// `# a | b | c` comment in .env.example. The build-config *_MODE keys predate
+// that notation, so they fall back to their add/override pair.
+export function selectOptions(key: string, inlineComment = ''): string[] {
+  const body = inlineComment.replace(/^#\s*/, '').trim();
+  if (body.includes('|')) {
+    const opts = body.split('|').map((o) => o.trim());
+    if (opts.every((o) => /^[A-Za-z0-9_.-]+$/.test(o))) return opts;
+  }
+  return /_MODE$/.test(key) ? ['add', 'override'] : [];
 }
 
 // Sections rendered collapsed by default (matched against the full banner
@@ -80,6 +94,7 @@ const SECTION_DESCRIPTIONS: [RegExp, string][] = [
   [/LLM PROVIDER API KEYS/i, 'API keys of LLM providers, used by the AI services (optional).'],
   [/OPENCLAW CONFIGURATION/i, 'Model & backend selection for OpenClaw, the recommended AI harness.'],
   [/OPENCODE CONFIGURATION/i, 'Self-hosted local LLM endpoint, shared by OpenCode and OpenClaw.'],
+  [/PRIVACY PROXY/i, 'Privacy model for AI tools — connect to it like a local model; it cleans messages before the cloud AI sees them and restores the reply.'],
   [/LIQUID AUTHENTICATION/i, 'Login and TLS keystore credentials for Liquid.'],
   [/IMAGE BUILD CONFIGURATION/i, 'Extra packages & commands baked into the Docker images by build.sh.']
 ];

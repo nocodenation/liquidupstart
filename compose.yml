@@ -117,8 +117,8 @@ services:
     container_name: proxy
     restart: unless-stopped
     ports:
-      - "${SYSTEM_HTTP_PORT:-8888}:${SYSTEM_HTTP_PORT:-8888}"
-      - "${SYSTEM_HTTPS_PORT:-8833}:${SYSTEM_HTTPS_PORT:-8833}"
+      - "127.0.0.1:${SYSTEM_HTTP_PORT:-8888}:${SYSTEM_HTTP_PORT:-8888}"
+      - "127.0.0.1:${SYSTEM_HTTPS_PORT:-8833}:${SYSTEM_HTTPS_PORT:-8833}"
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./config/openproject/theme:/usr/share/nginx/custom-theme:ro
@@ -295,6 +295,9 @@ services:
       SYNTHETIC_API_KEY: ${SYNTHETIC_API_KEY:-}
       LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+      PRIVACY_GATEWAY_ANTHROPIC_URL: ${PRIVACY_GATEWAY_ANTHROPIC_URL:-}
+      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
+      ENABLE_ANTHROPIC_CLAUDE_CODE: ${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-}
       POSTGREST_API_KEY: ${API_KEY:-}
       LIQUID_USERNAME: ${LIQUID_USERNAME:-}
@@ -712,6 +715,9 @@ services:
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
       OPENCLAW_CLAUDE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      PRIVACY_GATEWAY_ANTHROPIC_URL: ${PRIVACY_GATEWAY_ANTHROPIC_URL:-}
+      ENABLE_XAI_GROK: ${ENABLE_XAI_GROK:-0}
+      ENABLE_OPENAI_CODEX: ${ENABLE_OPENAI_CODEX:-0}
       POSTGREST_API_KEY: ${API_KEY:-}
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
       LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
@@ -734,6 +740,8 @@ services:
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
+      - ./config/openclaw/openclaw-claude-shim.py:/usr/local/bin/openclaw-claude-shim:ro
+      - ./config/openclaw/openclaw-claude.sh:/usr/local/bin/openclaw-claude:ro
       - ./volumes/data:/data
       - ./volumes/bun_app:/bun_app
       - ./volumes/dashboard:/secrets:ro
@@ -763,6 +771,7 @@ services:
         mkdir -p /home/node/openclaw-plugins
         cp -a /opt/plugins/. /home/node/openclaw-plugins/
         chmod -R go-w /home/node/openclaw-plugins
+        [ -d /home/node/.openclaw/npm ] && chmod -R go-w /home/node/.openclaw/npm 2>/dev/null || true
         exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test:
@@ -781,12 +790,12 @@ services:
 
   openclaw-cli:
     image: liquidupstart/openclaw:latest
-    network_mode: "service:openclaw-gateway"
-    user: "0:0"
-    container_name: openclaw-cli
     profiles:
       - "cli"
       - "full"
+    network_mode: "service:openclaw-gateway"
+    user: "0:0"
+    container_name: openclaw-cli
     env_file:
       - path: config/openclaw/.env
         required: false
@@ -809,6 +818,7 @@ services:
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
       OPENCLAW_CLAUDE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      PRIVACY_GATEWAY_ANTHROPIC_URL: ${PRIVACY_GATEWAY_ANTHROPIC_URL:-}
       TZ: ${OPENCLAW_TZ:-UTC}
       POSTGREST_API_KEY: ${API_KEY:-}
       POSTGREST_URL: ${POSTGREST_URL:-http://postgrest_app:3000}
@@ -831,6 +841,8 @@ services:
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
+      - ./config/openclaw/openclaw-claude-shim.py:/usr/local/bin/openclaw-claude-shim:ro
+      - ./config/openclaw/openclaw-claude.sh:/usr/local/bin/openclaw-claude:ro
       - ./volumes/data:/data
       - ./volumes/dashboard:/secrets:ro
       - ./volumes/python_extensions:/opt/python_extensions
@@ -845,6 +857,58 @@ services:
     entrypoint: ["node", "dist/index.js"]
     depends_on:
       - openclaw-gateway
+
+  privacy-proxy:
+    image: liquidupstart/privacy-proxy:latest
+    container_name: privacy-proxy
+    profiles: ["privacy-proxy"]
+    restart: unless-stopped
+    extra_hosts:
+      - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
+    environment:
+      PRIVACY_PROXY_PORT: ${PRIVACY_PROXY_PORT:-8080}
+      PRIVACY_PROXY_UPSTREAM_URL: ${PRIVACY_PROXY_UPSTREAM_URL:-https://api.openai.com}
+      PRIVACY_PROXY_UPSTREAM_MODEL: ${PRIVACY_PROXY_UPSTREAM_MODEL:-}
+      PRIVACY_PROXY_UPSTREAM_API_KEY: ${PRIVACY_PROXY_UPSTREAM_API_KEY:-}
+      PRIVACY_PROXY_ANTHROPIC_UPSTREAM_URL: ${PRIVACY_PROXY_ANTHROPIC_UPSTREAM_URL:-https://api.anthropic.com}
+      PRIVACY_PROXY_SECURITY_JUDGE_ENABLE: ${PRIVACY_PROXY_SECURITY_JUDGE_ENABLE:-0}
+      PRIVACY_PROXY_REQUEST_TIMEOUT: ${PRIVACY_PROXY_REQUEST_TIMEOUT:-3600}
+      PRIVACY_PROXY_CLAUDE_CLI_TIMEOUT: ${PRIVACY_PROXY_CLAUDE_CLI_TIMEOUT:-3600}
+      PRIVACY_PROXY_CLAUDE_CLI_MODEL: ${PRIVACY_PROXY_CLAUDE_CLI_MODEL:-}
+      PRIVACY_PROXY_CLAUDE_CLI_TOOLS: ${PRIVACY_PROXY_CLAUDE_CLI_TOOLS:-}
+      PRIVACY_PROXY_MCP_TOOL_TIMEOUT: ${PRIVACY_PROXY_MCP_TOOL_TIMEOUT:-300}
+      PRIVACY_PROXY_LOG_LEVEL: ${PRIVACY_PROXY_LOG_LEVEL:-INFO}
+      PRIVACY_PROXY_LOCAL_LLM_ENABLE: ${PRIVACY_PROXY_LOCAL_LLM_ENABLE:-0}
+      PRIVACY_PROXY_LOCAL_LLM_MODEL: ${PRIVACY_PROXY_LOCAL_LLM_MODEL:-}
+      PRIVACY_PROXY_GATE_MODE: ${PRIVACY_PROXY_GATE_MODE:-log}
+      PRIVACY_PROXY_MASK_SCAFFOLDING_ENABLE: ${PRIVACY_PROXY_MASK_SCAFFOLDING_ENABLE:-0}
+      PRIVACY_PROXY_SUFFICIENCY_LOW: ${PRIVACY_PROXY_SUFFICIENCY_LOW:-0.8}
+      PRIVACY_PROXY_SUFFICIENCY_MEDIUM: ${PRIVACY_PROXY_SUFFICIENCY_MEDIUM:-0.5}
+      PRIVACY_PROXY_SEMANTIC_ENABLE: ${PRIVACY_PROXY_SEMANTIC_ENABLE:-0}
+      PRIVACY_PROXY_SEMANTIC_MODE: ${PRIVACY_PROXY_SEMANTIC_MODE:-auto}
+      PRIVACY_PROXY_REWRITER_MODEL: ${PRIVACY_PROXY_REWRITER_MODEL:-}
+      PRIVACY_PROXY_JUDGE_MODEL: ${PRIVACY_PROXY_JUDGE_MODEL:-}
+      PRIVACY_PROXY_ADVERSARY_MODEL: ${PRIVACY_PROXY_ADVERSARY_MODEL:-}
+      PRIVACY_PROXY_FAITHFULNESS_ACCEPT: ${PRIVACY_PROXY_FAITHFULNESS_ACCEPT:-0.85}
+      PRIVACY_PROXY_FAITHFULNESS_SURFACE: ${PRIVACY_PROXY_FAITHFULNESS_SURFACE:-0.70}
+      PRIVACY_PROXY_SEMANTIC_MAX_ROUNDS: ${PRIVACY_PROXY_SEMANTIC_MAX_ROUNDS:-5}
+      PRIVACY_PROXY_SEMANTIC_MAX_RISK: ${PRIVACY_PROXY_SEMANTIC_MAX_RISK:-0.5}
+      PRIVACY_PROXY_SEMANTIC_RESTORE: ${PRIVACY_PROXY_SEMANTIC_RESTORE:-exact}
+      PRIVACY_PROXY_RESPEC_MODEL: ${PRIVACY_PROXY_RESPEC_MODEL:-}
+      PRIVACY_GATEWAY_LLM_CAPTURE: ${PRIVACY_GATEWAY_LLM_CAPTURE:-}
+      PRIVACY_PROXY_VAULT_DIR: /data
+      PRIVACY_PROXY_VAULT_KEY: ${PRIVACY_PROXY_VAULT_KEY:-}
+      PRIVACY_PROXY_VAULT_TTL: ${PRIVACY_PROXY_VAULT_TTL:-}
+      PRIVACY_PROXY_BACKSTOP_MODE: ${PRIVACY_PROXY_BACKSTOP_MODE:-block}
+      PRIVACY_PROXY_AUDIT_ENABLE: ${PRIVACY_PROXY_AUDIT_ENABLE:-1}
+      ENABLE_ANTHROPIC_CLAUDE_CODE: ${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}
+      LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+    volumes:
+      - ./volumes/privacy-proxy:/data
+      - ./volumes/_openclaw-claude:/root/.claude
+    networks:
+      - nocodenation_liquid_upstart_network
 
 networks:
   nocodenation_liquid_upstart_network:

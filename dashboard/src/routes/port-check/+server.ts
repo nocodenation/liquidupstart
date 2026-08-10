@@ -6,6 +6,7 @@
 
 import { json } from '@sveltejs/kit';
 import { spawn } from 'node:child_process';
+import { requireSameOrigin } from '$lib/server/origin';
 
 // Throwaway probe container: the dashboard image is always present and has
 // `true`, which exits at once so the published port is released immediately.
@@ -58,7 +59,10 @@ async function ourPublishedPorts(): Promise<Set<number>> {
   return ports;
 }
 
-export async function GET({ url }) {
+export async function GET({ request, url }) {
+  const blocked = requireSameOrigin(request);
+  if (blocked) return blocked;
+
   const requested = Number(url.searchParams.get('port'));
   // Ports to treat as taken regardless of probe (e.g. the other port field's
   // value, so HTTP and HTTPS never collide).

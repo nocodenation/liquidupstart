@@ -15,7 +15,8 @@ done
 # Stop and remove containers. cleanup is the full reset; down.sh stays
 # non-destructive and is not used here.
 echo "Stopping existing containers..."
-docker compose down --volumes --remove-orphans
+COMPOSE_PROFILES="$(docker compose config --profiles 2>/dev/null | paste -sd, -)" \
+  docker compose down --volumes --remove-orphans
 
 # Older installs named containers <service>-<APP_ID> (a 14-digit timestamp) under
 # a per-checkout compose project, so `docker compose down` above can't reach them.

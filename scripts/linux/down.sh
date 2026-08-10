@@ -7,4 +7,5 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_DIR}"
 
 echo "Stopping existing containers..."
-docker compose down
+COMPOSE_PROFILES="$(docker compose config --profiles 2>/dev/null | paste -sd, -)" \
+  docker compose down

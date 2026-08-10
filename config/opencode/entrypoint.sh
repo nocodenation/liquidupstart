@@ -78,10 +78,14 @@ _PROVIDERS="    \"llamacpp\": {
       }
     }"
 
+_ANTHROPIC_BASEURL_FIELD=""
+[ -n "${PRIVACY_GATEWAY_ANTHROPIC_URL:-}" ] && _ANTHROPIC_BASEURL_FIELD="
+        \"baseURL\": \"${PRIVACY_GATEWAY_ANTHROPIC_URL}\","
+
 if [ -n "${ANTHROPIC_API_KEY}" ]; then
     _PROVIDERS="${_PROVIDERS},
     \"anthropic\": {
-      \"options\": {
+      \"options\": {${_ANTHROPIC_BASEURL_FIELD}
         \"apiKey\": \"${ANTHROPIC_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
@@ -107,6 +111,47 @@ if [ -n "${OPENROUTER_API_KEY}" ]; then
         \"apiKey\": \"${OPENROUTER_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      }
+    }"
+fi
+
+if [ -n "${PRIVACY_PROXY_URL:-}" ]; then
+    _PRIVACY_CLAUDE=""
+    if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
+        _PRIVACY_CLAUDE=",
+        \"private-claude\": {
+          \"name\": \"privacy: private-claude\",
+          \"modalities\": {
+            \"input\": [\"text\"],
+            \"output\": [\"text\"]
+          }
+        }"
+    fi
+    _PROVIDERS="${_PROVIDERS},
+    \"privacy\": {
+      \"npm\": \"@ai-sdk/openai-compatible\",
+      \"name\": \"privacy\",
+      \"options\": {
+        \"baseURL\": \"${PRIVACY_PROXY_URL}/v1\",
+        \"apiKey\": \"local-no-auth\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      },
+      \"models\": {
+        \"private-default\": {
+          \"name\": \"privacy: private-default\",
+          \"modalities\": {
+            \"input\": [\"text\", \"image\"],
+            \"output\": [\"text\"]
+          }
+        },
+        \"private-strict\": {
+          \"name\": \"privacy: private-strict\",
+          \"modalities\": {
+            \"input\": [\"text\", \"image\"],
+            \"output\": [\"text\"]
+          }
+        }${_PRIVACY_CLAUDE}
       }
     }"
 fi
