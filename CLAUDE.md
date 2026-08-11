@@ -11,7 +11,8 @@ from the browser.
 > (`ghcr.io/nocodenation/privacy-proxy`, source at `nocodenation/privacy-proxy`). This repo only
 > deploys it: `config/privacy-proxy/templates/Dockerfile` derives a local image from the released
 > one, and `compose.yml`/`.env.example` §7 hold the wiring. Do not add its source back here — it is
-> proprietary and this repo is Apache-2.0.
+> proprietary and this repo is Apache-2.0. `.env.example` §11 (`PRIVACY_PROXY_DEV_SRC`) points the
+> build at a local checkout instead of the release image, for working on the service itself.
 
 ## Layout
 

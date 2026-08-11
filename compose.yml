@@ -907,6 +907,7 @@ services:
     volumes:
       - ./volumes/privacy-proxy:/data
       - ./volumes/_openclaw-claude:/root/.claude
+      - ./config/agents/skills:/root/.claude/skills:ro
     networks:
       - nocodenation_liquid_upstart_network
 

@@ -1,4 +1,5 @@
-FROM ghcr.io/nocodenation/privacy-proxy:latest
+ARG PRIVACY_PROXY_BASE_IMAGE=ghcr.io/nocodenation/privacy-proxy:latest
+FROM ${PRIVACY_PROXY_BASE_IMAGE}
 
 ARG ENABLE_ANTHROPIC_CLAUDE_CODE=0
 
