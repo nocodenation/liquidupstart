@@ -8,6 +8,8 @@ RUN apt-get update \
 #RUN npm install -g ytdl-core
 RUN npm install -g opencode-ai
 
+# GRAPHIFY_INSTALL
+
 # POST_INSTALL_COMMANDS
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

@@ -21,6 +21,8 @@ RUN set -e; \
       echo "WARN: 'PAGE_SIZE_DEFAULT = 20' not found in /app/dist; /models page-size patch skipped (OpenClaw upstream changed)"; \
     fi
 
+# GRAPHIFY_INSTALL
+
 # POST_INSTALL_COMMANDS
 
 USER node
