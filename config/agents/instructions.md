@@ -178,3 +178,23 @@ from memory.
 | `bun-app` | You're creating or modifying the SSR React app in `/bun_app` |
 | `liquid-api` | You need the Liquid REST API mechanics — auth token, CRUD calls, starting/stopping processors, setting up an HTTP ingress, routing data between services, or the user-facing canvas/ingress links |
 | `liquid` | You're **designing or building** a Liquid flow — laying out processors/funnels/connections, termination & cleanup rules, visual layout standards, or building and deploying a custom processor / NAR (pairs with `liquid-api` for the actual calls) |
+| `graphify` | You need to understand a repo's structure, architecture, or cross-file relationships, and the `graphify` CLI is installed — see the rule below |
+
+---
+
+## Graphify — repo knowledge graphs
+
+Requires the `graphify` CLI, which is only present when the stack was built with
+`ENABLE_GRAPHIFY=1` — check with `command -v graphify` and skip this section if
+absent. For any repository you need to understand (under `/data`, `/bun_app`, or
+anywhere you cloned it):
+
+1. **First time** (on demand, not on every clone): run `graphify extract .` in the
+   repo root — it can take minutes on large repos, so say so when you start. Then
+   run `graphify hook install` so your own commits keep the graph current, and
+   make sure `graphify-out/` is in that repo's `.gitignore`.
+2. **From then on**: prefer `graphify query "<question>"`, `graphify path A B`,
+   and `graphify explain "<concept>"` over grepping for cross-file questions.
+   After pulling upstream changes, run `graphify update .`.
+
+The graph is a local artifact of the clone — never commit `graphify-out/`.
