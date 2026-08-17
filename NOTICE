@@ -9,6 +9,11 @@ components are pulled as container images on the end user's machine, and each
 is governed by its own license. Running this stack means accepting the licenses
 of the software it deploys.
 
+Exception — bundled files:
+- config/agents/skills/ponytail* — from Ponytail
+  (https://github.com/DietrichGebert/ponytail), MIT License,
+  Copyright (c) 2026 DietrichGebert (see config/agents/skills/ponytail/LICENSE).
+
 Third-party software deployed by this stack:
 
   PostgreSQL              PostgreSQL License

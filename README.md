@@ -38,7 +38,7 @@ sandbox they can spin up, throw away, and spin up again.
 - 🔐 **Auto-generated secrets** — empty values in `.env` are filled with strong random ones on first save.
 - 🧩 **Batteries included** — Postgres + pgvector, PostgREST, Swagger, pgAdmin, OpenProject,
   Nextcloud + Collabora, Liquid (data flows), and AI agents.
-- 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
+- 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject, with an optional [Ponytail](https://github.com/DietrichGebert/ponytail) minimal-code mode (`PONYTAIL_LEVEL`).
 - 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro.
 - 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
 
