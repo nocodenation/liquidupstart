@@ -302,6 +302,7 @@ services:
       SYSTEM_HTTP_PORT: ${SYSTEM_HTTP_PORT:-8888}
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
+      PONYTAIL_LEVEL: ${PONYTAIL_LEVEL:-lite}
     volumes:
       - ./config/agents/instructions.md:/opencode/instructions.md:ro
       - ./config/agents/skills:/root/.config/opencode/skills
@@ -724,6 +725,7 @@ services:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PONYTAIL_LEVEL: ${PONYTAIL_LEVEL:-lite}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ./volumes/_openclaw:/home/node/.openclaw

@@ -178,3 +178,20 @@ from memory.
 | `bun-app` | You're creating or modifying the SSR React app in `/bun_app` |
 | `liquid-api` | You need the Liquid REST API mechanics — auth token, CRUD calls, starting/stopping processors, setting up an HTTP ingress, routing data between services, or the user-facing canvas/ingress links |
 | `liquid` | You're **designing or building** a Liquid flow — laying out processors/funnels/connections, termination & cleanup rules, visual layout standards, or building and deploying a custom processor / NAR (pairs with `liquid-api` for the actual calls) |
+| `ponytail` | You're about to write, refactor, or fix code and `$PONYTAIL_LEVEL` is not `off` — see the rule below |
+| `ponytail-review` | You're asked to review code for over-engineering, bloat, or unnecessary complexity |
+
+---
+
+## Ponytail — minimal-code mode
+
+The `ponytail` skill makes you write the least code that works. The environment
+variable `PONYTAIL_LEVEL` (`off` | `lite` | `full` | `ultra`) controls it:
+
+- Set to `lite`, `full`, or `ultra` → apply the `ponytail` skill at that level to
+  **every coding task**, without waiting to be asked.
+- Set to `off` or unset → use the skill only when explicitly requested
+  ("ponytail", "be lazy", "yagni", "simplest solution").
+
+The level from the environment is the default; an explicit user request
+("/ponytail full", "stop ponytail") overrides it for the session.
