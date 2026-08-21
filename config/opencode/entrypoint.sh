@@ -78,14 +78,10 @@ _PROVIDERS="    \"llamacpp\": {
       }
     }"
 
-_ANTHROPIC_BASEURL_FIELD=""
-[ -n "${PRIVACY_GATEWAY_ANTHROPIC_URL:-}" ] && _ANTHROPIC_BASEURL_FIELD="
-        \"baseURL\": \"${PRIVACY_GATEWAY_ANTHROPIC_URL}\","
-
 if [ -n "${ANTHROPIC_API_KEY}" ]; then
     _PROVIDERS="${_PROVIDERS},
     \"anthropic\": {
-      \"options\": {${_ANTHROPIC_BASEURL_FIELD}
+      \"options\": {
         \"apiKey\": \"${ANTHROPIC_API_KEY}\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
@@ -116,44 +112,52 @@ if [ -n "${OPENROUTER_API_KEY}" ]; then
 fi
 
 if [ -n "${PRIVACY_PROXY_URL:-}" ]; then
-    _PRIVACY_CLAUDE=""
-    if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
-        _PRIVACY_CLAUDE=",
-        \"private-claude\": {
-          \"name\": \"privacy: private-claude\",
+    _discover_ids() {
+        _i=0
+        while [ "$_i" -lt 10 ]; do
+            _c="$(curl -s -o /tmp/privacy_models.json -w '%{http_code}' "$1" 2>/dev/null || true)"
+            [ "$_c" = "200" ] && { jq -r ".data[].id | select(test(\"${2:-.}\"))" /tmp/privacy_models.json 2>/dev/null; return; }
+            [ "$_c" = "401" ] && { echo "WARNING: ${1} -> HTTP 401: no key for that provider in .env section 5 — provider skipped." >&2; return; }
+            _i=$((_i + 1)); sleep 3
+        done
+        echo "WARNING: ${1} unreachable (HTTP ${_c}) — provider skipped." >&2
+    }
+    _privacy_provider() {
+        _map=""
+        for _m in $4; do
+            [ -z "$_map" ] || _map="${_map},"
+            _map="${_map}
+        \"${_m}\": {
+          \"name\": \"${1}: ${_m}\",
           \"modalities\": {
-            \"input\": [\"text\"],
+            \"input\": [\"text\", \"image\"],
             \"output\": [\"text\"]
           }
         }"
-    fi
-    _PROVIDERS="${_PROVIDERS},
-    \"privacy\": {
-      \"npm\": \"@ai-sdk/openai-compatible\",
-      \"name\": \"privacy\",
+        done
+        [ -z "$_map" ] && return
+        _PROVIDERS="${_PROVIDERS},
+    \"${1}\": {
+      \"npm\": \"${2}\",
+      \"name\": \"${1}\",
       \"options\": {
-        \"baseURL\": \"${PRIVACY_PROXY_URL}/v1\",
+        \"baseURL\": \"${3}\",
         \"apiKey\": \"local-no-auth\",
         \"timeout\": ${_TIMEOUT},
         \"chunkTimeout\": ${_CHUNK_TIMEOUT}
       },
-      \"models\": {
-        \"private-default\": {
-          \"name\": \"privacy: private-default\",
-          \"modalities\": {
-            \"input\": [\"text\", \"image\"],
-            \"output\": [\"text\"]
-          }
-        },
-        \"private-strict\": {
-          \"name\": \"privacy: private-strict\",
-          \"modalities\": {
-            \"input\": [\"text\", \"image\"],
-            \"output\": [\"text\"]
-          }
-        }${_PRIVACY_CLAUDE}
+      \"models\": {${_map}
       }
     }"
+    }
+    _privacy_provider privacy-openai "@ai-sdk/openai-compatible" "${PRIVACY_PROXY_URL}/openai/v1" \
+        "$(_discover_ids "${PRIVACY_PROXY_URL}/openai/v1/models" "^(gpt-[0-9]|o[0-9]|chatgpt)" | grep -vE "audio|realtime|transcribe|tts|image|search|instruct|moderation|embed|-[0-9]{4}-[0-9]{2}-[0-9]{2}$")"
+    _privacy_provider privacy-anthropic "@ai-sdk/anthropic" "${PRIVACY_PROXY_URL}/anthropic" \
+        "$(_discover_ids "${PRIVACY_PROXY_URL}/anthropic/v1/models")"
+    if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
+        _privacy_provider privacy "@ai-sdk/openai-compatible" "${PRIVACY_PROXY_URL}/v1" \
+            "private-claude private-claude-opus private-claude-sonnet private-claude-fable"
+    fi
 fi
 
 # The providers below are resolved from the bundled models.dev registry (npm

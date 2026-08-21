@@ -100,6 +100,10 @@ ENABLE_PRIVACY="$(get_env PRIVACY_PROXY_ENABLE)"
 [[ -z "$ENABLE_PRIVACY" ]] && ENABLE_PRIVACY=0
 PRIVACY_PROXY_PORT="$(get_env PRIVACY_PROXY_PORT)"
 PRIVACY_PROXY_URL="http://privacy-proxy:${PRIVACY_PROXY_PORT:-8080}"
+PRIVACY_OPENAI=0
+[[ "$ENABLE_PRIVACY" == 1 && -n "$(get_env OPENAI_API_KEY)" ]] && PRIVACY_OPENAI=1
+PRIVACY_ANTHROPIC=0
+[[ "$ENABLE_PRIVACY" == 1 && ( -n "$(get_env ANTHROPIC_API_KEY)" || "$ENABLE_CLAUDE_CLI" == 1 ) ]] && PRIVACY_ANTHROPIC=1
 
 # Bootstrap baseline config + workspace in the state volume, only when
 # openclaw.json is missing (subsequent starts may carry user edits). `onboard
@@ -189,7 +193,8 @@ for _bw in \
   "${ENABLE_CODEX}:openai/*" \
   "${ENABLE_GROK}:xai/*" \
   "${ENABLE_LOCAL}:local/*" \
-  "${ENABLE_PRIVACY}:privacy/*"; do
+  "${PRIVACY_OPENAI}:privacy-openai/*" \
+  "${PRIVACY_ANTHROPIC}:privacy-anthropic/*"; do
   if [[ "${_bw%%:*}" == "1" && ",${MODEL_WILDCARDS}," != *",${_bw##*:},"* ]]; then
     MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_bw##*:}"
   fi
@@ -264,7 +269,8 @@ else
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
     -e ENABLE_GROK="${ENABLE_GROK}" \
     -e ENABLE_LOCAL="${ENABLE_LOCAL}" \
-    -e ENABLE_PRIVACY="${ENABLE_PRIVACY}" \
+    -e PRIVACY_OPENAI="${PRIVACY_OPENAI}" \
+    -e PRIVACY_ANTHROPIC="${PRIVACY_ANTHROPIC}" \
     -e PRIVACY_PROXY_URL="${PRIVACY_PROXY_URL}" \
     -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
     -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
@@ -308,10 +314,43 @@ else
       const enableCodex = process.env.ENABLE_CODEX === "1";
       const enableGrok = process.env.ENABLE_GROK === "1";
       const enableLocal = process.env.ENABLE_LOCAL === "1";
-      const enablePrivacy = process.env.ENABLE_PRIVACY === "1";
+      const privacyOpenai = process.env.PRIVACY_OPENAI === "1";
+      const privacyAnthropic = process.env.PRIVACY_ANTHROPIC === "1";
       c.agents = c.agents || {};
       c.agents.defaults = c.agents.defaults || {};
       c.agents.defaults.models = c.agents.defaults.models || {};
+
+      // The bundled model catalog of a provider plugin: every node with a string id and a
+      // numeric contextWindow, deduplicated to the widest entry per id.
+      const catalogOf = (pluginId) => {
+        const found = [];
+        try {
+          const manifest = JSON.parse(fs.readFileSync("/app/dist/extensions/" + pluginId + "/openclaw.plugin.json", "utf8"));
+          const collect = (node) => {
+            if (Array.isArray(node)) { node.forEach(collect); return; }
+            if (!node || typeof node !== "object") return;
+            if (typeof node.id === "string" && typeof node.contextWindow === "number") found.push(node);
+            Object.values(node).forEach(collect);
+          };
+          collect(manifest);
+        } catch (e) {
+          console.log("openclaw.json: could not read the " + pluginId + " model catalog (" + e.message + ")");
+        }
+        const widest = new Map();
+        for (const m of found) {
+          const prev = widest.get(m.id);
+          if (!prev || m.contextWindow > prev.contextWindow) widest.set(m.id, m);
+        }
+        return [...widest.values()];
+      };
+      const modelEntry = (m, suffix) => ({
+        id: m.id,
+        name: (m.name || m.id).replace(/\s*\((Claude CLI|private)\)\s*$/, "") + " (" + suffix + ")",
+        reasoning: m.reasoning === true,
+        input: Array.isArray(m.input) ? m.input : ["text"],
+        contextWindow: m.contextWindow,
+        ...(typeof m.maxTokens === "number" ? { maxTokens: m.maxTokens } : {})
+      });
 
       let cliPinnedModels = [];
 
@@ -324,29 +363,10 @@ else
         c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
         c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
 
-        let anthropicCatalog = [];
-        try {
-          const manifest = JSON.parse(fs.readFileSync("/app/dist/extensions/anthropic/openclaw.plugin.json", "utf8"));
-          const collect = (node) => {
-            if (Array.isArray(node)) { node.forEach(collect); return; }
-            if (!node || typeof node !== "object") return;
-            if (typeof node.id === "string" && typeof node.contextWindow === "number") anthropicCatalog.push(node);
-            Object.values(node).forEach(collect);
-          };
-          collect(manifest);
-        } catch (e) {
-          console.log("openclaw.json: could not read the Anthropic model catalog (" + e.message + "); leaving claude-cli context windows at their defaults");
-        }
-
         const CLI_DEFAULT_CONTEXT_WINDOW = 200000;
         const cliServes = (id) => /^claude-(opus|sonnet|fable|mythos)-/.test(id);
-        const widest = new Map();
-        for (const m of anthropicCatalog) {
-          if (!cliServes(m.id) || m.contextWindow <= CLI_DEFAULT_CONTEXT_WINDOW) continue;
-          const prev = widest.get(m.id);
-          if (!prev || m.contextWindow > prev.contextWindow) widest.set(m.id, m);
-        }
-        const candidates = [...widest.values()];
+        const candidates = catalogOf("anthropic")
+          .filter((m) => cliServes(m.id) && m.contextWindow > CLI_DEFAULT_CONTEXT_WINDOW);
 
         if (candidates.length) {
           c.models = c.models || {};
@@ -357,14 +377,7 @@ else
             : [];
           for (const model of candidates) {
             if (cliModels.some((m) => m && m.id === model.id)) continue;
-            cliModels.push({
-              id: model.id,
-              name: (model.name || model.id).replace(/\s*\(Claude CLI\)\s*$/, "") + " (Claude CLI)",
-              reasoning: model.reasoning === true,
-              input: Array.isArray(model.input) ? model.input : ["text"],
-              contextWindow: model.contextWindow,
-              ...(typeof model.maxTokens === "number" ? { maxTokens: model.maxTokens } : {})
-            });
+            cliModels.push(modelEntry(model, "Claude CLI"));
             cliPinnedModels.push(model.id + "=" + model.contextWindow);
           }
           c.models.providers["claude-cli"].models = cliModels;
@@ -432,27 +445,23 @@ else
         }
       }
 
-      if (enablePrivacy && process.env.PRIVACY_PROXY_URL) {
-        c.models = c.models || {};
-        c.models.providers = c.models.providers || {};
-        const privacyModels = [
-          { id: "private-default", name: "private-default" },
-          { id: "private-strict", name: "private-strict" },
-        ];
-        if (enableClaudeCli) {
-          for (const id of ["private-claude", "private-claude-opus",
-                            "private-claude-sonnet", "private-claude-fable"]) {
-            privacyModels.push({ id, name: id });
-          }
-        }
-        c.models.providers.privacy = {
-          baseUrl: process.env.PRIVACY_PROXY_URL.replace(/\/+$/, "") + "/v1",
-          api: "openai-completions",
-          apiKey: "local-no-auth",
-          auth: "api-key",
-          timeoutSeconds: 600,
-          models: privacyModels,
+      // One privacy provider per credentialed upstream, carrying the catalog of that
+      // upstream and routed through the dialect-native door the proxy has for it.
+      if (c.models && c.models.providers) delete c.models.providers.privacy;
+      delete c.agents.defaults.models["privacy/*"];
+      if ((privacyOpenai || privacyAnthropic) && process.env.PRIVACY_PROXY_URL) {
+        const proxy = process.env.PRIVACY_PROXY_URL.replace(/\/+$/, "");
+        const privacyProvider = (pluginId, api, baseUrl) => {
+          const models = catalogOf(pluginId).map((m) => modelEntry(m, "private"));
+          if (!models.length) { console.log("openclaw.json: no " + pluginId + " catalog; privacy-" + pluginId + " skipped"); return; }
+          c.models = c.models || {};
+          c.models.providers = c.models.providers || {};
+          c.models.providers["privacy-" + pluginId] = {
+            baseUrl, api, apiKey: "local-no-auth", auth: "api-key", timeoutSeconds: 600, models,
+          };
         };
+        if (privacyOpenai) privacyProvider("openai", "openai-completions", proxy + "/openai/v1");
+        if (privacyAnthropic) privacyProvider("anthropic", "anthropic-messages", proxy + "/anthropic");
       }
 
       // Model picker allowlist: add a `provider/*` wildcard per credentialed
@@ -531,8 +540,9 @@ else
       if (enableGrok) {
         console.log("openclaw.json: enabled bundled xai plugin (Grok subscription provider for xai/* turns)");
       }
-      if (enablePrivacy && c.models && c.models.providers && c.models.providers.privacy) {
-        console.log("openclaw.json: registered privacy provider (" + c.models.providers.privacy.baseUrl + ") with models [" + c.models.providers.privacy.models.map((m) => m.id).join(", ") + "] and allowlisted privacy/*");
+      for (const pid of ["privacy-openai", "privacy-anthropic"]) {
+        const prov = c.models && c.models.providers && c.models.providers[pid];
+        if (prov) console.log("openclaw.json: registered " + pid + " (" + prov.baseUrl + ") with models [" + prov.models.map((m) => m.id).join(", ") + "] and allowlisted " + pid + "/*");
       }
       if (enableLocal && c.models && c.models.providers && c.models.providers.local) {
         console.log("openclaw.json: registered self-hosted local provider (" + c.models.providers.local.baseUrl + ") with models [" + c.models.providers.local.models.map((m) => m.id).join(", ") + "] and allowlisted local/*");

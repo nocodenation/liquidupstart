@@ -13,6 +13,12 @@ from the browser.
 > one, and `compose.yml`/`.env.example` §7 hold the wiring. Do not add its source back here — it is
 > proprietary and this repo is Apache-2.0. `.env.example` §11 (`PRIVACY_PROXY_DEV_SRC`) points the
 > build at a local checkout instead of the release image, for working on the service itself.
+> It signs upstream requests with the shared §5 keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+> `XAI_API_KEY`, passed unprefixed in compose) and the agents reach it as `privacy-openai` /
+> `privacy-anthropic` carrying the providers' own catalogues — `config/scripts/start/openclaw.sh`
+> mirrors the bundled plugin manifests, `config/opencode/entrypoint.sh` discovers from the proxy's
+> `GET /{provider}/v1/models`. The built-in `anthropic`/`openai` providers are never pointed at it.
+> Details: `docs/SPECIFICATION.md` §7.
 
 ## Layout
 

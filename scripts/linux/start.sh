@@ -153,7 +153,6 @@ if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
   PP_PORT="${PP_PORT:-8080}"
   export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
   export PRIVACY_PROXY_URL="http://privacy-proxy:${PP_PORT}"
-  export PRIVACY_GATEWAY_ANTHROPIC_URL="http://privacy-proxy:${PP_PORT}"
 fi
 
 echo "Starting containers..."

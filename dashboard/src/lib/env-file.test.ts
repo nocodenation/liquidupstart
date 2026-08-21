@@ -221,7 +221,7 @@ describe('env-meta', () => {
     expect(inputType('PRIVACY_PROXY_SECURITY_JUDGE_ENABLE')).toBe('checkbox');
     // non-flag privacy-proxy keys stay their normal widgets
     expect(inputType('PRIVACY_PROXY_BACKSTOP_MODE')).toBe('select-mode');
-    expect(inputType('PRIVACY_PROXY_UPSTREAM_URL')).toBe('text');
+    expect(inputType('PRIVACY_PROXY_CLAUDE_CLI_MODEL')).toBe('text');
   });
 
   test('dropdown options come from the inline comment, add/override only as fallback', () => {

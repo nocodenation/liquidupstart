@@ -167,7 +167,7 @@ Runs the per-service build scripts in order — `opencode`, `bun-runner`, `liqui
    `nginx`, `liquid`, `openclaw`.
 2. Ensures the docker network exists.
 3. **Privacy gate:** greps `PRIVACY_PROXY_ENABLE` out of `.env`; when `1`, appends `privacy-proxy`
-   to `COMPOSE_PROFILES` and exports `PRIVACY_PROXY_URL` and `PRIVACY_GATEWAY_ANTHROPIC_URL`, both
+   to `COMPOSE_PROFILES` and exports `PRIVACY_PROXY_URL`,
    `http://privacy-proxy:${PRIVACY_PROXY_PORT:-8080}`.
 4. `docker compose up -d`, with explicit diagnosis of host port conflicts (rootless Docker means
    another user's containers do not appear in `docker ps`).
@@ -222,23 +222,39 @@ local LLM running on the host.
 
 ### 7.5 Consumers
 
-**OpenCode** (`config/opencode/entrypoint.sh`) adds a `privacy` provider using
-`@ai-sdk/openai-compatible` at `${PRIVACY_PROXY_URL}/v1` with models `private-default`,
-`private-strict`, and — only when `ENABLE_ANTHROPIC_CLAUDE_CODE=1` — `private-claude`. It also sets
-the Anthropic provider's `baseURL` to `PRIVACY_GATEWAY_ANTHROPIC_URL` when that is exported, routing
-the native Anthropic dialect through the proxy.
+Both agents get **one privacy provider per credentialed upstream**, each carrying that upstream's
+own model catalogue and pointed at the proxy's dialect-native door for it. The model id passes
+through unchanged; the proxy adds the key (from §5 of `.env`) and strips the client's.
 
-**OpenClaw** (`config/scripts/start/openclaw.sh`) patches `models.providers.privacy` into
-`openclaw.json` — same base URL, `apiKey: "local-no-auth"` — and allowlists a `privacy/*` model
-wildcard. The generated model list is echoed at start so a misconfiguration is visible.
+| provider id | door | catalogue (OpenClaw) | catalogue (OpenCode) | present when |
+|---|---|---|---|---|
+| `privacy-openai` | `${PRIVACY_PROXY_URL}/openai/v1` | bundled `openai` plugin manifest | `GET …/openai/v1/models` via the proxy | `OPENAI_API_KEY` set |
+| `privacy-anthropic` | `${PRIVACY_PROXY_URL}/anthropic` (`anthropic-messages`) | bundled `anthropic` plugin manifest | `GET …/anthropic/v1/models` via the proxy | `ANTHROPIC_API_KEY` set, or `ENABLE_ANTHROPIC_CLAUDE_CODE=1` (OpenClaw) |
 
-Note the asymmetry: OpenCode is handed `private-claude` only, while `models.py` also exposes
-`private-claude-{opus,sonnet,fable}`; OpenClaw's wildcard picks up whatever `/v1/models` returns.
+**OpenClaw** (`config/scripts/start/openclaw.sh`) mirrors the catalogues exactly as the
+`claude-cli` backend does (`catalogOf(pluginId)`, widest entry per id, names suffixed
+"(private)"), allowlists `privacy-openai/*` / `privacy-anthropic/*`, and deletes any
+`privacy` provider or `privacy/*` wildcard left in `openclaw.json` by an earlier version.
+
+**OpenCode** (`config/opencode/entrypoint.sh`) discovers each catalogue from the proxy at start
+(`_discover_ids`, ten tries; a 401 means no key for that provider and the provider is skipped
+with a warning). With `ENABLE_ANTHROPIC_CLAUDE_CODE=1` it also keeps a `privacy` provider at
+`${PRIVACY_PROXY_URL}/v1` with `private-claude{,-opus,-sonnet,-fable}`, the OpenAI-dialect
+door onto the CLI for the case where no Anthropic key is set and discovery cannot run. The
+built-in `anthropic` provider is never pointed at the proxy: "private" is always an explicit
+`privacy-*` pick.
+
+With the CLI enabled, the proxy serves `privacy-anthropic` through the Claude subscription and
+honours the requested `claude-*` model.
 
 ### 7.6 The four-place configuration contract
 
 Every privacy-proxy setting must appear in `privacy_proxy/config.py`, `privacy-proxy/.env.example`,
-this repo's `.env.example` §7, and this repo's `compose.yml` service block.
+this repo's `.env.example` §7, and this repo's `compose.yml` service block. The exceptions are the
+keys the proxy reads **unprefixed** because they are shared with the rest of the stack —
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY` (§5), `LOCAL_LLM_API_BASE/_KEY` (§6) — which
+are declared where they live and passed to the service in compose; the contract test asserts the
+three provider keys by name.
 `privacy-proxy/tests/test_env_contract.py` enforces the agreement and parses both files
 **positionally** — §7 by the exact header `# 7. PRIVACY PROXY`, the compose block by
 `  privacy-proxy:` at that exact indent. Reformatting either breaks the test, which is the intended
