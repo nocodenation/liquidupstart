@@ -209,6 +209,8 @@ echo "${HDR}=== Web interfaces = AI Harnesses ================================${
 # hermes disabled: url_line "Hermes"      "http://hermes.localhost:${HTTP_PORT}"
 url_line "OpenClaw"    "http://openclaw.localhost:${HTTP_PORT}   - recommended"
 url_line "OpenCode"    "http://opencode.localhost:${HTTP_PORT}"
+[[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]] && \
+  url_line "Privacy settings" "http://privacy.localhost:${HTTP_PORT}/policy/ui"
 echo ""
 echo "${HDR}=== Logins, passwords & tokens ===================================${RST}"
 # hermes disabled: echo "  Hermes API/Webhooks token:  ${CRED}${HERMES_API_KEY}${RST}"
