@@ -53,7 +53,6 @@ if [ -n "${DEV_SRC}" ]; then
 fi
 
 IMAGE="liquidupstart/privacy-proxy:latest"
-docker image rm "$IMAGE" >/dev/null 2>&1 || true
 echo "Building $IMAGE from ${CONFIG_DIR} on top of ${BASE_IMAGE}..."
 docker build ${NO_CACHE:+--no-cache} ${PULL} --progress=plain \
     --build-arg PRIVACY_PROXY_BASE_IMAGE="${BASE_IMAGE}" \
