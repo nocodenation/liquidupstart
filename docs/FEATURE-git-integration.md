@@ -253,61 +253,29 @@ because long runs get compacted.
 ### Prerequisite for acceptance
 
 Every criterion that exercises agent behaviour needs a **running stack** — the evidence comes from
-`docker compose exec`. Neither `.env` nor `volumes/` currently exists; the stack must be set up and
-started once before the first goal.
+`docker compose exec`. The stack was set up and started on 2026-08-29 from this working copy, with
+`.env` carried over from the operator's configured instance; `volumes/` holds fresh state. A
+milestone whose cases include system-level tests cannot be accepted while it is down.
 
-### Example — M-A0 as a goal
+### Goal form
 
 With the suite as the gate, a goal condition collapses from a handful of hand-written probes to one
-line, which is exactly the transcript-provable form the evaluator needs.
+line, which is exactly the transcript-provable form the evaluator needs:
 
 ```
-/goal Implement M-A0 from docs/FEATURE-git-integration.md and section 4 of
-docs/TEST-SPEC-git-integration.md: the test harness.
-
-Scope: create tests/ with lib/, unit/, component/, contract/, integration/ and
-system/ directories; a tests/run.sh entry point using bun test; milestone
-selection by the m-<id>.<subject>.test.ts filename convention; --no-system to
-skip stack-dependent tests; helpers for shell commands and docker compose.
-run.sh must also run the existing dashboard tests. Write the harness's own
-cases A0-1 to A0-6 from the test spec, each with the header format from §4.2.
-
-Done when `./tests/run.sh m-a0; echo EXIT=$?` is visible in this transcript
-with a passing summary and EXIT=0. The suite must include a case proving
-run.sh exits non-zero when a test fails — prove it from within that case, do
-not leave a failing test in the tree.
-
-Constraints: do not modify .env. Do not touch compose.yml or config/ — this
-milestone adds tests only. Search the codebase before assuming anything is
-missing; full implementations only, no placeholders. Or stop after 25 turns.
+Done when `./tests/run.sh m-a1; echo EXIT=$?` is visible in this transcript with EXIT=0,
+and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving earlier milestones have
+not regressed.
 ```
 
-Each milestone's goal is written into this form **immediately before it runs**, not up front: a goal text is only as good as its knowledge of
-the current state, and every milestone settles decisions the next one depends on — the workspace
-path in the example above is decided *by* M-A1. Only one goal can be active per session anyway.
+Each milestone's goal is written into this form **immediately before it runs**, not up front: a goal
+text is only as good as its knowledge of the current state, and every milestone settles decisions
+the next one depends on — the workspace path in M-A1 is decided *by* M-A1. Only one goal can be
+active per session anyway.
 
-### Per-milestone cycle
-
-1. Write the milestone's detailed test cases into `TEST-SPEC-git-integration.md`
-2. **Review gate — the cases are read, challenged, corrected and signed off before anything is
-   built.** They are the acceptance criteria; reviewing them afterwards is worthless, because a
-   milestone would already have passed on unexamined criteria
-3. Write the goal text, in a fresh session, against the actual state of the code, referencing the
-   signed-off cases
-4. Run it
-5. Check acceptance — is the evidence really in the transcript, or did the evaluator wave something
-   through
-6. **Diff review — do the tests that were written actually assert what the cases meant?** The spec
-   says what to prove; nothing else checks that the implementation of a test matches its intent
-7. Update this document and the process log — what changed, and what it means for the milestones
-   still ahead
-
-Steps 2 and 6 are the two human gates. Step 7 is the reason the milestone structure earns its keep.
-
-**M-A0 ran without step 2 or step 6.** The harness was specified and built in one pass, and its six
-test files have not been reviewed by anyone but their author. This is recorded rather than quietly
-fixed, because it is exactly the kind of finding the process log exists to capture: the first
-milestone measured the harness, not the workflow.
+Every goal is then recorded verbatim in the appendix, as posed. The loop guidance's own rule is that
+state belongs in files rather than chat, because long runs get compacted — and the goals are the raw
+material of this trial.
 
 ---
 
@@ -337,3 +305,66 @@ Two columns carry most of the value. **"Evaluator passed something untrue"** tra
 the LOOP guidance warns about — a goal declaring victory on a check that only looked passed.
 **"Plan changed"** is the direct answer to *where should a review have happened*: the milestones
 that forced a plan change are exactly the ones an earlier pair of eyes would have paid for.
+
+---
+
+## Appendix: goals as posed
+
+Verbatim record of every goal actually run, in order. Kept because a compacted conversation loses
+the wording, and because the goals themselves are what the working-model trial is about.
+
+### M-A0 — test harness · posed 2026-08-29 · finished at turn ~6 of 25, EXIT=0
+
+```
+/goal Implement M-A0 from docs/FEATURE-git-integration.md and section 4 of
+docs/TEST-SPEC-git-integration.md: the test harness.
+
+Scope: create tests/ with lib/, unit/, component/, contract/, integration/ and
+system/ directories; a tests/run.sh entry point using bun test; milestone
+selection by the m-<id>.<subject>.test.ts filename convention; --no-system to
+skip stack-dependent tests; helpers for shell commands and docker compose.
+run.sh must also run the existing dashboard tests. Write the harness's own
+cases A0-1 to A0-6 from the test spec, each with the header format from §4.2.
+
+Done when `./tests/run.sh m-a0; echo EXIT=$?` is visible in this transcript
+with a passing summary and EXIT=0. The suite must include a case proving
+run.sh exits non-zero when a test fails — prove it from within that case, do
+not leave a failing test in the tree.
+
+Constraints: do not modify .env. Do not touch compose.yml or config/ — this
+milestone adds tests only. Search the codebase before assuming anything is
+missing; full implementations only, no placeholders. Or stop after 25 turns.
+```
+
+Outcome: 13 tests across 6 files, EXIT=0. Two defects found while writing the harness — `set -e`
+swallowed the failing exit code, and the milestone prefix produced `m-m-a0`. Independently verified
+by the operator on 2026-08-29.
+
+### M-A1 — workspace and identity · posed 2026-08-29
+
+```
+/goal Implement M-A1 from docs/FEATURE-git-integration.md: repo workspace and
+git identity for the agent harnesses. The acceptance criteria are cases A1-1 to
+A1-10 in section 5 of docs/TEST-SPEC-git-integration.md, signed off on
+2026-08-29. Write those tests first, then make them pass.
+
+Scope: create volumes/repos and mount it at /repos in openclaw-gateway,
+openclaw-cli and opencode; add a "# 10. GIT INTEGRATION" section to
+.env.example declaring GIT_USER_NAME and GIT_USER_EMAIL with help text in the
+format the existing sections use; pass both into those three services through
+compose.yml environment blocks with defaults that work without any .env entry;
+have the start scripts create the directory with the permissions the sibling
+volumes/ directories use.
+
+Done when `./tests/run.sh m-a1; echo EXIT=$?` is visible in this transcript
+with EXIT=0 and all of A1-1 to A1-10 present, and `./tests/run.sh; echo EXIT=$?`
+also shows EXIT=0, proving M-A0 has not regressed.
+
+Constraints: do not modify .env — the compose defaults must carry this on their
+own, which is exactly what A1-9 proves. Recreate the affected containers so the
+changes take effect before checking. Search the codebase before assuming
+anything is missing; full implementations only, no placeholders. Remove any
+probe repositories the tests create. Or stop after 30 turns.
+```
+
+Outcome: pending.
