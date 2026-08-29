@@ -156,6 +156,20 @@ into the agent containers, `known_hosts` pre-seeded. Dashboard route `git-auth` 
 key with instructions.
 *Done when:* `./tests/run.sh m-a3` is green, including the clone of `nocodenation/agent-skills`.
 
+**M-A3b · Skill addendum, forced by the A3-11 failure**
+Teaches the SSH URL form and forbids answering about an unreachable repository from a substitute
+source. Both halves of what A3-11 exposed.
+*Done when:* `./tests/run.sh m-a3b` is green (A3b-1 to A3b-3), and the manual A3b-4 — the A3-11
+prompt repeated verbatim — ends in either a clone or an explicit refusal, but never in an answer
+from elsewhere.
+
+**M-A3c · One deploy key per repository**
+Carries out the credential decision from §2 that M-A3 did not implement: it built a single key for
+the whole stack, so only one private repository is reachable. Selection by `core.sshCommand` written
+into each clone, which keeps the URL form M-A3b teaches.
+*Done when:* `./tests/run.sh m-a3c` is green, including the case that two private repositories with
+separate keys are both reachable — the case that cannot pass today.
+
 **M-A4 · Hook guardrails**
 `pre-push` hook installed into every clone: branch rules, force and delete rejection, secret scan of
 the diff. Installed automatically so a fresh clone is covered.
@@ -290,6 +304,8 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
+| M-A3b | | | | | | |
+| M-A3c | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
 | M-B1 | | | | | | |

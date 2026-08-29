@@ -246,13 +246,13 @@ tried an HTTPS URL, hit a credential prompt, and — worse — answered from thi
 without saying it had changed sources. This addendum closes both halves in the skill, and is
 scheduled before M-A4 because M-A4's guardrails assume agents can reach remotes at all.
 
-**An open decision, not a test case.** M-A3 generated **one** key for the whole stack and named it in
-`GIT_SSH_COMMAND`, while §2 of the feature document and FR3 both say *one deploy key per
-repository*. GitHub refuses the same deploy key on a second repository, so the stack can currently
-reach exactly one private repository. Nothing catches this today because there is only one. Either
-the decision is amended to "one key for the stack" — simpler, and adequate while the stack talks to
-one private repository — or per-repository keys need a selection mechanism, which is real work and
-belongs in its own milestone rather than here.
+**An implementation gap, not an open question.** M-A3 generated **one** key for the whole stack and
+named it in `GIT_SSH_COMMAND`, while §2 of the feature document and FR3 both say *one deploy key per
+repository*. GitHub refuses the same deploy key on a second repository, so the stack currently
+reaches exactly one private repository. The decision was never in doubt; M-A3 simply did not carry
+it out, and nothing caught that because there is only one private repository so far. It is closed by
+**M-A3c**, not by amending the decision. Note that the limit applies to *private* repositories only:
+public ones are reachable over HTTPS with no key at all.
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
@@ -268,6 +268,24 @@ previous milestone had every automated case green and still failed the only ques
 
 **Note the deliberate breadth of A3b-4.** A refusal counts as success. The failure being corrected
 is not "did not clone" — it is "did not clone, did not say so, and answered anyway".
+
+### M-A3c — one deploy key per repository
+
+Carries out the credential decision from §2 that M-A3 did not implement. Detailed cases are written
+at the start of its cycle; what is already fixed:
+
+**Selection by `core.sshCommand`, not by SSH host aliases.** Host aliases would change the clone URL
+to something like `git@github-agent-skills:owner/repo.git`, which contradicts the URL rule M-A3b
+puts into the skill. Writing `core.sshCommand` into each clone's own `.git/config` keeps the natural
+`git@github.com:owner/repo.git` form and leaves M-A3b intact. This is why M-A3b can run first.
+
+Unit: the generation script takes a repository identifier and produces a keypair under its own
+directory; an existing key for that repository is left untouched, as in A3-2. Contract: no single
+key is named for all remotes any more. Component: the dashboard route lists every key with the
+repository it belongs to. System: two repositories, each with its own key, are both reachable —
+which is the case that cannot pass today. Unhappy: a repository with no key registered fails with a
+message naming the repository and pointing at the dashboard, rather than a bare permission error.
+Manual: the operator registers a second key and an agent reaches both repositories.
 
 ### M-A4 to M-B2 — outlines
 
