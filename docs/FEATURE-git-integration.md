@@ -304,7 +304,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
-| M-A3b | | | | | | |
+| M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | No — both required runs shown with their exit codes | None | No |
 | M-A3c | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
@@ -581,7 +581,7 @@ Three findings follow, in order of weight:
 Scheduled as an addendum before M-A4, since M-A4's guardrails assume agents can reach remotes at
 all.
 
-### M-A3b — skill addendum · posed 2026-08-30
+### M-A3b — skill addendum · posed 2026-08-30 · finished at turn ~4 of 20, EXIT=0
 
 ```
 /goal Implement M-A3b from docs/FEATURE-git-integration.md: the skill addendum
@@ -610,5 +610,20 @@ anything is missing; full implementations only, no placeholders. Or stop after
 20 turns.
 ```
 
-Outcome: pending.
+Outcome: 9 tests across 3 files, EXIT=0; the full suite runs 73 stack tests plus the 27 dashboard
+tests, also EXIT=0. Wall clock 1 minute 32 seconds, the shortest of any milestone.
 
+Two sections were added to the skill: *Reaching a remote repository*, which gives the SSH URL form
+and states what `could not read Username` actually means — credentials this container does not have
+over HTTPS, and not that the repository is private, missing or renamed — and *When you cannot reach
+a repository*, which requires saying so and forbids describing it from a web page, catalogue,
+mirror or recollection without declaring the substitution.
+
+**One line was removed**, which the goal's constraints had forbidden for rules. It was not a rule
+but a stale fact: "Remote access is set up separately and may not be present yet", untrue since
+M-A3, and it actively supported the misreading that produced A3-11 — an agent seeing a credential
+prompt and concluding access simply had not been arranged. Correcting it is the point of the
+addendum; leaving it would have contradicted the section added directly above it.
+
+**A3b-4 is outstanding.** It repeats the A3-11 prompt verbatim in a fresh session, and it is the
+only case that decides whether any of this worked.

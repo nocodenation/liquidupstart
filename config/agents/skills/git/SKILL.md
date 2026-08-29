@@ -39,6 +39,48 @@ Everything local: `init`, `clone`, `fetch`, `pull`, `add`, `commit`, `branch`,
 Commit early and often. A commit is cheap and reversible; losing an hour of work is
 not.
 
+## Reaching a remote repository
+
+**Use the SSH form for anything private in this stack:**
+
+```bash
+git clone git@github.com:owner/repo.git
+```
+
+The stack holds an SSH key for the repositories it is allowed to reach. That key
+is the only credential these containers have, and git only uses it for `git@`
+URLs.
+
+An `https://github.com/...` URL will **not** work for a private repository here.
+It makes git ask for a username and password, and there is no terminal to ask,
+so it fails with:
+
+```
+fatal: could not read Username for 'https://github.com': No such device or address
+```
+
+**Read that message literally.** It means git wanted credentials this container
+does not have over HTTPS. It does **not** mean the repository is private, does
+not exist, has been renamed, or that you lack access. Retry the same repository
+with the `git@github.com:owner/repo.git` form before drawing any conclusion
+about it.
+
+Public repositories are different: `https://` works for them with no key at all.
+
+## When you cannot reach a repository
+
+Say so. Name the repository, say what you tried, and stop there.
+
+**Never describe a repository you could not read by using some other source.**
+Not a web page about it, not a package or skills catalogue that lists it, not a
+mirror, not search results, not your own recollection. Those sources are stale,
+partial, or about something else that shares a name, and an answer built from
+them looks exactly like an answer built from the repository.
+
+If the operator explicitly asks you to look elsewhere, say plainly in your answer
+where the information came from and that it does not come from the repository
+itself.
+
 ## What you must ask the operator for
 
 **Pushing.** Never push unasked — not to any branch, not even one you created. Do the
@@ -46,7 +88,7 @@ work, commit it, and then tell the operator what is ready and ask whether to pus
 They may want to read the diff first, or push from their own machine.
 
 If you have been asked to push and no remote is configured, say so rather than
-inventing one. Remote access is set up separately and may not be present yet.
+inventing one.
 
 ## What you must never do
 
