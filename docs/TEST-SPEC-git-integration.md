@@ -199,16 +199,46 @@ skill itself uses `TRIGGER when`, which satisfies the strictest reading as well.
 | A2-4 | Integration **unhappy** | The skill guard is given a mount path that cannot exist | It fails with a message naming the missing path, rather than passing or hanging — the shape A0-5 uses for the stack guard, because a mount cannot be removed from a running container mid-suite |
 | A2-5 | **Manual** | An agent asked to commit work follows the skill | Documented observation: uses `/repos`, does not push unasked. Recorded in the process log, not automated — see §2 |
 
-### M-A3 to M-B2 — outlines
+### M-A3 — Credentials and remote access
+
+**Structural note, decided while writing these cases.** The success path — cloning a private
+repository — cannot be automated. A deploy key only grants access once a human has pasted the public
+key into that repository's settings, and that friction is the security property, not an oversight.
+So the suite covers everything up to the network boundary and every failure path across it, while
+the successful clone becomes a manual case, as A2-5 is. This is the honest split: an automated test
+that needed a human to arrange GitHub state first would be red until someone acted, and a suite that
+is red for procedural reasons teaches everyone to ignore red.
+
+**Carried over from M-A2.** The stack guard becomes a *named* test rather than a bare `beforeAll`:
+an aborted `beforeAll` is counted once per file and the tests inside vanish from the total, which
+reads as a shrinking count instead of a failure.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A3-1 | Unit | The key generation script is run | An ed25519 keypair appears under `volumes/_git-secrets`; the private key is mode 600, the public key is readable |
+| A3-2 | Unit | The script is run a second time | The existing key is left untouched — regenerating silently would revoke access the operator has already registered |
+| A3-3 | Contract | `known_hosts` is pre-seeded | It contains GitHub's host keys and matches the fingerprints GitHub publishes |
+| A3-4 | Contract | The repository is searched for `StrictHostKeyChecking=no` | Absent everywhere. Disabling host key verification would make the pre-seeded `known_hosts` decorative |
+| A3-5 | Contract | The secrets directory and the ssh configuration reach the agents | `volumes/_git-secrets` is mounted into all three agent services, and the ssh command they use names both the key and the pre-seeded `known_hosts` |
+| A3-6 | Component | The dashboard `git-auth` route is rendered | The public key is shown with copy support; the private key appears nowhere in the response |
+| A3-7 | System | `ssh -T git@github.com` from inside both harnesses | Returns GitHub's authenticated-or-denied answer within a bounded time — no host key prompt, no hang |
+| A3-8 | System **unhappy** | A key GitHub does not know is used | Fails with `Permission denied (publickey)` inside the time bound, rather than hanging or prompting for a password |
+| A3-9 | System **unhappy** | A host absent from `known_hosts` is contacted | Refused rather than silently trusted, and the message says why |
+| A3-10 | System **unhappy** | Private key material is searched for outside the secrets directory | It appears in no rendered configuration, no log file and no dashboard response |
+| A3-11 | **Manual** | The operator registers the deploy key on `nocodenation/agent-skills`, then an agent is asked to clone it | The repository lands under `/repos`, a `pull` succeeds, and no key material is copied out of the secrets directory. Recorded in the process log |
+
+A3-2 deserves the emphasis it gets. A generation script that overwrites an existing key on every
+start would silently break access that the operator had already arranged with GitHub, and the
+failure would surface much later as a confusing permission error.
+
+A3-7 to A3-9 all carry a time bound because the characteristic failure of misconfigured SSH is not
+an error but a hang: a host key prompt or a password prompt waiting on a terminal that is not there.
+A test that waits forever is worse than one that fails.
+
+### M-A4 to M-B2 — outlines
 
 Detailed cases are written at the start of each milestone's cycle, because they depend on decisions
 that milestone has not made yet. What is already fixed:
-
-**M-A3 — Credentials and remote access.** Unit: key generation produces a valid keypair with correct
-permissions, and is idempotent. Contract: `known_hosts` contains GitHub's host keys; no
-`StrictHostKeyChecking=no` anywhere in the repository. System: clone `nocodenation/agent-skills` (a
-genuinely private repository the stack needs) into the workspace, then pull. Unhappy: wrong key,
-unknown host key, network unreachable — each must fail with a legible message rather than hang.
 
 **M-A4 — Hook guardrails.** This is where full branch coverage applies. Unit, all paths: protected
 branch rejected; feature branch allowed; `--force` rejected; ref deletion rejected; diff containing
@@ -394,4 +424,44 @@ Carried out 2026-08-29 on `openai/gpt-5.4`; passed on all four points. The evide
 state, not the agent's own account of itself: the repository under `volumes/repos/`, the absence of
 a local `user.*` override, and the absence of any configured remote. Full record in the feature
 document's appendix.
+
+### M-A3 — credentials and remote access
+
+To be run after implementation; the pass count is filled in once known. None of these commands
+print private key material, and none should be changed so that they do.
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The milestone suite. Expect: 0 fail, EXIT=0
+./tests/run.sh m-a3; echo "EXIT=$?"
+
+# 2. No regression across the earlier milestones. Expect: EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# 3. Reaching GitHub by hand from inside a harness, bypassing the suite.
+#    Expect: GitHub's own answer within seconds -- either "successfully
+#    authenticated" or "Permission denied (publickey)". Neither a host key
+#    prompt nor a hang is acceptable.
+timeout 20 docker compose exec -T openclaw-gateway sh -lc 'ssh -T git@github.com'; echo "EXIT=$?"
+
+# 4. The private key stays where it belongs. Expect: mode 600, and no copy
+#    anywhere else in the workspace or the rendered configuration.
+docker compose exec -T openclaw-gateway sh -lc 'ls -l /git-secrets/ | grep -v total'
+grep -rl 'BEGIN OPENSSH PRIVATE KEY' volumes/repos config 2>/dev/null; echo "matches above (none expected)"
+
+# 5. Negative control: are the system tests real?
+#    Expect EXIT=1 naming the stopped container, then EXIT=0 once it is back.
+docker compose stop opencode
+./tests/run.sh m-a3; echo "EXIT=$?"
+docker compose start opencode
+./tests/run.sh m-a3; echo "EXIT=$?"
+```
+
+**A3-11 is manual and has no command here**, because it depends on GitHub state only a human can
+arrange. Register the public key from the dashboard's `git-auth` page as a deploy key on
+`nocodenation/agent-skills`, then ask an agent — without naming the path or the skill — to fetch that
+repository and look at it. The expected observation: the clone lands under `/repos`, a `pull`
+afterwards succeeds, the agent does not copy the key anywhere, and it does not attempt a push.
+Record what actually happened, a partial result included.
 
