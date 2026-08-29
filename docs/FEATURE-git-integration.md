@@ -379,3 +379,32 @@ Noted for the diff review: three assertions were written beyond the letter of th
 prefixed key exists (FR10 and NFR2, both squarely the contract level's job), and A1-4 additionally
 checks the live workspace, not only the throwaway one. They are aligned with the cases' intent, but
 they were not in the table when it was signed off.
+
+### M-A2 — git skill · posed 2026-08-29
+
+```
+/goal Implement M-A2 from docs/FEATURE-git-integration.md: the git skill for the
+agent harnesses. The acceptance criteria are cases A2-1 to A2-4 in section 5 of
+docs/TEST-SPEC-git-integration.md, signed off on 2026-08-29. Write those tests
+first, then make them pass. A2-5 is manual and must not be automated.
+
+Scope: write config/agents/skills/git/SKILL.md, following the frontmatter shape
+and the tone of the sibling skills in that directory. It must teach the
+workspace at /repos, the identity the containers already carry, commit
+conventions, which operations are free, which are forbidden (force push, pushing
+to main, committing secrets), and the push etiquette: ask the operator before
+pushing, never push unasked. The skills directory is already mounted into both
+harnesses, so no compose change is needed.
+
+Done when `./tests/run.sh m-a2; echo EXIT=$?` is visible in this transcript with
+EXIT=0 and all of A2-1 to A2-4 present, and `./tests/run.sh; echo EXIT=$?` also
+shows EXIT=0, proving M-A0 and M-A1 have not regressed.
+
+Constraints: do not modify .env or compose.yml. Match the style of the existing
+skills in config/agents/skills rather than inventing a format. Search the
+codebase before assuming anything is missing; full implementations only, no
+placeholders. Or stop after 25 turns.
+```
+
+Outcome: pending.
+
