@@ -289,7 +289,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
-| M-A3 | ~13 / 35 | 7 min 38 s | 5 changed, 9 new | No — both required runs shown with their exit codes | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
+| M-A3 | ~13 / 35 | 7 min 38 s | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
 | M-B1 | | | | | | |
@@ -478,10 +478,17 @@ tests, also EXIT=0. Wall clock 7 minutes 38 seconds.
 or directory`. Both image templates were extended and both images rebuilt. Without this the
 milestone was impossible, so it was taken into scope rather than deferred.
 
-**A defect in the project's build script.** The first rebuild failed with `DeadlineExceeded` while
-fetching a base image manifest, and `scripts/linux/build.sh` still exited 0. A build that fails
-while reporting success will eventually be trusted by something; worth fixing separately from this
-feature.
+**A misdiagnosis, retracted.** The first rebuild failed with `DeadlineExceeded` while fetching a
+base image manifest, and this document briefly recorded that `scripts/linux/build.sh` had reported
+success anyway. It had not. The command had been invoked as `build.sh 2>&1 | tail -30`, and in zsh a
+pipeline returns the status of its *last* element — `tail` succeeded, so the failure was invisible.
+The script is correct: it uses `set -euo pipefail` and calls each per-service build as a plain
+command, so a failure propagates.
+
+The real lesson is about measurement, not about the script. It is the same trap the verification
+procedures in the test spec avoid by writing `; echo EXIT=$?` directly after a command rather than
+piping it anywhere, and it had already produced one wrong reading earlier in this feature. A claim
+about an exit code is only worth as much as the way it was obtained.
 
 **Two self-inflicted test defects, both found by the tests themselves.** A3-4 forbade
 `StrictHostKeyChecking=no` anywhere in the repository and then failed on its own assertions, which
