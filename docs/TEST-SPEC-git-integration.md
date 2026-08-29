@@ -431,7 +431,10 @@ document's appendix.
 
 ### M-A3 — credentials and remote access
 
-Not yet independently verified — the operator's run is outstanding. None of these commands
+Verified by the operator on 2026-08-29; output in PR #9. The negative control confirms the fix
+carried over from M-A2: with a container stopped the run reports "Ran 24 tests across 7 files" with
+four *named* failures, where M-A2 had collapsed to "Ran 7 tests across 4 files" with `(unnamed)`
+failures and five tests vanishing from the count. None of these commands
 print private key material, and none should be changed so that they do.
 
 ```bash
