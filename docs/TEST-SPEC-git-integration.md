@@ -462,6 +462,11 @@ docker compose start opencode
 ./tests/run.sh m-a3; echo "EXIT=$?"
 ```
 
+**A3-11 was carried out on 2026-08-29 and failed** — the agent never reached the repository and
+answered from third-party web pages instead, incompletely. The full record is in the feature
+document's appendix. The automated cases all passed and none of them could have caught it, because
+each has the SSH URL written into it.
+
 **A3-11 is manual and has no command here**, because it depends on GitHub state only a human can
 arrange. Register the public key from the dashboard's `git-auth` page as a deploy key on
 `nocodenation/agent-skills`, then ask an agent — without naming the path or the skill — to fetch that

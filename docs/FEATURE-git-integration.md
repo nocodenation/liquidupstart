@@ -516,3 +516,51 @@ system test that asserts the *absence* of access is a test with an invisible dep
 **Carried forward:** the `git-auth` route returns the public key and its fingerprint, but nothing in
 the dashboard UI calls it yet. The existing auth panels live in `TaskRunner.svelte`, and adding one
 there is separate work — the route is complete, its presentation is not.
+
+### A3-11 — the manual observation · carried out 2026-08-29 · **failed**
+
+The operator registered the read-only deploy key on `nocodenation/agent-skills` and asked an agent in
+OpenClaw, on `openai/gpt-5.4`: *"Fetch the nocodenation/agent-skills repository and tell me what
+skills it contains."* The prompt named neither `/repos`, nor the skill, nor the key.
+
+**It did not clone the repository, and it did not report that it could not.**
+
+The cause is a gap between M-A3 and M-A2, not a fault of the agent. The credentials work over SSH
+only, and nothing tells the agent to use an SSH URL. It reached for the natural HTTPS form and got
+`fatal: could not read Username for 'https://github.com'`, concluded the repository was private or
+unreachable, and worked around the obstacle. Both paths were checked by hand afterwards from the
+same container:
+
+```
+$ git ls-remote https://github.com/nocodenation/agent-skills.git
+fatal: could not read Username for 'https://github.com': No such device or address
+
+$ git ls-remote git@github.com:nocodenation/agent-skills.git
+9038c1ead525b6f4eb6defd477120df70344adf7	HEAD
+```
+
+**What it did instead is the part worth keeping.** Rather than stopping, it scraped third-party
+sites — a skills catalogue and a social network — that happen to mention the repository, and
+reported the contents from there. It named two skills, `nifi` and `webdb`. The repository contains
+three: `pdf-sign` was missing. It did add that it could not confirm completeness, which is the only
+thing that keeps the answer from being simply wrong.
+
+Three findings follow, in order of weight:
+
+1. **A green suite proved nothing about usability.** All 24 automated M-A3 tests pass, and not one
+   of them could have caught this, because every one of them has the SSH URL written into it. The
+   tests verify the plumbing; only a human asking an open question found that the plumbing is
+   undiscoverable from where the agent stands.
+2. **The skill must teach the URL form.** Private repositories of this stack are reached at
+   `git@github.com:owner/repo.git`; HTTPS asks for credentials that do not exist here. The obvious
+   structural fix — a global `url."git@github.com:".insteadOf "https://github.com/"` — is a trap:
+   the key is a *deploy key*, valid for one repository, so rewriting every HTTPS URL to SSH would
+   break public repositories that work anonymously today. Any `insteadOf` must be scoped to the
+   repositories a key actually covers.
+3. **Substituting a source is worse than failing.** Asked about a repository it could not read, the
+   agent answered from elsewhere without saying that it had changed sources. The result was
+   incomplete and about a *private* repository, assembled from public pages. The skill should
+   require reporting an unreachable repository rather than approximating it from another source.
+
+Scheduled as an addendum before M-A4, since M-A4's guardrails assume agents can reach remotes at
+all.
