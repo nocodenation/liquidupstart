@@ -136,6 +136,7 @@ fi
 "${PROJECT_DIR}/config/scripts/start/generate_api_key.sh"
 "${PROJECT_DIR}/config/scripts/start/pgadmin.sh"
 "${PROJECT_DIR}/config/scripts/start/opencode.sh"
+"${PROJECT_DIR}/config/scripts/start/git.sh"
 "${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
 "${PROJECT_DIR}/config/scripts/start/nginx.sh"
 "${PROJECT_DIR}/config/scripts/start/liquid.sh"

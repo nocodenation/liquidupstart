@@ -287,7 +287,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | Milestone | Turns used / bound | Wall clock | Files touched | Evaluator passed something untrue? | Manual rework after the goal | Plan changed? |
 |---|---|---|---|---|---|---|
 | M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
-| M-A1 | | | | | | |
+| M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
 | M-A2 | | | | | | |
 | M-A3 | | | | | | |
 | M-A4 | | | | | | |
@@ -340,7 +340,7 @@ Outcome: 13 tests across 6 files, EXIT=0. Two defects found while writing the ha
 swallowed the failing exit code, and the milestone prefix produced `m-m-a0`. Independently verified
 by the operator on 2026-08-29.
 
-### M-A1 — workspace and identity · posed 2026-08-29
+### M-A1 — workspace and identity · posed 2026-08-29 · finished at turn ~8 of 30, EXIT=0
 
 ```
 /goal Implement M-A1 from docs/FEATURE-git-integration.md: repo workspace and
@@ -367,4 +367,15 @@ anything is missing; full implementations only, no placeholders. Remove any
 probe repositories the tests create. Or stop after 30 turns.
 ```
 
-Outcome: pending.
+Outcome: 17 tests across 6 files, EXIT=0; the full suite runs 30 stack tests plus the 27 dashboard
+tests, also EXIT=0, so M-A0 did not regress. Identity is carried by `GIT_AUTHOR_*` and
+`GIT_COMMITTER_*` environment variables derived from `GIT_USER_NAME` and `GIT_USER_EMAIL` in
+compose, which sidesteps the differing `HOME` between the two harnesses without any in-container
+configuration step. `.env` was not touched, and A1-9 proves the compose defaults carry the feature
+on their own.
+
+Noted for the diff review: three assertions were written beyond the letter of the signed-off cases
+— A1-3 also asserts the `/repos` mount is present in every agent service and that no `GITHUB_`
+prefixed key exists (FR10 and NFR2, both squarely the contract level's job), and A1-4 additionally
+checks the live workspace, not only the throwaway one. They are aligned with the cases' intent, but
+they were not in the table when it was signed off.
