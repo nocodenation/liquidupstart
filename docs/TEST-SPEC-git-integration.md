@@ -179,12 +179,18 @@ and lets the implementation choose.
 
 ### M-A2 — Git skill
 
+**Signed off 2026-08-29** — reviewed before implementation. Two cases were corrected during the
+review rather than after: A2-4 as originally written required removing a mount from a running
+container, which is not possible without rebuilding the stack mid-suite, so it now tests the
+guard's error message against a path that cannot exist — the same shape as A0-5. A2-2's description
+was overstating what it does and has been made literal.
+
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | A2-1 | Unit | `SKILL.md` frontmatter | Valid YAML with `name` and `description`; description contains a TRIGGER clause, matching the sibling skills |
-| A2-2 | Contract | Skill content names the load-bearing rules | Workspace path, the forbidden operations, and push etiquette each appear — guards against the file being gutted |
+| A2-2 | Contract | Skill text still contains its load-bearing terms | The workspace path, the forbidden operations and the push etiquette each appear literally. This is a presence check, not a judgement of whether the rules are good or complete: it catches the file being thinned out or a rule being dropped, and nothing beyond that |
 | A2-3 | System | Skill file visible inside both harnesses | Readable at the skill mount paths in `openclaw-gateway` and `opencode` |
-| A2-4 | System **unhappy** | Skill directory not mounted | Test fails with a message naming the missing mount |
+| A2-4 | Integration **unhappy** | The skill guard is given a mount path that cannot exist | It fails with a message naming the missing path, rather than passing or hanging — the shape A0-5 uses for the stack guard, because a mount cannot be removed from a running container mid-suite |
 | A2-5 | **Manual** | An agent asked to commit work follows the skill | Documented observation: uses `/repos`, does not push unasked. Recorded in the process log, not automated — see §2 |
 
 ### M-A3 to M-B2 — outlines
@@ -344,4 +350,35 @@ docker compose start opencode
 
 Verified by the operator on 2026-08-29; output in PR #9. Check 5 answers the question every system
 test raises: does it touch the stack at all, or would it pass just as happily with nothing running?
+
+### M-A2 — git skill
+
+To be run after implementation; the pass count is filled in once known.
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The milestone suite. Expect: 0 fail, EXIT=0
+./tests/run.sh m-a2; echo "EXIT=$?"
+
+# 2. No regression across the earlier milestones. Expect: EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# 3. The skill by hand, bypassing the suite -- read it from inside both
+#    harnesses. Expect: the frontmatter name line in each.
+docker compose exec -T openclaw-gateway sh -lc 'head -4 ~/.claude/skills/git/SKILL.md'
+docker compose exec -T opencode sh -lc 'head -4 ~/.config/opencode/skills/git/SKILL.md'
+
+# 4. Negative control: are the system tests real?
+#    Expect EXIT=1 naming the stopped container, then EXIT=0 once it is back.
+docker compose stop opencode
+./tests/run.sh m-a2; echo "EXIT=$?"
+docker compose start opencode
+./tests/run.sh m-a2; echo "EXIT=$?"
+```
+
+**A2-5 is manual and has no command.** Ask an agent in either harness to put some work under version
+control and observe what it does. The expected observation: it works inside `/repos`, it does not
+push, and it does not invent a location of its own. Record what actually happened in the process
+log — including a partial or wrong result, which is the outcome worth knowing about.
 
