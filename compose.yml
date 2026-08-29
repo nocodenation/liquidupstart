@@ -281,6 +281,7 @@ services:
     extra_hosts:
       - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
     environment:
+      GIT_SSH_COMMAND: "ssh -i /git-secrets/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
       GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
@@ -309,6 +310,7 @@ services:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
     volumes:
+      - ./volumes/_git-secrets:/git-secrets
       - ./volumes/repos:/repos
       - ./config/agents/instructions.md:/opencode/instructions.md:ro
       - ./config/agents/skills:/root/.config/opencode/skills
@@ -698,6 +700,7 @@ services:
       - path: config/openclaw/.env
         required: false
     environment:
+      GIT_SSH_COMMAND: "ssh -i /git-secrets/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
       GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
@@ -739,6 +742,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
+      - ./volumes/_git-secrets:/git-secrets
       - ./volumes/repos:/repos
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
@@ -810,6 +814,7 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      GIT_SSH_COMMAND: "ssh -i /git-secrets/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
       GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
@@ -843,6 +848,7 @@ services:
       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
     volumes:
+      - ./volumes/_git-secrets:/git-secrets
       - ./volumes/repos:/repos
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace

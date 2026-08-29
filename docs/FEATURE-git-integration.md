@@ -289,7 +289,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
-| M-A3 | | | | | | |
+| M-A3 | ~13 / 35 | 7 min 38 s | 5 changed, 9 new | No — both required runs shown with their exit codes | Two self-inflicted test defects fixed mid-run, see below | Yes — openssh-client was missing from both images, which the goal had not anticipated |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
 | M-B1 | | | | | | |
@@ -439,7 +439,7 @@ All four observations passed, with filesystem evidence:
 both names, or it will protect a branch that does not exist while the actual default branch stays
 unguarded.
 
-### M-A3 — credentials and remote access · posed 2026-08-29
+### M-A3 — credentials and remote access · posed 2026-08-29 · finished at turn ~13 of 35, EXIT=0
 
 ```
 /goal Implement M-A3 from docs/FEATURE-git-integration.md: SSH credentials and
@@ -470,5 +470,34 @@ Search the codebase before assuming anything is missing; full implementations
 only, no placeholders. Or stop after 35 turns.
 ```
 
-Outcome: pending.
+Outcome: 24 tests across 7 files, EXIT=0; the full suite runs 64 stack tests plus the 27 dashboard
+tests, also EXIT=0. Wall clock 7 minutes 38 seconds.
 
+**A missing prerequisite the goal had not anticipated.** Neither agent image contained
+`openssh-client`, so git could not use an SSH remote at all — `error: cannot run ssh: No such file
+or directory`. Both image templates were extended and both images rebuilt. Without this the
+milestone was impossible, so it was taken into scope rather than deferred.
+
+**A defect in the project's build script.** The first rebuild failed with `DeadlineExceeded` while
+fetching a base image manifest, and `scripts/linux/build.sh` still exited 0. A build that fails
+while reporting success will eventually be trusted by something; worth fixing separately from this
+feature.
+
+**Two self-inflicted test defects, both found by the tests themselves.** A3-4 forbade
+`StrictHostKeyChecking=no` anywhere in the repository and then failed on its own assertions, which
+necessarily contain the string; the search now covers the configuration surface and excludes the
+test tree. A3-7 to A3-9 drove bare `ssh`, which does not read `GIT_SSH_COMMAND` and therefore tested
+the container's default configuration rather than the one this milestone installs; they now drive
+`git`, the way production does. The second was the more serious: it would have passed a green suite
+while proving nothing about the feature.
+
+**A finding about the size heuristic.** M-A3 touched fourteen files, well past the "under ten"
+guideline, and was flagged as oversized before the run. It nevertheless took the *shortest* wall
+clock of any milestone so far. The reason is that the slow part — rebuilding two images — ran in the
+background while the tests were being written, and the remaining work was independent pieces rather
+than one long dependent chain. File count predicted difficulty poorly here; what mattered was
+whether the work serialised.
+
+**Carried forward:** the `git-auth` route returns the public key and its fingerprint, but nothing in
+the dashboard UI calls it yet. The existing auth panels live in `TaskRunner.svelte`, and adding one
+there is separate work — the route is complete, its presentation is not.

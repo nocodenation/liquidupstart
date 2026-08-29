@@ -431,13 +431,13 @@ document's appendix.
 
 ### M-A3 — credentials and remote access
 
-To be run after implementation; the pass count is filled in once known. None of these commands
+Not yet independently verified — the operator's run is outstanding. None of these commands
 print private key material, and none should be changed so that they do.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
 
-# 1. The milestone suite. Expect: 0 fail, EXIT=0
+# 1. The milestone suite. Expect: 24 pass, 0 fail, EXIT=0
 ./tests/run.sh m-a3; echo "EXIT=$?"
 
 # 2. No regression across the earlier milestones. Expect: EXIT=0

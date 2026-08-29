@@ -41,3 +41,6 @@ export function requireSkillFile(service: string, path: string): string {
   }
   return r.stdout;
 }
+
+export const SECRETS_DIR_HOST = 'volumes/_git-secrets';
+export const SECRETS_DIR_CONTAINER = '/git-secrets';
