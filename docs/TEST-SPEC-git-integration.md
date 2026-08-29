@@ -209,6 +209,10 @@ the successful clone becomes a manual case, as A2-5 is. This is the honest split
 that needed a human to arrange GitHub state first would be red until someone acted, and a suite that
 is red for procedural reasons teaches everyone to ignore red.
 
+**Signed off 2026-08-29** — reviewed before implementation. The structural decision above was put to
+the operator explicitly, including its consequence that M-A3 is the second milestone after M-A2
+whose core is verified by hand, and accepted.
+
 **Carried over from M-A2.** The stack guard becomes a *named* test rather than a bare `beforeAll`:
 an aborted `beforeAll` is counted once per file and the tests inside vanish from the total, which
 reads as a shrinking count instead of a failure.

@@ -439,3 +439,36 @@ All four observations passed, with filesystem evidence:
 both names, or it will protect a branch that does not exist while the actual default branch stays
 unguarded.
 
+### M-A3 — credentials and remote access · posed 2026-08-29
+
+```
+/goal Implement M-A3 from docs/FEATURE-git-integration.md: SSH credentials and
+remote access for the agent harnesses. The acceptance criteria are cases A3-1 to
+A3-10 in section 5 of docs/TEST-SPEC-git-integration.md, signed off on
+2026-08-29. Write those tests first, then make them pass. A3-11 is manual and
+must not be automated.
+
+Scope: a key generation script under config/scripts/ producing an ed25519
+keypair in volumes/_git-secrets, which must leave an existing key untouched when
+run again; a known_hosts file there, pre-seeded with GitHub's host keys and
+verified against the fingerprints GitHub publishes; volumes/_git-secrets mounted
+into openclaw-gateway, openclaw-cli and opencode; an ssh command configuration
+reaching those services that names both the key and that known_hosts, with host
+key checking left on; and a dashboard route git-auth showing the public key with
+copy support, following the existing claude-auth and copilot-auth routes. Wire
+the generation into the start scripts. Give the stack guard a named test rather
+than a bare beforeAll, per the M-A2 finding.
+
+Done when `./tests/run.sh m-a3; echo EXIT=$?` is visible in this transcript with
+EXIT=0 and all of A3-1 to A3-10 present, and `./tests/run.sh; echo EXIT=$?` also
+shows EXIT=0, proving the earlier milestones have not regressed.
+
+Constraints: do not modify .env. Never print private key material, and do not
+write a test that would. Every command that crosses the network carries a
+timeout, because the characteristic SSH failure is a hang rather than an error.
+Search the codebase before assuming anything is missing; full implementations
+only, no placeholders. Or stop after 35 turns.
+```
+
+Outcome: pending.
+
