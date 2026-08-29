@@ -68,6 +68,32 @@ Assume a senior developer reads the code and understands it without hand-holding
 something is genuinely non-obvious, explain it in the chat reply — never in the file. Add a
 comment ONLY when the user explicitly asks for one. When in doubt, no comment.
 
+**One carve-out: test files.** Every test file opens with a documented header block (purpose,
+given/when/then, requirements covered) — see `docs/TEST-SPEC-git-integration.md` §4.2. The
+zero-comment rule still governs the body of the test and all implementation code; the header
+is the exception, because a reviewer must understand what a test proves without reading it.
+
+## Development rules
+
+Adopted from Philipp's commandments for AI development.
+
+**Specify first.** Write the specification before the implementation. Include use cases — ask when
+they are unclear. Document data structures and APIs.
+
+**Implement to the specification.** Stick to it. When the implementation reveals a problem with the
+spec, raise it rather than quietly deviating, and adjust the spec with the other features in view.
+Document every implemented feature in its own Markdown file.
+
+**Test at every level.** Unit, component, integration and system tests — not unit tests alone.
+Cover happy and unhappy cases. Document every test in a human-readable header.
+
+**Coverage where it bites.** Full branch coverage is required for real decision logic. It is not
+demanded of configuration, mounts, or Markdown, where it produces ceremony rather than safety; the
+governing document declares per component which level of rigour applies.
+
+**Behaviour that depends on a model is a documented manual check**, never an automated assertion —
+such tests are non-deterministic and a flaky suite trains everyone to ignore red.
+
 ## GIT
 
 Do not commit any code into project's git repository. You can suggest when to commit, and a commit

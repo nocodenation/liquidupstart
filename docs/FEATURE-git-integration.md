@@ -1,7 +1,7 @@
 # Feature: Git Integration for the Agent Harnesses
 
-Status: **Requirements & milestone plan — awaiting approval**
-Branch: `feature/git-integration` (not yet created)
+Status: **Approved — implementation in progress**
+Branch: `feature/git-integration`, cut from `main` on 2026-08-29
 
 ---
 
@@ -54,7 +54,7 @@ private key — and an agent container executes model-generated shell commands.
 | **Self-damage** | The agent modifies the repo that builds its own container. A bad `compose.yml` or Dockerfile commit breaks the stack on the next rebuild. | Skill rules (M-A5), separate clone instead of the host working copy, PR review |
 | **Secret leak** | `.env` at the repo root holds every provider key. `.gitignore` does not protect against reading it, nor against `git add -f`. | Secret scan in the `pre-push` hook (M-A4); `.env` never enters the agent clone |
 | **History destruction** | Force-push truncates history — this happened on 2026-08-29, when a force-push cut 27 commits off `feature/privacy-gateway`. | `--force` and ref deletion rejected by the hook (M-A4) |
-| **Egress bypassing the privacy gate** | The privacy proxy inspects conversations; `git push` carries code and commit messages past it. | Open question **O1** |
+| **Egress bypassing the privacy gate** | Once `feature/privacy-gateway` merges, the privacy proxy will inspect conversations while `git push` carries code and commit messages past it. Not present on `main`, so not yet live. | Open question **O1** |
 
 ### 3.1 The enforcement decision, and what it costs
 
@@ -125,39 +125,48 @@ upgrade path and does not invalidate M-A1 through M-A3.
 Two tracks. **A** is the Git integration; **B** is NiFi development capability. B depends on A only
 loosely (from M-A1, for the workspace) and can run in parallel or later.
 
+Acceptance for every milestone is defined in `TEST-SPEC-git-integration.md`: a milestone is done
+when its tests are green, not when a one-off probe printed the right thing once.
+
 ### Track A — Git
+
+**M-A0 · Test harness**
+Build the runner described in the test spec (§4): `tests/` layout, `tests/run.sh`, shell and
+`docker compose` helpers, milestone filtering, and the harness's own failure-mode tests.
+*Done when:* `./tests/run.sh m-a0` is green — including the cases proving the runner can actually
+fail, refuses an empty milestone filter, and does not silently skip system tests when the stack is
+down.
 
 **M-A1 · Workspace and identity**
 Create `volumes/repos`, mounted into `openclaw-gateway`, `openclaw-cli` and `opencode`. New
 `.env.example` section with the `GIT_*` keys, declared in the service templates and `compose.yml`
 per the contract. The start script configures the git identity inside the containers.
-*Done when:* an agent can create a repository in the workspace and commit to it, the commit carries
-the configured identity, and everything is browsable on the host. No remote involved.
+*Done when:* `./tests/run.sh m-a1` is green (cases A1-1 to A1-10).
 
 **M-A2 · Git skill**
 `config/agents/skills/git/SKILL.md` — workspace path, identity, commit conventions, permitted and
 forbidden operations, push etiquette, secret rules. Uses the skill mounts both harnesses already
 have.
-*Done when:* both harnesses load the skill and behave consistently on a test task.
+*Done when:* `./tests/run.sh m-a2` is green (A2-1 to A2-4), and the manual behavioural check A2-5
+is recorded in the process log.
 
 **M-A3 · Credentials and remote access**
 Key generation script under `config/scripts/`, keys stored in `volumes/_git-secrets` and mounted
 into the agent containers, `known_hosts` pre-seeded. Dashboard route `git-auth` displays the public
 key with instructions.
-*Done when:* an agent can clone a private GitHub repository into the workspace, pull updates, and —
-when told to — push a commit to a feature branch.
+*Done when:* `./tests/run.sh m-a3` is green, including the clone of `nocodenation/agent-skills`.
 
 **M-A4 · Hook guardrails**
 `pre-push` hook installed into every clone: branch rules, force and delete rejection, secret scan of
 the diff. Installed automatically so a fresh clone is covered.
-*Done when:* a push to `main` fails, a `--force` fails, and a push whose diff contains `.env` fails
-— each with a clear reason — while a normal push to a feature branch succeeds.
+*Done when:* `./tests/run.sh m-a4` is green at **100% branch coverage** of the hook — the one
+artifact in this feature that earns it.
 
 **M-A5 · Self-development on Liquid Upstart**
 Its own clone at `volumes/repos/liquidupstart`, a deploy key for it, and additional skill rules
 (the container's own build files, `.env`, `volumes/`).
-*Done when:* an agent can commit a change to a Liquid Upstart feature branch and push it on request,
-without touching the host working copy.
+*Done when:* `./tests/run.sh m-a5` is green, including the contract test that the host working copy
+is untouched.
 
 ### Track B — NiFi development
 
@@ -168,13 +177,12 @@ deployment path (§6.3–6.6). Python processors therefore work today.
 **M-B1 · `nar_builder` service**
 New compose service with a JDK and Maven, sharing `volumes/nar_extensions` and `volumes/repos`,
 following the `bun_runner` pattern. Build script under `config/scripts/build/`.
-*Done when:* an agent places Java processor sources in the workspace, the builder produces a NAR,
-and it lands in `nar_extensions`.
+*Done when:* `./tests/run.sh m-b1` is green, happy and unhappy paths.
 
 **M-B2 · Document the deployment cycle**
 Extend the `liquid` skill with the builder path and the restart step: the agent places the artifact
 and asks the human to run `docker compose restart liquid`.
-*Done when:* a Java processor is built, deployed and — after a manual restart — visible in Liquid.
+*Done when:* `./tests/run.sh m-b2` is green, plus the documented manual restart step.
 
 ### Later increments (not part of this approval)
 
@@ -187,7 +195,10 @@ button for Liquid · Forgejo as a second remote profile · host-agnostic host AP
 
 **O1 — Should `git push` be gated on the privacy profile?** Push is an egress channel that bypasses
 the privacy proxy. It could be blocked, or warned about, while the privacy profile is active.
-Not blocking: needed by M-A4.
+
+This branch is cut from `main`, which does **not** contain the privacy proxy — that work lives on
+`feature/privacy-gateway`. The question is therefore not yet actionable and only becomes real when
+the two branches meet. Whoever merges them owns it; nothing here blocks on it.
 
 **O2 — Access to `nocodenation/agent-skills`.** The repository exists and is **private**. It holds
 three skills — `nifi` (NiFi flow development, REST API, custom processors and NAR packaging),
@@ -245,35 +256,58 @@ Every criterion that exercises agent behaviour needs a **running stack** — the
 `docker compose exec`. Neither `.env` nor `volumes/` currently exists; the stack must be set up and
 started once before the first goal.
 
-### Example — M-A1 as a goal
+### Example — M-A0 as a goal
+
+With the suite as the gate, a goal condition collapses from a handful of hand-written probes to one
+line, which is exactly the transcript-provable form the evaluator needs.
 
 ```
-/goal Implement M-A1 from docs/FEATURE-git-integration.md (repo workspace and git
-identity). Done when `docker compose exec -T openclaw-gateway sh -lc 'cd /repos &&
-git init probe && cd probe && echo x > a && git add a && git -c core.pager=cat
-commit -m probe && git log -1 --format="%an <%ae>"'` runs successfully, prints the
-configured identity and exits 0, and the same holds for opencode. Search the codebase
-before assuming anything is missing; full implementations only, no placeholders.
-Do not touch files outside .env.example, compose.yml, config/*/templates/ and
-config/scripts/. Or stop after 25 turns.
+/goal Implement M-A0 from docs/FEATURE-git-integration.md and section 4 of
+docs/TEST-SPEC-git-integration.md: the test harness.
+
+Scope: create tests/ with lib/, unit/, component/, contract/, integration/ and
+system/ directories; a tests/run.sh entry point using bun test; milestone
+selection by the m-<id>.<subject>.test.ts filename convention; --no-system to
+skip stack-dependent tests; helpers for shell commands and docker compose.
+run.sh must also run the existing dashboard tests. Write the harness's own
+cases A0-1 to A0-6 from the test spec, each with the header format from §4.2.
+
+Done when `./tests/run.sh m-a0; echo EXIT=$?` is visible in this transcript
+with a passing summary and EXIT=0. The suite must include a case proving
+run.sh exits non-zero when a test fails — prove it from within that case, do
+not leave a failing test in the tree.
+
+Constraints: do not modify .env. Do not touch compose.yml or config/ — this
+milestone adds tests only. Search the codebase before assuming anything is
+missing; full implementations only, no placeholders. Or stop after 25 turns.
 ```
 
-The remaining milestones state their acceptance in prose. Each is converted into this checkable
-form **immediately before it runs**, not up front: a goal text is only as good as its knowledge of
+Each milestone's goal is written into this form **immediately before it runs**, not up front: a goal text is only as good as its knowledge of
 the current state, and every milestone settles decisions the next one depends on — the workspace
 path in the example above is decided *by* M-A1. Only one goal can be active per session anyway.
 
 ### Per-milestone cycle
 
-1. Write the goal text, in a fresh session, against the actual state of the code
-2. Run it
-3. Check acceptance — is the evidence really in the transcript, or did the evaluator wave something
+1. Write the milestone's detailed test cases into `TEST-SPEC-git-integration.md`
+2. **Review gate — the cases are read, challenged, corrected and signed off before anything is
+   built.** They are the acceptance criteria; reviewing them afterwards is worthless, because a
+   milestone would already have passed on unexamined criteria
+3. Write the goal text, in a fresh session, against the actual state of the code, referencing the
+   signed-off cases
+4. Run it
+5. Check acceptance — is the evidence really in the transcript, or did the evaluator wave something
    through
-4. Test and assess
-5. **Update this document** — what changed, and what it means for the milestones still ahead
-6. Only then write the next goal text
+6. **Diff review — do the tests that were written actually assert what the cases meant?** The spec
+   says what to prove; nothing else checks that the implementation of a test matches its intent
+7. Update this document and the process log — what changed, and what it means for the milestones
+   still ahead
 
-Step 5 is the reason the milestone structure earns its keep.
+Steps 2 and 6 are the two human gates. Step 7 is the reason the milestone structure earns its keep.
+
+**M-A0 ran without step 2 or step 6.** The harness was specified and built in one pass, and its six
+test files have not been reviewed by anyone but their author. This is recorded rather than quietly
+fixed, because it is exactly the kind of finding the process log exists to capture: the first
+milestone measured the harness, not the workflow.
 
 ---
 
@@ -284,6 +318,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 
 | Milestone | Turns used / bound | Wall clock | Files touched | Evaluator passed something untrue? | Manual rework after the goal | Plan changed? |
 |---|---|---|---|---|---|---|
+| M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
 | M-A1 | | | | | | |
 | M-A2 | | | | | | |
 | M-A3 | | | | | | |
