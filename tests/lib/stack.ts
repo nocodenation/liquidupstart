@@ -25,3 +25,19 @@ export function compose(args: string[]) {
 export function inContainer(service: string, script: string) {
   return compose(['exec', '-T', service, 'sh', '-lc', script]);
 }
+
+export const SKILL_PATHS: Record<string, string> = {
+  'openclaw-gateway': '/home/node/.claude/skills',
+  opencode: '/root/.config/opencode/skills'
+};
+
+export function requireSkillFile(service: string, path: string): string {
+  const r = inContainer(service, `cat ${path}`);
+  if (r.code !== 0) {
+    throw new Error(
+      `skill file not readable in ${service}: ${path} is missing. ` +
+        `Check that ./config/agents/skills is mounted into ${service} in compose.yml.`
+    );
+  }
+  return r.stdout;
+}

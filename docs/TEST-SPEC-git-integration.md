@@ -185,9 +185,15 @@ container, which is not possible without rebuilding the stack mid-suite, so it n
 guard's error message against a path that cannot exist — the same shape as A0-5. A2-2's description
 was overstating what it does and has been made literal.
 
+**Corrected during implementation.** A2-1 originally demanded a "TRIGGER clause, matching the
+sibling skills". Only one of the ten sibling skills (`liquid`) uses that literal word: four say
+"Use whenever" and five carry no such clause at all, so requiring it verbatim would have encoded an
+outlier as the convention. The case now asks for a trigger clause in either accepted phrasing. The
+skill itself uses `TRIGGER when`, which satisfies the strictest reading as well.
+
 | # | Level | Case | Expectation |
 |---|---|---|---|
-| A2-1 | Unit | `SKILL.md` frontmatter | Valid YAML with `name` and `description`; description contains a TRIGGER clause, matching the sibling skills |
+| A2-1 | Unit | `SKILL.md` frontmatter | Frontmatter parses, `name` matches the directory, and the description carries a clause saying when to use the skill (`TRIGGER when` or `Use whenever`) |
 | A2-2 | Contract | Skill text still contains its load-bearing terms | The workspace path, the forbidden operations and the push etiquette each appear literally. This is a presence check, not a judgement of whether the rules are good or complete: it catches the file being thinned out or a rule being dropped, and nothing beyond that |
 | A2-3 | System | Skill file visible inside both harnesses | Readable at the skill mount paths in `openclaw-gateway` and `opencode` |
 | A2-4 | Integration **unhappy** | The skill guard is given a mount path that cannot exist | It fails with a message naming the missing path, rather than passing or hanging — the shape A0-5 uses for the stack guard, because a mount cannot be removed from a running container mid-suite |
@@ -353,12 +359,12 @@ test raises: does it touch the stack at all, or would it pass just as happily wi
 
 ### M-A2 — git skill
 
-To be run after implementation; the pass count is filled in once known.
+Verified by the operator on 2026-08-29; output in PR #9.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
 
-# 1. The milestone suite. Expect: 0 fail, EXIT=0
+# 1. The milestone suite. Expect: 10 pass, 0 fail, EXIT=0
 ./tests/run.sh m-a2; echo "EXIT=$?"
 
 # 2. No regression across the earlier milestones. Expect: EXIT=0

@@ -288,7 +288,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 |---|---|---|---|---|---|---|
 | M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
-| M-A2 | | | | | | |
+| M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes | None | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
@@ -380,7 +380,7 @@ prefixed key exists (FR10 and NFR2, both squarely the contract level's job), and
 checks the live workspace, not only the throwaway one. They are aligned with the cases' intent, but
 they were not in the table when it was signed off.
 
-### M-A2 — git skill · posed 2026-08-29
+### M-A2 — git skill · posed 2026-08-29 · finished at turn ~5 of 25, EXIT=0
 
 ```
 /goal Implement M-A2 from docs/FEATURE-git-integration.md: the git skill for the
@@ -406,5 +406,16 @@ codebase before assuming anything is missing; full implementations only, no
 placeholders. Or stop after 25 turns.
 ```
 
-Outcome: pending.
+Outcome: 10 tests across 4 files, EXIT=0; the full suite runs 40 stack tests plus the 27 dashboard
+tests, also EXIT=0, so M-A0 and M-A1 did not regress. No compose change was needed — the skills
+directory is already mounted into both harnesses, at `/home/node/.claude/skills` for OpenClaw and
+`/root/.config/opencode/skills` for OpenCode, which is why A2-3 checks each path separately.
+
+One specification defect surfaced: A2-1 asked for a "TRIGGER clause, matching the sibling skills",
+but only `liquid` of the ten siblings uses that word. The case was corrected rather than
+implemented as written, and the skill uses `TRIGGER when` anyway.
+
+**A2-5 is still outstanding.** It is the manual observation, and it is the only part of this
+milestone that tests what the milestone is actually for: whether an agent given the skill behaves
+by it.
 
