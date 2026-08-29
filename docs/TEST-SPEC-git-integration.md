@@ -444,10 +444,18 @@ cd /Users/christof/repos/liquidupstart
 ./tests/run.sh; echo "EXIT=$?"
 
 # 3. Reaching GitHub by hand from inside a harness, bypassing the suite.
-#    Expect: GitHub's own answer within seconds -- either "successfully
-#    authenticated" or "Permission denied (publickey)". Neither a host key
-#    prompt nor a hang is acceptable.
-timeout 20 docker compose exec -T openclaw-gateway sh -lc 'ssh -T git@github.com'; echo "EXIT=$?"
+#    git is driven rather than ssh: only git reads GIT_SSH_COMMAND, so a bare
+#    ssh call would test the container's default configuration instead of the
+#    one this milestone installs.
+#    Expect: commit hashes within seconds once the deploy key is registered,
+#    or "Permission denied (publickey)" before that. Neither a host key prompt
+#    nor a hang is acceptable.
+docker compose exec -T openclaw-gateway sh -lc 'cd /tmp && timeout 20 git ls-remote git@github.com:nocodenation/agent-skills.git | head -2'; echo "EXIT=$?"
+
+# 3b. The same repository over HTTPS, to show why A3-11 failed.
+#     Expect: "could not read Username" -- the credentials are SSH-only, and
+#     nothing yet tells an agent which URL form to use.
+docker compose exec -T openclaw-gateway sh -lc 'cd /tmp && timeout 20 git ls-remote https://github.com/nocodenation/agent-skills.git 2>&1 | head -2'; echo "EXIT=$?"
 
 # 4. The private key stays where it belongs. Expect: mode 600, and no copy
 #    anywhere else in the workspace or the rendered configuration.
