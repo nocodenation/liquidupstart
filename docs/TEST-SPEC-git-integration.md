@@ -359,7 +359,7 @@ test raises: does it touch the stack at all, or would it pass just as happily wi
 
 ### M-A2 — git skill
 
-Verified by the operator on 2026-08-29; output in PR #9.
+**Not yet independently verified.** The four commands above have so far been run only by the author; the operator's record in PR #9 covers A2-5, the manual observation, and not these. That is a weaker position than M-A0 and M-A1, where the operator ran the procedure and posted the output, and it is recorded rather than papered over: the negative control in particular has not been exercised by anyone but the author.
 
 ```bash
 cd /Users/christof/repos/liquidupstart

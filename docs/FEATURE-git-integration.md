@@ -288,7 +288,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 |---|---|---|---|---|---|---|
 | M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
-| M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
+| M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, but the automated checks were verified by the author only; the operator's record covers A2-5 alone | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
