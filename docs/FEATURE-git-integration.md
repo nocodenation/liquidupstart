@@ -289,7 +289,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
-| M-A3 | ~13 / 35 | 7 min 38 s | 5 changed, 9 new | No — both required runs shown with their exit codes | Two self-inflicted test defects fixed mid-run, see below | Yes — openssh-client was missing from both images, which the goal had not anticipated |
+| M-A3 | ~13 / 35 | 7 min 38 s | 5 changed, 9 new | No — both required runs shown with their exit codes | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
 | M-B1 | | | | | | |
@@ -497,6 +497,14 @@ clock of any milestone so far. The reason is that the slow part — rebuilding t
 background while the tests were being written, and the remaining work was independent pieces rather
 than one long dependent chain. File count predicted difficulty poorly here; what mattered was
 whether the work serialised.
+
+**A third test defect, surfaced by the operator registering the deploy key.** With access granted,
+the milestone suite went red: A3-8 asserted that the configured key would be denied, which had been
+true only because nobody had registered it yet. The test was coupled to state outside the
+repository — what a human had or had not done on GitHub — so it passed or failed for reasons
+unrelated to the code. It now generates its own throwaway key inside the container and asserts the
+denial against that, and is unaffected by whatever access the real key has. Worth generalising: a
+system test that asserts the *absence* of access is a test with an invisible dependency.
 
 **Carried forward:** the `git-auth` route returns the public key and its fingerprint, but nothing in
 the dashboard UI calls it yet. The existing auth panels live in `TaskRunner.svelte`, and adding one

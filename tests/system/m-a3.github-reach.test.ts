@@ -15,8 +15,11 @@
  * Then:     GitHub answers within the bound, either authenticating the key or
  *           denying it, and never asks about a host key.
  * Covers:   A3-7, A3-8, FR4, FR6
- * Unhappy:  A3-8 is the denial path, which is the expected state until the
- *           operator registers the key with a repository (A3-11).
+ * Unhappy:  A3-8 is the denial path. It generates its own throwaway key rather
+ *           than relying on the configured one being unregistered: whether the
+ *           operator has registered a deploy key is external state, and a test
+ *           that depends on it passes or fails for reasons that have nothing to
+ *           do with the code.
  */
 import { test, expect } from 'bun:test';
 import { inContainer } from '../lib/stack';
@@ -45,11 +48,15 @@ for (const service of ['openclaw-gateway', 'opencode']) {
 }
 
 test('A3-8 a key GitHub does not know is denied rather than hanging', () => {
-  const r = probe('openclaw-gateway');
-  if (r.output.includes('successfully authenticated')) {
-    expect(r.output).toContain('successfully authenticated');
-    return;
-  }
+  const r = inContainer(
+    'openclaw-gateway',
+    'd=$(mktemp -d) && ssh-keygen -t ed25519 -N "" -C throwaway -f "$d/k" >/dev/null 2>&1 && ' +
+      'cd /tmp && GIT_SSH_COMMAND="ssh -i $d/k -o IdentitiesOnly=yes ' +
+      '-o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes ' +
+      '-o ConnectTimeout=10 -o BatchMode=yes" ' +
+      'timeout 25 git ls-remote git@github.com:nocodenation/agent-skills.git 2>&1; ' +
+      'rc=$?; rm -rf "$d"; echo "RC=$rc"'
+  );
   expect(r.output).toContain('Permission denied (publickey)');
   expect(r.output).not.toContain('RC=124');
 });
