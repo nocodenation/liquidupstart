@@ -77,8 +77,9 @@ is the exception, because a reviewer must understand what a test proves without 
 
 **Project language is English.** Everything that lands in the repository or on GitHub is written in
 English — documentation, commit messages, test headers, pull request descriptions and review
-comments — because the team reads and reviews in English. Only the working conversation may be held
-in another language.
+comments — because the team reads and reviews in English. This includes command snippets handed to
+the operator for running and pasting: their comment lines end up in pull request comments verbatim.
+Only the working conversation itself may be held in another language.
 
 Adopted from Philipp's commandments for AI development.
 

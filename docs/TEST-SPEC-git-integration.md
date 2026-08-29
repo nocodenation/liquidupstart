@@ -273,3 +273,75 @@ deleted, because the reasoning is what a later reviewer needs.
 4. **M-A0 stood as its own milestone.** It cost one cycle and its process-log row measures the
    harness rather than the feature — accepted deliberately, and it paid for itself by catching two
    runner defects before any milestone depended on them.
+
+---
+
+## 9. Independent verification
+
+A green suite reported by whoever wrote it is weak evidence. Each milestone therefore also has a
+short procedure the **operator** runs by hand, and whose output is posted to the pull request. The
+procedures are recorded here rather than only in those comments, so a later reader can re-run them
+without archaeology.
+
+Two kinds of check earn their place. One **bypasses the suite entirely** and exercises the feature
+directly, which catches a suite that measures the wrong thing. The other is a **negative control**
+that proves the tests can fail — for system tests, that they genuinely touch the running stack
+rather than passing regardless.
+
+### M-A0 — harness
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The suite runs. Expect: 13 pass, 0 fail, EXIT=0
+./tests/run.sh m-a0; echo "EXIT=$?"
+
+# 2. What actually runs. Expect: 6 files
+./tests/run.sh --list
+
+# 3. Negative control -- does the runner notice a real failure? Expect: EXIT=1
+D=$(mktemp -d); mkdir -p "$D/unit"
+printf "import { test, expect } from 'bun:test';\ntest('x', () => expect(1).toBe(2));\n" > "$D/unit/m-x.probe.test.ts"
+./tests/run.sh --root "$D"; echo "EXIT=$?"; rm -rf "$D"
+
+# 4. A mistyped milestone id must fail, not pass silently. Expect: EXIT=2
+./tests/run.sh m-a9; echo "EXIT=$?"
+```
+
+Verified by the operator on 2026-08-29; output in PR #9. Check 3 is the one that matters: without
+it, every later milestone gate would rest on an unverified runner.
+
+### M-A1 — workspace and identity
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The milestone suite. Expect: 17 pass, 0 fail, EXIT=0
+./tests/run.sh m-a1; echo "EXIT=$?"
+
+# 2. No regression -- M-A0 must stay green.
+#    Expect: 30 stack tests plus 27 dashboard tests, EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# 3. The feature by hand, bypassing the suite. Expect:
+#    "Liquid Upstart Agent <agent@liquidupstart.local>" twice,
+#    then "a.txt" and "hallo" -- the commit is on the host.
+docker compose exec -T openclaw-gateway sh -lc 'cd /repos && rm -rf handcheck && git init -q handcheck && cd handcheck && echo hallo > a.txt && git add a.txt && git -c core.pager=cat commit -q -m "hand check" && git log -1 --format="%an <%ae> / %cn <%ce>"'
+ls volumes/repos/handcheck/ && cat volumes/repos/handcheck/a.txt
+rm -rf volumes/repos/handcheck
+
+# 4. Works with no entry in .env -- that is the claim of A1-9. Expect: 0
+grep -c '^GIT_' .env
+
+# 5. Negative control: are the system tests real?
+#    Expect EXIT=1 with "stack not running: container(s) opencode are not up",
+#    then EXIT=0 again once the container is back.
+docker compose stop opencode
+./tests/run.sh m-a1; echo "EXIT=$?"
+docker compose start opencode
+./tests/run.sh m-a1; echo "EXIT=$?"
+```
+
+Verified by the operator on 2026-08-29; output in PR #9. Check 5 answers the question every system
+test raises: does it touch the stack at all, or would it pass just as happily with nothing running?
+
