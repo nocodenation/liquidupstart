@@ -359,7 +359,9 @@ test raises: does it touch the stack at all, or would it pass just as happily wi
 
 ### M-A2 — git skill
 
-**Not yet independently verified.** The four commands above have so far been run only by the author; the operator's record in PR #9 covers A2-5, the manual observation, and not these. That is a weaker position than M-A0 and M-A1, where the operator ran the procedure and posted the output, and it is recorded rather than papered over: the negative control in particular has not been exercised by anyone but the author.
+Verified by the operator on 2026-08-29; output in PR #9, together with the A2-5 observation.
+
+**A reporting subtlety the negative control exposed.** With `opencode` stopped the run reports "Ran 7 tests across 4 files", 5 pass and 2 fail — not 10. `beforeAll(() => requireStack())` throws in the two files that need the stack, Bun counts that as one failure per *file*, and the five tests inside them never run and drop out of the count silently. The outcome is right (EXIT=1, and the message names the missing container) but the presentation is poor: the failure shows as `(unnamed)`, and a reviewer reading only the totals could mistake a shrinking count for a different problem. From M-A3 onwards the stack guard should be a named test rather than a bare `beforeAll`, so that a missing stack reads as a named failure instead of a gap.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
