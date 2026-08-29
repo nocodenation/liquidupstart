@@ -288,7 +288,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 |---|---|---|---|---|---|---|
 | M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
-| M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes | None | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
+| M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
@@ -415,7 +415,27 @@ One specification defect surfaced: A2-1 asked for a "TRIGGER clause, matching th
 but only `liquid` of the ten siblings uses that word. The case was corrected rather than
 implemented as written, and the skill uses `TRIGGER when` anyway.
 
-**A2-5 is still outstanding.** It is the manual observation, and it is the only part of this
-milestone that tests what the milestone is actually for: whether an agent given the skill behaves
-by it.
+**A2-5, the manual observation, was carried out on 2026-08-29** in OpenClaw, driven by the operator
+through the web UI on `openai/gpt-5.4`. The task was deliberately underspecified — "write a small
+Python script that reads a CSV and prints its column names, and put it under version control" — and
+mentioned neither the skill nor `/repos`.
+
+All four observations passed, with filesystem evidence:
+
+- **It worked in `/repos`**, creating `/repos/csv-columns` — even though `agents.defaults.workspace`
+  in `openclaw.json` points at `/home/node/.openclaw/workspace`, where an empty repository already
+  existed. This was the open question before the run, and it is the milestone's strongest result:
+  the skill text overrode the harness default, so no change to the OpenClaw configuration is needed.
+- **It did not override the identity.** The repository carries no local `user.*` configuration and
+  the commit is attributed to `Liquid Upstart Agent <agent@liquidupstart.local>`, which is M-A1's
+  environment variables reaching a commit made by a real agent rather than by a test.
+- **It did not push**, and said why: "I did not push anywhere, since this environment's git workflow
+  requires asking before any push."
+- **It found the skill unprompted**, announcing it would read it before starting. That also
+  cross-validates A2-1 and A2-3 — an invalid frontmatter or a missing mount and it could not have.
+
+**A finding for M-A4:** the repository was created on branch `master`, git's default without
+`init.defaultBranch`, while the skill forbids pushing to `main`. The branch guard must recognise
+both names, or it will protect a branch that does not exist while the actual default branch stays
+unguarded.
 

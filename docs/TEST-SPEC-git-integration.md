@@ -388,3 +388,8 @@ control and observe what it does. The expected observation: it works inside `/re
 push, and it does not invent a location of its own. Record what actually happened in the process
 log — including a partial or wrong result, which is the outcome worth knowing about.
 
+Carried out 2026-08-29 on `openai/gpt-5.4`; passed on all four points. The evidence is filesystem
+state, not the agent's own account of itself: the repository under `volumes/repos/`, the absence of
+a local `user.*` override, and the absence of any configured remote. Full record in the feature
+document's appendix.
+
