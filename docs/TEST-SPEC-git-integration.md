@@ -254,6 +254,8 @@ it out, and nothing caught that because there is only one private repository so 
 **M-A3c**, not by amending the decision. Note that the limit applies to *private* repositories only:
 public ones are reachable over HTTPS with no key at all.
 
+**Signed off 2026-08-30** — reviewed before implementation.
+
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | A3b-1 | Contract | The skill is searched for the URL form | It states that private repositories of this stack are reached at `git@github.com:owner/repo.git`, and that HTTPS asks for credentials which do not exist here |

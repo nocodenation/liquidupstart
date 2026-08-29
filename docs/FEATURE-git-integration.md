@@ -580,3 +580,35 @@ Three findings follow, in order of weight:
 
 Scheduled as an addendum before M-A4, since M-A4's guardrails assume agents can reach remotes at
 all.
+
+### M-A3b — skill addendum · posed 2026-08-30
+
+```
+/goal Implement M-A3b from docs/FEATURE-git-integration.md: the skill addendum
+forced by the A3-11 failure. The acceptance criteria are cases A3b-1 to A3b-3 in
+section 5 of docs/TEST-SPEC-git-integration.md, signed off on 2026-08-30. Write
+those tests first, then make them pass. A3b-4 is manual and must not be
+automated.
+
+Scope: extend config/agents/skills/git/SKILL.md with two rules, without
+rewriting or weakening what is already there. First, the URL form: private
+repositories of this stack are reached at git@github.com:owner/repo.git, and an
+https:// URL asks for credentials that do not exist in these containers, which
+is what "could not read Username" means when it appears. Second, the source
+rule: a repository that cannot be reached must be reported as unreachable, and
+must never be described from some other source -- a web page, a catalogue, a
+mirror -- without saying plainly that the answer does not come from the
+repository itself.
+
+Done when `./tests/run.sh m-a3b; echo EXIT=$?` is visible in this transcript
+with EXIT=0 and all of A3b-1 to A3b-3 present, and `./tests/run.sh; echo EXIT=$?`
+also shows EXIT=0, proving the earlier milestones have not regressed.
+
+Constraints: do not modify .env or compose.yml. Do not change the existing rules
+in the skill; this milestone adds to them. Search the codebase before assuming
+anything is missing; full implementations only, no placeholders. Or stop after
+20 turns.
+```
+
+Outcome: pending.
+
