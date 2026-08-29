@@ -75,6 +75,11 @@ is the exception, because a reviewer must understand what a test proves without 
 
 ## Development rules
 
+**Project language is English.** Everything that lands in the repository or on GitHub is written in
+English — documentation, commit messages, test headers, pull request descriptions and review
+comments — because the team reads and reviews in English. Only the working conversation may be held
+in another language.
+
 Adopted from Philipp's commandments for AI development.
 
 **Specify first.** Write the specification before the implementation. Include use cases — ask when

@@ -153,6 +153,12 @@ Every test file opens with a block that a human can read without opening the imp
 
 ### M-A1 — Workspace and identity
 
+**Signed off 2026-08-29** — reviewed before implementation, per step 2 of the per-milestone cycle.
+Four points were put to the operator and confirmed: M-A1 must work with no entry in `.env` at all,
+so A1-9 stands as written; A1-10 is kept as documentation of a non-guarantee rather than dropped as
+noise; coupling A1-1 and A1-2 to the dashboard's own env parser is accepted; and the two adaptations
+in §2 stand.
+
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | A1-1 | Component | `.env.example` §10 parsed by `parseExample` | Section recognised, `GIT_USER_NAME` and `GIT_USER_EMAIL` listed with help text |
@@ -253,13 +259,17 @@ otherwise notice if a later edit removed them.
 
 ---
 
-## 8. Open points for review
+## 8. Decisions taken
 
-1. **`bun test` as the single runner** — alternative would be `bats` for the shell parts, which is
-   idiomatic but adds a dependency. Proposal: one toolchain.
-2. **A2-5 as a manual step** — the alternative is an automated behavioural test that will be flaky.
-   Proposal: keep it manual and recorded.
-3. **A1-10 asserts nothing.** It documents that M-A1 adds no confinement to `/repos`. Worth keeping
-   as a written non-guarantee, or noise?
-4. **M-A0 as its own milestone** delays M-A1 by one cycle, and its process-log row will measure the
-   harness rather than the feature. Accepted deliberately.
+All four points originally raised here have been settled; they are kept as a record rather than
+deleted, because the reasoning is what a later reviewer needs.
+
+1. **`bun test` is the single runner.** `bats` would be idiomatic for the shell parts but adds a
+   dependency. Settled by building M-A0 on Bun and verifying it.
+2. **A2-5 stays a manual, recorded step.** The alternative is an automated behavioural test that
+   will be flaky, and a flaky suite trains everyone to ignore red.
+3. **A1-10 is kept as documentation.** It asserts nothing about confinement because there is none;
+   writing the non-guarantee down stops a later reader mistaking a missing check for a guarantee.
+4. **M-A0 stood as its own milestone.** It cost one cycle and its process-log row measures the
+   harness rather than the feature — accepted deliberately, and it paid for itself by catching two
+   runner defects before any milestone depended on them.

@@ -327,6 +327,12 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-B1 | | | | | | |
 | M-B2 | | | | | | |
 
+**M-A0 was independently verified on 2026-08-29** by the operator, not by its author: the four
+checks (suite green, discovery listing, a deliberately failing tree returning a non-zero exit, and a
+mistyped milestone id failing rather than passing silently) were run by hand and their output posted
+to PR #9. The third check is the one that matters — without it, every later milestone gate would
+rest on an unverified runner.
+
 Two columns carry most of the value. **"Evaluator passed something untrue"** tracks the failure mode
 the LOOP guidance warns about — a goal declaring victory on a check that only looked passed.
 **"Plan changed"** is the direct answer to *where should a review have happened*: the milestones
