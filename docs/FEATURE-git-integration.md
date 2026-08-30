@@ -657,3 +657,19 @@ recorded as a win.
 **M-A3b is therefore not done.** Its automated cases pass and its manual acceptance fails. The fix
 is one line: the description must trigger on fetching, cloning and reading repositories, not only on
 producing and keeping work.
+
+**Measured before acting, and the hypothesis was wrong.** The suspicion after A3b-4 was that skill
+descriptions might systematically fail to trigger, since a count taken during M-A2 found only one of
+ten skills using the literal word "TRIGGER". Reading all ten descriptions rather than grepping them
+shows nine state plainly when to use them, in varied phrasing — "Use for any…", "Use whenever you
+need to…". Only `create-db-function` gives no occasion at all, and its subject is narrow enough to
+match anyway. There is no systemic problem.
+
+The git skill is the outlier, and not for lack of a trigger clause: it has an explicit one. It
+enumerates too narrowly, and it enumerates the *wrong vocabulary*. The other skills describe
+occasions in the user's words — "make me a table", "list tickets", "what files are in the system" —
+while the git skill lists domain verbs: version, commit, branch, track changes. Nobody asks an agent
+to "version" something. They ask it to fetch a repository, and that appears nowhere.
+
+The correction is therefore narrow: the git skill's description, not a review of all ten. The
+document review answered this without spending a single prompt on a behavioural probe.
