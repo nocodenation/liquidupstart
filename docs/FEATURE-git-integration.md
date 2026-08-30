@@ -304,7 +304,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
-| M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | No — both required runs shown with their exit codes | None | No |
+| M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | **Yes, in effect** — nine green cases while the behaviour was unchanged, because they assert the file's content and the agent never opened it | A3b-4 failed; the skill's TRIGGER clause does not cover fetching a repository | Yes — the trigger, not the rules, is what needs fixing |
 | M-A3c | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
@@ -627,3 +627,33 @@ addendum; leaving it would have contradicted the section added directly above it
 
 **A3b-4 is outstanding.** It repeats the A3-11 prompt verbatim in a fresh session, and it is the
 only case that decides whether any of this worked.
+
+### A3b-4 — the manual observation · carried out 2026-08-30 · **failed**
+
+The A3-11 prompt was repeated verbatim in a fresh session on `openai/gpt-5.4`. The agent again never
+reached the repository: it tried HTTPS, read GitHub's 404 as "the repository does not exist" rather
+than "it is private", attempted to clone into `/home/node/.openclaw/workspace` rather than `/repos`,
+and finally answered from a public skills marketplace, naming two of the three skills.
+
+**The cause is not the rules M-A3b added. It is that the skill was never opened.** Its TRIGGER
+clause reads: *"TRIGGER when the user asks to version, commit, branch, or track changes to code,
+documents or generated artefacts, or when work you produced should be kept rather than
+overwritten."* Fetching an existing repository in order to read it matches none of those. In A2-5,
+where the task was "put it under version control", the agent announced that it would read the git
+skill and then followed it. In A3-11 and A3b-4 it never mentions the skill and behaves exactly as if
+the rules did not exist.
+
+So M-A3b wrote correct rules into a document the agent had no reason to open, and all nine of its
+automated cases passed because they read the file directly. This is the sharpest possible
+demonstration of the limit written into the headers of A2-2 and A3b-1: presence is not reachability.
+A skill can be valid, mounted, visible in both harnesses, and still be inert.
+
+**One improvement, which cannot honestly be credited to M-A3b.** This time the agent did name its
+source — "from the publicly indexed marketplace references I could verify" — and said plainly that
+it could not fetch the repository. That is better than A3-11. But if the skill was not loaded, the
+improvement did not come from it; variance is the more likely explanation, and it should not be
+recorded as a win.
+
+**M-A3b is therefore not done.** Its automated cases pass and its manual acceptance fails. The fix
+is one line: the description must trigger on fetching, cloning and reading repositories, not only on
+producing and keeping work.
