@@ -83,8 +83,9 @@ Only the working conversation itself may be held in another language.
 
 Adopted from Philipp's commandments for AI development.
 
-**Specify first.** Write the specification before the implementation. Include use cases — ask when
-they are unclear. Document data structures and APIs.
+**Specify first.** Write the specification before the implementation, covering system structure,
+features, use cases, data structures, APIs and tests. Include use cases — ask when they are unclear.
+Document data structures and APIs.
 
 **Implement to the specification.** Stick to it. When the implementation reveals a problem with the
 spec, raise it rather than quietly deviating, and adjust the spec with the other features in view.
@@ -92,6 +93,12 @@ Document every implemented feature in its own Markdown file.
 
 **Test at every level.** Unit, component, integration and system tests — not unit tests alone.
 Cover happy and unhappy cases. Document every test in a human-readable header.
+
+**The test specification carries an overview and a paragraph per test.** The overview is the table;
+the paragraph gives the test's premise, the system component it runs against, the steps to perform
+it, the expected result, any dependencies and test data it needs, and the use cases it covers. A
+reviewer has to be able to sign a test off, or challenge it, without reading the implementation —
+which a one-line table row does not allow.
 
 **Coverage where it bites.** Full branch coverage is required for real decision logic. It is not
 demanded of configuration, mounts, or Markdown, where it produces ceremony rather than safety; the
