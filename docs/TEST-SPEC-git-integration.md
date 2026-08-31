@@ -403,6 +403,8 @@ reaches OpenCode by a mount and OpenClaw's `claude-cli` backend by a copy, while
 OpenAI model — the configuration all three failures happened under — receives neither. The skill
 reaches all three; A2-5 ran on `openai/gpt-5.4` and the agent read the skill and followed it.
 
+**Signed off 2026-08-31** — reviewed before implementation.
+
 **Decided before implementing, so a fourth failure is not re-litigated.** If A3d-5 fails again, the
 conclusion is that a skill does not reliably carry this use case, and locating a repository becomes
 something the operator states in the prompt. It would not then be retried with further wording.
@@ -413,7 +415,7 @@ something the operator states in the prompt. It would not then be retried with f
 | A3d-2 | Contract | The description is searched for the workspace path | `/repos` appears in the description itself, not only in the body, so the catalogue entry locates the workspace without the skill being opened |
 | A3d-3 | Contract | The skill body is unchanged | Every rule from M-A2 and M-A3b is still present — this milestone touches the description only, and a regression here would be invisible otherwise |
 | A3d-4 | System | Both harnesses see the new description | Identical in each, at its own mount path |
-| A3d-5 | **Manual** | A fresh session is asked which skills the `agent-skills` repository contains, naming it as a repository but not saying where it is | The agent answers from `/repos/agent-skills` and names all three: `nifi`, `webdb`, `pdf-sign`. Saying plainly that it cannot find it is also a pass. Answering from elsewhere, or listing the stack's own installed skills, is a fail |
+| A3d-5 | **Manual** | A fresh session is asked, verbatim: **“Which skills are in the agent-skills repository?”** — named as a repository, its location not given | The agent answers from `/repos/agent-skills` and names all three: `nifi`, `webdb`, `pdf-sign`. Saying plainly that it cannot find it is also a pass. Answering from elsewhere, or listing the stack's own installed skills, is a fail |
 
 A3d-1 to A3d-4 can only assert that words are present and reachable as text. Whether the description
 causes the skill to open is a model decision, and A3d-5 is the only case that measures it.

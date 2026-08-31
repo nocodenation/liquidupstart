@@ -1044,3 +1044,36 @@ The configuration everything was tested under is the third row, so `instructions
 place to state anything this feature depends on — a fix put there would cover two environments of
 three and be reported as done while the failing case still failed. The skill is the route that
 reaches all three. This does not block M-A3d; it constrains where the answer may live.
+
+### M-A3d — making the workspace discoverable · posed 2026-08-31
+
+```
+/goal Implement M-A3d from docs/FEATURE-git-integration.md: make the repository
+workspace discoverable. The acceptance criteria are cases A3d-1 to A3d-4 in
+section 5 of docs/TEST-SPEC-git-integration.md, signed off on 2026-08-31. Write
+those tests first, then make them pass. A3d-5 is manual and must not be
+automated.
+
+Scope: change only the `description:` line in the frontmatter of
+config/agents/skills/git/SKILL.md. It must keep the versioning occasions it
+already names, add read-side ones in the vocabulary a user actually uses —
+fetching or cloning a repository, looking inside one, asking what a repository
+contains — and state the workspace path /repos in the description itself, so
+that the catalogue entry locates the workspace even when the skill is never
+opened. Match the phrasing style of the sibling skills in that directory, which
+name occasions the way a user would say them rather than as domain verbs.
+
+Do not change the body of the skill. Every rule from M-A2 and M-A3b stays exactly
+as it is; A3d-3 exists to catch a regression there.
+
+Done when `./tests/run.sh m-a3d; echo EXIT=$?` is visible in this transcript with
+EXIT=0 and all of A3d-1 to A3d-4 present, and `./tests/run.sh; echo EXIT=$?` also
+shows EXIT=0, proving the earlier milestones have not regressed.
+
+Constraints: do not modify .env or compose.yml. Search the codebase before
+assuming anything is missing; full implementations only, no placeholders. Or stop
+after 20 turns.
+```
+
+Outcome: pending.
+
