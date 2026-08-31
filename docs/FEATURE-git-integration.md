@@ -18,6 +18,81 @@ and discoverability**.
 Guiding constraint: **keep the first increment as small as it can be.** Where a cheaper option
 carries residual risk, the risk is named and accepted rather than engineered away.
 
+### 1.1 Use cases
+
+Written down after four milestones, which is late. Requirements were derived from capabilities
+rather than from how the feature is used, and it cost two milestones: M-A3b and its repetition both
+worked on "fetch a repository the stack does not have", which turns out to be a corner case rather
+than the point.
+
+The overarching case, in the operator's words: *store versioned artefacts — code, documents and the
+rest — in a remote git repository, and make changes there.* Beneath it:
+
+- **U1 · Declare the repositories.** The operator records which remotes the stack works with, with
+  what access, and under what policy. Nothing else in the feature discovers repositories on its own.
+- **U2 · Enable each repository once.** The stack produces a public key per repository; the operator
+  registers it with the host. After that the repository is usable without further ceremony.
+- **U3 · Work in one repository, writing.** The common case by a wide margin. An agent changes files
+  and commits.
+- **U4 · Push after approval.** Each push is approved individually, per §3.1.
+- **U5 · Read a repository the stack already has.** Answer a question about it without changing it.
+- **U6 · Create something that has no remote yet.** The agent creates it locally and may propose that
+  it become a remote; creating it on the host stays with the operator.
+- **U7 · Pick up where things were left.** Repositories and their state survive between sessions, and
+  the operator can open them with their own tools at any time.
+- **U8 · Several repositories in one session.** It happens; it need not be comfortable, only possible.
+
+### 1.2 Two working modes
+
+"Making changes" is not one activity. It is two, with different purposes, and conflating them is why
+the requirement never settled.
+
+**Developer mode** is for functionality that has to be tested and reviewed before it is released.
+Work happens on a feature branch, never on the default branch, and reaches it through review. Small
+frequent commits are right here: they are cheap, local, and nobody else sees them until the branch
+is pushed.
+
+**Content mode** is for documents and similar artefacts. Versioning serves two purposes that have
+nothing to do with review: undoing a change made by mistake, and giving collaborators a shared,
+inspectable state to work from. Committing to the default branch is normal here, where policy allows
+it, because a branch-and-merge dance for a shared folder is friction without benefit. Commits should
+be coarse — one per coherent change, not one per save — because every commit on a shared branch
+obliges every other collaborator to integrate it.
+
+A session works in one mode. Working on functionality and content at the same time produces exactly
+the confusion the modes exist to prevent. The mode is therefore **explicit**, not inferred from the
+branch policy: it changes how the agent commits, not only where it pushes.
+
+### 1.3 What is allowed: four levels, strictest wins
+
+**GitHub's branch protection** is the hard ceiling. It is enforced by the server, and nothing on this
+side can exceed it.
+
+**The repository's policy in the configuration** is the operator's deliberate decision, and it may be
+*stricter* than the server. Most small repositories have no branch protection at all, and "this one
+is code, always branch" still has to hold. The entry declares a policy, not a classification: a
+repository holding both code and documentation is not thereby one kind or the other.
+
+**The global default** sets the habit for new sessions.
+
+**The session** may tighten, never loosen. It cannot authorise a direct push that the repository's
+policy forbids.
+
+Two consequences follow, and neither was in the requirements before:
+
+**Automated pushes** — pushing without per-push approval — are configurable **per repository only**,
+never globally, and never for a repository whose content is executed. In a documents repository the
+blast radius is small and the history undoes mistakes. In a code repository an automated push is the
+path by which an injected instruction reaches infrastructure; the agent need not do anything
+malicious, an ingested document is enough.
+
+**Integrating before pushing.** A shared branch must be brought up to date before an agent pushes to
+it — fetch and rebase, never force, and report a conflict rather than resolve it. An agent pushing
+at machine pace to a branch other people work on makes every one of them integrate, every time. That
+is ordinary git life at human pace and a standing tax at agent pace.
+
+---
+
 ---
 
 ## 2. Decisions
@@ -33,6 +108,11 @@ carries residual risk, the risk is named and accepted rather than engineered awa
 | Working copy for liquidupstart | Its own clone under `volumes/`, host working copy untouched |
 | Java toolchain | Dedicated `nar_builder` service, mirroring `bun_runner` |
 | Liquid restart | Human restarts; dashboard button is a later increment |
+| Repositories | Declared in the configuration, with access and policy; nothing is discovered |
+| Working mode | Developer or content, explicit; global default, overridable per session |
+| Permission | Four levels, strictest wins: host · repository policy · global · session (§1.3) |
+| Automated push | Per repository only, never global, never where content is executed |
+| New remotes | The agent may propose one; creating it on the host stays with the operator |
 
 ### Out of scope for the first increment
 
@@ -118,6 +198,23 @@ upgrade path and does not invalidate M-A1 through M-A3.
 - **NFR5** — The existing security posture is preserved: `cap_drop`, `no-new-privileges`.
 - **NFR6** — A reset remains "delete `volumes/…`".
 
+### Added after the use cases were written (§1.1)
+
+- **FR11 — Declared repositories.** The configuration lists the remotes the stack works with, each
+  with its access (read or write) and its policy (may the default branch be written directly,
+  are pushes approved individually or automatic). Nothing discovers repositories on its own.
+- **FR12 — Clones follow the declaration.** A declared repository is present under the workspace
+  without an agent having to fetch it. Reading one is then looking at a directory, not an errand.
+- **FR13 — Explicit working mode.** Developer or content, set globally and overridable per session,
+  never inferred. A session may only tighten what the repository's policy allows, and the
+  repository's policy may only tighten what the host enforces (§1.3).
+- **FR14 — Integrate before pushing to a shared branch.** Fetch and rebase first; never force; a
+  conflict is reported, not resolved.
+- **FR15 — Commit granularity follows the mode.** Small and frequent on a private feature branch,
+  one per coherent change on a shared branch.
+- **FR16 — Automated push is per repository.** Never global, and never for a repository whose
+  content is executed.
+
 ---
 
 ## 5. Milestones
@@ -163,27 +260,38 @@ source. Both halves of what A3-11 exposed.
 prompt repeated verbatim — ends in either a clone or an explicit refusal, but never in an answer
 from elsewhere.
 
-**M-A3b-2 · The trigger, not the rules**
+**M-A3c · Declared repositories, their keys, and their clones**
+The core of the feature as the use cases describe it, and now the next milestone rather than a
+follow-up. The configuration gains a repository list (FR11); the start scripts generate a key per
+repository and clone each declared repository into the workspace (FR12); the dashboard shows one
+public key per repository to register. A scoped `insteadOf` per repository comes along, and
+`core.sshCommand` written into each clone selects the right key while keeping the plain
+`git@github.com:owner/repo.git` URL form.
+*Done when:* `./tests/run.sh m-a3c` is green, including two declared repositories with separate keys
+both present in the workspace after a start — the case that cannot pass today — and the manual case
+that an agent asked about a declared repository answers from the clone rather than from the network.
+
+**M-A3b-2 · The skill trigger — deferred, and probably unnecessary**
 A3b-4 failed with every automated case green: the rules were right and the skill was never opened,
-because its trigger lists domain verbs where the other nine skills list what a user says. Changes the
-description only.
-*Done when:* `./tests/run.sh m-a3b-2` is green, and the manual A3b-2-4 — the A3-11 prompt a third
-time — ends in a clone or an explicit refusal. If it fails again, skills do not carry this use case
-and reading an uncloned repository becomes a human-started operation; it is not retried a fourth
-time.
+because its trigger lists domain verbs where the other nine skills list what a user says. Writing
+the use cases changed its standing. Once M-A3c clones declared repositories at start, "fetch a
+repository the stack does not have" stops being something an agent does at all — U5 becomes reading
+a directory. Two milestones were spent teaching an agent to perform an errand the stack should have
+run for it.
+It is kept, not dropped: a repository nobody declared is still a real situation, and the source rule
+from M-A3b — never describe a repository you could not read using some other source — matters
+whatever the cause. But it runs **after** M-A3c, and its manual case is then a corner case rather
+than the acceptance of the feature.
 
-**M-A3c · One deploy key per repository**
-Carries out the credential decision from §2 that M-A3 did not implement: it built a single key for
-the whole stack, so only one private repository is reachable. Selection by `core.sshCommand` written
-into each clone, which keeps the URL form M-A3b teaches.
-*Done when:* `./tests/run.sh m-a3c` is green, including the case that two private repositories with
-separate keys are both reachable — the case that cannot pass today.
-
-**M-A4 · Hook guardrails**
-`pre-push` hook installed into every clone: branch rules, force and delete rejection, secret scan of
-the diff. Installed automatically so a fresh clone is covered.
+**M-A4 · Guardrails, aware of the mode**
+`pre-push` hook installed into every clone, enforcing what §1.3 allows for that repository: the
+branch rule as declared (not merely "never `main`" — the default branch may legitimately be written
+in content mode), rejection of force and of ref deletion, a secret scan of the diff, and FR14 —
+refusing a push that has not integrated the current remote state. Installed automatically so a fresh
+clone is covered.
 *Done when:* `./tests/run.sh m-a4` is green at **100% branch coverage** of the hook — the one
-artifact in this feature that earns it.
+artifact in this feature that earns it — including a repository whose policy permits writing the
+default branch and one whose policy forbids it.
 
 **M-A5 · Self-development on Liquid Upstart**
 Its own clone at `volumes/repos/liquidupstart`, a deploy key for it, and additional skill rules
