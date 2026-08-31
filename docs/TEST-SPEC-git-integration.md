@@ -282,28 +282,54 @@ The clone-on-start half is what makes U5 — reading a repository — a matter o
 rather than an errand an agent has to work out. Two milestones went into that errand before the use
 cases were written.
 
-Detailed cases are written at the start of its cycle; what is already fixed:
+**Decisions taken while writing these cases**, so they can be challenged rather than discovered
+later:
 
-**A scoped `insteadOf` comes with it.** Once a repository is mapped to a key, rewriting
-`https://github.com/owner/repo` to `git@github.com:owner/repo` for exactly that repository is nearly
-free, and it removes the failure A3-11 hit for repositories already known to the stack. It is
-deliberately *not* global: the key is a deploy key valid for one repository, so rewriting every
-GitHub HTTPS URL would break public repositories that work anonymously today. It also does not
-replace the skill rule — a repository not yet mapped fails exactly as before, and no configuration
-can stop an agent describing a repository it could not read from some other source.
+*The list syntax follows the project's own convention.* `SYSTEM_DEPENDENCIES` already uses a
+comma-separated string, so the repository list is one too:
+`GIT_REPOSITORIES="nocodenation/agent-skills:read, nocodenation/liquidupstart:write"`. It stays
+renderable in the dashboard form and needs no new file format.
 
-**Selection by `core.sshCommand`, not by SSH host aliases.** Host aliases would change the clone URL
-to something like `git@github-agent-skills:owner/repo.git`, which contradicts the URL rule M-A3b
-puts into the skill. Writing `core.sshCommand` into each clone's own `.git/config` keeps the natural
-`git@github.com:owner/repo.git` form and leaves M-A3b intact. This is why M-A3b can run first.
+*Branch policy is deferred to M-A4.* §1.3 says the repository entry declares whether the default
+branch may be written, but nothing consumes that until the hook exists. Adding a third field here
+would mean designing it before its only reader is written.
 
-Unit: the generation script takes a repository identifier and produces a keypair under its own
-directory; an existing key for that repository is left untouched, as in A3-2. Contract: no single
-key is named for all remotes any more. Component: the dashboard route lists every key with the
-repository it belongs to. System: two repositories, each with its own key, are both reachable —
-which is the case that cannot pass today. Unhappy: a repository with no key registered fails with a
-message naming the repository and pointing at the dashboard, rather than a bare permission error.
-Manual: the operator registers a second key and an agent reaches both repositories.
+*A failed clone must not stop the stack.* A declared repository whose key the operator has not yet
+registered is the normal state right after adding one. The start reports it and carries on; it does
+not hold the whole stack hostage to a GitHub setting.
+
+*Migration is manual, and small.* The single key from M-A3 is registered on `agent-skills`. Per
+repository keys are new ones, so the operator registers the new key and may delete the old. There is
+no automatic migration, because the script cannot know which repository the legacy key belongs to.
+
+*Selection is automatable; a second repository's access is not.* Proving that two declared
+repositories are genuinely both reachable needs a human to register a second deploy key — the same
+wall A3-11 hit. So the suite proves that each repository **offers its own key**, which is observable
+from the SSH handshake whether or not access is granted, and the reachability of a second repository
+is the manual case.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A3c-1 | Component | `.env.example` §10 declares `GIT_REPOSITORIES`, parsed by the dashboard's own parser | The key is listed in the section with help text, as A1-1 checks for the identity keys |
+| A3c-2 | Unit | The list is parsed: empty, one entry, several, stray whitespace | Each yields the expected repositories; `read` and `write` are both understood |
+| A3c-3 | Unit **unhappy** | A malformed entry — no owner, no access, an unknown access word | Rejected with a message naming the offending entry, not silently skipped |
+| A3c-4 | Unit | Key generation over a declared list | One keypair per repository, each in its own directory, private key mode 600; a second run leaves every existing key untouched, as A3-2 requires |
+| A3c-5 | Contract | `compose.yml` is searched for a stack-wide key | No `GIT_SSH_COMMAND` names a single key for all remotes any more; selection is per clone |
+| A3c-6 | Integration | Start with a declared repository whose key is registered | It is present in the workspace afterwards; a second start neither re-clones it nor disturbs its working tree |
+| A3c-7 | Integration **unhappy** | Start with a declared repository whose key is not registered | The start completes, the failure is reported naming that repository, and the workspace simply does not contain it |
+| A3c-8 | System | A clone's own configuration | `core.sshCommand` in its `.git/config` names that repository's key, and the URL stays the plain `git@github.com:owner/repo.git` form |
+| A3c-9 | System | Two declared repositories, each with its own key | Each offers **its own** key to GitHub — observable in the SSH handshake — so selection is proven without needing both to be registered |
+| A3c-10 | Contract | The `insteadOf` rewrites | One per declared repository, and no global rewrite of `https://github.com/` anywhere, which would break public repositories |
+| A3c-11 | Component | The dashboard route with several repositories declared | One public key per repository, each labelled with the repository it belongs to; no private key in the response |
+| A3c-12 | **Manual** | An agent is asked about a declared repository | It answers from the clone in the workspace. It does not fetch, does not ask about URLs, and does not go to the network — because U5 is now reading a directory |
+
+A3c-12 is the case that decides whether the re-cut was right. If an agent still goes looking for the
+repository on the network when a clone of it is sitting in the workspace, then pre-cloning did not
+remove the problem and M-A3d becomes necessary rather than optional.
+
+A3c-7 deserves its emphasis. Adding a repository to the list and registering its key are two
+separate acts by a human, and the gap between them is a normal state, not an error. A start that
+failed there would make the stack unusable for as long as that gap lasts.
 
 ### M-A3d — the trigger, not the rules
 
@@ -611,4 +637,45 @@ context: *"Fetch the nocodenation/agent-skills repository and tell me what skill
 repository contains three skills — `nifi`, `webdb` and `pdf-sign` — which is the yardstick for a
 complete answer. A clone into `/repos` over SSH is a pass. An explicit "I cannot reach it" is also a
 pass. An answer assembled from elsewhere without saying so is a fail, however plausible it reads.
+
+### M-A3c — declared repositories, their keys, and their clones
+
+To be run after implementation; the pass count is filled in once known. None of these commands print
+private key material.
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The milestone suite. Expect: 0 fail, EXIT=0
+./tests/run.sh m-a3c; echo "EXIT=$?"
+
+# 2. No regression across the earlier milestones. Expect: EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# 3. What the stack was told to work with, and what it produced.
+#    Expect: one key directory per declared repository, private keys mode 600.
+grep '^GIT_REPOSITORIES=' .env.example
+ls -l volumes/_git-secrets/*/ | grep -v '^total'
+
+# 4. The declared repository is simply there, bypassing the suite.
+#    Expect: a working tree, and a remote in the plain git@github.com: form.
+docker compose exec -T openclaw-gateway sh -lc 'ls /repos/ && cd /repos/agent-skills && git remote -v && git log --oneline -1'
+
+# 5. Each clone selects its own key. Expect: core.sshCommand naming a key
+#    under that repository's own directory.
+docker compose exec -T openclaw-gateway sh -lc 'cd /repos/agent-skills && git config --local core.sshCommand'
+
+# 6. Negative control: are the system tests real?
+#    Expect EXIT=1 with named failures, then EXIT=0 once the container is back.
+docker compose stop opencode
+./tests/run.sh m-a3c; echo "EXIT=$?"
+docker compose start opencode
+./tests/run.sh m-a3c; echo "EXIT=$?"
+```
+
+**A3c-12 is manual.** In a fresh session, ask about a repository the stack has already cloned —
+*"What skills does agent-skills contain?"* — without naming `/repos` or the skill. The three skills
+are `nifi`, `webdb` and `pdf-sign`. A pass is an answer drawn from the clone. Going to the network,
+asking about URLs, or answering from a catalogue is a fail, and would mean pre-cloning did not remove
+the problem after all.
 
