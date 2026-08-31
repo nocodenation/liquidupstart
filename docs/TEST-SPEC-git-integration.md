@@ -746,7 +746,8 @@ the problem after all.
 
 ### M-A3d — making the workspace discoverable
 
-Not yet independently verified — the operator's run is outstanding.
+Verified by the operator on 2026-08-31; output in PR #9. The negative control still reports the full
+count with named failures — 8 pass and 3 fail of 11 — where M-A2 had collapsed to a smaller number.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
