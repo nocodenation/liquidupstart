@@ -167,13 +167,17 @@ identical in a table.
 
 **What this milestone is for.** Nothing here tests the git integration. M-A0 builds the instrument
 every later milestone is measured with, and then measures the instrument. If the runner can report
-success while nothing ran, every gate after it is decoration — so four of its six cases exist to make
-the runner *fail*, not to make it pass.
+success while nothing ran, every gate after it is decoration — so most of its cases exist to make the
+runner *fail*, not to make it pass.
 
 **Shared fixture.** Cases A0-1 to A0-4 run `tests/run.sh` against a throwaway directory tree in
 `/tmp` holding whatever files the case needs. Nothing touches the repository's own tests, and no
 Docker or network is involved. The `--root` and `--list` options exist for exactly this: a case that
 verified discovery by performing a real full run would include itself and recurse.
+
+**Every case pairs a positive and a negative scenario**, listed separately below. A rule that only
+refuses is as useless as one that only permits, and the pairing is what distinguishes a working
+guard from one that is merely strict. Six cases contain thirteen scenarios in total.
 
 ---
 
@@ -183,9 +187,9 @@ verified discovery by performing a real full run would include itself and recurs
 |---|---|
 | **Premise** | A runner that silently covers less than it appears to is the quietest way for a suite to become worthless. |
 | **Component** | `tests/run.sh`, discovery only. |
-| **Steps** | Create a fixture tree with one file under `unit/` and one under `integration/`; run `run.sh --root <tree> --list`. |
-| **Expected** | Exit 0, both files named. |
-| **Test data** | Two trivially passing test files. |
+| **Test data** | A fixture tree with `unit/m-fx.one.test.ts` and `integration/m-fx.two.test.ts`, both trivially passing. Both belong to milestone id `fx`. |
+| **Positive — unfiltered** | Run `run.sh --root <tree> --list`. Expected: exit 0, both files named, exactly two lines. |
+| **Positive — filtered** | Run `run.sh fx --root <tree> --list`. Expected: exit 0 and the same two files, proving the filter selects rather than merely narrows. |
 | **Covers** | The harness itself. |
 
 ##### A0-2 — a failing test makes the runner exit non-zero
@@ -194,9 +198,9 @@ verified discovery by performing a real full run would include itself and recurs
 |---|---|
 | **Premise** | The single most important property. Every milestone gate and every `/goal` completion condition assumes a non-zero exit means something went wrong. |
 | **Component** | `tests/run.sh` and its exit status. |
-| **Steps** | Create a fixture tree containing one deliberately failing test; run the runner against it. The failing test lives in a temporary directory the case creates and deletes, so the repository never contains one. |
-| **Expected** | Non-zero exit, with the failure named in the output. |
-| **Test data** | One test asserting `1 === 2`. |
+| **Test data** | Two fixture trees, both temporary and deleted afterwards so the repository never contains a failing test: one holding a passing file *and* a file asserting `1 === 2`; one holding only the passing file. |
+| **Negative** | Run the runner against the tree containing the failing file. Expected: non-zero exit, and the failing test named in the output. |
+| **Positive** | Run it against the tree of passing files only. Expected: exit 0. Without this, a runner that always failed would satisfy the negative scenario. |
 | **Covers** | The harness. |
 | **What it found** | `set -euo pipefail` aborted `run.sh` before the exit code was captured, so a failing suite would have reported success on some paths. Caught before any milestone depended on it. |
 
@@ -204,11 +208,12 @@ verified discovery by performing a real full run would include itself and recurs
 
 | | |
 |---|---|
-| **Premise** | The most dangerous green is the one where nothing ran. A typo in a milestone id must fail loudly. |
+| **Premise** | The most dangerous green is the one where nothing ran. A typo in a milestone id, or a mistyped directory, must fail loudly. |
 | **Component** | `tests/run.sh`, argument handling. |
-| **Steps** | Run the runner against a fixture tree using a milestone id that matches no file. |
-| **Expected** | Non-zero exit and the message `no tests matched`. |
-| **Test data** | One test file belonging to a different milestone id. |
+| **Test data** | A fixture tree whose only file belongs to milestone id `fx`; a milestone id `zz` that matches nothing; a path that does not exist. |
+| **Negative — no match** | Run with milestone id `zz`. Expected: non-zero exit and the message `no tests matched`. |
+| **Negative — no such root** | Run with `--root <path that does not exist>`. Expected: non-zero exit and `test root not found`. |
+| **Positive** | Run with milestone id `fx`. Expected: exit 0 and the file listed, so the failure above is attributable to the filter rather than to the runner refusing everything. |
 | **Covers** | The harness. |
 | **What it found** | The milestone prefix was applied twice, turning `m-a0` into `m-m-a0`. The first real invocation matched nothing — and said so, instead of reporting an empty pass. |
 
@@ -218,9 +223,10 @@ verified discovery by performing a real full run would include itself and recurs
 |---|---|
 | **Premise** | `--no-system` exists so the suite can run where Docker is not available. It must not turn absence of testing into evidence of correctness. |
 | **Component** | `tests/run.sh`, selection logic. |
-| **Steps** | Fixture tree containing only a file under `system/`; run with `--no-system`. |
-| **Expected** | Exit 0 — the flag is meant to be usable — with `SKIPPED` in the output and no pass count. |
-| **Test data** | One system-level test file. |
+| **Test data** | Two fixture trees: one containing only `system/m-fx.stack.test.ts`; one containing that file *and* `unit/m-fx.plain.test.ts`. |
+| **Negative — nothing left to run** | System-only tree, run with `--no-system`. Expected: exit 0 — the flag is meant to be usable — with `SKIPPED` in the output and no pass count. |
+| **Positive — partial selection** | Mixed tree with `--no-system --list`. Expected: the unit file listed, the system file absent, proving the flag drops only what it should. |
+| **Positive — no flag** | System-only tree with `--list` and no flag. Expected: the system file selected, so the exclusion is attributable to the flag. |
 | **Covers** | The harness. |
 
 ##### A0-5 — the stack guard fails fast and names what is missing
@@ -229,9 +235,10 @@ verified discovery by performing a real full run would include itself and recurs
 |---|---|
 | **Premise** | System-level tests need the stack. Without a guard they fail with a bare Docker error, or hang. The message has to point at the cause, because the reader is usually someone who does not know the stack should be running. |
 | **Component** | `requireStack` in `tests/lib/stack.ts`. |
-| **Steps** | Call it with a container name that cannot exist. A positive control runs alongside: with the stack up, the real containers pass the guard. |
-| **Expected** | It throws; the message names the container and points at `start.sh`. |
-| **Test data** | An invented container name. |
+| **Test data** | Two sets of container names. The names that **must exist**: `openclaw-gateway` and `opencode`, the agent services declared in `compose.yml` and exported by the helper as `AGENT_CONTAINERS` — the guard's default argument. And a name that **must not exist**: `liquidupstart-no-such-container`, chosen so no environment can accidentally provide it. |
+| **Negative** | Call `requireStack(['liquidupstart-no-such-container'])`. Expected: it throws; the message contains that name, the words `stack not running`, and a pointer to `start.sh`. |
+| **Positive** | With the stack up, call `requireStack()` with no argument, so it checks the configured agent containers. Expected: it does not throw. Where the stack is down the scenario records that fact rather than asserting, so the file stays honest on a machine without Docker. |
+| **Dependencies** | Docker, and for the positive scenario a running stack. |
 | **Covers** | The harness. |
 | **Later amended** | M-A3 turned the guard into a *named* test rather than a bare `beforeAll`. An aborted `beforeAll` is counted once per file and the tests inside vanish from the total, so a shrinking count reads like a different problem. |
 
@@ -241,9 +248,10 @@ verified discovery by performing a real full run would include itself and recurs
 |---|---|
 | **Premise** | The repository had tests before this feature existed. One command has to cover the whole repository, or the older suite quietly rots while everyone watches the new one. |
 | **Component** | `tests/run.sh --dashboard`, which invokes `bun test src` in `dashboard/`. |
-| **Steps** | Run it as a subprocess and read the summary. Deliberately narrow: a case that ran the full suite would recurse into itself. |
-| **Expected** | Exit 0, at least one pass, no failures. |
-| **Dependencies** | The dashboard package and its `bun test` script. |
+| **Test data** | The dashboard's own existing suite — 27 tests across two files at the time of writing. No fixture is created. |
+| **Positive** | Run `run.sh --dashboard` as a subprocess and read the summary. Expected: exit 0, at least one pass, `0 fail`. The assertion is on "at least one" rather than on 27, so adding a dashboard test does not break this case. |
+| **Negative** | Not repeated here. A broken dashboard suite propagates as a non-zero exit through the same mechanism A0-2 already proves; duplicating it would assert the same property twice. |
+| **Dependencies** | The dashboard package and its `bun test` script. Deliberately narrow: a scenario that ran the full suite would recurse into itself. |
 | **Covers** | The harness, and the repository's pre-existing tests. |
 
 ---
