@@ -1127,6 +1127,73 @@ which reads just as well as "the skills of the agent" — and that is roughly wh
 it as a repository removes that ambiguity without revealing the location, which is the thing under
 test.
 
+#### Detail per case
+
+**What this milestone is for.** One line — the skill's `description`. Four automated cases hold ten
+scenarios; the fifth is manual and is the only one that decides whether the change worked.
+
+---
+
+##### A3d-1 — the description names the read-side occasions
+
+| | |
+|---|---|
+| **Premise** | Three manual observations failed because the trigger enumerated domain verbs — version, commit, branch, track changes — while the other nine skills in the directory enumerate what a user actually says. Nobody asks an agent to *version* something; they ask what is in a repository, and that matched nothing. |
+| **Component** | The `description:` line of `config/agents/skills/git/SKILL.md`, read on its own. |
+| **Test data** | Read-side phrasings — fetching, cloning, looking inside a repository, asking what one contains — in quoted user wording, matching the sibling style. |
+| **Positive — read side** | Expected: the description names those occasions. |
+| **Positive — no regression** | Expected: the versioning occasions it already carried are still there. Widening must not narrow. |
+| **Positive — still an occasion clause** | Expected: it still says *when* to reach for the skill, rather than only what the skill does. |
+| **Covers** | U5, FR9. |
+
+##### A3d-2 — the workspace path is in the description itself
+
+| | |
+|---|---|
+| **Premise** | The cheap insurance, and probably the change that carried the milestone. A description is read *in order to decide* whether to open a skill, so the one fact an agent needs before it starts looking should not sit behind that decision. |
+| **Component** | The frontmatter and the body, examined separately. |
+| **Test data** | The workspace path `/repos`. |
+| **Positive — in the description** | Expected: `/repos` appears in the description line. |
+| **Negative — not only in the body** | Expected: its presence in the body does not satisfy the case. Without this scenario, a skill that mentions the path only where it always did would pass. |
+| **Covers** | U5, FR9. |
+
+##### A3d-3 — the body is unchanged
+
+| | |
+|---|---|
+| **Premise** | The body carries the rules of two earlier milestones. This milestone touches the description only, and a regression there would otherwise be invisible. |
+| **Component** | The body of `SKILL.md`, **with the frontmatter stripped first**. |
+| **Test data** | Every rule from M-A2 and M-A3b: the workspace path, the force prohibition, the protected branch, the secret rule, the URL form, the source rule. |
+| **Positive — rules present** | Expected: all still in the body. |
+| **Positive — substance** | Expected: the body is still substantial, so the rules cannot be satisfied by a stub. |
+| **Why the frontmatter is stripped** | Implemented more strictly than the signed-off case asked. "The body is unchanged" reads naturally as checking the whole file — which the M-A2 and M-A3b suites already do — and a rule *moved* out of the body into the description would satisfy that while hollowing out the skill. |
+| **Covers** | FR9. |
+
+##### A3d-4 — both harnesses see the new description
+
+| | |
+|---|---|
+| **Premise** | The change is only worth anything where the agent reads it, and the two harnesses mount the skill at different paths. |
+| **Component** | The running stack, at each harness's own mount path. |
+| **Test data** | The mounted skill in each container. |
+| **Positive — per harness** | For `openclaw-gateway` and `opencode` separately: expected to see the read-side occasions and the workspace path. |
+| **Positive — identical** | Compare the two descriptions. Expected: identical. |
+| **Dependencies** | A running stack. |
+| **Covers** | FR9. |
+
+##### A3d-5 — an agent finds the repository unaided · **manual**
+
+| | |
+|---|---|
+| **Premise** | The fourth attempt at the same question, and the only case that measures whether a description causes a skill to open. That is a model decision; the automated cases can only assert the words are present and reachable as text. |
+| **Component** | An agent in a fresh session. |
+| **Test data** | The prompt *"Which skills are in the agent-skills repository?"* — named as a repository, its location not given. The clone at `/repos/agent-skills` holding `nifi`, `webdb`, `pdf-sign`. The prompt is sharper than A3c-13's, which read just as well as "the skills of the agent". |
+| **Expected** | An answer from `/repos/agent-skills` naming all three. Saying plainly it cannot find the repository is also a pass. Answering from elsewhere, or listing the stack's own installed skills, is a failure. |
+| **Dependencies** | A running stack, the cloned repository, a working model. |
+| **Covers** | U5, U7, FR9. |
+| **What it found** | Passed on 2026-08-31, the first after three failures. The agent opened with *"I'm checking the local repos to find the agent-skills repository"*, reported the path, and named all three, citing the repository's own README. `pdf-sign` is the hard evidence: it appears in none of the third-party pages the earlier attempts drew on. The agent never mentions reading the skill, which points at A3d-2 rather than A3d-1 as the change that carried it — circumstantial, but the sequence fits. |
+
+---
 ### M-A4 — guardrails, aware of the mode
 
 The first milestone containing real decision logic. Everything before it wired configuration into
