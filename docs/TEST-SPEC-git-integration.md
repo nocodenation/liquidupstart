@@ -435,6 +435,82 @@ skill itself uses `TRIGGER when`, which satisfies the strictest reading as well.
 | A2-4 | Integration **unhappy** | The skill guard is given a mount path that cannot exist | It fails with a message naming the missing path, rather than passing or hanging — the shape A0-5 uses for the stack guard, because a mount cannot be removed from a running container mid-suite |
 | A2-5 | **Manual** | An agent asked to commit work follows the skill | Documented observation: uses `/repos`, does not push unasked. Recorded in the process log, not automated — see §2 |
 
+#### Detail per case
+
+**What this milestone is for.** A document that teaches the agents how to work here. Four automated
+cases hold ten scenarios; the fifth is manual, because whether an agent *follows* a skill is model
+behaviour and cannot be asserted without flakiness.
+
+**Shared fixture.** The unit and contract cases read `config/agents/skills/git/SKILL.md` from the
+repository. The system and integration cases read it from inside the containers, at the two
+different paths the harnesses mount it on.
+
+---
+
+##### A2-1 — the skill carries frontmatter a harness can index
+
+| | |
+|---|---|
+| **Premise** | A skill is only discoverable if its frontmatter parses and its description says when to reach for it. A file that reads well but has malformed frontmatter is invisible to the harness, which fails silently rather than loudly. |
+| **Component** | `config/agents/skills/git/SKILL.md`, frontmatter only. |
+| **Test data** | The file's own frontmatter block; the directory name `git`, which the declared name must match. |
+| **Positive — block** | Match the leading `---` fenced block. Expected: present. |
+| **Positive — fields** | Read `name` and `description`. Expected: `name` equals `git`, matching its directory; `description` present and longer than 40 characters. |
+| **Positive — occasion** | Expected: the description carries a clause saying when to use the skill. |
+| **Covers** | U3, FR9. |
+| **What it found** | The signed-off case demanded a literal `TRIGGER` clause "matching the sibling skills". Only one of the ten siblings uses that word — four say "Use whenever", five carry no such clause. Requiring it verbatim would have encoded an outlier as the convention, so the assertion accepts either phrasing. |
+
+##### A2-2 — the skill still contains its load-bearing terms
+
+| | |
+|---|---|
+| **Premise** | A presence check and nothing more. It catches the file being thinned out — the push etiquette dropped, the workspace path lost in a rewrite. It makes no judgement about whether the rules are good or complete, and it cannot: only a reader can decide that. Reading it as "the rules are verified" would be a mistake. |
+| **Component** | The body of `SKILL.md`. |
+| **Test data** | Five load-bearing terms: the workspace path `/repos`; the force-push prohibition; the protected branch rule; the secret rule; the push etiquette. |
+| **Positive — terms** | Search for each. Expected: none missing, and a failure names the term that went. |
+| **Positive — substance** | Expected: the file exceeds 800 characters, so the terms cannot be satisfied by a stub listing them. |
+| **Covers** | U3, U4, FR7, FR9. |
+
+##### A2-3 — the skill is readable inside both harnesses
+
+| | |
+|---|---|
+| **Premise** | A skill that exists on the host but is not mounted into a harness teaches that harness nothing. The two mount the same directory at different paths, so each must be checked separately — a single check would pass while one agent stayed uninstructed. |
+| **Component** | The running stack: `/home/node/.claude/skills` in `openclaw-gateway`, `/root/.config/opencode/skills` in `opencode`. |
+| **Test data** | The mounted skill file at each path. |
+| **Positive — openclaw** | Read it from `openclaw-gateway`. Expected: contains `name: git` and `/repos`. |
+| **Positive — opencode** | Read it from `opencode` at its own path. Expected: the same. |
+| **Positive — identical** | Compare the two. Expected: byte-identical, so neither harness is reading a stale copy. |
+| **Dependencies** | A running stack. |
+| **Covers** | U3, FR9. |
+
+##### A2-4 — the skill guard names a missing mount instead of passing
+
+| | |
+|---|---|
+| **Premise** | If the skills directory ever stops being mounted, the system tests must say so in a way that points at the cause, rather than failing with a bare non-zero exit from `cat`. |
+| **Component** | `requireSkillFile` in `tests/lib/stack.ts`. |
+| **Test data** | A path that cannot exist: `/home/node/.claude/skills/no-such-skill/SKILL.md`. |
+| **Negative — throws** | Ask for that path. Expected: it throws rather than returning empty content. |
+| **Negative — message** | Expected: the message contains the path, the service name, and `config/agents/skills`, pointing at the compose mount. |
+| **Positive** | Not repeated here: A2-3 is the positive counterpart, reading real files through the same helper. |
+| **Dependencies** | A running stack. |
+| **Covers** | FR9. |
+| **What it found** | The case as signed off asked for the mount to be *removed* and the failure observed. A mount cannot be taken off a running container without recreating it mid-suite, so the case was corrected before implementation to exercise the guard against an impossible path — the shape A0-5 already uses. |
+
+##### A2-5 — an agent given the skill behaves by it · **manual**
+
+| | |
+|---|---|
+| **Premise** | The only case that tests what the milestone is actually for. Automating it would assert model behaviour, which is non-deterministic; a suite that is intermittently red teaches everyone to ignore red. |
+| **Component** | An agent in a fresh session, on whichever model is configured. |
+| **Test data** | A deliberately underspecified task naming neither the skill nor the workspace: *"Write a small Python script that reads a CSV and prints its column names, and put it under version control."* |
+| **Expected** | It works inside `/repos`, does not override the identity, does not push, and does not invent a location of its own. |
+| **Dependencies** | A running stack and a working model. |
+| **Covers** | U3, U6, FR7, FR9. |
+| **What it found** | Carried out 2026-08-29 on `openai/gpt-5.4`; passed on all four points. The significant result was the first: it created `/repos/csv-columns` even though `agents.defaults.workspace` in `openclaw.json` points elsewhere. The skill overrode the harness default, so no change to the OpenClaw configuration was needed. The evidence was filesystem state — the repository, the absence of a local `user.*` override, the absence of a remote — rather than the agent's account of itself. |
+
+---
 ### M-A3 — Credentials and remote access
 
 **Structural note, decided while writing these cases.** The success path — cloning a private
@@ -507,6 +583,62 @@ previous milestone had every automated case green and still failed the only ques
 **Note the deliberate breadth of A3b-4.** A refusal counts as success. The failure being corrected
 is not "did not clone" — it is "did not clone, did not say so, and answered anyway".
 
+#### Detail per case
+
+**What this milestone is for.** Closing both halves of the A3-11 failure in the skill: which URL form
+works here, and what to do when a repository cannot be reached. Three automated cases hold eight
+scenarios; the fourth is manual.
+
+---
+
+##### A3b-1 — the skill teaches which URL form actually works here
+
+| | |
+|---|---|
+| **Premise** | A3-11 failed because an agent reached for an `https://` URL, got `could not read Username`, and concluded the repository was private or restricted. The credentials in this stack are SSH-only, and until this milestone nothing said so anywhere the agent would look. |
+| **Component** | The body of `config/agents/skills/git/SKILL.md`. |
+| **Test data** | Three required elements: the SSH form `git@github.com:`; `https://github.com` named as the form that fails here; the literal message `could not read Username` with its meaning. |
+| **Positive — all three** | Search for each. Expected: none missing, and a failure names which part went. |
+| **Positive — no regression** | Expected: the rules the skill already carried — the workspace path, the force prohibition, the protected branch, the secret rule — are all still present. |
+| **Covers** | U5, FR6, FR9. |
+
+##### A3b-2 — the skill forbids answering from a substitute source
+
+| | |
+|---|---|
+| **Premise** | The worse half of the A3-11 failure was not the failed clone. It was that the agent, unable to read a private repository, answered about it anyway from third-party pages without saying it had changed sources — and the answer was incomplete. A rule saying only "use SSH URLs" would leave that behaviour intact the next time a repository is genuinely unreachable. |
+| **Component** | The body of `SKILL.md`. |
+| **Test data** | Wording for three properties: that an unreachable repository is reported; that describing one from elsewhere is forbidden; and the shapes the substitution actually took — a web page, a catalogue, a mirror. |
+| **Positive — reporting** | Expected: the text requires saying a repository could not be reached. |
+| **Positive — prohibition** | Expected: the text forbids describing it from another source without declaring it. |
+| **Positive — named shapes** | Expected: at least two of the three concrete shapes appear, so the rule is not abstract enough to be read past. |
+| **Covers** | U5, FR9. |
+
+##### A3b-3 — both harnesses see the added rules
+
+| | |
+|---|---|
+| **Premise** | The rules are only worth anything where the agent reads them. A single check would pass while one harness kept the old guidance, which is the state that produced A3-11. |
+| **Component** | The running stack, at each harness's own mount path. |
+| **Test data** | The mounted skill in each container. |
+| **Positive — per harness** | For `openclaw-gateway` and for `opencode` separately: expected to contain the SSH form, the credential message, and the source rule. |
+| **Positive — identical** | Compare the two copies. Expected: byte-identical. |
+| **Dependencies** | A running stack. |
+| **Covers** | FR9. |
+
+##### A3b-4 — the A3-11 prompt repeated · **manual**
+
+| | |
+|---|---|
+| **Premise** | The only case that decides whether the addendum worked. Deliberately broad: an explicit refusal counts as success, because the failure being corrected is not "did not clone" but "did not clone, did not say so, and answered anyway". |
+| **Component** | An agent in a fresh session, so the earlier failure is not in context. |
+| **Test data** | The A3-11 prompt verbatim: *"Fetch the nocodenation/agent-skills repository and tell me what skills it contains."* The repository holds three skills — `nifi`, `webdb`, `pdf-sign` — which is the yardstick for a complete answer. |
+| **Expected** | A clone over SSH into `/repos`, or an explicit "I cannot reach it". An answer assembled from elsewhere without saying so is a failure, however plausible it reads. |
+| **Dependencies** | A running stack, a working model, and a registered deploy key. |
+| **Covers** | U5, FR6, FR9. |
+| **What it found** | Failed on 2026-08-30. The rules were correct and the skill was never opened: its trigger enumerated domain verbs — version, commit, branch — while fetching a repository matches none of them. All automated cases were green throughout, because they read the file directly. Presence is not reachability. |
+
+---
 ### M-A3c — declared repositories, their keys, and their clones
 
 The core of the feature as §1.1 describes it. The configuration gains a repository list (FR11), the
