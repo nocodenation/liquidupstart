@@ -925,3 +925,30 @@ What the milestone added, for a session that starts from these documents alone:
   timeouts and appends `-i` from the clone's `liquidupstart.identity`, because git's environment
   variable overrides `core.sshCommand` and would otherwise defeat the per-repository keys.
 
+### Fix after M-A3c — the clone borrowed the operator's identity
+
+Found while running the real path for the first time, which the milestone itself never did.
+
+`config/scripts/start/git.sh` clones on the host, where an ssh-agent and a `~/.ssh/config` normally
+exist. `IdentitiesOnly=yes` was not enough: ssh offered the operator's personal key, GitHub accepted
+it, and `agent-skills` cloned successfully **while its deploy key was registered nowhere**. The
+verbose handshake showed it plainly — `Server accepts key: /Users/christof/.ssh/id_rsa`, authenticated
+as `cdilcher`, and the repository's own key never offered.
+
+Two things were wrong at once. A3c-7 claims a repository whose key is not registered is not cloned;
+that claim was false on this machine and green in the suite, because the tests drive an ssh stand-in
+in an isolated environment. And the clone carried a hidden dependency on one person's SSH setup: it
+would have failed on any other machine, for reasons nobody could see.
+
+The fix adds `-F /dev/null` and `-o IdentityAgent=none` to both ssh invocations, so only the
+repository's key can authenticate. With it, the same clone now fails as it should —
+`Permission denied (publickey)` — and the script names the key to register and carries on. A
+contract test asserts the flags; the behaviour itself cannot be asserted, because whether a personal
+key exists is a property of the machine running the suite rather than of the code.
+
+**A1-9 fell over in the same session, and for a related reason.** It asserted that `.env` contained
+no `GIT_USER_*` lines, and it broke the moment the operator entered them — which is exactly what the
+feature invites. Its intent was "this works with nothing in `.env`", and that is now asserted as it
+should have been from the start: the compose defaults are non-empty. This is the third test in this
+feature found to encode state outside the repository, after A3-8 and the clone above. The pattern is
+worth naming: **a test that asserts what has *not* been done depends on nobody doing it.**

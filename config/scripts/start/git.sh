@@ -91,7 +91,7 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   if [[ -d "${dest}/.git" ]]; then
     cloned=true
   else
-    clone_ssh="ssh -i ${key} -o IdentitiesOnly=yes -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+    clone_ssh="ssh -F /dev/null -i ${key} -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
     if out="$(with_timeout 300 env GIT_SSH_COMMAND="$clone_ssh" git clone --quiet "$url" "$dest" 2>&1)"; then
       cloned=true
       echo "Cloned ${url} into ${dest}"
@@ -105,7 +105,7 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   fi
 
   if [[ "$cloned" == true ]]; then
-    git -C "$dest" config core.sshCommand "ssh -i ${mount_key} -o IdentitiesOnly=yes -o UserKnownHostsFile=${SECRETS_MOUNT}/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+    git -C "$dest" config core.sshCommand "ssh -F /dev/null -i ${mount_key} -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=${SECRETS_MOUNT}/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
     git -C "$dest" config liquidupstart.identity "$mount_key"
     git -C "$dest" config liquidupstart.access "$access"
     git -C "$dest" config liquidupstart.policy "$policy"

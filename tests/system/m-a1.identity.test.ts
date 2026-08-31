@@ -8,15 +8,22 @@
  *           based on a global git config has to run per container while one
  *           based on environment variables does not. The test asserts the
  *           outcome and leaves the mechanism to the implementation.
- * Given:    A running stack, and no GIT_USER_NAME in .env at all.
+ * Given:    A running stack.
  * When:     A repository is initialised and committed at /repos inside
  *           openclaw-gateway and inside opencode.
  * Then:     Both commits succeed, and author and committer in both equal the
  *           default declared in compose.yml.
  * Covers:   A1-6, A1-7, A1-9, FR2, FR5, NFR1
- * Unhappy:  A1-9 is the unhappy path — the configuration file the operator
- *           would normally edit is deliberately left untouched, so a commit that
- *           succeeds proves the compose defaults carry the feature alone.
+ * Unhappy:  A1-9 is the unhappy path: the compose defaults must be non-empty, so
+ *           that an operator who has entered nothing still gets working commits.
+ *
+ *           Amended 2026-08-31. It originally asserted that .env contained no
+ *           GIT_USER_* lines, and it broke the moment the operator entered them —
+ *           which is what the feature invites. That is the third test in this
+ *           feature found to encode state outside the repository, after A3-8 and
+ *           the clone that borrowed the operator's ssh identity. The property
+ *           worth asserting is that a default exists, not that nobody has
+ *           overridden it.
  */
 import { test, expect, beforeAll, afterAll } from 'bun:test';
 import { readFileSync, rmSync, existsSync } from 'node:fs';
@@ -47,10 +54,11 @@ afterAll(() => {
   }
 });
 
-test('A1-9 the operator configuration file declares no git identity', () => {
-  const env = readFileSync(join(repoRoot, '.env'), 'utf8');
-  expect(env).not.toMatch(/^GIT_USER_NAME=/m);
-  expect(env).not.toMatch(/^GIT_USER_EMAIL=/m);
+test('A1-9 the feature needs no entry in the operator configuration', () => {
+  for (const key of ['GIT_USER_NAME', 'GIT_USER_EMAIL']) {
+    const fallback = composeDefault('opencode', key);
+    expect(fallback.length).toBeGreaterThan(0);
+  }
 });
 
 test('A1-6 openclaw-gateway commits into the workspace under the configured identity', () => {
