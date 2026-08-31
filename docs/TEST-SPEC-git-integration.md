@@ -285,14 +285,31 @@ cases were written.
 **Decisions taken while writing these cases**, so they can be challenged rather than discovered
 later:
 
-*The list syntax follows the project's own convention.* `SYSTEM_DEPENDENCIES` already uses a
-comma-separated string, so the repository list is one too:
-`GIT_REPOSITORIES="nocodenation/agent-skills:read, nocodenation/liquidupstart:write"`. It stays
-renderable in the dashboard form and needs no new file format.
+*The list is comma-separated, as the project already does elsewhere, and each entry is a full SSH
+URL with two fields after it.* `SYSTEM_DEPENDENCIES` established the comma convention, so the list
+follows it:
 
-*Branch policy is deferred to M-A4.* §1.3 says the repository entry declares whether the default
-branch may be written, but nothing consumes that until the hook exists. Adding a third field here
-would mean designing it before its only reader is written.
+```
+GIT_REPOSITORIES="git@github.com:nocodenation/agent-skills.git|read|protected"
+```
+
+*The URL is written out, not abbreviated to `owner/repo`.* An `owner/repo` shorthand would silently
+assume github.com and GitHub's two-level naming, which contradicts NFR2 and would not survive the
+move to Forgejo that §2 already anticipates. GitLab's nested groups do not fit two levels either.
+The full SSH URL costs a few characters and works for any host that speaks git over SSH. It also
+states the transport, which matters here: the stack's credentials are SSH-only, and an `https://`
+entry is rejected rather than quietly rewritten — silently repairing that is how A3-11's confusion
+was created in the first place.
+
+*The separator is `|`, not `:`.* An SSH URL contains a colon of its own (`git@host:path`), so a
+colon separator would be ambiguous. A pipe appears in neither URLs nor ref names.
+
+*Branch policy is in from the start*, at the operator's request. The third field says whether the
+repository's default branch may be written directly: `protected` means work goes on a feature
+branch, `direct` means the default branch may be committed to, as content mode expects. M-A4's hook
+reads it; M-A3c only has to parse, store and expose it. This deliberately reverses an earlier
+decision to defer it — deferring would have meant M-A4 designing a field that belongs to the
+repository declaration.
 
 *A failed clone must not stop the stack.* A declared repository whose key the operator has not yet
 registered is the normal state right after adding one. The start reports it and carries on; it does
@@ -311,21 +328,26 @@ is the manual case.
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | A3c-1 | Component | `.env.example` §10 declares `GIT_REPOSITORIES`, parsed by the dashboard's own parser | The key is listed in the section with help text, as A1-1 checks for the identity keys |
-| A3c-2 | Unit | The list is parsed: empty, one entry, several, stray whitespace | Each yields the expected repositories; `read` and `write` are both understood |
-| A3c-3 | Unit **unhappy** | A malformed entry — no owner, no access, an unknown access word | Rejected with a message naming the offending entry, not silently skipped |
+| A3c-2 | Unit | The list is parsed: empty, one entry, several, stray whitespace, a nested GitLab-style path, a non-GitHub host | Each yields the expected URL, access and policy; `read`/`write` and `protected`/`direct` are all understood |
+| A3c-3 | Unit **unhappy** | Malformed entries: a missing field, an unknown access or policy word, and an `https://` URL | Each rejected with a message naming the entry and what is wrong. The `https://` case says the stack's credentials are SSH-only rather than rewriting the URL |
 | A3c-4 | Unit | Key generation over a declared list | One keypair per repository, each in its own directory, private key mode 600; a second run leaves every existing key untouched, as A3-2 requires |
 | A3c-5 | Contract | `compose.yml` is searched for a stack-wide key | No `GIT_SSH_COMMAND` names a single key for all remotes any more; selection is per clone |
 | A3c-6 | Integration | Start with a declared repository whose key is registered | It is present in the workspace afterwards; a second start neither re-clones it nor disturbs its working tree |
 | A3c-7 | Integration **unhappy** | Start with a declared repository whose key is not registered | The start completes, the failure is reported naming that repository, and the workspace simply does not contain it |
 | A3c-8 | System | A clone's own configuration | `core.sshCommand` in its `.git/config` names that repository's key, and the URL stays the plain `git@github.com:owner/repo.git` form |
 | A3c-9 | System | Two declared repositories, each with its own key | Each offers **its own** key to GitHub — observable in the SSH handshake — so selection is proven without needing both to be registered |
-| A3c-10 | Contract | The `insteadOf` rewrites | One per declared repository, and no global rewrite of `https://github.com/` anywhere, which would break public repositories |
-| A3c-11 | Component | The dashboard route with several repositories declared | One public key per repository, each labelled with the repository it belongs to; no private key in the response |
-| A3c-12 | **Manual** | An agent is asked about a declared repository | It answers from the clone in the workspace. It does not fetch, does not ask about URLs, and does not go to the network — because U5 is now reading a directory |
+| A3c-10 | Unit | Two declared repositories whose last path segment is the same, from different hosts | Distinct key directories and distinct clone directories, or a legible refusal — never one silently overwriting the other |
+| A3c-11 | Contract | The `insteadOf` rewrites | One per declared repository, and no global rewrite of `https://github.com/` anywhere, which would break public repositories |
+| A3c-12 | Component | The dashboard route with several repositories declared | One public key per repository, each labelled with the repository it belongs to; no private key in the response |
+| A3c-13 | **Manual** | An agent is asked about a declared repository | It answers from the clone in the workspace. It does not fetch, does not ask about URLs, and does not go to the network — because U5 is now reading a directory |
 
-A3c-12 is the case that decides whether the re-cut was right. If an agent still goes looking for the
+A3c-13 is the case that decides whether the re-cut was right. If an agent still goes looking for the
 repository on the network when a clone of it is sitting in the workspace, then pre-cloning did not
 remove the problem and M-A3d becomes necessary rather than optional.
+
+A3c-2 and A3c-3 carry the host-agnostic claim. Neither needs a second host to exist: parsing a
+Forgejo-shaped and a GitLab-shaped entry proves the declaration does not assume GitHub, which is all
+that can be proven before such a host is actually in use.
 
 A3c-7 deserves its emphasis. Adding a repository to the list and registering its key are two
 separate acts by a human, and the gap between them is a normal state, not an error. A start that
@@ -673,7 +695,7 @@ docker compose start opencode
 ./tests/run.sh m-a3c; echo "EXIT=$?"
 ```
 
-**A3c-12 is manual.** In a fresh session, ask about a repository the stack has already cloned —
+**A3c-13 is manual.** In a fresh session, ask about a repository the stack has already cloned —
 *"What skills does agent-skills contain?"* — without naming `/repos` or the skill. The three skills
 are `nifi`, `webdb` and `pdf-sign`. A pass is an answer drawn from the clone. Going to the network,
 asking about URLs, or answering from a catalogue is a fail, and would mean pre-cloning did not remove

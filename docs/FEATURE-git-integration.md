@@ -200,9 +200,12 @@ upgrade path and does not invalidate M-A1 through M-A3.
 
 ### Added after the use cases were written (§1.1)
 
-- **FR11 — Declared repositories.** The configuration lists the remotes the stack works with, each
-  with its access (read or write) and its policy (may the default branch be written directly,
-  are pushes approved individually or automatic). Nothing discovers repositories on its own.
+- **FR11 — Declared repositories.** The configuration lists the remotes the stack works with as
+  comma-separated entries of `<ssh-url>|<access>|<policy>`: the full SSH URL, `read` or `write`, and
+  `protected` or `direct` for whether the default branch may be written. The URL is written out
+  rather than abbreviated to `owner/repo`, which would assume GitHub's host and its two-level naming
+  and would not survive Forgejo or GitLab's nested groups. An `https://` entry is rejected, not
+  rewritten: the stack's credentials are SSH-only. Nothing discovers repositories on its own.
 - **FR12 — Clones follow the declaration.** A declared repository is present under the workspace
   without an agent having to fetch it. Reading one is then looking at a directory, not an errand.
 - **FR13 — Explicit working mode.** Developer or content, set globally and overridable per session,
