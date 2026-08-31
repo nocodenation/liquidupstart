@@ -277,6 +277,137 @@ in §2 stand.
 | A1-9 | System **unhappy** | `GIT_USER_NAME` absent from `.env` | Commit still succeeds using the compose default — proves the feature does not depend on editing `.env` |
 | A1-10 | System **unhappy** | Write to a path outside `/repos`, e.g. `/` | Not asserted as blocked; documents that M-A1 adds no confinement, so nobody later mistakes it for one |
 
+#### Detail per case
+
+**What this milestone is for.** A workspace the agents share and an identity their commits carry.
+Ten cases hold seventeen scenarios. Nothing here touches a remote: M-A1 is entirely local, which is
+why its unhappy paths are about permissions and repetition rather than about access.
+
+**Shared fixture.** The unit and integration cases run `config/scripts/start/git.sh` against a
+throwaway project directory in `/tmp`, so the live workspace — which the running containers have
+mounted — is never disturbed. The system cases use the real stack through `docker compose exec`.
+
+---
+
+##### A1-1 — the new `.env.example` section parses as the dashboard reads it
+
+| | |
+|---|---|
+| **Premise** | `.env.example` is not only documentation, it is the schema the dashboard renders its configuration form from. A section that reads well to a human but does not parse is a silent failure: the keys simply never appear in the UI. |
+| **Component** | `parseExample` and `listFields` from `dashboard/src/lib/env-file`, run over the real `.env.example` rather than a fixture. |
+| **Test data** | The repository's own `.env.example`, section `10. GIT INTEGRATION`, declaring `GIT_USER_NAME` and `GIT_USER_EMAIL`. |
+| **Positive — section** | Parse the file and find the section whose title matches `GIT INTEGRATION`. Expected: it exists and its title begins `10.`. |
+| **Positive — fields** | List the fields of that section. Expected: both keys present, each carrying non-empty help text. |
+| **Dependencies** | The dashboard library. The coupling was accepted at sign-off: it tests the integration nothing else covers. |
+| **Covers** | U1, FR10. |
+
+##### A1-2 — the section is shown in the dashboard, not hidden
+
+| | |
+|---|---|
+| **Premise** | The `.env.example` contract encodes a section's behaviour in its title. A stray marker would silently hide the keys from the operator or have them overwritten as generated secrets. |
+| **Component** | `sectionModeFromTitle` from `dashboard/src/lib/env-meta`. |
+| **Test data** | The title of section 10. |
+| **Positive** | Apply the function to the title, and read the mode the parser assigned. Expected: `normal` in both — neither `hidden` nor `autogenerate`. |
+| **Covers** | U1, FR10. |
+
+##### A1-3 — every key reaches every agent service
+
+| | |
+|---|---|
+| **Premise** | The project's configuration contract says a start script injects a key into a service only where that service already declares it. A key added to `.env.example` but forgotten in one service block fails silently — that one harness simply has no identity. |
+| **Component** | `compose.yml`, parsed positionally: a service block is located by `  <name>:` at exactly two spaces, so reformatting the file breaks this test, which is intended. |
+| **Test data** | `GIT_USER_NAME` and `GIT_USER_EMAIL`; the three agent services `openclaw-gateway`, `openclaw-cli` and `opencode`. |
+| **Positive — declaration** | Assert both keys appear in `.env.example`. |
+| **Positive — reach** | For each of the three services, assert both keys appear in its block. Expected: no service missing, and a failure names the service and the key. |
+| **Positive — mount** | Assert `./volumes/repos:/repos` appears in each of the three blocks. |
+| **Negative — naming** | Assert no `GITHUB_`-prefixed configuration key exists, since a host-specific name would violate the host-agnostic rule. |
+| **Covers** | U1, FR10, NFR2. |
+
+##### A1-4 — the start script creates the workspace and is repeatable
+
+| | |
+|---|---|
+| **Premise** | The workspace must exist before the containers mount it, or Docker creates it root-owned and the first write fails. The script therefore owns its creation and must be safe to run on every start. |
+| **Component** | `config/scripts/start/git.sh`, invoked against a throwaway project directory. |
+| **Test data** | A temporary project directory; mode `777`, matching `volumes/data`, which the same containers share. |
+| **Positive — first run** | Run the script. Expected: exit 0, the directory exists, mode 777. |
+| **Positive — second run** | Run it again. Expected: exit 0, directory unchanged, mode still 777 — a no-op rather than an error. |
+| **Positive — live workspace** | Assert the repository's real `volumes/repos` exists with the same mode, so the throwaway run is not the only evidence. |
+| **Covers** | U3, U7, FR1, NFR3. |
+
+##### A1-5 — a deleted workspace is recreated
+
+| | |
+|---|---|
+| **Premise** | The unhappy path of A1-4. An operator who deletes `volumes/` to reset the stack must not have to recreate anything by hand. |
+| **Component** | `config/scripts/start/git.sh`. |
+| **Test data** | The same temporary project directory, with the workspace removed. |
+| **Negative → recovery** | Delete the workspace, assert it is gone, run the script again. Expected: exit 0 and the directory recreated. |
+| **Covers** | U7, NFR6. |
+
+##### A1-6 — openclaw-gateway commits under the configured identity
+
+| | |
+|---|---|
+| **Premise** | The milestone's substance: an agent can create a repository in the shared workspace and commit to it, attributably. |
+| **Component** | The running `openclaw-gateway` container, through `docker compose exec`. |
+| **Test data** | A probe repository created under `/repos` and removed afterwards; the identity read from the running container's environment, not from the compose default. |
+| **Positive** | Initialise a repository, add a file, commit, read `%an <%ae>` and `%cn <%ce>` from the log. Expected: exit 0, author and committer both equal to the configured identity. |
+| **Dependencies** | A running stack. |
+| **Covers** | U3, FR2, FR5. |
+| **Later amended** | This originally compared against the default declared in `compose.yml`. It broke the moment the operator set `GIT_USER_NAME` in `.env` — which is what the feature invites. It now reads the identity the container actually carries. |
+
+##### A1-7 — opencode commits under the same identity despite a different HOME
+
+| | |
+|---|---|
+| **Premise** | The two harnesses have different home directories — `/home/node` and `/root`. An identity mechanism based on a global git config must run per container; one based on environment variables does not. The case asserts the outcome and leaves the mechanism to the implementation. |
+| **Component** | The running `opencode` container, compared against `openclaw-gateway`. |
+| **Test data** | A probe repository under `/repos`; both containers' `HOME` values. |
+| **Positive — differing homes** | Read `$HOME` from each container. Expected: they differ, so the case is testing what it claims to. |
+| **Positive — same identity** | Commit in `opencode`. Expected: author and committer equal the same identity `openclaw-gateway` produced. |
+| **Dependencies** | A running stack. |
+| **Covers** | U3, FR2. |
+| **What it found** | Nothing failed, but the case shaped the implementation: the environment-variable mechanism was chosen precisely because it makes the differing `HOME` irrelevant. |
+
+##### A1-8 — a repository created in a container is browsable on the host
+
+| | |
+|---|---|
+| **Premise** | FR1 asks for a workspace the operator can browse, and NFR3 requires state to live in `./volumes` as a bind mount. A container-only check would pass just as happily against a named volume, so the assertion deliberately crosses back to the host filesystem. |
+| **Component** | The running stack and the host filesystem. |
+| **Test data** | A probe repository named `probe-roundtrip`, removed afterwards. |
+| **Positive** | Initialise it inside `openclaw-gateway`, then read `volumes/repos/probe-roundtrip/.git/HEAD` on the host. Expected: the file exists and contains a ref. |
+| **Dependencies** | A running stack. |
+| **Covers** | U3, U7, FR1, NFR3. |
+
+##### A1-9 — the feature needs no entry in the operator configuration
+
+| | |
+|---|---|
+| **Premise** | The compose defaults must carry the feature on their own, so an operator who has entered nothing still gets working commits. |
+| **Component** | `compose.yml` defaults for `GIT_USER_NAME` and `GIT_USER_EMAIL`. |
+| **Test data** | The defaulted values declared in the `opencode` service block. |
+| **Positive** | Read each default. Expected: non-empty. |
+| **Covers** | U3, FR2, NFR1. |
+| **Later amended** | This originally asserted that `.env` contained *no* `GIT_USER_*` lines. It broke when the operator added them — which the feature invites. Asserting the absence of an action depends on nobody performing it; the property worth asserting is that a default exists. |
+
+##### A1-10 — this milestone adds no confinement, and says so
+
+| | |
+|---|---|
+| **Premise** | Asserts a *non*-guarantee, deliberately. M-A1 gives the agents a workspace; it does not restrict them to it, and nothing in the milestone tries to. Writing that down as an executable statement stops a later reader mistaking the absence of a check for the presence of a boundary. |
+| **Component** | The running `openclaw-gateway` container. |
+| **Test data** | A file written at `/tmp/m-a1-outside-workspace`, removed afterwards. |
+| **Positive — writing outside succeeds** | Write and read the file outside `/repos`. Expected: it works. |
+| **Positive — no confinement** | `cd /` and read the working directory. Expected: `/`. |
+| **Inverted by design** | The "unhappy" outcome here would be success at confining, which no requirement in M-A1 asks for. If confinement is ever added, this case fails and forces the decision to be recorded rather than absorbed silently. |
+| **Dependencies** | A running stack. |
+| **Covers** | Documents the boundary of U3. |
+
+---
+
 A1-7 is the case worth keeping in view: the two harnesses have different `HOME`, so an identity
 mechanism based on `git config --global` must run per container, while one based on `GIT_AUTHOR_*`
 and `GIT_COMMITTER_*` environment variables sidesteps the difference. The test asserts the outcome

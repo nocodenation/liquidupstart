@@ -94,11 +94,27 @@ Document every implemented feature in its own Markdown file.
 **Test at every level.** Unit, component, integration and system tests — not unit tests alone.
 Cover happy and unhappy cases. Document every test in a human-readable header.
 
-**The test specification carries an overview and a paragraph per test.** The overview is the table;
-the paragraph gives the test's premise, the system component it runs against, the steps to perform
-it, the expected result, any dependencies and test data it needs, and the use cases it covers. A
-reviewer has to be able to sign a test off, or challenge it, without reading the implementation —
-which a one-line table row does not allow.
+**The test specification carries an overview and a detail block per test.** The overview is the
+table; the detail block gives the test's premise, the system component it runs against, the steps,
+the expected result, its dependencies and test data, and the use cases it covers. A reviewer has to
+be able to sign a test off, or challenge it, without reading the implementation — which a one-line
+table row does not allow. For a test that has already run, the block also records what it actually
+found, since in a table a test that never caught anything and one that caught a defect before it
+shipped look identical.
+
+**Every scenario gets its own row, labelled positive or negative.** A case usually holds several: a
+guard that refuses, and the counterpart proving it also permits. Both belong in the specification —
+a rule that only refuses is as useless as one that only permits, and a reader cannot tell which was
+tested from a single line. Where a counterpart is deliberately omitted, say so and why, so the gap
+reads as a decision rather than an oversight.
+
+**Test data names both sides.** What must exist, and where it comes from, as well as what must not.
+A guard checked only against something invented is not shown to accept anything real.
+
+**Write the specification against the code, not from memory.** When documenting tests that exist,
+read their names out of the test files first. Doing it from recollection understates them: an
+earlier pass here described one test per case and missed seven of thirteen, including every positive
+counterpart.
 
 **Coverage where it bites.** Full branch coverage is required for real decision logic. It is not
 demanded of configuration, mounts, or Markdown, where it produces ceremony rather than safety; the
