@@ -489,7 +489,7 @@ trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 | M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated | |
 | M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | **Yes, in effect** — nine green cases while the behaviour was unchanged, because they assert the file's content and the agent never opened it | A3b-4 failed; the skill's TRIGGER clause does not cover fetching a repository | Yes — the trigger, not the rules, is what needs fixing | |
 | M-A3c | 32 / 40 | ~16 min (08:23–08:39) | 7 changed, 10 new | No — but green and unexercised: the clone path is proven against an ssh stand-in and local seeds, never against GitHub, because `.env` was off limits | The env-over-config discovery changed the design mid-run; A3-5 amended rather than broken | Yes — A3-5's assertion was exactly what A3c-5 removes | **First fresh-session run.** Nothing reported missing. Roughly 9 of 32 turns went on orientation — reading the spec, the existing suite, probing git — which is the standing cost of a cold start rather than a documentation gap |
-| M-A3d | | | | | | | |
+| M-A3d | 8 / 20 | 2 min 26 s | 1 changed, 3 new | No — one line changed, verified as one insertion and one deletion | None | No | Nothing missing. Orientation cost roughly two turns against nine for M-A3c, because the milestone was narrow and the cases said exactly what to touch |
 | M-A4 | | | | | | | |
 | M-A5 | | | | | | | |
 | M-B1 | | | | | | | |
@@ -1045,7 +1045,7 @@ place to state anything this feature depends on — a fix put there would cover 
 three and be reported as done while the failing case still failed. The skill is the route that
 reaches all three. This does not block M-A3d; it constrains where the answer may live.
 
-### M-A3d — making the workspace discoverable · posed 2026-08-31
+### M-A3d — making the workspace discoverable · posed 2026-08-31 · finished at turn 8 of 20, EXIT=0
 
 ```
 /goal Implement M-A3d from docs/FEATURE-git-integration.md: make the repository
@@ -1075,5 +1075,25 @@ assuming anything is missing; full implementations only, no placeholders. Or sto
 after 20 turns.
 ```
 
-Outcome: pending.
+Outcome: 11 tests across 3 files, EXIT=0; the full suite runs 135 stack tests plus the 27 dashboard
+tests, also EXIT=0. Wall clock 2 minutes 26 seconds, in a fresh session. The diff is one insertion
+and one deletion in `SKILL.md` — the description line and nothing else.
 
+The new description keeps every versioning occasion, adds the read side in quoted user phrasing —
+*"which files are in the X repository"*, *"what does X contain"*, *"clone X"* — matching the style
+the ten sibling skills use, and names `/repos` in the sentence a model reads when deciding whether to
+open the skill.
+
+**One test in it is better than what the cases asked for.** A3d-3 was specified as "the body is
+unchanged", and the obvious implementation reads the whole file — which the M-A2 and M-A3b suites
+already do. A rule *moved* out of the body and into the description would satisfy that and hollow
+out the skill. The test strips the frontmatter first and reads only the body, so a moved rule fails.
+That distinction was not in the signed-off case.
+
+**The cold start was cheap this time.** Eight turns in total against thirty-two for M-A3c, with
+roughly two spent on orientation rather than nine. The milestone was narrow and the cases named the
+file and the line, so the documents had little to carry. It is the counter-example to M-A3c's
+figure: the cost of a fresh session scales with how much the milestone leaves open, not with the
+session being fresh.
+
+**A3d-5 is outstanding** and is the only case that decides whether any of this worked.

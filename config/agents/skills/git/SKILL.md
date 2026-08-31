@@ -1,6 +1,6 @@
 ---
 name: git
-description: Put work under version control in the shared repository workspace — create repositories, stage, commit, branch and inspect history, and hand a push to the operator. TRIGGER when the user asks to version, commit, branch, or track changes to code, documents or generated artefacts, or when work you produced should be kept rather than overwritten.
+description: Work with git repositories in the shared workspace at /repos — clone or fetch a repository, look inside one and see what it contains, and put work under version control by creating repositories, staging, committing, branching, inspecting history, and handing a push to the operator. TRIGGER when the user asks "which files are in the X repository", "what does X contain", "clone X", "fetch the latest X", or to version, commit, branch, or track changes to code, documents or generated artefacts, or when work you produced should be kept rather than overwritten.
 ---
 
 # Git in this environment
