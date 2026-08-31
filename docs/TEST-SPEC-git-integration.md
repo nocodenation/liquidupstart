@@ -551,6 +551,157 @@ A3-7 to A3-9 all carry a time bound because the characteristic failure of miscon
 an error but a hang: a host key prompt or a password prompt waiting on a terminal that is not there.
 A test that waits forever is worse than one that fails.
 
+#### Detail per case
+
+**What this milestone is for.** Credentials, and the network path they open. Ten automated cases hold
+twenty-one scenarios; the eleventh is manual, because the success path — cloning a private
+repository — cannot be automated: a deploy key only grants access once a human has registered it,
+and that friction is the security property rather than an oversight.
+
+**Shared fixture.** The unit cases run `config/scripts/start/git.sh` against a throwaway project in
+`/tmp`. The contract cases read `compose.yml` and the repository tree. The system cases drive **git**
+from inside the containers rather than `ssh` directly — only git reads `GIT_SSH_COMMAND`, so a bare
+`ssh` call would test the container's default configuration instead of the one this milestone
+installs. Every one of them carries a timeout, because the characteristic failure of misconfigured
+SSH is not an error but a wait.
+
+---
+
+##### A3-1 — key generation produces a usable key
+
+| | |
+|---|---|
+| **Premise** | The stack needs an identity of its own to reach a remote at all. |
+| **Component** | `config/scripts/start/git.sh`, against a temporary project directory. |
+| **Test data** | A temporary project; the expected artefacts `id_ed25519` and `id_ed25519.pub` under `volumes/_git-secrets`. |
+| **Positive — keypair** | Run the script. Expected: exit 0, both files exist, the public key begins `ssh-ed25519 `. |
+| **Positive — permissions** | Expected: the private key is mode `600` — unreadable by anyone else. |
+| **Covers** | U2, FR3, NFR1. |
+
+##### A3-2 — an existing key is never replaced
+
+| | |
+|---|---|
+| **Premise** | The deploy key is registered with the host by hand, so regenerating it silently revokes access the operator has already arranged. That failure would surface much later as a confusing permission error, far from its cause. |
+| **Component** | The same script, run twice. |
+| **Test data** | The keypair produced by A3-1, captured byte-for-byte before the second run. |
+| **Negative — no overwrite** | Run the script again. Expected: exit 0, and both the private and public key unchanged. |
+| **Covers** | U2, FR3. |
+
+##### A3-3 — host key verification rests on a real trust anchor
+
+| | |
+|---|---|
+| **Premise** | Pre-seeding `known_hosts` is only trustworthy if the seeded keys are GitHub's. Comparing against a constant copied into this repository would go stale; comparing against what GitHub publishes does not. |
+| **Component** | `volumes/_git-secrets/known_hosts`, produced by the start script. |
+| **Test data** | The seeded file; GitHub's published fingerprints, fetched live from `api.github.com/meta`. |
+| **Positive — seeded** | Expected: the file exists, contains `github.com`, and holds at least one entry. |
+| **Positive — verified** | Fingerprint every seeded `github.com` key and compare with the published set. Expected: every one is published by GitHub. |
+| **Negative** | Inverted by design: a seeded key GitHub does not publish fails the comparison, which is the machine-in-the-middle case this exists for. |
+| **Dependencies** | Network access to `api.github.com`, with a timeout. |
+| **Covers** | U2, FR4. |
+| **What it found** | The script's own fingerprint extraction was wrong — it truncated the value before the comparison — and the verification refused to write `known_hosts` at all. The check caught its author's defect on first run. |
+
+##### A3-4 — host key checking is never disabled
+
+| | |
+|---|---|
+| **Premise** | Disabling the check would make the seeded `known_hosts` decorative. It is also the obvious shortcut when an ssh call misbehaves, which is why it is asserted rather than assumed. |
+| **Component** | The configuration surface: `compose.yml`, `config/`, `scripts/`, `dashboard/src`. |
+| **Test data** | The forbidden string `StrictHostKeyChecking=no`. |
+| **Negative — absent** | Search those paths. Expected: no match. |
+| **Excluded** | The test tree, deliberately: assertions about a forbidden string necessarily contain it. |
+| **Covers** | FR4. |
+| **What it found** | It failed on its own assertions the first time it ran, before the exclusion was scoped — the search covered the whole repository including the test that performs it. |
+
+##### A3-5 — the secrets and the ssh configuration reach every harness
+
+| | |
+|---|---|
+| **Premise** | A key that exists on the host but is not mounted, or an ssh command that does not name it, leaves the harness silently unable to reach a remote — and the symptom is a permission error far from the cause. |
+| **Component** | `compose.yml`, parsed per service block. |
+| **Test data** | The three agent services; the mount `./volumes/_git-secrets:/git-secrets`; the `GIT_SSH_COMMAND` line of each. |
+| **Positive — mount** | Expected: present in all three blocks, and a failure names the service. |
+| **Positive — command** | Expected: each names the pre-seeded `known_hosts`, takes its identity from the clone being worked on, and does not disable host key checking. |
+| **Covers** | U2, FR3, FR4, NFR2. |
+| **Later amended** | M-A3c removed the stack-wide key this case originally required. The assertion now demands the mount, `known_hosts`, host key checking and a per-clone identity — which is what A3c-5 replaced it with. |
+
+##### A3-6 — the dashboard hands out the public key and only that
+
+| | |
+|---|---|
+| **Premise** | The operator has to copy the public key into a repository's settings, so the dashboard must expose it. The same endpoint must never expose the private key: it sits one filename away, and a careless read would publish it over HTTP. |
+| **Component** | The `git-auth` GET handler, called directly against a fixture directory rather than grepped, so behaviour is tested rather than the shape of the source. |
+| **Test data** | A fixture secrets directory holding a fake public key and a fake private key containing `-----BEGIN OPENSSH PRIVATE KEY-----`. No real key material is used. |
+| **Positive — public key** | Call the handler. Expected: `present` true and the public key returned verbatim. |
+| **Negative — private key** | Serialise the whole response and search it. Expected: neither the private key header nor its fixture body appears anywhere. |
+| **Negative — absent key** | Point the handler at an empty directory. Expected: `present` false and a message, rather than a thrown error, so the dashboard can tell the operator to start the stack once. |
+| **Covers** | U2, FR3, NFR1. |
+
+##### A3-7 — reaching GitHub gives a definite answer, never a hang
+
+| | |
+|---|---|
+| **Premise** | The characteristic failure of misconfigured SSH is not an error but a wait: a host key prompt or a password prompt blocking on a terminal that does not exist. An agent that hangs looks like an agent that is thinking. |
+| **Component** | git inside each harness, under a 25-second timeout. |
+| **Test data** | A real remote, `git@github.com:nocodenation/agent-skills.git`; the timeout marker `RC=124`. |
+| **Positive — definite answer, per harness** | For `openclaw-gateway` and `opencode` separately: expected either commit hashes or `Permission denied (publickey)`, and never a timeout. A refusal counts as success — what is proven is that the configuration reaches GitHub and gets an answer. |
+| **Negative — no host key prompt, per harness** | Expected: neither `Are you sure you want to continue connecting` nor `Host key verification failed`. |
+| **Dependencies** | A running stack and network access. |
+| **Covers** | U2, FR4, FR6. |
+| **What it found** | Written first against bare `ssh`, which does not read `GIT_SSH_COMMAND`; it therefore tested the container's default configuration rather than the one installed here, and failed on host key verification. Corrected to drive git. A green suite would otherwise have proven nothing about the feature. |
+
+##### A3-8 — a key GitHub does not know is denied rather than hanging
+
+| | |
+|---|---|
+| **Premise** | The unhappy counterpart to A3-7. |
+| **Component** | git inside `openclaw-gateway`, with an explicit throwaway identity. |
+| **Test data** | A keypair generated inside the container at run time and deleted afterwards — deliberately *not* the configured key. |
+| **Negative** | Point `GIT_SSH_COMMAND` at the throwaway key and contact the real remote. Expected: `Permission denied (publickey)` inside the time bound, never `RC=124`. |
+| **Dependencies** | A running stack and network access. |
+| **Covers** | FR4, FR6. |
+| **What it found** | It originally relied on the *configured* key being unregistered, and went red the moment the operator registered it. The case depended on state outside the repository — on what a human had not yet done — so it now generates its own key and holds whatever access the real one has. |
+
+##### A3-9 — an unknown host is refused, not silently trusted
+
+| | |
+|---|---|
+| **Premise** | Pre-seeding `known_hosts` protects the one host that was seeded. This proves the protection is real by aiming at a host deliberately not seeded. Without it, `StrictHostKeyChecking` could be quietly relaxed and nothing else in the suite would notice. |
+| **Component** | git inside `openclaw-gateway`, under a timeout. |
+| **Test data** | `git@gitlab.com:gitlab-org/gitlab.git` — a real host absent from the seeded `known_hosts`. |
+| **Negative — refused** | Expected: `Host key verification failed`, and never a timeout. |
+| **Negative — not a prompt** | Expected: no `Are you sure you want to continue connecting`; the refusal is immediate rather than a question waiting for an answer. |
+| **Inverted by design** | Success at connecting would be the defect. |
+| **Dependencies** | A running stack and network access. |
+| **Covers** | FR4. |
+
+##### A3-10 — private key material stays in the secrets directory
+
+| | |
+|---|---|
+| **Premise** | §3.1 accepts, deliberately, that the private key sits inside the agent container. What it does not accept is the key *spreading*: copied into a repository, echoed into a log, rendered into a configuration file. Each copy is a place someone could later publish by accident, and the accepted risk was for one location, not for many. |
+| **Component** | The container filesystem and the repository tree. |
+| **Test data** | The marker `BEGIN OPENSSH PRIVATE KEY`; the search paths `/repos`, `/data`, `/bun_app`, `/tmp` in the container, and `volumes/repos`, `config`, `dashboard/src` on the host. |
+| **Positive — present where it belongs** | Expected: the marker is found in `/git-secrets/id_ed25519`. |
+| **Negative — no copy on the host** | Expected: no match in the workspace or the rendered configuration. |
+| **Negative — no copy in the container** | Expected: no match outside the secrets mount. |
+| **Dependencies** | A running stack. |
+| **Covers** | NFR1. |
+
+##### A3-11 — an agent clones a private repository · **manual**
+
+| | |
+|---|---|
+| **Premise** | The success path cannot be automated: a deploy key works only once a human has registered it. Automating it would leave a case red for procedural reasons, and a suite that is red for procedural reasons teaches everyone to ignore red. |
+| **Component** | An agent in a fresh session. |
+| **Test data** | The prompt *"Fetch the nocodenation/agent-skills repository and tell me what skills it contains."*, naming neither `/repos` nor the skill nor the key; the repository's three skills as the yardstick. |
+| **Expected** | The clone lands under `/repos`, a `pull` succeeds, no key material is copied, and no push is attempted. |
+| **Dependencies** | A running stack and a deploy key the operator has registered. |
+| **Covers** | U2, U5, FR6. |
+| **What it found** | Failed on 2026-08-29, and it is the most instructive result in the feature. The agent tried an `https://` URL, read the credential prompt as "the repository does not exist", and answered from third-party pages — naming two of the three skills. All 24 automated cases were green and not one could have caught it, because every one has the SSH URL written into it. The tests verified the plumbing; only an open question from a human found the plumbing undiscoverable. |
+
+---
 ### M-A3b — addendum forced by the A3-11 failure
 
 A3-11 showed that M-A3's plumbing works and cannot be found from where an agent stands. The agent
