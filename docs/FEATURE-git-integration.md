@@ -163,6 +163,15 @@ source. Both halves of what A3-11 exposed.
 prompt repeated verbatim — ends in either a clone or an explicit refusal, but never in an answer
 from elsewhere.
 
+**M-A3b-2 · The trigger, not the rules**
+A3b-4 failed with every automated case green: the rules were right and the skill was never opened,
+because its trigger lists domain verbs where the other nine skills list what a user says. Changes the
+description only.
+*Done when:* `./tests/run.sh m-a3b-2` is green, and the manual A3b-2-4 — the A3-11 prompt a third
+time — ends in a clone or an explicit refusal. If it fails again, skills do not carry this use case
+and reading an uncloned repository becomes a human-started operation; it is not retried a fourth
+time.
+
 **M-A3c · One deploy key per repository**
 Carries out the credential decision from §2 that M-A3 did not implement: it built a single key for
 the whole stack, so only one private repository is reachable. Selection by `core.sshCommand` written
@@ -305,6 +314,7 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
 | M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | **Yes, in effect** — nine green cases while the behaviour was unchanged, because they assert the file's content and the agent never opened it | A3b-4 failed; the skill's TRIGGER clause does not cover fetching a repository | Yes — the trigger, not the rules, is what needs fixing |
+| M-A3b-2 | | | | | | |
 | M-A3c | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
