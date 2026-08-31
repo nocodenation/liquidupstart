@@ -396,6 +396,19 @@ Every criterion that exercises agent behaviour needs a **running stack** — the
 `.env` carried over from the operator's configured instance; `volumes/` holds fresh state. A
 milestone whose cases include system-level tests cannot be accepted while it is down.
 
+**State of the environment as of 2026-08-31**, for a session that does not have this conversation
+behind it:
+
+- The stack is up. `openclaw-gateway` and `opencode` have been running since 2026-08-29; verify with
+  `docker ps` and start it with `./scripts/linux/start.sh` if not.
+- One deploy key exists at `volumes/_git-secrets/id_ed25519` and is registered **read-only** on
+  `nocodenation/agent-skills`. The per-repository keys M-A3c generates are new ones; the operator
+  registers them, and this legacy key can then be retired. No script can migrate it, because nothing
+  records which repository it belongs to.
+- `volumes/repos/csv-columns` is a leftover from the A2-5 observation, not part of any milestone.
+  Ignore it; do not clean it up.
+- `.env` holds real credentials and is off limits in every goal so far.
+
 ### Goal form
 
 With the suite as the gate, a goal condition collapses from a handful of hand-written probes to one
@@ -801,6 +814,12 @@ The correction is therefore narrow: the git skill's description, not a review of
 document review answered this without spending a single prompt on a behavioural probe.
 
 ### M-A3c — declared repositories, their keys, and their clones · posed 2026-08-31
+
+**Run deliberately in a fresh session**, unlike every milestone before it. All of M-A0 to M-A3b ran
+inside one long conversation, so the loop guidance's "fresh session per phase, state handed over via
+files" was only ever half followed: the files were written with discipline and never actually relied
+upon. This run tests whether they suffice on their own. Whoever records the outcome should note
+whether anything had to be reconstructed that the documents should have carried.
 
 ```
 /goal Implement M-A3c from docs/FEATURE-git-integration.md: declared
