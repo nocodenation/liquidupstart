@@ -288,10 +288,9 @@ a directory. Two milestones were spent teaching an agent to perform an errand th
 run for it.
 **A3c-13 showed the premise was wrong.** Pre-cloning removed the network dependency, not the
 discoverability one: asked about a repository sitting in `/repos`, the agent searched its own home
-directory and never looked there. So this milestone is required, and it is larger than a trigger
-fix. It must also settle where the workspace path is stated, given that the three environments
-reach their always-loaded instructions by three different routes and one of them — OpenClaw on an
-OpenAI model, the configuration everything has been tested under — has no such route at all.
+directory and never looked there. So this milestone is required. It stays a trigger fix: the
+skill already states that repositories live under `/repos`, and it reaches all three environments,
+which `instructions.md` does not. The only thing wrong is when it opens.
 
 **M-A4 · Guardrails, aware of the mode**
 `pre-push` hook installed into every clone, enforcing what §1.3 allows for that repository: the
@@ -1023,7 +1022,14 @@ than the earlier "Fetch the nocodenation/agent-skills repository…". Read as "t
 agent" it is a reasonable question with a reasonable answer, and that is close to what the agent
 gave. The next attempt should name it as a repository without naming its location.
 
-**The lead for M-A3d: there is no single always-loaded place.** `config/agents/instructions.md` is
+**Corrected the same day.** The paragraph below first claimed there was no common place to state
+the workspace path, and that M-A3d therefore had to be larger than a trigger fix. That is wrong.
+Skills do reach OpenClaw on an OpenAI model: A2-5 ran on `openai/gpt-5.4`, and the agent announced
+it would read the git skill and then followed it. The skill is the common route, and its opening
+lines already say that all repositories live under `/repos`. The only reason the agent did not know
+that here is that the skill never opened. M-A3d is a trigger fix, as originally scoped.
+
+**Still true, and worth keeping: there is no single always-loaded place.** `config/agents/instructions.md` is
 the obvious home for "repositories live in `/repos`" — it already has a *Where user data lives —
 hard rule* section, and mentions `/repos` nowhere. But it reaches the three environments by three
 different routes:
@@ -1034,7 +1040,7 @@ different routes:
 | OpenClaw on `claude-cli` | `instructions.md`, copied to `~/.claude/CLAUDE.md` by the start script |
 | OpenClaw on `openai/*` | neither — only the workspace files OpenClaw generates itself |
 
-The configuration this was tested under is the third row. A fix that puts the workspace path into
-`instructions.md` would cover two environments out of three and would have been reported as done
-while the case that failed still failed. That is the same shape as A3b-4, and M-A3d has to face it
-directly rather than route around it.
+The configuration everything was tested under is the third row, so `instructions.md` is not the
+place to state anything this feature depends on — a fix put there would cover two environments of
+three and be reported as done while the failing case still failed. The skill is the route that
+reaches all three. This does not block M-A3d; it constrains where the answer may live.
