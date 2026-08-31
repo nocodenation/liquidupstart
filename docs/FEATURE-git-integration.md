@@ -474,25 +474,30 @@ for that session, not true.
 This feature doubles as a trial of the goal/loop working model; the log below is what makes that
 trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 
-| Milestone | Turns used / bound | Wall clock | Files touched | Evaluator passed something untrue? | Manual rework after the goal | Plan changed? |
-|---|---|---|---|---|---|---|
-| M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) |
-| M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written |
-| M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
-| M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
-| M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | **Yes, in effect** — nine green cases while the behaviour was unchanged, because they assert the file's content and the agent never opened it | A3b-4 failed; the skill's TRIGGER clause does not cover fetching a repository | Yes — the trigger, not the rules, is what needs fixing |
-| M-A3c | | | | | | |
-| M-A3d | | | | | | |
-| M-A4 | | | | | | |
-| M-A5 | | | | | | |
-| M-B1 | | | | | | |
-| M-B2 | | | | | | |
+| Milestone | Turns used / bound | Wall clock | Files touched | Evaluator passed something untrue? | Manual rework after the goal | Plan changed? | Had to be reconstructed? |
+|---|---|---|---|---|---|---|---|
+| M-A0 | ~6 / 25 | ~25 min | 12 new, 3 docs | No — but only because A0-2/A0-3 exist; two runner bugs would have produced a false green | Two fixes mid-run: `set -e` swallowed the failing exit code; milestone prefix produced `m-m-a0` | Yes — `--list` and `--root` added to the spec (§4) | |
+| M-A1 | ~8 / 30 | ~15 min | 3 changed, 8 new | No — evidence is real, both required runs shown with their exit codes | None; no defects surfaced during the run | No — the signed-off cases were implementable as written | |
+| M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses | |
+| M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated | |
+| M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | **Yes, in effect** — nine green cases while the behaviour was unchanged, because they assert the file's content and the agent never opened it | A3b-4 failed; the skill's TRIGGER clause does not cover fetching a repository | Yes — the trigger, not the rules, is what needs fixing | |
+| M-A3c | 32 / 40 | ~16 min (08:23–08:39) | 7 changed, 10 new | No — but green and unexercised: the clone path is proven against an ssh stand-in and local seeds, never against GitHub, because `.env` was off limits | The env-over-config discovery changed the design mid-run; A3-5 amended rather than broken | Yes — A3-5's assertion was exactly what A3c-5 removes | **First fresh-session run.** Nothing reported missing. Roughly 9 of 32 turns went on orientation — reading the spec, the existing suite, probing git — which is the standing cost of a cold start rather than a documentation gap |
+| M-A3d | | | | | | | |
+| M-A4 | | | | | | | |
+| M-A5 | | | | | | | |
+| M-B1 | | | | | | | |
+| M-B2 | | | | | | | |
 
 **M-A0 was independently verified on 2026-08-29** by the operator, not by its author: the four
 checks (suite green, discovery listing, a deliberately failing tree returning a non-zero exit, and a
 mistyped milestone id failing rather than passing silently) were run by hand and their output posted
 to PR #9. The third check is the one that matters — without it, every later milestone gate would
 rest on an unverified runner.
+
+**"Had to be reconstructed?"** is the column that measures the file-based handover. It is meaningless
+for M-A0 to M-A3b, which all ran inside one conversation and could lean on it without anyone
+noticing. It becomes the point from M-A3c onwards, where execution runs in a session holding nothing
+but the repository and these documents.
 
 Two columns carry most of the value. **"Evaluator passed something untrue"** tracks the failure mode
 the LOOP guidance warns about — a goal declaring victory on a check that only looked passed.
@@ -898,5 +903,25 @@ timeout. Search the codebase before assuming anything is missing; full
 implementations only, no placeholders. Or stop after 40 turns.
 ```
 
-Outcome: pending.
+Outcome: implemented 2026-08-31. `./tests/run.sh m-a3c` is green (48 assertions across A3c-1 to
+A3c-12); the full suite stays green, M-A3's cases included. A3c-13 remains open as a manual
+observation.
+
+What the milestone added, for a session that starts from these documents alone:
+
+- `GIT_REPOSITORIES` in `.env.example` §10, parsed by `config/scripts/start/lib/git-repos.sh`
+  (`parse` and `keys` are runnable sub-commands, which is what the unit cases drive).
+- One ed25519 pair per declared repository under `volumes/_git-secrets/repos/<host>_<path>/`, never
+  regenerated. The legacy stack key stays where it is; nothing can migrate it.
+- A clone per declared repository under `volumes/repos/`, carrying its own `core.sshCommand`,
+  `liquidupstart.identity`, `liquidupstart.access`, `liquidupstart.policy` (M-A4 reads the last two)
+  and one scoped `insteadOf`. A clone that already exists is left alone; a clone that fails is
+  reported by name and the start continues.
+- `volumes/_git-secrets/repositories.json` — the manifest, written by the start script and read by
+  the `git-auth` route. One object per declared repository: `name`, `url`, `host`, `path`, `access`,
+  `policy`, `slug`, `keyDir`, `publicKeyFile`, `clonePath`, `containerKey`, `containerClone`,
+  `cloned`, `error`. Paths are relative to the project directory; no key material is in it.
+- `GIT_SSH_COMMAND` in `compose.yml` no longer names a key. It keeps the host-key policy and the
+  timeouts and appends `-i` from the clone's `liquidupstart.identity`, because git's environment
+  variable overrides `core.sshCommand` and would otherwise defeat the per-repository keys.
 

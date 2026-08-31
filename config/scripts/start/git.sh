@@ -47,3 +47,97 @@ if [[ ! -f "$KNOWN_HOSTS" ]]; then
   chmod 644 "$KNOWN_HOSTS"
   echo "Seeded known_hosts with verified github.com host keys"
 fi
+
+# shellcheck source=lib/git-repos.sh
+source "${SCRIPT_DIR}/lib/git-repos.sh"
+
+SECRETS_MOUNT="${GIT_SECRETS_MOUNT:-/git-secrets}"
+REPOS_MOUNT="${GIT_REPOS_MOUNT:-/repos}"
+MANIFEST="${SECRETS_DIR}/repositories.json"
+ENV_FILE="${PROJECT_DIR}/.env"
+
+DECLARATION="${GIT_REPOSITORIES:-}"
+if [[ -z "$DECLARATION" && -f "$ENV_FILE" ]]; then
+  DECLARATION="$(grep -E '^GIT_REPOSITORIES=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
+fi
+
+with_timeout() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
+json_escape() {
+  printf '%s' "$1" | tr -d '\n\r\t' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+PARSED="$(lu_git_parse "$DECLARATION")"
+lu_git_keys "$SECRETS_DIR" "$DECLARATION" >/dev/null
+
+ENTRIES=""
+while IFS=$'\t' read -r name url host path access policy slug dir; do
+  [[ -n "${slug:-}" ]] || continue
+  key="${SECRETS_DIR}/repos/${slug}/id_ed25519"
+  mount_key="${SECRETS_MOUNT}/repos/${slug}/id_ed25519"
+  dest="${REPOS_DIR}/${dir}"
+  cloned=false
+  error=""
+
+  if [[ -d "${dest}/.git" ]]; then
+    cloned=true
+  else
+    clone_ssh="ssh -i ${key} -o IdentitiesOnly=yes -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+    if out="$(with_timeout 300 env GIT_SSH_COMMAND="$clone_ssh" git clone --quiet "$url" "$dest" 2>&1)"; then
+      cloned=true
+      echo "Cloned ${url} into ${dest}"
+    else
+      rm -rf "$dest"
+      error="$(printf '%s' "$out" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g')"
+      error="${error:-clone failed}"
+      echo "Warning: could not clone ${url}: ${error}" >&2
+      echo "  Register ${SECRETS_DIR}/repos/${slug}/id_ed25519.pub as a deploy key, then start again." >&2
+    fi
+  fi
+
+  if [[ "$cloned" == true ]]; then
+    git -C "$dest" config core.sshCommand "ssh -i ${mount_key} -o IdentitiesOnly=yes -o UserKnownHostsFile=${SECRETS_MOUNT}/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+    git -C "$dest" config liquidupstart.identity "$mount_key"
+    git -C "$dest" config liquidupstart.access "$access"
+    git -C "$dest" config liquidupstart.policy "$policy"
+    git -C "$dest" config "url.${url}.insteadOf" "https://${host}/${path}"
+  fi
+
+  entry="$(cat <<JSON
+    {
+      "name": "$(json_escape "$name")",
+      "url": "$(json_escape "$url")",
+      "host": "$(json_escape "$host")",
+      "path": "$(json_escape "$path")",
+      "access": "$(json_escape "$access")",
+      "policy": "$(json_escape "$policy")",
+      "slug": "$(json_escape "$slug")",
+      "keyDir": "volumes/_git-secrets/repos/$(json_escape "$slug")",
+      "publicKeyFile": "volumes/_git-secrets/repos/$(json_escape "$slug")/id_ed25519.pub",
+      "clonePath": "volumes/repos/$(json_escape "$dir")",
+      "containerKey": "$(json_escape "$mount_key")",
+      "containerClone": "${REPOS_MOUNT}/$(json_escape "$dir")",
+      "cloned": ${cloned},
+      "error": $(if [[ -n "$error" ]]; then printf '"%s"' "$(json_escape "$error")"; else printf 'null'; fi)
+    }
+JSON
+)"
+  ENTRIES="${ENTRIES:+${ENTRIES},
+}${entry}"
+done <<< "$PARSED"
+
+{
+  printf '{\n  "generated": "%s",\n  "repositories": [\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  [[ -n "$ENTRIES" ]] && printf '%s\n' "$ENTRIES"
+  printf '  ]\n}\n'
+} > "$MANIFEST"
+chmod 644 "$MANIFEST"

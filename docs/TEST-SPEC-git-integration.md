@@ -344,6 +344,31 @@ is the manual case.
 | A3c-12 | Component | The dashboard route with several repositories declared | One public key per repository, each labelled with the repository it belongs to; no private key in the response |
 | A3c-13 | **Manual** | An agent is asked about a declared repository | It answers from the clone in the workspace. It does not fetch, does not ask about URLs, and does not go to the network — because U5 is now reading a directory |
 
+**Corrected during implementation, recorded rather than absorbed.**
+
+*A3-5 is amended, not broken.* Its second case required `GIT_SSH_COMMAND` to name the key, which is
+exactly what A3c-5 removes. The test now requires what remains stack-wide — the mount, the
+pre-seeded `known_hosts`, host key checking — plus the per-clone identity, and carries an `Amended:`
+line saying why. Nothing else in M-A3 changed.
+
+*Git lets the environment beat the clone.* `GIT_SSH_COMMAND` overrides `core.sshCommand`, so a
+stack-wide environment variable would have silently discarded every per-repository key inside the
+containers while the host-side clone worked perfectly — the milestone would have passed its own
+cases and delivered nothing. The stack-wide command therefore keeps the policy and defers the
+identity: it appends `-i` from `liquidupstart.identity`, a value each clone declares for itself.
+A3c-9 asserts this twice per repository: once with the clone's own command, once with the command
+`compose.yml` ships, so the shipped value is proven rather than assumed.
+
+*The clone path is tested through an ssh stand-in.* A successful clone needs a registered deploy
+key, which is the wall §5 records for M-A3. A3c-6, A3c-7 and A3c-11 therefore clone local seed
+repositories through an `ssh` stand-in on `PATH`, proving the machinery — including that a second
+start leaves a working tree alone and that a refusal is survived — without needing GitHub state.
+A3c-9 still crosses the real network, because only a real handshake shows which key is offered.
+
+*The manifest is the interface to the dashboard.* The start script writes what it actually produced
+to `volumes/_git-secrets/repositories.json`; the route reads that rather than parsing the
+declaration again in TypeScript.
+
 A3c-13 is the case that decides whether the re-cut was right. If an agent still goes looking for the
 repository on the network when a clone of it is sitting in the workspace, then pre-cloning did not
 remove the problem and M-A3d becomes necessary rather than optional.

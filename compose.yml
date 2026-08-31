@@ -281,7 +281,7 @@ services:
     extra_hosts:
       - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
     environment:
-      GIT_SSH_COMMAND: "ssh -i /git-secrets/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+      GIT_SSH_COMMAND: "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |') -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
       GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
@@ -700,7 +700,7 @@ services:
       - path: config/openclaw/.env
         required: false
     environment:
-      GIT_SSH_COMMAND: "ssh -i /git-secrets/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+      GIT_SSH_COMMAND: "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |') -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
       GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
@@ -814,7 +814,7 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      GIT_SSH_COMMAND: "ssh -i /git-secrets/id_ed25519 -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+      GIT_SSH_COMMAND: "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |') -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
       GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}

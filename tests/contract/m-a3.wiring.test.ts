@@ -8,8 +8,12 @@
  *           single check would pass while one harness stayed unwired.
  * Given:    compose.yml.
  * When:     Each agent service block is inspected.
- * Then:     The secrets directory is mounted, and the ssh command names both the
- *           key and the pre-seeded known_hosts, with checking left on.
+ * Then:     The secrets directory is mounted, and the ssh command names the
+ *           pre-seeded known_hosts and the identity of the clone being worked
+ *           on, with checking left on.
+ * Amended:  M-A3c moved the identity out of this command and into each clone
+ *           (A3c-5), so the key is no longer named here. The rest of A3-5 —
+ *           the mount, known_hosts, and host key checking — stands unchanged.
  * Covers:   A3-5, FR3, FR4, NFR2
  * Unhappy:  A service missing either is named in the failure.
  */
@@ -24,7 +28,7 @@ test('A3-5 the secrets directory is mounted into every agent service', () => {
   expect(missing).toEqual([]);
 });
 
-test('A3-5 every agent service gets an ssh command naming the key and known_hosts', () => {
+test('A3-5 every agent service gets an ssh command naming known_hosts and a per-clone identity', () => {
   const text = composeText();
   const problems: string[] = [];
   for (const s of AGENT_SERVICES) {
@@ -34,7 +38,8 @@ test('A3-5 every agent service gets an ssh command naming the key and known_host
       problems.push(`${s} has no GIT_SSH_COMMAND`);
       continue;
     }
-    if (!line.includes('/git-secrets/id_ed25519')) problems.push(`${s} does not name the key`);
+    if (!line.includes('liquidupstart.identity'))
+      problems.push(`${s} does not take its identity from the clone`);
     if (!line.includes('/git-secrets/known_hosts')) problems.push(`${s} does not name known_hosts`);
     if (line.includes('StrictHostKeyChecking=no')) problems.push(`${s} disables host key checking`);
   }
