@@ -222,6 +222,11 @@ upgrade path and does not invalidate M-A1 through M-A3.
 Two tracks. **A** is the Git integration; **B** is NiFi development capability. B depends on A only
 loosely (from M-A1, for the workspace) and can run in parallel or later.
 
+**On the numbering.** A milestone carries a bare number; a letter marks an addendum to it, added
+after that milestone had already run. So M-A3 is the base and M-A3b, M-A3c and M-A3d are things it
+turned out to need. There is deliberately no M-A3a: the base *is* the a. The letters run in
+execution order, which is also the order they appear in below.
+
 Acceptance for every milestone is defined in `TEST-SPEC-git-integration.md`: a milestone is done
 when its tests are green, not when a one-off probe printed the right thing once.
 
