@@ -952,3 +952,42 @@ feature invites. Its intent was "this works with nothing in `.env`", and that is
 should have been from the start: the compose defaults are non-empty. This is the third test in this
 feature found to encode state outside the repository, after A3-8 and the clone above. The pattern is
 worth naming: **a test that asserts what has *not* been done depends on nobody doing it.**
+
+**The real path ran for the first time on 2026-08-31**, after the fix above. The operator declared
+`agent-skills` in `.env`, the start script generated its key, the clone failed as it should while
+the key was unregistered, the operator registered it, and the clone then succeeded — with the
+repository's own key, proven by GitHub's greeting:
+
+```
+Hi nocodenation/agent-skills! You've successfully authenticated
+```
+
+That line is the whole difference. A deploy key authenticates **as the repository**; a personal key
+authenticates as the person. The masked attempt an hour earlier had answered "Hi cdilcher!", and
+nothing else in the output distinguished the two. Inside the containers `/repos/agent-skills` holds
+all three skills and `git fetch` succeeds through the per-clone identity.
+
+So M-A3c is now both green and exercised. It took a fix, a registration, and a greeting line to get
+from one to the other.
+
+**And a fourth instance, immediately.** Declaring the identity in `.env` broke A1-6 and A1-7, which
+asserted that commits carry the value declared as the *default* in `compose.yml`. That held only
+while nobody set it. They now read the identity from the running container and assert that both
+harnesses apply the same one, which is the property actually under test: whichever identity is
+configured reaches commits consistently, in both harnesses, despite their differing `HOME`.
+
+Four tests in one feature, all green, all wrong in the same way, and every one of them exposed by an
+operator using the feature rather than by a test run:
+
+| Test | Encoded that… | Broken by |
+|---|---|---|
+| A3-8 | the deploy key was not registered | registering it |
+| the clone in `git.sh` | no other ssh identity was available | the operator having one |
+| A1-9 | `.env` declared no identity | declaring one |
+| A1-6, A1-7 | the identity was the compose default | overriding it |
+
+The rule that falls out: **assert the property, not the circumstance.** "No key is registered" is a
+circumstance; "an unregistered key is refused" is the property. "`.env` is empty" is a circumstance;
+"a default exists so `.env` need not be filled" is the property. Every one of these was written by
+reaching for the easiest observable rather than the intended one, and a suite of such tests measures
+the state of the world on the day it was written.

@@ -8,11 +8,15 @@
  *           based on a global git config has to run per container while one
  *           based on environment variables does not. The test asserts the
  *           outcome and leaves the mechanism to the implementation.
- * Given:    A running stack.
+ * Given:    A running stack, whatever identity it is configured with.
  * When:     A repository is initialised and committed at /repos inside
  *           openclaw-gateway and inside opencode.
  * Then:     Both commits succeed, and author and committer in both equal the
- *           default declared in compose.yml.
+ *           identity the containers actually carry — read from the running
+ *           container rather than from the compose default, because an operator
+ *           who sets GIT_USER_NAME in .env is doing what the feature invites and
+ *           must not break the suite by doing it. Amended 2026-08-31, the fourth
+ *           test in this feature caught encoding state outside the repository.
  * Covers:   A1-6, A1-7, A1-9, FR2, FR5, NFR1
  * Unhappy:  A1-9 is the unhappy path: the compose defaults must be non-empty, so
  *           that an operator who has entered nothing still gets working commits.
@@ -32,8 +36,11 @@ import { requireStack, inContainer } from '../lib/stack';
 import { composeDefault } from '../lib/compose-file';
 import { repoRoot } from '../lib/paths';
 
-const NAME = composeDefault('opencode', 'GIT_USER_NAME');
-const EMAIL = composeDefault('opencode', 'GIT_USER_EMAIL');
+const effective = (service: string, key: string) =>
+  inContainer(service, `printf '%s' "$${key}"`).stdout.trim();
+
+const NAME = effective('opencode', 'GIT_USER_NAME');
+const EMAIL = effective('opencode', 'GIT_USER_EMAIL');
 const probes: string[] = [];
 
 const commitProbe = (service: string, repo: string) => {
