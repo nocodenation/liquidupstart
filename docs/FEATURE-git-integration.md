@@ -408,6 +408,12 @@ behind it:
 - `volumes/repos/csv-columns` is a leftover from the A2-5 observation, not part of any milestone.
   Ignore it; do not clean it up.
 - `.env` holds real credentials and is off limits in every goal so far.
+- **Recreating an agent container breaks its web UI until nginx is reloaded.** `docker compose up -d
+  --force-recreate openclaw-gateway` gives the container a new address, and nginx resolves upstream
+  names when it loads its configuration and keeps them. The symptom is a 502 from the proxy while
+  the container is healthy and answers `/healthz` from inside. The cure is
+  `docker compose exec proxy nginx -s reload`. Any milestone that changes a service's environment
+  will meet this.
 
 ### Goal form
 
