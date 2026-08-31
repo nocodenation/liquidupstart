@@ -381,34 +381,47 @@ A3c-7 deserves its emphasis. Adding a repository to the list and registering its
 separate acts by a human, and the gap between them is a normal state, not an error. A start that
 failed there would make the stack unusable for as long as that gap lasts.
 
-### M-A3d — the trigger, not the rules
+### M-A3d — making the workspace discoverable
 
-A3b-4 failed with every automated case of M-A3b green. The rules were correct and the skill was
-never opened: its trigger enumerates domain verbs — version, commit, branch, track changes — while
-the other nine skills in the directory enumerate what a user actually says. "Fetch this repository"
-matches none of them. This iteration changes the description and nothing else.
+Three manual observations have now failed the same way. A3-11 and A3b-4 went to the network; A3c-13,
+with the repository already cloned into `/repos`, searched the agent's own home directory instead
+and never looked there. Each time the git skill held the answer and was never opened.
 
-**Decided before implementing, so a third failure is not re-litigated.** If A3d-4 fails again, the
-conclusion is that a skill does not carry this use case, and reading a repository the stack has not
-already cloned becomes an operation a human starts. It would not then be retried a fourth time with
-different wording. The structural alternatives were weighed and rejected on their merits: moving
-OpenClaw's workspace to `/repos` is probably unnecessary — A2-5 showed the skill overrides that
-default whenever it is loaded — and it would put OpenClaw's own operating files into the shared
-workspace while helping only one of the two harnesses. Forcing the URL form through git
-configuration is kept, but scoped, and it arrives as a by-product of M-A3c where the mapping from
-repository to key already exists.
+The skill's trigger enumerates domain verbs — version, commit, branch, track changes — while the
+other nine skills in the directory enumerate what a user actually says: "make me a table", "list
+tickets", "what files are in the system". Nobody asks an agent to *version* something; they ask what
+is in a repository. That sentence matches nothing in the trigger.
+
+**Two changes, and the second is the cheap insurance.** The description gains read-side occasions in
+the vocabulary a user would use. It also gains the workspace path itself — `/repos` — so that the
+catalogue entry alone locates the workspace even when the skill is never opened. A description is
+read by the model in order to decide whether to open the skill; putting the one fact that matters
+into that sentence costs nothing and does not depend on the decision going the right way.
+
+**Where an answer may live.** Not in `config/agents/instructions.md`, obvious though it looks: it
+reaches OpenCode by a mount and OpenClaw's `claude-cli` backend by a copy, while OpenClaw on an
+OpenAI model — the configuration all three failures happened under — receives neither. The skill
+reaches all three; A2-5 ran on `openai/gpt-5.4` and the agent read the skill and followed it.
+
+**Decided before implementing, so a fourth failure is not re-litigated.** If A3d-5 fails again, the
+conclusion is that a skill does not reliably carry this use case, and locating a repository becomes
+something the operator states in the prompt. It would not then be retried with further wording.
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | A3d-1 | Contract | The description is searched for read-side occasions | It names fetching, cloning and looking inside a repository, in the vocabulary a user would use, alongside the versioning occasions it already carries |
-| A3d-2 | Contract | The skill body is unchanged | Every rule from M-A2 and M-A3b is still present — this iteration touches the description only, and a regression here would be invisible otherwise |
-| A3d-3 | System | Both harnesses see the new description | Identical in each, at its own mount path |
-| A3d-4 | **Manual** | The A3-11 prompt, a third time, in a fresh session | The agent opens the skill, clones over SSH into `/repos`, and names all three skills — or says plainly it cannot reach the repository. Answering from elsewhere without declaring it is a fail |
+| A3d-2 | Contract | The description is searched for the workspace path | `/repos` appears in the description itself, not only in the body, so the catalogue entry locates the workspace without the skill being opened |
+| A3d-3 | Contract | The skill body is unchanged | Every rule from M-A2 and M-A3b is still present — this milestone touches the description only, and a regression here would be invisible otherwise |
+| A3d-4 | System | Both harnesses see the new description | Identical in each, at its own mount path |
+| A3d-5 | **Manual** | A fresh session is asked which skills the `agent-skills` repository contains, naming it as a repository but not saying where it is | The agent answers from `/repos/agent-skills` and names all three: `nifi`, `webdb`, `pdf-sign`. Saying plainly that it cannot find it is also a pass. Answering from elsewhere, or listing the stack's own installed skills, is a fail |
 
-A3d-1 to A3d-3 can only assert that words are present and reachable as text. Whether the
-description causes the skill to load is a model decision, and A3d-4 is the only case that measures
-it. That is the same limit as A2-2 and A3b-1, and this milestone exists because that limit was
-underestimated once already.
+A3d-1 to A3d-4 can only assert that words are present and reachable as text. Whether the description
+causes the skill to open is a model decision, and A3d-5 is the only case that measures it.
+
+**The prompt is sharpened, deliberately.** A3c-13 asked "What skills does agent-skills contain?",
+which reads just as well as "the skills of the agent" — and that is roughly what came back. Naming
+it as a repository removes that ambiguity without revealing the location, which is the thing under
+test.
 
 ### M-A4 to M-B2 — outlines
 
@@ -728,4 +741,39 @@ docker compose start opencode
 are `nifi`, `webdb` and `pdf-sign`. A pass is an answer drawn from the clone. Going to the network,
 asking about URLs, or answering from a catalogue is a fail, and would mean pre-cloning did not remove
 the problem after all.
+
+### M-A3d — making the workspace discoverable
+
+To be run after implementation; the pass count is filled in once known.
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The milestone suite. Expect: 0 fail, EXIT=0
+./tests/run.sh m-a3d; echo "EXIT=$?"
+
+# 2. No regression across the earlier milestones. Expect: EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# 3. What the catalogue entry alone says, bypassing the suite.
+#    Expect: read-side wording and the workspace path, in one sentence.
+sed -n '/^description:/p' config/agents/skills/git/SKILL.md
+
+# 4. The same, as the harnesses see it.
+docker compose exec -T openclaw-gateway sh -lc 'sed -n "/^description:/p" ~/.claude/skills/git/SKILL.md'
+docker compose exec -T opencode sh -lc 'sed -n "/^description:/p" ~/.config/opencode/skills/git/SKILL.md'
+
+# 5. Negative control: are the system tests real?
+#    Expect EXIT=1 with named failures, then EXIT=0 once the container is back.
+docker compose stop opencode
+./tests/run.sh m-a3d; echo "EXIT=$?"
+docker compose start opencode
+./tests/run.sh m-a3d; echo "EXIT=$?"
+```
+
+**A3d-5 is manual.** In a fresh session, and after a `docker compose exec proxy nginx -s reload` if
+any container was recreated: *"Which skills are in the agent-skills repository?"* The repository is
+named as a repository; its location is not. The clone sits at `/repos/agent-skills` and holds
+`nifi`, `webdb` and `pdf-sign`. Listing the stack's own installed skills instead is the failure
+A3c-13 produced and is what this is watching for.
 
