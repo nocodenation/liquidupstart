@@ -340,6 +340,27 @@ This branch is cut from `main`, which does **not** contain the privacy proxy —
 `feature/privacy-gateway`. The question is therefore not yet actionable and only becomes real when
 the two branches meet. Whoever merges them owns it; nothing here blocks on it.
 
+**O3 — The skill now contradicts the configuration.** M-A3b taught that an `https://` URL "will not
+work for a private repository here". M-A3c's scoped `insteadOf` made it work — inside a declared
+clone. Verified 2026-08-31: from `/repos/agent-skills`, `git ls-remote https://github.com/...`
+returns commit hashes; from `/tmp` the same command fails with `could not read Username`. An agent
+that tries HTTPS in a declared clone succeeds, learns that HTTPS works here, and misreads the failure
+the next time it meets an undeclared repository — the A3-11 confusion inverted. Either the skill
+tells the truth about both cases, or the rewrite goes. Neither is obviously right: the rewrite exists
+so that an agent reaching for the familiar URL is not punished for it.
+
+**O4 — Prevention without detection.** §3.1 accepts that an agent running as root can delete the
+`pre-push` hook, and A4-15 observes once whether it does. Nothing detects it afterwards: a removed
+hook, a redirected `core.hooksPath`, a changed remote — none leaves a trace, and the next push simply
+succeeds. A contract test asserting that every clone still points at the hook would close the gap
+between suite runs, cheaply. It would not close the gap during a run, which no arrangement short of
+moving the credential out of the container can.
+
+**O5 — M-A5 needs a write key on the stack's own repository.** This follows from §2 and was decided,
+but it was decided while "a key in the agent container" was still abstract. It is now concrete: a
+deploy key with write access to the repository that builds the stack, held in a container that
+executes model-generated commands. Worth confirming explicitly before M-A5 rather than inheriting.
+
 **O2 — Access to `nocodenation/agent-skills`.** The repository exists and is **private**. It holds
 three skills — `nifi` (NiFi flow development, REST API, custom processors and NAR packaging),
 `webdb`, and `pdf-sign` — installed upstream via `npx skills add nocodenation/agent-skills@<skill>`.

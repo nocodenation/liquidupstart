@@ -87,6 +87,12 @@ Adopted from Philipp's commandments for AI development.
 features, use cases, data structures, APIs and tests. Include use cases — ask when they are unclear.
 Document data structures and APIs.
 
+**Think critically.** When a request does not make sense, or the specification has a gap, a security
+weakness or an internal contradiction, say so and establish what is actually wanted rather than
+building what was literally asked for. Offer alternatives where the decision is genuinely open, and
+propose improvements that do not widen the scope. Agreement that turns out to be wrong costs more
+than the question would have.
+
 **Implement to the specification.** Stick to it. When the implementation reveals a problem with the
 spec, raise it rather than quietly deviating, and adjust the spec with the other features in view.
 Document every implemented feature in its own Markdown file.
