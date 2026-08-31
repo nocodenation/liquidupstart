@@ -282,6 +282,9 @@ The clone-on-start half is what makes U5 — reading a repository — a matter o
 rather than an errand an agent has to work out. Two milestones went into that errand before the use
 cases were written.
 
+**Signed off 2026-08-31** — reviewed before implementation, after the declaration was made
+host-agnostic and the branch policy pulled forward at the operator's request.
+
 **Decisions taken while writing these cases**, so they can be challenged rather than discovered
 later:
 
@@ -331,7 +334,7 @@ is the manual case.
 | A3c-2 | Unit | The list is parsed: empty, one entry, several, stray whitespace, a nested GitLab-style path, a non-GitHub host | Each yields the expected URL, access and policy; `read`/`write` and `protected`/`direct` are all understood |
 | A3c-3 | Unit **unhappy** | Malformed entries: a missing field, an unknown access or policy word, and an `https://` URL | Each rejected with a message naming the entry and what is wrong. The `https://` case says the stack's credentials are SSH-only rather than rewriting the URL |
 | A3c-4 | Unit | Key generation over a declared list | One keypair per repository, each in its own directory, private key mode 600; a second run leaves every existing key untouched, as A3-2 requires |
-| A3c-5 | Contract | `compose.yml` is searched for a stack-wide key | No `GIT_SSH_COMMAND` names a single key for all remotes any more; selection is per clone |
+| A3c-5 | Contract | `compose.yml` is searched for a stack-wide key | No `GIT_SSH_COMMAND` names a single key for all remotes any more. It still carries the host-key policy and the timeouts, because those are stack-wide and M-A3's cases rest on them; only the identity moves to each clone |
 | A3c-6 | Integration | Start with a declared repository whose key is registered | It is present in the workspace afterwards; a second start neither re-clones it nor disturbs its working tree |
 | A3c-7 | Integration **unhappy** | Start with a declared repository whose key is not registered | The start completes, the failure is reported naming that repository, and the workspace simply does not contain it |
 | A3c-8 | System | A clone's own configuration | `core.sshCommand` in its `.git/config` names that repository's key, and the URL stays the plain `git@github.com:owner/repo.git` form |

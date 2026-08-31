@@ -799,3 +799,47 @@ to "version" something. They ask it to fetch a repository, and that appears nowh
 
 The correction is therefore narrow: the git skill's description, not a review of all ten. The
 document review answered this without spending a single prompt on a behavioural probe.
+
+### M-A3c — declared repositories, their keys, and their clones · posed 2026-08-31
+
+```
+/goal Implement M-A3c from docs/FEATURE-git-integration.md: declared
+repositories, one key each, and their clones. The acceptance criteria are cases
+A3c-1 to A3c-12 in section 5 of docs/TEST-SPEC-git-integration.md, signed off on
+2026-08-31. Write those tests first, then make them pass. A3c-13 is manual and
+must not be automated.
+
+Scope: add GIT_REPOSITORIES to .env.example section 10, a comma-separated list
+of <ssh-url>|<access>|<policy> entries where access is read or write and policy
+is protected or direct; parse it in config/scripts/start/git.sh, rejecting a
+malformed entry or an https URL with a message that names the entry; generate
+one ed25519 keypair per declared repository into its own directory under
+volumes/_git-secrets, leaving any existing key untouched; clone each declared
+repository into volumes/repos, writing core.sshCommand and a scoped insteadOf
+into that clone's own .git/config, and leaving an existing clone alone; report
+and continue when a clone fails rather than failing the start; and extend the
+git-auth dashboard route to return one public key per repository, labelled,
+still never a private key.
+
+In compose.yml, GIT_SSH_COMMAND must stop naming a key. Keep it otherwise: the
+known_hosts file, StrictHostKeyChecking, and the timeouts are stack-wide policy
+and M-A3's cases rest on them. Only the identity moves into each clone.
+
+Have the start script write what it actually produced to a manifest the
+dashboard reads, rather than parsing the declaration a second time in
+TypeScript. Two parsers for one format drift apart.
+
+Done when `./tests/run.sh m-a3c; echo EXIT=$?` is visible in this transcript
+with EXIT=0 and all of A3c-1 to A3c-12 present, and `./tests/run.sh; echo
+EXIT=$?` also shows EXIT=0, proving the earlier milestones have not regressed —
+M-A3's cases in particular, which exercise the ssh configuration this milestone
+changes.
+
+Constraints: do not modify .env. Never print private key material, and do not
+write a test that would. Every command that crosses the network carries a
+timeout. Search the codebase before assuming anything is missing; full
+implementations only, no placeholders. Or stop after 40 turns.
+```
+
+Outcome: pending.
+
