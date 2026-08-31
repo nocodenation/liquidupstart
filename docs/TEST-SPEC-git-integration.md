@@ -900,6 +900,189 @@ A3c-7 deserves its emphasis. Adding a repository to the list and registering its
 separate acts by a human, and the gap between them is a normal state, not an error. A start that
 failed there would make the stack unusable for as long as that gap lasts.
 
+#### Detail per case
+
+**What this milestone is for.** The declaration the whole feature turns on: which repositories the
+stack works with, each with its own key and its own clone. Twelve automated cases hold thirty-eight
+scenarios; the thirteenth is manual.
+
+**Shared fixture.** The unit cases drive `config/scripts/start/lib/git-repos.sh` directly through its
+`parse` and `keys` sub-commands. The integration cases run the start script against a throwaway
+project whose declared remotes are **local bare repositories**, with an `ssh` stand-in on `PATH`, so
+the clone path runs without network or credentials. The contract cases read `compose.yml` and the
+clones the fixture produced. Only A3c-9 touches the real GitHub.
+
+---
+
+##### A3c-1 — the declaration is a field the dashboard can render
+
+| | |
+|---|---|
+| **Premise** | Same reasoning as A1-1: `.env.example` is the schema the dashboard renders. A key that does not parse never reaches the operator. |
+| **Component** | `parseExample` and `sectionModeFromTitle` over the real `.env.example`. |
+| **Test data** | Section `10. GIT INTEGRATION` and its `GIT_REPOSITORIES` field. |
+| **Positive — field** | Expected: the key is listed as a field of that section. |
+| **Positive — help** | Expected: it carries help text explaining the `<ssh-url>\|<access>\|<policy>` format. |
+| **Positive — visible** | Expected: the section mode is still `normal`, so adding the key did not hide the section. |
+| **Covers** | U1, FR10, FR11. |
+
+##### A3c-2 — the declaration parses, in every shape it may take
+
+| | |
+|---|---|
+| **Premise** | The entry format has to survive hosts other than GitHub and paths deeper than two levels, or NFR2 is a claim rather than a property. Neither can be proven by a second host existing — only by the parser accepting its shape. |
+| **Component** | `git-repos.sh parse`. |
+| **Test data** | Five declarations: empty; one entry; several with stray whitespace; a nested GitLab-style path `group/subgroup/project`; a non-GitHub host in both the scp-like and the `ssh://` form. |
+| **Positive — empty** | Expected: no repositories and no error. An operator who has declared nothing is in a normal state. |
+| **Positive — single** | Expected: URL, access and policy read back exactly. |
+| **Positive — several** | Expected: all understood, whitespace around separators ignored. |
+| **Positive — nested path** | Expected: every path segment kept, so GitLab groups survive. |
+| **Positive — foreign host** | Expected: accepted in both SSH URL forms. |
+| **Covers** | U1, FR11, NFR2. |
+
+##### A3c-3 — a malformed entry is refused and named
+
+| | |
+|---|---|
+| **Premise** | A declaration silently half-understood is worse than one rejected: the operator would believe a repository is governed when it is not. |
+| **Component** | `git-repos.sh parse`. |
+| **Test data** | Five malformed entries: a missing field; an unknown access word; an unknown policy word; an `https://` URL; a URL that is neither SSH form. |
+| **Negative — missing field** | Expected: refused, the offending entry named. |
+| **Negative — unknown access** | Expected: refused and named. |
+| **Negative — unknown policy** | Expected: refused and named. |
+| **Negative — https** | Expected: refused *as SSH-only*, not rewritten. Silently repairing it is how A3-11's confusion arose: an agent would learn that HTTPS works here. |
+| **Negative — neither form** | Expected: refused and named. |
+| **Covers** | U1, FR11. |
+
+##### A3c-4 — one key per repository, and never regenerated
+
+| | |
+|---|---|
+| **Premise** | A deploy key is bound to one repository, so a stack-wide key reaches exactly one. And regenerating any of them silently revokes access the operator has registered — the same reasoning as A3-2, now multiplied. |
+| **Component** | `git-repos.sh keys`, against a throwaway secrets directory. |
+| **Test data** | Two declared repositories; a third added later. |
+| **Positive — own directory** | Expected: each repository has its own key directory. |
+| **Positive — distinct keys** | Expected: the two keys differ, so one is not being reused under two names. |
+| **Positive — permissions** | Expected: every private key is mode `600`. |
+| **Negative — no overwrite** | Run again. Expected: every existing key unchanged. |
+| **Negative — only the new one** | Add a third repository and run. Expected: only the new key is generated; the other two are untouched. |
+| **Covers** | U2, FR3, FR11, NFR1. |
+
+##### A3c-5 — no single key serves every remote any more
+
+| | |
+|---|---|
+| **Premise** | Per-repository keys are pointless if the environment still names one key for everything. But `GIT_SSH_COMMAND` also carries the host-key policy and the timeouts, which are stack-wide and which M-A3's cases rest on — so it must lose the identity without losing the rest. |
+| **Component** | `compose.yml`, per service block. |
+| **Test data** | The three agent services and their `GIT_SSH_COMMAND` lines. |
+| **Positive — still declared** | Expected: every agent service still declares one. |
+| **Negative — no fixed key** | Expected: none names a single key for every remote. |
+| **Positive — per-clone identity** | Expected: the identity is taken from the clone being worked on. |
+| **Positive — policy survives** | Expected: `known_hosts`, `StrictHostKeyChecking=yes` and the timeouts are all still there. |
+| **Covers** | U2, FR3, FR4. |
+| **What it found** | The load-bearing discovery of the milestone: `GIT_SSH_COMMAND` **overrides** `core.sshCommand`. Removing the key from compose alone would have left every per-repository key inert inside the containers while the host-side clone still worked — green, and delivering nothing. Verified in the running container rather than assumed. |
+
+##### A3c-6 — a declared repository is simply there after a start
+
+| | |
+|---|---|
+| **Premise** | This is what turns U5 from an errand into reading a directory. |
+| **Component** | The start script, against a throwaway project with local bare remotes. |
+| **Test data** | Two declared repositories backed by bare repositories on disk; an ssh stand-in on `PATH`. |
+| **Positive — cloned** | Run the start. Expected: the repository is present in the workspace with a working tree. |
+| **Positive — left alone** | Run it again after touching the working tree. Expected: neither re-cloned nor disturbed. An agent's uncommitted work must survive a restart. |
+| **Covers** | U5, U7, FR12. |
+
+##### A3c-7 — a repository whose key is unregistered does not stop the start
+
+| | |
+|---|---|
+| **Premise** | Declaring a repository and registering its key are two separate human acts, and the gap between them is a normal state rather than an error. A start that failed there would make the stack unusable for as long as that gap lasts. |
+| **Component** | The start script, with a remote that refuses the key. |
+| **Test data** | A declared repository whose clone is made to fail. |
+| **Negative — reported** | Expected: the failure is reported naming that repository, and the start still succeeds overall. |
+| **Negative — absent** | Expected: the workspace simply does not contain it, rather than holding a partial clone. |
+| **Positive — key waiting** | Expected: its key exists anyway, so the operator has something to register. |
+| **Covers** | U1, U2, FR12. |
+| **What it found** | On the first real run the clone *succeeded* although the key was registered nowhere: `git.sh` clones on the host, where the operator's own ssh-agent supplied an identity. The case was green throughout, because its fixture uses an isolated stand-in. The fix adds `-F /dev/null` and `-o IdentityAgent=none`; A3c-8 now asserts it. |
+
+##### A3c-8 — a clone uses its own key and nothing else
+
+| | |
+|---|---|
+| **Premise** | Two ways to get this wrong: the clone borrowing an ambient identity from the machine, or losing the plain URL form the skill teaches. |
+| **Component** | `git.sh`'s ssh invocations, and each clone's own `.git/config`. |
+| **Test data** | The two ssh invocations in the script; the fixture clones the start script produced. |
+| **Positive — produced by the script** | Expected: the fixture clones exist, so the following assertions describe real output. |
+| **Positive — plain remote, per clone** | Expected: the remote stays `git@host:owner/repo.git`, not a host alias, so M-A3b's URL rule remains true. |
+| **Positive — own identity, per clone** | Expected: `core.sshCommand` names a key under that repository's own directory. |
+| **Negative — no ambient fallback** | Expected: both invocations carry `-F /dev/null` and `IdentityAgent=none`, so neither can use the operator's ssh config or agent. |
+| **Positive — verification survives** | Expected: `StrictHostKeyChecking=yes` and a `UserKnownHostsFile` are still present; isolation must not cost host verification. |
+| **Covers** | U2, FR3, NFR1, NFR2. |
+| **What it found** | Written in response to A3c-7's failure. The behaviour itself cannot be asserted — whether a personal key exists is a property of the machine running the suite, not of the code — so the flags are the observable part. |
+
+##### A3c-9 — each repository offers its own key to GitHub
+
+| | |
+|---|---|
+| **Premise** | Proving two repositories are genuinely both reachable needs a human to register a second deploy key. Proving each *offers its own key* does not: the SSH handshake shows which identity was presented, whether or not access is granted. |
+| **Component** | The real `github.com`, contacted from the host with the command `compose.yml` ships. |
+| **Test data** | Two declared repositories with distinct keys; the `GIT_SSH_COMMAND` value read out of `compose.yml` itself, so the test exercises what is shipped rather than a copy. |
+| **Positive — own key, per repository** | Expected: the handshake offers that repository's key, inside the time bound. |
+| **Positive — the shipped command selects it** | Expected: the command compose ships picks up that repository's key rather than a stack-wide one. |
+| **Dependencies** | Network access, with a timeout. |
+| **Covers** | U2, U8, FR3. |
+
+##### A3c-10 — two repositories sharing a name stay separate
+
+| | |
+|---|---|
+| **Premise** | The clone directory is derived from the last path segment. Two repositories of the same name on different hosts would collide, and the first symptom would be one silently overwriting the other — a failure that only appears once a second host is in use. |
+| **Component** | `git-repos.sh`, key and clone path derivation. |
+| **Test data** | Two declarations with the same final segment on different hosts. |
+| **Positive — distinct** | Expected: distinct key directories and distinct clone directories, or a legible refusal. Never one silently replacing the other. |
+| **Covers** | U8, NFR2. |
+
+##### A3c-11 — the URL rewrite is per repository, never global
+
+| | |
+|---|---|
+| **Premise** | Rewriting every GitHub HTTPS URL to SSH would break public repositories that work anonymously today, because a deploy key is valid for one repository only. The rewrite has to be scoped to exactly what a key covers. |
+| **Component** | Each clone's `.git/config`, and the repository tree. |
+| **Test data** | The two fixture clones and their remotes. |
+| **Positive — both clones** | Expected: the start produced both, so the rest describes real configuration. |
+| **Positive — one rewrite each** | Expected: exactly one rewrite per clone, naming that clone's own remote. |
+| **Positive — correct mapping** | Expected: it maps this repository's HTTPS URL onto its SSH URL. |
+| **Negative — nothing global** | Expected: no rewrite of a whole host exists anywhere in the tree. |
+| **Covers** | U5, FR11, NFR2. |
+
+##### A3c-12 — the dashboard lists one key per repository
+
+| | |
+|---|---|
+| **Premise** | The operator registers each key by hand, so the dashboard must show which key belongs to which repository. A list that showed keys without their repository would be unusable at two repositories and dangerous at three. |
+| **Component** | The `git-auth` route, reading the manifest the start script writes. |
+| **Test data** | A fixture manifest describing several repositories, one of whose clones failed. |
+| **Positive — each once** | Expected: every declared repository appears exactly once. |
+| **Positive — labelled** | Expected: each carries its own public key, labelled with its repository. |
+| **Positive — policy carried** | Expected: the access and branch policy reach the operator, so the page shows what was declared rather than only what was generated. |
+| **Positive — failed clone** | Expected: a repository whose clone failed still shows its key and the reason — that is precisely the operator who needs to act. |
+| **Negative** | No private key appears anywhere in the response; the same property A3-6 asserts, through the same handler. |
+| **Covers** | U1, U2, FR3. |
+
+##### A3c-13 — an agent answers from the clone · **manual**
+
+| | |
+|---|---|
+| **Premise** | The case that decides whether pre-cloning achieved what it was scheduled for. If an agent still goes to the network when a clone sits in the workspace, pre-cloning removed the wrong problem. |
+| **Component** | An agent in a fresh session. |
+| **Test data** | The prompt *"What skills does agent-skills contain?"*; the clone at `/repos/agent-skills` holding `nifi`, `webdb`, `pdf-sign`. |
+| **Expected** | An answer drawn from the clone. Going to the network, asking about URLs, or answering from a catalogue is a failure. |
+| **Dependencies** | A running stack, a cloned repository, a working model. |
+| **Covers** | U5, U7. |
+| **What it found** | Failed on 2026-08-31. The agent searched its own home directory, listed the stack's installed skills and never looked in `/repos`. It did not go to the network and did not substitute a source — progress — but pre-cloning had removed the network dependency, not the discoverability one. The premise behind scheduling this milestone ahead of M-A3d was wrong: an agent has to know *which* directory. The prompt was also more ambiguous than intended; "agent-skills" reads just as well as "the skills of the agent". |
+
+---
 ### M-A3d — making the workspace discoverable
 
 Three manual observations have now failed the same way. A3-11 and A3b-4 went to the network; A3c-13,
