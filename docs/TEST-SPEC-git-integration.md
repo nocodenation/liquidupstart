@@ -773,6 +773,10 @@ docker compose start opencode
 ./tests/run.sh m-a3d; echo "EXIT=$?"
 ```
 
+**A3d-5 was carried out on 2026-08-31 and passed** — the agent went straight to
+`/repos/agent-skills` and named all three skills, citing the repository's own README. Full record in
+the feature document's appendix.
+
 **A3d-5 is manual.** In a fresh session, and after a `docker compose exec proxy nginx -s reload` if
 any container was recreated: *"Which skills are in the agent-skills repository?"* The repository is
 named as a repository; its location is not. The clone sits at `/repos/agent-skills` and holds

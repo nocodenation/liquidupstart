@@ -1097,3 +1097,27 @@ figure: the cost of a fresh session scales with how much the milestone leaves op
 session being fresh.
 
 **A3d-5 is outstanding** and is the only case that decides whether any of this worked.
+
+### A3d-5 — the manual observation · carried out 2026-08-31 · **passed**
+
+The first pass after three failures. Asked *"Which skills are in the agent-skills repository?"* in a
+fresh session on `openai/gpt-5.4`, the agent opened with *"I'm checking the local repos to find the
+agent-skills repository"*, reported *"The repo is local at /repos/agent-skills"*, and answered with
+all three — `nifi`, `webdb`, `pdf-sign` — each described accurately, closing with *"I verified that
+from the repo root and its README at /repos/agent-skills/README.md."* No network, no substitute
+source, no listing of the stack's own skills. The clone was left untouched.
+
+`pdf-sign` is the hard evidence. It appears in none of the third-party pages A3-11 and A3b-4
+answered from; it can only have come from the clone.
+
+**Which of the two changes carried it is worth being honest about.** M-A3d altered the description in
+two ways: it added read-side occasions in user phrasing, and it named `/repos` in the description
+itself. The agent went to the local repositories in its very first sentence and never mentions
+reading the skill. That points at the second change — the one added as cheap insurance, on the
+reasoning that a description is read *in order to decide* whether to open a skill, so the one fact
+that matters should not sit behind that decision. The evidence is circumstantial: the transcript
+cannot show whether the skill was opened. But the sequence fits.
+
+If that reading is right, it generalises past this feature: **the fact an agent needs in order to
+start looking belongs in the sentence it reads before it chooses what to read.** Four attempts were
+spent putting it one layer too deep.
