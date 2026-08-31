@@ -140,14 +140,17 @@ Every test file opens with a block that a human can read without opening the imp
 
 ## 5. Detailed test cases
 
-**On the two formats in this section.** The development rules were extended on 2026-08-31 to require
-an overview *and* a paragraph per test giving its premise, the component it runs against, the steps,
-the expected result, the dependencies and test data, and the use cases it covers. M-A4 is written
-that way and everything after it will be. M-A0 to M-A3d keep their table-only form: they are
-implemented, verified by the operator and recorded, and rewriting sixty-nine finished cases would
-produce documentation nobody needs in order to sign anything off. The tables remain valid as the
-overview the rule also asks for; what they lack is the detail, and only for milestones where the
-detail is no longer a decision.
+**Why every case carries a paragraph.** This feature is also a trial of test-driven AI development,
+and the people judging that trial are not only the operator: developers will read it, and so will
+people from the business who have never seen this repository. A table row tells them neither what
+environment a test runs in nor why it exists. Each case therefore carries its premise, the component
+it runs against, the steps, the expected result, its dependencies and test data, and the use cases it
+covers.
+
+For milestones that have already run, the paragraph also records **what the test actually found**.
+That is the part which could not be written in advance and is the strongest evidence about the method
+itself: a test that never caught anything and a test that caught a defect before it shipped look
+identical in a table.
 
 ### M-A0 — Harness
 
@@ -159,6 +162,69 @@ detail is no longer a decision.
 | A0-4 | Unit | `--no-system` with only system tests present | Exit 0, reports "skipped", never "passed" |
 | A0-5 | Integration | System-level helper with the stack down | Fails fast, message names the missing stack |
 | A0-6 | Integration | Dashboard tests still run via `run.sh` | The existing suite executes with at least one pass and no failures |
+
+#### Detail per case
+
+**What this milestone is for.** Nothing here tests the git integration. M-A0 builds the instrument
+that every later milestone is measured with, and then measures the instrument. If the runner can
+report success while nothing ran, every gate after it is decoration — so four of its six cases exist
+to make the runner fail, not to make it pass.
+
+**Shared fixture.** Cases A0-1 to A0-4 run `tests/run.sh` against a throwaway directory tree created
+in `/tmp`, holding whatever test files the case needs. Nothing touches the repository's own tests, and
+no Docker or network is involved. The `--root` and `--list` options exist for exactly this: a test
+that verified discovery by performing a real full run would include itself and recurse.
+
+**A0-1 — the runner finds test files across the level directories.**
+*Premise:* a runner that silently covers less than it appears to is the quietest way for a suite to
+become worthless. *Component:* `tests/run.sh`, discovery only. *Steps:* create a fixture tree with
+one file under `unit/` and one under `integration/`, run `run.sh --root <tree> --list`. *Expected:*
+exit 0 and both files named. *Data:* two trivially passing test files. *Covers:* the harness itself.
+
+**A0-2 — a failing test makes the runner exit non-zero.**
+*Premise:* the single most important property. Everything downstream — every milestone gate, every
+`/goal` completion condition — assumes a non-zero exit means something went wrong. *Component:*
+`run.sh` and its exit status. *Steps:* create a fixture tree containing one deliberately failing
+test, run the runner against it. *Expected:* non-zero exit, and the failure named in the output. The
+failing test lives in a temporary directory created by the case and deleted afterwards, so the
+repository never contains a failing test. *Data:* one test asserting `1 === 2`. *Covers:* the
+harness. *What it found:* `set -euo pipefail` in `run.sh` aborted the script before the exit code
+was captured, so a failing suite would have reported success on some paths. Found before any
+milestone depended on it.
+
+**A0-3 — a milestone filter matching nothing is an error, not a pass.**
+*Premise:* the most dangerous green is the one where nothing ran; a typo in a milestone id must fail
+loudly. *Component:* `run.sh` argument handling. *Steps:* run the runner against a fixture tree with
+a milestone id that matches no file. *Expected:* non-zero exit and the message "no tests matched".
+*Data:* one test file belonging to a different milestone id. *Covers:* the harness. *What it found:*
+the milestone prefix was applied twice, turning `m-a0` into `m-m-a0`, so the very first real
+invocation matched nothing — and said so, instead of reporting an empty pass.
+
+**A0-4 — skipped system tests are reported as skipped, never as passed.**
+*Premise:* `--no-system` exists so the suite can run where Docker is not available, and it must not
+turn absence of testing into evidence of correctness. *Component:* `run.sh` selection logic.
+*Steps:* fixture tree containing only a file under `system/`, run with `--no-system`. *Expected:*
+exit 0 — the flag is meant to be usable — with the word SKIPPED in the output and no pass count.
+*Data:* one system-level test file. *Covers:* the harness.
+
+**A0-5 — the stack guard fails fast and names what is missing.**
+*Premise:* system-level tests need the stack; without a guard they fail with a bare Docker error, or
+hang. The message has to point at the cause, because the reader is usually someone who does not know
+the stack should be running. *Component:* `requireStack` in `tests/lib/stack.ts`. *Steps:* call it
+with a container name that cannot exist. *Expected:* it throws, the message names the container and
+points at `start.sh`. A positive control runs alongside: with the stack up, the real containers pass
+the guard. *Data:* an invented container name. *Covers:* the harness. *Later amended:* M-A3 turned
+the guard into a named test rather than a bare `beforeAll`, because an aborted `beforeAll` is counted
+once per file and the tests inside vanish from the total — a shrinking count reads like a different
+problem.
+
+**A0-6 — the dashboard suite still runs through the harness.**
+*Premise:* the repository had tests before this feature existed. One command has to cover the whole
+repository, or the older suite quietly rots while everyone watches the new one. *Component:*
+`run.sh --dashboard`, which invokes `bun test src` in `dashboard/`. *Steps:* run it as a subprocess
+and read the summary. *Expected:* exit 0, at least one pass, no failures. Deliberately narrow: a case
+that ran the full suite would recurse into itself. *Dependencies:* the dashboard package and its
+`bun test` script. *Covers:* the harness, and the repository's pre-existing tests.
 
 ### M-A1 — Workspace and identity
 
