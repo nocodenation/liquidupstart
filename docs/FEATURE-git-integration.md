@@ -429,12 +429,50 @@ Every goal is then recorded verbatim in the appendix, as posed. The loop guidanc
 state belongs in files rather than chat, because long runs get compacted — and the goals are the raw
 material of this trial.
 
+### Per-milestone cycle
+
+1. Write the milestone's detailed test cases into `TEST-SPEC-git-integration.md`
+2. **Review gate — the cases are read, challenged, corrected and signed off before anything is
+   built.** They are the acceptance criteria; reviewing them afterwards is worthless, because a
+   milestone would already have passed on unexamined criteria
+3. Write the goal text against the actual state of the code, referencing the signed-off cases
+4. Run it, in a fresh session
+5. Check acceptance — is the evidence really in the transcript, or did the evaluator wave something
+   through
+6. **Diff review — do the tests that were written actually assert what the cases meant?** The spec
+   says what to prove; nothing else checks that a test's implementation matches its intent
+7. Update this document and the process log — what changed, and what it means for the milestones
+   still ahead
+
+Steps 2 and 6 are the two human gates. Step 7 is the reason the milestone structure earns its keep.
+
+**M-A0 to M-A3b ran without step 2 or step 6 in some form, and all of them ran in one long
+conversation.** That is recorded rather than quietly fixed; it is what the process log exists to
+capture.
+
+### Execution runs in a fresh session; design does not
+
+From M-A3c onwards, step 4 happens in a session holding nothing but the repository and these
+documents. Two different activities are involved and they need opposite things from context.
+Execution is served by a clean one: the specification, not three days of superseded decisions and
+corrected misdiagnoses. Design is the opposite — the use cases in §1.1, the two working modes, the
+four-level permission model and the catch that the repository declaration was not host-agnostic all
+came out of an accumulating conversation, and none of them would have occurred to a session starting
+cold.
+
+Two costs come with it. A fresh session re-reads the documents every time, which for a short
+milestone can exceed the work itself; the rule is kept unconditional anyway, because "only when the
+milestone is large" cannot be judged in advance and would hollow it out. And an executing session
+cannot ask why: it meets the same surprises — a missing package, a runner swallowing exit codes —
+with less knowledge of how things came to be, so it guesses more often. What is not written down is,
+for that session, not true.
+
 ---
 
 ## 8. Process log
 
 This feature doubles as a trial of the goal/loop working model; the log below is what makes that
-trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
+trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 
 | Milestone | Turns used / bound | Wall clock | Files touched | Evaluator passed something untrue? | Manual rework after the goal | Plan changed? |
 |---|---|---|---|---|---|---|
