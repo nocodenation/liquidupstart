@@ -271,7 +271,7 @@ public key per repository to register. A scoped `insteadOf` per repository comes
 both present in the workspace after a start — the case that cannot pass today — and the manual case
 that an agent asked about a declared repository answers from the clone rather than from the network.
 
-**M-A3b-2 · The skill trigger — deferred, and probably unnecessary**
+**M-A3d · The skill trigger — deferred, and probably unnecessary**
 A3b-4 failed with every automated case green: the rules were right and the skill was never opened,
 because its trigger lists domain verbs where the other nine skills list what a user says. Writing
 the use cases changed its standing. Once M-A3c clones declared repositories at start, "fetch a
@@ -422,8 +422,8 @@ trial assessable instead of anecdotal. Filled in at step 5 of each cycle.
 | M-A2 | ~5 / 25 | ~10 min | 1 changed, 5 new | No — both required runs shown with their exit codes, operator ran the full procedure and A2-5 | None; A2-5 observed by the operator afterwards and passed on all four points | Yes — A2-1 demanded a literal TRIGGER clause that only 1 of 10 sibling skills actually uses |
 | M-A3 | ~13 / 35 | 7 min 38 s (verified by the operator afterwards; A3-11 failed) | 5 changed, 9 new | No — but one wrong finding was published and later retracted: a build failure attributed to build.sh, which had actually been masked by a zsh pipeline | Three test defects fixed, the third only after the operator registered the deploy key | Yes — openssh-client was missing from both images, which the goal had not anticipated |
 | M-A3b | ~4 / 20 | 1 min 32 s | 1 changed, 3 new | **Yes, in effect** — nine green cases while the behaviour was unchanged, because they assert the file's content and the agent never opened it | A3b-4 failed; the skill's TRIGGER clause does not cover fetching a repository | Yes — the trigger, not the rules, is what needs fixing |
-| M-A3b-2 | | | | | | |
 | M-A3c | | | | | | |
+| M-A3d | | | | | | |
 | M-A4 | | | | | | |
 | M-A5 | | | | | | |
 | M-B1 | | | | | | |

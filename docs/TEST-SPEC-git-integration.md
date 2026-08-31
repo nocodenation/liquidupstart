@@ -271,39 +271,18 @@ previous milestone had every automated case green and still failed the only ques
 **Note the deliberate breadth of A3b-4.** A refusal counts as success. The failure being corrected
 is not "did not clone" — it is "did not clone, did not say so, and answered anyway".
 
-### M-A3b-2 — the trigger, not the rules
+### M-A3c — declared repositories, their keys, and their clones
 
-A3b-4 failed with every automated case of M-A3b green. The rules were correct and the skill was
-never opened: its trigger enumerates domain verbs — version, commit, branch, track changes — while
-the other nine skills in the directory enumerate what a user actually says. "Fetch this repository"
-matches none of them. This iteration changes the description and nothing else.
+The core of the feature as §1.1 describes it. The configuration gains a repository list (FR11), the
+start scripts give each declared repository its own key and clone it into the workspace (FR12), and
+the dashboard shows one public key per repository to register. It also carries out the credential
+decision from §2 that M-A3 did not implement.
 
-**Decided before implementing, so a third failure is not re-litigated.** If A3b-2-4 fails again, the
-conclusion is that a skill does not carry this use case, and reading a repository the stack has not
-already cloned becomes an operation a human starts. It would not then be retried a fourth time with
-different wording. The structural alternatives were weighed and rejected on their merits: moving
-OpenClaw's workspace to `/repos` is probably unnecessary — A2-5 showed the skill overrides that
-default whenever it is loaded — and it would put OpenClaw's own operating files into the shared
-workspace while helping only one of the two harnesses. Forcing the URL form through git
-configuration is kept, but scoped, and it arrives as a by-product of M-A3c where the mapping from
-repository to key already exists.
+The clone-on-start half is what makes U5 — reading a repository — a matter of opening a directory
+rather than an errand an agent has to work out. Two milestones went into that errand before the use
+cases were written.
 
-| # | Level | Case | Expectation |
-|---|---|---|---|
-| A3b-2-1 | Contract | The description is searched for read-side occasions | It names fetching, cloning and looking inside a repository, in the vocabulary a user would use, alongside the versioning occasions it already carries |
-| A3b-2-2 | Contract | The skill body is unchanged | Every rule from M-A2 and M-A3b is still present — this iteration touches the description only, and a regression here would be invisible otherwise |
-| A3b-2-3 | System | Both harnesses see the new description | Identical in each, at its own mount path |
-| A3b-2-4 | **Manual** | The A3-11 prompt, a third time, in a fresh session | The agent opens the skill, clones over SSH into `/repos`, and names all three skills — or says plainly it cannot reach the repository. Answering from elsewhere without declaring it is a fail |
-
-A3b-2-1 to A3b-2-3 can only assert that words are present and reachable as text. Whether the
-description causes the skill to load is a model decision, and A3b-2-4 is the only case that measures
-it. That is the same limit as A2-2 and A3b-1, and this milestone exists because that limit was
-underestimated once already.
-
-### M-A3c — one deploy key per repository
-
-Carries out the credential decision from §2 that M-A3 did not implement. Detailed cases are written
-at the start of its cycle; what is already fixed:
+Detailed cases are written at the start of its cycle; what is already fixed:
 
 **A scoped `insteadOf` comes with it.** Once a repository is mapped to a key, rewriting
 `https://github.com/owner/repo` to `git@github.com:owner/repo` for exactly that repository is nearly
@@ -325,6 +304,35 @@ repository it belongs to. System: two repositories, each with its own key, are b
 which is the case that cannot pass today. Unhappy: a repository with no key registered fails with a
 message naming the repository and pointing at the dashboard, rather than a bare permission error.
 Manual: the operator registers a second key and an agent reaches both repositories.
+
+### M-A3d — the trigger, not the rules
+
+A3b-4 failed with every automated case of M-A3b green. The rules were correct and the skill was
+never opened: its trigger enumerates domain verbs — version, commit, branch, track changes — while
+the other nine skills in the directory enumerate what a user actually says. "Fetch this repository"
+matches none of them. This iteration changes the description and nothing else.
+
+**Decided before implementing, so a third failure is not re-litigated.** If A3d-4 fails again, the
+conclusion is that a skill does not carry this use case, and reading a repository the stack has not
+already cloned becomes an operation a human starts. It would not then be retried a fourth time with
+different wording. The structural alternatives were weighed and rejected on their merits: moving
+OpenClaw's workspace to `/repos` is probably unnecessary — A2-5 showed the skill overrides that
+default whenever it is loaded — and it would put OpenClaw's own operating files into the shared
+workspace while helping only one of the two harnesses. Forcing the URL form through git
+configuration is kept, but scoped, and it arrives as a by-product of M-A3c where the mapping from
+repository to key already exists.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A3d-1 | Contract | The description is searched for read-side occasions | It names fetching, cloning and looking inside a repository, in the vocabulary a user would use, alongside the versioning occasions it already carries |
+| A3d-2 | Contract | The skill body is unchanged | Every rule from M-A2 and M-A3b is still present — this iteration touches the description only, and a regression here would be invisible otherwise |
+| A3d-3 | System | Both harnesses see the new description | Identical in each, at its own mount path |
+| A3d-4 | **Manual** | The A3-11 prompt, a third time, in a fresh session | The agent opens the skill, clones over SSH into `/repos`, and names all three skills — or says plainly it cannot reach the repository. Answering from elsewhere without declaring it is a fail |
+
+A3d-1 to A3d-3 can only assert that words are present and reachable as text. Whether the
+description causes the skill to load is a model decision, and A3d-4 is the only case that measures
+it. That is the same limit as A2-2 and A3b-1, and this milestone exists because that limit was
+underestimated once already.
 
 ### M-A4 to M-B2 — outlines
 
