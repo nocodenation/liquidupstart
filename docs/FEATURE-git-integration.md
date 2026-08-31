@@ -279,17 +279,19 @@ public key per repository to register. A scoped `insteadOf` per repository comes
 both present in the workspace after a start — the case that cannot pass today — and the manual case
 that an agent asked about a declared repository answers from the clone rather than from the network.
 
-**M-A3d · The skill trigger — deferred, and probably unnecessary**
+**M-A3d · Making the workspace discoverable — necessary after all**
 A3b-4 failed with every automated case green: the rules were right and the skill was never opened,
 because its trigger lists domain verbs where the other nine skills list what a user says. Writing
 the use cases changed its standing. Once M-A3c clones declared repositories at start, "fetch a
 repository the stack does not have" stops being something an agent does at all — U5 becomes reading
 a directory. Two milestones were spent teaching an agent to perform an errand the stack should have
 run for it.
-It is kept, not dropped: a repository nobody declared is still a real situation, and the source rule
-from M-A3b — never describe a repository you could not read using some other source — matters
-whatever the cause. But it runs **after** M-A3c, and its manual case is then a corner case rather
-than the acceptance of the feature.
+**A3c-13 showed the premise was wrong.** Pre-cloning removed the network dependency, not the
+discoverability one: asked about a repository sitting in `/repos`, the agent searched its own home
+directory and never looked there. So this milestone is required, and it is larger than a trigger
+fix. It must also settle where the workspace path is stated, given that the three environments
+reach their always-loaded instructions by three different routes and one of them — OpenClaw on an
+OpenAI model, the configuration everything has been tested under — has no such route at all.
 
 **M-A4 · Guardrails, aware of the mode**
 `pre-push` hook installed into every clone, enforcing what §1.3 allows for that repository: the
@@ -997,3 +999,42 @@ circumstance; "an unregistered key is refused" is the property. "`.env` is empty
 "a default exists so `.env` need not be filled" is the property. Every one of these was written by
 reaching for the easiest observable rather than the intended one, and a suite of such tests measures
 the state of the world on the day it was written.
+
+### A3c-13 — the manual observation · carried out 2026-08-31 · **failed**
+
+Asked *"What skills does agent-skills contain?"* in a fresh session on `openai/gpt-5.4`, with the
+clone sitting in `/repos/agent-skills` holding all three skills, the agent searched under
+`$OPENCLAW_HOME`, reported that no such directory existed there, listed the stack's own installed
+skills instead, and offered to look elsewhere if pointed at a path. It never looked in `/repos`.
+
+**Two things improved and one did not.** It did not go to the network, and it did not describe the
+repository from a substitute source — it said what it had found and asked. That is the behaviour
+M-A3b's source rule asks for, arrived at without the rule being loaded. What did not improve is the
+part the re-cut was supposed to fix.
+
+**The re-cut's premise was wrong, and it was mine.** Scheduling M-A3c ahead of M-A3d rested on the
+claim that pre-cloning turns U5 into reading a directory. Pre-cloning removed the *network*
+dependency; it did not remove the *discoverability* problem. An agent has to know which directory,
+and nothing tells it. M-A3d is therefore necessary rather than optional, and the milestone list is
+wrong where it calls it "probably unnecessary".
+
+**A caveat about the prompt, honestly.** "What skills does agent-skills contain?" is more ambiguous
+than the earlier "Fetch the nocodenation/agent-skills repository…". Read as "the skills of the
+agent" it is a reasonable question with a reasonable answer, and that is close to what the agent
+gave. The next attempt should name it as a repository without naming its location.
+
+**The lead for M-A3d: there is no single always-loaded place.** `config/agents/instructions.md` is
+the obvious home for "repositories live in `/repos`" — it already has a *Where user data lives —
+hard rule* section, and mentions `/repos` nowhere. But it reaches the three environments by three
+different routes:
+
+| Environment | Always-loaded instructions |
+|---|---|
+| OpenCode | `instructions.md`, mounted |
+| OpenClaw on `claude-cli` | `instructions.md`, copied to `~/.claude/CLAUDE.md` by the start script |
+| OpenClaw on `openai/*` | neither — only the workspace files OpenClaw generates itself |
+
+The configuration this was tested under is the third row. A fix that puts the workspace path into
+`instructions.md` would cover two environments out of three and would have been reported as done
+while the case that failed still failed. That is the same shape as A3b-4, and M-A3d has to face it
+directly rather than route around it.
