@@ -487,7 +487,11 @@ material of this trial.
 6. **Diff review — do the tests that were written actually assert what the cases meant?** The spec
    says what to prove; nothing else checks that a test's implementation matches its intent
 7. Update this document and the process log — what changed, and what it means for the milestones
-   still ahead
+   still ahead. **The closing report goes into the document, not only into the executing session's
+   chat**: what was built, what is worth another pair of eyes, the elapsed time and the turn count.
+   A finding that exists only in a transcript has to be carried across by hand, which makes the
+   operator a courier between two sessions and loses whatever is not relayed. Write it where the
+   next session will read it anyway.
 
 Steps 2 and 6 are the two human gates.
 
