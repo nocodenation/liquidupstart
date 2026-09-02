@@ -170,10 +170,20 @@ every later milestone is measured with, and then measures the instrument. If the
 success while nothing ran, every gate after it is decoration — so most of its cases exist to make the
 runner *fail*, not to make it pass.
 
-**Shared fixture.** Cases A0-1 to A0-4 run `tests/run.sh` against a throwaway directory tree in
-`/tmp` holding whatever files the case needs. Nothing touches the repository's own tests, and no
-Docker or network is involved. The `--root` and `--list` options exist for exactly this: a case that
-verified discovery by performing a real full run would include itself and recurse.
+**Shared fixture: `tests/lib/fixtures.ts`.** It exports `makeTree(files)`, which writes a throwaway
+directory tree under `/tmp` and returns its path, `dropTree(root)` to remove it, and two file bodies
+used as the test material everywhere below:
+
+| Export | Content |
+|---|---|
+| `PASSING` | `test('fixture passes', () => { expect(1).toBe(1); });` |
+| `FAILING` | `test('fixture fails on purpose', () => { expect(1).toBe(2); });` |
+
+Cases A0-1 to A0-4 run `tests/run.sh --root <tree>` against such a tree. Nothing touches the
+repository's own tests, and no Docker or network is involved. The `--root` and `--list` options exist
+for exactly this: a case that verified discovery by performing a real full run would include itself
+and recurse. `FAILING` never reaches the repository — it is written into a temporary tree and deleted
+with it.
 
 **Every case pairs a positive and a negative scenario**, listed separately below. A rule that only
 refuses is as useless as one that only permits, and the pairing is what distinguishes a working
@@ -283,9 +293,12 @@ in §2 stand.
 Ten cases hold seventeen scenarios. Nothing here touches a remote: M-A1 is entirely local, which is
 why its unhappy paths are about permissions and repetition rather than about access.
 
-**Shared fixture.** The unit and integration cases run `config/scripts/start/git.sh` against a
-throwaway project directory in `/tmp`, so the live workspace — which the running containers have
-mounted — is never disturbed. The system cases use the real stack through `docker compose exec`.
+**Shared fixture: a throwaway project directory.** The unit and integration cases run
+`config/scripts/start/git.sh <project>` against a directory made with `mkdtemp` under `/tmp`, so the
+live workspace — which the running containers have mounted — is never disturbed. The script takes the
+project directory as its first argument precisely so it can be driven this way. The system cases use
+the real stack through `docker compose exec`, and their probe repositories are named `probe-openclaw`,
+`probe-opencode` and `probe-roundtrip`, each removed in the case's teardown.
 
 ---
 
@@ -441,9 +454,12 @@ skill itself uses `TRIGGER when`, which satisfies the strictest reading as well.
 cases hold ten scenarios; the fifth is manual, because whether an agent *follows* a skill is model
 behaviour and cannot be asserted without flakiness.
 
-**Shared fixture.** The unit and contract cases read `config/agents/skills/git/SKILL.md` from the
-repository. The system and integration cases read it from inside the containers, at the two
-different paths the harnesses mount it on.
+**Shared fixture: the skill file itself.** The unit and contract cases read
+`config/agents/skills/git/SKILL.md` straight from the repository — there is no synthetic copy, so a
+case cannot pass against a fixture while the real file is wrong. The system and integration cases
+read it from inside the containers through `requireSkillFile` in `tests/lib/stack.ts`, at the paths
+`SKILL_PATHS` records there: `/home/node/.claude/skills` for `openclaw-gateway` and
+`/root/.config/opencode/skills` for `opencode`.
 
 ---
 
@@ -558,12 +574,14 @@ twenty-one scenarios; the eleventh is manual, because the success path — cloni
 repository — cannot be automated: a deploy key only grants access once a human has registered it,
 and that friction is the security property rather than an oversight.
 
-**Shared fixture.** The unit cases run `config/scripts/start/git.sh` against a throwaway project in
-`/tmp`. The contract cases read `compose.yml` and the repository tree. The system cases drive **git**
-from inside the containers rather than `ssh` directly — only git reads `GIT_SSH_COMMAND`, so a bare
-`ssh` call would test the container's default configuration instead of the one this milestone
-installs. Every one of them carries a timeout, because the characteristic failure of misconfigured
-SSH is not an error but a wait.
+**Shared fixture.** The unit cases run `config/scripts/start/git.sh <project>` against a directory
+made with `mkdtemp` under `/tmp`. The contract cases read `compose.yml` through `serviceBlock` in
+`tests/lib/compose-file.ts`, which locates a block by `  <name>:` at exactly two spaces. The system
+cases drive **git** from inside the containers rather than `ssh` directly — only git reads
+`GIT_SSH_COMMAND`, so a bare `ssh` call would test the container's default configuration instead of
+the one this milestone installs. Every one of them carries a 25-second timeout, because the
+characteristic failure of misconfigured SSH is not an error but a wait; the marker `RC=124` in the
+output is how a timeout is told apart from a refusal.
 
 ---
 
@@ -906,11 +924,16 @@ failed there would make the stack unusable for as long as that gap lasts.
 stack works with, each with its own key and its own clone. Twelve automated cases hold thirty-eight
 scenarios; the thirteenth is manual.
 
-**Shared fixture.** The unit cases drive `config/scripts/start/lib/git-repos.sh` directly through its
-`parse` and `keys` sub-commands. The integration cases run the start script against a throwaway
-project whose declared remotes are **local bare repositories**, with an `ssh` stand-in on `PATH`, so
-the clone path runs without network or credentials. The contract cases read `compose.yml` and the
-clones the fixture produced. Only A3c-9 touches the real GitHub.
+**Shared fixture: `tests/lib/gitfixture.ts`.** It exports the builders these cases are made of —
+`tempProject()` for a directory under `/tmp`, `seedKnownHosts(project)`, `seedRepo(root, name)` for a
+bare repository standing in for a remote, `fakeSsh(root, routes)` for the `ssh` stand-in placed on
+`PATH`, `runStart(...)` to invoke the start script against that project, `manifest(project)` to read
+back what it produced, and `parseDeclaration(declaration)` for the parser cases.
+
+The unit cases drive `config/scripts/start/lib/git-repos.sh` directly through its `parse` and `keys`
+sub-commands. The integration cases run the start script against a project whose declared remotes are
+local bare repositories, so the clone path runs without network or credentials. The contract cases
+read `compose.yml` and the clones the fixture produced. Only A3c-9 touches the real GitHub.
 
 ---
 
@@ -1236,9 +1259,14 @@ distinction, was rejected at this gate in favour of a command that answers.
 **What this milestone is for.** Replacing a rule an agent has to remember with a question it can ask.
 Seven cases, no manual one — see below.
 
-**Shared fixture.** The unit cases run the command against a fixture manifest in a temporary
-directory, so no declaration or clone is needed. The contract cases read the skill. The system case
-uses the running stack.
+**Shared fixture: the manifest constants in `tests/lib/gitfixture.ts`.** It exports `DECLARED` and
+`CLONE_FAILED`, two manifest entries used as the test material, `writeManifest(repositories)` to write
+them to a temporary file, and `askRepoCommand(manifestPath, args)` to run the command against it. The
+command reads `GIT_REPOSITORIES_MANIFEST` when set, which is how the unit cases point it at a fixture
+instead of `/git-secrets/repositories.json`.
+
+The unit cases therefore need no declaration and no clone. The contract cases read the skill file
+directly. The system case uses the running stack and the real manifest.
 
 ---
 
@@ -1399,12 +1427,15 @@ first artifact containing decision logic: a `pre-push` hook that decides, on eve
 goes through. It is the only component in this feature that earns full branch coverage, and the first
 where a mistake can hide in reasoning rather than in a missing mount.
 
-**Shared fixture for A4-1 to A4-12.** A bare repository on disk stands in for the remote — for git
-there is no difference — and a clone of it carries the configuration under test. No network, no
-GitHub, no credentials.
+**Shared fixture for A4-1 to A4-12: `hookFixture()`.**
 
-The fixture is built once per case, in a temporary directory, and is identical everywhere except
-where a case says otherwise:
+| | |
+|---|---|
+| **Where it lives** | `tests/lib/gitfixture.ts`, alongside the builders M-A3c and M-A3e already keep there — `tempProject`, `seedRepo`, `fakeSsh`, `runStart`, `DECLARED`, `CLONE_FAILED`. This milestone adds `hookFixture()` to the same file rather than starting a parallel one. |
+| **What it returns** | The paths of the bare remote and the clone, so a case can assert against the remote as well as act in the clone. |
+| **What it builds** | A bare repository and a clone of it, on disk in a temporary directory. A bare repository is a complete remote as far as git is concerned, so no network, no GitHub and no credentials are involved. |
+
+`hookFixture()` produces exactly this, every time:
 
 | Element | Value |
 |---|---|
@@ -1412,11 +1443,11 @@ where a case says otherwise:
 | Seed commit | `README.md` containing the single line `seed`, committed as `seed`, on `main` |
 | Clone | `work`, cloned from `remote.git`, so `refs/remotes/origin/HEAD` names `main` as in a real clone |
 | Clone configuration | `liquidupstart.access=write`, `liquidupstart.policy=protected`, `core.hooksPath` pointing at the shared hook |
-| Feature branch | `feature/probe`, where one is needed |
+| Feature branch | `feature/probe`, created but not pushed |
 | Ordinary commit | `notes.md` containing `probe`, committed as `add probe note` |
 
-A case that needs a different setting says which one it changes; everything else stays as above, so a
-difference in outcome is attributable to that setting alone.
+Each case below states only what it changes about that. Everything unmentioned is as above, so a
+difference in outcome is attributable to the one setting the case names.
 
 ---
 
@@ -1428,7 +1459,7 @@ difference in outcome is attributable to that setting alone.
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone the bare fixture; set `access=write` and `policy=protected`; commit on branch `feature/x`; push it. |
 | **Expected** | Exit 0, the branch appears on the remote, no message from the hook. |
-| **Test data** | The shared fixture unchanged: `access=write`, `policy=protected`, branch `feature/probe`, commit `add probe note` adding `notes.md` with the line `probe`. |
+| **Test data** | `hookFixture()` unchanged: `access=write`, `policy=protected`, branch `feature/probe`, commit `add probe note` adding `notes.md` with the line `probe`. |
 | **Covers** | U3, U4. |
 
 ##### A4-2 — the default branch under a protected policy is refused
@@ -1439,7 +1470,7 @@ difference in outcome is attributable to that setting alone.
 | **Component** | The `pre-push` hook. |
 | **Steps** | Same clone with `policy=protected`; commit on the default branch; push it. |
 | **Expected** | Non-zero exit; `remote.git` still at the seed commit; the message contains `main`, the word `protected`, and the words `feature branch`. |
-| **Test data** | The shared fixture, committing `notes.md` on `main` rather than on `feature/probe`. |
+| **Test data** | `hookFixture()`, committing `notes.md` on `main` rather than on `feature/probe`. |
 | **Covers** | U4, §1.3. |
 
 ##### A4-3 — the default branch under a direct policy is allowed
@@ -1450,7 +1481,7 @@ difference in outcome is attributable to that setting alone.
 | **Component** | The `pre-push` hook. |
 | **Steps** | Same clone with `policy=direct`; commit on the default branch; push. |
 | **Expected** | Exit 0; `remote.git` advanced to the new commit. |
-| **Test data** | The shared fixture with one setting changed: `liquidupstart.policy=direct`. Commit `add probe note` on `main`. |
+| **Test data** | `hookFixture()` with one setting changed: `liquidupstart.policy=direct`. Commit `add probe note` on `main`. |
 | **Covers** | U3, U4, §1.2 content mode. |
 
 ##### A4-4 — a push that is not a fast-forward is refused
@@ -1472,7 +1503,7 @@ difference in outcome is attributable to that setting alone.
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; commit on `feature/probe`; push with `--force` while the remote holds nothing extra. |
 | **Expected** | Exit 0; the branch appears on the remote. |
-| **Test data** | The shared fixture unchanged, pushed with `--force` — the flag present, the history still a fast-forward, so only the flag distinguishes this from A4-1. |
+| **Test data** | `hookFixture()` unchanged, pushed with `--force` — the flag present, the history still a fast-forward, so only the flag distinguishes this from A4-1. |
 | **Covers** | U4. |
 
 ##### A4-6 — deleting a remote branch is refused
@@ -1483,7 +1514,7 @@ difference in outcome is attributable to that setting alone.
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; push a branch; then `git push origin --delete` it. |
 | **Expected** | Non-zero exit; `feature/probe` still listed by `git ls-remote remote.git`; the message names `feature/probe`. |
-| **Test data** | The shared fixture with `feature/probe` already pushed successfully, so the deletion is the only operation under test. |
+| **Test data** | `hookFixture()` with `feature/probe` already pushed successfully, so the deletion is the only operation under test. |
 | **Covers** | U4. |
 
 ##### A4-7 — a private key in the pushed commits is refused
@@ -1527,7 +1558,7 @@ difference in outcome is attributable to that setting alone.
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; set `access=read` and `policy=direct` — the most permissive branch setting; commit on a feature branch; push. |
 | **Expected** | Non-zero exit; the message contains `read` and does not mention the branch, so it is clear the access rule fired first. |
-| **Test data** | The shared fixture with two settings changed: `liquidupstart.access=read` and `liquidupstart.policy=direct` — the most permissive branch setting, so a refusal cannot be attributed to the branch. Commit `add probe note` on `feature/probe`. |
+| **Test data** | `hookFixture()` with two settings changed: `liquidupstart.access=read` and `liquidupstart.policy=direct` — the most permissive branch setting, so a refusal cannot be attributed to the branch. Commit `add probe note` on `feature/probe`. |
 | **Covers** | U1, U4, §1.3. |
 
 ##### A4-11 — a branch behind the remote is refused rather than integrated
@@ -1549,7 +1580,7 @@ difference in outcome is attributable to that setting alone.
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; commit; push without anything having changed on the remote. |
 | **Expected** | Exit 0; the commit reaches the remote. |
-| **Test data** | The shared fixture unchanged — identical to A4-1 except that the point under test is currency rather than the branch rule. |
+| **Test data** | `hookFixture()` unchanged — identical to A4-1 except that the point under test is currency rather than the branch rule. |
 | **Covers** | U4. |
 
 ##### A4-13 — every clone is governed, including one made later
