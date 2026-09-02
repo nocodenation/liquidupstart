@@ -1159,3 +1159,45 @@ cannot show whether the skill was opened. But the sequence fits.
 If that reading is right, it generalises past this feature: **the fact an agent needs in order to
 start looking belongs in the sentence it reads before it chooses what to read.** Four attempts were
 spent putting it one layer too deep.
+
+### M-A3e — a deterministic answer instead of a rule to remember · posed 2026-09-02
+
+```
+/goal Implement M-A3e from docs/FEATURE-git-integration.md: a command that
+answers questions about declared repositories, replacing a rule the skill would
+otherwise ask an agent to remember. The acceptance criteria are cases A3e-1 to
+A3e-7 in section 5 of docs/TEST-SPEC-git-integration.md, signed off on
+2026-09-02. Write those tests first, then make them pass. There is no manual
+case; do not invent one.
+
+Scope: an agent-facing command reading the manifest the start script already
+writes at /git-secrets/repositories.json. Given a repository as a bare name, an
+SSH URL or an HTTPS URL, all three yielding the same answer, it reports whether
+the repository is declared, where its clone is, its access and branch policy,
+and whether the clone succeeded — and for one that failed, the reason from the
+manifest, distinguishable from a repository that is not declared at all. An
+undeclared repository exits non-zero and says what the operator must do. Follow
+the pattern config/openclaw/openclaw-claude.sh already uses: a script in the
+repository, mounted into openclaw-gateway, openclaw-cli and opencode under
+/usr/local/bin so it is on PATH.
+
+Then amend config/agents/skills/git/SKILL.md: name the command as the way to
+find out about a repository, and describe "could not read Username" as meaning
+the repository is not declared, with the command as the next step — rather than
+as meaning it is private or missing. Do not teach the agent to decide for itself
+which URL form applies to which repository; that is what this milestone
+replaces. Change nothing else in the body: A3e-6 exists to catch a regression
+there, and reads the body with the frontmatter stripped.
+
+Done when `./tests/run.sh m-a3e; echo EXIT=$?` is visible in this transcript with
+EXIT=0 and all of A3e-1 to A3e-7 present, and `./tests/run.sh; echo EXIT=$?` also
+shows EXIT=0, proving the earlier milestones have not regressed.
+
+Constraints: do not modify .env. Never print private key material — the manifest
+names key paths, and the command must report paths rather than contents. Search
+the codebase before assuming anything is missing; full implementations only, no
+placeholders. Or stop after 25 turns.
+```
+
+Outcome: pending.
+

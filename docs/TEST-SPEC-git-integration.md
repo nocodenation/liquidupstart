@@ -1218,6 +1218,9 @@ description, which A3d-5 showed does reach it.
 repository is private or gone", it means "this repository is not declared — run the command". The
 message the agent misread in A3-11 becomes a signpost.
 
+**Signed off 2026-09-02** — reviewed before implementation. The first plan, teaching the agent the
+distinction, was rejected at this gate in favour of a command that answers.
+
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | A3e-1 | Unit | The command is asked about a declared repository | Reports it as declared, with its clone path, access and branch policy, and exits 0 |
