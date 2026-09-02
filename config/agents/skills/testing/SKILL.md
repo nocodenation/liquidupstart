@@ -7,11 +7,24 @@ description: Write tests and test specifications that a newcomer can judge — w
 
 The standard every test here is held to: **a reader who has never seen this project should learn,
 from the test itself, what context it exists in, why it is built the way it is, why it says anything
-useful about the thing under test, and how to satisfy themselves it delivers results worth
-judging by.**
+useful about the thing under test, and how to check that a green result actually rules something
+out.**
 
-That is a higher bar than "it passes". A test that passes tells you nothing until you know what it
-would take for it to fail.
+That last part is the one usually left out, so it is worth spelling out. A pass is only informative
+if the reader can answer three questions:
+
+1. **Could this test fail at all?** If nothing would turn it red, its green says nothing. The
+   commonest way this goes wrong is a filter that matches no files, a guard that is never reached,
+   or a suite that reports success because it ran nothing.
+2. **Would it fail for the right reason?** A test can be red for a dozen reasons that have nothing
+   to do with its subject. The failure message has to name what is actually wrong, or the reader
+   learns only that something is.
+3. **Is it exercising the real thing?** A test can pass against a stand-in that happens to agree
+   with the implementation while the implementation is wrong. Anything that needs a running system
+   must be shown to touch it.
+
+A test that passes tells you nothing until those three are answered. The sections below are how they
+get answered.
 
 ## The header block
 
@@ -62,16 +75,20 @@ belong in the specification. **A rule that only refuses is as useless as one tha
 a reader cannot tell from one line which was tested. Where a counterpart is deliberately omitted, say
 so and why, so the gap reads as a decision.
 
-## Show how the test could fail
+## Answer the three questions
 
-The hardest thing for a newcomer to establish is whether a green result means anything. Make it
-answerable:
+**Could it fail?** Include the negative scenario, so refusing and permitting are both demonstrated.
+Where a whole suite is involved, provide a way to watch it go red on purpose — a throwaway tree
+holding a deliberately failing case, run and then deleted, so nothing red is left behind.
 
-- Include the negative scenario, so refusing and permitting are both demonstrated.
-- Where a suite is involved, provide a way to see it fail on purpose — a throwaway tree with a
-  deliberately failing case, run and then deleted.
-- For anything that needs a running system, prove the test actually touches it: stop the dependency
-  and check the test goes red. A test that passes with its subject switched off is measuring nothing.
+**Would it fail for the right reason?** Assert on the message, not only on the exit status. "Non-zero
+exit" is satisfied by a typo in the script. `the message contains "main", "protected" and "feature
+branch"` is satisfied only by the rule having fired and having said something useful.
+
+**Is it exercising the real thing?** For anything that needs a running system, stop the dependency
+and check the test goes red — **a test that passes with its subject switched off is measuring
+nothing.** Give each milestone a documented procedure for this, so the check is repeatable by someone
+who was not there when it was written.
 
 ## Assert the property, not the circumstance
 
