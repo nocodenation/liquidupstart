@@ -480,7 +480,8 @@ material of this trial.
    built.** They are the acceptance criteria; reviewing them afterwards is worthless, because a
    milestone would already have passed on unexamined criteria
 3. Write the goal text against the actual state of the code, referencing the signed-off cases
-4. Run it, in a fresh session
+4. Run it, in a fresh session, noting the wall-clock time before the first action so the process log
+   records elapsed time and turn count rather than reconstructing them afterwards
 5. Check acceptance — is the evidence really in the transcript, or did the evaluator wave something
    through
 6. **Diff review — do the tests that were written actually assert what the cases meant?** The spec
@@ -488,7 +489,14 @@ material of this trial.
 7. Update this document and the process log — what changed, and what it means for the milestones
    still ahead
 
-Steps 2 and 6 are the two human gates. Step 7 is the reason the milestone structure earns its keep.
+Steps 2 and 6 are the two human gates.
+
+**A principle this feature produced, recorded in `CLAUDE.md`:** prefer a computed answer to a rule an
+agent has to remember. Facts are computed, conduct is taught. Three manual observations here failed
+on rules that were correct, present and mounted — twice the skill was never opened, once the rule had
+become false because the system changed underneath it. M-A3e is the first milestone built that way
+from the start, and it exists because the operator asked why the skill had to make a distinction a
+script could make instead. Step 7 is the reason the milestone structure earns its keep.
 
 **M-A0 to M-A3b ran without step 2 or step 6 in some form, and all of them ran in one long
 conversation.** That is recorded rather than quietly fixed; it is what the process log exists to

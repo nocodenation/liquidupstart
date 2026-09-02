@@ -87,6 +87,23 @@ Adopted from Philipp's commandments for AI development.
 features, use cases, data structures, APIs and tests. Include use cases — ask when they are unclear.
 Document data structures and APIs.
 
+**Prefer a computed answer to a rule an agent has to remember.** When a question has a determinable
+answer, compute it and give the agent a way to ask — a command, a file, a generated value. Do not
+write the rule into a skill and rely on the agent to recall it and apply it correctly. A computed
+answer reads current state, so it cannot go stale when the system changes; it is unambiguous, so
+there is nothing to misread; and it removes the reasoning step rather than making it easier.
+
+This is not an argument against skills. It draws a line through them: **facts are computed, conduct
+is taught.** Where a repository lives, whether it is declared, which key belongs to it — computable,
+and therefore a command. Asking before pushing, not describing a repository from a substitute
+source, committing at a granularity others can read — judgement, with nothing to compute, and
+therefore a skill.
+
+The evidence is in `docs/FEATURE-git-integration.md`: three manual observations failed on rules that
+were correct, present in the skill and mounted in both harnesses. Twice the agent never opened the
+skill; once the rule had quietly become false because the system changed underneath it. None of that
+is possible with a value read at the moment it is needed.
+
 **Think critically.** When a request does not make sense, or the specification has a gap, a security
 weakness or an internal contradiction, say so and establish what is actually wanted rather than
 building what was literally asked for. Offer alternatives where the decision is genuinely open, and
