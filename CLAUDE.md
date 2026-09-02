@@ -7,6 +7,10 @@ engine based on Apache NiFi), and AI coding agents (OpenClaw, OpenCode) behind a
 **SvelteKit dashboard** (`dashboard/`) configures, builds, starts, and stops the stack
 from the browser.
 
+> **Active work:** the agent git integration (branch `feature/git-integration`) is mid-stream.
+> Read **`HANDOFF.md`** in the project root before continuing it — current state, where the
+> specification lives, how the milestone cycle works, and what the failures so far have taught.
+
 ## Layout
 
 - `compose.yml` — all services. The compose project is named `liquidupstart`; a single
