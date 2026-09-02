@@ -2062,6 +2062,24 @@ A3c-13 produced and is what this is watching for.
 
 ### M-A4 — guardrails, aware of the mode
 
+**The first run of this procedure, on 2026-09-02, found three defects in the procedure itself** — all
+of them in instruments written to check other things, none in the milestone:
+
+- *Check 5 stopped the wrong container.* M-A4's only system case runs in `openclaw-gateway`; stopping
+  `opencode` left it untouched, and the suite passed with 23 of 23 while the negative control was
+  supposed to be showing it red. It proved nothing. Corrected above.
+- *Check 3's exit code was meaningless.* `git push … | head -5; echo "EXIT=$?"` reports the status of
+  `head`, not of `git`. This is the same zsh pipeline trap this feature documented after
+  misattributing a build failure to `build.sh` — repeated, in a procedure written afterwards.
+  Corrected above by capturing to a file first.
+- *A4-14's stack guard was a bare `beforeAll` again*, the pattern M-A2 replaced with a named test
+  because an aborted `beforeAll` is counted once per file and the tests inside vanish from the total.
+  Fixed in `tests/system/m-a4.hook-in-container.test.ts`.
+
+That a verification procedure needs verifying is the uncomfortable part. The three questions in the
+testing skill apply to the checks as much as to the tests: this one could not have failed, so its
+green said nothing.
+
 Run on 2026-09-02. Checks 1 and 2 are in the implementation transcript: 23 scenarios across 10 files,
 0 fail, EXIT=0; the full suite 196 stack tests plus the 27 dashboard tests, EXIT=0. Check 3 is the
 one that found GitHub answering before the hook (see A4-14 above), and its automated form now covers
@@ -2079,16 +2097,20 @@ cd /Users/christof/repos/liquidupstart
 # 3. The hook by hand, bypassing the suite: a real clone refusing its own
 #    default branch. Expect: a refusal naming the branch and the policy,
 #    and a non-zero exit.
-docker compose exec -T openclaw-gateway sh -lc 'cd /repos/agent-skills && git config --get liquidupstart.policy && git commit -q --allow-empty -m "guardrail probe" && git push origin HEAD:main 2>&1 | head -5; echo "EXIT=$?"; git reset -q --hard origin/main'
+docker compose exec -T openclaw-gateway sh -lc 'cd /repos/agent-skills && git config --get liquidupstart.policy && git commit -q --allow-empty -m "guardrail probe" && git push origin HEAD:main >/tmp/push.out 2>&1; echo "EXIT=$?"; head -5 /tmp/push.out; git reset -q --hard origin/main'
 
 # 4. Every clone is governed, and the hook is one file rather than copies.
 docker compose exec -T openclaw-gateway sh -lc 'cd /repos/agent-skills && git config --get core.hooksPath && ls -l $(git config --get core.hooksPath)'
 
 # 5. Negative control: are the system tests real?
-#    Expect EXIT=1 with named failures, then EXIT=0 once the container is back.
-docker compose stop opencode
+#    M-A4's system case runs in openclaw-gateway, so that is the container to
+#    stop -- stopping opencode proves nothing here.
+#    Expect EXIT=1 with "the stack is running" named as the failure, then
+#    EXIT=0 once the container is back. Reload nginx afterwards.
+docker compose stop openclaw-gateway
 ./tests/run.sh m-a4; echo "EXIT=$?"
-docker compose start opencode
+docker compose start openclaw-gateway
+docker compose exec proxy nginx -s reload
 ./tests/run.sh m-a4; echo "EXIT=$?"
 ```
 

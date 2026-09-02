@@ -29,14 +29,15 @@
  * but the refusal is GitHub's, not this stack's, so it proves nothing about the
  * hook. The second half was added to prove what the case is actually for.
  */
-import { test, expect, beforeAll } from 'bun:test';
-import { requireStack, inContainer } from '../lib/stack';
+import { test, expect } from 'bun:test';
+import { inContainer } from '../lib/stack';
+import { stackGuard } from '../lib/guard';
 import { HOOKS_MOUNT } from '../lib/gitfixture';
 
 const SERVICE = 'openclaw-gateway';
 const CLONE = '/repos/agent-skills';
 
-beforeAll(() => requireStack([SERVICE]));
+stackGuard([SERVICE]);
 
 test('A4-14 the shared hook is installed in the container and the real clone points at it', () => {
   const r = inContainer(
