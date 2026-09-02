@@ -1409,3 +1409,50 @@ Three things follow:
 3. **A4-15 must be repeated against a repository whose hook actually fires** — write access, so
    GitHub does not refuse first, and a protected policy, so the hook does. That needs the write-
    capable declaration M-A5 introduces, and belongs there rather than being staged now.
+
+### M-A5 — self-development on Liquid Upstart · posed 2026-09-02
+
+```
+/goal Implement M-A5 from docs/FEATURE-git-integration.md: self-development on
+Liquid Upstart. The acceptance criteria are cases A5-1 to A5-8 in section 5 of
+docs/TEST-SPEC-git-integration.md, signed off on 2026-09-02. Write those tests
+first, then make them pass. A5-9 and A5-10 are manual and must not be automated.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes.
+
+Scope: this milestone is mostly proof rather than construction. The declaration
+already carries an access field and the pre-push hook already reads it, but no
+repository has ever been declared write-capable, so the write path is untested.
+Write the cases against local bare repositories declared write|protected -- the
+hook reads the policy from the clone, not from the host, so a local remote
+exercises it identically and leaves nothing behind.
+
+The one addition to the product is a paragraph in
+config/agents/skills/git/SKILL.md, for A5-7: when working on the stack's own
+repository, compose.yml, the Dockerfiles and .env are the files whose change
+breaks the container the agent is running in, and a bad commit that reaches main
+breaks it for everyone who pulls. Add to the body; change nothing else there.
+
+A5-6 needs care: capture the project root's git status and HEAD before the
+system cases and compare afterwards. If a system case ever reaches the
+operator's own checkout it would be found as lost work rather than as a failing
+test.
+
+A5-8 asserts an arrangement rather than a protection -- that the nested clone is
+ignored and that git clean skips it -- and must not be turned into a guarantee.
+
+Done when `./tests/run.sh m-a5; echo EXIT=$?` is visible in this transcript with
+EXIT=0 and all of A5-1 to A5-8 present, and `./tests/run.sh; echo EXIT=$?` also
+shows EXIT=0, proving the earlier milestones have not regressed.
+
+Constraints: do not modify .env -- declaring the real liquidupstart repository is
+the operator's step, in A5-9. Do not push to any real remote: every automated
+case uses a local bare repository. Never print private key material. Search the
+codebase before assuming anything is missing; full implementations only, no
+placeholders. Or stop after 35 turns -- that bound covers the documentation the
+development rules require, not the code alone.
+```
+
+Outcome: pending.
+

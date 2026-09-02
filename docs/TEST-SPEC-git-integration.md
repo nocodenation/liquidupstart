@@ -1711,6 +1711,9 @@ The stack works on the repository that builds it. Everything before this was rea
 is declared `read`, and every credential in the stack so far has been a read key. M-A5 introduces the
 first **write-capable** one, on the repository that produces the containers the agents run in.
 
+**Signed off 2026-09-02** — reviewed before implementation; the operator accepted all three
+recommendations below.
+
 **Decisions taken while writing these cases:**
 
 *The clone is separate from the operator's working copy, and that is the point.* `volumes/repos/liquidupstart`
