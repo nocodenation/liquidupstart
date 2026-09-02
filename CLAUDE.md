@@ -138,6 +138,9 @@ reads as a decision rather than an oversight.
 **Test data names both sides.** What must exist, and where it comes from, as well as what must not.
 A guard checked only against something invented is not shown to accept anything real.
 
+The standard these rules serve, and how to meet it, is written up as a skill at
+`config/agents/skills/testing/SKILL.md`, so agents working in the stack are held to it too.
+
 **Test data is stated, not described.** Give the actual values — the file name and its contents, the
 branch name, the configuration setting and what it is set to, the string the assertion looks for. "A
 commit with an innocuous file" is an intention; `README.md` holding the line `probe` is data. A test
