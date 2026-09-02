@@ -1340,6 +1340,9 @@ place; a `pre-push` hook decides, on every push, whether it goes through. This i
 the feature that earns full branch coverage, and the first where a mistake can hide in reasoning
 rather than in a missing mount.
 
+**Signed off 2026-09-02** — A4-1 to A4-15 reviewed on 2026-08-31, A4-16 and A4-17 added and approved
+afterwards.
+
 **Decisions taken while writing these cases:**
 
 *The hook reads the clone's own configuration, not `.env`.* M-A3c already writes

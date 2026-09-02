@@ -1259,3 +1259,50 @@ evidence the case is not vacuous.
 **Nothing in the plan changed.** The seven signed-off cases were implementable as written; two
 assertions were added beyond them, both negative: that a different repository on the same host is
 not swept in by a loose match (A3e-3), and that the answer contains no key material (A3e-1, A3e-7).
+
+### M-A4 — guardrails, aware of the mode · posed 2026-09-02
+
+```
+/goal Implement M-A4 from docs/FEATURE-git-integration.md: the pre-push
+guardrails. The acceptance criteria are cases A4-1 to A4-17 in section 5 of
+docs/TEST-SPEC-git-integration.md, signed off on 2026-09-02. Write those tests
+first, then make them pass. A4-15 is manual and must not be automated.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes.
+
+Scope: a pre-push hook, one shared file installed through core.hooksPath rather
+than copied into each .git/hooks, so one file governs every clone and a clone
+made later is covered without a further step. Wire its installation into the
+start script for every declared repository. It reads the clone's own
+configuration -- liquidupstart.access, liquidupstart.policy and
+refs/remotes/origin/HEAD, all of which M-A3c already writes -- and never .env,
+so a clone carries its own rules. It refuses: any push when access is read,
+checked before every other rule; a push to the default branch when policy is
+protected; a push that is not a fast-forward; a ref deletion; a push whose
+commits add a private key or a .env file; and a push whose branch is behind the
+remote, telling the operator to integrate first rather than rebasing silently.
+Also extend config/agents/bin/git-repo-info.sh to report the default branch,
+read from the clone rather than assumed.
+
+Two rules are deliberately narrower than the familiar formulations, and
+overreaching would break a working mode the use cases require. Pushing to the
+default branch is legitimate when policy is direct -- content mode does exactly
+that -- so do not ban it outright. And a force flag on a fast-forward is
+harmless; refuse the non-fast-forward, which is the actual harm, not the flag,
+which the hook cannot see anyway.
+
+Done when `./tests/run.sh m-a4; echo EXIT=$?` is visible in this transcript with
+EXIT=0 and all of A4-1 to A4-14 and A4-16 to A4-17 present, and `./tests/run.sh;
+echo EXIT=$?` also shows EXIT=0, proving the earlier milestones have not
+regressed.
+
+Constraints: do not modify .env. A bind mount cannot appear in a running
+container, so recreate the agent services if you add one, and reload nginx
+afterwards. Search the codebase before assuming anything is missing; full
+implementations only, no placeholders. Or stop after 50 turns -- that bound
+covers the documentation the development rules require, not the code alone.
+```
+
+Outcome: pending.
+
