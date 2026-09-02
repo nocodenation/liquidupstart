@@ -28,6 +28,13 @@
  *           the clone that borrowed the operator's ssh identity. The property
  *           worth asserting is that a default exists, not that nobody has
  *           overridden it.
+ *
+ *           Timeouts made explicit during M-A4, 2026-09-02. Both probes drive
+ *           three `docker compose exec` calls and take four to five seconds on
+ *           this machine, against bun's five-second default, so A1-7 failed once
+ *           under the load of a full suite run and passed on its own moments
+ *           later. Nothing about the assertion changed; only the budget it is
+ *           given, so a slow machine reports a slow test rather than a red one.
  */
 import { test, expect, beforeAll, afterAll } from 'bun:test';
 import { readFileSync, rmSync, existsSync } from 'node:fs';
@@ -73,7 +80,7 @@ test('A1-6 openclaw-gateway commits into the workspace under the configured iden
   expect(r.code).toBe(0);
   expect(r.stdout).toContain(`AUTHOR=${NAME} <${EMAIL}>`);
   expect(r.stdout).toContain(`COMMITTER=${NAME} <${EMAIL}>`);
-});
+}, 30000);
 
 test('A1-7 opencode commits under the same identity despite a different HOME', () => {
   const home = inContainer('opencode', 'echo $HOME');
@@ -84,4 +91,4 @@ test('A1-7 opencode commits under the same identity despite a different HOME', (
   expect(r.code).toBe(0);
   expect(r.stdout).toContain(`AUTHOR=${NAME} <${EMAIL}>`);
   expect(r.stdout).toContain(`COMMITTER=${NAME} <${EMAIL}>`);
-});
+}, 30000);

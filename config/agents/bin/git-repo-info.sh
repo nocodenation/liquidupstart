@@ -163,9 +163,15 @@ case "$r_access" in
   *) access_note="$r_access" ;;
 esac
 
+r_default=""
+if [ "$r_cloned" = "true" ] && [ -d "$r_clone" ]; then
+  r_default="$(git -C "$r_clone" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  r_default="${r_default#origin/}"
+fi
+
 case "$r_policy" in
-  protected) policy_note="protected — work on a feature branch; never push to main" ;;
-  direct) policy_note="direct — main may be written to, but a push is still the operator's call" ;;
+  protected) policy_note="protected — work on a feature branch; the default branch is not yours to push" ;;
+  direct) policy_note="direct — the default branch may be written to, but a push is still the operator's call" ;;
   *) policy_note="$r_policy" ;;
 esac
 
@@ -179,10 +185,14 @@ if [ "$r_cloned" = "true" ]; then
   field "remote" "$r_url"
   field "access" "$access_note"
   field "branch policy" "$policy_note"
+  if [ -n "$r_default" ]; then field "default branch" "$r_default"; fi
   field "deploy key" "${r_key}.pub (the path; never print or copy a key)"
   field "clone status" "cloned"
   printf '\nWork in %s. Its remote and its key are already configured there, so\n' "$r_clone"
   printf 'fetch, pull and push need no URL and no credentials from you.\n'
+  if [ -n "$r_default" ]; then
+    printf 'Start new work from %s: git switch -c <name> origin/%s.\n' "$r_default" "$r_default"
+  fi
   exit 0
 fi
 

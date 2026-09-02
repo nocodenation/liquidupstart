@@ -311,6 +311,7 @@ services:
       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
     volumes:
       - ./volumes/_git-secrets:/git-secrets
+      - ./volumes/_git-secrets/gitconfig:/etc/gitconfig:ro
       - ./volumes/repos:/repos
       - ./config/agents/instructions.md:/opencode/instructions.md:ro
       - ./config/agents/skills:/root/.config/opencode/skills
@@ -744,6 +745,7 @@ services:
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ./volumes/_git-secrets:/git-secrets
+      - ./volumes/_git-secrets/gitconfig:/etc/gitconfig:ro
       - ./volumes/repos:/repos
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
@@ -851,6 +853,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
     volumes:
       - ./volumes/_git-secrets:/git-secrets
+      - ./volumes/_git-secrets/gitconfig:/etc/gitconfig:ro
       - ./volumes/repos:/repos
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace

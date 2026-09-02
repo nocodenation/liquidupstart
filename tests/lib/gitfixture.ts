@@ -145,3 +145,94 @@ export function askRepoCommand(manifestPath: string, args: string[]): Result {
   const stderr = p.stderr ? p.stderr.toString() : '';
   return { code: p.exitCode ?? -1, stdout, stderr, output: stdout + stderr };
 }
+
+export const hooksSource = join(repoRoot, 'config/agents/hooks');
+export const HOOKS_MOUNT = '/git-secrets/hooks';
+
+const FIXTURE_IDENTITY = {
+  GIT_AUTHOR_NAME: 'Fixture',
+  GIT_AUTHOR_EMAIL: 'fixture@local',
+  GIT_COMMITTER_NAME: 'Fixture',
+  GIT_COMMITTER_EMAIL: 'fixture@local',
+  GIT_CONFIG_NOSYSTEM: '1'
+};
+
+export function git(dir: string, args: string[], env: Record<string, string> = {}): Result {
+  const p = Bun.spawnSync(['git', '-C', dir, ...args], {
+    env: { ...(process.env as Record<string, string>), ...FIXTURE_IDENTITY, ...env },
+    stdout: 'pipe',
+    stderr: 'pipe'
+  });
+  const stdout = p.stdout ? p.stdout.toString() : '';
+  const stderr = p.stderr ? p.stderr.toString() : '';
+  return { code: p.exitCode ?? -1, stdout, stderr, output: stdout + stderr };
+}
+
+export function commit(dir: string, files: Record<string, string>, message: string): void {
+  for (const [path, body] of Object.entries(files)) {
+    const full = join(dir, path);
+    mkdirSync(join(full, '..'), { recursive: true });
+    writeFileSync(full, body);
+  }
+  git(dir, ['add', '--all']);
+  const r = git(dir, ['commit', '-qm', message]);
+  if (r.code !== 0) throw new Error(`fixture commit "${message}" failed: ${r.output}`);
+}
+
+export type HookFixture = { root: string; remote: string; clone: string };
+
+export function hookFixture(prefix = 'lu-a4-'): HookFixture {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  const remote = join(root, 'remote.git');
+  const seed = join(root, 'seed');
+  const clone = join(root, 'work');
+
+  sh(['git', 'init', '-q', '--bare', '--initial-branch=main', remote], root);
+  mkdirSync(seed, { recursive: true });
+  sh(['git', 'init', '-q', '-b', 'main', seed], root);
+  git(seed, ['config', 'user.name', 'Fixture']);
+  git(seed, ['config', 'user.email', 'fixture@local']);
+  commit(seed, { 'README.md': 'seed\n' }, 'seed');
+  git(seed, ['remote', 'add', 'origin', remote]);
+  git(seed, ['push', '-q', 'origin', 'main']);
+
+  sh(['git', 'clone', '-q', remote, clone], root);
+  git(clone, ['config', 'user.name', 'Fixture']);
+  git(clone, ['config', 'user.email', 'fixture@local']);
+  git(clone, ['config', 'commit.gpgsign', 'false']);
+  git(clone, ['config', 'liquidupstart.access', 'write']);
+  git(clone, ['config', 'liquidupstart.policy', 'protected']);
+  git(clone, ['config', 'core.hooksPath', hooksSource]);
+  git(clone, ['checkout', '-q', '-b', 'feature/probe']);
+  commit(clone, { 'notes.md': 'probe\n' }, 'add probe note');
+
+  return { root, remote, clone };
+}
+
+export function commitOnRemote(
+  fx: HookFixture,
+  branch: string,
+  files: Record<string, string>,
+  message: string
+): void {
+  const scratch = mkdtempSync(join(fx.root, 'elsewhere-'));
+  sh(['git', 'clone', '-q', fx.remote, scratch], fx.root);
+  git(scratch, ['config', 'user.name', 'Elsewhere']);
+  git(scratch, ['config', 'user.email', 'elsewhere@local']);
+  git(scratch, ['checkout', '-q', branch]);
+  commit(scratch, files, message);
+  const r = git(scratch, ['push', '-q', 'origin', branch]);
+  if (r.code !== 0) throw new Error(`fixture push to the remote failed: ${r.output}`);
+}
+
+export function remoteSha(fx: HookFixture, ref: string): string {
+  return git(fx.remote, ['rev-parse', ref]).stdout.trim();
+}
+
+export function remoteHas(fx: HookFixture, ref: string): boolean {
+  return git(fx.remote, ['rev-parse', '--verify', '--quiet', ref]).code === 0;
+}
+
+export function remoteFile(fx: HookFixture, ref: string, path: string): string {
+  return git(fx.remote, ['show', `${ref}:${path}`]).stdout;
+}

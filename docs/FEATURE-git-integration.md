@@ -545,7 +545,7 @@ trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 | M-A3c | 32 / 40 | ~16 min (08:23–08:39) | 7 changed, 10 new | No — but green and unexercised: the clone path is proven against an ssh stand-in and local seeds, never against GitHub, because `.env` was off limits | The env-over-config discovery changed the design mid-run; A3-5 amended rather than broken | Yes — A3-5's assertion was exactly what A3c-5 removes | **First fresh-session run.** Nothing reported missing. Roughly 9 of 32 turns went on orientation — reading the spec, the existing suite, probing git — which is the standing cost of a cold start rather than a documentation gap |
 | M-A3d | 8 / 20 | 2 min 26 s | 1 changed, 3 new | No — one line changed, verified as one insertion and one deletion | None | No | Nothing missing. Orientation cost roughly two turns against nine for M-A3c, because the milestone was narrow and the cases said exactly what to touch |
 | M-A3e | 25 / 25 to both runs green, 36 in total | 12 min (11:30–11:43) | 3 changed, 8 new | No — both required runs shown with their exit codes; the system case was seen red at 127 before the mount existed | None; no defects surfaced during the run | No — the seven cases were implementable as signed off | Nothing missing. Orientation cost roughly four turns: the manifest shape, the skill, the existing suite conventions and which interpreters the two images actually carry. **The turn bound was met for the goal and exceeded for the record**: the two required runs were green at turn 25, and writing this row, the outcome above and the seven "what it found" blocks took eleven more. The bound counts the build; the documentation the rules require sits outside it |
-| M-A4 | | | | | | | |
+| M-A4 | 46 to both gates green, ~55 in total — **the bound was exceeded** | 32 min (12:53–13:25) | 3 changed (2 of them earlier milestones' tests), 8 new | No — both required runs shown with their exit codes, and the hook was seen to fail seven ways with the file moved aside | One finding, in the guardrail rather than in a test: GitHub's read-only deploy key answers before `pre-push` runs, so the signed-off system case proved the remote's rule and not this stack's | Yes — A4-14 needed a second half to test what it was written to test, and A4-4 and A4-11 turned out to be one rule stated from two sides | Fresh session. Orientation cost roughly six turns: the two documents, the existing suite's conventions, the start script, and a probe of git itself to settle whether `pre-push` runs at all for a push git will reject — it does, which the whole of A4-4 and A4-11 depends on. **The turn bound was met for the build and missed overall**: the milestone suite was green at turn 31 and the full suite at turn 46, after two unrelated tests from earlier milestones had to be dealt with; the sixteen "what it found" blocks, the outcome above and this row took nine more. M-A3e recorded the same shape, and the bound has now been wrong twice in the same direction |
 | M-A5 | | | | | | | |
 | M-B1 | | | | | | | |
 | M-B2 | | | | | | | |
@@ -976,8 +976,9 @@ What the milestone added, for a session that starts from these documents alone:
 - One ed25519 pair per declared repository under `volumes/_git-secrets/repos/<host>_<path>/`, never
   regenerated. The legacy stack key stays where it is; nothing can migrate it.
 - A clone per declared repository under `volumes/repos/`, carrying its own `core.sshCommand`,
-  `liquidupstart.identity`, `liquidupstart.access`, `liquidupstart.policy` (M-A4 reads the last two)
-  and one scoped `insteadOf`. A clone that already exists is left alone; a clone that fails is
+  `liquidupstart.identity`, `liquidupstart.access`, `liquidupstart.policy` (M-A4 reads the last two),
+  `core.hooksPath` (added by M-A4, on every clone under `volumes/repos` rather than only the declared
+  ones) and one scoped `insteadOf`. A clone that already exists is left alone; a clone that fails is
   reported by name and the start continues.
 - `volumes/_git-secrets/repositories.json` — the manifest, written by the start script and read by
   the `git-auth` route. One object per declared repository: `name`, `url`, `host`, `path`, `access`,
@@ -1304,5 +1305,62 @@ implementations only, no placeholders. Or stop after 50 turns -- that bound
 covers the documentation the development rules require, not the code alone.
 ```
 
-Outcome: pending.
+Outcome: 23 scenarios across 10 files, EXIT=0; the full suite runs 196 stack tests plus the 27
+dashboard tests, also EXIT=0. Three files changed — `compose.yml`, `config/scripts/start/git.sh` and
+`config/agents/bin/git-repo-info.sh` — two amended from earlier milestones, and eight added, one of
+them the hook. A4-15 is manual and still to be observed by the operator.
+
+**The hook is one file at `config/agents/hooks/pre-push`**, POSIX `sh`, installed by the start script
+to `volumes/_git-secrets/hooks/pre-push` — inside the secrets mount the agent containers already
+have, so it needed no mount of its own. Every clone under `volumes/repos` gets
+`core.hooksPath=/git-secrets/hooks`, declared or not: `csv-columns` was created by the A2-5
+observation and is nobody's declaration, and a guardrail that skips it is a guardrail with a door in
+it.
+
+**A clone made later is covered by a system git configuration, not by the clone.** The start script
+writes `volumes/_git-secrets/gitconfig`:
+
+```
+[core]
+	hooksPath = /git-secrets/hooks
+```
+
+mounted read-only at `/etc/gitconfig` in `opencode`, `openclaw-gateway` and `openclaw-cli`. Git reads
+it whatever is cloned and whenever, so a repository an agent clones itself is governed the moment it
+exists. That is the one new bind mount in this milestone; the three services were recreated for it
+and the proxy reloaded.
+
+**What the hook refuses, in this order.** It reads `liquidupstart.access`, `liquidupstart.policy` and
+`refs/remotes/origin/HEAD` from the clone, and never `.env`, so a clone carries its own rules —
+copy it elsewhere and they travel with it.
+
+1. **`access: read`** — every push, before anything else is looked at, so the message is about access
+   and not about branches.
+2. **A ref deletion** — an all-zero local sha, the only signal git gives.
+3. **A push the remote is not an ancestor of** — the harm behind `--force`, which a `pre-push` hook
+   cannot see and does not need to. This is also FR14: "not a fast-forward" and "behind the remote"
+   are one condition, and the refusal names both consequences — commits that exist only on the remote
+   would be discarded, and `git fetch` then `git rebase` is the way through. The hook does not rebase
+   for you: a rebase that hits a conflict rewrites work that is not yours.
+4. **The default branch under `policy: protected`** — not a ban on `main`. Under `direct` the same
+   push goes through, which is what content mode does all day.
+5. **A commit adding a private key or a `.env` file** — the key by an OpenSSH header in the blob
+   rather than by file name, because `deploy_key` is named like nothing in particular; `.env` by
+   name, because in this project the name is the danger.
+
+**`git-repo-info` now reports the default branch**, read from `refs/remotes/origin/HEAD` in the clone
+and omitted when there is no clone to read. Writing that case exposed the command telling agents
+*never push to main* — a hard-coded answer to the question it was being asked to compute — for a
+repository whose default branch might be anything. It now names the branch it read, and tells the
+agent what to branch from.
+
+**What the milestone found.** GitHub answers before the hook does: `agent-skills` has a read-only
+deploy key, so a push is refused while git is still opening the connection and `pre-push` never runs.
+Nothing reaches `main` either way, but the specified system case proved the remote's rules rather
+than this stack's, and a second half was added that builds a remote and a clone inside the container
+and is refused there in the hook's own words. Two earlier tests were amended without weakening an
+assertion: A3-10 was searching for the words of a key header and reported a document that quotes
+A4-7's fixture data, so it now requires a base64 body as well as a header; A1-7 was failing on bun's
+five-second default while the suite was under load, and has an explicit budget now. Both are recorded
+in the test specification.
 

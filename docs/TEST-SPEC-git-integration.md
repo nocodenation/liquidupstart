@@ -1461,6 +1461,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Exit 0, the branch appears on the remote, no message from the hook. |
 | **Test data** | `hookFixture()` unchanged: `access=write`, `policy=protected`, branch `feature/probe`, commit `add probe note` adding `notes.md` with the line `probe`. |
 | **Covers** | U3, U4. |
+| **What it found** | Nothing wrong. It is also the case that proves the others are not simply strict: with the hook file moved aside, exactly the seven unhappy scenarios fail and this one still passes, which is how the suite was shown to be able to fail. |
 
 ##### A4-2 — the default branch under a protected policy is refused
 
@@ -1472,6 +1473,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Non-zero exit; `remote.git` still at the seed commit; the message contains `main`, the word `protected`, and the words `feature branch`. |
 | **Test data** | `hookFixture()`, committing `notes.md` on `main` rather than on `feature/probe`. |
 | **Covers** | U4, §1.3. |
+| **What it found** | Passed as written. Its message is the one A4-14 later looks for inside the container. |
 
 ##### A4-3 — the default branch under a direct policy is allowed
 
@@ -1483,6 +1485,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Exit 0; `remote.git` advanced to the new commit. |
 | **Test data** | `hookFixture()` with one setting changed: `liquidupstart.policy=direct`. Commit `add probe note` on `main`. |
 | **Covers** | U3, U4, §1.2 content mode. |
+| **What it found** | Passed. It settled the order of the rules: A4-4 pushes a diverged history to this same default branch under this same protected policy, and expects the fast-forward message rather than the branch one, so the currency rule has to be consulted before the branch rule. |
 
 ##### A4-4 — a push that is not a fast-forward is refused
 
@@ -1494,6 +1497,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Non-zero exit; `remote.git` still at `remote-only`; the message says the push would discard commits that exist only on the remote. |
 | **Test data** | On the remote, a commit `remote-only` adding `remote.md` with the line `theirs`, pushed there directly. In the clone, `git reset --hard` to the seed commit, then a commit `local-only` adding `local.md` with the line `mine`. Both on `main`, so the histories diverge by exactly one commit each. |
 | **Covers** | U4. |
+| **What it found** | That git runs `pre-push` even for a push it is about to reject itself, so the refusal in the transcript is the hook's and not git's hint — which was worth knowing, because the assertion would otherwise pass on git's own words. It also shares one code path with A4-11: 'not a fast-forward' and 'the remote holds commits you do not' are the same condition seen from two sides, so the hook states both in one message rather than pretending to two rules. |
 
 ##### A4-5 — a fast-forward push is allowed even with the force flag
 
@@ -1505,6 +1509,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Exit 0; the branch appears on the remote. |
 | **Test data** | `hookFixture()` unchanged, pushed with `--force` — the flag present, the history still a fast-forward, so only the flag distinguishes this from A4-1. |
 | **Covers** | U4. |
+| **What it found** | Passed, carrying `--force`. Together with A4-4 it is the evidence that the hook keys on the history rather than on the flag it cannot see. |
 
 ##### A4-6 — deleting a remote branch is refused
 
@@ -1516,6 +1521,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Non-zero exit; `feature/probe` still listed by `git ls-remote remote.git`; the message names `feature/probe`. |
 | **Test data** | `hookFixture()` with `feature/probe` already pushed successfully, so the deletion is the only operation under test. |
 | **Covers** | U4. |
+| **What it found** | Passed. The deletion arrives with an all-zero local sha, which is the only signal git gives, and the case fixes that reading in place. |
 
 ##### A4-7 — a private key in the pushed commits is refused
 
@@ -1527,6 +1533,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Non-zero exit; the message names `deploy_key`. |
 | **Test data** | A file `deploy_key` whose contents are the three lines `-----BEGIN OPENSSH PRIVATE KEY-----`, `AAAAFIXTURENOTAREALKEY`, `-----END OPENSSH PRIVATE KEY-----`. Shaped to match what a scan looks for while being no key at all: the body is a fixture marker rather than base64 of anything. Committed on `feature/probe` as `add deploy key`. |
 | **Covers** | U3, U4, NFR1. |
+| **What it found** | That the scan has to read content rather than names. `deploy_key` is named like nothing in particular, and a rule listing `id_rsa`, `*.pem` and their relatives would have let it through. The hook therefore looks for a private key header in the blob, which needs no list and has no unexercised branches. |
 
 ##### A4-8 — a `.env` file in the pushed commits is refused
 
@@ -1538,6 +1545,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Non-zero exit; the message names `.env`. |
 | **Test data** | A file `.env` containing the single line `API_KEY="fixture-not-a-real-secret"`, committed on `feature/probe` as `add env file`. The value is written to be obviously synthetic, so a reader who meets it in a failure message does not go looking for a leak. |
 | **Covers** | U3, U4. |
+| **What it found** | Passed. `.env` is matched by name, because its danger is what the name means in this project rather than anything in the bytes. |
 
 ##### A4-9 — clean commits pass the scan
 
@@ -1549,6 +1557,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Exit 0; both files reach the remote. |
 | **Test data** | `docs/notes.md` containing `A note about the probe.` and `bin/probe.sh` containing `#!/usr/bin/env sh` and `echo probe`. Deliberately ordinary: prose and a script, no base64-looking strings, no file named like a credential. |
 | **Covers** | U3, U4. |
+| **What it found** | Passed. It is the case that would fail first if the scan were tightened into a keyword hunt. |
 
 ##### A4-10 — a repository declared read refuses every push
 
@@ -1560,6 +1569,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Non-zero exit; the message contains `read` and does not mention the branch, so it is clear the access rule fired first. |
 | **Test data** | `hookFixture()` with two settings changed: `liquidupstart.access=read` and `liquidupstart.policy=direct` — the most permissive branch setting, so a refusal cannot be attributed to the branch. Commit `add probe note` on `feature/probe`. |
 | **Covers** | U1, U4, §1.3. |
+| **What it found** | Passed, including the negative half: with `policy=direct` and the push aimed at a feature branch, the output names neither the branch nor a branch policy, so the access rule is demonstrably the one that fired. |
 
 ##### A4-11 — a branch behind the remote is refused rather than integrated
 
@@ -1571,6 +1581,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Non-zero exit; the message contains `fetch` and `rebase`; `remote.git` still at `theirs`. |
 | **Test data** | On the remote, a commit `theirs` adding `theirs.md` with the line `theirs`, pushed directly. In the clone, without fetching, a commit `mine` adding `mine.md` with the line `mine`. Both on `feature/probe`, which is pushed and therefore shared. |
 | **Covers** | U4, FR14. |
+| **What it found** | That the clone does not hold the remote's commit at all — it has never fetched it — so `git merge-base --is-ancestor` fails on a missing object rather than answering 'no'. A hook that read only the exit status of a successful comparison would have waved this through. It treats an unreadable remote commit as commits it does not have, which is the safe reading and the true one. |
 
 ##### A4-12 — a branch level with the remote is allowed
 
@@ -1582,6 +1593,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | Exit 0; the commit reaches the remote. |
 | **Test data** | `hookFixture()` unchanged — identical to A4-1 except that the point under test is currency rather than the branch rule. |
 | **Covers** | U4. |
+| **What it found** | Passed. Between it and A4-11 the difference is one commit on the remote, and nothing else. |
 
 ##### A4-13 — every clone is governed, including one made later
 
@@ -1593,6 +1605,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Expected** | All three point at the same shared hook file, which exists and is executable. |
 | **Test data** | Two bare repositories `alpha.git` and `beta.git` in the temporary project, declared as `GIT_REPOSITORIES="git@localhost:alpha.git\|write\|protected, git@localhost:beta.git\|read\|protected"`, with the ssh stand-in on `PATH` that M-A3c's fixtures already provide. The third clone is made by hand from `alpha.git` after the start script has run. |
 | **Covers** | U7, U8, FR12. |
+| **What it found** | That a clone made later cannot be reached from inside the clone, because there is nothing in it yet to configure. The start script therefore also writes `volumes/_git-secrets/gitconfig`, mounted read-only at `/etc/gitconfig` in the three agent services, so git in the container reads `core.hooksPath` from the system configuration whatever is cloned and whenever. That is a new bind mount, and the agent services had to be recreated for it. |
 
 ##### A4-14 — the hook is installed where an agent actually works
 
@@ -1605,6 +1618,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Dependencies** | The stack running and `agent-skills` cloned, which M-A3c provides. |
 | **Test data** | The real clone at `/repos/agent-skills`, which carries `liquidupstart.access=read` and `liquidupstart.policy=protected`; an empty commit `guardrail probe`, undone afterwards with `git reset --hard origin/main` so the clone is left as it was found. |
 | **Covers** | U3, U4. |
+| **What it found** | The finding of the milestone. The specified step — pushing the real `/repos/agent-skills` to `main` — never reaches the hook. Its deploy key is registered read-only with GitHub, and the server refuses while git is still opening the connection, before `pre-push` runs. The guarantee holds (nothing reaches `main`, and the case asserts the remote's sha is unchanged) but the refusal is GitHub's, not this stack's, so as written the case proves nothing about the hook it was written to prove. A second half was added: a bare remote and a clone of it are built inside the container under `/repos`, declared `access=write` and `policy=protected`, and the push to their default branch is refused by the hook, in the hook's words. That clone also picks up `core.hooksPath` from `/etc/gitconfig` without anyone setting it, which is A4-13's later clone proven where it matters. |
 
 ##### A4-17 — the repository command reports the default branch
 
@@ -1618,6 +1632,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Negative — not cloned** | Ask about a declared repository whose clone failed. Expected: no default branch claimed, since there is no clone to read it from, and the existing not-cloned answer is given instead. |
 | **Covers** | U3, U4, §1.2. |
 | **Why here rather than in M-A3e** | Identified while M-A3e was already running. Adding it mid-run would have widened a signed-off scope; M-A4 is where the branch rules live, so it belongs to that milestone's cases. |
+| **What it found** | That the command hard-coded the answer it was being asked to compute. Its branch-policy line read *protected — work on a feature branch; never push to main*, and the second fixture's assertion — that `main` appears nowhere in the answer for a repository whose default branch is `trunk` — forbids exactly that. It now reads *the default branch is not yours to push*, and the branch itself is reported as a field, read from `refs/remotes/origin/HEAD` in the clone. |
 
 ##### A4-16 — every clone still points at the hook
 
@@ -1631,6 +1646,7 @@ difference in outcome is attributable to the one setting the case names.
 | **Negative — a clone without it** | Expected: named in the failure, rather than the run passing because the other clones are fine. |
 | **Covers** | U4, §3.1. |
 | **Why it is worth having anyway** | It detects the state, not the act. An agent that removed the hook, pushed, and restored it would pass. That is not a reason to omit it: most ways a guardrail stops working are careless rather than deliberate, and those this catches. |
+| **What it found** | That `csv-columns` — the clone this feature did not create — would have been ungoverned. The start script now sets `core.hooksPath` on every clone under `volumes/repos`, not only on the declared ones, which is what the case's own test data asks for. |
 
 ##### A4-15 — an agent respects the refusal instead of routing around it · **manual**
 
@@ -1648,6 +1664,42 @@ difference in outcome is attributable to the one setting the case names.
 A4-3 and A4-5 are the two cases most likely to be got wrong by writing the rules from memory. "Never
 push to `main`" and "never force push" are the familiar formulations, and both are wrong here: the
 default branch is legitimate in content mode, and a force flag on a fast-forward changes nothing.
+
+#### Recorded during the run · 2026-09-02
+
+**Two of the rules turned out to be one.** "A push that is not a fast-forward" and "a push whose
+branch is behind the remote" describe the same condition: the remote's commit is not an ancestor of
+what is being pushed. The hook states both consequences in a single refusal — that the push would
+discard commits that exist only on the remote, and that the way out is `git fetch` and then
+`git rebase` — rather than inventing two rules to make two cases look distinct. A4-4 and A4-11 assert
+the two halves of that one message, and both are met.
+
+**The branch rule is skipped, not failed, when the default branch cannot be read.** It is computed
+from `refs/remotes/origin/HEAD`, which every `git clone` writes. If that ref were missing the value
+is empty, no branch equals it, and the rule cannot match — the other four rules still apply. The
+alternative, refusing every push in a clone whose default branch is unknown, would add a decision
+branch that none of the signed-off cases exercise, and a guardrail with an untested path is a worse
+trade than a rule that quietly does not fire in a state `git clone` does not produce.
+
+**A4-14 as signed off does not test what it was written to test**, and its case block above records
+why and what was added. This is the deviation of the milestone, raised rather than absorbed.
+
+**Two tests from earlier milestones were amended, both without weakening an assertion.**
+
+*A3-10, key containment.* It searched `config/`, `volumes/repos` and `dashboard/src` for the words
+`BEGIN OPENSSH PRIVATE KEY`. During this run a skill appeared at
+`config/agents/skills/testing/SKILL.md` quoting A4-7's fixture data — the header with the body
+`AAAAFIXTURENOTAREALKEY` — and was reported as a leaked key. The words are not the material: a real
+key is a header *and* a base64 body, so the workspace search now requires both. It was checked
+against a copy of the stack's actual key placed in `config/`, which it still catches by name. The
+case that A4-7's own data would one day be quoted somewhere was, in hindsight, predictable — the
+fixture is deliberately shaped to look like what a scan looks for.
+
+*A1-7, one identity across two harnesses.* It failed once at 5.7 seconds against bun's five-second
+default while the full suite was running, and passed on its own moments later. Both probes in that
+file drive three `docker compose exec` calls; they are given an explicit 30-second budget now.
+Nothing about the assertions changed. A flaky red is worse than a slow green, because a suite that
+cries wolf is a suite people stop reading.
 Overreaching would break the working mode the use cases describe.
 
 ### M-A5 to M-B2 — outlines
@@ -2007,7 +2059,10 @@ A3c-13 produced and is what this is watching for.
 
 ### M-A4 — guardrails, aware of the mode
 
-To be run after implementation; the pass count is filled in once known.
+Run on 2026-09-02. Checks 1 and 2 are in the implementation transcript: 23 scenarios across 10 files,
+0 fail, EXIT=0; the full suite 196 stack tests plus the 27 dashboard tests, EXIT=0. Check 3 is the
+one that found GitHub answering before the hook (see A4-14 above), and its automated form now covers
+both halves.
 
 ```bash
 cd /Users/christof/repos/liquidupstart

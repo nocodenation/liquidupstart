@@ -1,0 +1,82 @@
+#!/bin/sh
+set -eu
+
+REMOTE="${1:-origin}"
+
+say() { printf '%s\n' "$1" >&2; }
+
+is_zero() {
+  case "$1" in
+    *[!0]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+access="$(git config --get liquidupstart.access 2>/dev/null || true)"
+policy="$(git config --get liquidupstart.policy 2>/dev/null || true)"
+default_branch="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+default_branch="${default_branch#origin/}"
+
+if [ "$access" = read ]; then
+  say "pre-push refused: this repository is declared with access read in this stack."
+  say "Nothing may be pushed to it from here, whatever is being pushed and wherever it goes."
+  say "Report the refusal and ask the operator; do not look for a way around it."
+  exit 1
+fi
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${remote_ref:-}" ] || continue
+  branch="${remote_ref#refs/heads/}"
+
+  if is_zero "$local_sha"; then
+    say "pre-push refused: this would delete ${branch} on ${REMOTE}."
+    say "A deleted branch takes work with it that no local clone need hold."
+    say "If it really should go, that is the operator's call, not yours."
+    exit 1
+  fi
+
+  if ! is_zero "$remote_sha"; then
+    if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+      say "pre-push refused: ${REMOTE}/${branch} holds commits your branch does not."
+      say "The push would discard commits that exist only on the remote."
+      say "Integrate first: git fetch ${REMOTE}, then git rebase ${REMOTE}/${branch}, then push again."
+      say "This hook will not rebase for you — a rebase that hits a conflict rewrites work that is not yours."
+      exit 1
+    fi
+  fi
+
+  if [ "$policy" = protected ] && [ -n "$default_branch" ] && [ "$branch" = "$default_branch" ]; then
+    say "pre-push refused: ${branch} is the default branch here and this repository's policy is protected."
+    say "Push a feature branch instead: git switch -c <name>, then git push -u ${REMOTE} <name>."
+    say "Changing ${branch} is the operator's call — report what you have and ask."
+    exit 1
+  fi
+
+  if is_zero "$remote_sha"; then
+    commits="$(git rev-list "$local_sha" --not --remotes="$REMOTE" 2>/dev/null || true)"
+  else
+    commits="$(git rev-list "${remote_sha}..${local_sha}" 2>/dev/null || true)"
+  fi
+
+  for commit in $commits; do
+    for path in $(git diff-tree -r -m --root --no-commit-id --name-only --diff-filter=AM "$commit" 2>/dev/null || true); do
+      base="${path##*/}"
+      case "$base" in
+        .env|.env.*)
+          say "pre-push refused: commit $(git rev-parse --short "$commit") adds ${path}."
+          say "A .env file holds this stack's credentials, and a remote never forgets what reaches it."
+          say "Take it out of the history you are pushing, then push again."
+          exit 1
+          ;;
+      esac
+      if git show "${commit}:${path}" 2>/dev/null | grep -q -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'; then
+        say "pre-push refused: commit $(git rev-parse --short "$commit") adds ${path}, which contains a private key."
+        say "A key that reaches a remote is a key to replace, so it is refused before the push rather than after."
+        say "Take it out of the history you are pushing, then push again."
+        exit 1
+      fi
+    done
+  done
+done
+
+exit 0

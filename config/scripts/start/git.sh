@@ -53,8 +53,21 @@ source "${SCRIPT_DIR}/lib/git-repos.sh"
 
 SECRETS_MOUNT="${GIT_SECRETS_MOUNT:-/git-secrets}"
 REPOS_MOUNT="${GIT_REPOS_MOUNT:-/repos}"
+HOOKS_DIR="${SECRETS_DIR}/hooks"
+HOOKS_MOUNT="${SECRETS_MOUNT}/hooks"
+GITCONFIG="${SECRETS_DIR}/gitconfig"
 MANIFEST="${SECRETS_DIR}/repositories.json"
 ENV_FILE="${PROJECT_DIR}/.env"
+
+mkdir -p "$HOOKS_DIR"
+chmod 755 "$HOOKS_DIR"
+install -m 755 "${SCRIPT_DIR}/../../agents/hooks/pre-push" "${HOOKS_DIR}/pre-push"
+
+cat > "$GITCONFIG" <<EOF
+[core]
+	hooksPath = ${HOOKS_MOUNT}
+EOF
+chmod 644 "$GITCONFIG"
 
 DECLARATION="${GIT_REPOSITORIES:-}"
 if [[ -z "$DECLARATION" && -f "$ENV_FILE" ]]; then
@@ -106,6 +119,7 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
 
   if [[ "$cloned" == true ]]; then
     git -C "$dest" config core.sshCommand "ssh -F /dev/null -i ${mount_key} -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=${SECRETS_MOUNT}/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+    git -C "$dest" config core.hooksPath "$HOOKS_MOUNT"
     git -C "$dest" config liquidupstart.identity "$mount_key"
     git -C "$dest" config liquidupstart.access "$access"
     git -C "$dest" config liquidupstart.policy "$policy"
@@ -134,6 +148,11 @@ JSON
   ENTRIES="${ENTRIES:+${ENTRIES},
 }${entry}"
 done <<< "$PARSED"
+
+for existing in "$REPOS_DIR"/*/; do
+  [[ -d "${existing}.git" ]] || continue
+  git -C "$existing" config core.hooksPath "$HOOKS_MOUNT"
+done
 
 {
   printf '{\n  "generated": "%s",\n  "repositories": [\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
