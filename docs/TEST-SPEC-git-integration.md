@@ -1194,81 +1194,134 @@ scenarios; the fifth is manual and is the only one that decides whether the chan
 | **What it found** | Passed on 2026-08-31, the first after three failures. The agent opened with *"I'm checking the local repos to find the agent-skills repository"*, reported the path, and named all three, citing the repository's own README. `pdf-sign` is the hard evidence: it appears in none of the third-party pages the earlier attempts drew on. The agent never mentions reading the skill, which points at A3d-2 rather than A3d-1 as the change that carried it — circumstantial, but the sequence fits. |
 
 ---
-### M-A3e — the skill tells the truth about HTTPS
+### M-A3e — a deterministic answer instead of a rule to remember
 
-M-A3b taught that an `https://` URL does not work here. M-A3c's scoped `insteadOf` made it work
-inside a declared clone. Verified from the container on 2026-08-31: in `/repos/agent-skills` an HTTPS
-`ls-remote` returns commit hashes; from `/tmp` the same command fails with `could not read Username`.
-The skill is therefore false about exactly the repositories the stack cares about most, and an agent
-that tries HTTPS there learns the wrong lesson.
+M-A3c's scoped `insteadOf` made HTTPS work inside a declared clone, while the skill still says it
+does not work at all. The first plan was to teach the distinction: HTTPS works for declared
+repositories, not for others. **That plan was rejected at review**, and rightly — it asks an agent to
+carry a taxonomy in its head and apply it correctly, which is exactly the kind of instruction the
+three failed observations show does not survive contact.
 
-**The rewrite stays.** It exists so an agent reaching for the familiar URL is not punished for it,
-and removing it would reintroduce the failure it was built to prevent. What changes is the sentence
-that describes reality.
+Instead the stack answers the question itself. A small command inside the containers reads the
+manifest the start script already writes and reports, for any repository an agent names: whether it
+is declared, where its clone is, what access and branch policy it has, and — when it is not declared
+— that the stack holds no key for it and the operator has to declare it. The skill then carries one
+instruction rather than a rule with an exception.
+
+**Why this is better than a corrected sentence.** The answer is computed from the current state, so
+it cannot go stale when the declaration changes. It is unambiguous, so there is nothing to misread.
+And it removes the reasoning step entirely: an agent does not need to know which URL form works,
+because it can ask. The one fact it must still hold — that the command exists — goes in the skill's
+description, which A3d-5 showed does reach it.
+
+**One sentence about HTTPS survives**, turned around: `could not read Username` no longer means "this
+repository is private or gone", it means "this repository is not declared — run the command". The
+message the agent misread in A3-11 becomes a signpost.
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
-| A3e-1 | Contract | The skill distinguishes declared from undeclared repositories | It says HTTPS works for a repository the stack has declared, and does not for any other |
-| A3e-2 | Contract | The SSH form is still taught as the one that always works | Unchanged in substance: it is the form to reach for, and the only one that works everywhere |
-| A3e-3 | Contract | The rest of the body is unchanged | Every rule from M-A2, M-A3b and M-A3d still present, frontmatter stripped before the check |
-| A3e-4 | System | Both harnesses see the corrected text | Identical in each, at its own mount path |
+| A3e-1 | Unit | The command is asked about a declared repository | Reports it as declared, with its clone path, access and branch policy, and exits 0 |
+| A3e-2 | Unit **unhappy** | The command is asked about an undeclared repository | Says it is not declared and that the stack holds no key for it, names what the operator must do, and exits non-zero so a script can branch on it |
+| A3e-3 | Unit | The command is given the same repository as a name, an SSH URL and an HTTPS URL | The same answer each time — an agent may hold any of the three, and which one it happens to have must not change the result |
+| A3e-4 | Unit **unhappy** | The command is asked about a declared repository whose clone failed | Reports it as declared but not cloned, with the reason from the manifest, rather than as absent |
+| A3e-5 | Contract | The skill points at the command | It names the command and no longer teaches a URL taxonomy; the credential message is described as the signal that a repository is undeclared |
+| A3e-6 | Contract | The rest of the body is unchanged | Every rule from M-A2, M-A3b and M-A3d still present, frontmatter stripped before the check |
+| A3e-7 | System | The command works inside both harnesses | Present on `PATH` and returning the same answers in `openclaw-gateway` and in `opencode` |
 
 #### Detail per case
 
-**What this milestone is for.** One paragraph of the skill, corrected. Four cases, no manual one —
-see below.
+**What this milestone is for.** Replacing a rule an agent has to remember with a question it can ask.
+Seven cases, no manual one — see below.
+
+**Shared fixture.** The unit cases run the command against a fixture manifest in a temporary
+directory, so no declaration or clone is needed. The contract cases read the skill. The system case
+uses the running stack.
 
 ---
 
-##### A3e-1 — the skill distinguishes declared from undeclared repositories
+##### A3e-1 — a declared repository is reported with everything an agent needs
 
 | | |
 |---|---|
-| **Premise** | The skill's present claim is false where it matters most. An agent that tries HTTPS in a declared clone succeeds, concludes HTTPS works here, and then misreads `could not read Username` on an undeclared repository — the A3-11 confusion inverted, and harder to spot because the first experience was a success. |
-| **Component** | The body of `config/agents/skills/git/SKILL.md`. |
-| **Test data** | Wording covering both cases: HTTPS works for a declared repository because the stack rewrites it; HTTPS does not work for anything else, and `could not read Username` means credentials this container does not have. |
-| **Positive — declared case** | Expected: the text says HTTPS works for repositories the stack has declared. |
-| **Positive — undeclared case** | Expected: the text still says it does not work otherwise, with the message and its meaning intact. |
-| **Covers** | U5, FR6, FR9. |
+| **Premise** | The whole point: one call, one unambiguous answer, computed from current state rather than recalled from a rule. |
+| **Component** | The agent-facing command, reading `/git-secrets/repositories.json`. |
+| **Test data** | A fixture manifest with one declared repository: clone path, `access: read`, `policy: protected`, `cloned: true`. |
+| **Positive** | Ask about it by name. Expected: exit 0, and output naming the clone path, the access and the branch policy. |
+| **Covers** | U1, U5, U8. |
 
-##### A3e-2 — the SSH form is still the one to reach for
+##### A3e-2 — an undeclared repository is named as such, actionably
 
 | | |
 |---|---|
-| **Premise** | The correction must not read as "HTTPS is fine now". The SSH form works for declared and undeclared repositories alike; HTTPS works only for the subset the stack has rewritten. A skill that presented them as equivalent would leave an agent choosing the more fragile one. |
-| **Component** | The body of `SKILL.md`. |
-| **Test data** | The SSH form `git@github.com:owner/repo.git`. |
-| **Positive** | Expected: still present, still presented as the form that always works. |
+| **Premise** | This is the case the milestone exists for. An agent that asks about something the stack does not know must get a clear "no" and a next step, not silence and not a guess. |
+| **Component** | The same command. |
+| **Test data** | The same fixture manifest; a repository absent from it. |
+| **Negative — reported** | Expected: output saying it is not declared and that the stack holds no key for it, naming what the operator must do. |
+| **Negative — exit code** | Expected: non-zero, so a script — or an agent checking the status — can branch on it without parsing prose. |
+| **Covers** | U1, U5. |
+
+##### A3e-3 — name, SSH URL and HTTPS URL give the same answer
+
+| | |
+|---|---|
+| **Premise** | An agent may hold any of the three: a bare name from a conversation, an SSH URL from the skill, an HTTPS URL from a browser. Which one it happens to have must not change the answer, or the command reintroduces the ambiguity it was built to remove. |
+| **Component** | The command's argument handling. |
+| **Test data** | One declared repository expressed three ways: `agent-skills`, `git@github.com:nocodenation/agent-skills.git`, `https://github.com/nocodenation/agent-skills`. |
+| **Positive — three forms** | Expected: identical output for all three. |
+| **Covers** | U5, NFR2. |
+
+##### A3e-4 — a declared repository whose clone failed is not reported as absent
+
+| | |
+|---|---|
+| **Premise** | A3c-7 makes "declared but not cloned" a normal state — the gap between declaring a repository and registering its key. Reporting it as undeclared would send the operator to fix the wrong thing. |
+| **Component** | The command, against the manifest's `cloned` and `error` fields. |
+| **Test data** | A fixture manifest entry with `cloned: false` and an error string. |
+| **Negative** | Expected: reported as declared but not cloned, with the reason, and distinguishable from the undeclared case in A3e-2. |
+| **Covers** | U1, U2. |
+
+##### A3e-5 — the skill points at the command
+
+| | |
+|---|---|
+| **Premise** | The command is worth nothing if the agent does not know it exists. The skill carries one instruction — ask — rather than the taxonomy the first plan would have required. |
+| **Component** | `config/agents/skills/git/SKILL.md`. |
+| **Test data** | The command name; the message `could not read Username`. |
+| **Positive — names the command** | Expected: the skill names it as the way to find out about a repository. |
+| **Positive — message repurposed** | Expected: `could not read Username` is described as meaning the repository is not declared, with the command as the next step, rather than as meaning the repository is private or missing. |
+| **Negative — no taxonomy** | Expected: the skill does not instruct the agent to decide for itself which URL form applies to which repository. |
 | **Covers** | U5, FR9. |
 
-##### A3e-3 — the rest of the body is unchanged
+##### A3e-6 — the rest of the body is unchanged
 
 | | |
 |---|---|
-| **Premise** | The body now carries rules from three milestones. This one touches a single paragraph, and a regression elsewhere would be invisible. |
-| **Component** | The body of `SKILL.md`, frontmatter stripped first — the distinction A3d-3 established, so that a rule moved into the description cannot satisfy the check. |
+| **Premise** | The body now carries rules from three milestones. A regression elsewhere would be invisible. |
+| **Component** | The body of `SKILL.md`, frontmatter stripped first, as A3d-3 established. |
 | **Test data** | Every load-bearing rule from M-A2, M-A3b and M-A3d. |
-| **Positive** | Expected: all still present in the body. |
+| **Positive** | Expected: all still present. |
 | **Covers** | FR9. |
 
-##### A3e-4 — both harnesses see the corrected text
+##### A3e-7 — the command works inside both harnesses
 
 | | |
 |---|---|
-| **Premise** | Same reasoning as A2-3, A3b-3 and A3d-4: the two harnesses mount the skill at different paths, and a single check would pass while one kept the false statement. |
-| **Component** | The running stack, at each mount path. |
-| **Positive — per harness** | Expected: each contains the corrected wording. |
-| **Positive — identical** | Expected: the two copies match. |
-| **Dependencies** | A running stack. |
-| **Covers** | FR9. |
+| **Premise** | Same reasoning as every skill-visibility case: what is not reachable from where the agent stands does not exist. Here it is a command rather than a document, so `PATH` matters as well as the mount. |
+| **Component** | The running stack, `openclaw-gateway` and `opencode`. |
+| **Test data** | The real manifest and the declared repository it describes. |
+| **Positive — per harness** | Expected: the command is on `PATH` and answers in each. |
+| **Positive — identical** | Expected: both give the same answer for the same repository. |
+| **Dependencies** | A running stack and at least one declared repository. |
+| **Covers** | U5, U8. |
 
 ##### No manual case, deliberately
 
 A3d-5 already established that an agent finds a declared repository in `/repos` and answers from it,
-which is the behaviour this milestone protects rather than creates. A fifth manual observation would
-re-measure a property already demonstrated. The correction guards against a *future* confusion on an
-undeclared repository — a situation the stack cannot currently produce, since every repository an
-agent knows about is declared. When an undeclared one first appears, that is the moment to observe.
+which is the behaviour this milestone protects rather than creates. What it adds — a command to ask
+about a repository — becomes observable only when an agent meets one the stack does not know, and
+the stack cannot currently produce that situation: every repository an agent knows about is
+declared. When an undeclared one first appears, that is the moment to observe, and the observation
+belongs to that occasion rather than being staged here.
 
 ### M-A4 — guardrails, aware of the mode
 

@@ -292,10 +292,14 @@ directory and never looked there. So this milestone is required. It stays a trig
 skill already states that repositories live under `/repos`, and it reaches all three environments,
 which `instructions.md` does not. The only thing wrong is when it opens.
 
-**M-A3e · The skill tells the truth about HTTPS**
-M-A3c's scoped `insteadOf` made HTTPS work inside a declared clone, while the skill still says it does
-not work at all. An agent that tries it there succeeds, learns the wrong lesson, and misreads the
-failure on an undeclared repository. Corrects the skill; the rewrite stays.
+**M-A3e · A deterministic answer instead of a rule to remember**
+M-A3c's scoped `insteadOf` made HTTPS work inside a declared clone while the skill still says it does
+not work at all. The first plan was to teach the distinction; that was rejected at review, because it
+asks an agent to carry a taxonomy and apply it correctly — the kind of instruction three failed
+observations show does not survive contact. Instead a command inside the containers answers from the
+manifest: is this repository declared, where is its clone, what access and policy, and if not
+declared, what the operator must do. The skill carries one instruction rather than a rule with an
+exception, and `could not read Username` is repurposed from a misleading message into a signpost.
 *Done when:* `./tests/run.sh m-a3e` is green.
 
 **M-A4 · Guardrails, aware of the mode**
