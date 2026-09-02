@@ -134,6 +134,14 @@ reads as a decision rather than an oversight.
 **Test data names both sides.** What must exist, and where it comes from, as well as what must not.
 A guard checked only against something invented is not shown to accept anything real.
 
+**Test data is stated, not described.** Give the actual values — the file name and its contents, the
+branch name, the configuration setting and what it is set to, the string the assertion looks for. "A
+commit with an innocuous file" is an intention; `README.md` holding the line `probe` is data. A test
+is only as good as what it is run against, so the data is where its worth is decided, and a reviewer
+who cannot see the values cannot judge the test. Where a value is deliberately shaped — a fixture
+that looks like a private key without being one, a name chosen so no environment can supply it by
+accident — say why.
+
 **Write the specification against the code, not from memory.** When documenting tests that exist,
 read their names out of the test files first. Doing it from recollection understates them: an
 earlier pass here described one test per case and missed seven of thirteen, including every positive
