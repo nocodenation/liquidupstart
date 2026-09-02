@@ -2076,6 +2076,13 @@ of them in instruments written to check other things, none in the milestone:
   because an aborted `beforeAll` is counted once per file and the tests inside vanish from the total.
   Fixed in `tests/system/m-a4.hook-in-container.test.ts`.
 
+**One unexplained red, recorded because it was not reproduced.** Immediately after the guard fix the
+full suite exited 1 while reporting `0 fail` in both halves — no assertion failed, so the cause was a
+file-level error or a timeout rather than a test. Two further runs were green at 197 tests. It is
+left here as an observation, not a diagnosis: an intermittent red that nobody writes down is an
+intermittent red that gets explained away the next time. A1-7 had already failed once at 5.7 seconds
+against bun's five-second default while the full suite ran, which is the nearest known cause.
+
 That a verification procedure needs verifying is the uncomfortable part. The three questions in the
 testing skill apply to the checks as much as to the tests: this one could not have failed, so its
 green said nothing.
