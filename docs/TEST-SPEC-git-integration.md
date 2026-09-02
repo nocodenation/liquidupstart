@@ -1691,7 +1691,10 @@ why and what was added. This is the deviation of the milestone, raised rather th
 `config/agents/skills/testing/SKILL.md` quoting A4-7's fixture data — the header with the body
 `AAAAFIXTURENOTAREALKEY` — and was reported as a leaked key. The words are not the material: a real
 key is a header *and* a base64 body, so the workspace search now requires both. It was checked
-against a copy of the stack's actual key placed in `config/`, which it still catches by name. The
+against a copy of the stack's actual key placed in `config/`, which it still catches by name, and
+independently afterwards from the working session against a copy placed under `volumes/repos`: both
+A3-10 scenarios went red, and both were green again once it was removed. Two paths, two sessions —
+the tightening did not cost the test its reach. The
 case that A4-7's own data would one day be quoted somewhere was, in hindsight, predictable — the
 fixture is deliberately shaped to look like what a scan looks for.
 
