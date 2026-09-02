@@ -87,3 +87,61 @@ export function manifest(project: string): any {
 export function parseDeclaration(declaration: string): Result {
   return sh(['bash', reposLib, 'parse', declaration]);
 }
+
+export const repoCommand = join(repoRoot, 'config/agents/bin/git-repo-info.sh');
+
+export const DECLARED = {
+  name: 'agent-skills',
+  url: 'git@github.com:nocodenation/agent-skills.git',
+  host: 'github.com',
+  path: 'nocodenation/agent-skills',
+  access: 'read',
+  policy: 'protected',
+  slug: 'github.com_nocodenation_agent-skills',
+  keyDir: 'volumes/_git-secrets/repos/github.com_nocodenation_agent-skills',
+  publicKeyFile: 'volumes/_git-secrets/repos/github.com_nocodenation_agent-skills/id_ed25519.pub',
+  clonePath: 'volumes/repos/agent-skills',
+  containerKey: '/git-secrets/repos/github.com_nocodenation_agent-skills/id_ed25519',
+  containerClone: '/repos/agent-skills',
+  cloned: true,
+  error: null as string | null
+};
+
+export const CLONE_FAILED = {
+  ...DECLARED,
+  name: 'flows',
+  url: 'git@github.com:nocodenation/flows.git',
+  path: 'nocodenation/flows',
+  access: 'write',
+  policy: 'direct',
+  slug: 'github.com_nocodenation_flows',
+  keyDir: 'volumes/_git-secrets/repos/github.com_nocodenation_flows',
+  publicKeyFile: 'volumes/_git-secrets/repos/github.com_nocodenation_flows/id_ed25519.pub',
+  clonePath: 'volumes/repos/flows',
+  containerKey: '/git-secrets/repos/github.com_nocodenation_flows/id_ed25519',
+  containerClone: '/repos/flows',
+  cloned: false,
+  error: 'ERROR: Repository not found. fatal: Could not read from remote repository.'
+};
+
+export function writeManifest(repositories: unknown[], prefix = 'lu-a3e-'): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const path = join(dir, 'repositories.json');
+  writeFileSync(
+    path,
+    JSON.stringify({ generated: '2026-09-02T00:00:00Z', repositories }, null, 2) + '\n'
+  );
+  return path;
+}
+
+export function askRepoCommand(manifestPath: string, args: string[]): Result {
+  const p = Bun.spawnSync([repoCommand, ...args], {
+    cwd: repoRoot,
+    env: { ...(process.env as Record<string, string>), GIT_REPOSITORIES_MANIFEST: manifestPath },
+    stdout: 'pipe',
+    stderr: 'pipe'
+  });
+  const stdout = p.stdout ? p.stdout.toString() : '';
+  const stderr = p.stderr ? p.stderr.toString() : '';
+  return { code: p.exitCode ?? -1, stdout, stderr, output: stdout + stderr };
+}

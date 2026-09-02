@@ -1,6 +1,6 @@
 ---
 name: git
-description: Work with git repositories in the shared workspace at /repos — clone or fetch a repository, look inside one and see what it contains, and put work under version control by creating repositories, staging, committing, branching, inspecting history, and handing a push to the operator. TRIGGER when the user asks "which files are in the X repository", "what does X contain", "clone X", "fetch the latest X", or to version, commit, branch, or track changes to code, documents or generated artefacts, or when work you produced should be kept rather than overwritten.
+description: Work with git repositories in the shared workspace at /repos — clone or fetch a repository, look inside one and see what it contains, and put work under version control by creating repositories, staging, committing, branching, inspecting history, and handing a push to the operator. TRIGGER when the user asks "which files are in the X repository", "what does X contain", "clone X", "fetch the latest X", or to version, commit, branch, or track changes to code, documents or generated artefacts, or when work you produced should be kept rather than overwritten. Run `git-repo-info <repository>` to find out whether a repository is declared here, where its clone is and what may be done with it.
 ---
 
 # Git in this environment
@@ -41,31 +41,41 @@ not.
 
 ## Reaching a remote repository
 
-**Use the SSH form for anything private in this stack:**
+The stack is told which repositories it may reach and holds one deploy key for
+each of them. Every repository it was told about is already cloned under
+`/repos`; nothing else can be reached from here.
+
+**Do not work out for yourself what is reachable — ask:**
 
 ```bash
-git clone git@github.com:owner/repo.git
+git-repo-info agent-skills
 ```
 
-The stack holds an SSH key for the repositories it is allowed to reach. That key
-is the only credential these containers have, and git only uses it for `git@`
-URLs.
+The command takes a bare name, an SSH address (`git@github.com:owner/repo.git`)
+or a web address (`https://github.com/owner/repo`), and all three give the same
+answer. It tells you whether the repository is declared here, where its clone
+is, what access and branch policy it carries, and whether the clone succeeded.
+It exits non-zero when the repository is not declared.
 
-An `https://github.com/...` URL will **not** work for a private repository here.
-It makes git ask for a username and password, and there is no terminal to ask,
-so it fails with:
+When it reports a repository as declared, work in the clone it names. The remote
+and the key are already configured there, so `fetch`, `pull` and `push` need no
+address and no credentials from you.
+
+When it reports a repository as not declared, the stack holds no key for it.
+Report that and ask the operator to declare it; you cannot do it yourself.
+
+### `could not read Username`
+
+If git answers
 
 ```
 fatal: could not read Username for 'https://github.com': No such device or address
 ```
 
-**Read that message literally.** It means git wanted credentials this container
-does not have over HTTPS. It does **not** mean the repository is private, does
-not exist, has been renamed, or that you lack access. Retry the same repository
-with the `git@github.com:owner/repo.git` form before drawing any conclusion
-about it.
-
-Public repositories are different: `https://` works for them with no key at all.
+that message means **the repository is not declared in this stack**. It was
+never given a key for it, so git fell back to asking for a password, and there
+is no terminal to ask. Run `git-repo-info <repository>`, report what it says,
+and draw no conclusion about the repository from the message itself.
 
 ## When you cannot reach a repository
 

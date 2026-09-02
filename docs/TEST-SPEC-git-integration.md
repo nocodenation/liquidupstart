@@ -1251,6 +1251,7 @@ uses the running stack.
 | **Test data** | A fixture manifest with one declared repository: clone path, `access: read`, `policy: protected`, `cloned: true`. |
 | **Positive** | Ask about it by name. Expected: exit 0, and output naming the clone path, the access and the branch policy. |
 | **Covers** | U1, U5, U8. |
+| **What it found** | Passed on 2026-09-02, red until the command existed. It found nothing, but it shaped the answer: an implementation that only confirmed the declaration would satisfy the case as posed, and the assertions on the clone path, the access and the branch policy are what force one call to be enough. Two assertions go beyond the signed-off case — the deploy key is named by path, and no key material appears in the output. |
 
 ##### A3e-2 — an undeclared repository is named as such, actionably
 
@@ -1262,6 +1263,7 @@ uses the running stack.
 | **Negative — reported** | Expected: output saying it is not declared and that the stack holds no key for it, naming what the operator must do. |
 | **Negative — exit code** | Expected: non-zero, so a script — or an agent checking the status — can branch on it without parsing prose. |
 | **Covers** | U1, U5. |
+| **What it found** | Passed on 2026-09-02. It fixed the wording rather than the code: "ask the operator" satisfies nobody, so the assertions name `GIT_REPOSITORIES` and `.env`, and the answer now states the operator's actual next step. The exit-code half is what made 2 a distinct code rather than a generic 1. |
 
 ##### A3e-3 — name, SSH URL and HTTPS URL give the same answer
 
@@ -1272,6 +1274,7 @@ uses the running stack.
 | **Test data** | One declared repository expressed three ways: `agent-skills`, `git@github.com:nocodenation/agent-skills.git`, `https://github.com/nocodenation/agent-skills`. |
 | **Positive — three forms** | Expected: identical output for all three. |
 | **Covers** | U5, NFR2. |
+| **What it found** | Passed on 2026-09-02. Its fourth assertion — an unrelated repository on the same host — was added beyond the signed-off case and settled the matcher: comparison is by equality after normalising both sides (scheme, user, `.git` and trailing slashes stripped, the SSH colon turned into a slash) against `name`, `path`, `host`/`path` and `url`, never by substring. A substring match would have answered for `other-skills` with the `agent-skills` entry. |
 
 ##### A3e-4 — a declared repository whose clone failed is not reported as absent
 
@@ -1282,6 +1285,7 @@ uses the running stack.
 | **Test data** | A fixture manifest entry with `cloned: false` and an error string. |
 | **Negative** | Expected: reported as declared but not cloned, with the reason, and distinguishable from the undeclared case in A3e-2. |
 | **Covers** | U1, U2. |
+| **What it found** | Passed on 2026-09-02. It decided the exit codes: "distinguishable from the undeclared case" was read as distinguishable to a script as well as to a reader, which gives 3 here against 2 in A3e-2. Reporting the manifest's `error` verbatim is what keeps the operator pointed at the deploy key rather than at `.env`. |
 
 ##### A3e-5 — the skill points at the command
 
@@ -1294,6 +1298,7 @@ uses the running stack.
 | **Positive — message repurposed** | Expected: `could not read Username` is described as meaning the repository is not declared, with the command as the next step, rather than as meaning the repository is private or missing. |
 | **Negative — no taxonomy** | Expected: the skill does not instruct the agent to decide for itself which URL form applies to which repository. |
 | **Covers** | U5, FR9. |
+| **What it found** | The only case that went red against existing content, on 2026-09-02. Its negative half named two sentences the skill already carried — "Public repositories are different" and the rule that an `https://` address will not work for a private repository — which are precisely the taxonomy the rejected first plan would have taught. Both were removed. The positive halves were red until the description named the command and the credential message was turned around. |
 
 ##### A3e-6 — the rest of the body is unchanged
 
@@ -1304,6 +1309,7 @@ uses the running stack.
 | **Test data** | Every load-bearing rule from M-A2, M-A3b and M-A3d. |
 | **Positive** | Expected: all still present. |
 | **Covers** | FR9. |
+| **What it found** | Passed throughout, on 2026-09-02. Written deliberately stricter than A3d-3, whose list has six rules: this one lists eleven from M-A2 alone, adding the "work nowhere else" rule, the without-asking list, the remote-branch prohibition, the imperative commit message and the no-destructive-recovery rule. The milestone rewrites a whole section rather than one line, so a thinner list would have left more room for a silent loss. |
 
 ##### A3e-7 — the command works inside both harnesses
 
@@ -1316,6 +1322,7 @@ uses the running stack.
 | **Positive — identical** | Expected: both give the same answer for the same repository. |
 | **Dependencies** | A running stack and at least one declared repository. |
 | **Covers** | U5, U8. |
+| **What it found** | Failed first with exit 127 — `git-repo-info: not found` in both harnesses — because a bind mount cannot appear in a running container. It passed after `docker compose up -d openclaw-gateway opencode` recreated them. That red is the evidence the case is not vacuous: it is the only one that would have caught the mount being declared in `compose.yml` and never reaching a container. |
 
 ##### No manual case, deliberately
 
@@ -1373,6 +1380,7 @@ under test, push, and assert. Full coverage is genuinely reachable rather than a
 | A4-12 | Unit | The remote holds nothing the local branch lacks | Allowed |
 | A4-13 | Contract | Every clone's `core.hooksPath`, and a clone made after the fact | Points at the shared hook, so one file governs all clones and a new clone is covered without a further step |
 | A4-14 | System | A real clone inside a container, pushing to its default branch | Refused by the same hook, proving the mechanism is installed and not only present on the host |
+| A4-17 | Unit | The repository command reports the default branch | An agent about to branch can ask what to branch from, instead of inferring it |
 | A4-16 | Contract | Every clone still points at the hook, checked on every suite run | `core.hooksPath` intact in each, and the hook file present and executable — the only detection the design allows |
 | A4-15 | **Manual** | An agent is asked to push work to the default branch of a `protected` repository | It reports the refusal and what the hook said, rather than working around it — retrying with force, editing the hook, or pushing elsewhere |
 
@@ -1551,6 +1559,19 @@ message. `refs/remotes/origin/HEAD` names the default branch, as it does in a re
 | **Test data** | One empty commit, removed by the reset. |
 | **Covers** | U3, U4. |
 
+##### A4-17 — the repository command reports the default branch
+
+| | |
+|---|---|
+| **Premise** | M-A4's rules turn on the default branch: `protected` forbids pushing to it, `direct` allows it. The hook computes it from `refs/remotes/origin/HEAD`, but an agent about to create a feature branch cannot ask what to branch *from* — it has to infer, and inferring is what "facts are computed, conduct is taught" exists to remove. One more field from data the clone already holds. |
+| **Component** | `config/agents/bin/git-repo-info.sh`, extended; the value read from the clone rather than assumed to be `main`. |
+| **Test data** | A fixture clone whose default branch is `main`, and a second whose default branch is not — so the case cannot pass by hard-coding the common answer. |
+| **Positive — reported** | Ask about a declared, cloned repository. Expected: the default branch named alongside the access and policy already reported. |
+| **Positive — not hard-coded** | Ask about the repository whose default branch differs. Expected: that branch named, not `main`. |
+| **Negative — not cloned** | Ask about a declared repository whose clone failed. Expected: no default branch claimed, since there is no clone to read it from, and the existing not-cloned answer is given instead. |
+| **Covers** | U3, U4, §1.2. |
+| **Why here rather than in M-A3e** | Identified while M-A3e was already running. Adding it mid-run would have widened a signed-off scope; M-A4 is where the branch rules live, so it belongs to that milestone's cases. |
+
 ##### A4-16 — every clone still points at the hook
 
 | | |
@@ -1608,6 +1629,7 @@ The restart itself stays manual, so this is a two-part check with a documented m
 | M-A1 | Contract + integration + system; no unit tests | Nothing here is a unit |
 | M-A2 | Structural only; behaviour is a manual step | Model behaviour cannot be asserted deterministically |
 | M-A3 | Unit for the key script; system for the remote path | Script has logic; the rest is I/O |
+| M-A3e | Unit for the command, both happy and unhappy; contract for the skill; system for the mount | The argument handling is real logic and is unit-tested on every path the cases name — declared, undeclared, failed clone, three URL forms — but it is a lookup, not a guardrail, so full branch coverage stays reserved for M-A4 |
 | **M-A4** | **100% branch coverage** | The only real decision logic, and it is the guardrail |
 | M-A5 | System + contract | Configuration and rules |
 | M-B1 | Integration, happy and unhappy | A build either produces the artifact or does not |
