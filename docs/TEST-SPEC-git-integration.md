@@ -2076,7 +2076,19 @@ of them in instruments written to check other things, none in the milestone:
   because an aborted `beforeAll` is counted once per file and the tests inside vanish from the total.
   Fixed in `tests/system/m-a4.hook-in-container.test.ts`.
 
-**One unexplained red, recorded because it was not reproduced.** Immediately after the guard fix the
+**The unexplained red, partly diagnosed on 2026-09-02.** Two concrete causes were found and fixed:
+A3-1 and A1-4 both drive `config/scripts/start/git.sh`, which since M-A3c generates keys and seeds
+`known_hosts` over the network — work that exceeds bun's five-second default under the full suite.
+The budgets were set when the script only made a directory. `tests/run.sh` now raises the per-test
+timeout for the whole suite in one place, overridable with `TEST_TIMEOUT_MS`, rather than patching
+tests one at a time as each surfaces.
+
+A red run was still seen afterwards and could not be reproduced with diagnostics attached; several
+consecutive runs since have been green. It is left recorded rather than closed. **An intermittently
+red suite is a defect in its own right** — the project's own rules say a flaky suite teaches everyone
+to ignore red — so this is not a matter of tolerating it but of not yet having caught it.
+
+**The original observation, kept for the record.** Immediately after the guard fix the
 full suite exited 1 while reporting `0 fail` in both halves — no assertion failed, so the cause was a
 file-level error or a timeout rather than a test. Two further runs were green at 197 tests. It is
 left here as an observation, not a diagnosis: an intermittent red that nobody writes down is an

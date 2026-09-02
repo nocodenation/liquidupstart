@@ -114,6 +114,22 @@ inventing one.
   history keeps them. Check what you are staging: `git diff --cached --stat` before
   every commit, and `git status` before `git add -A`.
 
+## A refusal is an answer, not an obstacle
+
+If a push is refused — by the guardrail hook, by the host, by anything — **report it and stop.** Say
+what you were doing, what refused you, and what it said, word for word. Then wait.
+
+Do not look for another way through. That means no `--force`, no editing or removing the hook, no
+switching the remote, no pushing to a different branch — **and no hunting for other credentials**, a
+different tool, another account, or a second authenticated path. Finding one is not success. It is
+the same push the refusal was about.
+
+A refusal almost always means a decision was made deliberately: a repository declared read-only, a
+branch declared protected. You are not the one who decides it was wrong. Report it, and if it needs
+changing the operator changes it.
+
+Being blocked and saying so clearly is a good outcome. Getting through anyway is not.
+
 ## Commit messages
 
 Say what changed and why, in the imperative, on one short subject line. Add a body

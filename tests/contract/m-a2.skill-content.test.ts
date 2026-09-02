@@ -27,7 +27,9 @@ const REQUIRED = [
   { term: 'the force-push prohibition', pattern: /force[- ]push|--force/i },
   { term: 'the protected branch rule', pattern: /\bmain\b/ },
   { term: 'the secret rule', pattern: /secret|\.env\b/i },
-  { term: 'the push etiquette', pattern: /ask .{0,40}before .{0,20}push|never push unasked/i }
+  { term: 'the push etiquette', pattern: /ask .{0,40}before .{0,20}push|never push unasked/i },
+  { term: 'the finality of a refusal', pattern: /refusal is an answer|report it and stop/i },
+  { term: 'the prohibition on seeking other credentials', pattern: /other credentials|another authenticated path|second authenticated path/i }
 ];
 
 test('A2-2 every load-bearing term is still present in the skill', () => {

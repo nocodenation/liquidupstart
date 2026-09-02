@@ -5,6 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LEVELS="unit component contract integration system"
 
+# Bun defaults to five seconds per test. Tests here shell out to docker, to git
+# and to the network, and under the full suite that default is exceeded for
+# reasons unrelated to the code -- an intermittently red suite teaches everyone
+# to ignore red. Raised in one place rather than per test.
+TEST_TIMEOUT_MS="${TEST_TIMEOUT_MS:-60000}"
+
 MILESTONE=""
 ROOT="$SCRIPT_DIR"
 LIST=0
@@ -42,7 +48,7 @@ done
 
 run_dashboard() {
   echo "--- dashboard suite ---"
-  (cd "${REPO_DIR}/dashboard" && bun test src)
+  (cd "${REPO_DIR}/dashboard" && bun test --timeout "$TEST_TIMEOUT_MS" src)
 }
 
 if [[ $DASHBOARD_ONLY -eq 1 ]]; then
@@ -108,7 +114,7 @@ if [[ $LIST -eq 1 ]]; then
 fi
 
 status=0
-bun test "${SELECTED[@]}" || status=$?
+bun test --timeout "$TEST_TIMEOUT_MS" "${SELECTED[@]}" || status=$?
 
 if [[ $status -eq 0 && -z "$MILESTONE" && $ROOT_GIVEN -eq 0 ]]; then
   run_dashboard || status=$?

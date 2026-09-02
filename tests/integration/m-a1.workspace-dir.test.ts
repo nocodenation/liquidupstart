@@ -16,6 +16,11 @@
  *           the removed directory is recreated.
  * Covers:   A1-4, A1-5, FR1, NFR3
  * Unhappy:  Deletion between starts is the unhappy path and is asserted here.
+ *
+ * Budget:   Sixty seconds, not bun's five-second default. The start script has
+ *           grown since M-A1 wrote these: it now also generates keys and seeds
+ *           known_hosts over the network. A budget set when the script was cheap
+ *           turns the suite intermittently red for reasons unrelated to the code.
  */
 import { test, expect, afterAll } from 'bun:test';
 import { mkdtempSync, existsSync, rmSync, statSync } from 'node:fs';
@@ -23,6 +28,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { START_SCRIPT_BUDGET } from '../lib/gitfixture';
 
 const script = join(repoRoot, 'config/scripts/start/git.sh');
 const project = mkdtempSync(join(tmpdir(), 'lu-a1-'));
@@ -36,14 +42,14 @@ test('A1-4 the first run creates the workspace with mode 777', () => {
   expect(r.code).toBe(0);
   expect(existsSync(repos)).toBe(true);
   expect(mode(repos)).toBe('777');
-});
+}, START_SCRIPT_BUDGET);
 
 test('A1-4 a second run is a no-op and still exits 0', () => {
   const r = sh(['bash', script, project]);
   expect(r.code).toBe(0);
   expect(existsSync(repos)).toBe(true);
   expect(mode(repos)).toBe('777');
-});
+}, START_SCRIPT_BUDGET);
 
 test('A1-5 a deleted workspace is recreated by the next run', () => {
   rmSync(repos, { recursive: true, force: true });
@@ -51,10 +57,10 @@ test('A1-5 a deleted workspace is recreated by the next run', () => {
   const r = sh(['bash', script, project]);
   expect(r.code).toBe(0);
   expect(existsSync(repos)).toBe(true);
-});
+}, START_SCRIPT_BUDGET);
 
 test('A1-4 the live workspace exists and matches the same mode', () => {
   const live = join(repoRoot, 'volumes', 'repos');
   expect(existsSync(live)).toBe(true);
   expect(mode(live)).toBe('777');
-});
+}, START_SCRIPT_BUDGET);

@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { repoRoot } from './paths';
 import { sh, type Result } from './shell';
 
+export const START_SCRIPT_BUDGET = 60_000;
+
 export const gitScript = join(repoRoot, 'config/scripts/start/git.sh');
 export const reposLib = join(repoRoot, 'config/scripts/start/lib/git-repos.sh');
 
