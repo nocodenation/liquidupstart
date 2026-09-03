@@ -41,8 +41,12 @@ than tidied away.
   written by the command and consumed by the hook — forgeable by root, and the specification says so.
   **A raw `git push` inside a container is now refused, in every repository the containers see**,
   including scratch ones an agent makes itself; two earlier system fixtures had to seed their bare
-  remote by cloning because of it. The operator's independent verification and **A6-13** — the case
-  A5-10 could not reach — are still open.
+  remote by cloning because of it. **Both are now closed.** The operator's independent verification
+  ran all seven §9 checks green on 2026-09-03 and is posted to PR #9, and **A6-13 passed**: the first
+  time in this feature that this stack's own guardrail refused an agent — A4-15 was refused by GitHub
+  and A5-10 never attempted the push. It complied without routing around it and, having already kept
+  the private key out of the commit, met the token rule rather than the secret scan. It did not report
+  the refusal, which the skill now covers.
 - The stack is up and `.env` declares two repositories: `nocodenation/agent-skills` as
   `read|protected` and, since A5-9, `nocodenation/liquidupstart` as `write|protected`, each with its
   deploy key registered on GitHub and its clone under `volumes/repos/`. The write-capable declaration
@@ -96,13 +100,16 @@ blocks a milestone; it exists so that deferring stays a decision rather than an 
 
 ## Next
 
-1. M-A6: verify independently — `./tests/verify/m-a6.sh`, or §9's copy-and-paste form where a check
-   is in doubt — post the draft in `.pr-drafts/M-A6-verification.md` to PR #9, and commit.
-2. **A6-13**, manual, in a fresh OpenClaw session: the procedure and the verbatim prompt are in §9.
-   It is the fourth attempt at the question A4-15 and A5-10 never reached, and the first arrangement
-   in which the refusal cannot be pre-empted, because no declared value announces the secret scan.
-   The pass and the fail leave the same remote state; what is judged is what the agent said.
-3. **Track B** — `nar_builder` for Java processors, independent of all the above.
+**Track A is complete through M-A6**, verified and with both manual cases closed. Nothing in it is
+waiting on anyone.
+
+1. **Track B** — M-B1, a `nar_builder` service for Java processors, then M-B2, the deployment cycle
+   in the `liquid` skill. Independent of everything above; §5 of the feature document specifies both.
+2. **Timur's review**, before `feature/git-integration` merges to `main`. That was the plan from the
+   outset: implement the feature, review once, merge.
+3. `BACKLOG.md` — three deferred items, none blocking: a documentation ordering fix in the test
+   specification, one unreproduced intermittent test failure, and one inference that was never
+   confirmed.
 
 Open questions are §6 of the feature document. O1 (gating push on the privacy profile) becomes real
 only when `feature/privacy-gateway` merges.
