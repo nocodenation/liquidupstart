@@ -72,6 +72,22 @@ mistake is available here and is cheaper to avoid than to repeat.
   It compiles source and writes one file.
 - **FR26 — The dependency cache lives under `volumes/`.** Like all state (NFR3). Without it every
   build re-downloads the NiFi API and the Maven plugin chain.
+- **FR27 — The API compiled against is resolved, not assumed, and is stated.** NiFi versions
+  `nifi-api` on its own line: 2.11.0 ships `nifi-api-2.10.0.jar`. The build resolves what the
+  distribution was actually built against, writes that version into the project, and prints it. FR23
+  asked for the target to be computed; this is the half of it M-B1 got wrong by pinning a version it
+  knew was not the one that loads.
+- **FR28 — The deployment cycle is documented as one path.** §6.4 of the `liquid` skill opens with
+  "Build the NAR(s)" and does not say how. From the source to the processor appearing, in one place,
+  naming `nar-build` as the first step.
+- **FR29 — The restart is the operator's, and the agent asks for it.** It interrupts every running
+  flow. The agent says what it placed and what it needs, and stops there.
+- **FR30 — What the drop directory holds reaches Liquid's load path.** The mechanism that makes
+  `nar_extensions` mean anything: on start, every `*.nar` in it is copied into `lib/` before Liquid
+  launches.
+- **FR31 — A deployment step that fails says so.** The copy in the entrypoint currently ends in
+  `|| true`, so a failure is swallowed and Liquid starts without the processor with nothing to read.
+  A step whose failure is invisible is worse than one that has none.
 - **NFR7 — The build's trust surface is stated, not assumed.** A Maven build downloads plugins from
   the internet and executes them. This is a new trust surface in the stack and is treated the way
   §3.1 treated the write key: named, bounded, and decided rather than slipped in. See §3.2.
@@ -194,10 +210,30 @@ in `nar_extensions`, a source that does not compile failing with the compiler's 
 no artifact behind, and a build refusing rather than guessing when the target version cannot be
 read.
 
-**M-B2 · Document the deployment cycle**
-Extend the `liquid` skill with the builder path and the restart step: the agent places the artifact
-and asks the human to run `docker compose restart liquid`.
-*Done when:* `./tests/run.sh m-b2` is green, plus the documented manual restart step.
+**M-B2 · The deployment cycle, and the API it is built against**
+Three things, and only the first is what the outline anticipated.
+
+*The cycle, documented as one path.* §6.4 of the `liquid` skill tells an agent how to deploy a NAR and
+opens with "Build the NAR(s)" — which, since M-B1, is `nar-build`. From source to the processor
+appearing, in one place, with the restart named as the operator's and the reason given: it interrupts
+every running flow.
+
+*The API the build compiles against.* M-B1 pins `nifi-api` to the distribution's version and Liquid
+loads a different one — 2.11.0 ships `nifi-api-2.10.0.jar`. It is harmless today only because NiFi
+raises that artifact solely when the API changes. §3 records both exposures, and the second is the
+one M-B1 missed: a version that resolves and is *newer* than the one that loads compiles cleanly and
+fails at runtime. The fix dissolves the choice the M-B1 run posed between pinned and implicit —
+**explicit means stated, not pinned**: resolve `nifi-api` through `nifi-utils` at the distribution's
+version, write *that* into the project, and print it.
+
+*The swallowed failure at the end of the path.* Liquid's entrypoint copies every `*.nar` from
+`nar_extensions` into `lib/` and ends the copy with `|| true`. A failure there is invisible: Liquid
+starts, the processor is absent, and nothing in the log says why. That is the failure class this work
+has spent seven milestones removing, sitting in the last step of the very path M-B2 documents.
+
+*Done when:* `./tests/run.sh m-b2` is green, and the one manual case has been observed — an agent
+asked to deploy a processor end to end, which is where judgement returns after M-B1 had none to
+measure.
 
 ---
 
