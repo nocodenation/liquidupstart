@@ -158,3 +158,99 @@ The same cycle as the git integration, described in §7 of its document: specify
 them, pose the goal in a fresh session, verify independently, record what was found. That cycle is
 not restated here — it belongs to the working method rather than to either feature, and duplicating
 it would guarantee the two copies drift.
+
+---
+
+## Appendix: goals as posed
+
+### M-B1 — the NAR builder · posed 2026-09-03
+
+```
+/goal Implement M-B1 from docs/FEATURE-liquid-java-extensions.md: the NAR
+builder. The acceptance criteria are cases B1-1 to B1-12 in section 3 of
+docs/TEST-SPEC-liquid-java-extensions.md, signed off on 2026-09-03. Write those
+tests first, then make them pass. There is no manual case in this milestone.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes.
+
+Why this exists: section 6.4 of config/agents/skills/liquid/SKILL.md documents
+how to deploy a NAR and opens with "1. Build the NAR(s)", which nothing in this
+stack can do -- there is no JDK and no Maven in it. Python processors work end to
+end; Java has no path at all.
+
+Build three things. A compose service nar_builder carrying a JDK and Maven,
+image liquidupstart/nar-builder:latest, from a Dockerfile under
+config/nar_builder/ in the manner of config/bun_runner/. A build script
+config/scripts/build/nar-builder.sh following config/scripts/build/bun-runner.sh,
+called from scripts/linux/build.sh. And config/agents/bin/nar-build.sh, POSIX sh
+like git-repo-info.sh and git-publish.sh, mounted read-only at
+/usr/local/bin/nar-build in every service that mounts git-repo-info today.
+
+Four decisions are taken and are not open:
+
+The agent calls a command; it does not drop files into a watched directory. A
+build has an outcome and FR22 requires it to reach the caller. nar-build reaches
+the builder through the proxy with a Host header -- X.localhost names do not
+resolve inside a container, which has caught this project before.
+
+The target version is read from the running Liquid, never declared. It is NiFi
+2.11.0 on OpenJDK 21 today. Assert the shape -- a 2.x.y NiFi version, Java major
+21 -- and not the literal, so the next image bump does not fail the suite for a
+reason that has nothing to do with this tool. A build that cannot read the
+version stops and says so; it never guesses, because a NAR compiled against the
+wrong nifi-api is not rejected by Liquid, it is silently never loaded.
+
+The build synthesises the Maven project, unless the source directory already
+holds a pom.xml, in which case that one is used unchanged. Both are positive
+cases, B1-5 and B1-6: a synthesiser that cannot be overridden is a ceiling for
+any processor with real dependencies.
+
+Every refusal from nar-build or the builder names a next step -- a command, a
+file to fix, an action. B1-11 enumerates them by reading the sources, not from a
+list kept by hand.
+
+FR24 is about the drop directory's state, not the exit code. B1-8 records the
+SHA-256 of an existing NAR, runs a failing build, and requires the artifact to be
+byte-identical afterwards with no partial file beside it. The failure it guards
+against is a stale NAR that Liquid loads on the next restart, which a check that
+only counts files cannot see.
+
+The builder holds no credentials (FR25) and B1-12 checks that from inside the
+running container, not from compose.yml: a mount can be absent from the
+declaration and the path reachable another way. Its dependency cache lives at
+volumes/nar_builder/m2 (FR26, NFR3).
+
+Add nothing to .env. If something appears to need a key there, stop and say so
+rather than adding one -- .env.example is the contract.
+
+Two files count images and must learn about the fifth: scripts/linux/build.sh
+and the line in CLAUDE.md that says four are built locally. Add a start script
+under config/scripts/start/ only if the service actually needs one.
+
+One trap, documented in section 4 of the test specification: nar-build is
+bind-mounted as a single file, and a single-file mount follows the inode. Any
+test or check that disables it must truncate the host file in place and never
+rename it -- a rename leaves the container seeing the old file, and the check
+would pass for the wrong reason.
+
+Also write tests/verify/m-b1.sh in the form of tests/verify/m-a6.sh: the checks
+of section 4 in order, each judged, everything it moves restored including on
+Ctrl-C, and a log plus a pull-request comment written to .pr-drafts/.
+
+Record the outcome where the next session will find it, not only in this chat:
+the process log row in section 5 of the feature document, an outcome paragraph in
+this appendix, and each case's "What it found" block.
+
+The first build will download the NiFi API and the Maven plugin chain. That is
+expected and is why the cache exists; do not work around a slow first build by
+skipping the cache.
+
+Search the codebase before assuming anything is missing; full implementations
+only, no placeholders.
+
+Done when `./tests/run.sh m-b1; echo EXIT=$?` is visible in this transcript with
+EXIT=0, and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving the git
+integration's milestones have not regressed. Or stop after 45 turns -- that bound
+covers the documentation the development rules require, not the code alone.
+```
