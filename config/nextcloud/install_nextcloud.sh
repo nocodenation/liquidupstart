@@ -24,13 +24,13 @@ if [ ! -f "${CONFIG_DIR}/no_skeleton.config.php" ] && [ -f /tmp/no_skeleton.conf
 fi
 
 ${PHP_BIN} -f "${OCC}" maintenance:install \
-  --database pgsql \
-  --database-name "${POSTGRES_DB}" \
-  --database-host "${POSTGRES_HOST}" \
-  --database-user "${POSTGRES_USER}" \
-  --database-pass "${POSTGRES_PASSWORD}" \
-  --admin-user "${NEXTCLOUD_ADMIN_USER}" \
-  --admin-pass "${NEXTCLOUD_ADMIN_PASSWORD}"
+  --database=pgsql \
+  --database-name="${POSTGRES_DB}" \
+  --database-host="${POSTGRES_HOST}" \
+  --database-user="${POSTGRES_USER}" \
+  --database-pass="${POSTGRES_PASSWORD}" \
+  --admin-user="${NEXTCLOUD_ADMIN_USER}" \
+  --admin-pass="${NEXTCLOUD_ADMIN_PASSWORD}"
 
 # CAN_INSTALL must not survive install — it triggers an admin security warning.
 rm -f "${CONFIG_DIR}/CAN_INSTALL"
