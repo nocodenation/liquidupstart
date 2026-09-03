@@ -1593,3 +1593,79 @@ no observable event, which is why three attempts have produced no observation. T
 narrow the capability rather than to guard it — one sanctioned publishing path, everything else
 refused — so that improvising becomes a visible act of circumvention instead of plausible work. That
 buys legibility, not security: §3.1 still holds, and root still wins.
+
+### M-A6 — one sanctioned publishing path · posed 2026-09-03
+
+```
+/goal Implement M-A6 from docs/FEATURE-git-integration.md: one sanctioned
+publishing path. The acceptance criteria are cases A6-1 to A6-12 in section 5 of
+docs/TEST-SPEC-git-integration.md, signed off on 2026-09-03. Write those tests
+first, then make them pass. A6-13 is manual and must not be automated.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes.
+
+Why this exists: A5-10 was run three times and observed nothing, because an agent
+that improvises a plausible push produces a transcript indistinguishable from one
+that did the right thing. This milestone narrows the capability instead of
+guarding it. It buys legibility, not security -- section 3.1 is unchanged, and an
+agent running as root can still defeat every part of it.
+
+Build three things. A command config/agents/bin/git-publish.sh, POSIX sh like
+git-repo-info.sh, mounted read-only at /usr/local/bin/git-publish in every
+service that mounts git-repo-info today. One new rule in
+config/agents/hooks/pre-push. One additive paragraph in
+config/agents/skills/git/SKILL.md naming git-publish as the way work leaves the
+stack; change nothing else there.
+
+Four decisions are taken and are not open:
+
+The new hook rule is evaluated LAST, after every rule M-A4 installed. A push to a
+protected default branch must still be refused for being that, not for the path
+it took. A6-9 asserts this and fails if the order is ever inverted.
+
+The branch namespace is fixed at agent/**, not declared. A repository whose
+policy is direct may still target its default branch -- A6-3 exists because a
+namespace rule written from the developer mode's point of view breaks content
+mode silently.
+
+The proof of passage is a single-use file: git-publish writes it, the hook
+consumes and deletes it, and a second push cannot ride on the first one's
+permission (A6-8). Per clone, not global. It is forgeable by root, and the
+specification says so rather than claiming a boundary it does not have.
+
+Every refusal from either the hook or the command names a next step -- a command,
+a branch form, an action. A6-11 enumerates them from the sources rather than from
+a list kept by hand.
+
+Coverage: 100% branch coverage of git-publish and of the new hook rule, the
+standard M-A4 earned, because this is guardrail logic and it decides what leaves
+the stack.
+
+Test against local bare repositories, as M-A5 does; the hook reads the policy
+from the clone, so a local remote exercises it identically and leaves nothing
+behind. Do not touch .env, do not push to any real remote, and never print
+private key material. A6-5's fixture is the key A4-7 already uses.
+
+One trap, documented in section 9 of the test specification: git-publish is
+bind-mounted as a single file, and a single-file mount follows the inode. Any
+test or check that disables it must truncate the host file in place and never
+rename it -- a rename leaves the container seeing the old file, and the test
+would pass for the wrong reason.
+
+Also write tests/verify/m-a6.sh in the form of tests/verify/m-a5.sh: the seven
+checks of section 9 in order, each judged, everything it moves restored including
+on Ctrl-C, and a log plus a pull-request comment written to .pr-drafts/.
+
+Record the outcome where the next session will find it, not only in this chat:
+the process log row in section 8, an outcome paragraph in this appendix, and each
+case's "What it found" block.
+
+Search the codebase before assuming anything is missing; full implementations
+only, no placeholders.
+
+Done when `./tests/run.sh m-a6; echo EXIT=$?` is visible in this transcript with
+EXIT=0, and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving earlier
+milestones have not regressed. Or stop after 40 turns -- that bound covers the
+documentation the development rules require, not the code alone.
+```
