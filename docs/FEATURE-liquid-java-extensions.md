@@ -22,6 +22,13 @@ M-B1 and M-B2. They are not renumbered, because they are already referenced by t
 and pull request #9, and because two documents in one repository each having a "U1" and an "FR21"
 would make every `Covers:` row ambiguous. The gap from U8 is deliberate and this paragraph is why.
 
+**Where this lives.** Branch `feature/liquid-java-extensions`, cut on 2026-09-03 from the tip of
+`feature/git-integration` — not from `main`, because this feature consumes the agent workspace and
+`main` does not have it yet. Its pull request takes `feature/git-integration` as its base until that
+one merges, at which point GitHub retargets it to `main` on its own. That retarget is only clean if
+PR #9 is merged with a merge commit rather than squashed; `HANDOFF.md` says why, and it is the kind of
+detail that is invisible until it is too late to choose.
+
 **Related documents.** `FEATURE-git-integration.md` for the workspace, the clones and `git-publish`;
 `TEST-SPEC-liquid-java-extensions.md` for the cases; `config/agents/skills/liquid/SKILL.md` §6 for
 processor development and §6.4 for the deployment path this feature completes.

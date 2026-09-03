@@ -98,6 +98,39 @@ have been caught by any of the 78 automated cases.
 unreproduced intermittent test failure, and one inference that was never confirmed. Nothing there
 blocks a milestone; it exists so that deferring stays a decision rather than an omission.
 
+## Branches, and one decision the merge depends on
+
+Two branches, since 2026-09-03.
+
+- **`feature/git-integration`** carries the git integration, M-A0 to M-A6, and is PR #9 (draft,
+  against `main`, 92 commits). Complete and verified; it is waiting for Timur's review and nothing
+  else.
+- **`feature/liquid-java-extensions`** carries the Java toolchain and starts from the tip of the
+  first. It has to: the feature consumes the agent workspace, so branching from `main` would branch
+  from a repository where none of it exists. It was cut before any M-B1 code was written, which was
+  the cheapest moment there will ever be.
+
+**Its pull request is opened after the first M-B1 commit**, not before — GitHub requires a commit
+difference between base and head, and the branch is currently identical to its base. Open it with
+**base `feature/git-integration`**, not `main`, so it shows its own commits instead of the other
+branch's 92.
+
+**PR #9 must be merged with a merge commit, not squashed.** Two reasons, and the second is the one
+that will be forgotten. GitHub retargets an open pull request to `main` by itself when the branch it
+was based on is merged — but a squash puts a single new commit on `main` that shares nothing with the
+92 the Java branch still carries, so the retargeted PR would present all of them again as new and
+would need a rebase to clean up. And independently of that: the individual commit messages are part
+of what this work is meant to demonstrate. A squash discards the record the exercise exists to
+produce.
+
+The three M-B1 specification commits (`8e6e256`, `c8e8131`, `61fbcff`) sit on `feature/git-integration`
+because they were written before the split was decided. They stay there. Moving them would mean
+force-pushing a branch with an open review over roughly 520 lines of Markdown whose filenames already
+say which feature they belong to.
+
+**Before starting a goal run, check which branch you are on** — `git branch --show-current`. The two
+branches share every file, so nothing will look wrong if the answer is the wrong one.
+
 ## Next
 
 **The git integration is complete through M-A6**, verified and with both manual cases closed.
