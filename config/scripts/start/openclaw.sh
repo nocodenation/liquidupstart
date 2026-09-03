@@ -535,7 +535,7 @@ else
         if (enableGrok) baseAllow.push("xai");
         const allow = new Set([...(c.plugins.allow || []), ...baseAllow]);
         c.plugins.allow = [...allow];
-        c.tools = { profile: "full" };
+        c.tools = { profile: "full", web: { search: { enabled: false } } };
       }
 
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
