@@ -100,11 +100,15 @@ blocks a milestone; it exists so that deferring stays a decision rather than an 
 
 ## Next
 
-**Track A is complete through M-A6**, verified and with both manual cases closed. Nothing in it is
-waiting on anyone.
+**The git integration is complete through M-A6**, verified and with both manual cases closed.
+Nothing in it is waiting on anyone.
 
-1. **Track B** — M-B1, a `nar_builder` service for Java processors, then M-B2, the deployment cycle
-   in the `liquid` skill. Independent of everything above; §5 of the feature document specifies both.
+1. **Java extensions for Liquid** — its own feature since 2026-09-03, in
+   `docs/FEATURE-liquid-java-extensions.md` and `docs/TEST-SPEC-liquid-java-extensions.md`. It was
+   "Track B" in the git documents until it became clear that it consumes this feature and contributes
+   nothing to it. M-B1 is specified and awaiting review; M-B2 is an outline. It is also the best
+   end-to-end exercise the git integration will get: the first real work to use the workspace, the
+   clones and `git-publish` without having helped design them.
 2. **Timur's review**, before `feature/git-integration` merges to `main`. That was the plan from the
    outset: implement the feature, review once, merge.
 3. `BACKLOG.md` — three deferred items, none blocking: a documentation ordering fix in the test

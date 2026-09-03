@@ -42,19 +42,6 @@ rest — in a remote git repository, and make changes there.* Beneath it:
   the operator can open them with their own tools at any time.
 - **U8 · Several repositories in one session.** It happens; it need not be comfortable, only possible.
 
-**Track B has its own two, written before its requirements rather than after.** This document records
-that deriving requirements from capabilities instead of from use cases cost two milestones on Track
-A; the same mistake is available here and is cheaper to avoid than to repeat.
-
-- **U9 · Extend Liquid in Java.** An agent writes a custom processor in a repository under the
-  workspace and needs it compiled into a NAR that Liquid will actually load. Today the stack has no
-  JDK and no Maven, so the agent can write the source and go no further: §6.4 of the `liquid` skill
-  documents how to *deploy* a NAR and step 1, "build the NAR", has nowhere to happen. Python
-  processors already work end to end (`volumes/python_extensions`), which is why the gap is Java's
-  alone.
-- **U10 · Get it running.** The built artifact reaches Liquid and the processor appears. The restart
-  is the operator's, deliberately — it interrupts every running flow, which is not an agent's call.
-
 ### 1.2 Two working modes
 
 "Making changes" is not one activity. It is two, with different purposes, and conflating them is why
@@ -119,8 +106,6 @@ is ordinary git life at human pace and a standing tax at agent pace.
 | Enforcement | Advisory — skill rules plus a `pre-push` hook. See §3.1 |
 | Git host | GitHub first; plumbing stays host-agnostic (Forgejo later) |
 | Working copy for liquidupstart | Its own clone under `volumes/`, host working copy untouched |
-| Java toolchain | Dedicated `nar_builder` service, mirroring `bun_runner` |
-| Liquid restart | Human restarts; dashboard button is a later increment |
 | Repositories | Declared in the configuration, with access and policy; nothing is discovered |
 | Working mode | Developer or content, explicit; global default, overridable per session |
 | Permission | Four levels, strictest wins: host · repository policy · global · session (§1.3) |
@@ -171,29 +156,6 @@ Why the residual risk is tolerable for now: the stack runs locally under one ope
 on feature branches, and those branches are reviewed before they reach `main`. **Reviewers should
 treat this as the open question it is** — if the assessment changes, "split keys" is the cheapest
 upgrade path and does not invalidate M-A1 through M-A3.
-
-### 3.2 The build's trust surface (Track B, decided 2026-09-03)
-
-A Maven build resolves plugins and dependencies from the internet and **executes them**. Adding
-`nar_builder` therefore adds a way for third-party code to run inside the stack, and it is named here
-rather than left implicit, on the same principle as §3.1: a risk that was decided is reviewable, and
-one that was assumed is not.
-
-What is exposed: `volumes/repos`, the source the agent is compiling — which the agent already writes
-freely — and `volumes/nar_extensions`, where the artifact lands. What is not: `volumes/_git-secrets`,
-the deploy keys, the `.env` values, and every other service's data. The builder is a compiler with a
-drop directory, not a member of the stack's credential-holding set (FR25).
-
-What remains: a compromised or malicious dependency can read the source being compiled, write
-anything into the drop directory, and reach the network. The third of those is inherent to Maven and
-would only be removed by pre-seeding the dependency cache and building offline, which is the upgrade
-path if the assessment changes. It is not taken now because the stack runs locally under one
-operator, the builds are of the operator's own processors, and the artifact is loaded only after a
-restart the operator performs deliberately (U10).
-
-**Reviewers should treat this as its own open question,** separate from §3.1. It is not the same
-risk: §3.1 is about what an agent may do with a credential, and this is about what a build may do
-with a network.
 
 ---
 
@@ -270,36 +232,15 @@ with a network.
   found first — the failure M-A3b through M-A3e spent four milestones on.
 
 
-### Track B (2026-09-03), for U9 and U10
-
-- **FR21 — Building is one command, from inside the container the agent works in.** `nar-build` on
-  the `PATH`, as `git-repo-info` and `git-publish` are. The agent does not assemble a Maven
-  invocation, and does not need Docker: NFR4 forbids the socket, and that is not negotiable.
-- **FR22 — The answer is synchronous and determinate.** Success names the artifact it produced;
-  failure carries the compiler's own words back to the caller. Neither outcome requires reading a log
-  file afterwards, because an answer that has to be fetched is one an agent will report without
-  having.
-- **FR23 — The target version is computed, never declared.** The NiFi and Java versions come from the
-  running Liquid, not from `.env`. A NAR built against the wrong `nifi-api` loads silently as nothing
-  at all, which is the failure class this feature has spent six milestones removing. If the version
-  cannot be read, the build refuses rather than guesses.
-- **FR24 — A failed build leaves no artifact.** No partial NAR, and no previous NAR left looking
-  current. The drop directory is what Liquid loads on restart, so a stale file there is worse than an
-  empty one.
-- **FR25 — The builder holds no credentials.** No `_git-secrets`, no deploy keys, no `.env` secrets.
-  It compiles source and writes one file.
-- **FR26 — The dependency cache lives under `volumes/`.** Like all state (NFR3). Without it every
-  build re-downloads the NiFi API and the Maven plugin chain.
-- **NFR7 — The build's trust surface is stated, not assumed.** A Maven build downloads plugins from
-  the internet and executes them. This is a new trust surface in the stack and is treated the way
-  §3.1 treated the write key: named, bounded, and decided rather than slipped in. See §3.2.
-
 ---
 
 ## 5. Milestones
 
-Two tracks. **A** is the Git integration; **B** is NiFi development capability. B depends on A only
-loosely (from M-A1, for the workspace) and can run in parallel or later.
+All of them are the Git integration. What was once "Track B" — the Java toolchain for Liquid — moved
+to `FEATURE-liquid-java-extensions.md` on 2026-09-03: it consumes the workspace this feature builds
+and contributes nothing back to it, which is the test for whether something belongs here. It remains
+this feature's most useful exercise, being the first real work to use the workspace, the clones and
+`git-publish` without having helped design any of them.
 
 **On the numbering.** A milestone carries a bare number; a letter marks an addendum to it, added
 after that milestone had already run. So M-A3 is the base and M-A3b, M-A3c and M-A3d are things it
@@ -308,8 +249,6 @@ execution order, which is also the order they appear in below.
 
 Acceptance for every milestone is defined in `TEST-SPEC-git-integration.md`: a milestone is done
 when its tests are green, not when a one-off probe printed the right thing once.
-
-### Track A — Git
 
 **M-A0 · Test harness**
 Build the runner described in the test spec (§4): `tests/` layout, `tests/run.sh`, shell and
@@ -415,47 +354,6 @@ stays taught, in the skill, and the specification says so rather than pretending
 *Done when:* `./tests/run.sh m-a6` is green, including a repository in content mode where the default
 branch is a legitimate target, a push refused for its own reason rather than for its path, and a
 refusal whose text names the command to run instead.
-
-### Track B — NiFi development
-
-More exists already than expected: `volumes/python_extensions` and `volumes/nar_extensions` are
-mounted into both agent containers **and** into `liquid`, and the `liquid` skill documents the
-deployment path (§6.3–6.6). Python processors therefore work today.
-
-**M-B1 · `nar_builder` service**
-The missing first step of §6.4 of the `liquid` skill. A compose service carrying a JDK and Maven,
-sharing `volumes/repos` (the source) and `volumes/nar_extensions` (the drop directory), built by a
-script under `config/scripts/build/` in the manner of `bun-runner.sh`. In front of it, `nar-build` on
-the agents' `PATH` — the third command in the row `git-repo-info` and `git-publish` began: one
-invocation, one determinate answer, the mechanism behind it not the agent's concern.
-
-*Three decisions, taken 2026-09-03 before any case was written:*
-
-**The agent calls a command, it does not drop files and wait.** `bun_runner`'s shape — write into a
-shared directory and the service reacts — does not fit a build. A build has an outcome, and FR22
-requires that outcome to come back to the caller: a watched directory cannot say when it finished or
-hand back the compiler's error, so the agent would report success it never saw. The command reaches
-the builder through the `proxy` with a `Host:` header, as every container-to-container call in this
-stack does.
-
-**The target version is read from the running Liquid, not written in `.env` (FR23).** Liquid is NiFi
-2.11.0 on OpenJDK 21 today, and a NAR compiled against a different `nifi-api` does not fail loudly —
-it is simply never loaded, and the processor never appears. That is precisely the silent failure this
-feature has spent six milestones learning to refuse, so the version is computed at build time and a
-build that cannot read it stops.
-
-**The trust surface is §3.2, not a footnote.** The builder holds no credentials (FR25) and its
-dependency cache lives under `volumes/` like all other state (FR26).
-
-*Done when:* `./tests/run.sh m-b1` is green — a Java source in the workspace producing a loadable NAR
-in `nar_extensions`, a source that does not compile failing with the compiler's own error and leaving
-no artifact behind, and a build refusing rather than guessing when the target version cannot be
-read.
-
-**M-B2 · Document the deployment cycle**
-Extend the `liquid` skill with the builder path and the restart step: the agent places the artifact
-and asks the human to run `docker compose restart liquid`.
-*Done when:* `./tests/run.sh m-b2` is green, plus the documented manual restart step.
 
 ### Later increments (not part of this approval)
 
@@ -675,8 +573,6 @@ trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 | M-A4 | 46 to both gates green, ~55 in total — **the bound was exceeded** | 32 min (12:53–13:25) | 3 changed (2 of them earlier milestones' tests), 8 new | No — both required runs shown with their exit codes, and the hook was seen to fail seven ways with the file moved aside | One finding, in the guardrail rather than in a test: GitHub's read-only deploy key answers before `pre-push` runs, so the signed-off system case proved the remote's rule and not this stack's | Yes — A4-14 needed a second half to test what it was written to test, and A4-4 and A4-11 turned out to be one rule stated from two sides | Fresh session. Orientation cost roughly six turns: the two documents, the existing suite's conventions, the start script, and a probe of git itself to settle whether `pre-push` runs at all for a push git will reject — it does, which the whole of A4-4 and A4-11 depends on. **The turn bound was met for the build and missed overall**: the milestone suite was green at turn 31 and the full suite at turn 46, after two unrelated tests from earlier milestones had to be dealt with; the sixteen "what it found" blocks, the outcome above and this row took nine more. M-A3e recorded the same shape, and the bound has now been wrong twice in the same direction |
 | M-A5 | 11 to both gates green, 14 in total | ~9 min (08:00–08:09) | 1 changed, 5 new | No — both required runs shown with their exit codes, and A5-4 and A5-5 were seen red with the hook moved aside before the suite was called green | None; one test defect (a line-wrap mismatch in A5-7) fixed during the run, no product defect surfaced | No — the eight cases were implementable as signed off; A5-6 changed file, not substance | Fresh session. Orientation cost roughly five turns: the two documents, the hook, the start script, the fixture library and the M-A4 tests it builds on. Nothing reported missing. **The turn bound held for the whole cycle** for the first time since M-A3d: both gates at turn 11, the documentation by turn 14, against a bound of 35 that had been set with the previous two overruns in view |
 | M-A6 | 27 to both gates green, 34 in total | 25 min (13:50–14:15 CEST; the run reported it as 11:50–12:15, which is UTC — every other row here is local time, so the row read as if M-A6 preceded M-A5's verification) | 13 changed (7 of them earlier milestones' tests and fixtures, 2 of them the documents), 9 new | No — both required runs are in the transcript with their exit codes, and the seven §9 checks were run, including the three negative controls | None in the product. Three defects found by the new cases themselves: an M-A4 refusal that named no next step, the container fixtures' seeding push, and a negative control that moved one of the hook's two copies | No — the twelve automated cases were implementable as signed off; §9 changed in three places to match what the milestone actually made true | Fresh session. Orientation cost roughly seven turns: the two documents, the hook, the fixture library, the M-A4 and M-A5 tests it builds on, and the compose mounts. Nothing reported missing. **The turn bound held**: both gates at turn 27 of 40, the verification script and the documentation by turn 34 |
-| M-B1 | | | | | | | |
-| M-B2 | | | | | | | |
 
 **M-A0 was independently verified on 2026-08-29** by the operator, not by its author: the four
 checks (suite green, discovery listing, a deliberately failing tree returning a non-zero exit, and a
