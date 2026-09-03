@@ -42,6 +42,19 @@ rest — in a remote git repository, and make changes there.* Beneath it:
   the operator can open them with their own tools at any time.
 - **U8 · Several repositories in one session.** It happens; it need not be comfortable, only possible.
 
+**Track B has its own two, written before its requirements rather than after.** This document records
+that deriving requirements from capabilities instead of from use cases cost two milestones on Track
+A; the same mistake is available here and is cheaper to avoid than to repeat.
+
+- **U9 · Extend Liquid in Java.** An agent writes a custom processor in a repository under the
+  workspace and needs it compiled into a NAR that Liquid will actually load. Today the stack has no
+  JDK and no Maven, so the agent can write the source and go no further: §6.4 of the `liquid` skill
+  documents how to *deploy* a NAR and step 1, "build the NAR", has nowhere to happen. Python
+  processors already work end to end (`volumes/python_extensions`), which is why the gap is Java's
+  alone.
+- **U10 · Get it running.** The built artifact reaches Liquid and the processor appears. The restart
+  is the operator's, deliberately — it interrupts every running flow, which is not an agent's call.
+
 ### 1.2 Two working modes
 
 "Making changes" is not one activity. It is two, with different purposes, and conflating them is why
@@ -159,6 +172,29 @@ on feature branches, and those branches are reviewed before they reach `main`. *
 treat this as the open question it is** — if the assessment changes, "split keys" is the cheapest
 upgrade path and does not invalidate M-A1 through M-A3.
 
+### 3.2 The build's trust surface (Track B, decided 2026-09-03)
+
+A Maven build resolves plugins and dependencies from the internet and **executes them**. Adding
+`nar_builder` therefore adds a way for third-party code to run inside the stack, and it is named here
+rather than left implicit, on the same principle as §3.1: a risk that was decided is reviewable, and
+one that was assumed is not.
+
+What is exposed: `volumes/repos`, the source the agent is compiling — which the agent already writes
+freely — and `volumes/nar_extensions`, where the artifact lands. What is not: `volumes/_git-secrets`,
+the deploy keys, the `.env` values, and every other service's data. The builder is a compiler with a
+drop directory, not a member of the stack's credential-holding set (FR25).
+
+What remains: a compromised or malicious dependency can read the source being compiled, write
+anything into the drop directory, and reach the network. The third of those is inherent to Maven and
+would only be removed by pre-seeding the dependency cache and building offline, which is the upgrade
+path if the assessment changes. It is not taken now because the stack runs locally under one
+operator, the builds are of the operator's own processors, and the artifact is loaded only after a
+restart the operator performs deliberately (U10).
+
+**Reviewers should treat this as its own open question,** separate from §3.1. It is not the same
+risk: §3.1 is about what an agent may do with a credential, and this is about what a build may do
+with a network.
+
 ---
 
 ## 4. Requirements
@@ -233,6 +269,30 @@ upgrade path and does not invalidate M-A1 through M-A3.
   command to run instead. Discovery at the moment of need, rather than a document that has to be
   found first — the failure M-A3b through M-A3e spent four milestones on.
 
+
+### Track B (2026-09-03), for U9 and U10
+
+- **FR21 — Building is one command, from inside the container the agent works in.** `nar-build` on
+  the `PATH`, as `git-repo-info` and `git-publish` are. The agent does not assemble a Maven
+  invocation, and does not need Docker: NFR4 forbids the socket, and that is not negotiable.
+- **FR22 — The answer is synchronous and determinate.** Success names the artifact it produced;
+  failure carries the compiler's own words back to the caller. Neither outcome requires reading a log
+  file afterwards, because an answer that has to be fetched is one an agent will report without
+  having.
+- **FR23 — The target version is computed, never declared.** The NiFi and Java versions come from the
+  running Liquid, not from `.env`. A NAR built against the wrong `nifi-api` loads silently as nothing
+  at all, which is the failure class this feature has spent six milestones removing. If the version
+  cannot be read, the build refuses rather than guesses.
+- **FR24 — A failed build leaves no artifact.** No partial NAR, and no previous NAR left looking
+  current. The drop directory is what Liquid loads on restart, so a stale file there is worse than an
+  empty one.
+- **FR25 — The builder holds no credentials.** No `_git-secrets`, no deploy keys, no `.env` secrets.
+  It compiles source and writes one file.
+- **FR26 — The dependency cache lives under `volumes/`.** Like all state (NFR3). Without it every
+  build re-downloads the NiFi API and the Maven plugin chain.
+- **NFR7 — The build's trust surface is stated, not assumed.** A Maven build downloads plugins from
+  the internet and executes them. This is a new trust surface in the stack and is treated the way
+  §3.1 treated the write key: named, bounded, and decided rather than slipped in. See §3.2.
 
 ---
 
@@ -363,9 +423,34 @@ mounted into both agent containers **and** into `liquid`, and the `liquid` skill
 deployment path (§6.3–6.6). Python processors therefore work today.
 
 **M-B1 · `nar_builder` service**
-New compose service with a JDK and Maven, sharing `volumes/nar_extensions` and `volumes/repos`,
-following the `bun_runner` pattern. Build script under `config/scripts/build/`.
-*Done when:* `./tests/run.sh m-b1` is green, happy and unhappy paths.
+The missing first step of §6.4 of the `liquid` skill. A compose service carrying a JDK and Maven,
+sharing `volumes/repos` (the source) and `volumes/nar_extensions` (the drop directory), built by a
+script under `config/scripts/build/` in the manner of `bun-runner.sh`. In front of it, `nar-build` on
+the agents' `PATH` — the third command in the row `git-repo-info` and `git-publish` began: one
+invocation, one determinate answer, the mechanism behind it not the agent's concern.
+
+*Three decisions, taken 2026-09-03 before any case was written:*
+
+**The agent calls a command, it does not drop files and wait.** `bun_runner`'s shape — write into a
+shared directory and the service reacts — does not fit a build. A build has an outcome, and FR22
+requires that outcome to come back to the caller: a watched directory cannot say when it finished or
+hand back the compiler's error, so the agent would report success it never saw. The command reaches
+the builder through the `proxy` with a `Host:` header, as every container-to-container call in this
+stack does.
+
+**The target version is read from the running Liquid, not written in `.env` (FR23).** Liquid is NiFi
+2.11.0 on OpenJDK 21 today, and a NAR compiled against a different `nifi-api` does not fail loudly —
+it is simply never loaded, and the processor never appears. That is precisely the silent failure this
+feature has spent six milestones learning to refuse, so the version is computed at build time and a
+build that cannot read it stops.
+
+**The trust surface is §3.2, not a footnote.** The builder holds no credentials (FR25) and its
+dependency cache lives under `volumes/` like all other state (FR26).
+
+*Done when:* `./tests/run.sh m-b1` is green — a Java source in the workspace producing a loadable NAR
+in `nar_extensions`, a source that does not compile failing with the compiler's own error and leaving
+no artifact behind, and a build refusing rather than guessing when the target version cannot be
+read.
 
 **M-B2 · Document the deployment cycle**
 Extend the `liquid` skill with the builder path and the restart step: the agent places the artifact

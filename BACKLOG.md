@@ -3,15 +3,6 @@
 Small things worth doing that are deliberately not being done now, so that deferring them stays a
 decision rather than an omission. Each entry says what, where, and why it was left.
 
-## Documentation
-
-**Move `M-B1 to M-B2 — outlines` out from between M-A5 and M-A6.**
-`docs/TEST-SPEC-git-integration.md` — the Track B outline sits between two Track A milestone
-sections, so a reader following Track A in order walks through NiFi material to reach M-A6. The
-feature document orders the same milestones correctly; only the test specification is affected. A
-move, not a rewrite. Noted 2026-09-03 when M-A6 was specified, and deferred so it can be batched with
-other tidying rather than interleaved with milestone work.
-
 ## Open findings
 
 **One unreproduced intermittent failure in the full suite.**
