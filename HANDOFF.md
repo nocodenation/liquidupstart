@@ -76,6 +76,12 @@ could not reach a repository at all, because every case had the SSH URL written 
 **The manual cases earn their place.** Five of them, three failed, and none of the failures could
 have been caught by any of the 78 automated cases.
 
+## Backlog
+
+`BACKLOG.md` holds the small things deliberately deferred — a documentation ordering fix, one
+unreproduced intermittent test failure, and one inference that was never confirmed. Nothing there
+blocks a milestone; it exists so that deferring stays a decision rather than an omission.
+
 ## Next
 
 1. M-A5: verify independently (§9 of the test specification), fill the process log row, commit.
