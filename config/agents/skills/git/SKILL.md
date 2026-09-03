@@ -130,6 +130,21 @@ changing the operator changes it.
 
 Being blocked and saying so clearly is a good outcome. Getting through anyway is not.
 
+## Working on the stack's own repository
+
+`liquidupstart` is the repository that builds this stack, including the container you
+are running in. Three things in it are not ordinary source files: `compose.yml`, the
+Dockerfiles under `config/`, and `.env`. A change to any of them changes what the
+container is, and a mistake there does not show up as a failing test — it shows up as a
+stack that no longer builds or starts, after you are gone. A bad commit that reaches
+`main` breaks it for everyone who pulls.
+
+So, in that repository: touch those files only when the task actually needs it, keep
+such a change small and alone in its commit so it can be reverted without taking
+anything else with it, and say in the commit message what it does to the running
+stack. `.env` is never committed at all, there or anywhere. `volumes/` is the stack's
+state, not its code; it is git-ignored and stays that way.
+
 ## Commit messages
 
 Say what changed and why, in the imperative, on one short subject line. Add a body

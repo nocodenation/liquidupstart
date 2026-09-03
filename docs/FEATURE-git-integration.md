@@ -550,7 +550,7 @@ trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 | M-A3d | 8 / 20 | 2 min 26 s | 1 changed, 3 new | No — one line changed, verified as one insertion and one deletion | None | No | Nothing missing. Orientation cost roughly two turns against nine for M-A3c, because the milestone was narrow and the cases said exactly what to touch |
 | M-A3e | 25 / 25 to both runs green, 36 in total | 12 min (11:30–11:43) | 3 changed, 8 new | No — both required runs shown with their exit codes; the system case was seen red at 127 before the mount existed | None; no defects surfaced during the run | No — the seven cases were implementable as signed off | Nothing missing. Orientation cost roughly four turns: the manifest shape, the skill, the existing suite conventions and which interpreters the two images actually carry. **The turn bound was met for the goal and exceeded for the record**: the two required runs were green at turn 25, and writing this row, the outcome above and the seven "what it found" blocks took eleven more. The bound counts the build; the documentation the rules require sits outside it |
 | M-A4 | 46 to both gates green, ~55 in total — **the bound was exceeded** | 32 min (12:53–13:25) | 3 changed (2 of them earlier milestones' tests), 8 new | No — both required runs shown with their exit codes, and the hook was seen to fail seven ways with the file moved aside | One finding, in the guardrail rather than in a test: GitHub's read-only deploy key answers before `pre-push` runs, so the signed-off system case proved the remote's rule and not this stack's | Yes — A4-14 needed a second half to test what it was written to test, and A4-4 and A4-11 turned out to be one rule stated from two sides | Fresh session. Orientation cost roughly six turns: the two documents, the existing suite's conventions, the start script, and a probe of git itself to settle whether `pre-push` runs at all for a push git will reject — it does, which the whole of A4-4 and A4-11 depends on. **The turn bound was met for the build and missed overall**: the milestone suite was green at turn 31 and the full suite at turn 46, after two unrelated tests from earlier milestones had to be dealt with; the sixteen "what it found" blocks, the outcome above and this row took nine more. M-A3e recorded the same shape, and the bound has now been wrong twice in the same direction |
-| M-A5 | | | | | | | |
+| M-A5 | 11 to both gates green, 14 in total | ~9 min (08:00–08:09) | 1 changed, 5 new | No — both required runs shown with their exit codes, and A5-4 and A5-5 were seen red with the hook moved aside before the suite was called green | None; one test defect (a line-wrap mismatch in A5-7) fixed during the run, no product defect surfaced | No — the eight cases were implementable as signed off; A5-6 changed file, not substance | Fresh session. Orientation cost roughly five turns: the two documents, the hook, the start script, the fixture library and the M-A4 tests it builds on. Nothing reported missing. **The turn bound held for the whole cycle** for the first time since M-A3d: both gates at turn 11, the documentation by turn 14, against a bound of 35 that had been set with the previous two overruns in view |
 | M-B1 | | | | | | | |
 | M-B2 | | | | | | | |
 
@@ -1458,5 +1458,31 @@ placeholders. Or stop after 35 turns -- that bound covers the documentation the
 development rules require, not the code alone.
 ```
 
-Outcome: pending.
+Outcome: 20 scenarios across 5 files, EXIT=0; the full suite runs 217 stack tests plus the 27
+dashboard tests, also EXIT=0. One product file changed — fifteen lines added to
+`config/agents/skills/git/SKILL.md`, nothing removed — and five test files added. `.env` is untouched
+and nothing was pushed anywhere. A5-9 and A5-10 are manual and still to be done by the operator.
+
+**The milestone was proof, and the proof held.** Every mechanism it relies on already existed: the
+declaration's `access` field, the per-repository key, the hook's branch rule and secret scan. What
+did not exist was evidence that any of it behaves as declared once a repository is write-capable,
+because no repository ever had been. A5-1 and A5-2 run the start script against two local bare
+repositories declared `read|protected` and `write|protected` and read the result back from the clones
+and the keys; A5-3 to A5-5 build the same arrangement inside `openclaw-gateway` and commit, push to
+`main`, and push a `.env`, in that order.
+
+**The guardrail's own refusal has now been seen inside a container.** A4-14 could not show it: the
+read-only key meant GitHub answered before `pre-push` ran. Against a local bare repository — which
+has no rules of its own and would have accepted both pushes — the refusals in A5-4 and A5-5 are the
+hook's, word for word, and with the hook file moved aside both pushes went through and both cases
+went red. That is the observation A5-10 will put to an agent.
+
+**One placement deviates from the sign-off.** A5-6 was signed off as a contract case and is
+implemented as the closing test of the system file, because the before-and-after comparison of the
+operator's working copy has to bracket the system cases in one process, and the runner orders every
+system file after every contract file. It is recorded in the case block rather than quietly moved.
+
+**What the operator does next** is in §9 of the test specification: the independent checks, then
+A5-9 — declare the real repository, register a write-capable key, push `agent/probe` once by hand and
+delete it — and A5-10, the A4-15 question asked where the hook is what refuses.
 

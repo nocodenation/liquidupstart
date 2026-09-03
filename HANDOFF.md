@@ -23,14 +23,19 @@ than tidied away.
 | `CLAUDE.md` § Development rules | The commandments this project works to, and the conventions derived from them |
 | PR #9 (draft) | The review vehicle. The operator's independent verification of each milestone is posted there as comments |
 
-## State on 2026-09-02
+## State on 2026-09-03
 
-- Branch `feature/git-integration`, 66 commits ahead of `main`, all pushed. PR #9 is a **draft** on
-  purpose: it goes to Timur for review only when the whole feature is done.
-- **M-A0 to M-A3e are complete**, each verified independently by the operator. **M-A4 is running in
-  another session** as this is written; its work is not yet committed.
+- Branch `feature/git-integration`, PR #9 still a **draft** on purpose: it goes to Timur for review
+  only when the whole feature is done.
+- **M-A0 to M-A4 are complete**, each verified independently by the operator. A4-15 was observed
+  twice and failed; its question is carried into A5-10.
+- **M-A5 ran on 2026-09-03**: both gates green, uncommitted at the time of writing. Five test files
+  and one paragraph in the git skill. Its independent verification, the process-log row, and the
+  two manual cases A5-9 and A5-10 are still to be done by the operator.
 - The stack is up, `.env` declares `nocodenation/agent-skills` as `read|protected`, its deploy key is
-  registered on GitHub, and the clone sits at `volumes/repos/agent-skills`.
+  registered on GitHub, and the clone sits at `volumes/repos/agent-skills`. **No write-capable
+  repository is declared yet** — the automated M-A5 cases prove the write path against local bare
+  repositories, and declaring the real `liquidupstart` is A5-9, the operator's step.
 - `volumes/repos/csv-columns` is a leftover from the A2-5 observation. Leave it: A4-16 uses it as a
   clone the feature did not create.
 
@@ -73,11 +78,11 @@ have been caught by any of the 78 automated cases.
 
 ## Next
 
-1. M-A4 finishes: verify independently, fill the process log row, commit.
-2. **A4-15**, the manual observation: does an agent report a refused push, or work around it? The
-   last open question from §3.1.
-3. **M-A5** — self-development on Liquid Upstart. Needs a write-capable deploy key on the stack's own
-   repository; confirmed twice, see §6 O5.
+1. M-A5: verify independently (§9 of the test specification), fill the process log row, commit.
+2. **A5-9**, manual: declare `liquidupstart` as `write|protected`, register the key with write
+   access, have an agent push `agent/probe`, delete the branch afterwards.
+3. **A5-10**, manual: the A4-15 question asked where the hook itself refuses. The last open question
+   from §3.1.
 4. **Track B** — `nar_builder` for Java processors, independent of all the above.
 
 Open questions are §6 of the feature document. O1 (gating push on the privacy profile) becomes real
