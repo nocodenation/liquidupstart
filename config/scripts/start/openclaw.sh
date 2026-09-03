@@ -113,9 +113,16 @@ PRIVACY_ANTHROPIC=0
 # source of truth for the primary model.
 CONFIG_JSON="${STATE_DIR}/openclaw.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
-  cd "${PROJECT_DIR}"
-  docker compose run --rm -T --user 0:0 openclaw-cli onboard --non-interactive --accept-risk --skip-health
-  docker compose rm -sf openclaw-gateway >/dev/null 2>&1 || true
+  docker run --rm --user 0:0 --entrypoint openclaw \
+    -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
+    -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
+    -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
+    -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
+    -e OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace \
+    -v "${STATE_DIR}:/home/node/.openclaw" \
+    -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
+    -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
+    "${OPENCLAW_IMAGE}" onboard --non-interactive --accept-risk --skip-health
 else
   echo "OpenClaw config already present at ${CONFIG_JSON}; skipping setup."
 fi
@@ -159,7 +166,7 @@ fi
 #      trustworthy because nothing but the proxy/CLI can reach the gateway.
 #   2. gateway.controlUi.allowedOrigins=["*"] — otherwise the dashboard's WebSocket
 #      origin is rejected. Safe (only a CSRF-style guard); no env var exists.
-#   3. gateway.controlUi.dangerouslyDisableDeviceAuth — behind the proxy the gateway
+#   3. gateway.auth.trustedProxy.deviceAutoApprove — behind the proxy the gateway
 #      sees the proxy IP not localhost, so allowInsecureAuth (localhost-only) can't
 #      apply and every browser would otherwise be forced to pair.
 #   4. per-backend provider/runtime wiring — each enabled backend routes its
@@ -297,14 +304,19 @@ else
       c.gateway.auth.trustedProxy.userHeader = "x-forwarded-user";
       c.gateway.auth.trustedProxy.allowLoopback = true;
       c.gateway.trustedProxies = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
+      c.gateway.allowRealIpFallback = true;
 
       // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};
       c.gateway.controlUi.allowedOrigins = ["*"];
 
-      // Disable per-browser device pairing (see header comment): allowInsecureAuth
+      // Auto-pair proxy-authenticated browsers (see header comment): allowInsecureAuth
       // is localhost-only and useless behind the proxy.
-      c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
+      delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
+      c.gateway.auth.trustedProxy.deviceAutoApprove = {
+        enabled: true,
+        scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing", "operator.talk"]
+      };
 
       // Per-backend provider/runtime wiring. No primary model is pinned; each
       // enabled backend routes its provider/* through the right runtime and the
@@ -354,14 +366,10 @@ else
 
       let cliPinnedModels = [];
 
+      delete c.agents.defaults.cliBackends;
       if (enableClaudeCli) {
         c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
         c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
-        // Run the CLI through our wrapper, which re-injects CLAUDE_CONFIG_DIR,
-        // IS_SANDBOX, and an optional OAuth token that OpenClaw otherwise strips.
-        c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
-        c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
-        c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
 
         const CLI_DEFAULT_CONTEXT_WINDOW = 200000;
         const cliServes = (id) => /^claude-(opus|sonnet|fable|mythos)-/.test(id);
@@ -395,16 +403,18 @@ else
       }
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
-      // memorySearch at github-copilot.
+      // memory.search at github-copilot.
       if (enableCopilot) {
         c.gateway = c.gateway || {};
         c.gateway.http = c.gateway.http || {};
         c.gateway.http.endpoints = c.gateway.http.endpoints || {};
         c.gateway.http.endpoints.chatCompletions = c.gateway.http.endpoints.chatCompletions || {};
         c.gateway.http.endpoints.chatCompletions.enabled = true;
-        c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
-        c.agents.defaults.memorySearch.provider = "github-copilot";
-        if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
+        delete c.agents.defaults.memorySearch;
+        c.memory = c.memory || {};
+        c.memory.search = c.memory.search || {};
+        c.memory.search.provider = "github-copilot";
+        if (!c.memory.search.model) c.memory.search.model = "text-embedding-3-small";
       }
 
       if (enableCodex) {
@@ -478,6 +488,24 @@ else
         }
       }
 
+      const currentPrimary = typeof c.agents.defaults.model === "string"
+        ? c.agents.defaults.model
+        : c.agents.defaults.model && c.agents.defaults.model.primary;
+      if (!currentPrimary) {
+        const firstLocal = (((c.models || {}).providers || {}).local || {}).models;
+        const defaultPrimary = enableClaudeCli ? "anthropic/claude-opus-5"
+          : enableCodex ? "openai/gpt-5.5"
+          : enableCopilot ? "github-copilot/gpt-4o"
+          : (Array.isArray(firstLocal) && firstLocal.length) ? "local/" + firstLocal[0].id
+          : null;
+        if (defaultPrimary) {
+          c.agents.defaults.model = typeof c.agents.defaults.model === "object" && c.agents.defaults.model
+            ? { ...c.agents.defaults.model, primary: defaultPrimary }
+            : { primary: defaultPrimary };
+          console.log("openclaw.json: pinned default primary model =", defaultPrimary, "(first-run model wizard skipped; change it in the UI)");
+        }
+      }
+
       let openrouterModels = [];
       try { openrouterModels = JSON.parse(process.env.OPENROUTER_MODELS_JSON || "[]"); } catch (e) {}
       if (openrouterModels.length) {
@@ -503,7 +531,7 @@ else
         c.plugins.load.paths = pluginPaths;
         const baseAllow = ["anthropic","browser","canvas","codex","device-pair",
           "file-transfer","memory-core","ollama","openai","openrouter",
-          "phone-control","talk-voice","ingest-pdf"];
+          "talk-voice","ingest-pdf"];
         if (enableGrok) baseAllow.push("xai");
         const allow = new Set([...(c.plugins.allow || []), ...baseAllow]);
         c.plugins.allow = [...allow];
@@ -513,7 +541,7 @@ else
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
       console.log("openclaw.json: auth.mode =", c.gateway.auth.mode, "; trustedProxies =", JSON.stringify(c.gateway.trustedProxies));
       console.log("openclaw.json: allowedOrigins =", JSON.stringify(c.gateway.controlUi.allowedOrigins));
-      console.log("openclaw.json: dangerouslyDisableDeviceAuth =", c.gateway.controlUi.dangerouslyDisableDeviceAuth);
+      console.log("openclaw.json: trustedProxy.deviceAutoApprove =", JSON.stringify(c.gateway.auth.trustedProxy.deviceAutoApprove));
       if (pluginPaths.length) {
         console.log("openclaw.json: plugins.load.paths =", JSON.stringify(c.plugins.load.paths));
       }
@@ -531,7 +559,7 @@ else
       }
       if (enableCopilot) {
         console.log("openclaw.json: routed github-copilot/* through the copilot runtime");
-        console.log("openclaw.json: enabled gateway /v1/embeddings + memorySearch.provider = github-copilot (model", c.agents.defaults.memorySearch.model + ") for RAG embeddings");
+        console.log("openclaw.json: enabled gateway /v1/embeddings + memory.search.provider = github-copilot (model", c.memory.search.model + ") for RAG embeddings");
       }
       if (enableCodex) {
         console.log("openclaw.json: routed openai/* through the codex runtime");
@@ -690,7 +718,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   fi
 
   register_anthropic_cli_profile() {
-    docker run --rm --user 0:0 \
+    timeout 120 docker run --rm --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
