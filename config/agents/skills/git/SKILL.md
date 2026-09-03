@@ -148,6 +148,14 @@ changing the operator changes it.
 
 Being blocked and saying so clearly is a good outcome. Getting through anyway is not.
 
+**A refusal you dealt with is still worth reporting.** Some refusals redirect rather than block: they
+name the command to run instead, you run it, and the work goes through. Say so anyway — what refused
+you, what it said, and what you did next. Leaving it out is not a small tidy-up. Your closing report
+is the only account most readers will ever see, and one that omits the refusal reads as though the
+first attempt simply worked, which is how a stack's rules become invisible to the person responsible
+for them. This is not about blame: being redirected is not a mistake, and reporting it costs a
+sentence.
+
 ## Working on the stack's own repository
 
 `liquidupstart` is the repository that builds this stack, including the container you
