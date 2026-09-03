@@ -12,7 +12,9 @@
  *           bare repository, so nothing reaches any real remote. The operator's
  *           own working copy at the project root is bracketed: its status and
  *           HEAD are captured before the cases and compared after.
- * Given:    The running stack. Inside openclaw-gateway, under /repos/.a5-probe:
+ * Given:    The running stack. Inside openclaw-gateway, under a directory named
+ *           /repos/.a5-probe-<pid> — unique per run, so no run depends on a
+ *           previous run's teardown having propagated across the bind mount:
  *           a bare `beta.git` seeded with `README.md` holding `seed` on `main`,
  *           and a clone `work` of it configured liquidupstart.access=write and
  *           liquidupstart.policy=protected, governed by the hook through the
@@ -28,13 +30,16 @@
  *           `feature/probe` at all. The project root's `git status --short` and
  *           `HEAD` are identical before and after.
  * Covers:   A5-3, A5-4, A5-5, A5-6, U3, U4, U7, FR2, FR5, NFR1, NFR3, §1.3
+ * Note:     The setup runs at import time and its output is asserted before its
+ *           exit code, so a failed fixture reports what git said rather than
+ *           only "expected 0, received 1".
  * Unhappy:  A5-4 and A5-5 are refusals; A5-3 is their counterweight in the
  *           same clone, showing the clone, the identity and the commit all
  *           work and only the push is stopped. The `.env` value is synthetic on
  *           purpose: no real value is committed even to a local fixture.
  */
 import { test, expect, afterAll } from 'bun:test';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { inContainer } from '../lib/stack';
 import { stackGuard } from '../lib/guard';
@@ -43,7 +48,7 @@ import { sh } from '../lib/shell';
 import { HOOKS_MOUNT } from '../lib/gitfixture';
 
 const SERVICE = 'openclaw-gateway';
-const PROBE = '/repos/.a5-probe';
+const PROBE = `/repos/.a5-probe-${process.pid}`;
 const REMOTE = `${PROBE}/beta.git`;
 const WORK = `${PROBE}/work`;
 
@@ -56,9 +61,12 @@ const before = workingCopy();
 stackGuard([SERVICE]);
 
 afterAll(() => {
-  inContainer(SERVICE, `rm -rf ${PROBE}`);
-  const host = join(repoRoot, 'volumes', 'repos', '.a5-probe');
-  if (existsSync(host)) rmSync(host, { recursive: true, force: true });
+  inContainer(SERVICE, 'rm -rf /repos/.a5-probe*');
+  const repos = join(repoRoot, 'volumes', 'repos');
+  if (!existsSync(repos)) return;
+  for (const name of readdirSync(repos).filter((n) => n.startsWith('.a5-probe'))) {
+    rmSync(join(repos, name), { recursive: true, force: true });
+  }
 });
 
 const effective = (key: string) => inContainer(SERVICE, `printf '%s' "$${key}"`).stdout.trim();
@@ -86,8 +94,8 @@ printf 'DEFAULT=%s\\n' "$(git symbolic-ref --short refs/remotes/origin/HEAD)"`
 );
 
 test('A5-3 the write-capable clone exists in the container and is governed by the hook', () => {
-  expect(setup.code).toBe(0);
   expect(setup.output).toContain(`HOOKSPATH=${HOOKS_MOUNT}`);
+  expect(setup.code).toBe(0);
   expect(setup.output).toContain('ACCESS=write');
   expect(setup.output).toContain('DEFAULT=origin/main');
 }, 60000);

@@ -14,7 +14,10 @@
  *           plus a nested repository `.a5-nested-probe` created under it for
  *           the duration of the test so the clean check is never vacuous.
  * When:     `git check-ignore -v volumes/repos` and `git clean -ndx volumes/repos`
- *           run at the project root.
+ *           run at the project root. Both assertions read git's own wording,
+ *           which is translated, so sh() pins LC_ALL=C for every child process;
+ *           without that this case fails on a German machine and passes on an
+ *           English one, which is a property of the tester, not of the system.
  * Then:     The path is ignored by the `volumes/` rule in .gitignore, every
  *           nested repository — the probe and each existing clone — is reported
  *           as skipped rather than as removable, and nothing under volumes/

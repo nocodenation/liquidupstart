@@ -1801,6 +1801,18 @@ policy is read from the clone, not from the host.
 | **Covers** | U3, FR2, FR5. |
 | **What it found** | Passed. The fixture is built inside `openclaw-gateway` under `/repos/.a5-probe` and removed afterwards. The clone picks up `core.hooksPath=/git-secrets/hooks` from `/etc/gitconfig` without being told, and that is asserted before any push, so a later refusal is attributable to the hook. The identity is read from the running container, as A1-6 does, rather than from `.env`. |
 
+**Amended 2026-09-03 — a flake, not diagnosed, and two changes that reduce its surface.** On the
+operator's second verification run the fixture failed to build: `A5-3` reported `expected 0, received
+1`, and the two cases after it failed with `cd: can't cd to /repos/.a5-probe/work`. It has not been
+reproduced — four consecutive runs, and the aside-and-restore sequence of check 6 run again by hand,
+were all green, and the setup executed by hand in the container succeeds. **No cause is claimed
+here.** Two things changed anyway, both defensible without a diagnosis. The probe directory is now
+`/repos/.a5-probe-<pid>`, unique per run, so a run no longer depends on the previous run's teardown
+having propagated across the bind mount; teardown sweeps every `.a5-probe*` rather than one fixed
+name. And the setup's output is now asserted before its exit code, because as written a failed
+fixture reported only `received: 1` and threw away git's own explanation — which is why this entry
+cannot say more than it does.
+
 ##### A5-4 — the hook refuses a push to the default branch
 
 | | |
@@ -1856,7 +1868,9 @@ policy is read from the clone, not from the host.
 | **Positive — skipped by clean** | A dry-run clean reports it as skipped rather than as removable. |
 | **Not a guarantee** | `git clean -ffdx` would remove it. No requirement forbids that, and nothing here prevents it. |
 | **Covers** | Documents the boundary of U7. |
-| **What it found** | Passed. `git check-ignore -v` reports `.gitignore:3:volumes/`, and `git clean -ndx volumes/repos` reports `Would skip repository` for `agent-skills`, `csv-columns` and the probe. The probe `volumes/repos/.a5-nested-probe` is created for the test and removed afterwards so the check is never vacuous on a checkout where the stack has not started; were it ever left behind, A4-16 would name it. The forced form is not run, and the test says why. |
+| **What it found** | Passed. `git check-ignore -v` reports `.gitignore:3:volumes/`, and `git clean -ndx volumes/repos` reports `Would skip repository` for `agent-skills`, `csv-columns` and the probe. The probe `volumes/repos/.a5-nested-probe` is created for the test and removed afterwards so the check is never vacuous on a checkout where the stack has not started; were it ever left behind, A4-16 would name it. The forced form is not run, and the test says why.
+
+**Amended 2026-09-03 — it had encoded its author's locale.** On the operator's machine the case failed on its first run outside the executing session: git reported `Würde Repository volumes/repos/.a5-nested-probe überspringen`, because `LANG` there is `de_DE.UTF-8`. The assertion was correct about git's behaviour and wrong about how it is observed — it asserted the circumstance that git happens to speak English, which is a property of the machine, not of the system under test. `sh()` in `tests/lib/shell.ts` now runs every child process with `LC_ALL=C`, so the whole suite reads git's output in the one language git guarantees. Verified both ways under `LC_ALL=de_DE.UTF-8`: without the pin the case fails and the other nineteen pass; with it, twenty pass. The full suite is green under German too, so A5-8 was the only case affected. |
 
 ##### A5-9 — write access proven once, by hand · **manual**
 
@@ -2407,6 +2421,28 @@ mv volumes/_git-secrets/hooks/pre-push.aside volumes/_git-secrets/hooks/pre-push
 Check 3 is the one that bypasses the suite, and check 6 is the one that proves the refusals come
 from the hook rather than from git or from the fixture. Both leave nothing behind: check 3 removes
 its directory, and check 6 restores the file it moved.
+
+All six are also available as one command, which runs them in the same order, judges each one, and
+puts everything it moved back — including on `Ctrl-C`, so an interrupted run cannot leave the hook
+disabled or the container stopped:
+
+```bash
+./tests/verify/m-a5.sh
+```
+
+It writes two files. `.pr-drafts/M-A5-verification.log` is the complete output of everything it ran;
+`.pr-drafts/M-A5-verification.md` is the pull request comment, with the verdict table filled in and
+the output folded into it, ready to paste or to post with
+`gh pr comment <n> --body-file .pr-drafts/M-A5-verification.md`. It exits non-zero if any check
+fails.
+
+**The script does not replace the block above, and reading its output still matters.** It is written
+by the same hand as the tests it checks, so a bare `PASS` from it is worth no more than a bare green
+from the suite — which is the whole reason checks 5 and 6 exist. What makes it worth trusting is that
+those two are self-refuting: check 5 fails if the suite survives its container being stopped, and
+check 6 fails if the suite survives the hook being removed, or if the cases that go red are not
+A5-4 and A5-5. It prints the raw output it judged, not only its verdict, so a reviewer can disagree
+with it. Where a check is in doubt, the copyable form above is the one to run by hand.
 
 #### A5-9 — the operator's procedure
 

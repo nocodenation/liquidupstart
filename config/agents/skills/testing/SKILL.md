@@ -135,6 +135,19 @@ exists so the file need not be filled" is the property.
 A test that asserts what has **not** been done depends on nobody doing it — and breaks the moment
 someone uses the feature as intended, for reasons that have nothing to do with the code.
 
+## Do not assume your own machine
+
+Language, time zone, path separator, sort order and line endings belong to the computer, not to the
+system under test. Assert the output of a tool and you assert which language it speaks: pin the
+language rather than trusting your own. `git clean -ndx` says `Would skip repository` under `LC_ALL=C`
+and `Würde Repository ... überspringen` under a German locale, and a test that expects the first is
+green for its author and red for everyone else.
+
+An agent cannot notice this by running the test. It verifies against its own machine, and what is
+accidental about that machine is invisible from inside it — the test passes, the reasoning is sound,
+and the defect ships. So the guard is not more care while checking; it is asking, before asserting on
+anything a tool prints, what about this output belongs to the environment rather than to the system.
+
 ## Record what a test found
 
 Once a test has run, add what it caught. In a table, a test that never found anything and one that
