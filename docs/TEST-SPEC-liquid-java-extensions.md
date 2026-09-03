@@ -110,6 +110,8 @@ says why not.
 | **Positive — present** | Both working mounts are declared. |
 | **Negative — absent** | `_git-secrets` appears nowhere in the block, and no secret-bearing environment key is passed. |
 | **Covers** | FR25, NFR7, §3.2. |
+| **Implemented by** | `tests/contract/m-b1.service-boundary.test.ts`. |
+| **What it found** | Green. The declaration carries `./volumes/repos`, `./volumes/nar_extensions` and the cache `./volumes/nar_builder/m2`, and none of the 14 credential-bearing keys `.env.example` declares. It also forced a decision the outline had not foreseen: the builder needs one more mount, `./volumes/liquid/logs:ro`, because that is where the running Liquid records the version it started with and there is no credential-free way to ask it over the network. §3.2 of the feature document was amended rather than the mount added quietly. |
 
 ##### B1-2 — the command is where the agent will look
 
@@ -120,6 +122,8 @@ says why not.
 | **Test data** | Every service that mounts `git-repo-info` today — three of them — read out of the file rather than listed by hand, so a service added later cannot be forgotten. |
 | **Expected** | Each also mounts `nar-build`, read-only, at `/usr/local/bin/nar-build`. |
 | **Covers** | FR21. |
+| **Implemented by** | `tests/contract/m-b1.command-mounted.test.ts`. |
+| **What it found** | Green. Three services carry `git-repo-info` — `openclaw-gateway`, `openclaw-cli`, `opencode` — and all three now carry `nar-build` at `/usr/local/bin/nar-build`, read-only and single-file. |
 
 ##### B1-3 — the version is read, not written down
 
@@ -130,6 +134,8 @@ says why not.
 | **Test data** | The running `liquid` container, which today reports `nifi-2.11.0` under `/opt/nifi/` and `openjdk version "21.0.12"`. The case asserts the shape — a NiFi version of the form `2.x.y` and a Java major of `21` — and not the literal `2.11.0`, because pinning the literal would fail on the next image bump for no reason that concerns this tool. |
 | **Expected** | The resolved values match what the container reports. Nothing is read from `.env`. |
 | **Covers** | FR23. |
+| **Implemented by** | `tests/unit/m-b1.target-version.test.ts`. |
+| **What it found** | Green. It reports `nifi_version 2.11.0`, `java_version 21.0.12+10-LTS`, `java_major 21`, and `read_from liquid at liquid:8833 (nifi-app_2026-09-03_12.0.log)`. The assertions are on the shape, so the next image bump moves the reported value without moving the case. |
 
 ##### B1-4 — an unreadable version stops the build
 
@@ -140,6 +146,8 @@ says why not.
 | **Test data** | The same source as B1-5, with the resolution pointed at a container name that does not exist — `liquid-absent` — so the failure is the one under test and not a broken fixture. |
 | **Expected** | Non-zero exit. The message says the target version could not be read and names what to do — start the stack — and `nar_extensions` is unchanged. |
 | **Covers** | FR23, FR24, FR20's property. |
+| **Implemented by** | `tests/unit/m-b1.version-unreadable.test.ts`. |
+| **What it found** | Green. With `NAR_BUILD_LIQUID_HOST=liquid-absent` the build stops before Maven is invoked, names the version as unreadable and `./scripts/linux/start.sh` as the way out, and the drop directory's listing is unchanged. |
 
 ##### B1-5 — a plain source produces a loadable NAR
 
@@ -150,6 +158,8 @@ says why not.
 | **Test data** | Under `volumes/repos/<fixture>/src/main/java/org/nocodenation/probe/ProbeProcessor.java`: a class `ProbeProcessor extends AbstractProcessor` whose `onTrigger` body is empty — the smallest thing that is a real processor and still compiles against `nifi-api`. Alongside it, `src/main/resources/META-INF/services/org.apache.nifi.processor.Processor` holding the single line `org.nocodenation.probe.ProbeProcessor`, which §6.3 of the `liquid` skill makes mandatory. No `pom.xml`. |
 | **Expected** | Exit 0. A `.nar` appears in `volumes/nar_extensions`, and unzipping it shows the SPI descriptor with that class name — the check §6.3 itself prescribes. The output names the file it wrote. |
 | **Covers** | U9, FR21, FR22. |
+| **Implemented by** | `tests/integration/m-b1.plain-source.test.ts`. |
+| **What it found** | Green, and it caught the defect this milestone most needed catching. The first synthesised pom produced a NAR that **bundled `nifi-api-2.10.0.jar` and `slf4j-api`** — pulled in transitively by `nifi-utils` — which is precisely the silent-failure class the feature exists to refuse: a NAR carrying its own copy of the API the framework provides. The parent pom now manages both as `provided`, and the artifact holds only `nifi-utils` and the processors jar. The case also corrected its own check: `nifi-nar-maven-plugin` 2.4.0 writes bundled dependencies under `META-INF/bundled-dependencies`, not `NAR-INF/`, which the first version of the assertion assumed. |
 
 ##### B1-6 — an author's own `pom.xml` is used, not overwritten
 
@@ -160,6 +170,8 @@ says why not.
 | **Test data** | The B1-5 fixture plus a `pom.xml` whose artifactId is `probe-with-pom`, distinguishable from anything the synthesiser would produce, and carrying one dependency the synthesised form would not add. |
 | **Expected** | Exit 0, the artifact named from that pom rather than from the generated one, and the declared dependency present in the build. |
 | **Covers** | U9, FR21. |
+| **Implemented by** | `tests/integration/m-b1.own-pom.test.ts`. |
+| **What it found** | Green. The artifact is `probe-with-pom-1.0.0.nar`, named from the author's pom and not from the source directory, and `commons-lang3` is bundled in it — a dependency the synthesiser never adds. A single-module `nar`-packaged pom builds correctly, so an author is not forced into the two-module layout the synthesiser generates. |
 
 ##### B1-7 — a source that does not compile fails with the compiler's own words
 
@@ -170,6 +182,8 @@ says why not.
 | **Test data** | The B1-5 fixture with one line added to `onTrigger`: `int probe = "probe";`, which `javac` rejects as *incompatible types: String cannot be converted to int* — a deterministic, well-known message, chosen over a syntax error because it proves compilation was actually attempted rather than parsing abandoned early. |
 | **Expected** | Non-zero exit. The output contains `incompatible types` and the file and line. `volumes/nar_extensions` gains nothing. |
 | **Covers** | FR22, FR24. |
+| **Implemented by** | `tests/integration/m-b1.broken-source.test.ts`. |
+| **What it found** | Green. The output carries `ProbeProcessor.java:[11,36] incompatible types: java.lang.String cannot be converted to int` — javac's own words, the file and the line — and the drop directory gains nothing. |
 
 ##### B1-8 — a failed build does not disturb the artifact already there
 
@@ -180,6 +194,8 @@ says why not.
 | **Test data** | B1-5 run first, so a known-good `.nar` exists and its SHA-256 is recorded; then B1-7's broken source built into the same place. |
 | **Expected** | The second build fails, the existing `.nar` has the same SHA-256 as before, and no other file — partial, temporary or otherwise — is left in the directory. |
 | **Covers** | FR24. |
+| **Implemented by** | `tests/integration/m-b1.stale-artifact.test.ts`. |
+| **What it found** | Green. The SHA-256 recorded before the failing build is the SHA-256 after it, and the directory listing is identical. The builder only copies into the drop directory after Maven has succeeded, and it stages through `.<name>.part` in the same directory so the visible file is never a partial one. |
 
 ##### B1-9 — the dependency cache is state, and lives where state lives
 
@@ -190,6 +206,8 @@ says why not.
 | **Test data** | Two consecutive builds of the B1-5 fixture, with `volumes/nar_builder/m2` inspected between them. |
 | **Expected** | The cache directory exists on the host and is non-empty after the first build; the second build succeeds without re-resolving what the first one fetched. |
 | **Covers** | FR26, NFR3. |
+| **Implemented by** | `tests/integration/m-b1.dependency-cache.test.ts`. |
+| **What it found** | Green — after catching a case that would have passed vacuously. The builder counted downloads with `grep -c '^Downloading from'`, while Maven prints `[INFO] Downloading from `, so the count was always `0` and the assertion proved nothing. Found by deleting one artifact from the cache and watching the count stay at zero. With the pattern corrected, a build that has to fetch `nifi-utils` again reports `downloads 9` and the build after it reports `downloads 0`. |
 
 ##### B1-10 — it works from where the agent actually is
 
@@ -200,6 +218,8 @@ says why not.
 | **Test data** | The B1-5 fixture, with `nar-build` invoked from inside the container as an agent would, with no path spelled out. |
 | **Expected** | Exit 0, the artifact in `volumes/nar_extensions`, and the command reachable on the bare `PATH`. |
 | **Covers** | U9, FR21. |
+| **Implemented by** | `tests/system/m-b1.build-in-container.test.ts`. |
+| **What it found** | Green. `command -v nar-build` in `openclaw-gateway` answers `/usr/local/bin/nar-build`, and the bare command run with the source directory as its working directory lands the artifact. The call goes to `http://proxy:8888` with `Host: nar-builder.localhost:8888`; the container name `nar-builder.localhost` resolves nowhere inside a container, which is why nothing addresses it directly. |
 
 ##### B1-11 — every refusal names a next step
 
@@ -210,6 +230,8 @@ says why not.
 | **Test data** | Every refusal in either source, enumerated by reading the files rather than from a list kept by hand, exactly as A6-11 does — so a message added later cannot escape the case. |
 | **Expected** | Each names a command, a file to fix, or an action. None ends at the refusal. |
 | **Covers** | FR20's property, FR22. |
+| **Implemented by** | `tests/contract/m-b1.refusal-next-step.test.ts`. |
+| **What it found** | Green over 12 refusals — three in `nar-build`, eight in the builder's `build.sh`, one in the endpoint `BuildServer.java`, all enumerated by reading the files. Each names a command, a file to fix or an action: `./scripts/linux/start.sh`, `docker compose start nar_builder`, `docker compose restart liquid`, `git-repo-info <repository>`, the descriptor to create, or the errors to fix and `nar-build` again. |
 
 ##### B1-12 — the builder cannot reach the credentials
 
@@ -220,6 +242,8 @@ says why not.
 | **Test data** | From inside the container: the existence of `/git-secrets` and of any path containing a deploy key, and the environment read for the keys `.env` marks as credentials. |
 | **Expected** | No such path exists and no such value is present. |
 | **Covers** | FR25, §3.2. |
+| **Implemented by** | `tests/contract/m-b1.no-credentials.test.ts`. |
+| **What it found** | Green. From inside the running container there is no `/git-secrets`, no `id_ed25519`, `id_rsa` or `known_hosts` anywhere on its own filesystem, no environment key whose name matches `KEY|SECRET|PASSWORD|TOKEN`, and none of the credential values `.env` actually holds appears in its environment. |
 
 ---
 
@@ -303,6 +327,8 @@ ls volumes/nar_extensions/
 #    a stub -- do not rename it: nar-build is bind-mounted as a single file, and a
 #    single-file mount follows the inode, so mv on the host leaves the container
 #    seeing the old file and the control would prove the opposite of its claim.
+#    Expect red: B1-3 B1-4 B1-5 B1-6 B1-7 B1-8 B1-9 B1-10 B1-11.
+#    Expect still green: B1-1 B1-2 B1-12. A case outside both lists is the finding.
 cp config/agents/bin/nar-build.sh /tmp/nar-build.sh.bak
 printf '#!/bin/sh\nexit 90\n' > config/agents/bin/nar-build.sh
 ./tests/run.sh m-b1; echo "EXIT=$?"
@@ -310,6 +336,8 @@ cat /tmp/nar-build.sh.bak > config/agents/bin/nar-build.sh
 ./tests/run.sh m-b1; echo "EXIT=$?"
 
 # 6. Negative control: do the build cases genuinely need the builder?
+#    Expect red: B1-3 B1-4 B1-5 B1-6 B1-7 B1-8 B1-9 B1-10 B1-12.
+#    Expect still green: B1-1 B1-2 B1-11. A case outside both lists is the finding.
 #    Expect the build cases red with it stopped, green once it is back.
 docker compose stop nar_builder
 ./tests/run.sh m-b1; echo "EXIT=$?"
@@ -335,6 +363,30 @@ other that a failure produces nothing and disturbs nothing. Check 4 compares the
 across the failed build rather than merely looking for a new file, because the failure FR24 guards
 against is a **stale** NAR that Liquid would load on the next restart, and a stale file is invisible
 to a check that only counts.
+
+**What checks 5 and 6 require, and how the lists were derived** — amended 2026-09-03, after the
+milestone ran. A control that only asks "did the suite go red" passes as long as *something* broke; it
+does not notice a case that quietly stopped testing anything. Both checks therefore name the cases
+that must go red and the cases that must stay green, and the lists come from reading the sources
+rather than from watching a run, so that they assert an expectation instead of recording an
+observation.
+
+Every case that calls `narBuild()` depends on the command, and `nar-build` always reaches the builder
+over the proxy, so those cases depend on the service too: B1-5 to B1-9, B1-4, and B1-3, whose
+`target()` is `narBuild` with `--target`. B1-10 runs the command inside `openclaw-gateway` through
+`docker exec`, so it needs both. B1-11 reads the command's *text* to enumerate its refusals, so
+truncating the file empties it — it belongs to check 5 and not to check 6. B1-12 scans inside the
+builder, so it belongs to check 6 and not to check 5. B1-1 and B1-2 read `compose.yml` and must stay
+green in both, which is what makes the pair meaningful rather than a way of breaking everything at
+once.
+
+**B1-4 was left out of check 6's lists at first, and then put in.** It makes the version deliberately
+unreadable and asserts the refusal that follows, and the first reading of the lists left it unlisted
+on the grounds that its behaviour with the builder stopped was not determinable. Reading what it
+actually asserts settles it: the case requires the output to contain `target version` and
+`could not be read`, and with the builder unreachable `nar-build` fails at the request instead, with a
+different message. It therefore must go red, for a reason and not merely because the first run showed
+it doing so — which the run did.
 
 Check 7 is asserted from inside the container on purpose. B1-1 reads `compose.yml`, which says what
 was declared; only this says what is reachable, and §3.2 makes a claim about reachability.

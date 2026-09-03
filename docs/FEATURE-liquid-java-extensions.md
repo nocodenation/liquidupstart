@@ -86,9 +86,63 @@ rather than left implicit, on the same principle as §3.1: a risk that was decid
 one that was assumed is not.
 
 What is exposed: `volumes/repos`, the source the agent is compiling — which the agent already writes
-freely — and `volumes/nar_extensions`, where the artifact lands. What is not: `volumes/_git-secrets`,
-the deploy keys, the `.env` values, and every other service's data. The builder is a compiler with a
-drop directory, not a member of the stack's credential-holding set (FR25).
+freely — `volumes/nar_extensions`, where the artifact lands, and `volumes/liquid/logs`, **read-only**,
+which M-B1 added and this paragraph exists to declare rather than to slip in. What is not:
+`volumes/_git-secrets`, the deploy keys, the `.env` values, and every other service's data. The
+builder is a compiler with a drop directory, not a member of the stack's credential-holding set
+(FR25).
+
+**Why the logs are mounted at all.** FR23 requires the target version to come from the running Liquid,
+and there is no credential-free way to ask it over the network: every `/nifi-api` endpoint that names
+a version answers `401`, the UI carries none, and `docker exec` is not available to a container that
+NFR4 keeps away from the socket. Liquid does record it, once per start, in
+`nifi-app*.log`: `Starting NiFi 2.11.0 using Java 21.0.12+10-LTS`. So the builder reads that line, and
+requires Liquid to answer on its HTTPS port before it trusts it — a log line alone would still be
+readable after Liquid had been stopped, and would then describe something that is not running. The
+mount is read-only and holds no credentials; a NiFi log is a record of flows and startups.
+
+To be exact about what the log route is and is not avoiding: `LIQUID_USERNAME`, `LIQUID_PASSWORD` and
+`LIQUID_KEYSTORE_PASSWORD` are fixed defaults in `.env` and are not secrets unless an operator changes
+them, so the choice was never about protecting a password. It is about moving parts. An authenticated
+call would mint a token, carry a credential the builder otherwise has no use for, and go stale the day
+someone does change one — and it would return the same two facts the startup line already carries,
+NiFi's version and Java's. B1-1 and B1-12 match on key *names* (`PASSWORD`, `SECRET`, `TOKEN`, `_KEY`),
+which over-approximates deliberately: it costs nothing while the builder needs none of them, and it is
+the guard that would notice a deploy key arriving later.
+
+**One thing the computed version does not settle.** NiFi 2.11.0 ships `nifi-api-2.10.0.jar`: the API
+artifact is versioned separately from the distribution, and its bundled version cannot be read from
+outside the container at all. The synthesised project therefore compiles against `nifi-api` at the
+NiFi version it read, and — this is the part that matters — the parent pom manages `nifi-api` and
+`slf4j-api` as `provided`, so **neither is bundled into the NAR** and the framework's own copy is the
+one that loads. The first synthesised pom did bundle them, and B1-5 caught it.
+
+**Amended 2026-09-03, on review: two things above are wrong, and the second matters.**
+
+*The bundled version can be read.* Not from the container, but from Maven: `nifi-utils` at the
+distribution's version resolves `nifi-api` to whatever NiFi itself was built against. The evidence is
+in the cache this milestone created — `volumes/nar_builder/m2/org/apache/nifi/nifi-api/` holds both
+`2.10.0` and `2.11.0`, the first pulled transitively through `nifi-utils:2.11.0` and the second by the
+explicit pin. So the correct version is computable after all, by resolution rather than by inspection.
+
+*And the exposure is not only the loud one.* The run recorded the case where `nifi-api` at the target
+version cannot be resolved, which fails at build time with `Could not resolve dependencies` — loud,
+and easy to give a next step. It did not record the other: the version **resolves and is newer than
+the one that loads**. A processor calling a method the newer API added then compiles cleanly and dies
+at runtime with `NoSuchMethodError`, when someone runs the flow. That is silent at build time, which
+is the failure class FR23 exists to prevent, so recording only the loud half understates it.
+
+It is harmless today, and for a reason worth stating rather than trusting: NiFi raises `nifi-api` only
+when the API changes, so 2.11.0 shipping `nifi-api-2.10.0` *is* the statement that nothing changed.
+The hole opens on the first release where the two move apart and the newer artifact exists.
+
+*What to do, when M-B2 is specified.* The run framed this as a choice between pinning the version
+(explicit, but knowably not the one that loads) and taking it transitively (correct, but implicit).
+The choice is false: **explicit means stated, not pinned.** The builder can resolve `nifi-api` through
+`nifi-utils`, write *that* version into the pom, and print it in the success line. Computed, written
+down, correct and reported — all four, with nothing traded. The explicit value stays as the fallback
+for a project that does not depend on `nifi-utils`, and B1-6's own-`pom.xml` path remains the escape
+hatch for everything else. M-B2's cases should cover both failure modes, not only the loud one.
 
 What remains: a compromised or malicious dependency can read the source being compiled, write
 anything into the drop directory, and reach the network. The third of those is inherent to Maven and
@@ -154,7 +208,7 @@ two features' runs stay comparable. Wall clock is local time.
 
 | Milestone | Turns used / bound | Wall clock | Files touched | Evaluator passed something untrue? | Manual rework after the goal | Plan changed? | Had to be reconstructed? |
 |---|---|---|---|---|---|---|---|
-| M-B1 | | | | | | | |
+| M-B1 | 55 / 45 | 2026-09-03 18:16–19:16 (local), 1h00 | 20: `compose.yml`, `config/nar_builder/{Dockerfile,build.sh,BuildServer.java,entrypoint.sh}`, `config/agents/bin/nar-build.sh`, `config/scripts/build/nar-builder.sh`, `scripts/linux/build.sh`, `config/nginx/templates/nginx.conf`, `CLAUDE.md`, 12 test files + `tests/lib/narfixture.ts`, `tests/verify/m-b1.sh`, this document, the test specification | No — the suite was run in the transcript and the two defects it found are recorded in B1-5 and B1-9 | Not yet run by the operator | No — the four fixed decisions held; one addition, the read-only `volumes/liquid/logs` mount, is declared in §3.2 | No |
 | M-B2 | | | | | | | |
 
 ---
@@ -169,6 +223,40 @@ it would guarantee the two copies drift.
 ---
 
 ## Appendix: goals as posed
+
+### M-B1 — outcome
+
+`./tests/run.sh m-b1` is green at 55 tests across 12 files, and `./tests/run.sh` at 306 + 27, so
+nothing in the git integration regressed. `./tests/verify/m-b1.sh` passes all eight checks of §4,
+including both negative controls: with `nar-build` truncated in place the build cases go red, and with
+`nar_builder` stopped they go red again. Built: the `nar_builder` service on
+`liquidupstart/nar-builder:latest` (a JDK 21 and Maven image from `config/nar_builder/`, the fifth
+image this stack builds), `nar-build` on the `PATH` of every service that carries `git-repo-info`, and
+an `nginx` block at `nar-builder.localhost` so the command reaches the builder through the `proxy`
+with a `Host:` header. Nothing was added to `.env`.
+
+**The four fixed decisions all held, and one thing had to be added.** There is no credential-free way
+to ask a running NiFi for its version — every `/nifi-api` route that names one answers `401` — so the
+builder mounts `volumes/liquid/logs` read-only and reads the line Liquid writes when it starts,
+`Starting NiFi 2.11.0 using Java 21.0.12+10-LTS`, having first required Liquid to answer on its HTTPS
+port so the line describes something that is running. That mount is declared in §3.2 rather than left
+implicit, which is what NFR7 asks for.
+
+**Two defects the cases caught, both of the kind this feature is about.** The first synthesised pom
+bundled `nifi-api-2.10.0.jar` and `slf4j-api` into the NAR, dragged in transitively by `nifi-utils`:
+a NAR carrying its own copy of the API the framework provides is exactly the silently-broken artifact
+FR23 exists to prevent. B1-5 found it by looking inside the archive; the parent pom now manages both
+as `provided`. The second was in a case rather than in the code: B1-9 counted Maven's downloads with
+`grep -c '^Downloading from'` while Maven prints `[INFO] Downloading from `, so the count was always
+zero and the cache assertion proved nothing. It was found by deleting one artifact from the cache and
+watching the count stay at zero — the check a green test cannot make for itself.
+
+**What is not done here, deliberately.** §6.4 of the `liquid` skill still opens with "Build the
+NAR(s)" and does not mention `nar-build`; documenting the deployment cycle, and the restart that
+belongs to the operator, is M-B2. NiFi ships `nifi-api` on its own version line — 2.11.0 bundles
+`nifi-api-2.10.0.jar` — and that bundled version cannot be read from outside the container, so the
+build compiles against `nifi-api` at the NiFi version it read. It is never bundled, so the framework's
+copy is the one that loads; §3.2 says so and it is the one open question this milestone leaves.
 
 ### M-B1 — the NAR builder · posed 2026-09-03
 
