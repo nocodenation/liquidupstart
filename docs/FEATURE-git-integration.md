@@ -485,6 +485,11 @@ and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving earlier milestones
 not regressed.
 ```
 
+**A goal condition is capped at 4000 characters.** M-B2's first draft was 4263 and was refused, which
+is a fact about the tool rather than about the milestone and is written here so the next one is
+drafted against it rather than discovering it. It also disciplines the form: everything in a goal
+either constrains the work or is decoration, and 4000 characters is generous for the first.
+
 Each milestone's goal is written into this form **immediately before it runs**, not up front: a goal
 text is only as good as its knowledge of the current state, and every milestone settles decisions
 the next one depends on — the workspace path in M-A1 is decided *by* M-A1. Only one goal can be

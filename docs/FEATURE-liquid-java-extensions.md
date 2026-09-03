@@ -389,75 +389,64 @@ covers the documentation the development rules require, not the code alone.
 ### M-B2 — the deployment cycle · posed 2026-09-03
 
 ```
-/goal Implement M-B2 from docs/FEATURE-liquid-java-extensions.md: the deployment
-cycle, and the API it is built against. The acceptance criteria are cases B2-1 to
-B2-9 in section 3 of docs/TEST-SPEC-liquid-java-extensions.md, signed off on
-2026-09-03. Write those tests first, then make them pass. B2-10 is manual and
-must not be automated.
+/goal Implement M-B2 from docs/FEATURE-liquid-java-extensions.md. Acceptance is
+cases B2-1 to B2-9 in section 3 of docs/TEST-SPEC-liquid-java-extensions.md,
+signed off 2026-09-03. Write those tests first, then make them pass. B2-10 is
+manual and must not be automated.
 
 Note the wall-clock time before your first action, and report elapsed time and
 turn count when the goal completes.
 
-Three things, and the first is the one the outline did not anticipate.
+Three things.
 
-M-B1 compiles against the wrong nifi-api. It reads NiFi 2.11.0 from Liquid and
-pins nifi-api to 2.11.0, while the distribution ships and loads
-nifi-api-2.10.0.jar. Resolve nifi-api through org.apache.nifi:nifi-utils at the
-NiFi version read, write THAT into the generated project, and print it in the
-success output alongside the NiFi and Java versions. Explicit means stated, not
-pinned -- that is the decision, and it is not open. The explicit value stays as
-the fallback for a project that does not depend on nifi-utils, and B1-6's
-own-pom.xml path remains the escape hatch. Evidence the resolution works is
-already on disk: volumes/nar_builder/m2/org/apache/nifi/nifi-api/ holds 2.10.0
-and 2.11.0, the first pulled transitively.
+1. M-B1 compiles against the wrong nifi-api: it reads NiFi 2.11.0 from Liquid and
+pins nifi-api to 2.11.0, while the distribution ships and loads 2.10.0. Resolve
+nifi-api through org.apache.nifi:nifi-utils at the NiFi version read, write that
+into the generated project, and print it beside the NiFi and Java versions.
+Explicit means stated, not pinned -- that decision is not open. The read version
+stays as the fallback when nifi-utils is absent; B1-6's own-pom.xml path remains
+the escape hatch. The resolution demonstrably works: M-B1's cache already holds
+nifi-api 2.10.0 and 2.11.0, the first pulled transitively.
 
-Liquid's entrypoint swallows its own failure. config/liquid/entrypoint.sh copies
-every *.nar from nar_extensions into lib/ and ends the copy with `|| true`, so a
-failure is discarded and Liquid starts without the processor with nothing to
-read. Make the failure reported. Whether Liquid should then start anyway is a
-decision B2-6 leaves to this milestone: take it, and write it down with the
-reason -- do not let it fall out of the implementation unstated.
+2. config/liquid/entrypoint.sh copies every *.nar from nar_extensions into lib/
+and ends the copy with `|| true`, so a failure is discarded and Liquid starts
+without the processor with nothing to read. Make the failure reported. Whether
+Liquid should then start anyway is a decision B2-6 leaves to you: take it and
+write it down with the reason, rather than letting it fall out of the code.
 
-**config/liquid/entrypoint.sh is COPYed into the image, not mounted.** B2-5 and
-B2-6 read the file as text, so they will pass while the running container still
-executes the old script. The milestone therefore also rebuilds
-liquidupstart/liquid:latest (config/scripts/build/liquid.sh) and recreates the
-container, and the section 4 procedure must read the entrypoint from INSIDE the
-running container and compare it with the file on disk. A green contract test
-over a file the container does not run is exactly the failure this feature exists
-to remove.
+That file is COPYed into the image, not mounted. B2-5 and B2-6 read it as text,
+so they pass while the container still runs the old script. So also rebuild
+liquidupstart/liquid:latest (config/scripts/build/liquid.sh) and recreate the
+container, and have the section 4 procedure read the entrypoint from inside the
+running container and compare. A green test over a file the container does not
+run is the failure this feature exists to remove.
 
-Then the documentation. Section 6.4 of config/agents/skills/liquid/SKILL.md tells
-an agent how to deploy a NAR and opens with "1. Build the NAR(s)", a step that had
-nowhere to happen until M-B1 and is still not named. Make it one path from source
-to processor: nar-build, the drop directory, the restart. Say the restart is the
-operator's AND why -- it interrupts every running flow. A rule without its reason
-is one an agent may reasonably decide does not apply. Additive to that section;
-change nothing else in the skill.
+3. Section 6.4 of config/agents/skills/liquid/SKILL.md opens with "1. Build the
+NAR(s)" and never says how. Make it one path: nar-build, the drop directory, the
+restart. Say the restart is the operator's and why -- it interrupts every running
+flow. A rule without its reason is one an agent may decide does not apply.
+Additive to that section; change nothing else in the skill.
 
-Two things not to do. Do not put the restart in the suite: it is deterministic
-but it interrupts every running flow, which is why it is a check in section 4
-instead. And add nothing to .env -- if something appears to need a key there, stop
-and say so.
+Do not put the restart in the suite; it belongs in section 4 because it
+interrupts running flows. Add nothing to .env -- if something seems to need a key
+there, stop and say so.
 
-Checks 4 and 5 of the section 4 procedure are a pair: one shows the NAR reaching
-lib/, the other shows it failing to arrive when the drop directory is empty.
-Neither means anything alone. Keep them together in tests/verify/m-b2.sh, written
-in the form of tests/verify/m-b1.sh -- the checks in order, each judged, everything
-it moves restored including on Ctrl-C, a log and a pull-request comment written to
-.pr-drafts/. m-b1.sh's negative controls name the cases that must go red AND the
-cases that must stay green, derived from the sources rather than from a run; do
-the same here.
+Write tests/verify/m-b2.sh in the form of tests/verify/m-b1.sh: checks in order,
+each judged, everything restored including on Ctrl-C, a log and a pull-request
+comment in .pr-drafts/. Its negative controls must name the cases that go red and
+the cases that stay green, derived from the sources rather than from a run.
+Checks 4 and 5 are a pair -- one shows the NAR reaching lib/, the other shows it
+failing to arrive when the drop directory is empty -- and neither means anything
+alone.
 
-Record the outcome where the next session will find it, not only in this chat: the
-process log row in section 5 of the feature document, an outcome paragraph in this
-appendix, and each case's "What it found" block.
+Record the outcome where the next session will find it, not only in this chat:
+the process log row in section 5, an outcome paragraph in the appendix, and each
+case's "What it found" block.
 
 Search the codebase before assuming anything is missing; full implementations
 only, no placeholders.
 
-Done when `./tests/run.sh m-b2; echo EXIT=$?` is visible in this transcript with
-EXIT=0, and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0. Or stop after 50
-turns -- the bound has been exceeded three times in the same direction, so this
-one is set where M-B1 actually landed rather than where it was hoped to.
+Done when `./tests/run.sh m-b2; echo EXIT=$?` shows EXIT=0 in this transcript and
+`./tests/run.sh; echo EXIT=$?` does too. Or stop after 50 turns -- a bound set
+where M-B1 landed, having been exceeded three times in the same direction.
 ```
