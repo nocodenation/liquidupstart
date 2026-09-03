@@ -37,6 +37,10 @@
  *           same clone, showing the clone, the identity and the commit all
  *           work and only the push is stopped. The `.env` value is synthetic on
  *           purpose: no real value is committed even to a local fixture.
+ * M-A6:     `beta.git` is cloned from the seed rather than pushed to. Inside
+ *           the container the hook governs every repository, so the seeding
+ *           push would now need the sanctioned path; A5-4 and A5-5 still
+ *           assert the same two refusals, which are evaluated before it.
  */
 import { test, expect, afterAll } from 'bun:test';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
@@ -77,13 +81,12 @@ const setup = inContainer(
 rm -rf ${PROBE}
 mkdir -p ${PROBE}
 cd ${PROBE}
-git init -q --bare --initial-branch=main beta.git
 git init -q -b main seed
 cd seed
 git config user.name Seed; git config user.email seed@local
 echo seed > README.md; git add README.md; git commit -qm seed
-git remote add origin ${REMOTE}; git push -q origin main
 cd ${PROBE}
+git clone -q --bare seed beta.git
 git clone -q ${REMOTE} work
 cd work
 git config liquidupstart.access write

@@ -91,6 +91,24 @@ If the operator explicitly asks you to look elsewhere, say plainly in your answe
 where the information came from and that it does not come from the repository
 itself.
 
+## Publishing: `git-publish`, and nothing else
+
+Work leaves this stack through one command. From inside the clone, on the branch you want
+published, run
+
+```bash
+git-publish
+```
+
+It reads what the repository was declared with, checks the branch, scans the commits it would
+send for credentials, and then pushes — or refuses with one message saying what to do instead.
+Branches you publish live under `agent/`: `git switch -c agent/<name>` before you start. A plain
+`git push` is refused by the guardrail hook whatever it carries, so there is nothing to weigh up
+here and nothing to assemble out of `git` primitives — `git-publish` or ask.
+
+This does not change who decides. The command publishes what the declaration permits; whether the
+operator wanted it published is not something any command can read. Ask first, as below.
+
 ## What you must ask the operator for
 
 **Pushing.** Never push unasked — not to any branch, not even one you created. Do the

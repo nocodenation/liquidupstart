@@ -238,3 +238,68 @@ export function remoteHas(fx: HookFixture, ref: string): boolean {
 export function remoteFile(fx: HookFixture, ref: string, path: string): string {
   return git(fx.remote, ['show', `${ref}:${path}`]).stdout;
 }
+
+export const publishCommand = join(repoRoot, 'config/agents/bin/git-publish.sh');
+export const PUBLISH_TOKEN = 'liquidupstart-publish';
+export const PUBLISH_MOUNT = '/usr/local/bin/git-publish';
+
+export function tokenPath(clone: string): string {
+  return join(clone, '.git', PUBLISH_TOKEN);
+}
+
+export function sanction(clone: string): void {
+  writeFileSync(tokenPath(clone), 'fixture-minted\n');
+}
+
+export function hasToken(clone: string): boolean {
+  return existsSync(tokenPath(clone));
+}
+
+export function publish(clone: string, args: string[] = []): Result {
+  const p = Bun.spawnSync([publishCommand, ...args], {
+    cwd: clone,
+    env: { ...(process.env as Record<string, string>), ...FIXTURE_IDENTITY, LC_ALL: 'C' },
+    stdout: 'pipe',
+    stderr: 'pipe'
+  });
+  const stdout = p.stdout ? p.stdout.toString() : '';
+  const stderr = p.stderr ? p.stderr.toString() : '';
+  return { code: p.exitCode ?? -1, stdout, stderr, output: stdout + stderr };
+}
+
+export function publishFixture(
+  opts: { prefix?: string; access?: string; policy?: string } = {}
+): HookFixture {
+  const root = mkdtempSync(join(tmpdir(), opts.prefix ?? 'lu-a6-'));
+  const remote = join(root, 'beta.git');
+  const seed = join(root, 'seed');
+  const clone = join(root, 'work');
+
+  sh(['git', 'init', '-q', '--bare', '--initial-branch=main', remote], root);
+  mkdirSync(seed, { recursive: true });
+  sh(['git', 'init', '-q', '-b', 'main', seed], root);
+  git(seed, ['config', 'user.name', 'Seed']);
+  git(seed, ['config', 'user.email', 'seed@local']);
+  commit(seed, { 'README.md': 'seed\n' }, 'seed');
+  git(seed, ['remote', 'add', 'origin', remote]);
+  const pushed = git(seed, ['push', '-q', 'origin', 'main']);
+  if (pushed.code !== 0) throw new Error(`fixture seed push failed: ${pushed.output}`);
+
+  sh(['git', 'clone', '-q', remote, clone], root);
+  git(clone, ['config', 'user.name', 'Fixture']);
+  git(clone, ['config', 'user.email', 'fixture@local']);
+  git(clone, ['config', 'commit.gpgsign', 'false']);
+  git(clone, ['config', 'liquidupstart.access', opts.access ?? 'write']);
+  git(clone, ['config', 'liquidupstart.policy', opts.policy ?? 'protected']);
+  git(clone, ['config', 'core.hooksPath', hooksSource]);
+
+  return { root, remote, clone };
+}
+
+export const FIXTURE_PRIVATE_KEY =
+  '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAFIXTURENOTAREALKEY\n-----END OPENSSH PRIVATE KEY-----\n';
+
+export function pushSanctioned(clone: string, args: string[]): Result {
+  sanction(clone);
+  return git(clone, ['push', ...args]);
+}

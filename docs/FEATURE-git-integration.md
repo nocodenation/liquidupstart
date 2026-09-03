@@ -589,7 +589,7 @@ trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 | M-A3e | 25 / 25 to both runs green, 36 in total | 12 min (11:30–11:43) | 3 changed, 8 new | No — both required runs shown with their exit codes; the system case was seen red at 127 before the mount existed | None; no defects surfaced during the run | No — the seven cases were implementable as signed off | Nothing missing. Orientation cost roughly four turns: the manifest shape, the skill, the existing suite conventions and which interpreters the two images actually carry. **The turn bound was met for the goal and exceeded for the record**: the two required runs were green at turn 25, and writing this row, the outcome above and the seven "what it found" blocks took eleven more. The bound counts the build; the documentation the rules require sits outside it |
 | M-A4 | 46 to both gates green, ~55 in total — **the bound was exceeded** | 32 min (12:53–13:25) | 3 changed (2 of them earlier milestones' tests), 8 new | No — both required runs shown with their exit codes, and the hook was seen to fail seven ways with the file moved aside | One finding, in the guardrail rather than in a test: GitHub's read-only deploy key answers before `pre-push` runs, so the signed-off system case proved the remote's rule and not this stack's | Yes — A4-14 needed a second half to test what it was written to test, and A4-4 and A4-11 turned out to be one rule stated from two sides | Fresh session. Orientation cost roughly six turns: the two documents, the existing suite's conventions, the start script, and a probe of git itself to settle whether `pre-push` runs at all for a push git will reject — it does, which the whole of A4-4 and A4-11 depends on. **The turn bound was met for the build and missed overall**: the milestone suite was green at turn 31 and the full suite at turn 46, after two unrelated tests from earlier milestones had to be dealt with; the sixteen "what it found" blocks, the outcome above and this row took nine more. M-A3e recorded the same shape, and the bound has now been wrong twice in the same direction |
 | M-A5 | 11 to both gates green, 14 in total | ~9 min (08:00–08:09) | 1 changed, 5 new | No — both required runs shown with their exit codes, and A5-4 and A5-5 were seen red with the hook moved aside before the suite was called green | None; one test defect (a line-wrap mismatch in A5-7) fixed during the run, no product defect surfaced | No — the eight cases were implementable as signed off; A5-6 changed file, not substance | Fresh session. Orientation cost roughly five turns: the two documents, the hook, the start script, the fixture library and the M-A4 tests it builds on. Nothing reported missing. **The turn bound held for the whole cycle** for the first time since M-A3d: both gates at turn 11, the documentation by turn 14, against a bound of 35 that had been set with the previous two overruns in view |
-| M-A6 | | | | | | | |
+| M-A6 | 27 to both gates green, 34 in total | 25 min (13:50–14:15 CEST; the run reported it as 11:50–12:15, which is UTC — every other row here is local time, so the row read as if M-A6 preceded M-A5's verification) | 13 changed (7 of them earlier milestones' tests and fixtures, 2 of them the documents), 9 new | No — both required runs are in the transcript with their exit codes, and the seven §9 checks were run, including the three negative controls | None in the product. Three defects found by the new cases themselves: an M-A4 refusal that named no next step, the container fixtures' seeding push, and a negative control that moved one of the hook's two copies | No — the twelve automated cases were implementable as signed off; §9 changed in three places to match what the milestone actually made true | Fresh session. Orientation cost roughly seven turns: the two documents, the hook, the fixture library, the M-A4 and M-A5 tests it builds on, and the compose mounts. Nothing reported missing. **The turn bound held**: both gates at turn 27 of 40, the verification script and the documentation by turn 34 |
 | M-B1 | | | | | | | |
 | M-B2 | | | | | | | |
 
@@ -1669,3 +1669,41 @@ EXIT=0, and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving earlier
 milestones have not regressed. Or stop after 40 turns -- that bound covers the
 documentation the development rules require, not the code alone.
 ```
+
+**Outcome, 2026-09-03.** Built as posed, both gates green: `./tests/run.sh m-a6` at 34 cases across
+seven files, and the full suite at 251 plus the dashboard's 27. Three artifacts, as the goal named
+them: `config/agents/bin/git-publish.sh`, mounted read-only at `/usr/local/bin/git-publish` in the
+three services that already carry `git-repo-info`; one rule at the end of `pre-push`; one section in
+the git skill. The four decisions held without amendment.
+
+**As built.** The proof of passage is `.git/liquidupstart-publish` inside the clone — written by the
+command immediately before it pushes, removed by the hook the moment it accepts a ref, and removed by
+the command as well if the push is rejected, so a refused push leaves no permission behind. It is per
+clone, and it is forgeable by anything that can write into `.git`, which in these containers is
+everything: §3.1 is unchanged and the file is chosen because forging it is a deliberate act with a
+trace, not because it cannot be forged. The namespace is fixed at `agent/**` in the command, with the
+default branch admitted wherever the policy is not `protected`, which is what keeps content mode
+whole. The refusals number sixteen — seven in the hook, nine in the command; the closing report said
+fourteen, six and eight, and the sources say otherwise. A6-11 reads them out of the two files rather
+than from a list, and deliberately asserts a floor rather than an exact count, so adding a refusal
+cannot break it — which is also why the miscount could stand in the prose while the case stayed green.
+
+**Three things the milestone found, none of them predicted.** A6-11 caught a refusal M-A4 had written
+that ended at *"then push again"* and named no command; it now names `git rm --cached <path>`, and no
+earlier case had ever looked at that message. A6-12 caught that inside the container `/etc/gitconfig`
+governs *every* repository, so the system fixtures' own seeding push was refused by the new rule —
+they clone their bare remote from the seed now, and §9's check 3 with them. And the negative control
+for the hook has two files to move, not one: the source the host cases point at and the copy the
+start script installs, which is what the containers read. The M-A5 form of that check moved only the
+installed copy, correctly, because every case it governed was a system case; here it would have
+proved half of what it claims, and §9 now says so.
+
+**What it cost the earlier milestones.** Seven M-A4 cases that push successfully now mint the token
+first, through one helper, with the reason in each file's header; two container fixtures seed by
+cloning. No assertion was removed or weakened, and every refusal those cases assert is still the
+M-A4 rule it names — which is exactly what A6-9 exists to keep true.
+
+**Still open:** A6-13, the manual case, and the independent verification. `./tests/verify/m-a6.sh`
+runs §9's seven checks and reported all seven green on 2026-09-03, but it is written by the same hand
+as the tests it checks: its worth rests on checks 4, 6 and 7, and where a check is in doubt the
+copy-and-paste form in §9 is the one to run.

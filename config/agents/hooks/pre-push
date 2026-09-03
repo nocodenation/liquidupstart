@@ -65,18 +65,28 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         .env|.env.*)
           say "pre-push refused: commit $(git rev-parse --short "$commit") adds ${path}."
           say "A .env file holds this stack's credentials, and a remote never forgets what reaches it."
-          say "Take it out of the history you are pushing, then push again."
+          say "Take it out of the history you are pushing — git rm --cached ${path}, commit, and publish again."
           exit 1
           ;;
       esac
       if git show "${commit}:${path}" 2>/dev/null | grep -q -- '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'; then
         say "pre-push refused: commit $(git rev-parse --short "$commit") adds ${path}, which contains a private key."
         say "A key that reaches a remote is a key to replace, so it is refused before the push rather than after."
-        say "Take it out of the history you are pushing, then push again."
+        say "Take it out of the history you are pushing — git rm --cached ${path}, commit, and publish again."
         exit 1
       fi
     done
   done
+
+  token="$(git rev-parse --absolute-git-dir)/liquidupstart-publish"
+  if [ -f "$token" ]; then
+    rm -f "$token"
+  else
+    say "pre-push refused: this push did not come through git-publish."
+    say "git-publish is the one way work leaves this stack: it reads the declaration, checks the branch namespace, scans the commits for credentials, and then pushes."
+    say "Run git-publish from this clone instead of git push, and report what it says."
+    exit 1
+  fi
 done
 
 exit 0

@@ -28,6 +28,11 @@
  * connection — before pre-push runs. The guarantee holds (nothing reaches main)
  * but the refusal is GitHub's, not this stack's, so it proves nothing about the
  * hook. The second half was added to prove what the case is actually for.
+ * M-A6:     The bare remote is cloned from the seed rather than pushed to.
+ *           Inside the container every repository is governed, so a seeding
+ *           push would itself need the sanctioned path M-A6 installed; the
+ *           refusal this case asserts is unchanged, and still the policy
+ *           rule, because that rule is evaluated before the path rule.
  */
 import { test, expect } from 'bun:test';
 import { inContainer } from '../lib/stack';
@@ -73,13 +78,12 @@ test('A4-14 a clone made inside the container is governed, and its protected def
 rm -rf /repos/.a4-probe.*
 probe=/repos/.a4-probe.$$
 mkdir -p "$probe"; cd "$probe"
-git init -q --bare --initial-branch=main remote.git
 git init -q -b main seed
 cd seed
 git config user.name Probe; git config user.email probe@local
 echo seed > README.md; git add README.md; git commit -qm seed
-git remote add origin ../remote.git; git push -q origin main
 cd "$probe"
+git clone -q --bare seed remote.git
 git clone -q remote.git work
 cd work
 git config user.name Probe; git config user.email probe@local

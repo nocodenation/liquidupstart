@@ -29,13 +29,25 @@ than tidied away.
   only when the whole feature is done.
 - **M-A0 to M-A4 are complete**, each verified independently by the operator. A4-15 was observed
   twice and failed; its question is carried into A5-10.
-- **M-A5 ran on 2026-09-03**: both gates green, uncommitted at the time of writing. Five test files
-  and one paragraph in the git skill. Its independent verification, the process-log row, and the
-  two manual cases A5-9 and A5-10 are still to be done by the operator.
-- The stack is up, `.env` declares `nocodenation/agent-skills` as `read|protected`, its deploy key is
-  registered on GitHub, and the clone sits at `volumes/repos/agent-skills`. **No write-capable
-  repository is declared yet** — the automated M-A5 cases prove the write path against local bare
-  repositories, and declaring the real `liquidupstart` is A5-9, the operator's step.
+- **M-A5 ran on 2026-09-03**: both gates green. A5-9 was done — `liquidupstart` is declared
+  `write|protected` with a write-enabled key — and A5-10 then failed for the third time and is
+  **closed and superseded by A6-13**: over the branch rule a well-behaved agent complies before the
+  hook can run, so there is nothing left to observe.
+- **M-A6 ran on 2026-09-03**: both gates green, uncommitted at the time of writing, and
+  `./tests/verify/m-a6.sh` green on all seven checks. Publishing is now narrowed to one command,
+  `git-publish` (`config/agents/bin/git-publish.sh`, mounted at `/usr/local/bin/git-publish` in the
+  three agent services); `pre-push` gained one rule, evaluated **last**, refusing any push that did
+  not come through it. The proof of passage is a single-use file, `.git/liquidupstart-publish`,
+  written by the command and consumed by the hook — forgeable by root, and the specification says so.
+  **A raw `git push` inside a container is now refused, in every repository the containers see**,
+  including scratch ones an agent makes itself; two earlier system fixtures had to seed their bare
+  remote by cloning because of it. The operator's independent verification and **A6-13** — the case
+  A5-10 could not reach — are still open.
+- The stack is up and `.env` declares two repositories: `nocodenation/agent-skills` as
+  `read|protected` and, since A5-9, `nocodenation/liquidupstart` as `write|protected`, each with its
+  deploy key registered on GitHub and its clone under `volumes/repos/`. The write-capable declaration
+  is what makes A6-13 runnable against a real remote; the automated cases still use local bare
+  repositories and reach nothing outside the machine.
 - `volumes/repos/csv-columns` is a leftover from the A2-5 observation. Leave it: A4-16 uses it as a
   clone the feature did not create.
 
@@ -84,12 +96,13 @@ blocks a milestone; it exists so that deferring stays a decision rather than an 
 
 ## Next
 
-1. M-A5: verify independently (§9 of the test specification), fill the process log row, commit.
-2. **A5-9**, manual: declare `liquidupstart` as `write|protected`, register the key with write
-   access, have an agent push `agent/probe`, delete the branch afterwards.
-3. **A5-10**, manual: the A4-15 question asked where the hook itself refuses. The last open question
-   from §3.1.
-4. **Track B** — `nar_builder` for Java processors, independent of all the above.
+1. M-A6: verify independently — `./tests/verify/m-a6.sh`, or §9's copy-and-paste form where a check
+   is in doubt — post the draft in `.pr-drafts/M-A6-verification.md` to PR #9, and commit.
+2. **A6-13**, manual, in a fresh OpenClaw session: the procedure and the verbatim prompt are in §9.
+   It is the fourth attempt at the question A4-15 and A5-10 never reached, and the first arrangement
+   in which the refusal cannot be pre-empted, because no declared value announces the secret scan.
+   The pass and the fail leave the same remote state; what is judged is what the agent said.
+3. **Track B** — `nar_builder` for Java processors, independent of all the above.
 
 Open questions are §6 of the feature document. O1 (gating push on the privacy profile) becomes real
 only when `feature/privacy-gateway` merges.

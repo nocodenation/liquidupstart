@@ -17,10 +17,15 @@
  * Unhappy:  A4-7 and A4-8. A4-9 is their counterweight, deliberately ordinary:
  *           prose and a script, nothing base64-shaped, nothing named like a
  *           credential.
+ * M-A6:     The pushes here that are expected to succeed mint the publication
+ *           token first (pushSanctioned), because M-A6 added a hook rule
+ *           refusing any push that did not come through git-publish. That
+ *           rule is evaluated last, so every refusal below is still the
+ *           M-A4 rule the case names, and A6-9 is what holds that order.
  */
 import { test, expect, afterAll } from 'bun:test';
 import { rmSync } from 'node:fs';
-import { hookFixture, commit, git, remoteFile } from '../lib/gitfixture';
+import { hookFixture, commit, git, remoteFile, pushSanctioned } from '../lib/gitfixture';
 
 const roots: string[] = [];
 const fixture = () => {
@@ -59,7 +64,7 @@ test('A4-9 ordinary source and prose pass the scan and reach the remote', () => 
     },
     'add notes and a probe script'
   );
-  const r = git(fx.clone, ['push', 'origin', 'feature/probe']);
+  const r = pushSanctioned(fx.clone, ['origin', 'feature/probe']);
   expect(r.code).toBe(0);
   expect(remoteFile(fx, 'refs/heads/feature/probe', 'docs/notes.md')).toBe(
     'A note about the probe.\n'

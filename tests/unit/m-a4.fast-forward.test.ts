@@ -18,10 +18,15 @@
  * Covers:   A4-4, A4-5, U4
  * Unhappy:  A4-4. A4-5 is its counterweight and carries the same `--force`, so
  *           the difference between them is the history, not the flag.
+ * M-A6:     The pushes here that are expected to succeed mint the publication
+ *           token first (pushSanctioned), because M-A6 added a hook rule
+ *           refusing any push that did not come through git-publish. That
+ *           rule is evaluated last, so every refusal below is still the
+ *           M-A4 rule the case names, and A6-9 is what holds that order.
  */
 import { test, expect, afterAll } from 'bun:test';
 import { rmSync } from 'node:fs';
-import { hookFixture, commitOnRemote, commit, git, remoteSha, remoteHas } from '../lib/gitfixture';
+import { hookFixture, commitOnRemote, commit, git, remoteSha, remoteHas, pushSanctioned } from '../lib/gitfixture';
 
 const roots: string[] = [];
 const fixture = () => {
@@ -51,7 +56,7 @@ test('A4-4 a push that is not a fast-forward is refused, force flag or not', () 
 test('A4-5 a fast-forward push is allowed even when it carries --force', () => {
   const fx = fixture();
   const local = git(fx.clone, ['rev-parse', 'HEAD']).stdout.trim();
-  const r = git(fx.clone, ['push', '--force', 'origin', 'feature/probe']);
+  const r = pushSanctioned(fx.clone, ['--force', 'origin', 'feature/probe']);
   expect(r.code).toBe(0);
   expect(remoteHas(fx, 'refs/heads/feature/probe')).toBe(true);
   expect(remoteSha(fx, 'refs/heads/feature/probe')).toBe(local);

@@ -20,10 +20,15 @@
  * Unhappy:  A4-2. Its counterweights are A4-1 (another branch, same policy) and
  *           A4-3 (the same branch, the other policy), so a refusal is
  *           attributable to the one setting each case names.
+ * M-A6:     The pushes here that are expected to succeed mint the publication
+ *           token first (pushSanctioned), because M-A6 added a hook rule
+ *           refusing any push that did not come through git-publish. That
+ *           rule is evaluated last, so every refusal below is still the
+ *           M-A4 rule the case names, and A6-9 is what holds that order.
  */
 import { test, expect, afterAll } from 'bun:test';
 import { rmSync } from 'node:fs';
-import { hookFixture, commit, git, remoteSha, remoteHas } from '../lib/gitfixture';
+import { hookFixture, commit, git, remoteSha, remoteHas, pushSanctioned } from '../lib/gitfixture';
 
 const roots: string[] = [];
 const fixture = () => {
@@ -35,7 +40,7 @@ afterAll(() => roots.forEach((r) => rmSync(r, { recursive: true, force: true }))
 
 test('A4-1 a feature branch under a protected policy is pushed without a word from the hook', () => {
   const fx = fixture();
-  const r = git(fx.clone, ['push', 'origin', 'feature/probe']);
+  const r = pushSanctioned(fx.clone, ['origin', 'feature/probe']);
   expect(r.code).toBe(0);
   expect(remoteHas(fx, 'refs/heads/feature/probe')).toBe(true);
   expect(r.output).not.toContain('pre-push');
@@ -60,7 +65,7 @@ test('A4-3 the default branch under a direct policy is allowed, as content mode 
   git(fx.clone, ['checkout', '-q', 'main']);
   commit(fx.clone, { 'notes.md': 'probe\n' }, 'add probe note');
   const local = git(fx.clone, ['rev-parse', 'HEAD']).stdout.trim();
-  const r = git(fx.clone, ['push', 'origin', 'main']);
+  const r = pushSanctioned(fx.clone, ['origin', 'main']);
   expect(r.code).toBe(0);
   expect(remoteSha(fx, 'refs/heads/main')).toBe(local);
 });
