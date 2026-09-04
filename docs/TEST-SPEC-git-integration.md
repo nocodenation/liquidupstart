@@ -2156,6 +2156,108 @@ produce the same remote state — the secret is not published either way — and
 whether the agent said what it did. That is the property worth measuring at this point in the
 feature, and it is why the case records a transcript rather than a verdict.
 
+### M-A7 — the paths nothing walks
+
+Counted on 2026-09-04, the suite is 117 contract, 106 unit, 52 system, 44 integration and 26 component
+tests, and **no end-to-end test at all**. The whole path — declare, key, clone, hook, commit, publish
+— exists only in A5-9 and A6-13, which are manual observations of an agent rather than tests of the
+mechanism. Every link is proven and the chain is not, which is not the same thing: a chain fails at
+its joints, and no case in this suite has ever looked at one.
+
+**Decisions taken while writing these cases:**
+
+*The chain runs against a local bare remote, not GitHub.* A5-9 already proves the real remote once, by
+hand, and it leaves a branch that only the operator can remove. What is untested is the joins, and a
+local bare repository exercises every one of them identically — the hook reads the clone's own
+configuration, not the host's.
+
+*Concurrency is tested where the mechanism is actually shared.* Two clones do not share the proof of
+passage: it lives at `.git/liquidupstart-publish` inside each. One clone publishing twice does, and
+that is the case worth having — the token is single-use precisely so one push cannot travel on
+another's permission (FR18, A6-8), and a second publication starting before the first has finished is
+the arrangement A6-8 could not create.
+
+*Cold start cannot be automated, and that is a property of the stack rather than a gap in the suite.*
+`compose.yml` fixes 23 container names and the project runs one instance per host, so a test cannot
+stand up a second stack beside the operator's; and a test that tore down the running one would destroy
+NextCloud, OpenProject and every volume in the process. It is therefore a **manual** case with a
+written procedure, run when the operator is willing to rebuild. Recording why is worth more than a
+test that pretends.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A7-1 | **End-to-end** | The whole path in one chain, in the container | Declaration to published commit without a step being simulated: the clone the start made, the hook it installed, the identity it configured, `git-publish` |
+| A7-2 | **End-to-end** **unhappy** | The same chain aimed at the protected default branch | Refused by the hook, in its own words, and the remote unchanged — the chain stops where it should rather than at its end |
+| A7-3 | Integration | Two clones publishing at the same time | Both land. They share no token, and the case exists to prove that rather than to assume it |
+| A7-4 | Integration **unhappy** | One clone, two publications overlapping | The second does not travel on the first's permission. Either it mints its own or it is refused; what must not happen is a push admitted by a token it did not create |
+| A7-5 | **Manual** | A cold start from a clean checkout | Build, start, and the workspace, keys, clones, hook and commands are all there — the path every new operator takes first, and the only one nothing has ever run |
+
+#### Detail per case
+
+**What this milestone is for.** To walk the joins. Eleven milestones have tested what each part does;
+none has tested that the parts hand over to each other.
+
+##### A7-1 — the chain, end to end
+
+| | |
+|---|---|
+| **Premise** | Every link has a case and the chain has none. The joins are where a feature of this shape fails: a key generated but not selected, a clone made but not configured, a hook installed but not reached, a command on the `PATH` that cannot see the clone. Each of those would leave every existing case green. |
+| **Component** | `git.sh`, the clone it makes, the hook it installs, and `git-publish`, driven from inside `openclaw-gateway`. |
+| **Test data** | A throwaway declaration naming one local bare repository, `git@localhost:e2e.git` in a temporary project directory, seeded with `README.md` holding `seed` on `main` and declared `write\|protected`. In the clone: `notes.md` holding `probe`, committed as `add probe note` on `agent/probe`. Nothing in this case touches the operator's `.env` or any real remote. |
+| **Steps** | Run the start script's git step against the throwaway declaration; assert the clone exists and carries `access`, `policy` and `core.hooksPath`; commit in the container; run `git-publish`; read the branch back out of the bare repository. |
+| **Expected** | The commit is on the bare remote under `agent/probe`, carrying the configured identity, and every intermediate state was produced by the stack rather than by the test. |
+| **Covers** | FR32, U1, U2, U3, U4. |
+
+##### A7-2 — the chain stops where it should
+
+| | |
+|---|---|
+| **Premise** | A chain test that only ever succeeds proves the happy path and hides the guard. This is the same chain with one thing changed, so a refusal here is attributable to the branch rule and not to the arrangement. |
+| **Component** | The same arrangement as A7-1. |
+| **Test data** | The A7-1 fixture, with the commit made on `main` and published from there. |
+| **Expected** | `git-publish` refuses, naming `main` and `protected`; the bare repository's `main` still holds `seed`; and `agent/probe` does not appear. |
+| **Covers** | FR32, §1.3, U4. |
+
+##### A7-3 — two clones do not interfere
+
+| | |
+|---|---|
+| **Premise** | The positive half of concurrency, and the one that says what "shared" means here. The proof of passage lives inside each clone's `.git`, so two clones have two tokens and should not see each other at all. That is a claim about the design, and it has never been checked. |
+| **Component** | Two clones of two local bare repositories. |
+| **Test data** | `alpha.git` and `beta.git`, each seeded as in A7-1, each with its own clone; a commit in each on `agent/probe`; both `git-publish` invocations started before either has returned. |
+| **Expected** | Both succeed. Each remote holds its own commit and neither holds the other's. |
+| **Covers** | FR33. |
+
+##### A7-4 — one clone, two publications, one permission each
+
+| | |
+|---|---|
+| **Premise** | The case A6-8 could not construct. A6-8 shows a *spent* token does not admit a second push; this asks what happens when the second publication begins before the first has finished, which is the only way one push can ride on a permission it did not create. It is the sharpest question the single-use design has to answer, and it has never been asked. |
+| **Component** | One clone, two overlapping `git-publish` invocations. |
+| **Test data** | The A7-1 fixture; two branches `agent/probe-1` and `agent/probe-2` committed in the same clone, published concurrently. |
+| **Expected** | Both branches reach the remote, or one is refused with a message naming what happened. **What must not happen** is a push accepted by a token another invocation minted — asserted by requiring each accepted push to correspond to a token that was created and then consumed, not by counting successes. |
+| **Failure** | A push that reached the remote without a token of its own, or a token left behind after both invocations returned. |
+| **Covers** | FR33, FR18. |
+
+##### A7-5 — a cold start · **manual**
+
+| | |
+|---|---|
+| **Premise** | The path every new operator takes first, and the only one nothing has ever run: a clean checkout, `.env` from the example, build, start. Every test in this suite runs against a stack that is already up and volumes that are already populated, so anything that only works because of a state an earlier run left behind is invisible to all of them. |
+| **Component** | The whole stack, from a clean checkout. |
+| **Why it is manual** | `compose.yml` fixes 23 container names and the project runs one instance per host, so no test can stand a second stack beside the operator's, and one that tore down the running stack would take NextCloud, OpenProject and every volume with it. The constraint is the stack's design, not an oversight in the suite, and it is recorded rather than worked around. |
+| **Test data** | The procedure is in §9 and names the steps and what to look for. |
+| **Expected** | After `build.sh` and `start.sh`: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, and `git-repo-info`, `git-publish` and `nar-build` answer inside the agent containers. |
+| **Covers** | FR32, NFR6, U1, U2, U7. |
+
+---
+
+A7-4 is the case most likely to be dismissed as theoretical. It is not: `git-publish` writes the token
+and then pushes, and nothing in between prevents a second invocation from writing it again or from
+finding one already there. Whether that is a defect depends on what the hook does with a token it did
+not expect, and nobody has looked. A concurrency case that finds nothing still converts an assumption
+into a fact.
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -2167,6 +2269,7 @@ feature, and it is why the case records a transcript rather than a verdict.
 | M-A3e | Unit for the command, both happy and unhappy; contract for the skill; system for the mount | The argument handling is real logic and is unit-tested on every path the cases name — declared, undeclared, failed clone, three URL forms — but it is a lookup, not a guardrail, so full branch coverage stays reserved for M-A4 |
 | **M-A4** | **100% branch coverage** | The only real decision logic, and it is the guardrail |
 | M-A5 | System + contract | Configuration and rules |
+| M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
 
 
@@ -2203,6 +2306,8 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR18 A push outside that path is refused | A6-6, A6-7, A6-8, A6-9, A6-13 |
 | FR19 Agent branches are recognisable | A6-3, A6-4 |
 | FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13 |
+| FR32 One test walks the whole path | A7-1, A7-2, A7-5 |
+| FR33 Concurrent publication is safe or refuses | A7-3, A7-4 |
 | NFR1 Credentials via `.env` | A1-9, A6-10 |
 | NFR2 Host-agnostic naming | A1-3, M-A3 |
 | NFR3 State under `volumes/` | A1-8, A6-5 |
@@ -3020,3 +3125,122 @@ docker compose exec -T openclaw-gateway sh -c 'cd /repos/liquidupstart &&
 
 Record the transcript or screenshots in the pull request either way — a pass and a fail are one
 sentence apart here, and a one-line verdict cannot carry the difference.
+
+---
+
+### M-A7 — the paths nothing walks
+
+Run at the project root with the stack up. Nothing here touches `.env`, GitHub, or the operator's
+clones; the chain builds its own throwaway declaration and local remotes.
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The milestone suite. Expect: EXIT=0
+./tests/run.sh m-a7; echo "EXIT=$?"
+
+# 2. No regression across everything before it. Expect: EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# 3. The chain by hand, bypassing the suite. Expect: PUBLISH EXIT=0 and the commit
+#    on the bare remote, every intermediate state produced by the stack.
+docker compose exec -T openclaw-gateway sh -lc '
+set -e; rm -rf /repos/.a7-hand; mkdir -p /repos/.a7-hand; cd /repos/.a7-hand
+git init -q --bare --initial-branch=main e2e.git
+git init -q -b main seed; cd seed; echo seed > README.md; git add README.md
+git -c user.name=Seed -c user.email=seed@local commit -qm seed
+git remote add origin ../e2e.git; git push -q origin main; cd ..
+git clone -q e2e.git work; cd work
+git config liquidupstart.access write; git config liquidupstart.policy protected
+git checkout -q -b agent/probe; echo probe > notes.md; git add notes.md
+git commit -qm "add probe note"
+set +e
+git-publish >/tmp/e2e.out 2>&1; echo "PUBLISH EXIT=$?"; tail -3 /tmp/e2e.out
+echo "ON REMOTE: $(git -C ../e2e.git log -1 --format=%s agent/probe 2>/dev/null || echo MISSING)"'
+
+# 4. The same chain aimed at main. Expect: non-zero, the refusal naming main and
+#    protected, and the remote unchanged.
+docker compose exec -T openclaw-gateway sh -lc '
+cd /repos/.a7-hand/work; set +e
+git checkout -q main; echo direct > direct.md; git add direct.md; git commit -qm "add direct note"
+git-publish >/tmp/e2e-main.out 2>&1; echo "PUBLISH EXIT=$?"; head -3 /tmp/e2e-main.out
+echo "REMOTE MAIN: $(git -C ../e2e.git log -1 --format=%s main)"'
+
+# 5. Two publications in one clone, overlapping. Expect: both branches on the
+#    remote or one refused with a message -- and no token left behind afterwards.
+docker compose exec -T openclaw-gateway sh -lc '
+cd /repos/.a7-hand/work; set +e
+git checkout -q -b agent/probe-1 agent/probe; echo one > one.md; git add one.md; git commit -qm one
+git checkout -q -b agent/probe-2 agent/probe; echo two > two.md; git add two.md; git commit -qm two
+( git checkout -q agent/probe-1 && git-publish ) >/tmp/p1.out 2>&1 &
+( sleep 0.2; git checkout -q agent/probe-2 && git-publish ) >/tmp/p2.out 2>&1 &
+wait
+echo "P1: $(tail -1 /tmp/p1.out)"; echo "P2: $(tail -1 /tmp/p2.out)"
+echo "BRANCHES: $(git -C ../e2e.git branch --list "agent/*" | tr -d " " | tr "\n" " ")"
+ls .git/liquidupstart-publish 2>/dev/null && echo "TOKEN LEFT BEHIND -- FR18 violated" || echo "no token left"'
+
+# 6. Negative control: does the hook decide? Same form as elsewhere -- truncate
+#    the command in place, never rename it; a single-file mount follows the inode.
+mv volumes/_git-secrets/hooks/pre-push volumes/_git-secrets/hooks/pre-push.aside
+mv config/agents/hooks/pre-push config/agents/hooks/pre-push.aside
+./tests/run.sh m-a7; echo "EXIT=$?"
+mv volumes/_git-secrets/hooks/pre-push.aside volumes/_git-secrets/hooks/pre-push
+mv config/agents/hooks/pre-push.aside config/agents/hooks/pre-push
+./tests/run.sh m-a7; echo "EXIT=$?"
+
+# 7. Clean up and confirm. Expect EXIT=0.
+docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.a7-hand'
+./tests/run.sh; echo "EXIT=$?"
+```
+
+Check 5 is the one worth reading slowly. Two `git-publish` invocations overlap in one clone, and the
+question is not whether both succeed — either outcome is acceptable — but whether a push was admitted
+by a token another invocation minted. The last line is the assertion that matters: a token left behind
+after both have returned means one was written and never consumed, which is the shape a stolen
+permission takes.
+
+#### A7-5 — the operator's procedure · a cold start
+
+**This tears the stack down.** It cannot be automated and it cannot be run beside the running one:
+`compose.yml` fixes 23 container names and the project runs one instance per host. Run it when you are
+willing to rebuild, and expect the NextCloud extraction alone to take a while.
+
+**What it is for.** Every other check in this document runs against a stack that is already up, with
+volumes already populated by earlier runs. Anything that works only because of state an earlier run
+left behind is invisible to all of them. This is the path a new operator takes, and nothing has ever
+run it.
+
+```bash
+# 1. Back up anything you want to keep. This removes every volume.
+cp .env /tmp/lu-env.bak
+
+# 2. Tear down and clear the state.
+./scripts/linux/down.sh
+sudo rm -rf volumes/
+
+# 3. Build the five images from scratch.
+./scripts/linux/build.sh --no-cache; echo "BUILD EXIT=$?"
+
+# 4. Start, with the .env you had. Expect every URL and credential printed at the
+#    end, and no error above them.
+./scripts/linux/start.sh; echo "START EXIT=$?"
+
+# 5. What a cold start must have produced. Expect: the workspace, a key and a
+#    clone per declared repository, the hook installed, and all three commands
+#    answering from inside the container an agent works in.
+ls volumes/repos/
+ls volumes/_git-secrets/repos/*/id_ed25519.pub
+ls -l volumes/_git-secrets/hooks/pre-push
+docker compose exec -T openclaw-gateway sh -lc '
+  git-repo-info | head -3
+  command -v git-publish nar-build
+  cd /repos/liquidupstart 2>/dev/null && git config --get core.hooksPath'
+
+# 6. And the suite, against a stack that has never done anything else.
+./tests/run.sh; echo "EXIT=$?"
+```
+
+**Pass:** every command in step 5 answers, and step 6 is `EXIT=0`. **Fail:** anything that needs a
+second `start.sh` to appear — that is a first-run defect, and it is exactly what a warm stack hides.
+Record what happened either way; a cold start that simply works is worth knowing, because until now
+nobody has been able to say it does.

@@ -232,6 +232,15 @@ upgrade path and does not invalidate M-A1 through M-A3.
   found first — the failure M-A3b through M-A3e spent four milestones on.
 
 
+### Added after counting what the suite covers (2026-09-04)
+
+- **FR32 — One test walks the whole path.** Declaration, key, clone, hook, commit, publish, and the
+  artefact on the remote — in one chain, in the container an agent works in. Every link has been
+  tested since M-A3c; the chain never has, and a chain of tested links is not a tested chain.
+- **FR33 — Concurrent publication is safe, or refuses.** The proof of passage is a single-use file
+  (FR18). Two publications from one clone must not let one push travel on the other's permission, and
+  two from different clones must not interfere at all.
+
 ---
 
 ## 5. Milestones
@@ -354,6 +363,20 @@ stays taught, in the skill, and the specification says so rather than pretending
 *Done when:* `./tests/run.sh m-a6` is green, including a repository in content mode where the default
 branch is a legitimate target, a push refused for its own reason rather than for its path, and a
 refusal whose text names the command to run instead.
+
+**M-A7 · The paths nothing walks**
+Counting the suite by level on 2026-09-04 gave 117 contract tests, 106 unit, 52 system, 44
+integration, 26 component — and **no end-to-end test at all**. The whole path is exercised only by
+A5-9 and A6-13, both manual. Every link is proven; the chain is not.
+
+*Why that shape is itself a warning.* Contract is the largest bucket at 34%, and a contract test reads
+what is **declared** rather than what runs. M-B2 demonstrated the cost within a day: B2-5 and B2-6
+read `entrypoint.sh` as text and would have been green while the container executed a different
+script, because the file is baked into the image. A check reading the running container had to be
+added before the assertion meant anything. A suite that drifts toward declaration-reading gets cheaper
+to write and quieter about what is broken.
+
+*Done when:* `./tests/run.sh m-a7` is green, and the manual cold-start case has been observed.
 
 ### Later increments (not part of this approval)
 
@@ -484,6 +507,11 @@ Done when `./tests/run.sh m-a1; echo EXIT=$?` is visible in this transcript with
 and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving earlier milestones have
 not regressed.
 ```
+
+**A goal condition is capped at 4000 characters.** M-B2's first draft was 4263 and was refused, which
+is a fact about the tool rather than about the milestone and is written here so the next one is
+drafted against it rather than discovering it. It also disciplines the form: everything in a goal
+either constrains the work or is decoration, and 4000 characters is generous for the first.
 
 Each milestone's goal is written into this form **immediately before it runs**, not up front: a goal
 text is only as good as its knowledge of the current state, and every milestone settles decisions
