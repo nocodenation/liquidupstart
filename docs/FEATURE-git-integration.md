@@ -378,6 +378,25 @@ to write and quieter about what is broken.
 
 *Done when:* `./tests/run.sh m-a7` is green, and the manual cold-start case has been observed.
 
+### Known gaps, decided rather than overlooked (2026-09-04)
+
+Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not
+cover, recorded here so a reviewer meets a decision instead of a silence.
+
+**Upgrades are untested.** `.liquidupstart-version` and the build manifest exist, so upgrading an
+installation is a real operation in this stack, and nothing verifies that one arriving from an older
+version gains the workspace, the keys, the hook and the three commands. It is not built here for two
+reasons: it is a property of the stack rather than of this feature, and an honest test needs an old
+installation to raise, which no fixture can conjure. Whoever adds upgrade handling owns the test; the
+gap belongs to them and is named so it can be handed over.
+
+**Nothing has run on Windows.** `CLAUDE.md` states that Windows users work through WSL2, and every
+test in this repository has run on macOS. The parts most likely to differ are the ones this feature
+leans on hardest: bind-mount permissions on `volumes/_git-secrets` (the keys are `chmod 600`, and a
+key SSH considers world-readable is refused), file modes on the hook, and line endings in the shell
+scripts. This is not testable from here and is written down rather than assumed away — a reviewer on
+Windows should treat it as unverified, not as working.
+
 ### Later increments (not part of this approval)
 
 Split keys or a credential-holding service (§3.1) · dashboard approval flow · dashboard restart
@@ -1716,3 +1735,69 @@ M-A4 rule it names — which is exactly what A6-9 exists to keep true.
 runs §9's seven checks and reported all seven green on 2026-09-03, but it is written by the same hand
 as the tests it checks: its worth rests on checks 4, 6 and 7, and where a check is in doubt the
 copy-and-paste form in §9 is the one to run.
+
+### M-A7 — the paths nothing walks · posed 2026-09-04
+
+```
+/goal Implement M-A7 from docs/FEATURE-git-integration.md. Acceptance is cases
+A7-1 to A7-4 in section 5 of docs/TEST-SPEC-git-integration.md, signed off
+2026-09-04. Write those tests first, then make them pass. A7-5 is manual and must
+not be automated.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes.
+
+Why this exists: counting the suite by level gave 117 contract tests, 106 unit,
+52 system, 44 integration, 26 component -- and no end-to-end test at all. The
+whole path is exercised only by A5-9 and A6-13, which are manual observations of
+an agent, not tests of the mechanism. Every link is proven and the chain is not,
+and a chain fails at its joints.
+
+This needs a new level. tests/run.sh line 6 has
+LEVELS="unit component contract integration system", and
+tests/unit/m-a0.runner-discovery.test.ts asserts what the runner discovers --
+both must learn about e2e. End-to-end tests need the running stack, so group them
+with system for ordering and for --no-system; a level that runs before the stack
+is up would fail for a reason that has nothing to do with the case.
+
+Four decisions are taken and are not open:
+
+The chain runs against a local bare repository, not GitHub. A5-9 proves the real
+remote once, by hand, and leaves a branch only the operator can remove. What is
+untested is the joins, and a local remote exercises every one identically: the
+hook reads the clone's own configuration, not the host's. Use a throwaway
+declaration in a temporary project directory. Do not touch .env.
+
+No step may be simulated. The clone must be the one the start script made, the
+hook the one it installed, the identity the one it configured, the push through
+git-publish. A chain test that constructs its own clone tests the test.
+
+A7-4 asserts tokens, not successes. Two overlapping git-publish invocations in
+one clone: either both branches land or one is refused with a message, and both
+are acceptable. What must not happen is a push admitted by a token another
+invocation minted, and no token may remain after both return. Count tokens
+created and consumed; do not count successes.
+
+A7-3 is the counterpart that says what "shared" means: two clones have two
+tokens, in their own .git, and should not interact at all. It is a claim about
+the design that has never been checked.
+
+Also write tests/verify/m-a7.sh in the form of tests/verify/m-b1.sh: the checks
+of section 9 in order, each judged, everything restored including on Ctrl-C, a
+log and a pull-request comment in .pr-drafts/. Its negative controls must name
+the cases that go red and the cases that stay green, derived from the sources
+rather than from a run -- m-b1.sh's lists matched the observed run exactly, which
+is the standard.
+
+Record the outcome where the next session will find it: the process log row in
+section 8, an outcome paragraph in the appendix, and each case's "What it found"
+block.
+
+Search the codebase before assuming anything is missing; full implementations
+only, no placeholders.
+
+Done when `./tests/run.sh m-a7; echo EXIT=$?` shows EXIT=0 in this transcript and
+`./tests/run.sh; echo EXIT=$?` does too. Or stop after 45 turns -- the bound has
+been exceeded four times in the same direction, so treat it as a stop condition
+rather than an estimate, and say so if you reach it.
+```
