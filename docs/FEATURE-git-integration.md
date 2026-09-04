@@ -620,6 +620,7 @@ trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 | M-A4 | 46 to both gates green, ~55 in total — **the bound was exceeded** | 32 min (12:53–13:25) | 3 changed (2 of them earlier milestones' tests), 8 new | No — both required runs shown with their exit codes, and the hook was seen to fail seven ways with the file moved aside | One finding, in the guardrail rather than in a test: GitHub's read-only deploy key answers before `pre-push` runs, so the signed-off system case proved the remote's rule and not this stack's | Yes — A4-14 needed a second half to test what it was written to test, and A4-4 and A4-11 turned out to be one rule stated from two sides | Fresh session. Orientation cost roughly six turns: the two documents, the existing suite's conventions, the start script, and a probe of git itself to settle whether `pre-push` runs at all for a push git will reject — it does, which the whole of A4-4 and A4-11 depends on. **The turn bound was met for the build and missed overall**: the milestone suite was green at turn 31 and the full suite at turn 46, after two unrelated tests from earlier milestones had to be dealt with; the sixteen "what it found" blocks, the outcome above and this row took nine more. M-A3e recorded the same shape, and the bound has now been wrong twice in the same direction |
 | M-A5 | 11 to both gates green, 14 in total | ~9 min (08:00–08:09) | 1 changed, 5 new | No — both required runs shown with their exit codes, and A5-4 and A5-5 were seen red with the hook moved aside before the suite was called green | None; one test defect (a line-wrap mismatch in A5-7) fixed during the run, no product defect surfaced | No — the eight cases were implementable as signed off; A5-6 changed file, not substance | Fresh session. Orientation cost roughly five turns: the two documents, the hook, the start script, the fixture library and the M-A4 tests it builds on. Nothing reported missing. **The turn bound held for the whole cycle** for the first time since M-A3d: both gates at turn 11, the documentation by turn 14, against a bound of 35 that had been set with the previous two overruns in view |
 | M-A6 | 27 to both gates green, 34 in total | 25 min (13:50–14:15 CEST; the run reported it as 11:50–12:15, which is UTC — every other row here is local time, so the row read as if M-A6 preceded M-A5's verification) | 13 changed (7 of them earlier milestones' tests and fixtures, 2 of them the documents), 9 new | No — both required runs are in the transcript with their exit codes, and the seven §9 checks were run, including the three negative controls | None in the product. Three defects found by the new cases themselves: an M-A4 refusal that named no next step, the container fixtures' seeding push, and a negative control that moved one of the hook's two copies | No — the twelve automated cases were implementable as signed off; §9 changed in three places to match what the milestone actually made true | Fresh session. Orientation cost roughly seven turns: the two documents, the hook, the fixture library, the M-A4 and M-A5 tests it builds on, and the compose mounts. Nothing reported missing. **The turn bound held**: both gates at turn 27 of 40, the verification script and the documentation by turn 34 |
+| M-A7 | 32 to both gates green, 45 in total — at the bound | 25 min (13:32–13:57) | 4 changed (the runner, the fixture library and two of M-A0's own tests), 5 new (2 end-to-end cases, 2 integration cases, the verification script), plus both documents and `BACKLOG.md` | No — both required runs are in the transcript with their exit codes, and all eight §9 checks were run, the two negative controls matching the lists derived from the sources before the run | None in the product: nothing had to be repaired for the chain to run end to end. Two corrections to §9 itself — a seeding push the hook refuses, and a control that could not discriminate | Yes — A7-3 and A7-4 each gained a probe the signed-off case did not name, without which both would pass with the hook disabled; §9 gained a second negative control | Fresh session. Orientation cost roughly nine turns: the two documents, the start script, the hook, the command, the fixture library, the runner and its own tests, and a chain built by hand in the container to settle whether the declaration parser would take a local path. It will not — SSH URLs only — which is what decides the `ssh` stand-in. **The turn bound was met and then reached**: both gates at turn 32 of 45, and the verification script, the two documents, `BACKLOG.md` and `HANDOFF.md` took the remaining thirteen. The same shape as M-A3e, M-A4 and M-A6 — the build fits, the record the rules require does not, and the bound has now been set with that in view three times without being widened |
 
 **M-A0 was independently verified on 2026-08-29** by the operator, not by its author: the four
 checks (suite green, discovery listing, a deliberately failing tree returning a non-zero exit, and a
@@ -1801,3 +1802,58 @@ Done when `./tests/run.sh m-a7; echo EXIT=$?` shows EXIT=0 in this transcript an
 been exceeded four times in the same direction, so treat it as a stop condition
 rather than an estimate, and say so if you reach it.
 ```
+
+**Outcome, 2026-09-04.** Built as posed, both gates green: `./tests/run.sh m-a7` at 25 cases across
+four files, and the full suite at 277 plus the dashboard's 27 — up from 251 before the milestone. The
+four decisions held without amendment. The suite now has a sixth level: `tests/e2e/`, in
+`tests/run.sh` (`LEVELS` and a new `STACK_LEVELS`, so the grouping with `system` for ordering and for
+`--no-system` is stated once rather than by a comparison against the word `system`), and asserted by
+M-A0's own cases — a level the runner does not know about is a directory of tests nobody runs, and
+before the amendment `m-a0.runner-discovery` would have passed unchanged with `tests/e2e` ignored.
+
+**As built.** A7-1 and A7-2 are end-to-end, in the container; A7-3 and A7-4 are integration, on the
+host, because the permission lives in the clone and the race is between two processes rather than two
+machines. All four run against a throwaway declaration in a temporary project under
+`volumes/repos/.a7-<case>-<pid>` — inside the workspace so the container sees the same files, and
+dot-prefixed so neither the start script's directory sweep nor A4-16 looks at it. Every fixture is
+made by `config/scripts/start/git.sh` itself, given `GIT_SECRETS_MOUNT` and `GIT_REPOS_MOUNT` for the
+view it will be used from: the clone is the one it made, the hook the one it installed, the identity
+the one it configured, the push through the mounted `git-publish`. **The one thing the chain does not
+do is cross a network.** The declaration parser accepts SSH URLs only — by design, since the stack's
+credentials are SSH-only — and no sshd runs on the host or in the container, so `ssh` is stood in for
+on `PATH` and routes `git-upload-pack` and `git-receive-pack` to a local bare repository. That is the
+transport; no step of the chain is simulated, and each test says so in its header.
+
+**The joins held.** Nothing in the product had to be repaired to make the chain run end to end, which
+is the first time anything in this suite could have said so — and the reason to run it was never that
+a failure was expected but that nobody could say either way.
+
+**What the milestone found is in the concurrency pair.** The proof of passage is one path per clone,
+not per publication: `git-publish` writes it before pushing and removes it afterwards whether or not
+the push was accepted, so with two publications in flight in one clone the permission one mints can be
+consumed by the other's hook or removed by the other's cleanup. Both outcomes were observed — on the
+host both branches land, in the container with a longer stagger the second is refused in the hook's
+words with nothing left behind. It fails closed, which is what FR18 asks, so it is recorded in
+`BACKLOG.md` rather than fixed: a per-invocation permission changes the mechanism M-A6 signed off, and
+no requirement asks for it. A7-4 therefore asserts tokens and not successes, as the goal required.
+
+**Two probes were added that the cases as signed off did not name, and they are what makes the pair
+mean anything.** A7-3 writes a permission by hand into one clone and shows a raw push in the other is
+still refused; A7-4 shows that a push without a permission is refused in that clone before it counts
+anything. Without them both cases would pass with the hook disabled — §9's check 6 now demonstrates
+exactly that, and it is why the control was changed from moving the hook aside to truncating it in
+place: moving it makes the start script fail, so everything goes red and the control cannot tell the
+cases that need the hook from the ones that do not. A second control on `git-publish` was added
+alongside it. Both lists were derived from the sources before the run and matched it exactly: with the
+hook permissive A7-3 and A7-4 go red while A7-1 and A7-2 stay green; with the command stubbed all four
+go red.
+
+**Also corrected:** §9's check 3 seeded its bare remote with `git push`, which the hook refuses inside
+the container for the reason M-A6 established. It seeds by cloning now, as A4-14, A5-3 and A6-12's
+fixtures already do.
+
+**Still open:** A7-5, the manual cold start, which tears the stack down and is the operator's; and the
+independent verification. `./tests/verify/m-a7.sh` runs §9's eight checks, judges each, restores
+everything including on `Ctrl-C`, and reported all eight green on 2026-09-04 — but it is written by
+the same hand as the tests it checks, so where a check is in doubt the copy-and-paste form in §9 is
+the one to run.

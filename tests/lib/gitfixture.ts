@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { repoRoot } from './paths';
@@ -302,4 +302,132 @@ export const FIXTURE_PRIVATE_KEY =
 export function pushSanctioned(clone: string, args: string[]): Result {
   sanction(clone);
   return git(clone, ['push', ...args]);
+}
+
+export const CHAIN_ROOT_PREFIX = '.a7-';
+export const chainSsh = `#!/bin/sh
+BASE="__BASE__"
+cmd=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -i|-o|-F|-p|-l|-b|-c|-E|-I|-J|-L|-m|-O|-Q|-R|-S|-W|-w) shift 2 ;;
+    -*) shift ;;
+    *) shift; cmd="$*"; break ;;
+  esac
+done
+verb="\${cmd%% *}"
+path="\${cmd#* }"
+path="$(printf '%s' "$path" | tr -d "'\\"")"
+name="\${path##*/}"
+case "$verb" in
+  git-receive-pack)
+    [ -n "\${A7_SSH_DELAY:-}" ] && sleep "$A7_SSH_DELAY"
+    exec "$verb" "\${BASE}/\${name}" ;;
+  git-upload-pack) exec "$verb" "\${BASE}/\${name}" ;;
+  *) echo "a7-ssh: unsupported command: $cmd" >&2; exit 128 ;;
+esac
+`;
+
+export type ChainFixture = {
+  root: string;
+  containerRoot: string;
+  project: string;
+  declaration: string;
+  hostBin: string;
+  containerBin: string;
+  start: Result;
+  bare: (name: string) => string;
+  clone: (name: string) => string;
+  containerClone: (name: string) => string;
+  containerBare: (name: string) => string;
+};
+
+function writeSsh(path: string, base: string): void {
+  writeFileSync(path, chainSsh.replace('__BASE__', base));
+  chmodSync(path, 0o755);
+}
+
+export function chainFixture(
+  tag: string,
+  names: string[],
+  view: 'container' | 'host' = 'container'
+): ChainFixture {
+  const dir = `${CHAIN_ROOT_PREFIX}${tag}-${process.pid}`;
+  const root = join(repoRoot, 'volumes', 'repos', dir);
+  const containerRoot = `/repos/${dir}`;
+  const project = join(root, 'project');
+
+  rmSync(root, { recursive: true, force: true });
+  mkdirSync(join(root, 'bin-host'), { recursive: true });
+  mkdirSync(join(root, 'bin-container'), { recursive: true });
+  writeSsh(join(root, 'bin-host', 'ssh'), root);
+  writeSsh(join(root, 'bin-container', 'ssh'), containerRoot);
+
+  for (const name of names) {
+    const seed = join(root, `${name}-seed`);
+    mkdirSync(seed, { recursive: true });
+    sh(['git', 'init', '-q', '-b', 'main', seed], root);
+    git(seed, ['config', 'user.name', 'Seed']);
+    git(seed, ['config', 'user.email', 'seed@local']);
+    commit(seed, { 'README.md': 'seed\n' }, 'seed');
+    sh(['git', 'clone', '-q', '--bare', seed, join(root, `${name}.git`)], root);
+  }
+
+  seedKnownHosts(project);
+  const mountRoot = view === 'container' ? containerRoot : root;
+  const declaration = names.map((n) => `git@localhost:${n}.git|write|protected`).join(',');
+  const start = runStart(project, declaration, {
+    pathPrefix: join(root, 'bin-host'),
+    env: {
+      GIT_SECRETS_MOUNT: `${mountRoot}/project/volumes/_git-secrets`,
+      GIT_REPOS_MOUNT: `${mountRoot}/project/volumes/repos`
+    }
+  });
+
+  return {
+    root,
+    containerRoot,
+    project,
+    declaration,
+    hostBin: join(root, 'bin-host'),
+    containerBin: `${containerRoot}/bin-container`,
+    start,
+    bare: (name) => join(root, `${name}.git`),
+    clone: (name) => join(project, 'volumes', 'repos', name),
+    containerClone: (name) => `${containerRoot}/project/volumes/repos/${name}`,
+    containerBare: (name) => `${containerRoot}/${name}.git`
+  };
+}
+
+export function dropChainFixture(fx: ChainFixture): void {
+  rmSync(fx.root, { recursive: true, force: true });
+}
+
+export function publishOnHost(
+  clone: string,
+  pathPrefix: string,
+  extra: Record<string, string> = {}
+): Promise<Result> {
+  const p = Bun.spawn([publishCommand], {
+    cwd: clone,
+    env: {
+      ...(process.env as Record<string, string>),
+      ...FIXTURE_IDENTITY,
+      LC_ALL: 'C',
+      PATH: `${pathPrefix}:${process.env.PATH}`,
+      ...extra
+    },
+    stdout: 'pipe',
+    stderr: 'pipe'
+  });
+  return (async () => {
+    const stdout = await new Response(p.stdout).text();
+    const stderr = await new Response(p.stderr).text();
+    const code = await p.exited;
+    return { code, stdout, stderr, output: stdout + stderr };
+  })();
+}
+
+export function gitOnHost(dir: string, args: string[], pathPrefix: string): Result {
+  return git(dir, args, { PATH: `${pathPrefix}:${process.env.PATH}` });
 }

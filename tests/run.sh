@@ -3,7 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-LEVELS="unit component contract integration system"
+LEVELS="unit component contract integration system e2e"
+STACK_LEVELS="system e2e"
 
 # Bun defaults to five seconds per test. Tests here shell out to docker, to git
 # and to the network, and under the full suite that default is exceeded for
@@ -24,7 +25,7 @@ Usage: tests/run.sh [milestone] [options]
 
   milestone        run only files named m-<milestone>.*.test.ts
   --list           print the files that would run, then exit
-  --no-system      skip tests that need the running stack
+  --no-system      skip the levels that need the running stack (system, e2e)
   --dashboard      run only the dashboard suite
   --root DIR       discover tests under DIR instead of tests/
   -h, --help       this text
@@ -71,6 +72,14 @@ else
   PATTERN="*.test.ts"
 fi
 
+needs_stack() {
+  local level
+  for level in $STACK_LEVELS; do
+    [[ "$1" == "$level" ]] && return 0
+  done
+  return 1
+}
+
 SYSTEM_FILES=()
 OTHER_FILES=()
 for level in $LEVELS; do
@@ -78,7 +87,7 @@ for level in $LEVELS; do
   [[ -d "$dir" ]] || continue
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
-    if [[ "$level" == "system" ]]; then
+    if needs_stack "$level"; then
       SYSTEM_FILES+=("$f")
     else
       OTHER_FILES+=("$f")
@@ -104,7 +113,7 @@ else
 fi
 
 if [[ ${#SELECTED[@]} -eq 0 ]]; then
-  echo "SKIPPED: ${system_count} system test file(s) need the running stack; nothing else matched."
+  echo "SKIPPED: ${system_count} test file(s) at the stack levels (${STACK_LEVELS}) need the running stack; nothing else matched."
   exit 0
 fi
 

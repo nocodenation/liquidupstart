@@ -61,6 +61,13 @@ result is still recorded rather than felt.
 | **Contract** | An assertion that a declaration appears in every place the configuration contract requires | No |
 | **Integration** | Several parts together on the host — start script, rendered config, directory state | No |
 | **System** | The running stack, driven through `docker compose exec` | Yes |
+| **End-to-end** | The whole path in one chain, from the declaration to the artefact on the remote, with no step performed by the test | Yes |
+
+The **end-to-end** level was added by M-A7 on 2026-09-04, when counting the suite showed 345 tests
+across five levels and not one that walks a whole path. It is separated from **system** because the
+two answer different questions: a system test drives one part inside the running stack, an end-to-end
+test drives every part in sequence and passes only if each hands over to the next. It runs with the
+system level and after it — the stack has to be up either way — so `--no-system` drops both.
 
 The **contract** level is not in Philipp's list but is added deliberately: the project's own
 `.env.example` contract ("a start script injects a key only if the service template declares it") is
@@ -85,6 +92,7 @@ tests/
   contract/
   integration/
   system/
+  e2e/
   run.sh        entry point
 ```
 
@@ -2207,6 +2215,7 @@ none has tested that the parts hand over to each other.
 | **Steps** | Run the start script's git step against the throwaway declaration; assert the clone exists and carries `access`, `policy` and `core.hooksPath`; commit in the container; run `git-publish`; read the branch back out of the bare repository. |
 | **Expected** | The commit is on the bare remote under `agent/probe`, carrying the configured identity, and every intermediate state was produced by the stack rather than by the test. |
 | **Covers** | FR32, U1, U2, U3, U4. |
+| **What it found** | **Passed, and the joins held**: nothing had to be repaired to make the chain run end to end, which is the first time anything in this suite could have said so. `tests/e2e/m-a7.chain.test.ts`, at the new end-to-end level. The start script clones `git@localhost:e2e.git` into `volumes/repos/.a7-chain-<pid>/project` and configures `liquidupstart.access=write`, `liquidupstart.policy=protected`, `core.hooksPath` and `liquidupstart.identity`; the `pre-push` it installs is byte-identical to `config/agents/hooks/pre-push`, and inside `openclaw-gateway` the hook at that path and the key at that identity are both reachable. `git-publish` resolves to `/usr/local/bin/git-publish`, exits 0, and `e2e.git` holds `agent/probe` **at the clone's own sha**, carrying `notes.md` with `probe` and the author the containers are configured with — read out of the container rather than out of `compose.yml`, as A1-6 was amended to do. No token remains. **What it cannot do is cross a network:** the declaration parser accepts SSH URLs only, by design, and no sshd runs on the host or in the container, so `ssh` is stood in for on `PATH` in both places and routes `git-upload-pack` and `git-receive-pack` to the local bare repository. That is the transport; every step the milestone names is still performed by the stack. |
 
 ##### A7-2 — the chain stops where it should
 
@@ -2217,6 +2226,7 @@ none has tested that the parts hand over to each other.
 | **Test data** | The A7-1 fixture, with the commit made on `main` and published from there. |
 | **Expected** | `git-publish` refuses, naming `main` and `protected`; the bare repository's `main` still holds `seed`; and `agent/probe` does not appear. |
 | **Covers** | FR32, §1.3, U4. |
+| **What it found** | Passed. `tests/e2e/m-a7.chain-refused.test.ts`, on its own instance of the fixture rather than A7-1's, so that "`agent/probe` never appears" is a statement about this run and not a leftover from that one. The refusal reads `git-publish refused: main is the default branch here and this repository's policy is protected`, offers `git switch -c agent/<name>`, and the remote is exactly as the seed left it: `main` at `seed`, no `direct.md` in it, no `agent/probe` at all. It also asserts that **nothing was minted** — the command refuses before it writes a permission — which is what makes the refusal attributable: under §9's check 6, with the hook made permissive, A7-2 stays green, so its refusal is demonstrably the command's and not the hook's. |
 
 ##### A7-3 — two clones do not interfere
 
@@ -2227,6 +2237,7 @@ none has tested that the parts hand over to each other.
 | **Test data** | `alpha.git` and `beta.git`, each seeded as in A7-1, each with its own clone; a commit in each on `agent/probe`; both `git-publish` invocations started before either has returned. |
 | **Expected** | Both succeed. Each remote holds its own commit and neither holds the other's. |
 | **Covers** | FR33. |
+| **What it found** | Passed, and the design claim is now checked instead of assumed. `tests/integration/m-a7.two-clones.test.ts`, on the host: one declaration names `alpha.git` and `beta.git`, the start script makes both clones, and each publishes `agent/probe` — **the same branch name in both, on purpose**, so that a permission read across clones would have somewhere to go wrong. Both land; `alpha.git` holds `notes.md` with `alpha` and `beta.git` with `beta`, and neither bare repository can name the other's commit at all (`git cat-file -e` fails in both directions). The overlap is asserted rather than hoped for: the second publication is shown to have begun before the first returned. **The half that earns the case is the closing probe.** A permission is written by hand into alpha's clone and a raw `git push` in beta's is still refused by the hook, with alpha's permission untouched afterwards. Without it, "two clones share no token" would rest on two publications that would equally have succeeded if they had shared one — and §9's check 6 confirms the probe is what carries it: with the hook permissive, this is one of the two cases that go red. |
 
 ##### A7-4 — one clone, two publications, one permission each
 
@@ -2238,6 +2249,7 @@ none has tested that the parts hand over to each other.
 | **Expected** | Both branches reach the remote, or one is refused with a message naming what happened. **What must not happen** is a push accepted by a token another invocation minted — asserted by requiring each accepted push to correspond to a token that was created and then consumed, not by counting successes. |
 | **Failure** | A push that reached the remote without a token of its own, or a token left behind after both invocations returned. |
 | **Covers** | FR33, FR18. |
+| **What it found** | Passed, and it converted the assumption it was written for into a fact. `tests/integration/m-a7.overlapping-publish.test.ts`, on the host, in the clone the start script made: `agent/probe-1` and `agent/probe-2` publish concurrently, and the case asserts that both invocations minted, that every branch that landed belongs to an invocation whose own permission was consumed, that any invocation that did not land said why, and that no permission remained. Counting is done from what the two invocations printed, because the permission is **one path per clone and two writes to it collapse into one file**: an invocation printing `git-publish refused:` never minted, and one printing the hook's `did not come through git-publish` minted a permission something else consumed. The overlap is made certain rather than hoped for — the `ssh` stand-in holds the connection for half a second, and the case asserts the second began before the first returned. **What it found about the design:** because the file is per clone and not per invocation, a permission one invocation mints can be consumed by the other's hook or removed by the other's cleanup — `git-publish` removes the token after its push whether or not the push was accepted. Both outcomes appear in practice and both are safe: on the host both branches landed, and in §9's check 5, run in the container with a longer stagger, the second was refused in the hook's words with nothing left behind. It **fails closed**, which is what FR18 asks for, but which of two well-behaved publications succeeds is decided by timing. That is recorded in `BACKLOG.md` rather than fixed here: no requirement is violated, and a fix — a per-invocation permission — is a change to the mechanism M-A6 signed off. |
 
 ##### A7-5 — a cold start · **manual**
 
@@ -2249,6 +2261,7 @@ none has tested that the parts hand over to each other.
 | **Test data** | The procedure is in §9 and names the steps and what to look for. |
 | **Expected** | After `build.sh` and `start.sh`: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, and `git-repo-info`, `git-publish` and `nar-build` answer inside the agent containers. |
 | **Covers** | FR32, NFR6, U1, U2, U7. |
+| **What it found** | Not yet run. It is the operator's, it tears the stack down, and the procedure is in §9. It was deliberately not automated: `compose.yml` fixes 23 container names and one instance runs per host, so a test could only run it by destroying the stack it runs in. |
 
 ---
 
@@ -3131,7 +3144,13 @@ sentence apart here, and a one-line verdict cannot carry the difference.
 ### M-A7 — the paths nothing walks
 
 Run at the project root with the stack up. Nothing here touches `.env`, GitHub, or the operator's
-clones; the chain builds its own throwaway declaration and local remotes.
+clones; the chain builds its own throwaway declaration and local bare remotes under `/repos/.a7-*`
+and removes them again.
+
+`./tests/verify/m-a7.sh` runs the eight checks below in order, judges each one, restores everything
+it changed — including on `Ctrl-C` — and writes a log and a pull-request comment into `.pr-drafts/`.
+Run it, or run the commands by hand; the script is the same procedure with its judgements written
+down.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
@@ -3143,53 +3162,71 @@ cd /Users/christof/repos/liquidupstart
 ./tests/run.sh; echo "EXIT=$?"
 
 # 3. The chain by hand, bypassing the suite. Expect: PUBLISH EXIT=0 and the commit
-#    on the bare remote, every intermediate state produced by the stack.
+#    on the bare remote, every intermediate state produced by the stack. The bare
+#    remote is seeded by cloning rather than by pushing: inside the container the
+#    hook governs every repository, so a seeding push would itself need the
+#    sanctioned path.
 docker compose exec -T openclaw-gateway sh -lc '
 set -e; rm -rf /repos/.a7-hand; mkdir -p /repos/.a7-hand; cd /repos/.a7-hand
-git init -q --bare --initial-branch=main e2e.git
-git init -q -b main seed; cd seed; echo seed > README.md; git add README.md
-git -c user.name=Seed -c user.email=seed@local commit -qm seed
-git remote add origin ../e2e.git; git push -q origin main; cd ..
+git init -q -b main seed; cd seed
+git config user.name Seed; git config user.email seed@local
+echo seed > README.md; git add README.md; git commit -qm seed; cd ..
+git clone -q --bare seed e2e.git
 git clone -q e2e.git work; cd work
 git config liquidupstart.access write; git config liquidupstart.policy protected
 git checkout -q -b agent/probe; echo probe > notes.md; git add notes.md
-git commit -qm "add probe note"
+git -c core.pager=cat commit -qm "add probe note"
+echo "HOOKSPATH: $(git config --get core.hooksPath)"
 set +e
 git-publish >/tmp/e2e.out 2>&1; echo "PUBLISH EXIT=$?"; tail -3 /tmp/e2e.out
-echo "ON REMOTE: $(git -C ../e2e.git log -1 --format=%s agent/probe 2>/dev/null || echo MISSING)"'
+echo "ON REMOTE: $(git -C ../e2e.git log -1 --format=%s agent/probe 2>/dev/null || echo MISSING)"
+echo "TOKEN: $(test -e .git/liquidupstart-publish && echo present || echo none)"'
 
 # 4. The same chain aimed at main. Expect: non-zero, the refusal naming main and
 #    protected, and the remote unchanged.
 docker compose exec -T openclaw-gateway sh -lc '
 cd /repos/.a7-hand/work; set +e
-git checkout -q main; echo direct > direct.md; git add direct.md; git commit -qm "add direct note"
+git checkout -q main; echo direct > direct.md; git add direct.md
+git -c core.pager=cat commit -qm "add direct note"
 git-publish >/tmp/e2e-main.out 2>&1; echo "PUBLISH EXIT=$?"; head -3 /tmp/e2e-main.out
-echo "REMOTE MAIN: $(git -C ../e2e.git log -1 --format=%s main)"'
+echo "REMOTE MAIN: $(git -C ../e2e.git log -1 --format=%s main)"
+echo "REMOTE DIRECT: $(git -C ../e2e.git rev-parse --verify --quiet main:direct.md >/dev/null && echo present || echo absent)"'
 
 # 5. Two publications in one clone, overlapping. Expect: both branches on the
 #    remote or one refused with a message -- and no token left behind afterwards.
 docker compose exec -T openclaw-gateway sh -lc '
 cd /repos/.a7-hand/work; set +e
-git checkout -q -b agent/probe-1 agent/probe; echo one > one.md; git add one.md; git commit -qm one
-git checkout -q -b agent/probe-2 agent/probe; echo two > two.md; git add two.md; git commit -qm two
+git checkout -q -b agent/probe-1 agent/probe; echo one > one.md; git add one.md
+git -c core.pager=cat commit -qm one
+git checkout -q -b agent/probe-2 agent/probe; echo two > two.md; git add two.md
+git -c core.pager=cat commit -qm two
 ( git checkout -q agent/probe-1 && git-publish ) >/tmp/p1.out 2>&1 &
 ( sleep 0.2; git checkout -q agent/probe-2 && git-publish ) >/tmp/p2.out 2>&1 &
 wait
 echo "P1: $(tail -1 /tmp/p1.out)"; echo "P2: $(tail -1 /tmp/p2.out)"
+echo "REFUSALS: $(cat /tmp/p1.out /tmp/p2.out | grep -c refused)"
 echo "BRANCHES: $(git -C ../e2e.git branch --list "agent/*" | tr -d " " | tr "\n" " ")"
-ls .git/liquidupstart-publish 2>/dev/null && echo "TOKEN LEFT BEHIND -- FR18 violated" || echo "no token left"'
+test -e .git/liquidupstart-publish && echo "TOKEN LEFT BEHIND -- FR18 violated" || echo "no token left"'
 
-# 6. Negative control: does the hook decide? Same form as elsewhere -- truncate
-#    the command in place, never rename it; a single-file mount follows the inode.
-mv volumes/_git-secrets/hooks/pre-push volumes/_git-secrets/hooks/pre-push.aside
-mv config/agents/hooks/pre-push config/agents/hooks/pre-push.aside
+# 6. Negative control: does the hook decide? Truncate it in place to a permissive
+#    stub, never rename it -- it is bind-mounted as a single file and a single-file
+#    mount follows the inode. Expect A7-3 and A7-4 red, A7-1 and A7-2 green.
+cp config/agents/hooks/pre-push /tmp/pre-push.bak
+printf '#!/bin/sh\nexit 0\n' > config/agents/hooks/pre-push
 ./tests/run.sh m-a7; echo "EXIT=$?"
-mv volumes/_git-secrets/hooks/pre-push.aside volumes/_git-secrets/hooks/pre-push
-mv config/agents/hooks/pre-push.aside config/agents/hooks/pre-push
+cat /tmp/pre-push.bak > config/agents/hooks/pre-push; chmod 755 config/agents/hooks/pre-push
 ./tests/run.sh m-a7; echo "EXIT=$?"
 
-# 7. Clean up and confirm. Expect EXIT=0.
+# 7. Negative control: does git-publish decide? Same form. Expect all four red.
+cp config/agents/bin/git-publish.sh /tmp/git-publish.sh.bak
+printf '#!/bin/sh\nexit 90\n' > config/agents/bin/git-publish.sh
+./tests/run.sh m-a7; echo "EXIT=$?"
+cat /tmp/git-publish.sh.bak > config/agents/bin/git-publish.sh; chmod 755 config/agents/bin/git-publish.sh
+./tests/run.sh m-a7; echo "EXIT=$?"
+
+# 8. Clean up and confirm. Expect EXIT=0.
 docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.a7-hand'
+rm -rf volumes/repos/.a7-*
 ./tests/run.sh; echo "EXIT=$?"
 ```
 
@@ -3198,6 +3235,16 @@ question is not whether both succeed — either outcome is acceptable — but wh
 by a token another invocation minted. The last line is the assertion that matters: a token left behind
 after both have returned means one was written and never consumed, which is the shape a stolen
 permission takes.
+
+**Two corrections made while implementing the milestone, recorded rather than tidied away.** Check 3
+as signed off seeded the bare remote with `git push`, which the hook refuses inside the container for
+exactly the reason M-A6 established — the same correction A4-14, A5-3 and A6-12's fixtures needed —
+so it now seeds by cloning. And check 6 as signed off *moved* both copies of the hook aside; that
+makes the start script's `install` fail, so all four cases go red and the control cannot tell the
+cases that need the hook from the ones that do not. Truncating the source in place to a permissive
+stub separates them, which is what a negative control is for, and it matches the wording the check
+already carried. Check 7 was added for the same reason: two controls between them say which artefact
+decides which case.
 
 #### A7-5 — the operator's procedure · a cold start
 

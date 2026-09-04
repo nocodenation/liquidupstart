@@ -23,7 +23,7 @@ than tidied away.
 | `CLAUDE.md` § Development rules | The commandments this project works to, and the conventions derived from them |
 | PR #9 (draft) | The review vehicle. The operator's independent verification of each milestone is posted there as comments |
 
-## State on 2026-09-03
+## State on 2026-09-04
 
 - Branch `feature/git-integration`, PR #9 still a **draft** on purpose: it goes to Timur for review
   only when the whole feature is done.
@@ -47,6 +47,16 @@ than tidied away.
   and A5-10 never attempted the push. It complied without routing around it and, having already kept
   the private key out of the commit, met the token rule rather than the secret scan. It did not report
   the refusal, which the skill now covers.
+- **M-A7 ran on 2026-09-04**: both gates green and `./tests/verify/m-a7.sh` green on all eight §9
+  checks. It adds a sixth test level, `tests/e2e/`, which `tests/run.sh` groups with `system` for
+  ordering and for `--no-system`, and M-A0's own cases now assert it. Four cases: the whole chain in
+  the container (A7-1) and the same chain refused on the protected default branch (A7-2), plus the
+  concurrency pair on the host (A7-3, A7-4). All four run against a throwaway declaration and local
+  bare remotes under `volumes/repos/.a7-*`; `.env` and GitHub are untouched. **The joins held** —
+  nothing in the product had to be repaired. What it found is in `BACKLOG.md`: the proof of passage is
+  one path per clone rather than one per publication, so two publications in one clone can take each
+  other's permission. It fails closed and no requirement is violated, so it is recorded, not fixed.
+  **A7-5, the manual cold start, is still open** and is the operator's: it tears the stack down.
 - The stack is up and `.env` declares two repositories: `nocodenation/agent-skills` as
   `read|protected` and, since A5-9, `nocodenation/liquidupstart` as `write|protected`, each with its
   deploy key registered on GitHub and its clone under `volumes/repos/`. The write-capable declaration
@@ -100,8 +110,10 @@ blocks a milestone; it exists so that deferring stays a decision rather than an 
 
 ## Next
 
-**The git integration is complete through M-A6**, verified and with both manual cases closed.
-Nothing in it is waiting on anyone.
+**The git integration is complete through M-A7**, verified and with M-A6's manual cases closed. One
+manual case is open: **A7-5, the cold start** — it rebuilds the stack from a clean checkout, so it is
+run when the operator is willing to lose the volumes. The procedure is in §9 of the test
+specification.
 
 1. **Java extensions for Liquid** — its own feature since 2026-09-03, in
    `docs/FEATURE-liquid-java-extensions.md` and `docs/TEST-SPEC-liquid-java-extensions.md`. It was
