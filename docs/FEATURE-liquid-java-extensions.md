@@ -245,7 +245,7 @@ two features' runs stay comparable. Wall clock is local time.
 | Milestone | Turns used / bound | Wall clock | Files touched | Evaluator passed something untrue? | Manual rework after the goal | Plan changed? | Had to be reconstructed? |
 |---|---|---|---|---|---|---|---|
 | M-B1 | 55 / 45 | 2026-09-03 18:16–19:16 (local), 1h00 | 20: `compose.yml`, `config/nar_builder/{Dockerfile,build.sh,BuildServer.java,entrypoint.sh}`, `config/agents/bin/nar-build.sh`, `config/scripts/build/nar-builder.sh`, `scripts/linux/build.sh`, `config/nginx/templates/nginx.conf`, `CLAUDE.md`, 12 test files + `tests/lib/narfixture.ts`, `tests/verify/m-b1.sh`, this document, the test specification | No — the suite was run in the transcript and the two defects it found are recorded in B1-5 and B1-9 | Not yet run by the operator | No — the four fixed decisions held; one addition, the read-only `volumes/liquid/logs` mount, is declared in §3.2 | No |
-| M-B2 | | | | | | | |
+| M-B2 | ~70 / 50 — over, and the bound was set at where M-B1 landed | 2026-09-03 21:57–22:47 (local), 0h50 | 21: `config/nar_builder/{build.sh,BuildServer.java}`, `config/agents/bin/nar-build.sh`, `config/liquid/entrypoint.sh`, `config/agents/skills/liquid/SKILL.md`, 9 test files + `tests/lib/{entrypointfixture.ts,narfixture.ts,shell.ts}`, `tests/verify/m-b2.sh`, this document, the test specification | No — the suite was run in the transcript, and the two things it could have passed over were caught before the run: a contract test green over an entrypoint the container does not execute (§4 check 3b), and a negative control reading the artifact the previous check had left in `lib/` (§4 check 5) | Not yet run by the operator; B2-10 is still to be observed | No — the three things the goal named were built as posed, and the one decision it left open (whether Liquid starts after a failed copy) was taken and written down | No |
 
 ---
 
@@ -385,6 +385,78 @@ EXIT=0, and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving the git
 integration's milestones have not regressed. Or stop after 45 turns -- that bound
 covers the documentation the development rules require, not the code alone.
 ```
+
+### M-B2 — outcome
+
+`./tests/run.sh m-b2` is green at 43 tests across 9 files, and `./tests/run.sh` at 349 + 27, so nothing
+in the git integration or in M-B1 regressed. Built: `nifi-api` resolved rather than pinned, Liquid's
+entrypoint made to report the failure it used to discard, and §6.4 of the `liquid` skill rewritten as
+one path from source to processor. Nothing was added to `.env`, and nothing needed to be.
+
+**The API is now resolved, stated and correct — all three.** `nar-build --target` answers
+`nifi_version 2.11.0`, `nifi_api_version 2.10.0` and
+`nifi_api_source org.apache.nifi:nifi-utils:2.11.0, which is what the distribution was built against`.
+The resolution is a `dependency:list` over a probe pom depending only on `nifi-utils` at the NiFi
+version read from Liquid, run against the same cache under `volumes/nar_builder/m2`; the value is
+written into the synthesised project as its own property, `nifi.api.version`, beside `nifi.version`,
+which is what lets `nifi-utils` stay at the distribution's version while `nifi-api` sits at the version
+the distribution was built against. M-B1 pinned 2.11.0 and Liquid loads 2.10.0; the pin is gone.
+
+**The fallback and the refusal are different branches, and the distinction is the point.** When
+`nifi-utils` resolves but declares no `nifi-api` — a project that does not depend on it — the NiFi
+version read from Liquid stands, and the source line says that is what happened. When `nifi-utils`
+cannot be resolved at all, the build refuses and names the `pom.xml` escape hatch B1-6 proves. A
+resolution with nothing to answer about is a fallback; one that cannot answer is a refusal. B2-3 forces
+the second with `NAR_BUILD_API_PROBE_VERSION=99.99.99`, carried to the builder over the same header
+path as `X-Liquid-Host` — the lever changes what is *resolved*, never what is *declared*, which is why
+it does not put a version back into configuration and FR23 still holds.
+
+**The decision B2-6 left open, taken: the copy reports its failure and Liquid starts anyway.** `|| true`
+is gone; every file that fails to reach `lib/` is named on stderr with the destination it did not
+reach, a summary line counts them, and the next step is given. Liquid still launches, because it hosts
+every other running flow and refusing to start over one unreadable extension would take all of them
+down — and under `restart: unless-stopped` it would loop the container fast enough to scroll away the
+message the operator needs. FR31 asks for the failure to be *visible*, not for it to be fatal, and the
+operator is reading `docker compose logs liquid` at exactly that moment because §6.4 tells them the
+restart is theirs.
+
+**Two things this milestone caught that a green suite could not have caught for itself.** The
+entrypoint is `COPY`ed into `liquidupstart/liquid:latest`, not mounted, so B2-5 and B2-6 would have
+been green while the container still executed the old script: the image was rebuilt, the container
+recreated, and §4 gained check 3b, which reads the entrypoint out of the running container and diffs
+it against the file the cases assert. And §4's check 5 emptied the drop directory and restarted,
+expecting the NAR to be gone — but a restart never deletes from `lib/`, so it would have been reading
+the copy check 4 caused. It now removes the artifact from `lib/` as well, which is what makes it a
+control rather than a second reading of check 4.
+
+**`./tests/verify/m-b2.sh` passes all eight checks, and it found two defects in itself first — both
+of the kind a green suite cannot find for itself.** Its readiness check waited for
+`docker compose exec liquid ls lib` to succeed, which it does the moment the container is up and long
+before NiFi is listening; the negative control then ran against a Liquid that could not yet report its
+version, and four cases went red for a reason that had nothing to do with the control. It now waits for
+Liquid to answer on its HTTPS port from inside `nar_builder` — the same condition `build.sh` itself
+requires before it trusts the log line. The second: check 4 looked for the entrypoint's own report in
+`docker compose logs liquid` with a grep that also matched NiFi's `NarAutoLoader` lines, and `tail -8`
+pushed the entrypoint's lines out of the window — a check reading the framework's log while believing
+it was reading the entrypoint's. It now matches the entrypoint's own vocabulary only.
+
+**One observation worth keeping.** NiFi's own `NarAutoLoader` also watches `nar_extensions`, and on the
+restart it says `Found existing bundle with coordinate org.nocodenation.liquid:b2-hand-nar:1.0.0, will
+not load` — because the entrypoint had already put that NAR into `lib/`. The autoload directory is not
+the supported path in this stack (§6.4 of the skill says so), and this is the log line that shows why
+it does not matter: `lib/` wins, and the copy is what loads.
+
+**A stack detail the next session will hit.** Recreating `nar_builder` gives it a new address, and the
+`proxy` holds the old one until it is told otherwise: `nar-build` answered `502 Bad Gateway` until
+`docker compose exec proxy nginx -s reload`. Nothing in this feature caused it — it is how every
+container-to-container call in this stack reaches its target — but it looks exactly like a broken
+builder to anyone who has just rebuilt one.
+
+**What is not done here.** B2-10, the manual case, has not been observed: it is the agent's judgement
+— whether it asks for the restart or reports the processor as deployed before one has happened — and
+its procedure is in §4 of the test specification, self-contained and safe to run on a machine where
+M-B1's checks already have. `./tests/verify/m-b2.sh` has been written but is the operator's to run,
+because checks 4, 5 and 7 restart Liquid.
 
 ### M-B2 — the deployment cycle · posed 2026-09-03
 

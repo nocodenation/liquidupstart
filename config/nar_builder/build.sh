@@ -15,6 +15,56 @@ field() {
   printf '%s\n' "$2" | sed -n "s/^$1 \(.*\)$/\1/p"
 }
 
+API_VERSION=""
+API_SOURCE=""
+API_ERROR=""
+
+resolve_api_version() {
+  nifi="$1"
+  probe_version="${NAR_BUILD_API_PROBE_VERSION:-$nifi}"
+  probe="$(mktemp -d)"
+
+  cat > "${probe}/pom.xml" <<POM
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.nocodenation.liquid</groupId>
+  <artifactId>nifi-api-probe</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.nifi</groupId>
+      <artifactId>nifi-utils</artifactId>
+      <version>${probe_version}</version>
+    </dependency>
+  </dependencies>
+</project>
+POM
+
+  if ! mvn -B -f "${probe}/pom.xml" -Dmaven.repo.local="$CACHE" dependency:list \
+       > "${probe}/resolve.log" 2>&1; then
+    API_ERROR="$(grep '^\[ERROR\]' "${probe}/resolve.log" | head -4 | sed 's/^/  /')"
+    rm -rf "$probe"
+    return 1
+  fi
+
+  API_VERSION="$(sed -n 's/.*org\.apache\.nifi:nifi-api:jar:\([0-9][^:]*\):.*/\1/p' \
+                "${probe}/resolve.log" | head -1)"
+  rm -rf "$probe"
+
+  if [ -z "$API_VERSION" ]; then
+    API_VERSION="$nifi"
+    API_SOURCE="the NiFi version read from Liquid, because org.apache.nifi:nifi-utils:${probe_version} resolves no nifi-api"
+    return 0
+  fi
+
+  API_SOURCE="org.apache.nifi:nifi-utils:${probe_version}, which is what the distribution was built against"
+  return 0
+}
+
 resolve_target() {
   if ! curl -sk --max-time 10 -o /dev/null "https://${LIQUID_HOST}:${LIQUID_PORT}/nifi" 2>/dev/null; then
     cat <<UNREACHABLE
@@ -55,8 +105,26 @@ UNREADABLE
     return 3
   fi
 
+  if ! resolve_api_version "$nifi"; then
+    cat <<UNRESOLVED
+nar-build refused: the nifi-api version could not be resolved through
+org.apache.nifi:nifi-utils:${NAR_BUILD_API_PROBE_VERSION:-$nifi}, and this build will not
+guess it. NiFi versions nifi-api on its own line — ${nifi} does not ship nifi-api ${nifi} —
+and a NAR compiled against an API newer than the one Liquid loads compiles cleanly and
+fails at runtime with NoSuchMethodError, which nobody sees until a flow runs.
+Maven said:
+${API_ERROR}
+Add a pom.xml to the source directory naming the nifi-api version you mean — nar-build uses
+it unchanged — or ask the operator whether the builder can reach Maven Central:
+docker compose exec nar_builder curl -sSI https://repo.maven.apache.org/maven2/
+Nothing was built and nothing was written to ${DROP}.
+UNRESOLVED
+    return 3
+  fi
+
   out "nifi_version ${nifi}"
-  out "nifi_api_version ${nifi}"
+  out "nifi_api_version ${API_VERSION}"
+  out "nifi_api_source ${API_SOURCE}"
   out "java_version ${java}"
   out "java_major ${major}"
   out "read_from liquid at ${LIQUID_HOST}:${LIQUID_PORT} ($(basename "${source_log}"))"
@@ -66,8 +134,9 @@ synthesise() {
   proj="$1"
   art="$2"
   nifi="$3"
-  major="$4"
-  src="$5"
+  api="$4"
+  major="$5"
+  src="$6"
 
   mkdir -p "${proj}/processors" "${proj}/nar"
   cp -a "${src}/src" "${proj}/processors/src"
@@ -86,13 +155,14 @@ synthesise() {
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>${major}</maven.compiler.release>
     <nifi.version>${nifi}</nifi.version>
+    <nifi.api.version>${api}</nifi.api.version>
   </properties>
   <dependencyManagement>
     <dependencies>
       <dependency>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-api</artifactId>
-        <version>\${nifi.version}</version>
+        <version>\${nifi.api.version}</version>
         <scope>provided</scope>
       </dependency>
       <dependency>
@@ -127,7 +197,7 @@ POM
     <dependency>
       <groupId>org.apache.nifi</groupId>
       <artifactId>nifi-api</artifactId>
-      <version>\${nifi.version}</version>
+      <version>\${nifi.api.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -229,7 +299,8 @@ NOSPI
     printf '%s\n' "$TARGET" >&2
     return 3
   fi
-  nifi="$(field nifi_api_version "$TARGET")"
+  nifi="$(field nifi_version "$TARGET")"
+  api="$(field nifi_api_version "$TARGET")"
   major="$(field java_major "$TARGET")"
 
   work="$(mktemp -d)"
@@ -247,7 +318,7 @@ NOSPI
     art="$(basename "$rel" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-' \
           | sed 's/^[.-]*//; s/[.-]*$//')"
     [ -n "$art" ] || art=liquid-processor
-    synthesise "$proj" "$art" "$nifi" "$major" "$src"
+    synthesise "$proj" "$art" "$nifi" "$api" "$major" "$src"
   fi
 
   log="${work}/maven.log"

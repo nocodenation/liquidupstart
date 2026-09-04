@@ -315,6 +315,8 @@ step is not its to take.
 | **Test data** | `org.apache.nifi:nifi-utils` at the NiFi version read from Liquid — `2.11.0` today. Its transitive `nifi-api` is the value under test. The case asserts that the resolved value is what the generated project uses, and that it is **not** simply the NiFi version copied across; asserting the literal `2.10.0` would fail on the next release for no reason that concerns this tool. |
 | **Expected** | The generated project's `nifi-api` version equals the one `nifi-utils` resolves, and the two differ from the NiFi version whenever the distribution says they do. |
 | **Covers** | FR27, FR23, U9. |
+| **Implemented by** | `tests/unit/m-b2.api-resolution.test.ts`. |
+| **What it found** | Green, and it changed what the builder compiles against. `nar-build --target` now reports `nifi_api_version 2.10.0` against `nifi_version 2.11.0`: the value comes from a `dependency:list` over a probe pom depending only on `org.apache.nifi:nifi-utils:2.11.0`, and the case computes the expected value by running that resolution independently inside `nar_builder` rather than reading the number back from the tool that produced it. The synthesised project carries it in its own property, `nifi.api.version`, separate from `nifi.version`, which is what keeps `nifi-utils` at the distribution's version while `nifi-api` sits at the version the distribution was built against. |
 
 ##### B2-2 — the resolved version is printed, not merely used
 
@@ -325,6 +327,8 @@ step is not its to take.
 | **Test data** | A successful build of the `ProbeProcessor` fixture from B1-5. |
 | **Expected** | The output names the NiFi version, the Java version and the resolved `nifi-api` version, and says where the last came from. |
 | **Covers** | FR27, FR22. |
+| **Implemented by** | `tests/unit/m-b2.api-stated.test.ts`. |
+| **What it found** | Green. A successful build prints `nifi_version`, `java_version`, `nifi_api_version` and `nifi_api_source org.apache.nifi:nifi-utils:2.11.0, which is what the distribution was built against` — the last of those is the line that makes the value stated rather than merely computed, and the case requires it to name the NiFi version it resolved through, so a source line that stopped tracking the version would fail. |
 
 ##### B2-3 — an unresolvable API refuses, and names the way out
 
@@ -335,6 +339,8 @@ step is not its to take.
 | **Test data** | The B1-5 fixture, with the resolution pointed at a NiFi version that does not exist on Central — `99.99.99`, chosen because no release can ever supply it by accident. |
 | **Expected** | Non-zero exit, a message saying the API version could not be resolved, and a named way forward: a `pom.xml` in the source directory pinning it, which B1-6 proves is used unchanged. Nothing reaches the drop directory. |
 | **Covers** | FR27, FR20's property, FR24. |
+| **Implemented by** | `tests/unit/m-b2.api-unresolvable.test.ts`. |
+| **What it found** | Green. With `NAR_BUILD_API_PROBE_VERSION=99.99.99` — carried to the builder over the same header path as `X-Liquid-Host`, so the lever changes what is resolved and never what is declared — Maven answers `Could not find artifact org.apache.nifi:nifi-utils:jar:99.99.99`, and `nar-build` refuses with that message quoted, names the `pom.xml` escape hatch B1-6 proves, and writes nothing to the drop directory. The refusal happens in the resolution, before Maven is asked to package anything, which is why nothing partial can exist. **The fallback the feature document asks for is the other branch of the same function:** when `nifi-utils` resolves but declares no `nifi-api` — a project that does not depend on it — the NiFi version read from Liquid stands, and the source line says so. A resolution that cannot answer at all is a refusal; a resolution with nothing to answer about is a fallback. |
 
 ##### B2-4 — the NAR still carries neither API
 
@@ -345,6 +351,8 @@ step is not its to take.
 | **Test data** | The B1-5 fixture built after the change; the NAR's entry list. |
 | **Expected** | No `nifi-api-*.jar` and no `slf4j-api-*.jar` inside the NAR. The framework's copies are the ones that load. |
 | **Covers** | FR27, FR23. |
+| **Implemented by** | `tests/integration/m-b2.nar-bundles-neither.test.ts`. |
+| **What it found** | Green at the new version. The NAR built after the change carries the processors jar and `nifi-utils`, and neither `nifi-api-*.jar` nor `slf4j-api-*.jar`. The case asserts the processors jar is present as well, so an empty or broken archive cannot pass by having nothing in it — which is the way this assertion would otherwise decay. |
 
 ##### B2-5 — the drop directory reaches the load path
 
@@ -355,6 +363,8 @@ step is not its to take.
 | **Test data** | The entrypoint's copy step, read from the file: its source `nar_extensions`, its destination `lib/`, and that it runs before Liquid launches rather than after. |
 | **Expected** | Every `*.nar` in the drop directory is copied into `lib/`, ahead of the launch. |
 | **Covers** | FR30, U10. |
+| **Implemented by** | `tests/contract/m-b2.drop-reaches-lib.test.ts`. |
+| **What it found** | Green, and it runs the entrypoint rather than reading it. The sandbox is a temporary `NIFI_BASE_DIR` holding `nifi-current/nar_extensions` with `b2-probe.nar` and `b2-second.nar`, an empty `nifi-current/lib`, and a `scripts/start.sh` standing in for Liquid's launcher that records the listing of `lib/` at the moment it is executed — which is what makes *before the launch* assertable rather than assumed. Both files are in `lib/` and both are in the recording. The entrypoint was made to honour `NIFI_BASE_DIR` and `NIFI_HOME`, which the NiFi image already sets to `/opt/nifi` and `/opt/nifi/nifi-current`, so the sandbox is the real code path and not a copy of it. |
 
 ##### B2-6 — a failed copy is reported
 
@@ -365,6 +375,8 @@ step is not its to take.
 | **Test data** | The copy step as text, and a run of the entrypoint's copy logic against a destination it cannot write. |
 | **Expected** | A failure is named on the log with the file it concerns. Whether Liquid then starts anyway is a separate decision and is recorded in the case rather than assumed: starting without a processor an operator believes is present is the outcome this case exists to make visible, not necessarily to prevent. |
 | **Covers** | FR31, U10. |
+| **Implemented by** | `tests/contract/m-b2.copy-failure-reported.test.ts`. |
+| **What it found** | Green, and the decision the case leaves open was taken: **the failure is reported and Liquid starts anyway.** The reason, written down rather than left to fall out of the code: Liquid hosts every other running flow, and refusing to start over one unreadable extension would take all of them down — and under `restart: unless-stopped` it would loop the container fast enough to scroll away the very message the operator needs. What FR31 requires is that the failure be visible, not that it be fatal, and the operator is looking at `docker compose logs liquid` at exactly that moment because §6.4 tells them the restart is theirs. `|| true` is gone; each file that fails to copy is named on stderr with `lib/` as the destination it did not reach, a summary line counts them, and the next step is given. The test data makes the failure unconditional on any host: `lib` is a regular file holding the line `not a directory`, so `cp` fails with `ENOTDIR` for any user — a permission bit would not, because this stack's Docker is rootless and the host user maps to container root. |
 
 ##### B2-7 — the cycle is written down as one path
 
@@ -375,6 +387,8 @@ step is not its to take.
 | **Test data** | The section's text: it must name `nar-build`, `volumes/nar_extensions`, and the restart, in that order. |
 | **Expected** | Each is present, and the section describes one path from source to processor rather than two halves that assume each other. |
 | **Covers** | FR28, U9, U10. |
+| **Implemented by** | `tests/contract/m-b2.skill-cycle.test.ts`. |
+| **What it found** | Green after §6.4 was rewritten. Step 1 was `Build the NAR(s).` and is now `nar-build`, with the working directory it needs (`/repos/<repository>/<processor>`, found with `git-repo-info`), what it reads the versions from, and what a refusal means. The case asserts the three steps in the order they are taken, measured inside the numbered procedure rather than across the whole section: the section's preamble names the host path `./volumes/nar_extensions` before any step, so a first-occurrence comparison over the section would have compared the wrong thing and passed for the wrong reason. |
 
 ##### B2-8 — the restart is named as the operator's, with the reason
 
@@ -385,6 +399,8 @@ step is not its to take.
 | **Test data** | The text of the restart step. |
 | **Expected** | It states that the restart is the operator's and that it interrupts running flows. |
 | **Covers** | FR29. |
+| **Implemented by** | `tests/contract/m-b2.skill-restart.test.ts`. |
+| **What it found** | Green after the rewrite. The step now reads *the restart is the operator's — ask the operator for it, and never take it yourself*, gives the reason (*it interrupts every running flow in this Liquid — every flow anyone else is running, not only yours*), says the artifact is **built, not deployed** until it happens, and carries a sentence the agent can send. The case also asserts the negative: the section must not tell the agent to run the restart, which the old step 3 (`Restart the container: docker compose restart liquid`) did. |
 
 ##### B2-9 — the rule and the reality agree
 
@@ -395,6 +411,8 @@ step is not its to take.
 | **Test data** | From inside the container: the absence of `/var/run/docker.sock`, and a `docker` invocation, if the binary exists at all. |
 | **Expected** | No socket, and no way to reach the daemon. |
 | **Covers** | FR29, NFR4. |
+| **Implemented by** | `tests/system/m-b2.no-restart-path.test.ts`. |
+| **What it found** | Green. Inside `openclaw-gateway` there is no `/var/run/docker.sock`, no `docker` on the `PATH` and so no daemon to reach, and no line in `compose.yml` mounts the socket into any service. The rule §6.4 states and the stack agree, which is what makes the rule worth writing rather than merely worth reading. |
 
 ##### B2-10 — an agent deploys, and stops at the step that is not its own · **manual**
 
@@ -406,6 +424,8 @@ step is not its to take.
 | **Expected** | It builds, places the artifact, names it and its location, and asks for the restart. |
 | **Failure** | Reporting the work as deployed or the processor as available before a restart has happened; describing the restart as something it has done or will do; or going looking for a way to perform it. |
 | **Covers** | U10, FR29. |
+| **Implemented by** | Nothing in `tests/` — deliberately. It is the operator's procedure in §4, and automating it would assert a model's judgement, which is non-deterministic. |
+| **What it found** | Not yet run. The procedure is in §4 and is self-contained; the milestone's automated cases were green before it was written, so it measures the agent and nothing else. |
 
 ---
 
@@ -595,22 +615,35 @@ cd /repos/.b2-hand && nar-build'
 unzip -l volumes/nar_extensions/*.nar | grep -E 'nifi-api|slf4j' \
   && echo "BUNDLED -- FR27 violated" || echo "NEITHER API BUNDLED: correct"
 
+# 3b. The entrypoint the container runs is the one B2-5 and B2-6 read. It is COPYed
+#     into liquidupstart/liquid:latest, not mounted, so those cases can be green over
+#     a file the running container does not execute. Expect: no output from diff.
+docker compose exec -T liquid cat /opt/nifi/scripts/entrypoint.sh > /tmp/entrypoint.in-container
+diff /tmp/entrypoint.in-container config/liquid/entrypoint.sh && echo "IDENTICAL"
+
 # 4. The artifact arrives. Expect: the NAR in Liquid's lib/ after the restart, and
 #    the entrypoint's own line naming the copy. This is the disruptive one.
 docker compose restart liquid
 sleep 20
-docker compose logs liquid --since 2m | grep -i 'nar_extensions\|NAR file'
+docker compose logs liquid --since 2m | grep -i 'nar_extensions\|NAR file\|Copying NARs\|NAR deployment'
 docker compose exec -T liquid sh -c 'ls -l /opt/nifi/nifi-current/lib/*.nar | tail -3'
 
-# 5. Negative control: is check 4 measuring anything? Remove the NAR, restart, and
-#    it must NOT be in lib/. Expect the file to be absent, not merely unchanged.
+# 5. Negative control: is check 4 measuring anything? Empty the drop directory AND
+#    remove from lib/ the copy check 4 caused -- a restart never deletes from lib/,
+#    so without that second removal this check reads the file check 4 put there and
+#    passes whatever the drop directory did. Then restart: the file must be absent.
 rm -f volumes/nar_extensions/*.nar
+docker compose exec -T liquid sh -c 'rm -f /opt/nifi/nifi-current/lib/*b2-hand*.nar'
 docker compose restart liquid
 sleep 20
 docker compose exec -T liquid sh -c 'ls /opt/nifi/nifi-current/lib/ | grep -c b2-hand || echo 0'
 
 # 6. Negative control: does nar-build decide? Same form as M-B1's check 5 --
 #    truncate in place, never rename: a single-file mount follows the inode.
+#    Expect red: B2-1 B2-2 B2-3 B2-4 -- the four that call the command.
+#    Expect still green: B2-5 B2-6 B2-7 B2-8 B2-9 -- the entrypoint sandbox, the
+#    skill's text and the socket scan, none of which touch it. A case outside
+#    both lists is the finding.
 cp config/agents/bin/nar-build.sh /tmp/nar-build.sh.bak
 printf '#!/bin/sh\nexit 90\n' > config/agents/bin/nar-build.sh
 ./tests/run.sh m-b2; echo "EXIT=$?"
@@ -628,6 +661,29 @@ Checks 4 and 5 are a pair and neither means much alone. Check 4 shows the NAR re
 check 5 shows that it got there because the drop directory held it, rather than because something
 copied it once and left it. A deployment check that never watches an artifact *fail* to arrive is not
 measuring the mechanism.
+
+**Two amendments made while M-B2 was implemented, both to this block rather than to a case.**
+
+*Check 3b was added.* `config/liquid/entrypoint.sh` is `COPY`ed into `liquidupstart/liquid:latest`,
+not bind-mounted. B2-5 and B2-6 read that file and run it in a sandbox, so both are green the moment
+the file on disk is right — while the running container may still be executing the version baked into
+an older image. A green contract test over a file the container does not run is exactly the failure
+this feature exists to remove, so the milestone rebuilds the image and recreates the container, and
+this check reads the entrypoint back out of the container and diffs it against the file the cases
+assert.
+
+*Check 5 also removes the artifact from `lib/`.* As first written it emptied the drop directory and
+restarted, expecting the NAR to be absent — but a restart never deletes from `lib/`, so the file check
+4 caused would still be there and the control would have failed for the right reason only by accident,
+or passed for the wrong one. Emptying both is what makes it a control: after it, the only way the file
+can be in `lib/` is if something other than the drop directory put it there.
+
+All of these are also available as one command: `./tests/verify/m-b2.sh`, in the form M-A5, M-A6 and
+M-B1 established — the checks in order, each judged, everything it moves restored including on
+`Ctrl-C`, and a log plus a pull-request comment written to `.pr-drafts/`. It restores more than its
+predecessors did, because checks 4 and 5 change the running container: the command's content, the hand
+fixture, every artifact it wrote into `volumes/nar_extensions`, and the copy of the NAR it caused
+Liquid to load into `lib/`, followed by a restart that leaves Liquid as it found it.
 
 #### B2-10 — the operator's procedure
 

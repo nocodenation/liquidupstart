@@ -15,6 +15,7 @@ public class BuildServer {
 
     private static final String SCRIPT = "/opt/builder/build.sh";
     private static final Pattern HOSTNAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,62}");
+    private static final Pattern VERSION = Pattern.compile("[0-9A-Za-z][0-9A-Za-z._-]{0,31}");
 
     public static void main(String[] args) throws IOException {
         int port = Integer.parseInt(System.getenv().getOrDefault("NAR_BUILDER_PORT", "8770"));
@@ -36,6 +37,10 @@ public class BuildServer {
         String liquid = exchange.getRequestHeaders().getFirst("X-Liquid-Host");
         if (liquid != null && HOSTNAME.matcher(liquid).matches()) {
             pb.environment().put("NAR_BUILD_LIQUID_HOST", liquid);
+        }
+        String probe = exchange.getRequestHeaders().getFirst("X-Nifi-Api-Probe-Version");
+        if (probe != null && VERSION.matcher(probe).matches()) {
+            pb.environment().put("NAR_BUILD_API_PROBE_VERSION", probe);
         }
         Process process = pb.start();
         byte[] output;

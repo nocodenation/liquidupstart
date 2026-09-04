@@ -199,3 +199,37 @@ export function builderCredentialScan(): Result {
       'echo "END"'
   ]);
 }
+
+export const API_PROBE_LEVER = 'NAR_BUILD_API_PROBE_VERSION';
+export const UNRESOLVABLE_VERSION = '99.99.99';
+
+export function resolveApiThroughNifiUtils(nifiVersion: string): Result {
+  const script = `W=$(mktemp -d); cd "$W"
+cat > pom.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.nocodenation.probe</groupId>
+  <artifactId>nifi-api-probe</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.nifi</groupId>
+      <artifactId>nifi-utils</artifactId>
+      <version>NIFI_VERSION</version>
+    </dependency>
+  </dependencies>
+</project>
+EOF
+sed -i "s|NIFI_VERSION|${nifiVersion}|" pom.xml
+mvn -B -f pom.xml -Dmaven.repo.local=/m2 dependency:list 2>&1 | sed -n 's/.*org\\.apache\\.nifi:nifi-api:jar:\\([0-9][^:]*\\):.*/RESOLVED \\1/p' | head -1
+rm -rf "$W"`;
+  return sh(['docker', 'compose', 'exec', '-T', BUILDER_SERVICE, 'sh', '-lc', script]);
+}
+
+export function resolvedApi(nifiVersion: string): string {
+  const r = resolveApiThroughNifiUtils(nifiVersion);
+  const m = r.stdout.match(/^RESOLVED\s+(\S+)$/m);
+  return m ? m[1] : '';
+}

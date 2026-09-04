@@ -23,8 +23,11 @@ module and a nar module, built against the version the running Liquid reports.
 If the directory carries its own pom.xml, that one is used unchanged, so a
 processor with real dependencies is not capped by the synthesiser.
 
---target prints the NiFi and Java versions the build would target and where they
-were read from. Nothing is declared: a build that cannot read them stops.
+--target prints the NiFi and Java versions the build would target, the nifi-api
+version it resolves through org.apache.nifi:nifi-utils, and where each came from.
+NiFi versions nifi-api on its own line, so the two differ: the resolved one is
+what Liquid loads and what the project is written against. Nothing is declared: a
+build that cannot read or resolve them stops.
 
 The artifact is not live until Liquid restarts, which is the operator's call.
 
@@ -49,18 +52,16 @@ ask() {
   payload="$3"
   body="$(mktemp)"
   errors="$(mktemp)"
-  set +e
+  set -- -sS -o "$body" -w '%{http_code}' --max-time "$TIMEOUT" -H "Host: ${VHOST}:${PORT}"
   if [ -n "${NAR_BUILD_LIQUID_HOST:-}" ]; then
-    code="$(curl -sS -o "$body" -w '%{http_code}' --max-time "$TIMEOUT" \
-      -H "Host: ${VHOST}:${PORT}" -H "X-Liquid-Host: ${NAR_BUILD_LIQUID_HOST}" \
-      -X "$method" --data-binary "$payload" \
-      "http://${PROXY}:${PORT}${path}" 2>"$errors")"
-  else
-    code="$(curl -sS -o "$body" -w '%{http_code}' --max-time "$TIMEOUT" \
-      -H "Host: ${VHOST}:${PORT}" \
-      -X "$method" --data-binary "$payload" \
-      "http://${PROXY}:${PORT}${path}" 2>"$errors")"
+    set -- "$@" -H "X-Liquid-Host: ${NAR_BUILD_LIQUID_HOST}"
   fi
+  if [ -n "${NAR_BUILD_API_PROBE_VERSION:-}" ]; then
+    set -- "$@" -H "X-Nifi-Api-Probe-Version: ${NAR_BUILD_API_PROBE_VERSION}"
+  fi
+  set -- "$@" -X "$method" --data-binary "$payload" "http://${PROXY}:${PORT}${path}"
+  set +e
+  code="$(curl "$@" 2>"$errors")"
   curl_status=$?
   set -e
 
