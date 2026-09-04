@@ -20,6 +20,7 @@ documents in one repository each owning a "U1" would make every `Covers:` row am
 
 | Milestone | Level of rigour | Rationale |
 |---|---|---|
+| M-B3 | End-to-end in §4, integration for concurrency | The load path cannot be asserted without a restart, and concurrency cannot be asserted without two builds. Neither has branching logic to cover |
 | M-B2 | Unit for the resolution, contract for the entrypoint and the skill, one manual case | The decisions are few and each has a case on both sides. The restart is deterministic and disruptive, so it is a verification check rather than a suite test; the manual case is the agent's judgement, which is the only part a model can get wrong |
 | M-B1 | Unit for the two decisions it makes, integration for the builds, contract for the mounts | The tool has exactly two branches worth the name — is the version readable, does the source carry a pom — and both have a case on each side. Full branch coverage is not demanded: this is a compiler front end, not a guardrail, and the standard is reserved for logic that decides what leaves the stack |
 | M-B2 | System, with a documented manual restart | Restart is deliberately human |
@@ -43,6 +44,8 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR29 The restart is the operator's, and the agent asks | B2-8, B2-9, B2-10 |
 | FR30 The drop directory reaches Liquid's load path | B2-5 |
 | FR31 A deployment step that fails says so | B2-6 |
+| FR34 What is built is proven loadable | B3-1, B3-2 |
+| FR35 Concurrent builds do not corrupt each other | B3-3, B3-4 |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
 
 ---
@@ -437,6 +440,91 @@ not safe; it is untested.
 
 ---
 
+### M-B3 — does Liquid load what we build
+
+The question this feature has never asked. `nar-build` produces an artifact; B1-5 reads the SPI
+descriptor inside it; B2-5 asserts the entrypoint copies it into `lib/`. Between that copy and a
+processor an operator can drag onto a canvas sits the framework, and no case has ever consulted it.
+The `nifi-api` version M-B2 corrected is observable in exactly one place — here — and the correction
+was made on argument alone because there was nowhere to look.
+
+**Decisions taken while writing these cases:**
+
+*The load checks restart Liquid, so they live in §4 and not in the suite.* The same reasoning as
+M-B2's: deterministic, so not a manual case; disruptive, so not something to run on every milestone.
+
+*The negative control is not optional here, it is the case.* "The processor appeared" proves only
+that something appeared. A NAR built deliberately against the wrong API must **not** appear, and until
+that has been seen, the positive check has no failure mode and therefore no meaning. This is the
+project's own lesson — a suite that stays green through its control is not testing what it claims —
+applied to the one link that has never had a control at all.
+
+*Reading Liquid needs credentials, and the harness may hold them where the builder may not.* §3
+forbids the *builder* credentials, because it runs third-party Maven plugins. The test harness runs on
+the operator's host, alongside `.env`, and is not the same trust boundary. `LIQUID_USERNAME` and
+`LIQUID_PASSWORD` are fixed defaults and not secrets unless an operator changes them.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| B3-1 | **End-to-end** · §4 | Source, build, drop, restart, and ask Liquid | The processor type is listed by the Liquid API — the first evidence in this feature that anything it builds is loadable |
+| B3-2 | **End-to-end** **unhappy** · §4 | The same, with a NAR built against the wrong API | It does **not** appear, and the framework log says why. Without this, B3-1 proves nothing |
+| B3-3 | Integration | Two builds of different sources at once | Both produce their artifact; neither corrupts the shared cache or the other's output |
+| B3-4 | Integration **unhappy** | Two builds of the **same** source directory at once | Either both succeed or one refuses with a message. What must not happen is a half-written NAR in the drop directory, which the entrypoint would copy on the next restart |
+
+#### Detail per case
+
+**What this milestone is for.** To close the one gap that makes every other case in this feature
+conditional: that the artifact is loadable at all.
+
+##### B3-1 — Liquid lists the processor · §4 check
+
+| | |
+|---|---|
+| **Premise** | The end of U10, and the only unproven link. Everything up to `lib/` is asserted; whether NiFi accepts the bundle, resolves its API and registers the type has never been observed. |
+| **Component** | The whole path, ending at Liquid's API. |
+| **Test data** | The `ProbeProcessor` fixture of B1-5 — `org.nocodenation.probe.ProbeProcessor`, an empty `onTrigger`, its SPI descriptor — built with `nar-build`, restarted into, and looked for by that fully-qualified name in the processor types the API returns. |
+| **Expected** | The type is listed. The artifact in `lib/` is the one the build produced, by SHA-256, so the case cannot pass on a leftover from an earlier run. |
+| **Covers** | FR34, U9, U10. |
+
+##### B3-2 — a NAR built against the wrong API does not load · §4 check
+
+| | |
+|---|---|
+| **Premise** | The control that gives B3-1 meaning, and the observation M-B2's correction never had. M-B1 compiled against `nifi-api` 2.11.0 while Liquid loads 2.10.0; the argument that this is dangerous is sound and was never once seen to be true. This is where it becomes evidence. |
+| **Component** | The same path, with the resolution overridden. |
+| **Test data** | The same fixture, built with the API version forced to something the framework does not provide — the `NAR_BUILD_API_PROBE_VERSION` lever B2-3 already uses — and a processor body that calls something only that version has, so the mismatch is real rather than nominal. |
+| **Expected** | The type is **not** listed after the restart, and `nifi-app.log` names the failure. Whether it is a `NoClassDefFoundError`, a bundle-loading error or silence is recorded as found rather than predicted: the point is to learn what this failure actually looks like, because an operator will meet it before anyone else does. |
+| **Covers** | FR34, FR27. |
+
+##### B3-3 — two builds at once, different sources
+
+| | |
+|---|---|
+| **Premise** | One builder, one `volumes/nar_builder/m2`, one `/repos`. Two agents working is the ordinary case, not an exotic one, and Maven's local repository is famously not concurrency-safe. Nothing has ever run two builds together. |
+| **Component** | `nar_builder` under two simultaneous requests. |
+| **Test data** | Two copies of the B1-5 fixture under different directories and artifact names, `probe-a` and `probe-b`, both started before either returns. |
+| **Expected** | Both exit 0, both artifacts are in the drop directory, each contains its own processor and not the other's, and the cache is intact afterwards — asserted by a third build succeeding without re-resolving. |
+| **Covers** | FR35. |
+
+##### B3-4 — two builds at once, one source
+
+| | |
+|---|---|
+| **Premise** | The sharper half. Two invocations writing the same artifact name into the same drop directory can leave a partial file, and the entrypoint copies whatever it finds into `lib/` on the next restart — so a torn NAR does not fail the build, it fails the deployment, later, on a restart nobody connects to it. FR24 protects the directory against a *failed* build; nothing protects it against two successful ones. |
+| **Component** | `nar_builder`, twice on one source directory. |
+| **Test data** | One copy of the B1-5 fixture, two overlapping `nar-build` invocations against it. |
+| **Expected** | Either both succeed and the artifact is a valid archive, or one refuses and says so. **What must not happen** is an unreadable or partial `.nar` in the drop directory — asserted by opening the archive afterwards, not by counting files. |
+| **Failure** | An archive that cannot be listed, or a temporary file left beside it. |
+| **Covers** | FR35, FR24. |
+
+---
+
+B3-2 is the case this milestone exists for. Every argument in §3 about which `nifi-api` version to
+compile against — including the correction M-B2 made — has been reasoning about what *would* happen.
+One run of this case turns the whole discussion into an observation, and if it turns out that a
+mismatched NAR loads perfectly well, that is worth knowing too: it would mean FR23 has been defending
+against something that does not occur, and the requirement should say so rather than quietly stand.
+
 ---
 
 ## 4. Independent verification
@@ -713,3 +801,88 @@ B2-9 rather than only about the agent.
 **Afterwards:** remove the artifact from `volumes/nar_extensions/`, remove `processors/` from the
 clone, and run `./tests/run.sh` — a cleanup nobody checks is a cleanup that gets half-done, which is
 what A3-10 caught after A6-13.
+
+---
+
+### M-B3 — does Liquid load what we build
+
+**Checks 3 and 4 restart Liquid twice**, which interrupts every running flow. Run them when nothing is
+mid-flight. They are the reason this milestone exists, and they are also the slowest thing in this
+document.
+
+```bash
+cd /Users/christof/repos/liquidupstart
+
+# 1. The milestone suite (the concurrency cases). Expect: EXIT=0
+./tests/run.sh m-b3; echo "EXIT=$?"
+
+# 2. No regression. Expect: EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# 3. Does Liquid load it? Build the probe, restart, and ask the API for the type.
+#    Expect: the fully-qualified class name in the processor types Liquid returns.
+docker compose exec -T openclaw-gateway sh -lc '
+set -e
+P=/repos/.b3-hand/src/main/java/org/nocodenation/probe
+R=/repos/.b3-hand/src/main/resources/META-INF/services
+rm -rf /repos/.b3-hand; mkdir -p "$P" "$R"
+cat > "$P/ProbeProcessor.java" <<EOF
+package org.nocodenation.probe;
+
+import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+
+public class ProbeProcessor extends AbstractProcessor {
+    @Override
+    public void onTrigger(ProcessContext context, ProcessSession session) { }
+}
+EOF
+echo org.nocodenation.probe.ProbeProcessor > "$R/org.apache.nifi.processor.Processor"
+cd /repos/.b3-hand && nar-build'
+shasum -a 256 volumes/nar_extensions/*.nar
+docker compose restart liquid
+# Wait for Liquid to answer before asking it anything -- the mistake M-B2's
+# verification script made was treating "container up" as "NiFi listening".
+until docker compose exec -T liquid sh -c \
+  'curl -sk -o /dev/null https://127.0.0.1:8443/nifi-api/access/token' 2>/dev/null; do sleep 5; done
+docker compose exec -T liquid sh -c 'sha256sum /opt/nifi/nifi-current/lib/*probe*.nar'
+source .env 2>/dev/null
+TOKEN=$(docker compose exec -T liquid sh -c "curl -sk -X POST \
+  -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
+  https://127.0.0.1:8443/nifi-api/access/token")
+docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${TOKEN}' \
+  https://127.0.0.1:8443/nifi-api/flow/processor-types" | grep -c 'org.nocodenation.probe.ProbeProcessor'
+# Expect 1. Expect the two SHA-256 values above to match: the NAR in lib/ must be
+# the one this build produced, not a leftover from an earlier run.
+
+# 4. The control that gives check 3 its meaning: build against an API the
+#    framework does not provide, restart, and expect the type NOT to appear.
+docker compose exec -T openclaw-gateway sh -lc '
+cd /repos/.b3-hand
+NAR_BUILD_API_PROBE_VERSION=99.99.99 nar-build 2>&1 | tail -3'
+# If that refuses, the mismatch has to be produced another way -- see B3-2, whose
+# fixture calls a method only the wrong version provides. Record which happened.
+docker compose restart liquid
+until docker compose exec -T liquid sh -c \
+  'curl -sk -o /dev/null https://127.0.0.1:8443/nifi-api/access/token' 2>/dev/null; do sleep 5; done
+docker compose logs liquid --since 3m | grep -iE 'NoClassDefFound|could not.*load|bundle' | head -5
+# Expect: the type absent from processor-types, and a reason in the log. Record
+# what the failure actually looks like -- an operator meets it before anyone else.
+
+# 5. Clean up and confirm. Expect EXIT=0.
+docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.b3-hand'
+rm -f volumes/nar_extensions/*probe*.nar
+docker compose exec -T liquid sh -c 'rm -f /opt/nifi/nifi-current/lib/*probe*.nar'
+docker compose restart liquid
+./tests/run.sh; echo "EXIT=$?"
+```
+
+Check 4 is the point of the milestone, not an addition to it. Check 3 alone would prove that *a*
+processor appeared; only check 4 shows that the check can fail, and therefore that its passing means
+anything. **Record what check 4 actually produces even if it surprises you** — if a mismatched NAR
+loads without complaint, that is a finding about FR23 rather than a broken check, and the requirement
+should be rewritten to say what it really defends against.
+
+The two SHA-256 comparisons in check 3 are not ceremony. `lib/` accumulates: a NAR from an earlier run
+with the same artifact name would make the check pass without this build having contributed anything.

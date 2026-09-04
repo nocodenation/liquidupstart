@@ -88,6 +88,14 @@ mistake is available here and is cheaper to avoid than to repeat.
 - **FR31 — A deployment step that fails says so.** The copy in the entrypoint currently ends in
   `|| true`, so a failure is swallowed and Liquid starts without the processor with nothing to read.
   A step whose failure is invisible is worse than one that has none.
+- **FR34 — What is built is proven loadable, not merely well-formed.** Nothing in M-B1 or M-B2 asks
+  Liquid whether it accepted the artifact. B1-5 reads the SPI descriptor inside the archive and B2-5
+  asserts the copy into `lib/`; between the copy and a usable processor sits the framework, which has
+  never been consulted. The `nifi-api` mismatch M-B2 corrected would have shown itself here and
+  nowhere else — the whole argument for the fix was reasoning, never observation.
+- **FR35 — Concurrent builds do not corrupt each other.** One builder, one dependency cache, one
+  `/repos`. Two builds at once is the ordinary case the moment two agents work, and nothing has ever
+  run it.
 - **NFR7 — The build's trust surface is stated, not assumed.** A Maven build downloads plugins from
   the internet and executes them. This is a new trust surface in the stack and is treated the way
   §3.1 treated the write key: named, bounded, and decided rather than slipped in. See §3.2.
@@ -234,6 +242,23 @@ has spent seven milestones removing, sitting in the last step of the very path M
 *Done when:* `./tests/run.sh m-b2` is green, and the one manual case has been observed — an agent
 asked to deploy a processor end to end, which is where judgement returns after M-B1 had none to
 measure.
+
+**M-B3 · Does Liquid load what we build**
+The question this feature has never asked. `nar-build` produces an artifact, the entrypoint copies it
+into `lib/`, and there the evidence stops: no case has ever established that NiFi accepts it and the
+processor becomes available. That is not a small remainder — it is the only place the `nifi-api`
+version can be observed to matter, and M-B2's correction rests entirely on argument because there was
+nowhere to look.
+
+*And the negative control is the case that gives it worth.* A NAR deliberately built against the wrong
+API must **not** load. Without that, "the processor appeared" proves only that something appeared;
+with it, the check has a failure mode and therefore a meaning.
+
+*Also here: two builds at once.* One builder, one cache, one `/repos`. Two agents is the ordinary
+situation, and the collision surface has never been touched.
+
+*Done when:* `./tests/run.sh m-b3` is green, and §4's load checks — which restart Liquid, and so live
+there rather than in the suite — have been run.
 
 ---
 
