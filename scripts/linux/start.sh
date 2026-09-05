@@ -166,6 +166,35 @@ if [[ $UP_RC -ne 0 ]]; then
   exit $UP_RC
 fi
 
+# OpenClaw 2026.9.1 refuses proxy-shaped traffic unless gateway.trustedProxies is
+# narrow. config/scripts/start/openclaw.sh writes this stack's docker network when
+# it can, but on a cold start the network does not exist until the `up` above, so
+# it fell back to the wide RFC1918 list. Correct it here, and restart the gateway
+# only when the value actually changed -- on every ordinary start it already
+# matches and nothing happens.
+LU_SUBNET="$(docker network ls --filter name=nocodenation_liquid_upstart_network \
+    --format '{{.Name}}' | head -1 \
+    | xargs -r -I{} docker network inspect {} \
+        --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
+OC_CONFIG="${PROJECT_DIR}/volumes/_openclaw/openclaw.json"
+if [[ -n "$LU_SUBNET" && -f "$OC_CONFIG" ]] \
+   && ! grep -q "\"${LU_SUBNET}\"" "$OC_CONFIG"; then
+  echo "Narrowing OpenClaw trustedProxies to ${LU_SUBNET} (the network exists only now)..."
+  if docker compose exec -T -e LU_SUBNET="$LU_SUBNET" openclaw-gateway node -e '
+      const fs = require("fs");
+      const p = process.env.OPENCLAW_HOME + "/.openclaw/openclaw.json";
+      const c = JSON.parse(fs.readFileSync(p, "utf8"));
+      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_SUBNET];
+      fs.writeFileSync(p, JSON.stringify(c, null, 2));
+    ' 2>/dev/null; then
+    docker compose restart openclaw-gateway >/dev/null 2>&1 || true
+    docker compose exec -T proxy nginx -s reload >/dev/null 2>&1 || true
+  else
+    echo "Warning: could not narrow trustedProxies; the OpenClaw UI will answer" >&2
+    echo "  'proxy_attribution_required' until it is set to ${LU_SUBNET}." >&2
+  fi
+fi
+
 PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 LIQUID_USERNAME="$(grep -E '^LIQUID_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 LIQUID_PASSWORD="$(grep -E '^LIQUID_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
