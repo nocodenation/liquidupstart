@@ -7,6 +7,19 @@ engine based on Apache NiFi), and AI coding agents (OpenClaw, OpenCode) behind a
 **SvelteKit dashboard** (`dashboard/`) configures, builds, starts, and stops the stack
 from the browser.
 
+> **Privacy Proxy:** the service lives in its own repository
+> (`ghcr.io/nocodenation/privacy-proxy`, source at `nocodenation/privacy-proxy`). This repo only
+> deploys it: `config/privacy-proxy/templates/Dockerfile` derives a local image from the released
+> one, and `compose.yml`/`.env.example` §7 hold the wiring. Do not add its source back here — it is
+> proprietary and this repo is Apache-2.0. `.env.example` §11 (`PRIVACY_PROXY_DEV_SRC`) points the
+> build at a local checkout instead of the release image, for working on the service itself.
+> It signs upstream requests with the shared §5 keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+> `XAI_API_KEY`, passed unprefixed in compose) and the agents reach it as `privacy-openai` /
+> `privacy-anthropic` carrying the providers' own catalogues — `config/scripts/start/openclaw.sh`
+> mirrors the bundled plugin manifests, `config/opencode/entrypoint.sh` discovers from the proxy's
+> `GET /{provider}/v1/models`. The built-in `anthropic`/`openai` providers are never pointed at it.
+> Details: `docs/SPECIFICATION.md` §7.
+
 ## Layout
 
 - `compose.yml` — all services. The compose project is named `liquidupstart`; a single
@@ -23,6 +36,10 @@ from the browser.
 ## Services & images
 
 Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-runner,liquid,openclaw}:latest`.
+`liquidupstart/privacy-proxy:latest` is a fifth, built only when `PRIVACY_PROXY_ENABLE=1`: a thin
+derivation of the released `ghcr.io/nocodenation/privacy-proxy:latest` that adds the Claude Code
+CLI when `ENABLE_ANTHROPIC_CLAUDE_CODE=1` (the released image omits it — proprietary, no
+redistribution grant — so it is installed here, on the operator's own machine).
 `hermes` exists in config but is **disabled** (commented out in `compose.yml`, `build.sh`,
 `start.sh`). Service UIs are reached at `http://<name>.localhost:${SYSTEM_HTTP_PORT}`
 (HTTP default 8888; Liquid over HTTPS on `${SYSTEM_HTTPS_PORT}`, default 8833).

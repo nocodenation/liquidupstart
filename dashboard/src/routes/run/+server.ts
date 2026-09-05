@@ -8,6 +8,8 @@
 import { appendFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { requireSameOrigin } from '$lib/server/origin';
+import { envValues } from '$lib/server/project';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const RESULT_FILE = join(ENV_DIR, '.install-result');
@@ -24,6 +26,20 @@ const TASKS: Record<string, string> = {
 };
 
 let running = false;
+
+// Absolute host paths outside ENV_DIR that a script needs to see — a developer
+// build reads its Docker context from a service checkout kept elsewhere. Same
+// path inside as out, so the toolbox's docker CLI and the engine agree on it;
+// relative values are already under ENV_DIR.
+const DEV_SRC_KEYS = ['PRIVACY_PROXY_DEV_SRC'];
+
+function devSourceMounts(): string[] {
+  const values = envValues();
+  return DEV_SRC_KEYS.flatMap((key) => {
+    const path = values.get(key)?.value.trim() ?? '';
+    return path.startsWith('/') ? ['-v', `${path}:${path}:ro`] : [];
+  });
+}
 
 function run(
   args: string[],
@@ -46,10 +62,8 @@ function run(
 export async function POST({ request }) {
   // Defense in depth on top of SvelteKit's CSRF protection: this endpoint
   // executes commands on the host, so only accept calls from the installer page.
-  const origin = request.headers.get('origin');
-  if (process.env.ORIGIN && origin !== process.env.ORIGIN) {
-    return new Response('Forbidden', { status: 403 });
-  }
+  const blocked = requireSameOrigin(request);
+  if (blocked) return blocked;
 
   const { task } = await request.json();
   const script = TASKS[task];
@@ -104,6 +118,7 @@ export async function POST({ request }) {
             `${HOST_DOCKER_SOCK}:/var/run/docker.sock`,
             '-v',
             `${ENV_DIR}:${ENV_DIR}`,
+            ...devSourceMounts(),
             '-w',
             ENV_DIR,
             TOOLBOX,

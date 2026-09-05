@@ -26,6 +26,4 @@ RUN /root/.hermes/bin/uv pip install --python /usr/local/lib/hermes-agent/venv \
 
 COPY ./entrypoint.sh /opt/entrypoint.sh
 
-VOLUME [ "/root/.hermes" ]
-
 ENTRYPOINT ["/opt/entrypoint.sh"]

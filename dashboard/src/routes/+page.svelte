@@ -33,9 +33,11 @@
                 {#if tile.note}<span class="sectdesc">{tile.note}</span>{/if}
               </div>
               {#if tile.subtitle}<div class="tilesubtitle">{tile.subtitle}</div>{/if}
-              <a href={tile.url} target="_blank" rel="noopener noreferrer" class="tileurl">
-                {tile.url}
-              </a>
+              {#if tile.url}
+                <a href={tile.url} target="_blank" rel="noopener noreferrer" class="tileurl">
+                  {tile.url}
+                </a>
+              {/if}
               {#if tile.creds}
                 <dl class="tilecreds">
                   {#each tile.creds as cred}

@@ -17,12 +17,7 @@ for arg in "$@"; do
 done
 
 # Load environment variables from .env file if it exists
-if [ -f "${PROJECT_DIR}/.env" ]; then
-    # Export variables from .env file, ignoring comments and empty lines
-    set -a
-    source "${PROJECT_DIR}/.env"
-    set +a
-fi
+load_env_file "${PROJECT_DIR}/.env"
 
 # Use environment variables (with defaults if not set)
 SYSTEM_DEPENDENCIES="${SYSTEM_DEPENDENCIES:-}"

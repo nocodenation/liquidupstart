@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { envValues, isConfigured, readAppPassword, stackState } from '$lib/server/project';
+import { privacyTile } from '$lib/server/privacy-tile';
 
 // The service catalog mirrors the URL/credential listing start.sh prints.
 export const load: PageServerLoad = async () => {
@@ -61,7 +62,8 @@ export const load: PageServerLoad = async () => {
         //   creds: [{ label: 'API/Webhooks token', value: get('HERMES_API_KEY') }]
         // },
         { name: 'OpenClaw', url: `http://openclaw.localhost:${http}`, note: 'recommended' },
-        { name: 'OpenCode', url: `http://opencode.localhost:${http}` }
+        { name: 'OpenCode', url: `http://opencode.localhost:${http}` },
+        privacyTile(http, get('PRIVACY_PROXY_ENABLE') === '1')
       ]
     }
   ];

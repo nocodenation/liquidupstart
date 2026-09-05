@@ -39,6 +39,10 @@ sandbox they can spin up, throw away, and spin up again.
 - 🧩 **Batteries included** — Postgres + pgvector, PostgREST, Swagger, pgAdmin, OpenProject,
   Nextcloud + Collabora, Liquid (data flows), and AI agents.
 - 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
+- 🕵️ **Privacy Proxy (optional)** — a stand-in model between the agents and the cloud: names,
+  IDs and secrets are swapped for stand-ins before a message leaves the machine and put back in
+  the reply. Appears in the agents as `privacy-openai` / `privacy-anthropic` with those
+  providers' own models.
 - 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro.
 - 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
 
@@ -51,7 +55,8 @@ sandbox they can spin up, throw away, and spin up again.
    │  Data             │  Apps / PM            │  Flow      │  AI agents  │
    │  Postgres+pgvector│  OpenProject          │  Liquid    │  OpenClaw   │
    │  PostgREST        │  Nextcloud+Collabora  │            │  OpenCode   │
-   │  Swagger, pgAdmin │  bun_runner (apps)    │            │             │
+   │  Swagger, pgAdmin │  bun_runner (apps)    │            │  ↳ privacy- │
+   │                   │                       │            │    proxy    │
    └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -190,9 +195,11 @@ Default HTTP port is `8888` (`SYSTEM_HTTP_PORT`); Liquid is served over HTTPS on
 | **OpenCode** | `http://opencode.localhost:PORT` | OpenCode AI agent web interface |
 | **Liquid** | `https://liquid.localhost:HTTPS_PORT` | Data-flow automation (Apache NiFi-based); HTTP ingress on `https://{port}.liquid.localhost` (ports 8900–8999) |
 | **Postgres** | `postgres:5432` (internal) | Postgres 17 with pgvector — user `api_user`, db `postgres` |
+| **Privacy Proxy** | `privacy-proxy:8080` (internal, optional) | Anonymizing stand-in model for the agents — see [Privacy Proxy](#privacy-proxy-optional) |
 
 Four images are built locally — `liquidupstart/{opencode,bun-runner,liquid,openclaw}` —
-the rest are pulled. (`hermes` exists in config but is disabled.)
+the rest are pulled; a fifth, `liquidupstart/privacy-proxy`, is built only when the Privacy
+Proxy is enabled. (`hermes` exists in config but is disabled.)
 
 ## Configuration
 
@@ -205,11 +212,13 @@ edits it for you; you can also edit it by hand. It's organized into sections:
 | 2. Auto-generated secrets | Internal passwords/tokens — generated automatically if left empty |
 | 3. User-settable credentials | Logins you may want to set before first start |
 | 4. Script-generated secrets | Managed by scripts; not shown in the UI |
-| 5. LLM provider API keys | Shared keys used by the AI agents (all optional) |
-| 6. OpenClaw configuration | Model & backend selection for the OpenClaw agent |
-| 7. OpenCode configuration | Model, Ollama endpoint, and timeout settings |
-| 8. Liquid authentication | Login + TLS keystore credentials for Liquid |
-| 9. Image build configuration | Extra packages/commands baked into the custom images |
+| 5. LLM provider API keys | Shared keys used by the AI agents and the Privacy Proxy (all optional) |
+| 6. Self-hosted local LLM | An OpenAI-compatible endpoint of your own (Ollama, llama.cpp, …) for the agents and for the Privacy Proxy's local checks |
+| 7. Privacy Proxy | The on/off switch and behaviour knobs of the anonymizing stand-in model |
+| 8. OpenClaw configuration | Subscription backends (Claude CLI, Copilot, ChatGPT/Codex, Grok) for the OpenClaw agent |
+| 9. Liquid authentication | Login + TLS keystore credentials for Liquid |
+| 10. Image build configuration | Extra packages/commands baked into the custom images |
+| 11. Developer options | Local-source overrides; not shown in the UI |
 
 > **Contract rule:** start scripts only inject a root `.env` key into a service if that
 > service's template already declares it. To add a new key, add it to `.env.example` first.
@@ -223,8 +232,8 @@ edits it for you; you can also edit it by hand. It's organized into sections:
 
 Two coding agents run inside the stack and can operate the platform directly:
 
-- **OpenClaw** — the recommended harness (configured in `.env` section 6).
-- **OpenCode** — a web-based agent UI at `opencode.localhost` (section 7).
+- **OpenClaw** — the recommended harness (subscription backends in `.env` section 8).
+- **OpenCode** — a web-based agent UI at `opencode.localhost`.
 
 Both ship with **skills** that encode how to use this environment:
 
@@ -251,6 +260,36 @@ Add at least one LLM provider key (section 5) to enable the agents.
 
 The `.env` section 5 configures API keys; the OAuth login happens inside the respective
 agent. Both can coexist.
+
+### Privacy Proxy (optional)
+
+Set `PRIVACY_PROXY_ENABLE=1` (section 7), rebuild, start. A small service then sits between the
+agents and the cloud: every message is scanned for names, addresses, ID numbers, passwords and
+keys, each is swapped for a realistic stand-in, the cleaned message goes to the real provider,
+and the real values are put back into the reply. State — the encrypted mapping — stays on this
+machine under `volumes/privacy-proxy/`.
+
+- **No extra keys.** The proxy signs upstream requests with the section 5 keys you already
+  entered (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) and strips whatever key the agent sends.
+- **What you see in the agents:** one extra provider per real provider you have a key for —
+  `privacy-openai` and `privacy-anthropic` — each listing that provider's **own models**
+  (`privacy-openai/gpt-5.4-mini`, `privacy-anthropic/claude-sonnet-5`, …). Pick one of those to
+  go through the proxy; the plain `openai/*` / `anthropic/*` entries still go direct.
+- **With the Claude subscription on** (`ENABLE_ANTHROPIC_CLAUDE_CODE=1`, section 8),
+  `privacy-anthropic` runs through your Claude login, not the API key — exactly as OpenClaw's own
+  `anthropic/*` does. The Anthropic key is then used only to list the catalogue.
+- **Knobs** (section 7): `PRIVACY_PROXY_GATE_MODE` (`log` notes a message that could still
+  identify someone, `block` refuses to send it), the optional local-LLM second pass and semantic
+  rewriting (section 6 endpoint), and the vault retention.
+- **What it catches, and when.** Built-in detectors (names, e-mails, phones, IBANs, ids,
+  dates) run on every message; the optional local-LLM second pass adds what a model notices on
+  that call, which varies from call to call. Anything masked once stays masked for the whole
+  conversation. For the terms that matter to you — project names, codes, study ids — name them
+  on the settings page (`privacy.localhost`), which catches them on first sight instead of
+  relying on the model to find them.
+- **The local model is the trust boundary.** The second pass and the judges read your messages
+  in full before anything is masked, so whatever `LOCAL_LLM_API_BASE` (section 6) points at sees
+  the real data. Keep it on your own machine or network; only the masked text goes to the cloud.
 
 ## Data & persistence
 

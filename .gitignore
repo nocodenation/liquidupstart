@@ -5,7 +5,11 @@ volumes/
 dashboard/node_modules/
 dashboard/.svelte-kit/
 dashboard/build/
+.dashboard-port
 .liquidupstart-version
+!.env.example
+
 .liquidupstart-manifest
 *.pyc
+__pycache__/
 *.bak

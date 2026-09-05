@@ -12,6 +12,8 @@ export interface FieldSpec {
   help: string[];
   defaultValue: string;
   quoted: boolean;
+  /** trailing `# a | b | c` on the value line, verbatim */
+  inlineComment: string;
 }
 
 export type SectionItem =
@@ -134,10 +136,10 @@ export function parseExample(text: string): Section[] {
 
     const kv = line.match(KEY_RE);
     if (kv) {
-      const { value, quoted } = splitValue(kv[2]);
+      const { value, quoted, inlineComment } = splitValue(kv[2]);
       cur.items.push({
         kind: 'field',
-        field: { key: kv[1], help: pending, defaultValue: value, quoted }
+        field: { key: kv[1], help: pending, defaultValue: value, quoted, inlineComment }
       });
       pending = [];
       continue;

@@ -16,12 +16,7 @@ for arg in "$@"; do
 done
 
 # Load environment variables from .env file if it exists
-if [ -f "${PROJECT_DIR}/.env" ]; then
-    # Export variables from .env file, ignoring comments and empty lines
-    set -a
-    source "${PROJECT_DIR}/.env"
-    set +a
-fi
+load_env_file "${PROJECT_DIR}/.env"
 
 # Use environment variables (with defaults if not set)
 SYSTEM_DEPENDENCIES="${SYSTEM_DEPENDENCIES:-}"
@@ -37,7 +32,7 @@ render_dockerfile "${TEMPLATES_DIR}/Dockerfile" "${DOCKERFILE}"
 
 # Optionally install the Claude Code CLI into the image. When
 # ENABLE_ANTHROPIC_CLAUDE_CODE=1 the "# CLAUDE_CLI_INSTALL" marker in the rendered
-# Dockerfile is turned into a `RUN npm install -g @anthropic-ai/claude-code`
+# Dockerfile is turned into a `RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code`
 # step (still running as root, before the trailing `USER node`). The companion
 # start script (config/scripts/start/openclaw.sh) then points OpenClaw at the
 # claude-cli runtime. When the flag is unset/0 the marker stays a comment, so
@@ -52,7 +47,7 @@ sed_inplace() {
 
 if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
     echo "ENABLE_ANTHROPIC_CLAUDE_CODE=1: installing Claude Code CLI into the image."
-    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${DOCKERFILE}"
+    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code|' "${DOCKERFILE}"
 fi
 
 IMAGE="liquidupstart/openclaw:latest"
