@@ -5,6 +5,23 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**The harness models one precondition where there are two.**
+Found during A7-5 on 2026-09-05, in the window between `cleanup.sh` and the first `start.sh`. Four
+cases fail there that `--no-system` does not skip: A3-3 twice (`known_hosts` seeded), A4-16 (the
+shared hook present and executable) and A1-4 (the live workspace). None of them needs the containers
+running; all of them need **the start script to have run at least once**, because they assert its
+output. `stackGuard` covers "containers are up" and nothing covers "the start has produced its
+files", so `--no-system` promises a suite that runs without the stack and does not deliver one.
+
+The cost is not only the broken promise. On a machine that has never started, these fail with
+`expected true, received false`, while the system cases fail with *"stack not running … Start the
+stack with ./scripts/linux/start.sh"* — the same difference between a refusal that names the next
+step and one that does not, which FR20 exists to remove. A second guard asserting the start's
+artefacts, with that message, would fix both halves.
+
+Deferred rather than fixed because it is harness work discovered mid-procedure, and A7-5's own record
+should carry it once the case completes.
+
 **One unreproduced intermittent failure in the full suite.**
 Recorded in the amendment to A5-3's detail block. The M-A5 fixture failed to build once during the
 operator's second verification run and has not reproduced since — four consecutive runs, the
