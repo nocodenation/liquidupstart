@@ -3327,11 +3327,15 @@ for f in volumes/_git-secrets/repos/*/id_ed25519.pub; do echo "--- $f"; cat "$f"
 #     healthy, and none restarting.
 docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}'
 docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}' \
-  | grep -vE '\srunning\s' | grep -v 'healthy)$' || echo "  nothing to report"
-#     State and health are different fields: a container can be 'running' and
-#     '(unhealthy)' at once, and a filter on State alone reports nothing. That is
-#     how the first version of this check passed a stack whose bun_runner was
-#     unhealthy on 2026-09-05.
+  | awk -F'\t' '$2 != "running" || $3 ~ /unhealthy|Restarting/' \
+  | grep . || echo "  nothing to report"
+#     Two positive conditions, named on the fields they belong to: State must be
+#     'running', and Status must not say unhealthy or restarting. Both earlier
+#     versions of this check were negative filters -- "show me what is not fine"
+#     -- and both were wrong in the same way, reporting a clean stack on
+#     2026-09-05 while bun_runner was '(unhealthy)'. State and health are
+#     different fields, and a filter matching 'running' removes the unhealthy
+#     rows along with the healthy ones.
 #     Known and not a failure: bun_runner is unhealthy while volumes/bun_app is
 #     empty. Its healthcheck probes port 3000 and there is no app to serve, so a
 #     cold start reaches this state by definition. It logs nothing at all, which
