@@ -2259,7 +2259,8 @@ none has tested that the parts hand over to each other.
 | **Component** | The whole stack, from a clean checkout. |
 | **Why it is manual** | `compose.yml` fixes 23 container names and the project runs one instance per host, so no test can stand a second stack beside the operator's, and one that tore down the running stack would take NextCloud, OpenProject and every volume with it. The constraint is the stack's design, not an oversight in the suite, and it is recorded rather than worked around. |
 | **Test data** | The procedure is in §9 and names the steps and what to look for. |
-| **Expected** | After `build.sh` and `start.sh`: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, and `git-repo-info`, `git-publish` and `nar-build` answer inside the agent containers. |
+| **Expected** | After `build.sh` and `start.sh`: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, the rendered `config/nginx/nginx.conf` and the per-service files under `config/` are back, and `git-repo-info`, `git-publish` and `nar-build` answer inside the agent containers. |
+| **Amended 2026-09-04, twice** | First: the procedure removed only `volumes/`, which is not a cold start. Five generated files live outside it — the rendered `config/nginx/nginx.conf`, `config/openclaw/.env`, `config/pgadmin/{pgpass,config_distro.py}` and `config/nextcloud/set_trusted_proxies.sh` — and each is enough on its own to make a start script appear to produce a file it no longer produces. It now clears everything git does not track except `.env`, with a dry run first so the operator reads the list before it goes, and step 5 asserts those files came back rather than only the workspace. Then: the operator pointed out that the stack already has a full reset, `./cleanup.sh`, and it is more thorough than the deletion this case had invented — it also removes the rendered files for pgadmin, nginx, nextcloud, liquid, hermes and openclaw, stale containers from other checkouts, and the images. The procedure uses it, and `git clean -nffdx` is demoted from the tool to the **check**: git decides whether the reset worked, rather than the script vouching for itself. A side effect worth naming — this is the only thing in the repository that exercises `cleanup.sh` at all. |
 | **Covers** | FR32, NFR6, U1, U2, U7. |
 | **What it found** | Not yet run. It is the operator's, it tears the stack down, and the procedure is in §9. It was deliberately not automated: `compose.yml` fixes 23 container names and one instance runs per host, so a test could only run it by destroying the stack it runs in. |
 
@@ -3258,12 +3259,30 @@ left behind is invisible to all of them. This is the path a new operator takes, 
 run it.
 
 ```bash
-# 1. Back up anything you want to keep. This removes every volume.
+# 1. Back up .env. cleanup.sh removes it, deliberately -- it is generated from
+#    .env.example and a full reset treats it as generated. Yours is not.
 cp .env /tmp/lu-env.bak
 
-# 2. Tear down and clear the state.
-./scripts/linux/down.sh
-sudo rm -rf volumes/
+# 2. The supported full reset. This is the stack's own tool, not a recipe
+#    invented for this case: it downs the containers with their volumes, removes
+#    stale ones from older checkouts, deletes every rendered config file, removes
+#    volumes/ (with sudo if container-owned files need it), deletes .env, and
+#    removes the project images and every base image compose.yml names.
+#    Expect a long re-pull afterwards -- NextCloud and OpenProject come down
+#    again. --keep-images exists and is NOT used here: an image that survives is
+#    a build nobody watched.
+./cleanup.sh
+
+# 2b. Verify the reset independently, with git as the arbiter rather than the
+#     script's own word. Expect NOTHING except .pr-drafts/. Anything else listed
+#     is state cleanup.sh does not know about, and is the finding.
+git clean -nffdx -e .env
+
+# 2c. The network can outlive the containers. Expect no output.
+docker network ls --filter name=liquid --format '{{.Name}}'
+
+# 2d. Put .env back. From here on, every file that appears is the stack's work.
+cp /tmp/lu-env.bak .env
 
 # 3. Build the five images from scratch.
 ./scripts/linux/build.sh --no-cache; echo "BUILD EXIT=$?"
@@ -3272,9 +3291,10 @@ sudo rm -rf volumes/
 #    end, and no error above them.
 ./scripts/linux/start.sh; echo "START EXIT=$?"
 
-# 5. What a cold start must have produced. Expect: the workspace, a key and a
-#    clone per declared repository, the hook installed, and all three commands
-#    answering from inside the container an agent works in.
+# 5. What a cold start must have produced. Every path below was absent after
+#    step 2, so each one appearing is the start script's own work and not a
+#    survivor. That is the whole point of the case.
+ls -l config/nginx/nginx.conf config/openclaw/.env config/pgadmin/pgpass
 ls volumes/repos/
 ls volumes/_git-secrets/repos/*/id_ed25519.pub
 ls -l volumes/_git-secrets/hooks/pre-push
