@@ -3274,7 +3274,13 @@ cp .env /tmp/lu-env.bak
 #    a build nobody watched.
 ./cleanup.sh
 
-# 2b. Verify the reset independently, with git as the arbiter rather than the
+# 2b. Do NOT run the test suite between here and step 4. Several cases invoke
+#     git.sh, which recreates volumes/repos, so running the suite in this window
+#     puts back part of what step 2 removed. It happened on 2026-09-05, while
+#     investigating an unrelated question, and left two empty directories that
+#     had to be removed by hand.
+#
+#     Verify the reset independently, with git as the arbiter rather than the
 #     script's own word. Expect NOTHING except .pr-drafts/. Anything else listed
 #     is state cleanup.sh does not know about, and is the finding.
 git clean -nffdx -e .env
@@ -3288,7 +3294,7 @@ cp /tmp/lu-env.bak .env
 # 3. Build the images this checkout declares -- do not count them from memory,
 #    the number differs by branch: the Java extensions add a fifth, nar_builder,
 #    which does not exist here.
-grep -o 'build/[a-z-]*\.sh' scripts/linux/build.sh | grep -v '^#'
+grep -v '^[[:space:]]*#' scripts/linux/build.sh | grep -o 'build/[a-z-]*\.sh'
 ./scripts/linux/build.sh --no-cache; echo "BUILD EXIT=$?"
 
 # 4. Start, with the .env you had. Expect every URL and credential printed at the
