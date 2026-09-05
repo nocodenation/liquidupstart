@@ -2257,6 +2257,7 @@ none has tested that the parts hand over to each other.
 |---|---|
 | **Premise** | The path every new operator takes first, and the only one nothing has ever run: a clean checkout, `.env` from the example, build, start. Every test in this suite runs against a stack that is already up and volumes that are already populated, so anything that only works because of a state an earlier run left behind is invisible to all of them. |
 | **Component** | The whole stack, from a clean checkout. |
+| **Not reproducible, by design** | Seven of the seventeen images a cold start pulls hang on moving tags, so the run assembles what those tags point at today rather than restoring what was here. A failure therefore has two candidate causes — this repository, or an upstream move — and the procedure says to compare digests before blaming the stack. It is also the only thing here that would ever notice such a move. |
 | **Why it is manual** | `compose.yml` fixes 23 container names and the project runs one instance per host, so no test can stand a second stack beside the operator's, and one that tore down the running stack would take NextCloud, OpenProject and every volume with it. The constraint is the stack's design, not an oversight in the suite, and it is recorded rather than worked around. |
 | **Test data** | The procedure is in §9 and names the steps and what to look for. |
 | **Expected** | After `build.sh` and `start.sh`: every service is running and none is restarting — a cold start that lays the workspace out correctly while OpenProject loops would otherwise pass. Then: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, the rendered `config/nginx/nginx.conf` and the per-service files under `config/` are back, and `git-repo-info` and `git-publish` answer inside the agent containers. `nar-build` belongs to `FEATURE-liquid-java-extensions.md` and is present only where that work is: checking for it on this branch would fail a cold start that succeeded. |
@@ -3321,6 +3322,27 @@ docker compose exec -T openclaw-gateway sh -lc '
 # 6. And the suite, against a stack that has never done anything else.
 ./tests/run.sh; echo "EXIT=$?"
 ```
+
+**What comes down the wire, and why a failure here has two possible causes.** `cleanup.sh` removes
+every base image `compose.yml` names, not only the four this project builds, so a cold start pulls
+**seventeen** distinct images: eleven that compose uses directly — `postgres:17` (three services),
+`pgvector/pgvector:pg17`, `dpage/pgadmin4`, `postgrest/postgrest`, `swaggerapi/swagger-ui`,
+`nginx:latest`, `openproject/openproject:17-slim` (four services), `memcached:1.6-alpine`,
+`nextcloud:34`, `redis:8` and `ghcr.io/euro-office/documentserver:latest` — and six more that the
+four local builds take as their base: `ubuntu:24.04`, `debian:bookworm-slim`, `node:lts-slim`,
+`oven/bun:latest`, `ghcr.io/nocodenation/liquid-nifi:latest` and `ghcr.io/openclaw/openclaw:latest`.
+
+**Seven of the seventeen hang on moving tags** — the two `ghcr.io` ones, `nginx:latest`,
+`oven/bun:latest`, and `dpage/pgadmin4`, `postgrest/postgrest` and `swaggerapi/swagger-ui`, which
+carry no tag at all and therefore mean `latest`. A cold start does not restore the stack that was
+here; it assembles whatever those tags point at today.
+
+That cuts both ways, and the reader should know which way to look first. **A failure here has two
+possible causes** — this repository, or something upstream that moved — and they are not
+distinguishable from the error alone. Before filing a defect against the stack, compare the image
+digests with what a working machine has. And the same property is why the case is worth running at
+all: on a warm machine those tags sit in the cache, and **this is the only thing in the repository
+that would ever notice one of them moving.** Nothing else re-pulls.
 
 **Pass:** every command in step 5 answers, and step 6 is `EXIT=0`. **Fail:** anything that needs a
 second `start.sh` to appear — that is a first-run defect, and it is exactly what a warm stack hides.
