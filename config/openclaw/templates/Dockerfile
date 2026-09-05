@@ -12,6 +12,8 @@ RUN apt update && apt install -y libxml2-utils jq git ripgrep curl git xz-utils 
 COPY ./openclaw-claude.sh /usr/local/bin/openclaw-claude
 RUN chmod 0755 /usr/local/bin/openclaw-claude
 
+# CLAUDE_CLI_WRAPPER
+
 RUN set -e; \
     f="$(grep -rlF 'PAGE_SIZE_DEFAULT = 20' /app/dist || true)"; \
     if [ -n "$f" ]; then \
