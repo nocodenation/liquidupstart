@@ -114,6 +114,13 @@ require_stack() {
 require_stack
 cat "$COMMAND" > "$BACKUP"
 
+# A container recreated just before this script starts is up long before NiFi
+# answers, and the API cases then fail for a reason that has nothing to do with
+# them. That happened on 2026-09-05 after a "docker compose up -d
+# --force-recreate liquid" immediately beforehand: check 1 went red while a
+# rerun a minute later was 43/0. Wait once, here, before anything is judged.
+await_liquid || { echo "liquid did not answer on its HTTPS port within 240s" >&2; exit 2; }
+
 banner "Check 1 — the milestone suite (expect EXIT=0)"
 run_suite m-b2 C1_OUT C1_CODE
 echo "$C1_OUT" | tail -6
