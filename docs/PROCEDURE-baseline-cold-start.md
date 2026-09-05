@@ -93,16 +93,15 @@ A7-5 established that seven of the images a cold start pulls hang on tags that c
 the digests means that when a later run differs, the cause can be told apart: this repository, or an
 upstream move.
 
-Taken at `2026-09-05T17:55:11Z`, into
-`/Users/christof/repos/liquidupstart-backups/digests-before.txt`. Eleven pulled service images,
-seven build base images, and the three OpenClaw tags. It is read from the **registry**, not from
-local images, so a base image that BuildKit never tagged locally is still covered:
+> **Nothing to run in this step.** The snapshot was taken at `2026-09-05T17:55:11Z`, into
+> `/Users/christof/repos/liquidupstart-backups/digests-before.txt`. Go to step 2.
 
-```bash
-docker buildx imagetools inspect <image> --format '{{.Manifest.Digest}}'
-```
+Eleven pulled service images, seven build base images, and the three OpenClaw tags. Digests are read
+from the **registry** rather than from local images — `docker buildx imagetools inspect NAME:TAG
+--format '{{.Manifest.Digest}}'` — so a base image that BuildKit pulled without ever tagging it
+locally is covered too. The full form is in step 6, which runs the same snapshot again afterwards.
 
-It already produced one result worth keeping:
+The snapshot already produced one result worth keeping:
 
 ```
 ghcr.io/openclaw/openclaw:2026.9.1   sha256:6afe42854c87471188b9c4f8dce6bbc14005a48d8e1592846548b32508754f84
@@ -132,8 +131,8 @@ grep -c . /Users/christof/repos/liquidupstart/.env    # expect a number near 252
 ```
 
 **Step 2c — let git say whether the reset actually worked.** The script vouching for itself is
-weaker than an independent check; `-e .env` excludes what step 2b just restored, and `-e volumes`
-excludes the directories the build is about to recreate:
+weaker than an independent check. The three exclusions are what we put back or keep on purpose:
+`.env` from step 2b, and `.pr-drafts` and `scratch.md`, which are the scratch area:
 
 ```bash
 cd /Users/christof/repos/liquidupstart
@@ -147,8 +146,8 @@ reset missed it, and the run would then be measuring leftovers.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-./scripts/linux/build.sh 2>&1 | tee /Users/christof/repos/liquidupstart-backups/build-baseline.log
-echo "build.sh EXIT=${PIPESTATUS[0]}"
+{ ./scripts/linux/build.sh 2>&1; echo "build.sh EXIT=$?"; } \
+  | tee /Users/christof/repos/liquidupstart-backups/build-baseline.log
 ```
 
 Expect `EXIT=0`. This pulls `ghcr.io/openclaw/openclaw:2026.7.1` — the pin from #11 — and the build
@@ -158,8 +157,8 @@ ends in `claude --version`, so an install that produces nothing fails instead of
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-./scripts/linux/start.sh 2>&1 | tee /Users/christof/repos/liquidupstart-backups/start-baseline.log
-echo "start.sh EXIT=${PIPESTATUS[0]}"
+{ ./scripts/linux/start.sh 2>&1; echo "start.sh EXIT=$?"; } \
+  | tee /Users/christof/repos/liquidupstart-backups/start-baseline.log
 ```
 
 The interactive Claude sign-in appears here. Follow it.
