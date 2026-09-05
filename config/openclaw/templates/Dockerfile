@@ -1,4 +1,8 @@
-FROM ghcr.io/openclaw/openclaw:latest
+# Pinned deliberately. A floating tag moved this stack under us on 2026-09-05:
+# 2026.9.1 arrived unannounced and broke four things at once. 2026.7.1 is the
+# version this stack is known to work with, and moving off it is a decision
+# someone makes, not something that happens.
+FROM ghcr.io/openclaw/openclaw:2026.7.1
 
 USER root
 
