@@ -30,8 +30,38 @@ rest — in a remote git repository, and make changes there.* Beneath it:
 
 - **U1 · Declare the repositories.** The operator records which remotes the stack works with, with
   what access, and under what policy. Nothing else in the feature discovers repositories on its own.
-- **U2 · Enable each repository once.** The stack produces a public key per repository; the operator
-  registers it with the host. After that the repository is usable without further ceremony.
+- **U2 · Enable each repository once, and see whether it worked.** Rewritten 2026-09-05, after a cold
+  start showed the original — *"the operator registers it with the host, after that the repository is
+  usable without further ceremony"* — described only the successful half and said nothing about where
+  any of it happens.
+
+  The operator declares a repository in the **configuration** view: intent, and nothing else. The
+  stack generates a key pair for it on the next start — **one per repository**, so a key that leaks
+  in one opens no other, and **only when none exists**, so a restart never invalidates what is
+  already registered. The operator copies the public half from the **launchpad**, registers it with
+  the host as a deploy key — with write access where the declaration says `write`, which the stack
+  knows and therefore says — and asks the launchpad to test the repository. The test is a real clone,
+  not a claim: there is no code to paste back, so the only honest confirmation is the operation
+  itself succeeding.
+
+  **None of this blocks the start.** A repository that is not yet enabled costs that repository and
+  nothing else; the database, the file storage and the agents come up regardless. What is missing is
+  visible where the operator is looking, and stays visible until it is fixed, because the state lives
+  in the repositories manifest rather than in a session.
+
+  Adding a repository later repeats only the parts that changed: the configuration gains an entry,
+  the next start generates that one key, and the launchpad shows that one repository as unreachable.
+  No rebuild — the key is made at start, not at build.
+- **U11 · Re-enable a repository whose key no longer works.** The unhappy twin of U2, and until
+  2026-09-05 it had no home at all. A key stops working for ordinary reasons: a reset removed
+  `volumes/_git-secrets/` and the next start made a new one, someone revoked it at the host, or the
+  repository moved. The operator needs to be told which repository is affected, to be given the
+  current public key, and to be able to retry — the same path as U2, entered from the failure rather
+  than from the declaration. **The failure must not read as success:** a start that ends in a list of
+  URLs and passwords while two repositories are unreachable is the shape this case exists to prevent.
+
+  *On the numbering:* U9 and U10 belong to `FEATURE-liquid-java-extensions.md`, so this is U11. Two
+  documents in one repository each owning a "U9" would make every `Covers:` row ambiguous.
 - **U3 · Work in one repository, writing.** The common case by a wide margin. An agent changes files
   and commits.
 - **U4 · Push after approval.** Each push is approved individually, per §3.1.
