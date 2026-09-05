@@ -283,7 +283,7 @@ else
 
       // Retired in OpenClaw 2026.9.1 (accepted by the schema, ignored at runtime,
       // and reported by doctor). Control UI browsers pair through the device flow.
-      delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
+      c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
 
       // Per-backend provider/runtime wiring. No primary model is pinned; each
       // enabled backend routes its provider/* through the right runtime and the
@@ -306,7 +306,9 @@ else
         // hardcodes `command: "claude"`; 2026.9.1 dropped agents.defaults.cliBackends
         // and offers no replacement knob. The wrapper is applied in the image instead,
         // as the `claude` first on PATH (config/openclaw/templates/Dockerfile).
-        delete c.agents.defaults.cliBackends;
+        c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
+        c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
+        c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
 
         let anthropicCatalog = [];
         try {
@@ -366,19 +368,18 @@ else
       }
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
-      // memory search at github-copilot. 2026.9.1 moved agents.defaults.memorySearch
-      // to the top-level memory.search.
+      // memory search at github-copilot. 2026.7.1 reads agents.defaults.memorySearch;
+      // 2026.9.1 moved it to the top-level memory.search, which is why the base
+      // image is pinned rather than followed.
       if (enableCopilot) {
         c.gateway = c.gateway || {};
         c.gateway.http = c.gateway.http || {};
         c.gateway.http.endpoints = c.gateway.http.endpoints || {};
         c.gateway.http.endpoints.chatCompletions = c.gateway.http.endpoints.chatCompletions || {};
         c.gateway.http.endpoints.chatCompletions.enabled = true;
-        delete c.agents.defaults.memorySearch;
-        c.memory = c.memory || {};
-        c.memory.search = c.memory.search || {};
-        c.memory.search.provider = "github-copilot";
-        if (!c.memory.search.model) c.memory.search.model = "text-embedding-3-small";
+        c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
+        c.agents.defaults.memorySearch.provider = "github-copilot";
+        if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
       }
 
       if (enableCodex) {
