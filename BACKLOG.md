@@ -5,31 +5,34 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
-**The Claude CLI install could not fail, and shipped a broken image.**
-Found by A7-5 on 2026-09-05 — the first rebuild of `liquidupstart/openclaw:latest` in weeks. The
-start reported `EXIT=0`, printed every URL and password, and OpenClaw could not serve a single
-request: `Error: claude native binary not installed`.
+**The Claude CLI install could not fail, and shipped a broken image.** *Fixed 2026-09-05.*
+Found by A7-5's cold start — the first rebuild of `liquidupstart/openclaw:latest` in weeks. The start
+reported `EXIT=0`, printed every URL and password, and OpenClaw could not serve a single request:
+`Error: claude native binary not installed`.
 
-The cause is exact. `@anthropic-ai/claude-code` declares eight platform packages as
-**optionalDependencies** — including `@anthropic-ai/claude-code-linux-arm64`, the one this container
-needs — and its `bin` is `bin/claude.exe`, a launcher that locates the native binary in whichever
-platform package installed. None of the eight was present: `/usr/local/lib/node_modules/@anthropic-ai/`
-held only `claude-code` itself. The two causes the error message names were both ruled out on the
-running container — `ignore-scripts` is `false`, `omit` is `dev`, and there is no `.npmrc` anywhere.
-An optional dependency that fails to install is skipped **silently**, by design, so
-`RUN npm install -g @anthropic-ai/claude-code` succeeded over a broken result.
+**npm 12 blocks install scripts by default.** `@anthropic-ai/claude-code` fetches its native binary
+in a `postinstall` (`node install.cjs`), and npm's new `allowScripts` mechanism skipped it with a
+warning while the install itself succeeded. The image shipped a launcher with nothing to launch. The
+base image `ghcr.io/openclaw/openclaw:latest` is one of the seven moving tags A7-5 lists and was
+pulled that morning, bringing node 24.19.0 and npm 12.0.2 — so the stack's build broke because
+something upstream changed a default, which is exactly the failure mode A7-5 was written to surface
+and the only place in this repository where it could have surfaced.
 
-**Fixed by making the build check its own work:** the rendered line is now
-`RUN npm install -g @anthropic-ai/claude-code && claude --version`, so a rebuild fails where it used
-to ship. It is the same shape as the `|| true` removed from Liquid's entrypoint in M-B2 — a step that
-could not report its own failure — this time in our own Dockerfile and hitting the component
-everything else depends on.
+The rendered line is now
+`RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code && claude --version`.
+The first half makes it work; the second makes the next silent failure loud, in the manner of the
+`|| true` removed from Liquid's entrypoint in M-B2. Verified in the running container: the install
+then reports `changed 2 packages` and `claude --version` answers `2.1.261 (Claude Code)`.
 
-**What is not established:** why the optional dependency did not install. The base image
-`ghcr.io/openclaw/openclaw:latest` is one of the seven moving tags A7-5 lists and was pulled fresh
-that morning, bringing node 24.19.0 and npm 12.0.2; a registry hiccup during the build would produce
-the same result and leave no trace. The fix makes either cause loud rather than silent, which is what
-matters; the diagnosis stays open.
+**Two corrections to this entry's first version, kept because how the wrong answer was reached
+matters.** It blamed `optionalDependencies` being silently skipped — the package does declare eight
+platform packages, none was installed, and that looked sufficient. It is not what happened:
+`install.cjs` fetches the binary itself, and no platform package is installed even now that it works.
+And it ruled out blocked scripts by reading `npm config get ignore-scripts`, which is `false` —
+the wrong knob entirely, since npm 12 blocks through `allowScripts` instead. A cause was excluded by
+checking something adjacent to it, and the remaining theory was then written down as fact. Re-running
+the install is what corrected it, which is the same discipline this project applies everywhere else:
+reproduce before concluding.
 
 **`bun_runner` reports unhealthy with no app, and says nothing about it.**
 Seen during A7-5 on 2026-09-05, thirty minutes into a cold start. Its healthcheck probes port 3000;
