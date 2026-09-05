@@ -2259,7 +2259,7 @@ none has tested that the parts hand over to each other.
 | **Component** | The whole stack, from a clean checkout. |
 | **Why it is manual** | `compose.yml` fixes 23 container names and the project runs one instance per host, so no test can stand a second stack beside the operator's, and one that tore down the running stack would take NextCloud, OpenProject and every volume with it. The constraint is the stack's design, not an oversight in the suite, and it is recorded rather than worked around. |
 | **Test data** | The procedure is in §9 and names the steps and what to look for. |
-| **Expected** | After `build.sh` and `start.sh`: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, the rendered `config/nginx/nginx.conf` and the per-service files under `config/` are back, and `git-repo-info`, `git-publish` and `nar-build` answer inside the agent containers. |
+| **Expected** | After `build.sh` and `start.sh`: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, the rendered `config/nginx/nginx.conf` and the per-service files under `config/` are back, and `git-repo-info` and `git-publish` answer inside the agent containers. `nar-build` belongs to `FEATURE-liquid-java-extensions.md` and is present only where that work is: checking for it on this branch would fail a cold start that succeeded. |
 | **Amended 2026-09-04, twice** | First: the procedure removed only `volumes/`, which is not a cold start. Five generated files live outside it — the rendered `config/nginx/nginx.conf`, `config/openclaw/.env`, `config/pgadmin/{pgpass,config_distro.py}` and `config/nextcloud/set_trusted_proxies.sh` — and each is enough on its own to make a start script appear to produce a file it no longer produces. It now clears everything git does not track except `.env`, with a dry run first so the operator reads the list before it goes, and step 5 asserts those files came back rather than only the workspace. Then: the operator pointed out that the stack already has a full reset, `./cleanup.sh`, and it is more thorough than the deletion this case had invented — it also removes the rendered files for pgadmin, nginx, nextcloud, liquid, hermes and openclaw, stale containers from other checkouts, and the images. The procedure uses it, and `git clean -nffdx` is demoted from the tool to the **check**: git decides whether the reset worked, rather than the script vouching for itself. A side effect worth naming — this is the only thing in the repository that exercises `cleanup.sh` at all. |
 | **Covers** | FR32, NFR6, U1, U2, U7. |
 | **What it found** | Not yet run. It is the operator's, it tears the stack down, and the procedure is in §9. It was deliberately not automated: `compose.yml` fixes 23 container names and one instance runs per host, so a test could only run it by destroying the stack it runs in. |
@@ -3284,7 +3284,10 @@ docker network ls --filter name=liquid --format '{{.Name}}'
 # 2d. Put .env back. From here on, every file that appears is the stack's work.
 cp /tmp/lu-env.bak .env
 
-# 3. Build the five images from scratch.
+# 3. Build the images this checkout declares -- do not count them from memory,
+#    the number differs by branch: the Java extensions add a fifth, nar_builder,
+#    which does not exist here.
+grep -o 'build/[a-z-]*\.sh' scripts/linux/build.sh | grep -v '^#'
 ./scripts/linux/build.sh --no-cache; echo "BUILD EXIT=$?"
 
 # 4. Start, with the .env you had. Expect every URL and credential printed at the
@@ -3300,8 +3303,11 @@ ls volumes/_git-secrets/repos/*/id_ed25519.pub
 ls -l volumes/_git-secrets/hooks/pre-push
 docker compose exec -T openclaw-gateway sh -lc '
   git-repo-info | head -3
-  command -v git-publish nar-build
+  command -v git-publish
   cd /repos/liquidupstart 2>/dev/null && git config --get core.hooksPath'
+# nar-build belongs to the Java extensions and is absent on this branch. Check it
+# only where its service exists:
+[ -d config/nar_builder ] && docker compose exec -T openclaw-gateway sh -lc 'command -v nar-build'
 
 # 6. And the suite, against a stack that has never done anything else.
 ./tests/run.sh; echo "EXIT=$?"
