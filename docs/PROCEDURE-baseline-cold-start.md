@@ -125,9 +125,11 @@ It will ask for your `sudo` password partway through. Expected.
 **Step 2b — put the configuration back:**
 
 ```bash
-cp -a /Users/christof/repos/liquidupstart-backups/.env.bak /Users/christof/repos/liquidupstart/.env
+B=/Users/christof/repos/liquidupstart-backups
+cp -a "$B/.env.bak" /Users/christof/repos/liquidupstart/.env
 chmod 600 /Users/christof/repos/liquidupstart/.env
-grep -c . /Users/christof/repos/liquidupstart/.env    # expect a number near 252
+diff -q /Users/christof/repos/liquidupstart/.env "$B/.env.bak" \
+  && echo "restored, identical to the backup" || echo "FAIL: .env differs from the backup"
 ```
 
 **Step 2c — let git say whether the reset actually worked.** The script vouching for itself is
