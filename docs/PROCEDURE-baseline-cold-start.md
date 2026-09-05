@@ -148,8 +148,9 @@ reset missed it, and the run would then be measuring leftovers.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-{ ./scripts/linux/build.sh 2>&1; echo "build.sh EXIT=$?"; } \
-  | tee /Users/christof/repos/liquidupstart-backups/build-baseline.log
+script -q /Users/christof/repos/liquidupstart-backups/build-baseline.log \
+  ./scripts/linux/build.sh
+echo "build.sh EXIT=$?"
 ```
 
 Expect `EXIT=0`. This pulls `ghcr.io/openclaw/openclaw:2026.7.1` — the pin from #11 — and the build
@@ -159,11 +160,34 @@ ends in `claude --version`, so an install that produces nothing fails instead of
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-{ ./scripts/linux/start.sh 2>&1; echo "start.sh EXIT=$?"; } \
-  | tee /Users/christof/repos/liquidupstart-backups/start-baseline.log
+script -q /Users/christof/repos/liquidupstart-backups/start-baseline.log \
+  ./scripts/linux/start.sh
+echo "start.sh EXIT=$?"
 ```
 
 The interactive Claude sign-in appears here. Follow it.
+
+> **`script`, not `| tee` — do not simplify this back.** A pipe makes stdout a pipe, `start.sh`
+> tests `[[ -t 0 && -t 1 ]]`, finds no terminal and takes its non-interactive branch: no sign-in URL
+> is ever printed, and the run waits fifteen minutes for a login that cannot be given. `script`
+> allocates a pty, so the child sees a real terminal *and* the session is written to the log.
+> Verified on this machine rather than assumed — `script` also propagates the command's exit status
+> (a child exiting 7 makes `script` exit 7), which is why `$?` on the next line is trustworthy where
+> `${PIPESTATUS[0]}` was not.
+>
+> **If the sign-in prompt does not appear anyway**, `start.sh` says to run
+> `docker compose exec -it openclaw-gateway …`. **That cannot work at this point**: the sign-in step
+> runs *before* `docker compose up` and there is no container yet. Use a throwaway container, which
+> is what the script itself does internally:
+>
+> ```bash
+> docker run --rm -it --user 0:0 -e HOME=/home/node \
+>   -v /Users/christof/repos/liquidupstart/volumes/_openclaw-claude:/home/node/.claude \
+>   --entrypoint /usr/local/bin/openclaw-claude \
+>   liquidupstart/openclaw:latest auth login --claudeai
+> ```
+>
+> The waiting run picks the login up by itself. This is a **product defect**, recorded in the result.
 
 **Step 4b — only if the sign-in cannot be completed:**
 
