@@ -65,6 +65,34 @@ than tidied away.
 - `volumes/repos/csv-columns` is a leftover from the A2-5 observation. Leave it: A4-16 uses it as a
   clone the feature did not create.
 
+## Branches, and one thing that costs an hour if nobody says it
+
+Three branches since 2026-09-05. `feature/git-integration` is PR #9 and holds M-A0 to M-A7.
+`feature/liquid-java-extensions` is PR #10, cut from it, and holds M-B1 to M-B3 — it must branch from
+here rather than from `main`, because it consumes the agent workspace. `fix/openclaw-2026-9-1` is
+PR #11, cut from **`main`**, and repairs the released stack; both feature branches already carry it
+by merge, so nothing waits on that review. **PR #9 must be merged with a merge commit, not squashed**
+— GitHub retargets #10 by itself, but only cleanly if the commits it already carries survive, and the
+individual messages are part of what this work exists to demonstrate.
+
+**One working copy, one stack — and the stack belongs to whichever branch last started it.**
+`docker compose` reads the `compose.yml` of the checkout at the moment `start.sh` runs, so the
+containers keep the mounts, services and images that branch declared, no matter what is checked out
+afterwards. On 2026-09-05 a hotfix session started the stack from `fix/openclaw-2026-9-1`, which is
+cut from `main` and contains no git integration; back here the suite reported 42 failures, every one
+of them the missing `/git-secrets` mounts and the three commands that branch never mounted. Nothing
+was broken, and nothing in the repository said so.
+
+**After switching to a branch whose `compose.yml` differs, run `./scripts/linux/start.sh` before
+trusting a test run.** One line tells the two cases apart:
+
+```bash
+docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'
+```
+
+Silence means the running stack predates the git integration, and the red tests are describing the
+containers rather than the code.
+
 ## How work proceeds
 
 The cycle is in §7 of the feature document. In short: write the test cases → **the operator reviews
