@@ -5,6 +5,23 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**`cleanup.sh` asks for a sudo password in the middle of a long run, and need not ask at all.**
+Noticed during A7-5 on 2026-09-05. Under rootless Docker the host user maps to container root, so
+files the containers wrote belong to subordinate UIDs and the host user cannot remove them; the plain
+`rm -rf volumes/` fails and the script falls back to `sudo`.
+
+Deleting from inside a container avoids the prompt entirely — there the ownership is root's own:
+
+    docker run --rm -v "${PROJECT_DIR}/volumes:/v" alpine sh -c 'rm -rf /v/..?* /v/.[!.]* /v/*'
+
+The script already has the shape for it: plain removal, then a fallback. The container attempt
+belongs between the two, with `sudo` kept as the last resort for a host without a working Docker.
+
+And if `sudo` is still reached, the prompt belongs at the **start** of the script rather than four
+minutes in, where it arrives long after the operator has looked away — and where missing it leaves a
+half-cleared directory. `cleanup.sh` lives on `main`, so this is stack work rather than this
+feature's, and is recorded rather than fixed here.
+
 **The Claude CLI install could not fail, and shipped a broken image.** *Fixed 2026-09-05.*
 Found by A7-5's cold start — the first rebuild of `liquidupstart/openclaw:latest` in weeks. The start
 reported `EXIT=0`, printed every URL and password, and OpenClaw could not serve a single request:
