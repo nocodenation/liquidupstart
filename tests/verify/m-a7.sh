@@ -169,10 +169,14 @@ git -c core.pager=cat commit -qm two
 ( git checkout -q agent/probe-1 && git-publish ) >/tmp/p1.out 2>&1 &
 ( sleep 0.2; git checkout -q agent/probe-2 && git-publish ) >/tmp/p2.out 2>&1 &
 wait
-echo "PUBLISHED LINES: $(cat /tmp/p1.out /tmp/p2.out | grep -c "published agent/")"
+published=0
+for out in /tmp/p1.out /tmp/p2.out; do grep -q "published agent/" "$out" && published=$((published + 1)); done
+echo "PUBLISHED LINES: ${published}"
 echo "P1: $(tail -1 /tmp/p1.out)"
 echo "P2: $(tail -1 /tmp/p2.out)"
-echo "REFUSALS: $(cat /tmp/p1.out /tmp/p2.out | grep -c refused)"
+refused=0
+for out in /tmp/p1.out /tmp/p2.out; do grep -q refused "$out" && refused=$((refused + 1)); done
+echo "REFUSALS: ${refused}"
 echo "BRANCHES: $(git -C ../e2e.git branch --list "agent/*" | tr -d " " | tr "\n" " ")"
 test -e .git/liquidupstart-publish && echo "TOKEN LEFT BEHIND -- FR18 violated" || echo "no token left"' 2>&1)"
 echo "$C5_HAND"
