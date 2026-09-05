@@ -39,6 +39,26 @@ get_env() {
 
 OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 
+# The OpenClaw version the gateway will actually run, read from the image.
+# 2026.9.1 retired two config keys this stack writes and relocated a third, so
+# the config that is correct for one version fails validation on the other. The
+# version is a determinable fact, so it is read at the moment it is needed
+# rather than inferred from the Dockerfile's pin: a pin plus a comment can go
+# false when someone changes the pin, a value read from the image cannot.
+# Empty when it cannot be determined -- the caller must refuse, not guess.
+openclaw_version() {
+  local image="${1:-$OPENCLAW_IMAGE}" out
+  out="$(with_timeout 60 docker run --rm --entrypoint openclaw "$image" --version 2>/dev/null | head -n1)" || return 0
+  # "OpenClaw 2026.7.1" and "OpenClaw 2026.9.1 (ad6fe23)" both parse.
+  printf '%s' "$out" | sed -n 's/^OpenClaw \([0-9][0-9.]*\).*$/\1/p'
+}
+
+# True when $1 is at least $2, comparing as versions rather than as strings
+# (2026.10 must beat 2026.9, which a string comparison gets wrong).
+version_at_least() {
+  [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]
+}
+
 # Render config/openclaw/.env from the template, then inject model-provider keys
 # from the root .env. The template is the contract: only keys it already declares
 # (as a commented `# KEY=` line) are supported; others are ignored. A supported
@@ -182,7 +202,7 @@ else
       -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
       -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
       --entrypoint node \
-      ghcr.io/openclaw/openclaw:latest \
+      "${OPENCLAW_IMAGE}" \
       -e '
         (async () => {
           const base = process.env.LOCAL_LLM_API_BASE.replace(/\/+$/, "");
@@ -209,7 +229,7 @@ else
     OPENROUTER_MODELS_JSON="$(docker run --rm \
       -e OPENROUTER_API_KEY="${OPENROUTER_KEY}" \
       --entrypoint node \
-      ghcr.io/openclaw/openclaw:latest \
+      "${OPENCLAW_IMAGE}" \
       -e '
         (async () => {
           try {
@@ -241,9 +261,31 @@ else
       | xargs -r -I{} docker network inspect {} \
           --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
 
+  # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
+  # relocated agents.defaults.memorySearch to memory.search, and retired
+  # gateway.controlUi.dangerouslyDisableDeviceAuth in favour of
+  # gateway.auth.trustedProxy.deviceAutoApprove. None of the replacements exist
+  # in 2026.7.1's schema and none of the originals exist in 2026.9.1's, so there
+  # is no single shape that satisfies both.
+  OPENCLAW_VERSION="$(openclaw_version)"
+  if [[ -z "$OPENCLAW_VERSION" ]]; then
+    echo "Error: could not determine the OpenClaw version in ${OPENCLAW_IMAGE}." >&2
+    echo "  The configuration differs between 2026.7.1 and 2026.9.1 and writing the" >&2
+    echo "  wrong one makes the gateway refuse to start, so this does not guess." >&2
+    echo "  Build the image first:" >&2
+    echo "    ./config/scripts/build/openclaw.sh" >&2
+    exit 1
+  fi
+  OC_SCHEMA_NEW=0
+  version_at_least "$OPENCLAW_VERSION" "2026.9.0" && OC_SCHEMA_NEW=1
+  echo "openclaw: image reports ${OPENCLAW_VERSION}; writing the $([[ $OC_SCHEMA_NEW == 1 ]] && echo "2026.9" || echo "2026.7") config shape."
+
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
     -e LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET}" \
+    -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
+    -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
+    -e OC_DEVICE_AUTO_APPROVE_SCOPES="${OC_DEVICE_AUTO_APPROVE_SCOPES:-operator.read,operator.write,operator.talk,operator.pairing,operator.approvals,operator.questions}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
@@ -256,7 +298,7 @@ else
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
     -e OPENROUTER_MODELS_JSON="${OPENROUTER_MODELS_JSON}" \
     --entrypoint node \
-    ghcr.io/openclaw/openclaw:latest \
+    "${OPENCLAW_IMAGE}" \
     -e '
       const fs = require("fs");
       const p = "/state/openclaw.json";
@@ -281,9 +323,35 @@ else
       c.gateway.controlUi = c.gateway.controlUi || {};
       c.gateway.controlUi.allowedOrigins = ["*"];
 
-      // Retired in OpenClaw 2026.9.1 (accepted by the schema, ignored at runtime,
-      // and reported by doctor). Control UI browsers pair through the device flow.
-      c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
+      const schemaNew = process.env.OC_SCHEMA_NEW === "1";
+
+      // Keeping browsers from having to pair, in the vocabulary of each version.
+      //
+      // 2026.7.1 reads gateway.controlUi.dangerouslyDisableDeviceAuth. 2026.9.1
+      // still accepts the key -- so nothing warns -- but only carries it in
+      // legacy-*.js: "retired and ignored. Control UI browsers pair through the
+      // normal device flow." The device flow cannot be completed here, because
+      // `openclaw devices approve` needs a gateway token this stack does not set.
+      //
+      // The 2026.9.1 replacement auto-approves a browser once the proxy has
+      // authenticated the user. Our nginx does not authenticate anyone -- it sets
+      // a constant X-Forwarded-User -- so this admits whoever reaches the proxy.
+      // That is the posture 2026.7.1 already has with the check disabled, not a
+      // new exposure, and the stack binds to localhost on one host. The scopes are
+      // what is new: operator.admin makes doctor raise a critical finding by
+      // design, so it is excluded and admin, if ever needed, goes to
+      // gateway.auth.identityScopes for the one configured identity.
+      if (schemaNew) {
+        delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
+        c.gateway.auth.trustedProxy.deviceAutoApprove = {
+          enabled: true,
+          scopes: (process.env.OC_DEVICE_AUTO_APPROVE_SCOPES || "")
+            .split(",").map((s) => s.trim()).filter(Boolean),
+        };
+      } else {
+        delete c.gateway.auth.trustedProxy.deviceAutoApprove;
+        c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
+      }
 
       // Per-backend provider/runtime wiring. No primary model is pinned; each
       // enabled backend routes its provider/* through the right runtime and the
@@ -302,13 +370,22 @@ else
       if (enableClaudeCli) {
         c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
         c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
-        // The bundled anthropic plugin registers the claude-cli backend itself and
-        // hardcodes `command: "claude"`; 2026.9.1 dropped agents.defaults.cliBackends
-        // and offers no replacement knob. The wrapper is applied in the image instead,
-        // as the `claude` first on PATH (config/openclaw/templates/Dockerfile).
-        c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
-        c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
-        c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
+        // Pointing OpenClaw at the openclaw-claude wrapper, which re-injects the
+        // CLAUDE_CONFIG_DIR, IS_SANDBOX and OAuth token that OpenClaw strips.
+        //
+        // 2026.9.1 removed agents.defaults.cliBackends from the schema entirely --
+        // writing it fails validation, and under a pty that failure becomes an
+        // unanswerable `doctor --fix? [Y/n]` prompt and an indefinite hang. The
+        // bundled anthropic plugin owns the backend and offers no command override.
+        // The wrapper is interposed in the image instead, as the `claude` first on
+        // PATH (config/openclaw/templates/Dockerfile), which works on both versions.
+        if (schemaNew) {
+          delete c.agents.defaults.cliBackends;
+        } else {
+          c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
+          c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
+          c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
+        }
 
         let anthropicCatalog = [];
         try {
@@ -369,17 +446,27 @@ else
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
       // memory search at github-copilot. 2026.7.1 reads agents.defaults.memorySearch;
-      // 2026.9.1 moved it to the top-level memory.search, which is why the base
-      // image is pinned rather than followed.
+      // 2026.9.1 relocated the whole subtree to the top-level memory.search and
+      // removed the old path from the schema. Neither path validates on both
+      // versions, so this is the one place a single configuration cannot serve both.
       if (enableCopilot) {
         c.gateway = c.gateway || {};
         c.gateway.http = c.gateway.http || {};
         c.gateway.http.endpoints = c.gateway.http.endpoints || {};
         c.gateway.http.endpoints.chatCompletions = c.gateway.http.endpoints.chatCompletions || {};
         c.gateway.http.endpoints.chatCompletions.enabled = true;
-        c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
-        c.agents.defaults.memorySearch.provider = "github-copilot";
-        if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
+        if (schemaNew) {
+          delete c.agents.defaults.memorySearch;
+          c.memory = c.memory || {};
+          c.memory.search = c.memory.search || {};
+          c.memory.search.provider = "github-copilot";
+          if (!c.memory.search.model) c.memory.search.model = "text-embedding-3-small";
+        } else {
+          if (c.memory) delete c.memory.search;
+          c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
+          c.agents.defaults.memorySearch.provider = "github-copilot";
+          if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
+        }
       }
 
       if (enableCodex) {
@@ -459,9 +546,43 @@ else
         c.plugins.load.paths = pluginPaths;
       }
 
+      // Sweep the keys the running version no longer accepts, whatever wrote them.
+      // The branches above only clean up inside the `if` of their own feature, so a key
+      // left by an earlier start whose feature has since been turned off would
+      // survive and fail validation. This runs every start, so an install upgraded
+      // underneath self-heals rather than staying broken.
+      const retired = schemaNew
+        ? [["agents", "defaults", "cliBackends"],
+           ["agents", "defaults", "memorySearch"],
+           ["gateway", "controlUi", "dangerouslyDisableDeviceAuth"]]
+        : [["memory", "search"],
+           ["gateway", "auth", "trustedProxy", "deviceAutoApprove"]];
+      const sweptKeys = [];
+      for (const path of retired) {
+        let node = c;
+        for (const seg of path.slice(0, -1)) {
+          if (!node || typeof node !== "object") { node = null; break; }
+          node = node[seg];
+        }
+        const leaf = path[path.length - 1];
+        if (node && typeof node === "object" && leaf in node) {
+          delete node[leaf];
+          sweptKeys.push(path.join("."));
+        }
+      }
+      if (sweptKeys.length) {
+        console.log("openclaw.json: removed keys this version does not accept:", sweptKeys.join(", "));
+      }
+
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+      console.log("openclaw.json: OpenClaw " + process.env.OPENCLAW_VERSION + "; config shape " + (schemaNew ? "2026.9" : "2026.7"));
       console.log("openclaw.json: auth.mode =", c.gateway.auth.mode, "; trustedProxies =", JSON.stringify(c.gateway.trustedProxies));
       console.log("openclaw.json: allowedOrigins =", JSON.stringify(c.gateway.controlUi.allowedOrigins));
+      if (schemaNew) {
+        console.log("openclaw.json: deviceAutoApprove =", JSON.stringify(c.gateway.auth.trustedProxy.deviceAutoApprove));
+      } else {
+        console.log("openclaw.json: dangerouslyDisableDeviceAuth =", c.gateway.controlUi.dangerouslyDisableDeviceAuth);
+      }
       if (pluginPaths.length) {
         console.log("openclaw.json: plugins.load.paths =", JSON.stringify(c.plugins.load.paths));
       }
@@ -479,7 +600,9 @@ else
       }
       if (enableCopilot) {
         console.log("openclaw.json: routed github-copilot/* through the copilot runtime");
-        console.log("openclaw.json: enabled gateway /v1/embeddings + memory.search.provider = github-copilot (model", c.memory.search.model + ") for RAG embeddings");
+        const embedModel = schemaNew ? c.memory.search.model : c.agents.defaults.memorySearch.model;
+        const embedPath = schemaNew ? "memory.search" : "agents.defaults.memorySearch";
+        console.log("openclaw.json: enabled gateway /v1/embeddings + " + embedPath + ".provider = github-copilot (model", embedModel + ") for RAG embeddings");
       }
       if (enableCodex) {
         console.log("openclaw.json: routed openai/* through the codex runtime");
