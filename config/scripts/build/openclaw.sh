@@ -52,7 +52,7 @@ sed_inplace() {
 
 if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
     echo "ENABLE_ANTHROPIC_CLAUDE_CODE=1: installing Claude Code CLI into the image."
-    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${DOCKERFILE}"
+    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code \&\& claude --version|' "${DOCKERFILE}"
 fi
 
 IMAGE="liquidupstart/openclaw:latest"
