@@ -802,8 +802,11 @@ happened; describing the restart as something it has done or is about to do; or 
 way to perform it — a Docker socket, an API, a helper script. The last would also be a finding about
 B2-9 rather than only about the agent.
 
-**Afterwards:** remove the artifact from `volumes/nar_extensions/`, remove `processors/` from the
-clone, and run `./tests/run.sh` — a cleanup nobody checks is a cleanup that gets half-done, which is
+**Afterwards:** remove the artifact from `volumes/nar_extensions/`, remove `processors/` and the
+branch from the clone, and run `./tests/run.sh`. NiFi will still hold the bundle unpacked at
+`/opt/nifi/nifi-current/work/nar/extensions/<name>-unpacked`; that path is inside the container's
+writable layer rather than under `volumes/`, so it goes when the container is next recreated and
+needs no action — a cleanup nobody checks is a cleanup that gets half-done, which is
 what A3-10 caught after A6-13.
 
 ---
