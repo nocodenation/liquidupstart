@@ -510,6 +510,13 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "Claude CLI: using CLAUDE_CODE_OAUTH_TOKEN from .env (forwarded to the CLI; no interactive login needed)."
   elif claude_cli "" auth status >/dev/null 2>&1; then
     echo "Claude CLI: already authenticated (login persists in ${CLAUDE_DIR})."
+  elif ! claude_cli "" --version >/dev/null 2>&1; then
+    echo "Claude CLI: the binary in ${OPENCLAW_IMAGE} does not run — sign-in skipped." >&2
+    echo "  'auth status' fails both when unauthenticated and when the CLI is broken;" >&2
+    echo "  this is the second case, so there is nothing to sign in to." >&2
+    echo "  Rebuild the image, then start again:" >&2
+    echo "    ./config/scripts/build/openclaw.sh" >&2
+    echo "  OpenClaw requests will fail until this is fixed." >&2
   elif [[ -t 0 && -t 1 ]]; then
     echo "Claude CLI: not authenticated — starting interactive Claude Code sign-in."
     echo "  A sign-in URL appears below. Open it, authorize, then paste the code here."
