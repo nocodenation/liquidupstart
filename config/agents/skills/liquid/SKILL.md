@@ -382,21 +382,38 @@ or which file failed to arrive. So the deploy procedure is:
    inside the container). Place NARs you did not build with `nar-build` there yourself, and
    put every NAR of a dependency chain there together (§6.5).
 
-3. **The restart is the operator's — ask the operator for it, and never take it yourself.**
+3. **Check whether it loaded — do not assume either way.** The drop directory is also NiFi's
+   auto-load directory, and NiFi watches it while running. A **new** bundle is usually picked
+   up within seconds and needs no restart; Liquid's log says so plainly:
+
+   ```
+   NarAutoLoaderTask   Found .../nar_extensions/<file>.nar in auto-load directory
+   ExtensionDiscovery  Loaded extensions for <group>:<artifact>:<version> in NN millis
+   ```
+
+   Then confirm the type is really there — list processor types through the API, or drop one
+   on the canvas and check `extensionMissing: false` before removing it again. §1.1 applies:
+   back the canvas up first.
+
+   **A restart is required when you are replacing a version that is already loaded**, because
+   the entrypoint's copy into `lib/` wins over the auto-load directory and the old bundle
+   stays. That is the case where the auto-loader will not help you.
+
+4. **When a restart is needed, it is the operator's — ask, and never take it yourself.**
    It interrupts every running flow in this Liquid — every flow anyone else is running, not
    only yours — so it is not a step an agent takes on its own timing, and you have no way to
-   take it in any case: no Docker socket is mounted in your container. Report what you built and where it is, and say that
-   it becomes available on the next restart:
+   take it in any case: no Docker socket is mounted in your container.
 
-   > Built `my-processors-1.0.0.nar` into `./volumes/nar_extensions/`. It loads on the next
-   > Liquid restart (`docker compose restart liquid`), which interrupts every running flow —
-   > tell me when you want it and I will confirm the processor afterwards.
+   > Built `my-processors-1.0.0.nar` into `./volumes/nar_extensions/`. It replaces a bundle
+   > Liquid has already loaded, so it needs a restart (`docker compose restart liquid`),
+   > which interrupts every running flow — tell me when you want it and I will confirm the
+   > processor afterwards.
 
-   Until that restart has happened the processor is **built, not deployed**: do not report it
-   as available, and do not describe the restart as something you have done or are about to
-   do.
+   **Say what you checked, not what you expect.** "Built, not deployed" is the right report
+   when you looked and it had not loaded; it is a false report when you did not look. Never
+   describe the restart as something you have done or are about to do.
 
-4. After the operator's restart, confirm the component appears (list controller-service /
+5. After the operator's restart, confirm the component appears (list controller-service /
    processor types via the API, or check the canvas), and check the entrypoint's own lines in
    `docker compose logs liquid` — a NAR that failed to reach `lib/` is named there.
 

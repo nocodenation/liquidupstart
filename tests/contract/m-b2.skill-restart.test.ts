@@ -14,6 +14,13 @@
  *           every running flow, and that the agent reports what it placed and
  *           where instead of performing it — and it does not tell the agent to
  *           run the restart itself.
+ * Note:     REQUIRED lists phrasings of four properties, not the properties
+ *           themselves, which is as close as a test on prose can get. It cost a
+ *           false red on 2026-09-05: §6.4 was rewritten to say "ask, and never
+ *           take it yourself" and the pattern only knew "ask the operator". The
+ *           alternative was added rather than the assertion loosened -- a
+ *           pattern that matches anything proves nothing -- but a reader
+ *           changing this section should expect to extend the list.
  * Covers:   B2-8, FR29
  * Unhappy:  A section that names the restart without saying whose it is, or
  *           whose it is without saying why, fails by name. B2-9 is the other
@@ -32,7 +39,7 @@ const section = (sections.find((s) => /^### 6\.4/.test(s)) ?? '').replace(/\s+/g
 
 const REQUIRED = [
   { term: "the restart belongs to the operator", pattern: /operator'?s?\b/i },
-  { term: 'the agent does not take it', pattern: /do not restart|never restart|not yours to take|ask the operator/i },
+  { term: 'the agent does not take it', pattern: /do not restart|never restart|not yours to take|ask the operator|never take it yourself/i },
   { term: 'the reason: it interrupts every running flow', pattern: /interrupts every running flow|interrupts all running flows/i },
   { term: 'the agent reports what it placed and where', pattern: /report|say what you placed|name the artifact/i }
 ];
