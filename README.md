@@ -281,6 +281,15 @@ machine under `volumes/privacy-proxy/`.
 - **Knobs** (section 7): `PRIVACY_PROXY_GATE_MODE` (`log` notes a message that could still
   identify someone, `block` refuses to send it), the optional local-LLM second pass and semantic
   rewriting (section 6 endpoint), and the vault retention.
+- **What it catches, and when.** Built-in detectors (names, e-mails, phones, IBANs, ids,
+  dates) run on every message; the optional local-LLM second pass adds what a model notices on
+  that call, which varies from call to call. Anything masked once stays masked for the whole
+  conversation. For the terms that matter to you — project names, codes, study ids — name them
+  on the settings page (`privacy.localhost`), which catches them on first sight instead of
+  relying on the model to find them.
+- **The local model is the trust boundary.** The second pass and the judges read your messages
+  in full before anything is masked, so whatever `LOCAL_LLM_API_BASE` (section 6) points at sees
+  the real data. Keep it on your own machine or network; only the masked text goes to the cloud.
 
 ## Data & persistence
 
