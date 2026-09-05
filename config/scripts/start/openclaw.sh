@@ -231,8 +231,19 @@ else
 
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
+  # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute, and
+  # demands a narrow gateway.trustedProxies. This stack's own docker network is
+  # narrow enough; the three RFC1918 ranges written until 2026-09-05 are not.
+  # Empty on a cold start, where the network does not exist until `docker compose
+  # up` -- start.sh corrects the config after that and restarts the gateway.
+  LU_NETWORK_SUBNET="$(docker network ls --filter name=nocodenation_liquid_upstart_network \
+      --format '{{.Name}}' | head -1 \
+      | xargs -r -I{} docker network inspect {} \
+          --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
+
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
+    -e LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
@@ -262,7 +273,9 @@ else
       c.gateway.auth.trustedProxy = c.gateway.auth.trustedProxy || {};
       c.gateway.auth.trustedProxy.userHeader = "x-forwarded-user";
       c.gateway.auth.trustedProxy.allowLoopback = true;
-      c.gateway.trustedProxies = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
+      c.gateway.trustedProxies = process.env.LU_NETWORK_SUBNET
+        ? ["127.0.0.1/32", process.env.LU_NETWORK_SUBNET]
+        : ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 
       // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};
