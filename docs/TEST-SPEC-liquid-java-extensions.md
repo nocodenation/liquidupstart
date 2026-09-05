@@ -878,6 +878,16 @@ docker compose restart liquid
 ./tests/run.sh; echo "EXIT=$?"
 ```
 
+**Check 3b earned its place on 2026-09-05, for a reason nobody anticipated.** It failed during the
+operator's verification, and not because anything in M-B2 was wrong: the running `liquid` image had
+been built forty minutes earlier during A7-5's cold start, on `feature/git-integration`, where this
+milestone's entrypoint fix does not exist. The container carried the old script with `|| true` while
+the file B2-5 and B2-6 read carried the new one. Both cases would have been green over a container
+running something else — which is exactly the failure 3b exists to catch, met by a route the check
+was not written for. **A stack built from one branch and asserted from another is indistinguishable
+from a broken fix**, and only a check that reads the running container can tell them apart. The
+remedy is to rebuild the image on the branch being verified; `HANDOFF.md` records the general rule.
+
 Check 4 is the point of the milestone, not an addition to it. Check 3 alone would prove that *a*
 processor appeared; only check 4 shows that the check can fail, and therefore that its passing means
 anything. **Record what check 4 actually produces even if it surprises you** — if a mismatched NAR
