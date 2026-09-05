@@ -2261,6 +2261,7 @@ none has tested that the parts hand over to each other.
 | **Why it is manual** | `compose.yml` fixes 23 container names and the project runs one instance per host, so no test can stand a second stack beside the operator's, and one that tore down the running stack would take NextCloud, OpenProject and every volume with it. The constraint is the stack's design, not an oversight in the suite, and it is recorded rather than worked around. |
 | **Test data** | The procedure is in §9 and names the steps and what to look for. |
 | **Expected** | After `build.sh` and `start.sh`: every service is running and none is restarting — a cold start that lays the workspace out correctly while OpenProject loops would otherwise pass. Then: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, the rendered `config/nginx/nginx.conf` and the per-service files under `config/` are back, and `git-repo-info` and `git-publish` answer inside the agent containers. `nar-build` belongs to `FEATURE-liquid-java-extensions.md` and is present only where that work is: checking for it on this branch would fail a cold start that succeeded. |
+| **Amended again 2026-09-05** | The procedure did not mention that a reset invalidates the deploy keys. `cleanup.sh` removes `volumes/_git-secrets`, so the first start generates new ones and both clones fail — which reads as a failed cold start and is not. Step 4b now walks it: print the public halves, register them, start again. That step is U11 performed by hand, and running it is the closest thing this feature has to a rehearsal of what the launchpad card should do instead. |
 | **Amended 2026-09-04, twice** | First: the procedure removed only `volumes/`, which is not a cold start. Five generated files live outside it — the rendered `config/nginx/nginx.conf`, `config/openclaw/.env`, `config/pgadmin/{pgpass,config_distro.py}` and `config/nextcloud/set_trusted_proxies.sh` — and each is enough on its own to make a start script appear to produce a file it no longer produces. It now clears everything git does not track except `.env`, with a dry run first so the operator reads the list before it goes, and step 5 asserts those files came back rather than only the workspace. Then: the operator pointed out that the stack already has a full reset, `./cleanup.sh`, and it is more thorough than the deletion this case had invented — it also removes the rendered files for pgadmin, nginx, nextcloud, liquid, hermes and openclaw, stale containers from other checkouts, and the images. The procedure uses it, and `git clean -nffdx` is demoted from the tool to the **check**: git decides whether the reset worked, rather than the script vouching for itself. A side effect worth naming — this is the only thing in the repository that exercises `cleanup.sh` at all. |
 | **Covers** | FR32, NFR6, U1, U2, U7. |
 | **What it found** | Not yet run. It is the operator's, it tears the stack down, and the procedure is in §9. It was deliberately not automated: `compose.yml` fixes 23 container names and one instance runs per host, so a test could only run it by destroying the stack it runs in. |
@@ -3300,6 +3301,23 @@ grep -v '^[[:space:]]*#' scripts/linux/build.sh | grep -o 'build/[a-z-]*\.sh'
 # 4. Start, with the .env you had. Expect every URL and credential printed at the
 #    end, and no error above them.
 ./scripts/linux/start.sh; echo "START EXIT=$?"
+
+# 4b. EXPECTED, not a failure: both clones fail on this first start. cleanup.sh
+#     removed volumes/_git-secrets, so step 4 generated NEW deploy keys, and the
+#     ones registered at the host belong to keys that no longer exist. The start
+#     names the path and the remedy for each repository:
+#       Warning: could not clone git@github.com:... :
+#         Register <project>/volumes/_git-secrets/repos/<slug>/id_ed25519.pub
+#         as a deploy key, then start again.
+#     This is U11 -- re-enabling a repository whose key no longer works -- walked
+#     by hand, and it is the friction the launchpad card in U2 exists to remove.
+#     Print both public halves, register them at the host, and start again. The
+#     write-capable repository needs "Allow write access" ticked; the read-only
+#     one must not have it. Delete the stale entries at the host while you are
+#     there: their private halves no longer exist anywhere.
+for f in volumes/_git-secrets/repos/*/id_ed25519.pub; do echo "--- $f"; cat "$f"; done
+./scripts/linux/start.sh; echo "START EXIT=$?"
+#     Expect this second start to report "Cloned ..." for each repository.
 
 # 5a. Did the stack come up at all? Every base image was removed in step 2, so
 #     this is also the only check in the repository that the pinned tags still
