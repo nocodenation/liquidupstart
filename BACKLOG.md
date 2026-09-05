@@ -57,6 +57,13 @@ Seen during A7-5 on 2026-09-05, thirty minutes into a cold start. Its healthchec
 marked unhealthy. Its log is **completely empty** — not a line about starting, about finding no app,
 or about what would change it.
 
+**And the healthcheck hides it for exactly as long as anyone is watching.** `start_period` is 5m, so
+for the first five minutes after every start Docker reports `health: starting` rather than
+`unhealthy`. That is the window in which an operator still has the terminal in front of them: they
+see "starting", read it as warming up, and turn away. The unhealthy state appears afterwards, when
+nobody is looking. It is a plausible reason this has gone unnoticed, and it means "check right after
+the start" is not a way to find it.
+
 Whether idle-without-an-app should report unhealthy is a judgement for whoever owns the service. What
 is not a judgement is that the state is **indistinguishable from broken**: the first thing a new
 operator does is a cold start, and it ends with one of nineteen services red and nothing anywhere
