@@ -3308,7 +3308,16 @@ grep -v '^[[:space:]]*#' scripts/linux/build.sh | grep -o 'build/[a-z-]*\.sh'
 #     cache and nobody notices when one moves. Expect every service running or
 #     healthy, and none restarting.
 docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}'
-docker compose ps --format '{{.Service}}\t{{.State}}' | grep -v 'running' || echo "  all running"
+docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}' \
+  | grep -vE '\srunning\s' | grep -v 'healthy)$' || echo "  nothing to report"
+#     State and health are different fields: a container can be 'running' and
+#     '(unhealthy)' at once, and a filter on State alone reports nothing. That is
+#     how the first version of this check passed a stack whose bun_runner was
+#     unhealthy on 2026-09-05.
+#     Known and not a failure: bun_runner is unhealthy while volumes/bun_app is
+#     empty. Its healthcheck probes port 3000 and there is no app to serve, so a
+#     cold start reaches this state by definition. It logs nothing at all, which
+#     is recorded in BACKLOG.md as its own problem.
 
 # 5b. What a cold start must have produced. Every path below was absent after
 #     step 2, so each one appearing is the start script's own work and not a

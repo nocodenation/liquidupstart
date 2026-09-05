@@ -5,6 +5,22 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**`bun_runner` reports unhealthy with no app, and says nothing about it.**
+Seen during A7-5 on 2026-09-05, thirty minutes into a cold start. Its healthcheck probes port 3000;
+`volumes/bun_app` is empty because the reset removed it, so nothing listens and the container is
+marked unhealthy. Its log is **completely empty** — not a line about starting, about finding no app,
+or about what would change it.
+
+Whether idle-without-an-app should report unhealthy is a judgement for whoever owns the service. What
+is not a judgement is that the state is **indistinguishable from broken**: the first thing a new
+operator does is a cold start, and it ends with one of nineteen services red and nothing anywhere
+that explains it. One line on startup — "no application in /bun_app; serving nothing until one is
+added" — would settle it either way.
+
+Not this feature's, so recorded rather than fixed. The causal chain is strongly suggested by the
+empty directory, the port the check probes and the silent log, but has not been confirmed by watching
+the service become healthy once an app exists.
+
 **The harness models one precondition where there are two.**
 Found during A7-5 on 2026-09-05, in the window between `cleanup.sh` and the first `start.sh`. Four
 cases fail there that `--no-system` does not skip: A3-3 twice (`known_hosts` seeded), A4-16 (the
