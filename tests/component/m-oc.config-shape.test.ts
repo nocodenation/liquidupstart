@@ -207,6 +207,42 @@ describe('OC-5/OC-6/OC-7 memory search, in both directions', () => {
   });
 });
 
+describe('OC-31 a plugin the operator did not ask for does not stay enabled', () => {
+  test('codex is removed from plugins.entries when ENABLE_OPENAI_CODEX is 0', () => {
+    // 2026.9.1 enables the codex plugin during its own startup migration --
+    // absent from a 2026.7.1 config, present after the first 2026.9.1 boot --
+    // and then cannot load it: @openai/codex is bundled in the 2026.7.1 image
+    // and gone from the 2026.9.1 one. The operator sees a permanent plugin error
+    // for a feature they switched off.
+    const dir = mkdtempSync(join(workRoot, 'codex-'));
+    writeFileSync(join(dir, 'openclaw.json'), JSON.stringify({
+      plugins: { entries: { codex: { enabled: true }, xai: { enabled: true } } },
+    }));
+    writeFileSync(join(dir, 'writer.js'), program);
+    const r = sh([
+      'docker', 'run', '--rm', '--user', '0:0', '-v', `${dir}:/state`,
+      '-e', 'OC_SCHEMA_NEW=1', '-e', 'OPENCLAW_VERSION=test',
+      '-e', 'ENABLE_CLAUDE_CLI=0', '-e', 'ENABLE_COPILOT=0', '-e', 'ENABLE_CODEX=0',
+      '-e', 'ENABLE_GROK=0', '-e', 'ENABLE_LOCAL=0',
+      '-e', 'LU_NETWORK_SUBNET=172.18.0.0/16', '-e', 'PLUGIN_PATHS=',
+      '-e', 'MODEL_WILDCARDS=', '-e', 'OPENROUTER_MODELS_JSON=[]', '-e', 'LOCAL_LLM_MODELS_JSON=[]',
+      '-e', 'OC_DEVICE_AUTO_APPROVE_SCOPES=operator.read',
+      '--entrypoint', 'node', IMAGE_NEW, '/state/writer.js',
+    ]);
+    expect(r.code).toBe(0);
+    const cfg = JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
+    expect(cfg.plugins?.entries?.codex).toBeUndefined();
+    expect(cfg.plugins?.entries?.xai).toBeUndefined();
+  });
+
+  test('OC-31 and it stays enabled when the operator did ask for it', () => {
+    // The counterpart. A sweep that removes it unconditionally would break the
+    // feature rather than fix the symptom.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', ENABLE_CODEX: '1' });
+    expect(cfg.plugins.entries.codex.enabled).toBe(true);
+  });
+});
+
 describe('the sweep: a key left by the other version does not survive', () => {
   test('a stale 2026.7 key is removed even when its feature is now off', () => {
     // The per-feature branches only clean up inside their own `if`. Turning

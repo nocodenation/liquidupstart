@@ -557,6 +557,21 @@ else
            ["gateway", "controlUi", "dangerouslyDisableDeviceAuth"]]
         : [["memory", "search"],
            ["gateway", "auth", "trustedProxy", "deviceAutoApprove"]];
+
+      // 2026.9.1 enables the codex plugin in the config by itself during its
+      // startup migration -- absent from a 2026.7.1 config, present after the
+      // first 2026.9.1 boot -- and then cannot load it, because @openai/codex is
+      // bundled in the 2026.7.1 image and gone from the 2026.9.1 one. An operator
+      // who left ENABLE_OPENAI_CODEX at 0 gets a permanent plugin error for a
+      // feature they never asked for. The enable is ours to own either way: the
+      // block above writes it when the flag is on, so this removes it when it is
+      // off, whoever put it there.
+      if (!enableCodex && c.plugins && c.plugins.entries) {
+        retired.push(["plugins", "entries", "codex"]);
+      }
+      if (!enableGrok && c.plugins && c.plugins.entries) {
+        retired.push(["plugins", "entries", "xai"]);
+      }
       const sweptKeys = [];
       for (const path of retired) {
         let node = c;

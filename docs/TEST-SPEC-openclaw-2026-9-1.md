@@ -62,6 +62,7 @@ here; each is executed where its subject exists.
 | **OC-28** | system, **manual** | **negative** | Starting 2026.9.1 against a state directory written by 2026.7.1 **fails** until the workspace is migrated — the upgrade path, which no cold start can reach |
 | **OC-29** | system | positive | After the migration, that same upgraded stack starts and passes the OC-20 acceptance |
 | **OC-30** | system | **negative** | The acceptance sweep reports a crash-looping service as a failure, whenever it is sampled |
+| **OC-31** | component + system | **negative** | A plugin 2026.9.1 enables by itself, and cannot load, does not stay enabled — and the removal is what silences the error |
 
 ### Suite 2 — compatibility
 
@@ -223,6 +224,18 @@ here; each is executed where its subject exists.
 | **Expected** | OC-28: the gateway refuses to start and names the workspace migration. OC-29: after the migration, the stack starts and passes OC-20's acceptance, with `deviceAutoApprove`, and without `cliBackends` or `dangerouslyDisableDeviceAuth`, surviving the doctor rewrite. |
 | **Failure** | OC-29 leaving any of those three keys in the state doctor rewrote. |
 | **What this changes** | The start script must perform this migration itself, or say plainly that an upgrade needs it and how. A stack that crash-loops after an upgrade with the fix reachable only by reconstructing a container's startup copy is not a migration anyone can follow. |
+| **Covers** | OC-G1, OC-G4 |
+
+### OC-31 — 2026.9.1 enables a plugin it cannot load · **added 2026-09-06, found in a screenshot**
+
+| | |
+|---|---|
+| **Premise** | The operator's screenshot confirming OC-8 showed a warning badge on CODEX in the sidebar, with `ENABLE_OPENAI_CODEX=0`. It was not a rendering artefact. `plugins.entries.codex.enabled = true` is **absent** from the 2026.7.1 state and **present** after the first 2026.9.1 boot; this stack's start script writes it only when the flag is on. 2026.9.1's own startup migration added it — and then cannot load it: `@openai/codex` is bundled in `ghcr.io/openclaw/openclaw:2026.7.1` and gone from `:2026.9.1`. |
+| **Component** | The config writer's sweep, and a running gateway. |
+| **Test data** | `{"plugins":{"entries":{"codex":{"enabled":true}}}}` — the exact shape 2026.9.1 wrote by itself, observed rather than invented. The assertion string is the plugin loader's own: `ERROR codex:`. |
+| **Expected** | Component: with `ENABLE_OPENAI_CODEX=0` the writer removes `plugins.entries.codex`, whoever put it there — and with the flag **on** it leaves it, so the sweep fixes the symptom rather than breaking the feature. System: doctor reports `Errors: 1 — ERROR codex: Plugin "codex" cannot load because required dependencies are missing: @openai/codex, smol-toml` with the key present, and nothing with it absent. |
+| **Why the system half exists** | The component case proves the key is removed. Only the running gateway proves that removing it is what silences the error — measured as an A/B on the live stack rather than inferred from the error having disappeared. |
+| **Failure** | The error persisting with the key absent would mean the config entry is not what enables the load attempt, and the fix is aimed at the wrong thing. |
 | **Covers** | OC-G1, OC-G4 |
 
 ### OC-30 — the acceptance sweep must not pass a crash loop
