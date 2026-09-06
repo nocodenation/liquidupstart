@@ -140,6 +140,81 @@ else
   echo "OpenClaw config already present at ${CONFIG_JSON}; skipping setup."
 fi
 
+# Which version last wrote this state, read out of the state itself. OpenClaw
+# records it in meta.lastTouchedVersion; empty when the config predates the field.
+openclaw_state_version() {
+  [[ -f "$CONFIG_JSON" ]] || return 0
+  docker run --rm --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
+    try {
+      const c = JSON.parse(require("fs").readFileSync("/state/openclaw.json", "utf8"));
+      const v = c && c.meta && c.meta.lastTouchedVersion;
+      if (typeof v === "string") process.stdout.write(v);
+    } catch (e) {}
+  ' 2>/dev/null
+}
+
+# Carry a state directory written by an older OpenClaw across to this one.
+#
+# 2026.9.1 refuses to start against 2026.7.1 state -- "Legacy workspace setup
+# state requires migration for /home/node/.openclaw/workspace" -- and restarts
+# until its own restart-loop breaker trips, so `docker compose up` fails with
+# "dependency failed to start" and the start script exits with the gateway down.
+#
+# The repair is `openclaw doctor --fix`, and it is not reachable the way its own
+# message implies. Doctor refuses while any config error stands, and one always
+# does here: plugins.load.paths names /home/node/openclaw-plugins/ingest-pdf,
+# which is not a mount. The gateway's compose `command:` copies it from
+# /opt/plugins at its own startup, so the directory exists in no other container
+# -- and not in the gateway either, while it is crash-looping. Every documented
+# route to the fix therefore leads nowhere. This replicates the copy first.
+openclaw_migrate_state() {
+  echo "OpenClaw: state was written by ${1}, image is ${2} — migrating before start."
+  if docker compose run --rm --no-deps -T --user 0:0 --entrypoint /bin/sh openclaw-gateway -lc '
+        mkdir -p /home/node/openclaw-plugins
+        cp -a /opt/plugins/. /home/node/openclaw-plugins/ 2>/dev/null || true
+        chmod -R go-w /home/node/openclaw-plugins 2>/dev/null || true
+        openclaw doctor --fix
+      ' >/dev/null 2>&1; then
+    echo "OpenClaw: state migrated."
+  else
+    echo "Warning: the OpenClaw state migration did not complete." >&2
+    echo "  The gateway will refuse to start against state an older version wrote." >&2
+    echo "  Run it by hand and read the output:" >&2
+    echo "    docker compose run --rm --no-deps --user 0:0 --entrypoint /bin/sh openclaw-gateway -lc '\\" >&2
+    echo "      mkdir -p /home/node/openclaw-plugins && cp -a /opt/plugins/. /home/node/openclaw-plugins/ && \\" >&2
+    echo "      chmod -R go-w /home/node/openclaw-plugins && openclaw doctor --fix'" >&2
+  fi
+}
+
+if [[ -f "$CONFIG_JSON" ]]; then
+  STATE_VERSION="$(openclaw_state_version)"
+  IMAGE_VERSION="$(openclaw_version)"
+  if [[ -z "$IMAGE_VERSION" ]]; then
+    echo "Error: could not determine the OpenClaw version in ${OPENCLAW_IMAGE}." >&2
+    echo "  Build the image first: ./config/scripts/build/openclaw.sh" >&2
+    exit 1
+  fi
+  if [[ -z "$STATE_VERSION" ]]; then
+    # Predates meta.lastTouchedVersion, so it is older by definition.
+    openclaw_migrate_state "an older version" "$IMAGE_VERSION"
+  elif [[ "$STATE_VERSION" != "$IMAGE_VERSION" ]]; then
+    if version_at_least "$IMAGE_VERSION" "$STATE_VERSION"; then
+      openclaw_migrate_state "$STATE_VERSION" "$IMAGE_VERSION"
+    else
+      # A downgrade. OpenClaw refuses to run startup migrations backwards, and
+      # the failure is a crash loop rather than a message, so it is caught here.
+      echo "Error: ${STATE_DIR} was written by OpenClaw ${STATE_VERSION}, but ${OPENCLAW_IMAGE} is ${IMAGE_VERSION}." >&2
+      echo "  OpenClaw refuses to start on state a newer version wrote:" >&2
+      echo "  \"Refusing to run automatic gateway startup migrations\"." >&2
+      echo "  A downgrade is never only a tag change — the state has to go with it." >&2
+      echo "  Either build the image the state expects, or set the state aside:" >&2
+      echo "    mv ${STATE_DIR} ${STATE_DIR}.bak-${STATE_VERSION}" >&2
+      echo "  and start again, which creates a fresh one. Sessions in it are lost." >&2
+      exit 1
+    fi
+  fi
+fi
+
 # Patch openclaw.json on every start so the gateway works behind the proxy:
 #   1. gateway.auth (trusted-proxy) — auth delegated to nginx; the gateway trusts
 #      the X-Forwarded-User header only from trusted proxy IPs (private Docker

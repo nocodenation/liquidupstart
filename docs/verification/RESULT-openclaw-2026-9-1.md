@@ -24,10 +24,11 @@ from the proxy's `X-Forwarded-User`. **No pairing prompt.** A `Session not found
 a session id from the 2026.7.1 state, which the migration moved into SQLite — expected, and not a
 fault.
 
-## The 27 automated cases
+## The automated cases
 
-**28 pass, 0 fail** (plus the 27 dashboard cases). Covering OC-1, OC-2, OC-5, OC-6, OC-7, OC-10,
-OC-11, OC-12, OC-13, OC-14, OC-15, OC-17, OC-18, OC-19, OC-22, OC-31, and the config sweep.
+**41 pass, 0 fail** across six files (plus the 27 dashboard cases). Covering OC-1, OC-2, OC-5, OC-6,
+OC-7, OC-10, OC-11, OC-12, OC-13, OC-14, OC-15, OC-17, OC-18, OC-19, OC-21, OC-22, OC-28, OC-31,
+and the config sweep.
 
 The implementation is small, as §6 predicted: the version is read from the built image, and the
 config writer branches on it. Two of the five affected parts needed no work at all.
@@ -74,8 +75,35 @@ existing installation is actually in.
 Our three configuration keys survived doctor's rewrite: `deviceAutoApprove` intact, `cliBackends` and
 `dangerouslyDisableDeviceAuth` absent.
 
-**Not yet fixed.** The start script should perform this itself, or say plainly that an upgrade needs
-it and how. That is the next piece of work on this branch.
+**Fixed, and verified against the state that produced it.** The start script now reads
+`meta.lastTouchedVersion` out of the state — OpenClaw's own record of which version last wrote it —
+compares it with the version the image reports, and migrates when the image is newer. It replicates
+the plugin copy first, because that is what makes `doctor --fix` willing to run at all.
+
+The proof is an A/B on the same starting state, not an argument. `volumes/_openclaw` was replaced
+with `liquidupstart-backups/_openclaw.bak-2026.7.1` — the directory the 2026-09-05 baseline left —
+and `./scripts/linux/start.sh` run once:
+
+```
+OpenClaw: state was written by 2026.7.1, image is 2026.9.1 — migrating before start.
+OpenClaw: state migrated.
+openclaw: image reports 2026.9.1; writing the 2026.9 config shape.
+start.sh EXIT=0
+```
+
+`restarts=0`, `health=healthy`, 19 services, Control UI 200, configuration valid. **The identical
+state produced ten crash-loops and `EXIT=1` an hour earlier.**
+
+The order matters and is deliberate: migrate first, write our configuration second. Doctor rewrites
+the config as part of the migration — it is what added `plugins.entries.codex` — so anything we care
+about has to be written after it, not before. Verified in the same run: `deviceAutoApprove` enabled,
+`cliBackends` absent, `dangerouslyDisableDeviceAuth` absent, `plugins.entries.codex` absent,
+`trustedProxies` narrowed, and zero `ERROR codex:` occurrences.
+
+**And the same check closes the other direction.** An image *older* than the state is a downgrade,
+which OpenClaw refuses with `Refusing to run automatic gateway startup migrations` — again as a
+crash loop rather than a message. The start script now refuses first, names both versions, and says
+how to recover. That turns OC-21 from an observation into a guard.
 
 ### 2. 2026.9.1 enables a plugin it cannot load · OC-31 · **fixed**
 
@@ -149,8 +177,9 @@ baseline and again here, where the build ended in `2.1.263 (Claude Code)`.
 
 ## What is not done
 
-- **The upgrade migration (finding 1)** is not automated. This is the next task.
-- **OC-3**, **OC-4**, **OC-16**, **OC-20**, **OC-21** are specified and not run.
+- **OC-3**, **OC-4**, **OC-16**, **OC-20** are specified and not run. OC-4 is the interesting one:
+  it decides whether the `cliBackends` key is needed on 2026.7.1 at all, and could remove one branch
+  from the version split.
 - **Suite 2** — OC-23 to OC-27 — needs an integration branch carrying #9 and #10.
 - Two `${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}` fallbacks remain in the `ingest-pdf`
   plugin build scripts. Neither `build.sh` nor `start.sh` invokes them, and the plugin's bundle is
