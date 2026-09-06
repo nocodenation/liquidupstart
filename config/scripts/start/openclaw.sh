@@ -253,8 +253,15 @@ for _tp in \
   fi
 done
 
+# The Claude CLI serves models under two provider ids: anthropic/* for the API
+# route and claude-cli/* for the CLI itself. 2026.7.1 had no model policy, so
+# only the routing map mattered and anthropic/* was enough. 2026.9.1 introduced
+# agents.defaults.modelPolicy.allow and built it from that map -- which never
+# mentioned claude-cli, so every claude-cli model was listed and none selectable:
+# "Failed to set model: model not allowed: claude-cli/claude-opus-5".
 for _bw in \
   "${ENABLE_CLAUDE_CLI}:anthropic/*" \
+  "${ENABLE_CLAUDE_CLI}:claude-cli/*" \
   "${ENABLE_COPILOT}:github-copilot/*" \
   "${ENABLE_CODEX}:openai/*" \
   "${ENABLE_GROK}:xai/*" \
@@ -594,6 +601,25 @@ else
         for (const w of modelWildcards) {
           if (!c.agents.defaults.models[w]) c.agents.defaults.models[w] = {};
         }
+
+        // 2026.9.1 introduced agents.defaults.modelPolicy.allow and populated it
+        // once, during its startup migration, by copying the legacy model map.
+        // A list built once from a map that predates it goes stale the moment
+        // anything changes -- and it did immediately: the map never mentioned
+        // claude-cli, so every claude-cli model was listed by /models and none
+        // could be selected ("model not allowed: claude-cli/claude-opus-5").
+        // Owned here instead, and merged rather than replaced so a model the
+        // operator allowed by hand survives.
+        if (schemaNew) {
+          c.agents.defaults.modelPolicy = c.agents.defaults.modelPolicy || {};
+          const allow = Array.isArray(c.agents.defaults.modelPolicy.allow)
+            ? c.agents.defaults.modelPolicy.allow
+            : [];
+          for (const w of modelWildcards) {
+            if (!allow.includes(w)) allow.push(w);
+          }
+          c.agents.defaults.modelPolicy.allow = allow;
+        }
       }
 
       let openrouterModels = [];
@@ -678,6 +704,9 @@ else
       }
       if (modelWildcards.length) {
         console.log("openclaw.json: model allowlist wildcards =", JSON.stringify(modelWildcards));
+        if (schemaNew) {
+          console.log("openclaw.json: agents.defaults.modelPolicy.allow =", JSON.stringify(c.agents.defaults.modelPolicy.allow));
+        }
       }
       if (openrouterModels.length) {
         console.log("openclaw.json: added " + openrouterModels.length + " OpenRouter models to the picker allowlist");

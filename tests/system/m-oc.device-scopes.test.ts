@@ -126,6 +126,17 @@ describe('OC-10 the guard still bites', () => {
 });
 
 describe('OC-22 the model survives the move', () => {
+  test('claude-cli/* is allowed by the model policy, not merely listed', () => {
+    // Added 2026-09-06, after this case passed while the model was unusable.
+    // 2026.9.1 introduced agents.defaults.modelPolicy.allow and built it once
+    // from a map that never mentioned claude-cli, so /models listed all nine
+    // claude-cli models and selecting one answered "model not allowed:
+    // claude-cli/claude-opus-5". Being catalogued is not being usable, and only
+    // this assertion tells the two apart.
+    const allow = readConfig().agents?.defaults?.modelPolicy?.allow ?? [];
+    expect(allow).toContain('claude-cli/*');
+  });
+
   test('claude-cli/claude-opus-5 is offered with its 1M context window', () => {
     const cfg = readConfig();
     // models.providers["claude-cli"].models, not agents.defaults.models — the

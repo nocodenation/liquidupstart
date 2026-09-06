@@ -175,6 +175,60 @@ And 2026.9.1's base image ships **npm 12**, where `--allow-scripts` is load-bear
 npm 11, where it is inert and merely warns. The same line is correct on both — measured on the
 baseline and again here, where the build ended in `2.1.263 (Claude Code)`.
 
+### 9. 2026.9.1 runs the anthropic backend in-process, so the wrapper is off the model path · OC-4
+
+**OC-4 is answered, and inverted.** It asked whether the PATH wrapper alone suffices on 2026.7.1,
+so that the retired `cliBackends` key could be dropped for both versions. The real answer is that on
+**2026.9.1 the wrapper is not used for model turns at all.**
+
+2026.9.1 replaced spawning the `claude` binary with the **Claude Agent SDK, running inside the
+gateway process**. Measured in both images — `extensions/anthropic/` carries **0** agent-sdk files in
+2026.7.1 and **5** in 2026.9.1 — and observed in every run: the wrapper, instrumented to log each
+invocation, was never called, while the turn reached the backend and completed.
+
+```
+[agent/cli-backend] cli exec: provider=claude-cli model=claude-opus-5
+[CLAUDE_SDK_CAN_USE_TOOL_SHADOWED] Warning: canUseTool will not be invoked …
+[agent/cli-backend] cli turn: durationMs=3388 outBytes=23 outHash=245696534a34
+liquidupstart-oc4-probe
+```
+
+**Nothing had to be built for this.** The wrapper injected three things, and each turns out to be
+either already satisfied or unnecessary on 2026.9.1: `CLAUDE_CONFIG_DIR` is redundant because the
+gateway runs with `HOME=/home/node` and the credential mount is at `/home/node/.claude`;
+`IS_SANDBOX` proved unnecessary, since the turn completed as root without it; and the
+`CLAUDE_CODE_OAUTH_TOKEN` forwarding still works where it is used, because the start script's own
+CLI containers name the wrapper as their entrypoint explicitly rather than relying on PATH.
+
+That distinction is the precise statement: **the wrapper is off the gateway's model path and still on
+the start script's explicit path.** It is not dead code; it is code with a smaller job.
+
+**And it was nearly a repair of a problem that did not exist.** The first turn failed with `Failed to
+authenticate: OAuth session expired and could not be refreshed`, and the reasoning above — wrapper
+bypassed, therefore environment not injected, therefore authentication broken — is coherent and was
+wrong. The operator signed in again and the identical command returned
+`liquidupstart-oc4-probe`. The cause was only the expired session. Measuring first cost one message;
+building first would have added an environment variable against nothing.
+
+**No API billing is involved, and none was proposed.** The route is `claude-cli`, not `anthropic`:
+the failure named an OAuth session rather than a key, the fallback decision recorded `next=none`, and
+`ANTHROPIC_API_KEY` is empty in `.env`. What 2026.9.1 changed is where the code runs, not what it
+bills.
+
+### 10. The OpenClaw CLI cannot reach its own gateway here
+
+Triggering a turn from inside the container fails both ways: without `--local` the gateway answers
+`unauthorized`, and with `--local` it refuses because a gateway is running for the same state
+directory. The first is the same root cause as the September `openclaw devices approve` failure —
+`gateway.auth.mode` is `trusted-proxy`, there is no `gateway.auth.token`, and the CLI sends no
+identity header. `openclaw doctor` names it: *"Gateway identity-header auth has no configured
+token/password path for machine clients."*
+
+Worked around here by stopping the gateway and running `--local` in a throwaway container. Not fixed:
+giving the gateway a token is a change to the authentication model, not part of this migration.
+`.env.example` already declares `OPENCLAW_GATEWAY_TOKEN` and **nothing reads it** — dangling contract
+surface, and the obvious place to start if this is ever taken up.
+
 ## What is not done
 
 - **OC-3**, **OC-4**, **OC-16**, **OC-20** are specified and not run. OC-4 is the interesting one:
