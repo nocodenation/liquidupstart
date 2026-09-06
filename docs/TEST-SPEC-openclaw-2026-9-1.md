@@ -44,10 +44,10 @@ here; each is executed where its subject exists.
 | OC-5 | component | positive | With Copilot enabled on 2026.9.1, the config carries `memory.search.*` and validates |
 | OC-6 | component | **negative** | `agents.defaults.memorySearch` on 2026.9.1 is rejected |
 | OC-7 | component | **negative** | `memory.search` on **2026.7.1** is rejected — proving the two cannot share one configuration |
-| OC-8 | system | positive | On 2026.9.1 with `deviceAutoApprove` enabled, a first-time browser reaches the Control UI without pairing |
-| OC-9 | system | **negative** | On 2026.9.1 **without** it, the same request is refused — proving the setting is what fixes it |
-| OC-10 | system | **negative** | `deviceAutoApprove.scopes` including `operator.admin` makes `doctor` raise a critical finding |
-| OC-11 | system | positive | With the chosen scopes, `doctor` raises no critical finding |
+| OC-8 | system, **manual** | positive | On 2026.9.1 with `deviceAutoApprove` enabled, a first-time browser reaches the Control UI without pairing |
+| OC-9 | system, **manual** | **negative** | On 2026.9.1 **without** it, the same browser is asked to pair — proving the setting is what fixes it |
+| OC-10 | system | **negative** | `deviceAutoApprove.scopes` including `operator.admin` makes the **gateway** log its security warning |
+| OC-11 | system | positive | With the chosen scopes, it does not, and `doctor` raises no critical finding |
 | OC-12 | component | positive | `gateway.controlUi.dangerouslyDisableDeviceAuth` is not written on 2026.9.1; `doctor` reports no legacy key |
 | OC-13 | system | positive | `gateway.trustedProxies` naming the docker network: Control UI answers 200 |
 | OC-14 | system | **negative** | The wide RFC1918 list on 2026.9.1: Control UI answers 403 `proxy_attribution_required` |
@@ -59,6 +59,9 @@ here; each is executed where its subject exists.
 | OC-20 | system, **manual** | positive | A full cold start on 2026.9.1: the OC-BASE acceptance, all seven checks |
 | OC-21 | system | **negative** | After 2026.9.1 has written the state directory, 2026.7.1 refuses to start — the one-way door, documented |
 | OC-22 | system | positive | `claude-cli/claude-opus-5` is offered with its 1M context window intact |
+| **OC-28** | system, **manual** | **negative** | Starting 2026.9.1 against a state directory written by 2026.7.1 **fails** until the workspace is migrated — the upgrade path, which no cold start can reach |
+| **OC-29** | system | positive | After the migration, that same upgraded stack starts and passes the OC-20 acceptance |
+| **OC-30** | system | **negative** | The acceptance sweep reports a crash-looping service as a failure, whenever it is sampled |
 
 ### Suite 2 — compatibility
 
@@ -114,9 +117,11 @@ here; each is executed where its subject exists.
 | **Premise** | This is the fault that stopped the migration. OC-9 is written and run **first**: without it, OC-8 proves only that something works, not that `deviceAutoApprove` is what made it work. |
 | **Component** | A 2026.9.1 stack behind the nginx proxy, reached as a browser that has never paired. |
 | **Test data** | A request carrying **no** device credentials — a fresh cookie jar, i.e. `curl` with no stored state, through the proxy with `Host: openclaw.localhost`. OC-9's config omits `gateway.auth.trustedProxy.deviceAutoApprove` entirely; OC-8's sets `{"enabled": true, "scopes": [...]}` with the scope set from OC-11. Everything else identical. |
-| **The assertion target is established by OC-9, not guessed.** | The Control UI's static entry point may well answer 200 in both cases while the pairing gate sits on an API or WebSocket route behind it. OC-9 therefore runs first against the un-fixed configuration and **its observed refusal — the exact route, status and error body — becomes OC-8's fixture.** Writing OC-8 against a guessed endpoint risks a case that passes because it asks the wrong question, which is the failure mode this specification exists to avoid. |
-| **Expected** | OC-9: the refusal that the September observation described — a device-pairing demand the browser cannot satisfy here. OC-8: the same request, on the same route, succeeds. |
-| **Failure** | OC-9 succeeding would mean pairing is not enforced in our configuration and §5.3 is wrong about the blocker. OC-8 failing means `deviceAutoApprove` does not cover this path and the migration is not yet possible. |
+| **Why these are manual — measured, not assumed** | The specification required OC-9 to run first so its observed refusal would become OC-8's fixture rather than a guess. It ran first, and what it found was that **there is no refusal to observe without a browser.** Probed on the running 2026.9.1 stack, with and without `deviceAutoApprove`, these were byte-for-byte identical: `/` → 200, `/healthz` → 200, `/api/*` and `/rpc` → 404, `/control-ui-config.json` → 200. The WebSocket upgrade succeeds in both cases and the gateway sends the same first frame in both: `{"type":"event","event":"connect.challenge","payload":{"nonce":"…"}}`. The pairing decision happens *after* the client signs that challenge, so reaching it means implementing OpenClaw's device authentication — a reimplementation of the product inside its own test. This is the same rule this project already applies to model-dependent behaviour, for the same reason: **behaviour reachable only through a real client is a documented manual check, never an automated assertion.** Writing OC-8 against `/` → 200 would have produced a green case proving nothing, which is exactly the failure this specification exists to prevent. |
+| **Procedure** | With the stack on 2026.9.1: open `http://openclaw.localhost:8888` in a browser profile that has never paired with this gateway (a private window is enough). Record whether the interface loads or asks for a one-time device approval. Then remove `gateway.auth.trustedProxy.deviceAutoApprove` from `volumes/_openclaw/openclaw.json`, `docker compose restart openclaw-gateway`, and repeat in a fresh private window. Restore the key afterwards, or run `./scripts/linux/start.sh`, which rewrites it. |
+| **Expected** | OC-8: the Control UI loads and is usable, with no pairing prompt. OC-9: the pairing demand from the September observation returns — *"Device pairing required — This browser needs one-time approval"*. |
+| **Failure** | OC-8 showing the pairing demand means `deviceAutoApprove` does not cover this path and the migration is not possible. OC-9 *not* showing it would mean pairing is not enforced here at all, and §5.3 is wrong about what the blocker was. |
+| **What automation still covers** | That the configuration carries the setting with the intended scopes, that no retired key survives beside it, that the gateway accepts the configuration, and that the WebSocket transport the Control UI uses is reachable and issues a challenge. What it cannot cover is the answer to that challenge. |
 | **Covers** | OC-G1, §5.3 |
 
 ### OC-10 / OC-11 — the scopes are a decision, so they are measured
@@ -125,9 +130,11 @@ here; each is executed where its subject exists.
 |---|---|
 | **Premise** | `deviceAutoApprove` auto-approves whoever the proxy claims, and our proxy claims a constant: `X-Forwarded-User: "user@nocodenation.org"`. The exposure equals what 2026.7.1 already had with the device check switched off — but the scopes decide how far an auto-approved device reaches, and that part is new. OC-10 keeps the guard honest; OC-11 records what was actually granted. |
 | **Component** | `openclaw doctor` against the live configuration on 2026.9.1. |
-| **Test data** | OC-10: `scopes: ["operator.admin"]`. OC-11: the chosen set, drawn from `operator.read`, `operator.write`, `operator.talk`, `operator.pairing`, `operator.approvals`, `operator.questions` — **determined by removing scopes until the Control UI stops working, and recording the last set that did.** The result is written into this block when the case is run, so a reviewer sees what was granted and why. |
-| **Expected** | OC-10: `doctor` reports `gateway.trusted_proxy_device_auto_approve_admin` at severity **critical**, and the gateway logs the security warning verbatim. OC-11: `doctor` reports no critical finding, and the Control UI is usable. |
-| **Failure** | OC-10 not raising the finding would mean the guard we are relying on to keep us honest does not exist. OC-11 needing `operator.admin` is not a failure but a **decision point**: it moves to `gateway.auth.identityScopes` for the single identity, as the warning itself instructs, and that becomes a case of its own. |
+| **Test data** | OC-10: `scopes: ["operator.admin"]`. OC-11: the set the start script writes — `operator.read`, `operator.write`, `operator.talk`, `operator.pairing`, `operator.approvals`, `operator.questions` — read from the live configuration rather than retyped. |
+| **Corrected 2026-09-06, by running it** | This block expected `doctor` to report `gateway.trusted_proxy_device_auto_approve_admin` at severity **critical**. **It does not.** The check exists in the bundle, but across repeated runs against this configuration doctor never surfaced it. What does fire, every time and verbatim, is a gateway log line at startup: `SECURITY WARNING: gateway.auth.trustedProxy.deviceAutoApprove.scopes includes operator.admin; every proxy-authenticated user can auto-approve a new browser device with full admin, and requests without scopes receive full admin automatically. Remove operator.admin and grant admin per identity via gateway.auth.identityScopes instead.` The case asserts the log. Had it kept asserting doctor, we would have shipped a guard that never fires — worse than no guard, because it reads like one. |
+| **Expected** | OC-10: the gateway logs that line after a restart with `operator.admin` in the scopes. OC-11: it does not, with the scopes the start script writes, and `doctor` reports no critical finding. |
+| **Both are scoped to their own restart.** | The gateway log is a rolling buffer, so a warning from an earlier case or an operator probing by hand is still in it. Each case records the moment its restart began and reads only from there — the first version greped the last 300 lines and read a ten-minute-old line from a manual probe as its own result. |
+| **Failure** | OC-10 not producing the line would mean the guard we rely on to keep us honest does not exist. OC-11 needing `operator.admin` is not a failure but a **decision point**: it moves to `gateway.auth.identityScopes` for the single identity, as the warning itself instructs. |
 | **Covers** | OC-G1, OC-G3, §5.3 |
 
 ### OC-12 — the hollow survivor is removed
@@ -203,6 +210,32 @@ here; each is executed where its subject exists.
 | **Expected** | `claude-cli/claude-opus-5` present and selectable, context window `1000000`. |
 | **Failure** | Absent, or a reduced context window. |
 | **Covers** | OC-G1 |
+
+### OC-28 / OC-29 — the upgrade path · **added 2026-09-06, after the first 2026.9.1 start**
+
+| | |
+|---|---|
+| **Premise** | **These cases exist because the specification was missing them and the run found out.** Every case above either starts from an empty state directory or from one 2026.9.1 already owns. Nobody had asked what happens to a state directory that 2026.7.1 wrote — which is the only situation every existing installation is actually in. A cold start cannot reach it by construction: it deletes the state first. |
+| **What happened** | The gateway refused to start, ten times, until the restart-loop breaker tripped: `Gateway failed to start: Legacy workspace setup state requires migration for /home/node/.openclaw/workspace; run openclaw doctor --fix.` `docker compose up` failed with `dependency failed to start: container openclaw-gateway is unhealthy`, and `start.sh` exited 1. |
+| **And the repair is not where the message points.** | `openclaw doctor --fix` refuses while any config error stands, and the standing error was `plugins.load.paths: plugin path not found: /home/node/openclaw-plugins/ingest-pdf`. That path is not a mount: the gateway's own `command:` copies it from `/opt/plugins` at startup, so it exists in no other container and not in the gateway either while it is crash-looping. The migration therefore cannot be performed by any documented route — it needs a container that replicates the copy first. |
+| **Component** | A `volumes/_openclaw` written by 2026.7.1, and the 2026.9.1 image. |
+| **Test data** | The state directory as the 2026-09-05 baseline run left it — preserved as `liquidupstart-backups/_openclaw.bak-2026.7.1`, which makes this case repeatable rather than a one-off observation. |
+| **Expected** | OC-28: the gateway refuses to start and names the workspace migration. OC-29: after the migration, the stack starts and passes OC-20's acceptance, with `deviceAutoApprove`, and without `cliBackends` or `dangerouslyDisableDeviceAuth`, surviving the doctor rewrite. |
+| **Failure** | OC-29 leaving any of those three keys in the state doctor rewrote. |
+| **What this changes** | The start script must perform this migration itself, or say plainly that an upgrade needs it and how. A stack that crash-loops after an upgrade with the fix reachable only by reconstructing a container's startup copy is not a migration anyone can follow. |
+| **Covers** | OC-G1, OC-G4 |
+
+### OC-30 — the acceptance sweep must not pass a crash loop
+
+| | |
+|---|---|
+| **Premise** | While the gateway was restarting for the tenth time, the sweep this project has used since A7-5 reported *"all running, none unhealthy."* It was sampled in the window between two crashes, where `docker compose ps` shows `running` and the health status is `starting` rather than `unhealthy`. The filter is not wrong, it is **timing-dependent** — and a criterion that depends on when you look is not a criterion. |
+| **Component** | The acceptance sweep in `PROCEDURE-baseline-cold-start.md` step 5. |
+| **Test data** | A container in a restart loop — reproducible with the OC-28 state, which crash-loops on purpose. |
+| **Expected** | The sweep reports a failure **on every sample**, not only on the lucky ones. Achieved by reading `RestartCount` and the health status per container rather than the one-line `Status` string: a freshly started stack has `RestartCount` 0, and any container with a healthcheck must reach `healthy`, not sit in `starting`. |
+| **Failure** | Any sample during a crash loop that reports the stack as sound. |
+| **Why it is here rather than quietly fixed** | Every "all services running" claim in this repository's records was made with the old sweep, including the baseline run of 2026-09-05. Those results are not invalidated — the stack was genuinely sound, and `bun_runner` was the only thing it ever caught — but the confidence they carry is lower than it reads, and that belongs on the record rather than in a silent edit. |
+| **Covers** | OC-G4, and the acceptance in `PROCEDURE-baseline-cold-start.md` |
 
 ### OC-23 / OC-24 / OC-25 — the features in flight still work
 
