@@ -340,6 +340,31 @@ It is also a reminder that the precondition A7-5 documented is not a one-off: **
 `main`-shaped branch and a feature-shaped one silently invalidates the deploy keys**, because the
 key material lives under `volumes/` while the code that uses it lives on the branch.
 
+### 12. `:latest` moved again, and the version string does not identify the image
+
+Found on 2026-09-07 by the first run of `scripts/linux/image-digests.sh`, which exists because the
+operator asked what step 1 of the cold-start procedure actually requires of them — it said "use the
+block from step 6", which is not something anyone can run.
+
+```
+2026-09-05   ghcr.io/openclaw/openclaw:latest   sha256:6afe42854c87…
+2026-09-07   ghcr.io/openclaw/openclaw:latest   sha256:a8604855b76c…
+```
+
+Both that image and `:2026.9.1` report **`OpenClaw 2026.9.1 (ad6fe23)`** — same version, same
+commit, different bits. `:latest` was **rebuilt**, not bumped.
+
+**The version string does not identify the image.** A rebuild can change the base layers underneath
+an unchanged version, which is precisely how npm went from 11 to 12 and shipped an image whose
+Claude CLI had no binary while the build reported success. Anything that depends on the environment
+rather than on OpenClaw itself can move without a version number moving with it.
+
+**And the pin is doing its job.** `:2026.9.1` resolves to the same digest it did on 2026-09-05,
+while the floating tag moved twice in three days. That is the argument for pinning, restated as a
+measurement rather than as a principle.
+
+The snapshot is kept as `liquidupstart-backups/digests-20260907-latest-moved.txt`.
+
 ## What is not done
 
 - **OC-3**, **OC-4**, **OC-16**, **OC-20** are specified and not run. OC-4 is the interesting one:

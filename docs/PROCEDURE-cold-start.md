@@ -154,30 +154,45 @@ tar -xf "$B/_openclaw-<version>.tar" -C volumes     # only to return to an older
 
 ### Step 1 — record what the moving tags point at today
 
-A7-5 established that seven of the images a cold start pulls hang on tags that can move. Recording
-the digests means that when a later run differs, the cause can be told apart: this repository, or an
-upstream move.
+Seven of the images a cold start pulls hang on tags that can move, and one of them moved under this
+stack on 2026-09-05. Recording what every tag resolves to lets a later difference be attributed:
+this repository, or an upstream move.
 
-**Take it per run**, into a file named for this run — the 2026-09-05 snapshot is in
-`digests-before.txt` and must not be overwritten, because comparing a later run against it is the
-whole point. Use the block from step 6 with a run-specific output name.
-
-Eleven pulled service images, seven build base images, and the three OpenClaw tags. Digests are read
-from the **registry** rather than from local images — `docker buildx imagetools inspect NAME:TAG
---format '{{.Manifest.Digest}}'` — so a base image that BuildKit pulled without ever tagging it
-locally is covered too. The full form is in step 6, which runs the same snapshot again afterwards.
-
-The snapshot already produced one result worth keeping:
-
-```
-ghcr.io/openclaw/openclaw:2026.9.1   sha256:6afe42854c87471188b9c4f8dce6bbc14005a48d8e1592846548b32508754f84
-ghcr.io/openclaw/openclaw:latest     sha256:6afe42854c87471188b9c4f8dce6bbc14005a48d8e1592846548b32508754f84
-ghcr.io/openclaw/openclaw:2026.7.1   sha256:6a31d44b2944e7adcd2b582bf6fb463111264ebca97a0201795b799135bd102c
+```bash
+cd /Users/christof/repos/liquidupstart
+./scripts/linux/image-digests.sh /Users/christof/repos/liquidupstart-backups/digests-$(date +%Y%m%d-%H%M)-before.txt
 ```
 
-`:latest` and `:2026.9.1` are **bit-identical**. That `:latest` now serves 2026.9.1 was the
-inference #11 rests on; it is a measurement now. The third line is what the pin holds, and the first
-is the migration's target.
+**Name it per run and do not overwrite an older snapshot** — comparing a later run against an earlier
+one is the entire point. Step 6 runs the same script again afterwards, with `-after` in the name.
+
+The script lives in the repository rather than in this document because the same block was needed in
+two steps, and a block that exists twice is one that gets fixed once. It reads digests from the
+**registry** rather than from local images, so a base image BuildKit pulled without ever tagging it
+locally is covered too.
+
+**Compare against the last snapshot before going on:**
+
+```bash
+B=/Users/christof/repos/liquidupstart-backups
+diff <(grep -v '^#' "$B/digests-before.txt" | sort) \
+     <(grep -v '^#' "$B/digests-<this run>-before.txt" | sort) \
+  && echo "nothing moved since the reference snapshot" || echo "the differences above are what moved"
+```
+
+Expect a difference on the `FROM` line whenever the pin has been changed deliberately. **Any other
+difference is an upstream move, and worth understanding before you build on top of it.**
+
+> **What this caught the first time it was run, on 2026-09-07.**
+> `ghcr.io/openclaw/openclaw:latest` had moved again — `sha256:6afe4285…` on 2026-09-05,
+> `sha256:a8604855…` now. But both that image and `:2026.9.1` report **`OpenClaw 2026.9.1
+> (ad6fe23)`**: same version, same commit, different bits. `:latest` had been **rebuilt**, not
+> bumped.
+>
+> Two things follow. **The version string does not identify the image** — a rebuild can change the
+> base layers underneath it, which is exactly how npm went from 11 to 12 and shipped an image whose
+> Claude CLI had no binary. And **the pin is doing its job**: `:2026.9.1` resolves to the same digest
+> it did on 2026-09-05, while the floating tag moved twice in three days.
 
 ### Step 2 — the reset
 
@@ -350,28 +365,16 @@ the branch.
 ```bash
 cd /Users/christof/repos/liquidupstart
 B=/Users/christof/repos/liquidupstart-backups
-{
-  echo "# Registry digests, recorded $(date -u +%Y-%m-%dT%H:%M:%SZ) on branch $(git branch --show-current)"
-  echo "# Service images (compose.yml)"
-  docker compose config --format json | jq -r '.services[].image' | sort -u | grep -v '^liquidupstart/' \
-    | while read -r img; do printf '%s\t%s\n' "$img" "$(docker buildx imagetools inspect "$img" --format '{{.Manifest.Digest}}' 2>/dev/null || echo '(lookup failed)')"; done
-  echo "# Base images of the local builds"
-  for f in config/*/Dockerfile config/*/templates/Dockerfile; do
-    [ -f "$f" ] || continue
-    b="$(grep -m1 '^FROM ' "$f" | awk '{print $2}')"
-    [ -n "$b" ] && printf '%s\t%s\t%s\n' "$f" "$b" "$(docker buildx imagetools inspect "$b" --format '{{.Manifest.Digest}}' 2>/dev/null || echo '(lookup failed)')"
-  done
-  echo "# The two OpenClaw tags side by side — the move this work exists because of"
-  for t in 2026.7.1 2026.9.1 latest; do
-    printf 'ghcr.io/openclaw/openclaw:%s\t%s\n' "$t" "$(docker buildx imagetools inspect "ghcr.io/openclaw/openclaw:$t" --format '{{.Manifest.Digest}}' 2>/dev/null || echo '(lookup failed)')"
-  done
-} > "$B/digests-after.txt"
+RUN=<the same stamp you used in step 1>
+./scripts/linux/image-digests.sh "$B/digests-${RUN}-after.txt"
 
-diff <(grep -v '^#' "$B/digests-before.txt") <(grep -v '^#' "$B/digests-after.txt") \
-  && echo "no tag moved during this run" || echo "the differences above are what moved"
+diff <(grep -v '^#' "$B/digests-${RUN}-before.txt" | sort) \
+     <(grep -v '^#' "$B/digests-${RUN}-after.txt" | sort) \
+  && echo "no tag moved during this run" || echo "the differences above are what moved during the run"
 ```
 
----
+A difference here means a tag moved **while the run was in progress**, which is rare and worth
+recording; the interesting comparison is usually the one in step 1, against the previous run.
 
 ## 5. Where the result goes
 
