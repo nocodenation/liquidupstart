@@ -173,10 +173,24 @@ a copy-paste block invites.
 Expect a difference on a `FROM` line whenever the pin has been changed deliberately. **Any other
 difference is an upstream move, and worth understanding before you build on top of it.**
 
-If it reports `INCOMPLETE`, the registry refused some lookups — Docker Hub answers **429** to
-anonymous manifest requests once a quota is used up. Those images are excluded from both sides
-rather than compared, the snapshot is filed as `-incomplete` so it cannot become a later run's
-reference, and the verdict says what was actually compared. Wait, or authenticate, and take another.
+If it reports `INCOMPLETE`, the registry refused some lookups. Those images are excluded from both
+sides rather than compared, the snapshot is filed as `-incomplete` so it cannot become a later run's
+reference, and the verdict says what was actually compared.
+
+> **The Docker Hub quota, because it is invisible until it bites.** Docker Hub allows **100 manifest
+> requests per hour**, counted **per public IP address**, when nobody is signed in — measured on
+> 2026-09-07, from its own `ratelimit-limit: 100;w=3600` header. Every `docker pull` and every
+> digest lookup counts, not just downloads.
+>
+> One cold start pulls seventeen images and fits comfortably. **Repeated runs do not**: a snapshot
+> costs about fifteen Hub lookups, so roughly six of them exhaust an hour. And because the count is
+> keyed to the IP rather than the machine, colleagues on the same office network share the same
+> hundred.
+>
+> `docker login` raises it, and is a matter for the **host's Docker** rather than for this stack —
+> nothing goes into `.env` or the repository, because the containers do not pull images; the daemon
+> on your machine does. It is **not an installation requirement**: a normal operator installing once
+> never comes near the limit. It is worth doing for this development loop, and on shared networks.
 
 > **What this caught the first time it ran, on 2026-09-07.**
 > `ghcr.io/openclaw/openclaw:latest` had moved again — `sha256:6afe4285…` on 2026-09-05,

@@ -111,12 +111,21 @@ compare() {  # compare <older> <newer> <what-a-difference-means>
     echo "$3"
   fi
   rm -f "$badfile"
+  # The advice has to match which side is incomplete. Telling the operator to
+  # "wait, or authenticate" when only the historical snapshot has gaps is telling
+  # them to fix something that already happened.
   if (( skipped_a > 0 || skipped_b > 0 )); then
     echo
     echo "INCOMPLETE: ${skipped_a} image(s) unreadable in the older snapshot, ${skipped_b} in the newer."
     echo "  Those images were excluded from both sides rather than compared, so nothing above is"
-    echo "  about them. Docker Hub answers 429 to anonymous manifest requests once a quota is used"
-    echo "  up; wait, or authenticate, then run this again."
+    echo "  about them."
+    if (( skipped_b > 0 )); then
+      echo "  Docker Hub allows 100 manifest requests per hour per public IP when nobody is signed"
+      echo "  in, and answers 429 after that. Wait, or run 'docker login', then take another."
+    else
+      echo "  The gaps are in the older snapshot and cannot be filled retroactively. This one is"
+      echo "  complete; nothing to do."
+    fi
   fi
 }
 
