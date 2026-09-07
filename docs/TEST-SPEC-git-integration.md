@@ -2308,6 +2308,12 @@ hand and says so — *"it is the friction the launchpad card in U2 exists to rem
 So this milestone builds the presentation and, for the first time in this feature, tests what the
 **operator** sees rather than what an agent can reach.
 
+**And it starts where the operator starts, not where the defect is.** The card is the missing piece,
+but nobody reaches a card without first declaring a repository — and that step turns out to be the
+one with the most cases pointing at it and the least actually covered. The cases therefore run in the
+order the operator does: declare (A8-1 to A8-3), then the card (A8-4 to A8-14), then the same path
+walked by a person in a browser (A8-15 to A8-17).
+
 **Decisions taken while writing these cases:**
 
 *The repositories are rendered server-side, not fetched by the browser.* Every existing panel in
@@ -2319,43 +2325,46 @@ of them needs a browser. The same fact, in two places, is the difference between
 and three.
 
 *No browser automation is introduced.* Playwright would be a new dependency on a project whose entire
-test command is `bun test src`, and it would assert what a browser does with HTML that A8-3 already
+test command is `bun test src`, and it would assert what a browser does with HTML that A8-6 already
 reads directly. What genuinely needs a browser — that the key is selectable and copyable, that the
-card tells an operator what to do next — needs a **human**, not a headless one. Those are A8-12 to
-A8-14, and they are manual on purpose rather than for want of tooling.
+card tells an operator what to do next — needs a **human**, not a headless one. Those are A8-15 to
+A8-17, and they are manual on purpose rather than for want of tooling.
 
 *The retry is a POST on the existing route, and it accepts only declared names.* U2 asks the
 launchpad to test a repository, and *"the test is a real clone, not a claim"* — so the action runs
-`git clone` with a name that arrives over HTTP. That is an injection surface. A8-9 exists for that
+`git clone` with a name that arrives over HTTP. That is an injection surface. A8-12 exists for that
 reason and not as ceremony.
 
 *This milestone does not add validation to the configuration view.* `GIT_REPOSITORIES` is free text
 rendered from `.env.example`, and `git-repos.sh` is the single place that parses it — a second parser
 in the dashboard would drift from the first, which is the argument A3c-12 already made for reading
-the manifest instead of re-parsing the declaration. A8-12 therefore does not assert that the form
+the manifest instead of re-parsing the declaration. A8-15 therefore does not assert that the form
 rejects a bad entry; it records **where** the operator finds out, and if that place turns out to be
 the start log three minutes later, that is this milestone's finding rather than its remedy.
 
 *What is deliberately not covered:* whether the copy button actually copies. That is the browser's
 clipboard, not this stack, and a human looking at a screen is the only honest test of it. It lives
-inside A8-13 as an observation rather than as a case.
+inside A8-16 as an observation rather than as a case.
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
-| A8-1 | Component | The launchpad's page data carries every declared repository | Each declared repository reaches the page with its label, access, policy and public key — the case that would have caught a route nobody calls |
-| A8-2 | Component **unhappy** | No private key material in that data | The keys sit one filename apart in the same directory; a second path to them is a second chance to publish the wrong one |
-| A8-3 | System | The served launchpad names each repository and shows its key | Fetched over HTTP from the running dashboard: the label, the fingerprint and the public key are in the HTML, not merely in a JSON route |
-| A8-4 | System **unhappy** | Before the first start there is nothing to show | The card says the stack has to run once, in the shape FR20 asks for — a refusal that names the next step, not an empty list |
-| A8-5 | Component | A repository whose clone failed is presented as unreachable, with its error and its key | U11's whole substance: which repository, why, and the key to register — without leaving the page |
-| A8-6 | Component **unhappy** | A repository that cloned is not presented as needing attention | Without this, A8-5 passes on a card that flags everything |
-| A8-7 | Contract | The instruction printed matches the declared access | `write` says write access is needed, `read` says read-only. Registering a read-only key with write access is a real and silent over-grant |
-| A8-8 | Component | The retry action re-clones exactly the repository named | U2's "ask the launchpad to test it": the manifest afterwards reports that repository as cloned, and no other entry changed |
-| A8-9 | Component **unhappy** | The retry refuses a name that is not declared | A name that arrives over HTTP must not reach `git clone`. Refused before anything runs, whatever it says |
-| A8-10 | Integration | A retry that still cannot authenticate leaves the repository unreachable and says so | The command ran; the clone failed. Reporting success because a process exited is the failure this case exists to catch |
-| A8-11 | System **unhappy** | A declaration that exists while the manifest does not | `GIT_REPOSITORIES` names two repositories and `repositories.json` is missing or unreadable. "No repositories declared" would be a lie; the page must say the two are declared and unaccounted for |
-| A8-12 | **Manual** | U1 in the browser: declare a repository in the configuration view | Section 10 renders with its help text, an entry saves into `.env`, and reopening the view shows it. Then an `https://` entry: the case records where the operator learns it is refused |
-| A8-13 | **Manual** | U2 in the browser: key from the launchpad, registered, tested | The operator never opens a terminal — copy the key from the card, register it at the host, press the card's test, watch the repository turn reachable |
-| A8-14 | **Manual unhappy** | U11 in the browser: a key that no longer works | With the deploy key removed at the host, the launchpad names that repository as unreachable and offers its current key, the start does not read as success, and the state survives a reload |
+| A8-1 | Component | The configuration view presents section 10 with all three fields | A1-2 is titled "the section is shown in the dashboard" and asserts a function applied to a title string. This asks the view what it will actually render |
+| A8-2 | Component | A declaration typed into the view reaches `.env`, and comes back on the next visit | The operator's own step, never performed by any case in either direction |
+| A8-3 | Component **unhappy** | The save loses nothing it was not asked about | `save` re-renders the whole file, so every key in the installation passes through it. A form that drops one destroys a working installation, and the operator's own act is the trigger |
+| A8-4 | Component | The launchpad's page data carries every declared repository | Each declared repository reaches the page with its label, access, policy and public key — the case that would have caught a route nobody calls |
+| A8-5 | Component **unhappy** | No private key material in that data | The keys sit one filename apart in the same directory; a second path to them is a second chance to publish the wrong one |
+| A8-6 | System | The served launchpad names each repository and shows its key | Fetched over HTTP from the running dashboard: the label, the fingerprint and the public key are in the HTML, not merely in a JSON route |
+| A8-7 | System **unhappy** | Before the first start there is nothing to show | The card says the stack has to run once, in the shape FR20 asks for — a refusal that names the next step, not an empty list |
+| A8-8 | Component | A repository whose clone failed is presented as unreachable, with its error and its key | U11's whole substance: which repository, why, and the key to register — without leaving the page |
+| A8-9 | Component **unhappy** | A repository that cloned is not presented as needing attention | Without this, A8-8 passes on a card that flags everything |
+| A8-10 | Contract | The instruction printed matches the declared access | `write` says write access is needed, `read` says read-only. Registering a read-only key with write access is a real and silent over-grant |
+| A8-11 | Component | The retry action re-clones exactly the repository named | U2's "ask the launchpad to test it": the manifest afterwards reports that repository as cloned, and no other entry changed |
+| A8-12 | Component **unhappy** | The retry refuses a name that is not declared | A name that arrives over HTTP must not reach `git clone`. Refused before anything runs, whatever it says |
+| A8-13 | Integration | A retry that still cannot authenticate leaves the repository unreachable and says so | The command ran; the clone failed. Reporting success because a process exited is the failure this case exists to catch |
+| A8-14 | System **unhappy** | A declaration that exists while the manifest does not | `GIT_REPOSITORIES` names two repositories and `repositories.json` is missing or unreadable. "No repositories declared" would be a lie; the page must say the two are declared and unaccounted for |
+| A8-15 | **Manual** | U1 in the browser: declare a repository in the configuration view | Section 10 renders with its help text, an entry saves into `.env`, and reopening the view shows it. Then an `https://` entry: the case records where the operator learns it is refused |
+| A8-16 | **Manual** | U2 in the browser: key from the launchpad, registered, tested | The operator never opens a terminal — copy the key from the card, register it at the host, press the card's test, watch the repository turn reachable |
+| A8-17 | **Manual unhappy** | U11 in the browser: a key that no longer works | With the deploy key removed at the host, the launchpad names that repository as unreachable and offers its current key, the start does not read as success, and the state survives a reload |
 
 #### Detail per case
 
@@ -2363,7 +2372,55 @@ inside A8-13 as an observation rather than as a case.
 an operator can see, which is the surface the feature is judged on and the only one nothing has
 tested.
 
-##### A8-1 — the page carries the repositories
+**Part 1 — the declaration · U1.**
+
+The operator's first act, and the one with the most cases pointing at it and the least actually
+covered. Twenty case blocks in this document name U1. Every one of them exercises a parser or the
+start script: A1-1 proves the section **parses**; A1-2, titled *"the section is shown in the
+dashboard, not hidden"*, applies `sectionModeFromTitle` to a **title string**; A3c-1 proves
+`GIT_REPOSITORIES` is a field; A3c-2 and A3c-3 prove the declaration parses and that a malformed
+entry is refused — by `git-repos.sh`, at start, not by the form.
+
+The step between them has never been exercised in either direction: an operator types a repository
+into the view, saves, and it takes effect. These three cases are that round trip, and they are
+automated because the view's save is a **server action** taking form data — no browser is needed to
+drive it, which is a thing worth knowing before reaching for one.
+
+##### A8-1 — the configuration view presents the section
+
+| | |
+|---|---|
+| **Premise** | A section can parse, carry mode `normal`, and still not reach the page. The view's own `load` filters out sections with no field items, folds everything after a collapsing subheading into a nested group, and computes each field's input type and displayed value. None of that is exercised anywhere, and A1-1 and A1-2 cannot see it — they stop at the parser. |
+| **Component** | `load` from `dashboard/src/routes/config/+page.server.ts`, over the real `.env.example`. |
+| **Steps** | Call `load`. Find the git section in what it returns and read its items. |
+| **Expected** | The section is present with its display title and description, and carries all three fields — `GIT_USER_NAME`, `GIT_USER_EMAIL`, `GIT_REPOSITORIES` — each with the help text `.env.example` gives it and a text input. It is not collapsed and not marked autogenerate. |
+| **Covers** | FR10, U1. |
+
+##### A8-2 — a declaration typed into the view takes effect
+
+| | |
+|---|---|
+| **Premise** | The round trip nobody has checked. A1-3 proves a key that is in `.env` reaches the services; A3c-2 proves `git-repos.sh` parses a declaration it is given. Between those two sits the operator's actual step, and no case has ever performed it. A view that writes correctly and reads back empty is a defect met on the second visit rather than the first. |
+| **Component** | The `save` action and `load`, against a fixture project directory. |
+| **Test data** | The form data the view submits, with `GIT_REPOSITORIES` set to `git@github.com:example/one.git\|read\|protected`. |
+| **Steps** | Invoke `save` with that form data. Read `.env` from disk. Then call `load` again. |
+| **Expected** | The entry is in `.env` in exactly the form `git-repos.sh` parses, and `load` returns it as the field's value. Both directions, in one case, because either one alone passes on a broken view. |
+| **Covers** | FR10, FR11, U1. |
+
+##### A8-3 — and it loses nothing it was not asked about
+
+| | |
+|---|---|
+| **Premise** | `save` does not edit `.env`. It re-renders the whole file from `.env.example` plus what it decided to keep, so **every key in the installation passes through it** — including the ones the operator never looks at, `DATABASE_PASSWORD` among them. Keys that exist only in `.env` survive solely because the action copies their raw lines forward. A save that drops one destroys a working installation, and the operator's own act is what triggers it. |
+| **Component** | The `save` action, against a fixture holding a fully populated `.env`. |
+| **Test data** | Every key of a configured installation, one of them quoted, plus a key present in `.env` and absent from `.env.example`. |
+| **Steps** | Invoke `save` changing only `GIT_REPOSITORIES`. Compare the file before and after. |
+| **Expected** | Every other key keeps its exact value and its quoting; the `.env`-only key is still there verbatim; and the write goes through a temporary file and a rename, so an interrupted save cannot leave a half-written `.env`. |
+| **Covers** | FR10, NFR1. |
+
+**Part 2 — the launchpad card · U2 and U11.**
+
+##### A8-4 — the page carries the repositories
 
 | | |
 |---|---|
@@ -2374,7 +2431,7 @@ tested.
 | **Expected** | Both repositories are present, each with its label, access, policy, public key and fingerprint. The order is the declaration's. |
 | **Covers** | FR3, FR11, U1, U2. |
 
-##### A8-2 — and nothing of the private half
+##### A8-5 — and nothing of the private half
 
 | | |
 |---|---|
@@ -2384,19 +2441,19 @@ tested.
 | **Expected** | No `BEGIN OPENSSH PRIVATE KEY`, and no substring of any private key file, anywhere in the payload. |
 | **Covers** | NFR1, FR3. |
 
-##### A8-3 — the operator can see it without a terminal
+##### A8-6 — the operator can see it without a terminal
 
 | | |
 |---|---|
-| **Premise** | A8-1 proves the data reaches the page object. It does not prove anything renders it: a `load` returning a field no template reads is the same defect one layer up. |
+| **Premise** | A8-4 proves the data reaches the page object. It does not prove anything renders it: a `load` returning a field no template reads is the same defect one layer up. |
 | **Component** | The running dashboard, over HTTP. |
 | **Test data** | The stack's own declared repositories, whatever they are — the case reads the manifest to learn what to expect rather than hard-coding names, so it does not fail when the declaration changes. |
 | **Steps** | `GET` the launchpad. Parse the manifest. For each declared repository, search the served HTML. |
 | **Expected** | Each repository's label and public key appear in the HTML, and so does its fingerprint. |
-| **Unhappy twin** | A8-4. |
+| **Unhappy twin** | A8-7. |
 | **Covers** | FR3, U2. |
 
-##### A8-4 — before the first start, it says so
+##### A8-7 — before the first start, it says so
 
 | | |
 |---|---|
@@ -2406,7 +2463,7 @@ tested.
 | **Expected** | The card is present and says the stack must be started once for the keys to be generated. It names that as the next step, in the shape FR20 requires, rather than rendering an empty list or an error. |
 | **Covers** | FR3, FR20, U2. |
 
-##### A8-5 — U11, on the page
+##### A8-8 — U11, on the page
 
 | | |
 |---|---|
@@ -2416,16 +2473,16 @@ tested.
 | **Expected** | It is marked unreachable, carries the error the start recorded, carries its **current** public key — the one on disk now, not the one that was registered — and offers the retry. |
 | **Covers** | FR3, FR11, U11. |
 
-##### A8-6 — and does not flag the healthy one
+##### A8-9 — and does not flag the healthy one
 
 | | |
 |---|---|
-| **Premise** | A card that marks everything as needing attention satisfies A8-5 and tells the operator nothing. The distinction is the whole value. |
+| **Premise** | A card that marks everything as needing attention satisfies A8-8 and tells the operator nothing. The distinction is the whole value. |
 | **Steps** | The same fixture; read the **first** repository, the one that cloned. |
 | **Expected** | Not marked unreachable, no error, and it does not offer a retry it does not need. |
 | **Covers** | U2, U11. |
 
-##### A8-7 — the instruction matches the access
+##### A8-10 — the instruction matches the access
 
 | | |
 |---|---|
@@ -2435,7 +2492,7 @@ tested.
 | **Expected** | The `write` entry's instruction asks for write access explicitly; the `read` entry's says read-only. Neither is the generic sentence. |
 | **Covers** | FR3, §3.1, NFR5. |
 
-##### A8-8 — the retry is a real clone
+##### A8-11 — the retry is a real clone
 
 | | |
 |---|---|
@@ -2446,7 +2503,7 @@ tested.
 | **Expected** | The clone exists on disk, that entry reports cloned with no error, and **the other entry is byte-for-byte unchanged**. |
 | **Covers** | FR3, FR11, U2, U11. |
 
-##### A8-9 — and it clones nothing it was not told to
+##### A8-12 — and it clones nothing it was not told to
 
 | | |
 |---|---|
@@ -2455,7 +2512,7 @@ tested.
 | **Expected** | All three refused before any process starts, naming the declaration as where repositories come from. No clone directory appears, and the manifest is unchanged. |
 | **Covers** | NFR5, FR11. |
 
-##### A8-10 — a retry that fails, reports failure
+##### A8-13 — a retry that fails, reports failure
 
 | | |
 |---|---|
@@ -2465,7 +2522,7 @@ tested.
 | **Expected** | The repository is still unreachable, the error is the authentication failure and not a generic one, and the response says so. The public key is still offered, because that is what the operator needs next. |
 | **Covers** | FR20, U11. |
 
-##### A8-11 — declared, and unaccounted for
+##### A8-14 — declared, and unaccounted for
 
 | | |
 |---|---|
@@ -2475,18 +2532,20 @@ tested.
 | **Expected** | Both times the page says two repositories are declared and their state is unknown, and names starting the stack as the next step. Neither an empty card nor a stack trace. |
 | **Covers** | FR10, FR11, FR20. |
 
-##### A8-12 — U1 in the browser · **manual**
+**Part 3 — the operator, in a browser · manual.**
+
+##### A8-15 — U1 in the browser · **manual**
 
 | | |
 |---|---|
-| **Premise** | The configuration view is generated from `.env.example`, and A1-1 and A3c-1 prove the section **parses**. Nobody has ever confirmed that it renders, that a value typed into it survives a save, or that it comes back on the next visit. Those are three different claims and the suite makes only the first. |
+| **Premise** | A8-1 to A8-3 settle what a server can answer: the view offers the fields, a saved declaration reaches `.env` and comes back, and nothing else in the file is lost. What none of them can see is a **rendered page** — a field present in `load` and clipped to nothing by CSS, help text that is technically there and unreadable, a section that requires three scrolls to find. That is what a person is for, and it is the whole of what is left here. |
 | **Component** | `http://localhost:7777/config` in a browser. |
 | **Test data** | The procedure is in §9. |
-| **Expected** | Section 10 appears with its heading and its help text; `GIT_USER_NAME`, `GIT_USER_EMAIL` and `GIT_REPOSITORIES` are all present as fields; an entry typed into `GIT_REPOSITORIES` is written to `.env` on save and is shown again when the view is reopened. |
+| **Expected** | Section 10 is findable, its heading and help text are legible, and all three fields are visible and editable. An entry typed into `GIT_REPOSITORIES` is still shown when the view is reopened — asserted by A8-2 through the action, confirmed here through the screen, because those are different claims. |
 | **And the second half** | An `https://` entry is refused by `git-repos.sh`, not by the form. The case records **where** the operator learns it: if the only place is the start log, that is the finding, and it belongs in the record rather than being fixed inside this case. |
 | **Covers** | FR10, U1. |
 
-##### A8-13 — U2 in the browser · **manual**
+##### A8-16 — U2 in the browser · **manual**
 
 | | |
 |---|---|
@@ -2497,7 +2556,7 @@ tested.
 | **Observed rather than asserted** | Whether the copy control works, and whether the card reads as an instruction rather than as a status display. Screenshots are the evidence, as they are for OC-8 and OC-20. |
 | **Covers** | FR3, U2. |
 
-##### A8-14 — U11 in the browser · **manual unhappy**
+##### A8-17 — U11 in the browser · **manual unhappy**
 
 | | |
 |---|---|
@@ -2543,7 +2602,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR7 Push on request | A2-5 (manual), M-A4 |
 | FR8 Hook guardrails | M-A4 |
 | FR9 Git skill | A2-1, A2-2, A2-3 |
-| FR10 Configuration contract | A1-3 |
+| FR10 Configuration contract | A1-3, A8-1, A8-2, A8-3 |
 | NFR1 Credentials via `.env` | A1-9 |
 | NFR2 Host-agnostic naming | A1-3, M-A3 |
 | NFR3 State under `volumes/` | A1-8 |
@@ -2558,7 +2617,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR17 One sanctioned publishing path | A6-1, A6-2, A6-3, A6-5, A6-12 |
 | FR18 A push outside that path is refused | A6-6, A6-7, A6-8, A6-9, A6-13 |
 | FR19 Agent branches are recognisable | A6-3, A6-4 |
-| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-4, A8-10, A8-11 |
+| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14 |
 | FR32 One test walks the whole path | A7-1, A7-2, A7-5 |
 | FR33 Concurrent publication is safe or refuses | A7-3, A7-4 |
 | NFR1 Credentials via `.env` | A1-9, A6-10 |
@@ -3649,24 +3708,24 @@ for k in volumes/_git-secrets/repos/*/id_ed25519; do
 done
 
 # 5. Negative control: does the page decide, or the route? Move the manifest
-#    aside. Expect: A8-1, A8-3, A8-5, A8-6 and A8-7 red and the page still
-#    answering 200 with the A8-11 wording; then EXIT=0 once it is back.
+#    aside. Expect: A8-4, A8-6, A8-8, A8-9 and A8-10 red and the page still
+#    answering 200 with the A8-14 wording; then EXIT=0 once it is back.
 mv volumes/_git-secrets/repositories.json /tmp/repositories.json.aside
 ./tests/run.sh m-a8; echo "EXIT=$?"
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7777/
 mv /tmp/repositories.json.aside volumes/_git-secrets/repositories.json
 ./tests/run.sh m-a8; echo "EXIT=$?"
 
-# 6. Negative control: are the system cases real? A8-3, A8-4 and A8-11 talk to
+# 6. Negative control: are the system cases real? A8-6, A8-7 and A8-14 talk to
 #    the dashboard rather than to a container, so the stack guard does not cover
 #    them -- stop the dashboard instead. Expect EXIT=1 naming the dashboard as
 #    unreachable, then EXIT=0 once it is back.
 ```
 
-#### A8-12 — the operator's procedure · the configuration view
+#### A8-15 — the operator's procedure · the configuration view
 
 The browser is the instrument here, so the evidence is screenshots. Save them under
-`ScreenCaps/Stills/A8-12` and name the step in the filename.
+`ScreenCaps/Stills/A8-15` and name the step in the filename.
 
 1. Open `http://localhost:7777/config`. Scroll to **10. GIT INTEGRATION**.
    *Expect:* the heading, the section's explanatory text, and three fields — `GIT_USER_NAME`,
@@ -3704,13 +3763,13 @@ The browser is the instrument here, so the evidence is screenshots. Save them un
 
 6. Put the declaration back the way it was.
 
-#### A8-13 — the operator's procedure · enabling a repository
+#### A8-16 — the operator's procedure · enabling a repository
 
 The claim under test is that this can be done **without a terminal**. Every step below is in the
 browser except the confirmations, which exist only because a case needs evidence. If a step cannot be
 completed in the browser, that is the finding.
 
-1. Declare a repository in `/config`, as A8-12 step 2 does, if one is not declared already.
+1. Declare a repository in `/config`, as A8-15 step 2 does, if one is not declared already.
 
 2. Start the stack from the launchpad.
    *Expect:* the start completes and prints its URLs and credentials. A repository that cannot be
@@ -3734,15 +3793,15 @@ completed in the browser, that is the finding.
        ls volumes/repos/
 
    *Expect:* the repository's working tree. The card claiming success while nothing was cloned is the
-   failure A8-8 automates and this step confirms in the arrangement that matters.
+   failure A8-11 automates and this step confirms in the arrangement that matters.
 
-#### A8-14 — the operator's procedure · a key that stopped working · **unhappy**
+#### A8-17 — the operator's procedure · a key that stopped working · **unhappy**
 
-The twin of A8-13, entered from the failure. It is also the only rehearsal this feature has of what
+The twin of A8-16, entered from the failure. It is also the only rehearsal this feature has of what
 a reset does to a running installation, short of a full cold start.
 
 1. Delete the deploy key for one declared repository at the host — the same settings page as
-   A8-13 step 4. Leave the declaration and everything else alone.
+   A8-16 step 4. Leave the declaration and everything else alone.
 
 2. Remove that repository's clone and its key locally, which is what a reset would have done:
 
