@@ -289,6 +289,57 @@ contract changes, a probe, four cases, and a stack that fails quietly the next t
 lapses. This is the second time in two days that a coherent inference from a minified bundle was
 wrong, and the second time measuring caught it.
 
+## Suite 2 — the compatibility question, executed
+
+**424 pass, 0 fail**, plus the 27 dashboard cases, on a 2026.9.1 stack carrying the git integration
+(#9), the Java extensions (#10) and this migration at the same time.
+
+Run on `integration/oc-2026-9-1`, which exists for exactly this and is **not a branch to merge**.
+`git-repo-info` and `nar-build` do not exist on a branch cut from `main`, so the claim that the
+migration does not break the two features in flight could only be *executed* where its subject lives.
+It has been.
+
+The stack it ran against: `git-repo-info` at `/usr/local/bin/`, one `nar_builder` container,
+`OpenClaw 2026.9.1 (ad6fe23)`, every service running with zero restarts and every healthcheck green.
+The image carries both halves — the 2026.9.1 pin and the `openssh-client` the git integration needs.
+
+The three named cases, asserted under their own identifiers:
+
+| | |
+|---|---|
+| **OC-23** | `git-repo-info nocodenation/agent-skills` → exit 0, `branch policy protected`, `clone status cloned` |
+| **OC-24** | A direct `git push` on a clone is refused: `pre-push refused: this push did not come through git-publish.` followed by git's own `error: failed to push some refs`. The guardrail still bites on 2026.9.1 |
+| **OC-25** | `nar-build` answers with its usage |
+
+**OC-24 is the one that matters.** A guardrail that still exists but no longer refuses is worse than
+one that is gone, and a version change to the harness it lives in is exactly the kind of thing that
+could have hollowed it out without touching its code.
+
+### The first run was red, and the reason is worth keeping
+
+420 pass, **4 fail** — A3e-7 twice and A4-14 twice, all in the git integration. Not a compatibility
+defect: `volumes/repos` was empty because the clone failed with `Permission denied (publickey)`. The
+deploy keys in use had been generated **that morning**, by the first start of a git-integration-shaped
+branch since 2026-09-05; the keys registered with GitHub were the older ones. `git.sh` generates keys
+when it finds none, and the migration never touched `volumes/_git-secrets`.
+
+**The feature reported it correctly**, which is the part worth recording:
+
+```
+clone status   not cloned — git@github.com: Permission denied (publickey)
+The declaration is in place; the clone itself failed. The operator has to
+register the deploy key above with the repository host and start the stack
+again. Report that rather than cloning it yourself.
+```
+
+That is what M-A3e was built to say. The operator registered the two public keys, both authenticated
+against GitHub before the stack was touched again, one restart produced both clones, and the four
+cases went green.
+
+It is also a reminder that the precondition A7-5 documented is not a one-off: **switching between a
+`main`-shaped branch and a feature-shaped one silently invalidates the deploy keys**, because the
+key material lives under `volumes/` while the code that uses it lives on the branch.
+
 ## What is not done
 
 - **OC-3**, **OC-4**, **OC-16**, **OC-20** are specified and not run. OC-4 is the interesting one:

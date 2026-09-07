@@ -20,6 +20,10 @@ Suite 2 cannot run here. `git-repo-info` and `nar-build` do not exist on a branc
 and the baseline procedure explicitly fails a run that checks for them. Both suites are specified
 here; each is executed where its subject exists.
 
+**Suite 2 was executed on 2026-09-07** on `integration/oc-2026-9-1` — this branch merged with #9 and
+#10 — and passed: 424 cases, 0 failures, plus the 27 dashboard cases. The record is in
+`verification/RESULT-openclaw-2026-9-1.md`.
+
 ## 2. Levels and rigour
 
 | Component | Level | Rigour |
