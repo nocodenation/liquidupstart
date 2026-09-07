@@ -408,6 +408,34 @@ to write and quieter about what is broken.
 
 *Done when:* `./tests/run.sh m-a7` is green, and the manual cold-start case has been observed.
 
+**M-A8 · The half of FR3 that was never built**
+FR3 has two clauses. The key generation script exists and the `git-auth` route exists; the clause
+that says *"the dashboard shows the public key with copy support and instructions"* does not. M-A3
+recorded it as carried forward — *"the route is complete, its presentation is not"* — and nothing
+carried it. `git grep 'git-auth' -- dashboard/src` returns nothing to this day, and §7 of the test
+specification has been reporting FR3 as covered by M-A3 since.
+
+*Three consequences, each worse than the missing card.* `.env.example` tells the operator that *"the
+dashboard shows you each key"*, so the configuration file promises a screen that does not exist. U2
+and U11 are both written around a **launchpad** that appears three times in this document and zero
+times in `dashboard/`. And U11 — a repository whose key stopped working — has no `Covers:` row
+anywhere in the suite; its only exercise is step 4b inside A7-5's cold-start procedure, which walks it
+by hand and says so.
+
+*What it builds.* The card on the launchpad, fed by the existing route through the page's own `load`
+rather than by a browser fetch, so that the card is in the served HTML and can be asserted with the
+tooling this repository already has. And the action U2 asks for — *"asks the launchpad to test the
+repository. The test is a real clone, not a claim"* — as a POST restricted to declared repositories.
+
+*Why it is worth a milestone rather than a fix.* Every case before it asks what an agent can reach.
+These ask what an operator can see, which is the surface this feature is judged on and the only one
+nothing has tested. Three of the fourteen cases are manual and stay manual: what a browser does with
+HTML that A8-3 already reads is not the question, and whether a card reads as an instruction needs a
+person.
+
+*Done when:* `./tests/run.sh m-a8` is green, and A8-12, A8-13 and A8-14 have been observed by the
+operator with their screenshots recorded.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not
@@ -878,6 +906,11 @@ system test that asserts the *absence* of access is a test with an invisible dep
 **Carried forward:** the `git-auth` route returns the public key and its fingerprint, but nothing in
 the dashboard UI calls it yet. The existing auth panels live in `TaskRunner.svelte`, and adding one
 there is separate work — the route is complete, its presentation is not.
+
+*And it stayed carried forward for four milestones.* Nothing picked it up, and it never reached
+`BACKLOG.md` either, so it was neither built nor deferred by a decision. It became **M-A8**, written
+2026-09-07 after the question "where are the user tests?" went looking for a screen to test and found
+none.
 
 ### A3-11 — the manual observation · carried out 2026-08-29 · **failed**
 
