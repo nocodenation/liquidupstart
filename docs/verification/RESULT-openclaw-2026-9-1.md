@@ -2,7 +2,7 @@
 
 Branch `feature/openclaw-2026-9-1`. Analysis in `../FEATURE-openclaw-2026-9-1.md`, cases in
 `../TEST-SPEC-openclaw-2026-9-1.md`, measured against the baseline in
-`RESULT-baseline-cold-start.md` (2026-09-05, 2026.7.1, all seven checks green).
+`RESULT-cold-start-2026.7.1.md` (2026-09-05, 2026.7.1, all seven checks green).
 
 **The stack runs on OpenClaw 2026.9.1, and the blocker that stopped this in September is gone.**
 

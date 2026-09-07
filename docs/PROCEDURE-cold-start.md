@@ -1,9 +1,19 @@
-# OC-BASE — the verified baseline · **manual**
+# A cold start, whichever OpenClaw the branch pins · **manual**
 
-Branch `feature/openclaw-2026-9-1`, at its base point: `main` + the OpenClaw pin (#11) + the
-`bun_runner` health check (#12), and nothing else. This is the stand the migration to OpenClaw
-2026.9.1 will be measured against, so it is established by a **cold start** rather than asserted
-from a stack that has been running for weeks.
+The path a new operator takes: a reset checkout, `.env` from the example, build, start. Every other
+case in this project runs against a stack that is already up, so anything that only works because of
+state an earlier run left behind is invisible to all of them.
+
+**This procedure does not name a version.** It reads the pin out of
+`config/openclaw/templates/Dockerfile` and requires the running container to report *that*. Writing
+the number into the prose is how a document goes false the moment someone changes the pin — the same
+reason the start script reads `openclaw --version` from the image rather than trusting the
+Dockerfile's comment.
+
+| Run | Pin | Record |
+|---|---|---|
+| **OC-BASE**, 2026-09-05 — the baseline the migration is measured against | 2026.7.1 | `verification/RESULT-cold-start-2026.7.1.md` |
+| **OC-20** — the same path on the new version | 2026.9.1 | **not yet run**; its record will be `verification/RESULT-cold-start-2026.9.1.md` |
 
 Written to be run by the operator, in one sitting, from this checkout. It is **destructive** — read
 §1 before starting.
@@ -48,10 +58,10 @@ state directory was last written by a newer version.** A downgrade is never only
 | | |
 |---|---|
 | **Premise** | The migration needs something to be measured against, and "it works today" is not it — this stack has been running for weeks and carries state no fresh installation has. Every claim about what 2026.9.1 costs is a difference from *this* run. |
-| **Component** | The whole stack, from a reset checkout, on branch `feature/openclaw-2026-9-1` at its base point. |
-| **Shape** | `main`-shaped: **no git integration, no `nar_builder`**. Those live on the other branches and are absent here by design. Checking for them would fail a run that succeeded. |
-| **Expected** | `build.sh` and `start.sh` both exit 0; OpenClaw in the container reports **2026.7.1**; the Control UI answers **200**, not the 403 that 2026.9.1 gave; `openclaw config validate` reports the live configuration valid; the Claude CLI in the image runs and reports a version; and every service is running with none unhealthy or restarting. |
-| **Failure** | Any non-zero exit, a 403 from the Control UI, a service not running, or any service reported unhealthy or restarting. |
+| **Component** | The whole stack, from a reset checkout, on whichever branch is checked out. |
+| **Shape** | Depends on the branch, and step 5 check 7 reads it rather than assuming: a `main`-shaped branch has **no git integration and no `nar_builder`**, and checking for them would fail a run that succeeded. On a branch that has them, their absence is the failure. |
+| **Expected** | `build.sh` and `start.sh` both exit 0; OpenClaw in the container reports **the version the Dockerfile pins**; the Control UI answers **200**, not the 403 that an unattributable proxy gives; `openclaw config validate` reports the live configuration valid; the Claude CLI in the image runs and reports a version; and every service is running, with **zero restarts**, every healthcheck green. |
+| **Failure** | Any non-zero exit, a 403 from the Control UI, a service not running or restarting, or any healthcheck that has not reached `healthy`. |
 
 **The health criterion is only meaningful because of #12.** Until this afternoon `bun_runner`
 reported unhealthy on every stack that had ever existed, so "none unhealthy" could not be asked.
@@ -87,14 +97,15 @@ ls -la /Users/christof/repos/liquidupstart-backups/
 Expect `.env.bak`, `_git-secrets.bak`, `_openclaw-claude.bak`, `_openclaw.bak-2026.7.1`,
 `_openclaw.bak-2026.9.1`. **If any is missing, stop here.**
 
-### Step 1 — record what the moving tags point at today · **already done**
+### Step 1 — record what the moving tags point at today
 
 A7-5 established that seven of the images a cold start pulls hang on tags that can move. Recording
 the digests means that when a later run differs, the cause can be told apart: this repository, or an
 upstream move.
 
-> **Nothing to run in this step.** The snapshot was taken at `2026-09-05T17:55:11Z`, into
-> `/Users/christof/repos/liquidupstart-backups/digests-before.txt`. Go to step 2.
+**Take it per run**, into a file named for this run — the 2026-09-05 snapshot is in
+`digests-before.txt` and must not be overwritten, because comparing a later run against it is the
+whole point. Use the block from step 6 with a run-specific output name.
 
 Eleven pulled service images, seven build base images, and the three OpenClaw tags. Digests are read
 from the **registry** rather than from local images — `docker buildx imagetools inspect NAME:TAG
@@ -148,19 +159,20 @@ reset missed it, and the run would then be measuring leftovers.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-script -q /Users/christof/repos/liquidupstart-backups/build-baseline.log \
+script -q /Users/christof/repos/liquidupstart-backups/build-coldstart-$(date +%Y%m%d-%H%M).log \
   ./scripts/linux/build.sh
 echo "build.sh EXIT=$?"
 ```
 
-Expect `EXIT=0`. This pulls `ghcr.io/openclaw/openclaw:2026.7.1` — the pin from #11 — and the build
-ends in `claude --version`, so an install that produces nothing fails instead of shipping.
+Expect `EXIT=0`. This pulls whatever `config/openclaw/templates/Dockerfile` pins, and the build ends
+in `claude --version`, so an install that produces nothing fails instead of shipping — which is what
+it did on 2026-09-05, silently, before that check was added.
 
 ### Step 4 — start
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-script -q /Users/christof/repos/liquidupstart-backups/start-baseline.log \
+script -q /Users/christof/repos/liquidupstart-backups/start-coldstart-$(date +%Y%m%d-%H%M).log \
   ./scripts/linux/start.sh
 echo "start.sh EXIT=$?"
 ```
@@ -199,17 +211,49 @@ cp -a /Users/christof/repos/liquidupstart-backups/_openclaw-claude.bak \
 
 Note in the record that this was used, because it means the sign-in path was not exercised.
 
+**Step 4c — the deploy keys, on a branch that carries the git integration.**
+
+`./cleanup.sh` deleted `volumes/`, and `git.sh` generates a fresh key pair when it finds none — so
+after a reset the keys are new and the repository host does not know them. A `main`-shaped branch has
+no clones to make and can skip this.
+
+`git-repo-info` reports it plainly rather than failing silently, and that message is the feature
+working rather than a fault:
+
+```
+clone status   not cloned — git@github.com: Permission denied (publickey)
+```
+
+Print the public halves, register each with its repository, then start again so the clones are made:
+
+```bash
+cd /Users/christof/repos/liquidupstart
+for d in volumes/_git-secrets/repos/*/; do
+  echo "=== ${d} ==="; cat "${d}id_ed25519.pub"
+done
+# register each at https://github.com/<owner>/<repo>/settings/keys/new
+# write access only where .env declares |write|, then:
+./scripts/linux/start.sh
+ls volumes/repos            # expect one directory per declared repository
+```
+
+Confirm the clones before running any suite, so a red run is never mistaken for a broken feature.
+On 2026-09-07 four cases failed for exactly this reason and were briefly taken for a compatibility
+defect of the OpenClaw migration.
+
 ### Step 5 — the acceptance, in one block
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-echo "=== OC-BASE acceptance ==="
+PINNED="$(grep -m1 '^FROM ' config/openclaw/templates/Dockerfile | sed 's|.*openclaw:||')"
+echo "=== acceptance, against the pin this branch carries: ${PINNED} ==="
 
-echo "-- 1. OpenClaw version (expect 2026.7.1, the pin)"
-docker compose exec -T openclaw-gateway openclaw --version
+echo "-- 1. OpenClaw version (must equal the pin, read above, not typed here)"
+docker compose exec -T openclaw-gateway openclaw --version | grep -q "$PINNED" \
+  && echo "   matches ${PINNED}" || echo "   FAIL: container does not report ${PINNED}"
 
-echo "-- 2. Control UI (expect 200; 2026.9.1 answered 403 proxy_attribution_required)"
-curl -s -o /dev/null -w 'HTTP %{http_code}\n' -H 'Host: openclaw.localhost' \
+echo "-- 2. Control UI (expect 200; an unattributable proxy gives 403 proxy_attribution_required)"
+curl -s -o /dev/null -w '   HTTP %{http_code}\n' -H 'Host: openclaw.localhost' \
   "http://127.0.0.1:$(grep -E '^SYSTEM_HTTP_PORT=' .env | cut -d= -f2- | tr -d '"')/"
 
 echo "-- 3. Live configuration valid"
@@ -219,19 +263,32 @@ echo "-- 4. Claude CLI in the image runs (the npm --allow-scripts repair)"
 docker compose exec -T openclaw-gateway claude --version
 
 echo "-- 5. bun_runner specifically (BR-5)"
-docker inspect bun_runner --format 'status={{.State.Health.Status}} streak={{.State.Health.FailingStreak}}'
+docker inspect bun_runner --format '   status={{.State.Health.Status}} streak={{.State.Health.FailingStreak}}'
 
-echo "-- 6. every service running, none unhealthy or restarting"
-docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}' \
-  | awk -F'\t' '$2 != "running" || $3 ~ /unhealthy|Restarting/' \
-  | grep . && echo "FAIL: the services above" || echo "pass: all running, none unhealthy"
+echo "-- 6. every service: running, zero restarts, every healthcheck green"
+docker inspect $(docker compose ps -q) \
+  --format '{{.Name}}\t{{.State.Status}}\trestarts={{.RestartCount}}\t{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' \
+  | sed 's|^/||' \
+  | awk -F'\t' '$2 != "running" || $3 != "restarts=0" || ($4 != "healthy" && $4 != "no-healthcheck")' \
+  | grep . && echo "   FAIL: the services above" || echo "   pass: all running, zero restarts, all healthy"
 
-echo "-- 7. main-shaped, as this branch should be (expect no output)"
-docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info' || echo "(absent, correct)"
+echo "-- 7. the branch's own shape (git integration present or absent, as it should be)"
+docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info' 2>/dev/null \
+  || echo "   git-repo-info absent — correct on a main-shaped branch, a FAILURE on a feature branch"
 ```
 
-Expected: `OpenClaw 2026.7.1` · `HTTP 200` · configuration valid · a Claude version · `status=healthy
-streak=0` · `pass: all running, none unhealthy` · `(absent, correct)`.
+Expected: the version matches the pin · `HTTP 200` · configuration valid · a Claude version ·
+`status=healthy streak=0` · `pass: all running, zero restarts, all healthy` · and check 7 matching
+the branch.
+
+> **Check 6 is not the one this project used until 2026-09-06, and the difference matters.** The old
+> sweep filtered `docker compose ps` for `unhealthy|Restarting`. A container in a restart loop reads
+> as `running` with health `starting` in the window between two crashes, so a single sample can call
+> a crash-looping stack sound — which is exactly what it did while the OpenClaw gateway was on its
+> tenth restart, and the result was reported as "all running, none unhealthy". A criterion that
+> depends on when you look is not a criterion. This one names three positive conditions instead: the
+> container runs, it has not restarted, and if it declares a healthcheck it has reached `healthy`
+> rather than sitting in `starting`.
 
 ### Step 6 — record the digests the run actually assembled
 
@@ -263,7 +320,7 @@ diff <(grep -v '^#' "$B/digests-before.txt") <(grep -v '^#' "$B/digests-after.tx
 
 ## 5. Where the result goes
 
-Paste the output of steps 3, 4 and 5 into `.pr-drafts/RESULT-baseline-cold-start.md`. A result that
+Paste the output of steps 3, 4 and 5 into `.pr-drafts/RESULT-cold-start-2026.7.1.md`. A result that
 exists only in a terminal has to be carried by hand, and that is where it is lost.
 
 Record what happened either way. A cold start that simply works is worth knowing: A7-5, the only

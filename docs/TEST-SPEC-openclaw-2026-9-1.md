@@ -4,7 +4,7 @@ For review and sign-off **before** implementation. Cases derive from
 `FEATURE-openclaw-2026-9-1.md` §5; every part there has at least one positive case and one negative
 counterpart, because a rule that only refuses is as useless as one that only permits.
 
-Baseline: `verification/RESULT-baseline-cold-start.md` (2026-09-05, all seven checks green on
+Baseline: `verification/RESULT-cold-start-2026.7.1.md` (2026-09-05, all seven checks green on
 2026.7.1). Every claim below is a **difference from that run**.
 
 ---
@@ -202,8 +202,8 @@ here; each is executed where its subject exists.
 |---|---|
 | **Premise** | Every other case runs against a stack that is already up. This is the path a new operator takes, on the new version, and the counterpart to the baseline run of 2026-09-05 — every claim in the feature document is a difference from that run, and this is where the difference is actually measured. |
 | **Component** | The whole stack, from a reset checkout. |
-| **Test data** | The procedure in `PROCEDURE-baseline-cold-start.md`, with the pin moved to 2026.9.1. Its corrected step 4 has never been run — this is its first execution, which is stated in that document. |
-| **Expected** | The same seven checks, with two differences: OpenClaw reports **2026.9.1**, and the Control UI answers 200 **without any browser having paired**. `openclaw config validate` valid, `doctor` free of critical findings and legacy keys, the Claude CLI at 2.1.x, `bun_runner` healthy, every service running. |
+| **Test data** | The procedure in `PROCEDURE-cold-start.md`. It no longer names a version: it reads the pin out of `config/openclaw/templates/Dockerfile` and requires the container to report *that*, so the same document serves OC-BASE and OC-20 and whatever is pinned next. Its corrected step 4 has never been run — this is its first execution. |
+| **Expected** | The same seven checks, with two differences from the 2026-09-05 run: OpenClaw reports **2026.9.1**, and the Control UI answers 200 **without any browser having paired**. `openclaw config validate` valid, `doctor` free of critical findings and legacy keys, the Claude CLI at 2.1.x, `bun_runner` healthy, and every service running with **zero restarts and every healthcheck green** — check 6 is the restart-aware one from OC-30, not the sweep that reported a crash-looping gateway as sound. |
 | **Failure** | Any of the seven, or a device-pairing demand. |
 | **Covers** | OC-G1, all of §5 |
 
@@ -216,7 +216,7 @@ here; each is executed where its subject exists.
 | **Test data** | The state directory as OC-20 leaves it, and the 2026.7.1 image. |
 | **Expected** | The gateway **refuses to start**, with `Refusing to run automatic gateway startup migrations`. |
 | **Failure** | It starts — the downgrade would then be a plain tag change and the backup unnecessary. Worth knowing either way; the current belief rests on one observation. |
-| **Covers** | §1, and the return path in `PROCEDURE-baseline-cold-start.md` §1 |
+| **Covers** | §1, and the return path in `PROCEDURE-cold-start.md` §1 |
 
 ### OC-22 — the model survives the move
 
@@ -259,12 +259,12 @@ here; each is executed where its subject exists.
 | | |
 |---|---|
 | **Premise** | While the gateway was restarting for the tenth time, the sweep this project has used since A7-5 reported *"all running, none unhealthy."* It was sampled in the window between two crashes, where `docker compose ps` shows `running` and the health status is `starting` rather than `unhealthy`. The filter is not wrong, it is **timing-dependent** — and a criterion that depends on when you look is not a criterion. |
-| **Component** | The acceptance sweep in `PROCEDURE-baseline-cold-start.md` step 5. |
+| **Component** | The acceptance sweep in `PROCEDURE-cold-start.md` step 5. |
 | **Test data** | A container in a restart loop — reproducible with the OC-28 state, which crash-loops on purpose. |
 | **Expected** | The sweep reports a failure **on every sample**, not only on the lucky ones. Achieved by reading `RestartCount` and the health status per container rather than the one-line `Status` string: a freshly started stack has `RestartCount` 0, and any container with a healthcheck must reach `healthy`, not sit in `starting`. |
 | **Failure** | Any sample during a crash loop that reports the stack as sound. |
 | **Why it is here rather than quietly fixed** | Every "all services running" claim in this repository's records was made with the old sweep, including the baseline run of 2026-09-05. Those results are not invalidated — the stack was genuinely sound, and `bun_runner` was the only thing it ever caught — but the confidence they carry is lower than it reads, and that belongs on the record rather than in a silent edit. |
-| **Covers** | OC-G4, and the acceptance in `PROCEDURE-baseline-cold-start.md` |
+| **Covers** | OC-G4, and the acceptance in `PROCEDURE-cold-start.md` |
 
 ### OC-23 / OC-24 / OC-25 — the features in flight still work
 
@@ -302,7 +302,7 @@ them is a feature decision, not a migration, and a case would be testing OpenCla
 
 **No case for `start.sh`'s broken sign-in instruction** found by the baseline run. It is a defect of
 the released stack, belongs in a repair cut from `main`, and is recorded in
-`verification/RESULT-baseline-cold-start.md`.
+`verification/RESULT-cold-start-2026.7.1.md`.
 
 ## 6. Traceability
 

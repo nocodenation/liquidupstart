@@ -1,7 +1,7 @@
 # Result — OC-BASE, the verified baseline
 
 Run 2026-09-05 by the operator on `feature/openclaw-2026-9-1` at its base point: `main` + the
-OpenClaw pin (#11) + the `bun_runner` health check (#12). Procedure: `../PROCEDURE-baseline-cold-start.md`.
+OpenClaw pin (#11) + the `bun_runner` health check (#12). Procedure: `../PROCEDURE-cold-start.md`.
 
 **Passed.** This is the stand the migration to OpenClaw 2026.9.1 is measured against.
 

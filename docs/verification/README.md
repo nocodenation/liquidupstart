@@ -16,7 +16,7 @@ they describe:
 | | |
 |---|---|
 | `../CASES-bun-runner-health.md` | The five cases for the `bun_runner` health check, signed off before the one-line change was made. Its record is here. |
-| `../PROCEDURE-baseline-cold-start.md` | OC-BASE, the cold start that establishes the stand the OpenClaw 2026.9.1 migration is measured against. Run 2026-09-05; its record is `RESULT-baseline-cold-start.md`. |
+| `../PROCEDURE-cold-start.md` | OC-BASE, the cold start that establishes the stand the OpenClaw 2026.9.1 migration is measured against. Run 2026-09-05; its record is `RESULT-cold-start-2026.7.1.md`. |
 
 ## Why a record and a transcript, not just a summary
 

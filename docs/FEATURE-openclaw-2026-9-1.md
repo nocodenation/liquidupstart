@@ -5,8 +5,8 @@ why, before any code is written. The test cases are in `TEST-SPEC-openclaw-2026-
 signed off before implementation begins.
 
 Branch `feature/openclaw-2026-9-1`, cut from `fix/openclaw-2026-9-1` (#11) with
-`fix/bun-runner-health` (#12) merged. The baseline it is measured against is `PROCEDURE-baseline-cold-start.md`,
-verified 2026-09-05: `verification/RESULT-baseline-cold-start.md`.
+`fix/bun-runner-health` (#12) merged. The baseline it is measured against is `PROCEDURE-cold-start.md`,
+verified 2026-09-05: `verification/RESULT-cold-start-2026.7.1.md`.
 
 ---
 
@@ -299,7 +299,7 @@ second would be exactly the kind of unbacked assertion this project's method exi
 **Repairing `start.sh`'s sign-in instructions.** The baseline run found that when no terminal is
 attached, the script tells the operator to run `docker compose exec -it openclaw-gateway …` at a
 point where no container exists. That is a defect of the released stack and belongs in a repair cut
-from `main`. Recorded in `verification/RESULT-baseline-cold-start.md`.
+from `main`. Recorded in `verification/RESULT-cold-start-2026.7.1.md`.
 
 **The `ingest-pdf` plugin's error text** naming `memorySearch.provider`, now stale. A diagnostic
 string only; correcting it means rebuilding a checked-in `dist/index.mjs` bundle, which is more risk
