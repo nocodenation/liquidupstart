@@ -229,6 +229,66 @@ giving the gateway a token is a change to the authentication model, not part of 
 `.env.example` already declares `OPENCLAW_GATEWAY_TOKEN` and **nothing reads it** — dangling contract
 surface, and the obvious place to start if this is ever taken up.
 
+### 11. The long-lived token would not have worked · **measured, and not built**
+
+The Claude login expired **three times on 2026-09-06/07**, and each expiry turns an unattended start
+into a blocking prompt — twice it also produced a wrong diagnosis, because the prompt is written to
+`/dev/tty` and never reaches the log, so a run that is waiting for a code looks exactly like a run
+that has hung.
+
+A long-lived `CLAUDE_CODE_OAUTH_TOKEN` looked like the answer, and the design was worked out in
+full: three declarations (`.env.example`, the OpenClaw env template, the start script's injection
+list) so the token would reach the gateway process through the same `env_file` that already carries
+`OPENAI_API_KEY`, plus a validity probe and four new cases.
+
+**None of it was built, because the deciding assumption was measured first and turned out false.**
+
+| Run | File login | Token in env | Result |
+|---|:---:|:---:|---|
+| negative control | — | — | `Not logged in · Please run /login` |
+| **the case** | — | ✓ | **`Not logged in · Please run /login`** |
+| CLI control | — | ✓ | `loggedIn: true` |
+
+The third row is what makes the second mean something. **The same token and the same empty
+credential directory**: the Claude CLI accepts it, the in-process Agent SDK does not. The token is
+valid; the SDK simply does not authenticate from it in this configuration.
+
+**And the bundle had said otherwise, or seemed to.** `CLAUDE_CODE_OAUTH_TOKEN` appears in the
+agent-sdk files and in a list of auth environment variables, which was read as *the SDK takes the
+token as a credential*. With the measurement in hand the same line reads differently:
+
+```js
+if (!p && !process.env.ANTHROPIC_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) m = await refresh();
+```
+
+The token **suppresses the refresh path** rather than supplying credentials. So it is not merely
+useless there — it could prevent a refresh that would otherwise have succeeded.
+
+**Leaving it in `.env` would have been actively harmful**, and this is the part worth keeping. The
+start script branches on it:
+
+```
+if [[ -n "$OAUTH_TOKEN" ]]; then
+  echo "Claude CLI: using CLAUDE_CODE_OAUTH_TOKEN from .env (… no interactive login needed)."
+```
+
+With the token set, the start skips the interactive sign-in *even when the file login has expired* —
+and the SDK cannot use the token. The result is a start that reports success while OpenClaw can
+answer nothing: the loud failure traded for a silent one. That is exactly the failure mode the
+proposed validity probe was designed to prevent, and adopting the token without building the probe
+would have introduced it. The token was removed from `.env`, and the copy of `.env` that held it was
+deleted rather than kept as a backup.
+
+**What remains open:** the login still expires, and the credentials file is the only source the SDK
+accepts. One idea is untested and stated as an idea: the CLI *does* accept the token, so a CLI call
+made with it might materialise a `.credentials.json` the SDK then reads, which would give the start
+an unattended path to valid credentials. Nobody has measured that. `BACKLOG.md`.
+
+**The cost of measuring first was one command.** The cost of building first would have been three
+contract changes, a probe, four cases, and a stack that fails quietly the next time the login
+lapses. This is the second time in two days that a coherent inference from a minified bundle was
+wrong, and the second time measuring caught it.
+
 ## What is not done
 
 - **OC-3**, **OC-4**, **OC-16**, **OC-20** are specified and not run. OC-4 is the interesting one:

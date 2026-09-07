@@ -39,7 +39,7 @@ here; each is executed where its subject exists.
 |---|---|---|---|
 | OC-1 | component | positive | On 2026.9.1 the written config contains **no** `agents.defaults.cliBackends`, and `config validate` passes |
 | OC-2 | component | **negative** | On 2026.9.1 a config that **does** contain it is rejected by `config validate` |
-| OC-3 | component | **negative** | On 2026.9.1 that same rejection, under a pty, produces the `doctor --fix? [Y/n]` prompt — the hang, reproduced |
+| OC-3 | contract | **negative** | Every unattended `docker run` in the start script is bounded, or is a named exception with a reason — **replaced 2026-09-07**, see below |
 | OC-4 | system | positive | On **2026.7.1**, with `cliBackends` absent, Claude requests still run through the wrapper |
 | OC-5 | component | positive | With Copilot enabled on 2026.9.1, the config carries `memory.search.*` and validates |
 | OC-6 | component | **negative** | `agents.defaults.memorySearch` on 2026.9.1 is rejected |
@@ -85,8 +85,20 @@ here; each is executed where its subject exists.
 | **Premise** | `agents.defaults.cliBackends` is not a configuration key in 2026.9.1 at all. OC-1 shows we stopped writing it; OC-2 shows that mattered; OC-3 shows what it cost, because an error message and an indefinite hang are different failures and only one of them was survivable. |
 | **Component** | `config/scripts/start/openclaw.sh`'s config writer, and `openclaw config validate` in a 2026.9.1 container. |
 | **Test data** | OC-1: the config the start script writes with `ENABLE_ANTHROPIC_CLAUDE_CODE=1` against a 2026.9.1 image. OC-2 and OC-3: that same file with the single key added back, verbatim as 2026.7.1 wrote it — `{"agents":{"defaults":{"cliBackends":{"claude-cli":{"command":"/usr/local/bin/openclaw-claude"}}}}}` merged in. |
-| **Expected** | OC-1: `jq -e '.agents.defaults.cliBackends'` finds nothing, and `openclaw config validate` exits 0. OC-2: validate exits non-zero naming `agents.defaults: Unrecognized key: "cliBackends"`. OC-3: the same file, with the command run under `script` so a pty is attached, produces `Run "openclaw doctor --fix" now? [Y/n]` and does **not** return on its own — asserted with a bounded wait, and the container force-removed. |
-| **Failure** | OC-1: the key is present, or validation fails for another reason. OC-2: validation passes — the key would then be harmless and §5.1 would be wrong. OC-3: no prompt appears, which would mean the hang had another cause and the timeout guards in #11 were aimed at the wrong thing. |
+| **Expected** | OC-1: `jq -e '.agents.defaults.cliBackends'` finds nothing, and `openclaw config validate` exits 0. OC-2: validate exits non-zero naming `agents.defaults: Unrecognized key: "cliBackends"`. OC-3: see the replacement below. |
+| **Failure** | OC-1: the key is present, or validation fails for another reason. OC-2: validation passes — the key would then be harmless and §5.1 would be wrong. |
+
+##### OC-3, replaced 2026-09-07: assert the guard, not the hazard
+
+| | |
+|---|---|
+| **What it was** | Reproduce the September hang: an invalid config under a pty produces `Run "openclaw doctor --fix" now? [Y/n]` and never returns. |
+| **Why it was abandoned** | Attempted four times. The prompt sits behind two earlier checks — an unauthenticated container bails at `Claude CLI is not authenticated on this host`, and `--profile` reads a different config directory entirely — so provoking it needs **a valid Claude login inside a throwaway container**. A run of exactly that shape had already overwritten the operator's credentials once that same day. A case that periodically risks the operator's login is not worth the finding. |
+| **And it was the wrong subject** | It would assert *upstream's* behaviour rather than our protection against it. If OpenClaw stopped prompting tomorrow the case would go red while nothing about this stack had got better or worse. What protects the start is that our own calls are bounded — a property of `config/scripts/start/openclaw.sh`, deterministic and free. |
+| **What replaced it** | A contract case: every `docker run` / `docker compose run` in the start script is bounded by `with_timeout`, **or** appears in a named exception list carrying the reason it may wait. Plus an assertion that each exception still exists, since a stale allowance is a hole that hides its successor; and that the timed helpers name their container and force-remove it, because `timeout` kills the docker client and not the container. |
+| **What it found immediately** | Four unbounded non-interactive calls, two of them added the day before by this very migration — the state-version probe and the state migration — and two making **network requests**, the local-LLM discovery and the OpenRouter model list, either of which could hang a start indefinitely. And three more: `copilot_authed`, `codex_authed` and `grok_authed` are the same shape as the Claude probe #11 bounded, and were left unbounded when it was. All seven are bounded now. |
+| **The hazard stays documented** | The hang was observed for real on 2026-09-05 and is recorded verbatim in #11's commit message. It moves from an automated case to a deliberate omission with a reason, which §5 of this document provides for. |
+| **Covers** | OC-G4, §5.1 |
 | **Covers** | OC-G1, §5.1 |
 
 ### OC-4 — does the wrapper alone suffice on 2026.7.1?

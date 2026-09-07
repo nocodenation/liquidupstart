@@ -144,7 +144,7 @@ fi
 # records it in meta.lastTouchedVersion; empty when the config predates the field.
 openclaw_state_version() {
   [[ -f "$CONFIG_JSON" ]] || return 0
-  docker run --rm --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
+  with_timeout 60 docker run --rm --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
     try {
       const c = JSON.parse(require("fs").readFileSync("/state/openclaw.json", "utf8"));
       const v = c && c.meta && c.meta.lastTouchedVersion;
@@ -169,12 +169,15 @@ openclaw_state_version() {
 # route to the fix therefore leads nowhere. This replicates the copy first.
 openclaw_migrate_state() {
   echo "OpenClaw: state was written by ${1}, image is ${2} — migrating before start."
-  if docker compose run --rm --no-deps -T --user 0:0 --entrypoint /bin/sh openclaw-gateway -lc '
+  local _mig="openclaw-migrate-$$-${RANDOM}" _mrc=0
+  with_timeout 600 docker compose run --rm --name "$_mig" --no-deps -T --user 0:0 --entrypoint /bin/sh openclaw-gateway -lc '
         mkdir -p /home/node/openclaw-plugins
         cp -a /opt/plugins/. /home/node/openclaw-plugins/ 2>/dev/null || true
         chmod -R go-w /home/node/openclaw-plugins 2>/dev/null || true
         openclaw doctor --fix
-      ' >/dev/null 2>&1; then
+      ' >/dev/null 2>&1 || _mrc=$?
+  if (( _mrc == 124 )); then docker rm -f "$_mig" >/dev/null 2>&1 || true; fi
+  if (( _mrc == 0 )); then
     echo "OpenClaw: state migrated."
   else
     echo "Warning: the OpenClaw state migration did not complete." >&2
@@ -280,7 +283,7 @@ else
     _llm_host="${LOCAL_LLM_API_BASE#*://}"; _llm_host="${_llm_host%%[:/]*}"
     _addhost=()
     [[ -n "$_llm_host" && -n "$LOCAL_LLM_HOST_IP" ]] && _addhost=(--add-host "${_llm_host}:${LOCAL_LLM_HOST_IP}")
-    LOCAL_LLM_MODELS_JSON="$(docker run --rm ${_addhost[@]+"${_addhost[@]}"} \
+    LOCAL_LLM_MODELS_JSON="$(with_timeout 60 docker run --rm ${_addhost[@]+"${_addhost[@]}"} \
       -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
       -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
       --entrypoint node \
@@ -308,7 +311,7 @@ else
   OPENROUTER_MODELS_JSON="[]"
   OPENROUTER_KEY="$(get_env OPENROUTER_API_KEY)"
   if [[ -n "$OPENROUTER_KEY" ]]; then
-    OPENROUTER_MODELS_JSON="$(docker run --rm \
+    OPENROUTER_MODELS_JSON="$(with_timeout 60 docker run --rm \
       -e OPENROUTER_API_KEY="${OPENROUTER_KEY}" \
       --entrypoint node \
       "${OPENCLAW_IMAGE}" \
@@ -976,7 +979,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  copilot_authed() { local out; out="$(copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
+  copilot_authed() { local out; out="$(with_timeout 60 copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
 
   if copilot_authed; then
     echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
@@ -1017,7 +1020,7 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  codex_authed() { local out; out="$(codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
+  codex_authed() { local out; out="$(with_timeout 60 codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if codex_authed; then
     echo "OpenAI Codex: already authenticated (ChatGPT/Codex login persists in ${STATE_DIR})."
@@ -1071,7 +1074,7 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  grok_authed() { local out; out="$(grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
+  grok_authed() { local out; out="$(with_timeout 60 grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if grok_authed; then
     echo "xAI Grok: already authenticated (Grok login persists in ${STATE_DIR})."
