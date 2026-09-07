@@ -449,7 +449,10 @@ build runs `bun run build`, so an interface that does not compile is a launcher 
 with no interface left to repair it from. Nothing outside that image build compiles the UI: not the
 suite, not `build.sh`, not even a cold start, and the 27 dashboard tests import library modules rather
 than components. The exposure was theoretical until now because nothing here had ever touched a Svelte
-component. M-A8 does, so A8-18 answers it where it arises.
+component. M-A8 does, so A8-18 answers it where it arises — by running `docker build` on `dashboard/`,
+the command the launcher runs, because `bun run build` on the host answers `vite: command not found`:
+a checkout has no `dashboard/node_modules`, which is a good part of why nothing has ever compiled the
+interface outside an image build. Measured 2026-09-07: 20 seconds cold, a no-op warm.
 
 *Done when:* `./tests/run.sh m-a8` is green — A8-18 included, so a green suite also means the
 launcher still starts — and A8-15, A8-16 and A8-17 have been observed by the operator with their
@@ -1940,3 +1943,76 @@ independent verification. `./tests/verify/m-a7.sh` runs §9's eight checks, judg
 everything including on `Ctrl-C`, and reported all eight green on 2026-09-04 — but it is written by
 the same hand as the tests it checks, so where a check is in doubt the copy-and-paste form in §9 is
 the one to run.
+
+### M-A8 — the half of FR3 that was never built · posed 2026-09-07
+
+Signed off by the operator on 2026-09-07, after the cases were reordered around the declaration and
+A8-18 was added. 3653 characters, against the 4000-character cap M-B2 discovered.
+
+```
+/goal Implement M-A8 from docs/FEATURE-git-integration.md. Acceptance is cases
+A8-1 to A8-14 and A8-18 in section 5 of docs/TEST-SPEC-git-integration.md, signed
+off 2026-09-07. Write those tests first, then make them pass. A8-15, A8-16 and
+A8-17 are manual and must not be automated.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes.
+
+Why this exists: FR3 has two clauses. The key script and the git-auth route
+exist; "the dashboard shows the public key with copy support and instructions"
+was never built. `git grep 'git-auth' -- dashboard/src` returns nothing -- no
+component has ever called that route. M-A3 recorded it as carried forward and
+nothing carried it, section 7 has been reporting FR3 as covered since, and
+.env.example tells the operator "the dashboard shows you each key". U11 has no
+Covers: row anywhere in the suite.
+
+Seven decisions are taken and are not open:
+
+The repositories reach the page through dashboard/src/routes/+page.server.ts,
+not through a browser fetch. They are state the start script already wrote to
+volumes/_git-secrets/repositories.json, not a sign-in to watch, so the card is in
+the served HTML. Every existing panel in TaskRunner.svelte is client-side; do not
+follow that pattern here. A8-6 depends on this.
+
+The card is shown whether or not the stack is running. The state lives in the
+manifest, not in a session -- that is U11's requirement and A8-14's premise. The
+page currently renders tiles only in the running branch; the card belongs outside
+that condition.
+
+The retry is a POST on the existing /git-auth route and accepts only names
+already in the manifest. It ends in a real clone, so the name arrives over HTTP
+and reaches git. A8-12 covers that and is not optional.
+
+Do not add any key to .env.example. The declaration surface is complete; this
+milestone renders what exists. The section is read live from the bind-mounted
+project directory, so no new configuration is needed anywhere.
+
+A8-6, A8-7 and A8-14 are integration, not system. They start a dashboard against
+a fixture project directory and reach it over HTTP. Two of the three describe
+states a working installation does not have, so fixtures are the only way to
+reach them, and section 3 reserves "system" for the running stack driven through
+docker compose exec.
+
+A8-18 runs `docker build` on dashboard/ to a throwaway tag and removes it after.
+Not `bun run build`: a checkout has no dashboard/node_modules and that command
+exits 127 with "vite: command not found". docker build is what run.sh runs at
+every launch. It took 20s against an empty cache on 2026-09-07.
+
+Do not touch .env, and do not write into volumes/_git-secrets. Every case uses a
+temporary fixture project directory with ENV_DIR pointed at it, the way
+tests/component/m-a3.dashboard-key.test.ts already does. Dashboard-facing cases
+live in tests/component/ and tests/integration/ and import from
+../../dashboard/src/..., not in dashboard/src, which holds the 27 tests that run
+inside the image build.
+
+A8-3 is the one to write carefully. The save action re-renders the whole of .env
+from .env.example plus what it keeps, so every key in an installation passes
+through it, and .env-only keys survive only because their raw lines are copied
+forward. Build the fixture with a fully populated .env including a quoted value
+and a key absent from .env.example, change only GIT_REPOSITORIES, and compare
+the whole file.
+
+Done when `./tests/run.sh m-a8; echo EXIT=$?` is visible in this transcript with
+EXIT=0, and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving earlier
+milestones have not regressed.
+```
