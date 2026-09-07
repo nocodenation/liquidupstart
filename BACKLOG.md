@@ -5,6 +5,33 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**The toolbox image had no `git` and no `openssh`, and the start script's git step runs inside it.**
+*Observed and fixed 2026-09-07. Kept because how it was found is the point.*
+`scripts/linux/start.sh` runs `config/scripts/start/git.sh` at line 139; the dashboard's Build and
+Start buttons run those scripts in the **toolbox** container
+(`dashboard/src/routes/run/+server.ts`), and `config/toolbox/Dockerfile` installed bash,
+ca-certificates, curl, gnupg, openssl, gawk, sed, grep, coreutils, procps, a JRE and the Docker CLI
+on `debian:bookworm-slim` — none of which brings `git`, `ssh` or `ssh-keygen`.
+
+**It was first written here as a reading, not an observation**, and deliberately left that way: the
+toolbox image is not built while writing tests, so nobody had watched it fail. The entry named the
+two steps to take. Both were taken the same day. The image was built and asked — `git: ABSENT`,
+`ssh: ABSENT`, `ssh-keygen: ABSENT` — and then `git.sh` was run inside it against a throwaway
+project: `line 17: ssh-keygen: command not found`, `EXIT=127`.
+
+**The reading understated it.** It said an operator "reaches key generation with no `ssh-keygen`",
+which sounds like a missing key. `start.sh` sets `set -euo pipefail` on line 2 and calls `git.sh`
+unguarded on line 139, fourteen lines before `docker compose up -d`. The failure did not cost the git
+step; it cost **the whole start** — no services, no stack, one line of output. And `git.sh` does not
+exist on `main`, so the defect arrived with this feature and broke the path `CLAUDE.md` calls
+recommended. It survived because every start in this project's history was typed into a terminal.
+
+Fixed by adding `git openssh-client`, and covered by **A8-19**, which runs the git step inside the
+image rather than listing what the image should contain — so the next start script to grow a
+dependency fails there too. The same gap existed in `dashboard/Dockerfile` and was fixed by M-A8, and
+M-A3 found it in the agent images. Three images, one mistake, three separate discoveries: nothing
+compares what the scripts invoke against what the images carry.
+
 **`cleanup.sh` asks for a sudo password in the middle of a long run, and need not ask at all.**
 Noticed during A7-5 on 2026-09-05. Under rootless Docker the host user maps to container root, so
 files the containers wrote belong to subordinate UIDs and the host user cannot remove them; the plain

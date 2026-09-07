@@ -701,6 +701,20 @@ trial assessable instead of anecdotal. Filled in at step 7 of each cycle.
 | M-A5 | 11 to both gates green, 14 in total | ~9 min (08:00–08:09) | 1 changed, 5 new | No — both required runs shown with their exit codes, and A5-4 and A5-5 were seen red with the hook moved aside before the suite was called green | None; one test defect (a line-wrap mismatch in A5-7) fixed during the run, no product defect surfaced | No — the eight cases were implementable as signed off; A5-6 changed file, not substance | Fresh session. Orientation cost roughly five turns: the two documents, the hook, the start script, the fixture library and the M-A4 tests it builds on. Nothing reported missing. **The turn bound held for the whole cycle** for the first time since M-A3d: both gates at turn 11, the documentation by turn 14, against a bound of 35 that had been set with the previous two overruns in view |
 | M-A6 | 27 to both gates green, 34 in total | 25 min (13:50–14:15 CEST; the run reported it as 11:50–12:15, which is UTC — every other row here is local time, so the row read as if M-A6 preceded M-A5's verification) | 13 changed (7 of them earlier milestones' tests and fixtures, 2 of them the documents), 9 new | No — both required runs are in the transcript with their exit codes, and the seven §9 checks were run, including the three negative controls | None in the product. Three defects found by the new cases themselves: an M-A4 refusal that named no next step, the container fixtures' seeding push, and a negative control that moved one of the hook's two copies | No — the twelve automated cases were implementable as signed off; §9 changed in three places to match what the milestone actually made true | Fresh session. Orientation cost roughly seven turns: the two documents, the hook, the fixture library, the M-A4 and M-A5 tests it builds on, and the compose mounts. Nothing reported missing. **The turn bound held**: both gates at turn 27 of 40, the verification script and the documentation by turn 34 |
 | M-A7 | 32 to both gates green, 45 in total — at the bound | 25 min (13:32–13:57) | 4 changed (the runner, the fixture library and two of M-A0's own tests), 5 new (2 end-to-end cases, 2 integration cases, the verification script), plus both documents and `BACKLOG.md` | No — both required runs are in the transcript with their exit codes, and all eight §9 checks were run, the two negative controls matching the lists derived from the sources before the run | None in the product: nothing had to be repaired for the chain to run end to end. Two corrections to §9 itself — a seeding push the hook refuses, and a control that could not discriminate | Yes — A7-3 and A7-4 each gained a probe the signed-off case did not name, without which both would pass with the hook disabled; §9 gained a second negative control | Fresh session. Orientation cost roughly nine turns: the two documents, the start script, the hook, the command, the fixture library, the runner and its own tests, and a chain built by hand in the container to settle whether the declaration parser would take a local path. It will not — SSH URLs only — which is what decides the `ssh` stand-in. **The turn bound was met and then reached**: both gates at turn 32 of 45, and the verification script, the two documents, `BACKLOG.md` and `HANDOFF.md` took the remaining thirteen. The same shape as M-A3e, M-A4 and M-A6 — the build fits, the record the rules require does not, and the bound has now been set with that in view three times without being widened |
+| M-A8 | **120 to both gates green, 127 in total** — no bound was set | **48 min (17:29–18:17)** | 6 changed (2 of them M-A3's tests, plus the Dockerfile, the page, its server load and the stylesheet), 3 new in `dashboard/`, 7 new test files and 4 new test libraries, plus both documents and `BACKLOG.md` | No — both required runs are in the transcript with their exit codes, and A8-6 was proven able to fail: with the public key file removed the label still renders and the key is gone, and the key is present twice in the raw HTML against once after the hydration payload is stripped | None in the card. Roughly a third of the wall clock went on the environment rather than the milestone: the working copy was `main`-shaped, so `volumes/_git-secrets` had to be restored from the operator's archive and the stack restarted on this branch, and `liquidupstart/opencode:latest` — rebuilt by OC-20 from a `main`-shaped checkout — had no `ssh`, which failed A3-7 until the image was rebuilt **Amended after the diff review, 2026-09-07: rework was needed, and outside the card.** Three defects in the product and two in the tests, none of which the suite could see. *The toolbox image carried no `git` and no `openssh`*, and the dashboard's Start button runs the start script there — the run had recorded this in `BACKLOG.md` as a reading and named the two steps to confirm it; both were taken, and the reading understated it: under `set -euo pipefail` the git step does not fail, the whole start does, fourteen lines before `docker compose up`. *The card was built from the manifest alone*, so a repository declared in `.env` and not yet prepared was not reported as missing but not reported at all, under a message claiming everything was cloned — reachable by saving the configuration without restarting. *And `startDashboard` threw after `docker run` had succeeded* without removing the container, which left three of them and an image behind and put the next run on a dirty machine; the milestone suite was seen red once in five runs and has not been red since. Fixed, and covered by A8-19 and A8-20: 44 cases across 9 files, full suite 321 plus the dashboard's 27, `EXIT=0` | Yes, in the harness rather than in the cases: no route module could be imported by a host-side test at all, so `tests/lib/svelte.ts` had to exist before A8-1 could be written. The fourteen cases themselves were implementable as signed off | Fresh session. Orientation cost roughly eight turns: the two documents, the dashboard's load/save, the start script and its parser, the fixture library, and six probes of Bun's module resolution to find one that could reach a SvelteKit route file without `node_modules`. **The environment, not the build, is what the wall clock measures here** — the milestone suite was green at turn **63** of 127, and the 57 turns between that and both gates green went on the documents, the negative controls, and repairing a stack and an image that two earlier runs had left in a different shape. **These figures are read out of the session transcript, not counted by hand** — see the note under this table |
+
+**The turn counts before M-A8 are the agent's own count of its messages; M-A8's are measured.** Asked
+to check them, the run that produced the M-A8 row read them out of the session transcript
+(`~/.claude/projects/<project>/<session-id>.jsonl`, one API turn per `requestId`) and found its own
+report wrong in both directions: **127 turns against the ~94 it had reported**, a quarter low, and 48
+minutes against the 51 it claimed, because the elapsed time had been taken from a clock reading in
+the middle of the final turn rather than at its end. The tool calls were 138 — 121 Bash, 14 Write, 3
+Edit — which is more than the turn count because some turns issue two.
+
+That matters for this table rather than for the milestone. Every row above reports a number an agent
+counted by recalling its own conversation, and the one time it was checked it was out by 28. Treat
+those as estimates; the transcript is the record, and the query above is three lines of Python. It is
+the same lesson as *facts are computed, conduct is taught*, applied to this document's own evidence.
 
 **M-A0 was independently verified on 2026-08-29** by the operator, not by its author: the four
 checks (suite green, discovery listing, a deliberately failing tree returning a non-zero exit, and a
@@ -1944,7 +1958,7 @@ everything including on `Ctrl-C`, and reported all eight green on 2026-09-04 —
 the same hand as the tests it checks, so where a check is in doubt the copy-and-paste form in §9 is
 the one to run.
 
-### M-A8 — the half of FR3 that was never built · posed 2026-09-07
+### M-A8 — the half of FR3 that was never built · posed 2026-09-07 · both gates EXIT=0 at turn 120 of 127
 
 Signed off by the operator on 2026-09-07, after the cases were reordered around the declaration and
 A8-18 was added. 3653 characters, against the 4000-character cap M-B2 discovered.
@@ -2016,3 +2030,44 @@ Done when `./tests/run.sh m-a8; echo EXIT=$?` is visible in this transcript with
 EXIT=0, and `./tests/run.sh; echo EXIT=$?` also shows EXIT=0, proving earlier
 milestones have not regressed.
 ```
+
+**Outcome — built 2026-09-07.** Fourteen automated cases green, the three manual ones untouched and
+still owed. What it changed, and what it found:
+
+*The card.* `dashboard/src/lib/server/git.ts` is new and holds everything the milestone reasons
+about — the manifest, the declaration, the per-repository instruction, and the retry.
+`+page.server.ts` returns it as `data.git` **outside** the running branch, and `GitRepositories.svelte`
+renders it, so the card is in the served HTML whether or not the stack is up. `git-auth/+server.ts`
+keeps its `GET` and now reads through the same module, which is what makes the *"the route and the
+page agree"* check in §9 step 3 a real comparison rather than two readings of one file.
+
+*The retry does not re-implement cloning.* It sets `GIT_REPOSITORIES` to the single declared entry,
+runs `config/scripts/start/git.sh`, and splices the entry that comes back into the manifest it read
+first. One clone implementation, one manifest writer, one place where a `git config` setting is
+decided. The cost is that the dashboard image now installs `bash`, `git` and `openssh` — it carried
+none of them.
+
+*And that is where the milestone found something outside its own scope.* The **toolbox** image has
+the same gap and nothing here closes it: `config/toolbox/Dockerfile` installs bash, curl, gnupg,
+openssl, gawk, sed, grep, coreutils, procps, a JRE and the Docker CLI on `debian:bookworm-slim` —
+**no git and no openssh**. `scripts/linux/start.sh` runs `config/scripts/start/git.sh` at line 139,
+and the dashboard's Build/Start buttons run that script *inside the toolbox*. So an operator who
+never opens a terminal — which is exactly the operator U2 and A8-16 describe — reaches the git step
+with neither `ssh-keygen` nor `git` present. This is read out of the Dockerfile, not observed: the
+image is not built on this machine, so nobody has watched it fail. It is in `BACKLOG.md` with that
+distinction intact, because guessing at it is how a start that reads as success gets shipped.
+
+*What the cases themselves settled* is per case in §5 of the test specification, in the "What it
+found" rows. The two that decide the milestone: A8-6 had to strip SvelteKit's hydration payload out
+of the HTML before searching it, or it would have been green on a page that ships the key and draws
+nothing — the same defect it exists to catch, one layer out; and A8-4 forced the declaration to be
+read through `git-repos.sh parse` rather than split a second time in TypeScript, which is A3c-12's
+argument applied to the card.
+
+*One thing had to be built before any of it could be tested.* A checkout has no
+`dashboard/node_modules`, so no module under `dashboard/src/routes/` that names `$lib/...` or
+`@sveltejs/kit` can be imported by a test on the host — which is why every dashboard case before this
+one happens to test a file whose imports are node built-ins, and why nothing had ever asserted a
+page's `load`. `tests/lib/svelte.ts` supplies the `$lib/*` alias SvelteKit itself makes and a
+one-function stand-in for `redirect`. It is the only substitution in the milestone, and A8-6, A8-7
+and A8-14 run the same code under the real SvelteKit inside the image, so it cannot hide a defect.

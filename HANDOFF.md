@@ -53,7 +53,7 @@ branches.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
-| `feature/git-integration` | **#9** (draft) | `main` | M-A0 to M-A7 |
+| `feature/git-integration` | **#9** (draft) | `main` | M-A0 to M-A8 |
 | `feature/liquid-java-extensions` | **#10** (draft) | `feature/git-integration` | M-B1 to M-B3 |
 | `fix/openclaw-2026-9-1` | **#11** | `main` | The pin to 2026.7.1 |
 | `fix/bun-runner-health` | **#12** | `main` | One line: the health check |
@@ -103,8 +103,13 @@ containers rather than the code.
 Control UI answering 200 with no pairing prompt, configuration valid, Claude CLI 2.1.263, and a full
 agent turn verified end to end through the subscription route.
 
-**The git integration is complete.** M-A0 to M-A7 built, each verified independently and posted to
+**The git integration is complete.** M-A0 to M-A8 built, each verified independently and posted to
 #9. All four manual cases observed, including the three that failed.
+
+**M-A8 was built on 2026-09-07** — the launchpad card, the retry, and the configuration round trip
+nothing had ever run. Fourteen automated cases green; **A8-15, A8-16 and A8-17 are manual and still
+owed**, and their procedures are in §9 of the test specification. The card can be seen without them:
+`./run.sh` and look under the service tiles.
 
 **The Java extensions:** M-B1 and M-B2 built and verified. **M-B3 is specified and not built.**
 
@@ -194,6 +199,13 @@ so its environment is not injected, so authentication fails — was wrong. The c
 login. The operator asked what exactly was being proposed instead of letting it be built, and one
 message of measuring replaced a change against a problem that did not exist.
 
+**A payload is not a page.** M-A8's whole point was that the route had been correct and unread for
+four milestones, so its case had to assert the *served page*. SvelteKit embeds the page data in the
+HTML for hydration — so `html.includes(publicKey)` is green on a page that ships the key and draws
+nothing, which is the same defect one layer out. The assertion strips `<script>` blocks first, and
+the control that proves it can fail was run: with the key file removed the label still renders and
+the key is gone.
+
 **A green suite says nothing about a path nobody walks.** Two whole classes of defect surfaced only
 when someone tried to *use* the thing: the upgrade path (every existing installation's situation, and
 no cold start can reach it, because it deletes the state first) and sending an actual message (which
@@ -229,6 +241,9 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
 
+0. **A8-15, A8-16 and A8-17** — the three manual cases M-A8 owes, in a browser. A8-17 is the one to
+   run first: it is the only rehearsal this feature has of a revoked key, and its step 3 asks whether
+   a start that leaves a repository broken *reads* as success.
 1. **M-B3** — the only unbuilt milestone, on `feature/liquid-java-extensions`. It asks whether Liquid
    loads what we build, and its negative control — a NAR built against the wrong API must *not* load —
    is the case, not an addition to it.
@@ -240,7 +255,21 @@ route, and the pairing decision happens only after a browser signs a challenge.
    rather than open — the Claude CLI install, fixed 2026-09-05, and `bun_runner` reporting unhealthy
    with no app, fixed by #12.
 
-**The working copy is `main`-shaped and its `volumes/` was destroyed by OC-20.** Anything on a feature
-branch needs `_git-secrets.tar` restored first — its archived keys *are* the ones registered with
-GitHub — or two fresh registrations. `git-repo-info` says which case you are in rather than failing
-silently.
+~~**The working copy is `main`-shaped and its `volumes/` was destroyed by OC-20.**~~ **Repaired
+2026-09-07 while running M-A8**, because the second gate cannot pass without it. Three things had to
+happen, and the next person switching branches will need the same three:
+
+1. `tar -xf ../liquidupstart-backups/_git-secrets.tar -C volumes/` — the archived keys are the ones
+   registered with GitHub, and both declared repositories cloned on the first attempt with them.
+2. `./scripts/linux/start.sh` — the containers were still the `main`-shaped ones. The discriminator
+   in "One working copy, one stack" above is what says so; it now answers
+   `/usr/local/bin/git-repo-info`.
+3. `./config/scripts/build/opencode.sh`, then `docker compose up -d opencode`. **OC-20 rebuilt all
+   four images from a `main`-shaped checkout**, so `liquidupstart/opencode:latest` had no `ssh` and
+   A3-7 failed on it — the same gap M-A3 fixed in the templates months ago, reintroduced by building
+   from a branch that does not carry the fix. The other three images were not rebuilt and did not
+   need to be, but **any image built during OC-20 is suspect on a feature branch** and the check is
+   one line: `docker compose exec -T <service> sh -lc 'command -v ssh git'`.
+
+Both gates then passed: `./tests/run.sh m-a8` 35/35, and `./tests/run.sh` 312/312 plus the 27
+dashboard tests.

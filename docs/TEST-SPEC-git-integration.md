@@ -2355,6 +2355,45 @@ the start log three minutes later, that is this milestone's finding rather than 
 clipboard, not this stack, and a human looking at a screen is the only honest test of it. It lives
 inside A8-16 as an observation rather than as a case.
 
+**Four decisions taken while building it, which the cases did not anticipate — and one limit the
+card inherits.**
+
+*The route modules had to be made importable at all.* A checkout has no `dashboard/node_modules`, so
+nothing under `dashboard/src/routes/` can be imported by a test on the host the moment it names
+`$lib/...` or `@sveltejs/kit` — which is why every dashboard case before this one happens to test a
+route file whose imports are node built-ins. `tests/lib/svelte.ts` registers `$lib/*` as the alias
+SvelteKit itself makes, pointing at the real files, and `@sveltejs/kit` as a one-function stand-in
+for `redirect`. That stand-in is the only substitution in the milestone: it is confined to one
+function, everything else in the module under test is the shipped code, and A8-6, A8-7 and A8-14 run
+that same code under the real SvelteKit inside the image, so it cannot hide a defect. One
+consequence lands outside M-A8 — `git-auth/+server.ts` now imports `$lib/server/git`, so the two
+M-A3 component tests gained one import line each.
+
+*The card reads the declaration through `git-repos.sh parse`.* It has to know what is declared while
+the manifest says nothing (A8-7, A8-14), and the alternative — splitting `GIT_REPOSITORIES` in
+TypeScript — is the second parser A3c-12 already argued against. Running the one that exists costs a
+subprocess per page load and cannot disagree with the start script about what a declaration means.
+
+*The retry re-runs the start script's git step for a single repository.* It sets `GIT_REPOSITORIES`
+to that one entry, runs `config/scripts/start/git.sh`, and splices the entry that comes back into
+the manifest it read beforehand. So the clone, the `git config` settings left on it and the entry's
+own shape all come from the script that owns them, and no second clone implementation exists to
+drift. The price is that the dashboard image had to gain `bash`, `git` and `openssh`, which it
+carried in none of its layers.
+
+*A8-6 searches the rendered markup rather than the served bytes.* SvelteKit embeds the page data in
+the HTML for hydration, so searching the whole response would pass on a page that ships the key and
+draws nothing — the very defect the case exists to catch, one layer out. The assertion strips
+`<script>` blocks first.
+
+*And the limit.* The card reports what the manifest knows, and the manifest's `cloned` means **the
+clone is on disk**, not **the key still works** — `git.sh` sets it by testing for `.git`. So a deploy
+key revoked at the host after a successful clone leaves the card reading "cloned" until something
+tries to use the key. A8-17 does not fall into this, because its step 2 removes the clone, which is
+what a reset does; an operator whose key is revoked on a Tuesday and who never resets does. Closing
+it would mean the card running `git ls-remote` per repository on every page load — a network call per
+render, on a page that must answer while the stack is down — so it is recorded rather than built.
+
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | A8-1 | Component | The configuration view presents section 10 with all three fields | A1-2 is titled "the section is shown in the dashboard" and asserts a function applied to a title string. This asks the view what it will actually render |
@@ -2375,6 +2414,8 @@ inside A8-16 as an observation rather than as a case.
 | A8-16 | **Manual** | U2 in the browser: key from the launchpad, registered, tested | The operator never opens a terminal — copy the key from the card, register it at the host, press the card's test, watch the repository turn reachable |
 | A8-17 | **Manual unhappy** | U11 in the browser: a key that no longer works | With the deploy key removed at the host, the launchpad names that repository as unreachable and offers its current key, the start does not read as success, and the state survives a reload |
 | A8-18 | Integration | The dashboard image still builds | `run.sh` rebuilds the dashboard image on every launch and the image build runs `bun run build`. A component that does not compile passes `bun test src` and breaks the launcher instead — with no interface left to fix it from |
+| A8-19 | Integration | The git step runs inside the toolbox, which is where the Start button runs it | Found by running it: the toolbox carried no `git` and no `openssh`, so `git.sh` died at line 17 with `ssh-keygen: command not found` — under `set -euo pipefail`, fourteen lines before `docker compose up` |
+| A8-20 | Component + integration **unhappy** | The card compares the manifest against the declaration | A repository declared in `.env` and absent from the manifest was not reported as missing — it was not reported at all, under a message saying everything was cloned |
 
 #### Detail per case
 
@@ -2404,6 +2445,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | `load` from `dashboard/src/routes/config/+page.server.ts`, over the real `.env.example`. |
 | **Steps** | Call `load`. Find the git section in what it returns and read its items. |
 | **Expected** | The section is present with its display title and description, and carries all three fields — `GIT_USER_NAME`, `GIT_USER_EMAIL`, `GIT_REPOSITORIES` — each with the help text `.env.example` gives it and a text input. It is not collapsed and not marked autogenerate. |
+| **What it found** | Passed on the first run, against code nobody had changed: the view does present section 10 with all three fields, so the gap A1-2 left was in the testing rather than in the page. What it fixes is the reach of the assertion — the help text is now load-bearing, and the two sentences an operator depends on, *"the dashboard shows you each key"* and the refusal of `https://`, go red if a later edit drops them. |
 | **Covers** | FR10, U1. |
 
 ##### A8-2 — a declaration typed into the view takes effect
@@ -2415,6 +2457,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | The form data the view submits, with `GIT_REPOSITORIES` set to `git@github.com:example/one.git\|read\|protected`. |
 | **Steps** | Invoke `save` with that form data. Read `.env` from disk. Then call `load` again. |
 | **Expected** | The entry is in `.env` in exactly the form `git-repos.sh` parses, and `load` returns it as the field's value. Both directions, in one case, because either one alone passes on a broken view. |
+| **What it found** | Passed on the first run. The round trip works and the value comes back quoted, which is what `git-repos.sh` accepts. The case does not stop at comparing strings: it feeds the value it read out of `.env` to the real parser and checks the row that comes back, so *"in exactly the form `git-repos.sh` parses"* is a claim this case can actually make. |
 | **Covers** | FR10, FR11, U1. |
 
 ##### A8-3 — and it loses nothing it was not asked about
@@ -2426,6 +2469,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | Every key of a configured installation, one of them quoted, plus a key present in `.env` and absent from `.env.example`. |
 | **Steps** | Invoke `save` changing only `GIT_REPOSITORIES`. Compare the file before and after. |
 | **Expected** | Every other key keeps its exact value and its quoting; the `.env`-only key is still there verbatim; and the write goes through a temporary file and a rename, so an interrupted save cannot leave a half-written `.env`. |
+| **What it found** | Passed on the first run, against a `.env` carrying all 57 keys of `.env.example` with `LIQUID_PASSWORD` quoted and `OPERATOR_NOTE=kept-by-hand` present only in `.env`. Nothing was lost. Writing it found two things. The form has to be built the way the **view** submits it — an unticked checkbox is absent, so a form assembled by hand turns every `ENABLE_*` to `0` and the case fails for a reason that has nothing to do with the save. And the atomic write is asserted as a property rather than by reading the source: the file's inode changes, which a rewrite in place would not do. |
 | **Covers** | FR10, NFR1. |
 
 **Part 2 — the launchpad card · U2 and U11.**
@@ -2439,6 +2483,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | A fixture holding `repositories.json` with two entries — one `write\|protected` and cloned, one `read\|direct` and failed — and the generated public keys beside them, in the layout `git.sh` writes. |
 | **Steps** | Call `load` with `ENV_DIR` pointing at the fixture. Read the repositories out of what it returns. |
 | **Expected** | Both repositories are present, each with its label, access, policy, public key and fingerprint. The order is the declaration's. |
+| **What it found** | Red until the card existed, which is the point of asserting the page rather than the route: the route had been correct for four milestones and the page carried nothing. It also decided where the declaration is read. The card needs to know what is declared even when the manifest is silent, and rather than parse `GIT_REPOSITORIES` a second time in TypeScript it runs `git-repos.sh parse` — the same argument A3c-12 made for reading the manifest. The consequence is visible in the fixtures: a project directory is not a project directory without `config/scripts/start/`, so the fixtures carry it. |
 | **Covers** | FR3, FR11, U1, U2. |
 
 ##### A8-5 — and nothing of the private half
@@ -2449,6 +2494,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | The same `load`, same fixture — with real-shaped private keys present beside the public ones. |
 | **Steps** | Serialise everything `load` returns and search the whole of it. |
 | **Expected** | No `BEGIN OPENSSH PRIVATE KEY`, and no substring of any private key file, anywhere in the payload. |
+| **What it found** | Passed as soon as A8-4 did, and found nothing — which is worth only as much as the material it searched. The fixture keys are generated by `ssh-keygen` rather than invented, so the strings the payload is searched for are real private key lines rather than a pattern someone thought a private key looks like. |
 | **Covers** | NFR1, FR3. |
 
 ##### A8-6 — the operator can see it without a terminal
@@ -2461,6 +2507,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Steps** | `GET` the launchpad. Parse the manifest. For each declared repository, search the served HTML. |
 | **Expected** | Each repository's label and public key appear in the HTML, and so does its fingerprint. |
 | **Unhappy twin** | A8-7. |
+| **What it found** | The case that decides the milestone, and it needed correcting before it could decide anything. SvelteKit embeds the page data in the served HTML for hydration, so `html.includes(publicKey)` is green on a page that ships the data and draws nothing — the very defect the case exists to catch, one layer further out. The assertion strips `<script>` blocks first. Measured 2026-09-07: the key appears **twice** in the raw HTML and **once** after stripping. Negative control, run the same day: with the public key file removed the label is still rendered and the key is gone, so the case goes red exactly where §9 step 6 says it should, rather than passing on a card that renders the label alone. |
 | **Covers** | FR3, U2. |
 
 ##### A8-7 — before the first start, it says so
@@ -2471,6 +2518,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | The same, against a fixture whose `_git-secrets` does not exist. |
 | **Steps** | Point the dashboard at a project directory with no secrets directory. `GET` the launchpad. |
 | **Expected** | The card is present and says the stack must be started once for the keys to be generated. It names that as the next step, in the shape FR20 requires, rather than rendering an empty list or an error. |
+| **What it found** | Red first, and for the right reason — the card said "no repositories are declared" while two were. Building it found a second way to tell the same lie: with the declaration read through `git-repos.sh`, a project directory that does not carry that script parses to nothing, which is indistinguishable from nothing being declared. It is unreachable in an installation, where `ENV_DIR` is the project root, but it was reachable in a fixture — so the card now says the parser is missing instead of reporting an empty declaration. |
 | **Covers** | FR3, FR20, U2. |
 
 ##### A8-8 — U11, on the page
@@ -2481,6 +2529,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | The launchpad's `load`, against a fixture whose second repository has `cloned: false` and an error. |
 | **Steps** | Read that repository out of the page data. |
 | **Expected** | It is marked unreachable, carries the error the start recorded, carries its **current** public key — the one on disk now, not the one that was registered — and offers the retry. |
+| **What it found** | Red until the card existed. The clause that earned its keep is *"its **current** public key"*: the fixture generates the key, writes the manifest, and then generates it again, so an implementation that carried the key in the manifest — or cached it — fails. Without that step the case passes on both. |
 | **Covers** | FR3, FR11, U11. |
 
 ##### A8-9 — and does not flag the healthy one
@@ -2490,6 +2539,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Premise** | A card that marks everything as needing attention satisfies A8-8 and tells the operator nothing. The distinction is the whole value. |
 | **Steps** | The same fixture; read the **first** repository, the one that cloned. |
 | **Expected** | Not marked unreachable, no error, and it does not offer a retry it does not need. |
+| **What it found** | Passed with A8-8, and it is the reason A8-8 means anything: the two ran against one fixture, so a card that marks everything as needing attention cannot satisfy both. |
 | **Covers** | U2, U11. |
 
 ##### A8-10 — the instruction matches the access
@@ -2500,6 +2550,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | The instruction text the page produces per repository. |
 | **Steps** | Read both fixture repositories' instructions. |
 | **Expected** | The `write` entry's instruction asks for write access explicitly; the `read` entry's says read-only. Neither is the generic sentence. |
+| **What it found** | Red until the card existed, though not because the wording was wrong — the route already distinguished the two, one sentence per access. What the case changed is that there is now one function producing that sentence for both the route and the page, so the two cannot drift into disagreeing about which repository needs write access. |
 | **Covers** | FR3, §3.1, NFR5. |
 
 ##### A8-11 — the retry is a real clone
@@ -2511,6 +2562,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | Two declared repositories; the local bare remote is reachable, the other is not. |
 | **Steps** | Invoke the action naming the reachable one. Read the manifest afterwards. |
 | **Expected** | The clone exists on disk, that entry reports cloned with no error, and **the other entry is byte-for-byte unchanged**. |
+| **What it found** | Green once the action existed, and it settled the design rather than merely checking it. The retry does **not** re-implement cloning: it re-runs `config/scripts/start/git.sh` with `GIT_REPOSITORIES` set to the single repository, then splices the entry that comes back into the manifest it saved beforehand. The clone, the `git config` settings it leaves behind and the manifest entry's shape therefore come from the one script that owns them. The price is in the image: the dashboard container had `bash`, `git` and `openssh` in none of its layers, and now installs all three — which is exactly the kind of change A8-18 exists to notice. |
 | **Covers** | FR3, FR11, U2, U11. |
 
 ##### A8-12 — and it clones nothing it was not told to
@@ -2520,6 +2572,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Premise** | The action takes a repository identifier over HTTP and ends in `git clone`. The declaration is the only list of what this stack may talk to, and the action must consult it rather than trust its input. |
 | **Steps** | Invoke the action with: a name absent from the manifest; a name carrying path traversal; and a full SSH URL that is not declared. |
 | **Expected** | All three refused before any process starts, naming the declaration as where repositories come from. No clone directory appears, and the manifest is unchanged. |
+| **What it found** | Green with A8-11, and it found that the guard needs no parsing at all. All three inputs — an undeclared name, `../../etc/passwd`, and an SSH URL for a repository this stack does not declare — are refused by one rule: the name has to equal a `name` in the manifest. There is no traversal check and no URL matcher to get wrong. A fourth input, the empty string, was added to the case for the same reason. |
 | **Covers** | NFR5, FR11. |
 
 ##### A8-13 — a retry that fails, reports failure
@@ -2530,6 +2583,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | The action, against a declared repository whose key is registered nowhere. |
 | **Steps** | Invoke the retry. Read the manifest and the response. |
 | **Expected** | The repository is still unreachable, the error is the authentication failure and not a generic one, and the response says so. The public key is still offered, because that is what the operator needs next. |
+| **What it found** | Green once the retry ran the real script, and that is what makes the error worth reading: it is git's own refusal, whitespace-collapsed by `git.sh`, so the case asserts both halves of it — `Permission denied (publickey)` and `Could not read from remote repository` — rather than a message this milestone wrote for itself. |
 | **Covers** | FR20, U11. |
 
 ##### A8-14 — declared, and unaccounted for
@@ -2540,6 +2594,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | The same, against a fixture whose `.env` names two repositories while `repositories.json` is absent, then present but truncated mid-JSON. |
 | **Steps** | `GET` the launchpad in both states. |
 | **Expected** | Both times the page says two repositories are declared and their state is unknown, and names starting the stack as the next step. Neither an empty card nor a stack trace. |
+| **What it found** | Green once the count came from the declaration rather than the manifest. Both broken states reach it: a missing file and a file truncated mid-JSON land in the same branch, the page answers 200 in both, and it names the two repositories it cannot account for. A card built from the manifest alone can only say nothing here, which is the lie the case was written against. |
 | **Covers** | FR10, FR11, FR20. |
 
 **Part 3 — the operator, in a browser · manual.**
@@ -2577,6 +2632,32 @@ drive it, which is a thing worth knowing before reaching for one.
 | **The failure to watch for** | A start that reads as success. If the operator can reach the end of a start and see nothing amiss while a repository is broken, the case has found what it was written to find, whatever the card does afterwards. |
 | **Covers** | FR3, FR20, U11. |
 
+**Part 4 — the paths the operator's buttons take.**
+
+##### A8-19 — the start the Start button actually runs
+
+| | |
+|---|---|
+| **Premise** | A8-16 claims an operator can walk U2 without opening a terminal, and the first thing that operator does is press **Start**. That does not run on the host: `dashboard/src/routes/run/+server.ts` spawns `scripts/linux/start.sh` inside the **toolbox** container. `start.sh` sets `set -euo pipefail` on line 2, calls `config/scripts/start/git.sh` unguarded on line 139, and reaches `docker compose up -d` on line 153. Every start in this project's history had been typed into a terminal, so nothing had ever taken that path. |
+| **Component** | `config/scripts/start/git.sh`, run inside `liquidupstart/toolbox:latest` against a fixture project. |
+| **Test data** | A declared repository on a host that refuses connections, so the clone fails fast and offline, and a pre-seeded `known_hosts` so the step does not reach for `ssh-keyscan`. |
+| **Expected** | The step completes, generates the agent key and the per-repository key, writes the manifest, and reports the unreachable clone as a warning naming the key to register — A3c-7's rule, in the container that actually runs it. And **nothing in its output is a missing command**, which is the assertion that survives the next dependency a start script grows. |
+| **What it found, before it was written** | On 2026-09-07 the toolbox installed bash, curl, openssl, gawk, sed, grep, coreutils, a JRE and the Docker CLI — no `git`, no `ssh`, no `ssh-keygen`. Observed rather than read: the image was built and asked, then `git.sh` was run inside it and answered `line 17: ssh-keygen: command not found`, `EXIT=127`. Under `set -e` that does not cost the git step, it **costs the start** — no `docker compose up`, no stack, one line of output. `git.sh` does not exist on `main`, so the defect arrives with this feature, and the path it breaks is the one `CLAUDE.md` calls recommended. Fixed by adding `git openssh-client` to `config/toolbox/Dockerfile`: the same gap `dashboard/Dockerfile` had, and the same one M-A3 found in the agent images. Three images, one mistake. |
+| **Covers** | FR3, FR11, U2, U11. |
+
+##### A8-20 — the manifest is not the declaration
+
+| | |
+|---|---|
+| **Premise** | The manifest is what the last start prepared; the declaration in `.env` is what the operator asked for. They part company on an ordinary sequence — declare a repository in the configuration view, save, do not restart yet, which is **A8-15 step 2** — and again inside the retry, because `git.sh` writes `repositories.json` whole from the declaration it is handed and the retry hands it one entry. |
+| **Component** | `gitCard`, and the served page. |
+| **Steps** | With two declared and both in the manifest, read the card. Then narrow the manifest to one, leaving `.env` alone, and read it again — and fetch the page, because carrying the data is not drawing it. |
+| **Expected** | With the two in agreement, nothing is pending. With them apart, the missing repository is named as declared and not yet prepared, it appears in the served markup, and the message no longer claims the declared repositories are cloned — any completeness claim is scoped to what was **prepared**. |
+| **What it found, before it was written** | The card was built from the manifest alone and answered *"All 1 prepared repository is cloned into ./volumes/repos"* while `.env` named two. The second was not reported as missing; it was not reported at all. That is U11's shape — *"a start that ends in a list of URLs and passwords while two repositories are unreachable"* — reached from the other side, and it needs no crash to produce: a save without a restart is enough. |
+| **And what it found in its own fix** | The singular branch of the new message read *"All prepared repository is cloned"*. Written, run, red, corrected — which is the argument for asserting the wording rather than eyeballing it. |
+| **Covers** | FR11, FR20, U1, U11. |
+
+
 **And one guard under all three parts.**
 
 ##### A8-18 — the dashboard compiles
@@ -2590,6 +2671,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Why not `bun run build` on the host** | Because it does not work, and finding that out is half of why this case exists. There is no `dashboard/node_modules` in a checkout — `bun run build` answers `vite: command not found`, exit 127. Asserting that would be asserting a broken host command, not the gate the launcher passes through. `docker build` runs `bun install --frozen-lockfile`, then `bun run test && bun run build`, which is precisely what an operator's launch does. |
 | **Why integration rather than contract** | Contract is defined here as reading a declaration, with no Docker. This runs one. It needs no stack, so it is not system either. |
 | **Why it is in this milestone** | It guards the whole dashboard rather than this card, so strictly it belongs to no feature. Until now the exposure was theoretical: nothing in this repository had ever touched a Svelte component. M-A8 changes `+page.svelte` and `+page.server.ts`, which makes it real, and the milestone that creates a risk is the honest place to answer it. |
+| **What it found** | Passed, in 2.1 s against a warm cache — and it stopped being theoretical during this milestone. `dashboard/Dockerfile` gained `bash git openssh-client openssh-keygen curl` for the retry and `+page.svelte` gained a component, so this is now the only check in the repository that would notice either of them breaking the build. It also confirmed the reason it is not `bun run build`: there is still no `dashboard/node_modules` in the checkout, and there does not need to be. |
 | **Covers** | FR3, FR10. |
 
 ---
@@ -2607,7 +2689,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
-| M-A8 | Component and system for the page, contract for the wording and for the build, three manual cases | The subject is a screen. What can be read out of served HTML is automated here; what needs eyes on a browser is manual and says so, rather than being approximated by a headless one |
+| M-A8 | Component and integration for the page, contract for the wording, integration for the build, three manual cases | The subject is a screen. What can be read out of served HTML is automated here; what needs eyes on a browser is manual and says so, rather than being approximated by a headless one. **"System" was corrected to "integration" on 2026-09-07**: the cases drive a dashboard the test starts against a fixture, not the running stack through `docker compose exec`, and the row said otherwise while §5 already said this |
 
 
 ---
@@ -2620,20 +2702,20 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 |---|---|
 | FR1 Repo workspace | A1-4, A1-8 |
 | FR2 Git identity | A1-6, A1-7, A1-9 |
-| FR3 Key management | M-A3 (the script and the route), **M-A8** (the presentation) — this row read `M-A3` alone until 2026-09-07, while half the requirement was unbuilt |
+| FR3 Key management | M-A3 (the script and the route), **M-A8** (the presentation): A8-4, A8-5, A8-6, A8-7, A8-8, A8-10, A8-11, A8-13, A8-18 — this row read `M-A3` alone until 2026-09-07, while half the requirement was unbuilt |
 | FR4 Host key verification | M-A3 |
 | FR5 Free local operations | A1-6 |
 | FR6 Free reads | M-A3 |
 | FR7 Push on request | A2-5 (manual), M-A4 |
 | FR8 Hook guardrails | M-A4 |
 | FR9 Git skill | A2-1, A2-2, A2-3 |
-| FR10 Configuration contract | A1-3, A8-1, A8-2, A8-3 |
+| FR10 Configuration contract | A1-3, A8-1, A8-2, A8-3, A8-14, A8-18 |
 | NFR1 Credentials via `.env` | A1-9 |
 | NFR2 Host-agnostic naming | A1-3, M-A3 |
 | NFR3 State under `volumes/` | A1-8 |
 | NFR4 No Docker socket | Contract test: `docker.sock` absent from `compose.yml` |
 | NFR5 Security posture | Contract test: `cap_drop` and `no-new-privileges` still present |
-| FR11 Declared repositories | A3c-1, A3c-2, A3c-3, A3c-4, A3c-11, A5-1 |
+| FR11 Declared repositories | A3c-1, A3c-2, A3c-3, A3c-4, A3c-11, A5-1, A8-2, A8-4, A8-8, A8-11, A8-12, A8-14 |
 | FR12 Clones follow the declaration | A3c-6, A3c-7, A4-13 |
 | FR13 Explicit working mode | **Nothing — and there is nothing to test.** See below |
 | FR14 Integrate before pushing | A4-11 |
@@ -2642,14 +2724,14 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR17 One sanctioned publishing path | A6-1, A6-2, A6-3, A6-5, A6-12 |
 | FR18 A push outside that path is refused | A6-6, A6-7, A6-8, A6-9, A6-13 |
 | FR19 Agent branches are recognisable | A6-3, A6-4 |
-| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14 |
+| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14, A8-20 |
 | FR32 One test walks the whole path | A7-1, A7-2, A7-5 |
 | FR33 Concurrent publication is safe or refuses | A7-3, A7-4 |
-| NFR1 Credentials via `.env` | A1-9, A6-10 |
+| NFR1 Credentials via `.env` | A1-9, A6-10, A8-3, A8-5 |
 | NFR2 Host-agnostic naming | A1-3, M-A3 |
 | NFR3 State under `volumes/` | A1-8, A6-5 |
 | NFR4 No Docker socket | Contract test: `docker.sock` absent from `compose.yml` |
-| NFR5 Security posture | Contract test: `cap_drop` and `no-new-privileges` still present |
+| NFR5 Security posture | Contract test: `cap_drop` and `no-new-privileges` still present; A8-10, A8-12 |
 | NFR6 Reset by deleting `volumes/` | M-A5 |
 
 NFR4 and NFR5 get contract tests of their own precisely because nothing in the feature would
