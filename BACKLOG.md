@@ -5,6 +5,33 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**A locally built image can belong to another branch, and nothing on this one says so.**
+Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
+branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
+version takes. The image on the machine, `liquidupstart/openclaw:latest`, was **2026.9.1** — built
+eight hours earlier from `feature/openclaw-2026-9-1`, because images live on the host and not in the
+branch. The start wrote a `cliBackends` key, a 2026.9.1 binary answered *"Unrecognized key"*, and
+under a pty it asked `Run "openclaw doctor --fix" now? [Y/n]` in a one-shot container with no stdin.
+
+**The only symptom was a container that did not come back.** Nothing compared the pin against the
+image; nothing named a version at all. Removing the container by hand let the start continue, and it
+then completed: the gateway migrated the legacy key away by itself, reported `restarts=0` and
+`healthy`, and the stack came up with all twenty containers. So the failure mode after the hang is
+worse than the hang — an installation that looks entirely correct while running a version this branch
+does not pin, silently rewriting its own configuration on every start.
+
+**The answer already exists one branch over.** `feature/openclaw-2026-9-1` reads
+`openclaw --version` out of the built image and `meta.lastTouchedVersion` out of the state, and
+refuses rather than guessing — *facts are computed, conduct is taught*, applied to exactly this. On
+`main` and on this branch that probe does not exist, so the check arrives whenever #13 lands.
+
+**And it is not OpenClaw's problem.** Four images are built locally, all tagged `:latest`, and
+nothing anywhere compares a built image against the branch that should have built it. The same class
+struck twice in one day: `liquidupstart/opencode:latest` had to be rebuilt while M-A8 ran, because
+OC-20 had built it from a `main`-shaped checkout and it carried no `ssh`, so A3-7 failed against it.
+A cheap first move is a start-time line naming what each locally built image was built from —
+`.liquidupstart-version` and the build manifest already exist for exactly this kind of question.
+
 **The toolbox image had no `git` and no `openssh`, and the start script's git step runs inside it.**
 *Observed and fixed 2026-09-07. Kept because how it was found is the point.*
 `scripts/linux/start.sh` runs `config/scripts/start/git.sh` at line 139; the dashboard's Build and
