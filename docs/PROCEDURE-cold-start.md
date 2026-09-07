@@ -35,21 +35,29 @@ Written to be run by the operator, in one sitting, from this checkout. It is **d
 It also asks for a `sudo` password partway through, because `volumes/` contains files owned by
 subordinate UIDs the host user cannot remove directly. That prompt is expected; it is not an error.
 
-**Saved beforehand, outside the repository** — `cleanup.sh` deletes `volumes/` wholesale, so a
-backup kept *inside* `volumes/` would go with it:
+**Four things must be copied out first**, and out means *outside the repository*: `cleanup.sh`
+deletes `volumes/` wholesale, so a backup kept inside it dies with the original. Step 0 makes them.
 
-```
-/Users/christof/repos/liquidupstart-backups/
-  .env.bak                     the 252-line configuration
-  _git-secrets.bak             the deploy keys registered with GitHub for
-                               nocodenation/agent-skills and nocodenation/liquidupstart
-  _openclaw-claude.bak         the Claude Code login
-  _openclaw.bak-2026.7.1       OpenClaw state, so the feature branches can be returned to
-  _openclaw.bak-2026.9.1       the state from the failed 2026.9.1 attempt, kept as evidence
-```
+| What | Why | Restoring it afterwards |
+|---|---|---|
+| `.env` | `cleanup.sh` deletes it, and it holds every configured value | **Required.** Without it the run measures a default configuration, not yours |
+| `volumes/_git-secrets` → `_git-secrets.tar` | The deploy keys registered with the repository host | **A choice** — see below |
+| `volumes/_openclaw-claude` → `_openclaw-claude.tar` | The Claude Code login | **A choice** — restoring skips the interactive sign-in |
+| `volumes/_openclaw` → `_openclaw-<version>.tar` | OpenClaw's state, tagged with the version that wrote it | Only for the return path: **OpenClaw refuses to start when its state directory was last written by a newer version**, so going back to an older pin needs the matching state. A downgrade is never only a tag change |
 
-`_openclaw.bak-2026.7.1` is the one that matters most later: **OpenClaw refuses to start when its
-state directory was last written by a newer version.** A downgrade is never only a tag change.
+**The two choices are the interesting part, and they should be made deliberately.**
+
+Restoring `_git-secrets` and `_openclaw-claude` after the reset saves two registrations and a
+browser sign-in — but it also means the run *does not exercise* the path a genuinely new operator
+takes. The 2026-09-05 run deliberately did not restore them, and that is how it discovered that a
+reset invalidates the deploy keys at all, and that `start.sh`'s own sign-in instructions name a
+command that cannot work where they are printed. Both were product defects, and both were invisible
+until someone walked the path.
+
+So: **restore them when the run is about something else** (a version change, a rebuild), and **do not
+restore them when the run is about the new operator's first hour.** Whichever you choose, record it
+in the result — a cold start that skipped the sign-in and one that went through it are different
+results.
 
 ---
 
@@ -86,16 +94,63 @@ pinned stack, not the configuration choices. Regenerating `.env` from `.env.exam
 
 ## 4. The procedure
 
-### Step 0 — confirm the backups exist before anything is destroyed
+### Step 0 — make the backups, then confirm them
+
+Idempotent, and safe to re-run. **Archives, not directory copies** — see the note below.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-git branch --show-current    # expect: feature/openclaw-2026-9-1
-ls -la /Users/christof/repos/liquidupstart-backups/
+B=/Users/christof/repos/liquidupstart-backups
+mkdir -p "$B"
+
+cp -a .env "$B/.env.bak" && chmod 600 "$B/.env.bak"
+[ -d volumes/_git-secrets ]     && tar -cf "$B/_git-secrets.tar"     -C volumes _git-secrets
+[ -d volumes/_openclaw-claude ] && tar -cf "$B/_openclaw-claude.tar" -C volumes _openclaw-claude
+
+# OpenClaw's state, tagged with the version that wrote it. Never overwritten: an
+# older tagged archive may be the only route back to an older pin.
+if [ -f volumes/_openclaw/openclaw.json ]; then
+  V="$(docker run --rm --user 0:0 -v "$(pwd)/volumes/_openclaw:/state" --entrypoint node \
+        liquidupstart/openclaw:latest -e 'const c=JSON.parse(require("fs").readFileSync("/state/openclaw.json","utf8"));process.stdout.write(String((c.meta&&c.meta.lastTouchedVersion)||"unknown"))' 2>/dev/null)"
+  [ -f "$B/_openclaw-$V.tar" ] || tar -cf "$B/_openclaw-$V.tar" -C volumes _openclaw
+  echo "OpenClaw state archived as _openclaw-$V.tar"
+fi
 ```
 
-Expect `.env.bak`, `_git-secrets.bak`, `_openclaw-claude.bak`, `_openclaw.bak-2026.7.1`,
-`_openclaw.bak-2026.9.1`. **If any is missing, stop here.**
+> **Why archives.** The first version of this step copied directory trees and refreshed them with
+> `rm -rf`. That fails on this host: `volumes/_openclaw-claude/skills` is an empty directory that
+> cannot be removed — not by its owner with a writable parent, not by `rmdir`, and not by `rm` inside
+> a privileged container, which answers `Operation not permitted`. It carries no macOS flags and is
+> not a mount point, and the cause was not established. It does not need to be: an archive is a
+> single file, overwritten rather than deleted, and the whole class of problem disappears. A restore
+> extracts into space that `cleanup.sh` has already emptied, so nothing has to be removed there
+> either.
+
+Then confirm, and note which branch you are on — the procedure does not care which, but the result
+must say, because the branch decides the stack's shape:
+
+```bash
+git branch --show-current
+ls -A /Users/christof/repos/liquidupstart-backups/ | grep -E '^\.env\.bak$|\.tar$'
+```
+
+`ls -A`, not `ls`: **`.env.bak` is a dotfile and a plain `ls` hides it** — the one file that cannot be
+reconstructed, invisible in the check meant to confirm it. That was the second defect found by
+running this step.
+
+Expect `.env.bak` and at least one `_openclaw-<version>.tar`. `_git-secrets.tar` and
+`_openclaw-claude.tar` are absent only if the stack never had them. **If `.env.bak` is missing, stop
+here.**
+
+To restore, after the reset:
+
+```bash
+B=/Users/christof/repos/liquidupstart-backups
+cp -a "$B/.env.bak" .env && chmod 600 .env          # always
+tar -xf "$B/_git-secrets.tar"     -C volumes        # optional, see §1
+tar -xf "$B/_openclaw-claude.tar" -C volumes        # optional, see §1
+tar -xf "$B/_openclaw-<version>.tar" -C volumes     # only to return to an older pin
+```
 
 ### Step 1 — record what the moving tags point at today
 
