@@ -2312,7 +2312,9 @@ So this milestone builds the presentation and, for the first time in this featur
 but nobody reaches a card without first declaring a repository — and that step turns out to be the
 one with the most cases pointing at it and the least actually covered. The cases therefore run in the
 order the operator does: declare (A8-1 to A8-3), then the card (A8-4 to A8-14), then the same path
-walked by a person in a browser (A8-15 to A8-17).
+walked by a person in a browser (A8-15 to A8-17). A8-18 sits under all three: the launcher rebuilds
+the interface every time it starts, so an interface that does not compile is a launcher that does not
+run.
 
 **Decisions taken while writing these cases:**
 
@@ -2365,6 +2367,7 @@ inside A8-16 as an observation rather than as a case.
 | A8-15 | **Manual** | U1 in the browser: declare a repository in the configuration view | Section 10 renders with its help text, an entry saves into `.env`, and reopening the view shows it. Then an `https://` entry: the case records where the operator learns it is refused |
 | A8-16 | **Manual** | U2 in the browser: key from the launchpad, registered, tested | The operator never opens a terminal — copy the key from the card, register it at the host, press the card's test, watch the repository turn reachable |
 | A8-17 | **Manual unhappy** | U11 in the browser: a key that no longer works | With the deploy key removed at the host, the launchpad names that repository as unreachable and offers its current key, the start does not read as success, and the state survives a reload |
+| A8-18 | Contract | The dashboard compiles | `run.sh` rebuilds the dashboard image on every launch and the image build runs `bun run build`. A component that does not compile passes `bun test src` and breaks the launcher instead — with no interface left to fix it from |
 
 #### Detail per case
 
@@ -2567,6 +2570,19 @@ drive it, which is a thing worth knowing before reaching for one.
 | **The failure to watch for** | A start that reads as success. If the operator can reach the end of a start and see nothing amiss while a repository is broken, the case has found what it was written to find, whatever the card does afterwards. |
 | **Covers** | FR3, FR20, U11. |
 
+**And one guard under all three parts.**
+
+##### A8-18 — the dashboard compiles
+
+| | |
+|---|---|
+| **Premise** | `run.sh` runs `docker build` on `dashboard/` at **every** launch, and that image's build runs `bun run test && bun run build`. So the launcher's first act depends on the interface compiling — and if it does not, `run.sh` stops at *"Building the dashboard image…"* and the operator has no interface left to repair it from. Nothing outside that image build ever compiles the UI: `bun run build` and `svelte-check` appear nowhere in `tests/`, `scripts/` or `config/scripts/`, `build.sh` does not build the dashboard at all, so not even a cold start does it, and the 27 dashboard tests import library modules rather than components. A Svelte file that does not compile is therefore green everywhere until an operator launches. |
+| **Component** | The dashboard project, on its own. |
+| **Steps** | `bun run build` in `dashboard/`. |
+| **Expected** | `EXIT=0`, and the adapter's output directory exists. No stack, no containers, no fixtures. |
+| **Why it is in this milestone** | It guards the whole dashboard rather than this card, so strictly it belongs to no feature. Until now the exposure was theoretical: nothing in this repository had ever touched a Svelte component. M-A8 changes `+page.svelte` and `+page.server.ts`, which makes it real, and the milestone that creates a risk is the honest place to answer it. |
+| **Covers** | FR3, FR10. |
+
 ---
 
 ## 6. Coverage policy per milestone
@@ -2582,7 +2598,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
-| M-A8 | Component and system for the page, contract for the wording, three manual cases | The subject is a screen. What can be read out of served HTML is automated here; what needs eyes on a browser is manual and says so, rather than being approximated by a headless one |
+| M-A8 | Component and system for the page, contract for the wording and for the build, three manual cases | The subject is a screen. What can be read out of served HTML is automated here; what needs eyes on a browser is manual and says so, rather than being approximated by a headless one |
 
 
 ---
@@ -3699,6 +3715,11 @@ cd /path/to/liquidupstart
 #    Expect: the same repository labels from both, and the same public keys.
 curl -s http://localhost:7777/git-auth | jq -r '.repositories[] | .label'
 curl -s http://localhost:7777/ | grep -o 'github\.com/[a-zA-Z0-9_.-]*/[a-zA-Z0-9_.-]*' | sort -u
+
+# 3b. The launcher's own gate, by hand: the image build runs this, and if it
+#     fails there the operator has no interface left to fix it from. Expect:
+#     EXIT=0. This is A8-18 without the harness around it.
+(cd dashboard && bun run build); echo "EXIT=$?"
 
 # 4. The private half is nowhere in what the page serves. Expect: no output.
 #    Compared against the real key on disk rather than against a pattern, so it

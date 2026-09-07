@@ -439,13 +439,21 @@ operator's own act is the trigger. No case covers that either.
 
 *Why it is worth a milestone rather than a fix.* Every case before it asks what an agent can reach.
 These ask what an operator can see, which is the surface this feature is judged on and the only one
-nothing has tested. Seventeen cases in the order the operator works: declare, then the card, then the
+nothing has tested. Eighteen cases in the order the operator works: declare, then the card, then the
 same path walked by a person. Three of them are manual and stay manual — what a browser does with
 HTML that A8-6 already reads is not the question, and whether a card reads as an instruction needs a
 person.
 
-*Done when:* `./tests/run.sh m-a8` is green, and A8-15, A8-16 and A8-17 have been observed by the
-operator with their screenshots recorded.
+*And one that belongs to no feature.* `run.sh` rebuilds the dashboard image on every launch, and that
+build runs `bun run build`, so an interface that does not compile is a launcher that does not run —
+with no interface left to repair it from. Nothing outside that image build compiles the UI: not the
+suite, not `build.sh`, not even a cold start, and the 27 dashboard tests import library modules rather
+than components. The exposure was theoretical until now because nothing here had ever touched a Svelte
+component. M-A8 does, so A8-18 answers it where it arises.
+
+*Done when:* `./tests/run.sh m-a8` is green — A8-18 included, so a green suite also means the
+launcher still starts — and A8-15, A8-16 and A8-17 have been observed by the operator with their
+screenshots recorded.
 
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
