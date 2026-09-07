@@ -30,6 +30,9 @@ fault.
 OC-7, OC-10, OC-11, OC-12, OC-13, OC-14, OC-15, OC-17, OC-18, OC-19, OC-21, OC-22, OC-28, OC-31,
 and the config sweep.
 
+**OC-3 and OC-16 joined on 2026-09-07**, after this count was taken, as a contract and a component
+case. Both were in place before Suite 2 ran and are inside its 424.
+
 The implementation is small, as §6 predicted: the version is read from the built image, and the
 config writer branches on it. Two of the five affected parts needed no work at all.
 
@@ -367,10 +370,22 @@ The snapshot is kept as `liquidupstart-backups/digests-20260907-latest-moved.txt
 
 ## What is not done
 
-- **OC-3**, **OC-4**, **OC-16**, **OC-20** are specified and not run. OC-4 is the interesting one:
-  it decides whether the `cliBackends` key is needed on 2026.7.1 at all, and could remove one branch
-  from the version split.
-- **Suite 2** — OC-23 to OC-27 — needs an integration branch carrying #9 and #10.
+*Written on 2026-09-06, when the automated cases had just run. The first two entries were closed the
+next day and the sections that closed them are above, which for a while left this document
+contradicting itself. Corrected 2026-09-07; the original wording is kept rather than deleted, because
+what a record claimed and when is part of what it is for.*
+
+- ~~**OC-3**, **OC-4**, **OC-16**, **OC-20** are specified and not run.~~ **All four closed
+  2026-09-07.** OC-4 is answered and *inverted* in §9 above — the question stopped being whether the
+  wrapper suffices, because on 2026.9.1 the wrapper is off the model path entirely. OC-3 was
+  **replaced**: reproducing the hang needs a valid Claude login inside a throwaway container, and a
+  run of exactly that shape had already overwritten the operator's credentials once that day, so the
+  case now asserts the property that actually protects the start — every unattended `docker run` in
+  the start script is bounded, or is a named exception with its reason. OC-16 became a component case
+  on the `--allow-scripts` build. OC-20 passed as a full cold start, `RESULT-cold-start-2026.9.1.md`.
+- ~~**Suite 2** — OC-23 to OC-27 — needs an integration branch carrying #9 and #10.~~ **Executed
+  2026-09-07** on `integration/oc-2026-9-1`: 424 pass, 0 fail. The section above records it.
 - Two `${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}` fallbacks remain in the `ingest-pdf`
   plugin build scripts. Neither `build.sh` nor `start.sh` invokes them, and the plugin's bundle is
-  checked in, so rebuilding it carries more risk than the papercut warrants.
+  checked in, so rebuilding it carries more risk than the papercut warrants. **Still true**, and now
+  in `BACKLOG.md` with the rest of what this migration deferred.

@@ -69,6 +69,18 @@ work exists to demonstrate.
 
 **#10 was 28 commits behind #9 and was merged forward on 2026-09-07.** It is level now.
 
+**`integration/oc-2026-9-1` is deliberately behind**, by one commit each on #9 and #10 and nine on
+#13 as of 2026-09-07 evening. All eleven are documents plus `scripts/linux/image-digests.sh`; not one
+test and not one line of stack code changed, so **Suite 2's 424 stand** — that was measured, not
+assumed. Bringing it level is three merges, of which two are clean and one conflicts in
+`docs/verification/README.md`, where both sides rewrote the same paragraph.
+
+**The rule, decided 2026-09-07: nothing reaches `main` without Timur's review. Merging forward
+inside the stack is fine** — #11 into #13, #9 into #10, the three into the integration branch — and
+is how each branch stays reviewable against what it actually builds on. Whoever runs anything on the
+integration branch must merge the three forward *first*, or they are measuring a stand that no longer
+exists.
+
 ## One working copy, one stack
 
 `docker compose` reads the `compose.yml` of the checkout at the moment `start.sh` runs, so the
@@ -222,7 +234,11 @@ route, and the pairing decision happens only after a browser signs a challenge.
    is the case, not an addition to it.
 2. **Timur's reviews** of #9, #10, #11, #12 and #13. They run in parallel and block nothing; that is
    what the branch stacking is for.
-3. `BACKLOG.md`.
+3. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
+   was the one without, and its file holds the four things 2026.9.1 deferred plus the `bun_runner`
+   entrypoint alternative that #12 had nowhere to record. Two entries on #9 and #10 are answered
+   rather than open — the Claude CLI install, fixed 2026-09-05, and `bun_runner` reporting unhealthy
+   with no app, fixed by #12.
 
 **The working copy is `main`-shaped and its `volumes/` was destroyed by OC-20.** Anything on a feature
 branch needs `_git-secrets.tar` restored first — its archived keys *are* the ones registered with
