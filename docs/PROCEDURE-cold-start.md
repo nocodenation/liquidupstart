@@ -155,44 +155,37 @@ tar -xf "$B/_openclaw-<version>.tar" -C volumes     # only to return to an older
 ### Step 1 — record what the moving tags point at today
 
 Seven of the images a cold start pulls hang on tags that can move, and one of them moved under this
-stack on 2026-09-05. Recording what every tag resolves to lets a later difference be attributed:
-this repository, or an upstream move.
+stack on 2026-09-05 and again on 2026-09-07. Recording what every tag resolves to lets a later
+difference be attributed: this repository, or an upstream move.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-./scripts/linux/image-digests.sh /Users/christof/repos/liquidupstart-backups/digests-$(date +%Y%m%d-%H%M)-before.txt
+./scripts/linux/image-digests.sh before
 ```
 
-**Name it per run and do not overwrite an older snapshot** — comparing a later run against an earlier
-one is the entire point. Step 6 runs the same script again afterwards, with `-after` in the name.
+That is the whole step. The script names the file, remembers the run, and diffs against the previous
+snapshot by itself — **nothing has to be filled in**. An earlier version of this step asked the
+operator to substitute a run name into a command, and it was pasted literally, because that is what
+a copy-paste block invites.
 
-The script lives in the repository rather than in this document because the same block was needed in
-two steps, and a block that exists twice is one that gets fixed once. It reads digests from the
-**registry** rather than from local images, so a base image BuildKit pulled without ever tagging it
-locally is covered too.
-
-**Compare against the last snapshot before going on:**
-
-```bash
-B=/Users/christof/repos/liquidupstart-backups
-diff <(grep -v '^#' "$B/digests-before.txt" | sort) \
-     <(grep -v '^#' "$B/digests-<this run>-before.txt" | sort) \
-  && echo "nothing moved since the reference snapshot" || echo "the differences above are what moved"
-```
-
-Expect a difference on the `FROM` line whenever the pin has been changed deliberately. **Any other
+Expect a difference on a `FROM` line whenever the pin has been changed deliberately. **Any other
 difference is an upstream move, and worth understanding before you build on top of it.**
 
-> **What this caught the first time it was run, on 2026-09-07.**
+If it reports `INCOMPLETE`, the registry refused some lookups — Docker Hub answers **429** to
+anonymous manifest requests once a quota is used up. Those images are excluded from both sides
+rather than compared, the snapshot is filed as `-incomplete` so it cannot become a later run's
+reference, and the verdict says what was actually compared. Wait, or authenticate, and take another.
+
+> **What this caught the first time it ran, on 2026-09-07.**
 > `ghcr.io/openclaw/openclaw:latest` had moved again — `sha256:6afe4285…` on 2026-09-05,
-> `sha256:a8604855…` now. But both that image and `:2026.9.1` report **`OpenClaw 2026.9.1
+> `sha256:a8604855…` two days later. But that image and `:2026.9.1` both report **`OpenClaw 2026.9.1
 > (ad6fe23)`**: same version, same commit, different bits. `:latest` had been **rebuilt**, not
 > bumped.
 >
-> Two things follow. **The version string does not identify the image** — a rebuild can change the
-> base layers underneath it, which is exactly how npm went from 11 to 12 and shipped an image whose
-> Claude CLI had no binary. And **the pin is doing its job**: `:2026.9.1` resolves to the same digest
-> it did on 2026-09-05, while the floating tag moved twice in three days.
+> **The version string does not identify the image.** A rebuild can change the base layers under an
+> unchanged version — which is exactly how npm went from 11 to 12 and shipped an image whose Claude
+> CLI had no binary while the build reported success. And **the pin is doing its job**: `:2026.9.1`
+> resolves to the digest it had on 2026-09-05, while the floating tag moved twice in three days.
 
 ### Step 2 — the reset
 
@@ -364,17 +357,12 @@ the branch.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
-B=/Users/christof/repos/liquidupstart-backups
-RUN=<the same stamp you used in step 1>
-./scripts/linux/image-digests.sh "$B/digests-${RUN}-after.txt"
-
-diff <(grep -v '^#' "$B/digests-${RUN}-before.txt" | sort) \
-     <(grep -v '^#' "$B/digests-${RUN}-after.txt" | sort) \
-  && echo "no tag moved during this run" || echo "the differences above are what moved during the run"
+./scripts/linux/image-digests.sh after
 ```
 
-A difference here means a tag moved **while the run was in progress**, which is rare and worth
-recording; the interesting comparison is usually the one in step 1, against the previous run.
+It finds this run's `before` by itself and diffs against it. A difference here means a tag moved
+**while the run was in progress** — rare, and worth recording in the result. The interesting
+comparison is usually step 1's, against the previous run.
 
 ## 5. Where the result goes
 
