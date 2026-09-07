@@ -1,7 +1,7 @@
-# Handover — 2026-09-07
+# Handover — 2026-09-07 (afternoon)
 
-Read this first. It is the map and the current state; the specifications are the six documents in
-`docs/`. Everything here was true at the end of 2026-09-06.
+Read this first. It is the map and the current state; the specifications are the documents in
+`docs/`. Everything here was true at the end of 2026-09-07.
 
 ## What is being built
 
@@ -38,7 +38,8 @@ than tidied away.
 | `docs/TEST-SPEC-liquid-java-extensions.md` | The Java cases |
 | `docs/FEATURE-openclaw-2026-9-1.md` | The migration analysis, in the three-part view: how each part worked, what changed, what had to be adapted |
 | `docs/TEST-SPEC-openclaw-2026-9-1.md` | 31 migration cases, OC-1 to OC-31 |
-| `docs/PROCEDURE-baseline-cold-start.md` | OC-BASE, the cold start that established the 2026.7.1 baseline |
+| `docs/PROCEDURE-cold-start.md` | The cold start, **version-neutral**: it reads the pin out of the Dockerfile rather than naming a version, so one document serves 2026.7.1, 2026.9.1 and whatever is pinned next |
+| `scripts/linux/image-digests.sh` | `before` / `after`: what every image tag resolves to, so a later difference can be told apart from an upstream move |
 | `docs/verification/` | The records, with the raw transcripts. Promoted from `.pr-drafts/` when finished |
 | `CLAUDE.md` § Development rules | The commandments this project works to |
 | `BACKLOG.md` | What was deliberately deferred, each with why. **Exists only on the feature branches** |
@@ -57,6 +58,7 @@ branches.
 | `fix/openclaw-2026-9-1` | **#11** | `main` | The pin to 2026.7.1 |
 | `fix/bun-runner-health` | **#12** | `main` | One line: the health check |
 | `feature/openclaw-2026-9-1` | **#13** | `fix/openclaw-2026-9-1` | The migration, with #12 merged |
+| `integration/oc-2026-9-1` | — | — | **Not a merge candidate.** #13 + #9 + #10 in one place, so the compatibility cases can be *executed* rather than asserted |
 
 Cutting a branch from another is how each PR shows only its own diff. GitHub retargets a stacked PR
 by itself once its base lands, so **Timur can review the four in any order and nothing waits.**
@@ -65,8 +67,7 @@ by itself once its base lands, so **Timur can review the four in any order and n
 cleanly if the commits it already carries survive — and the individual messages are part of what this
 work exists to demonstrate.
 
-**#10 is 28 commits behind #9.** It is being reviewed against a stale base. The merge-forward is due
-and is the first step of the Suite 2 work below.
+**#10 was 28 commits behind #9 and was merged forward on 2026-09-07.** It is level now.
 
 ## One working copy, one stack
 
@@ -95,7 +96,14 @@ agent turn verified end to end through the subscription route.
 
 **The Java extensions:** M-B1 and M-B2 built and verified. **M-B3 is specified and not built.**
 
-**The migration:** 42 automated cases pass. Open: OC-3, OC-16, OC-20, and the whole of Suite 2.
+**The migration is verified.** 42 automated cases on the branch itself; **Suite 2 — 424 cases, 0
+failures** — on `integration/oc-2026-9-1`, proving it breaks neither feature in flight; and **OC-20**,
+the cold start on 2026.9.1, passed manually including the browser half: on a state directory twenty
+minutes old the Control UI loaded with no pairing prompt and a turn returned its probe string in five
+seconds. Records in `docs/verification/`.
+
+Nothing in the migration is open. OC-3 was **replaced** by a contract case — assert the guard, not
+the hazard — and the reasons are in the test specification.
 
 ### Things on disk that matter
 
@@ -115,12 +123,28 @@ root `./cleanup.sh` deletes `volumes/` wholesale and a backup kept inside it die
 `volumes/repos/csv-columns` is a leftover from the A2-5 observation. **Leave it**: A4-16 uses it as a
 clone the feature did not create.
 
-### The Claude login expires, twice a day so far
+### The Claude login expires, and a long-lived token does not help
 
-The operator had to sign in interactively twice on 2026-09-06. `.env` carries no
-`CLAUDE_CODE_OAUTH_TOKEN`, so the login lives only in `volumes/_openclaw-claude` and does not survive
-a reset. A long-lived token via `openclaw-claude setup-token` would be stabler — **and is still the
-subscription, not an API key.** Not decided; it is an operating choice, not part of the migration.
+Four interactive sign-ins in two days. The login lives only in `volumes/_openclaw-claude` and does
+not survive a reset.
+
+**A long-lived `CLAUDE_CODE_OAUTH_TOKEN` was measured and refused.** With the file login set aside and
+the token in the process environment a turn still fails `Not logged in`; the same token in the same
+empty directory is accepted by the Claude CLI. The in-process Agent SDK — which is what serves turns
+on 2026.9.1 — does not authenticate from it. Leaving it in `.env` would be **actively harmful**:
+`start.sh` branches on it and skips the sign-in, so an expired login would stop prompting and turns
+would fail silently. The full measurement is in `verification/RESULT-openclaw-2026-9-1.md`.
+
+Still open, and now in `BACKLOG.md`: the CLI *does* accept the token, so a CLI call made with it
+might materialise a `.credentials.json` the SDK then reads. Nobody has measured that.
+
+### Docker Hub's quota, because it is invisible until it bites
+
+**100 manifest requests per hour, per public IP**, when nobody is signed in — measured from Docker
+Hub's own header. Every pull and every digest lookup counts. One cold start fits; a digest snapshot
+costs about fifteen lookups, so six exhaust an hour, and the count is keyed to the IP, so colleagues
+on one network share it. `docker login` raises it and belongs to the **host's** Docker — nothing goes
+into `.env` or the repository. Not an installation requirement; a development-loop one.
 
 ## How work proceeds
 
@@ -168,6 +192,19 @@ since A7-5 reported "all running, none unhealthy" while the gateway was on its t
 `docker compose ps` shows a crash-looping container as `running` with health `starting` between two
 crashes. `tests/lib/health.ts` reads status, `RestartCount` and health per container instead.
 
+**A block needed in two places belongs in neither.** The cold-start procedure told the operator to
+reuse another step's block "with a run-specific name", and the name was pasted literally as
+`<this run>` — the third placeholder inside a runnable block in one week, and this one was introduced
+while fixing the previous one. The block became `scripts/linux/image-digests.sh`, which owns the
+naming so nothing has to be filled in. Its first run found that `:latest` had moved again — and that
+the two images report the *same version and commit* with different digests, so **a version string does
+not identify an image**.
+
+**A check that cries wolf is worse than no check.** That same script, run once too often, hit Docker
+Hub's rate limit and reported every image as unreadable — which, diffed against a good snapshot, reads
+as though every tag had moved at once. Failures are now excluded from both sides, incomplete snapshots
+are named so they cannot become a later reference, and the verdict says what was actually compared.
+
 **Do not let a document exist twice.** Promoting the cold-start procedure from `.pr-drafts/` to
 `docs/` left two copies; every repair went into one while the operator worked from the other, so a
 fix that had been reported as done was hit again. It is the same failure the tests are explicitly
@@ -180,18 +217,14 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
 
-In this order, and the reasons are in the thread rather than invented here:
+1. **M-B3** — the only unbuilt milestone, on `feature/liquid-java-extensions`. It asks whether Liquid
+   loads what we build, and its negative control — a NAR built against the wrong API must *not* load —
+   is the case, not an addition to it.
+2. **Timur's reviews** of #9, #10, #11, #12 and #13. They run in parallel and block nothing; that is
+   what the branch stacking is for.
+3. `BACKLOG.md`.
 
-1. **OC-16 and OC-3** — the two cheap open cases, closing the last negative counterparts. OC-16
-   builds the image *without* `--allow-scripts` on npm 12 and requires it to fail; OC-3 reproduces
-   the `doctor --fix? [Y/n]` hang under a pty.
-2. **Suite 2** — an integration branch carrying #13 + #9 + #10, so the claim that the migration does
-   not break the two features in flight is executed rather than asserted. Forces the #10 merge-forward,
-   which is due anyway. This is the substantive one.
-3. **OC-20** — the cold start on 2026.9.1, destructive and manual, with the operator at the keyboard.
-   Last, because it wipes the state and exercises the fresh-install branch of the upgrade guard.
-4. **M-B3** — still the only unbuilt milestone.
-
-**Not in this order, on purpose:** Timur's reviews run in parallel and block nothing. The long-lived
-Claude token and a gateway token for the CLI are both decisions about operation and the
-authentication model, not migration work — `BACKLOG.md`, not #13.
+**The working copy is `main`-shaped and its `volumes/` was destroyed by OC-20.** Anything on a feature
+branch needs `_git-secrets.tar` restored first — its archived keys *are* the ones registered with
+GitHub — or two fresh registrations. `git-repo-info` says which case you are in rather than failing
+silently.
