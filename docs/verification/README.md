@@ -2,19 +2,22 @@
 
 Evidence that the milestones were actually verified, not only declared verified.
 
-**A reviewer does not need to read this directory.** The findings are already folded into
-`docs/TEST-SPEC-git-integration.md` and `docs/TEST-SPEC-liquid-java-extensions.md`, in each case's
-*"What it found"* row. What lives here is the material behind those rows.
+**A reviewer does not need to read this directory.** The findings are already folded into the three
+test specifications in `docs/`, in each case's *"What it found"* row. What lives here is the material
+behind those rows.
 
-Since `feature/git-integration` was merged forward into this branch on 2026-09-07, both sets are
-here: **M-A5 to M-A7** for the git integration and **M-B1 to M-B2** for the Java extensions. The
-earlier version of this file said they would arrive when that merge happened; they have.
+This branch is an **integration vehicle, not something to merge**: it carries the git integration
+(#9), the Java extensions (#10) and the OpenClaw 2026.9.1 migration (#13) together, so the
+compatibility cases OC-23 to OC-27 can be *executed* rather than asserted. All three sets of records
+are therefore here.
 
 | | |
 |---|---|
-| `M-*-verification.md` | The record: what was run, what it produced, what it found, what was left. English, written to be read. |
-| `M-*-verification.log` | The raw terminal transcript of that run. Not written to be read — it is what the record is checkable against. |
-| `A6-13.md` | An operator procedure, kept because the case it belongs to is manual and the steps are the test. |
+| `M-A*-verification.*` | The git integration, M-A5 to M-A7 |
+| `M-B*-verification.*` | The Java extensions, M-B1 and M-B2 |
+| `RESULT-*.md` | The migration: the 2026.7.1 baseline cold start, the `bun_runner` health check, and the migration itself |
+| `A6-13.md` | An operator procedure, kept because the case it belongs to is manual and the steps are the test |
+| `schema-keys-*.txt` | The flattened OpenClaw config schemas the migration analysis was computed from |
 
 ## Why the logs are here
 
@@ -32,6 +35,3 @@ Drafts. `.pr-drafts/` stays gitignored and is the scratch area; a record is **pr
 it is finished. The distinction is deliberate — everything in this directory is final.
 
 M-B3 has no record because it is not built.
-
-The OpenClaw 2026.9.1 migration keeps its records on `feature/openclaw-2026-9-1`, with the
-specification they belong to.
