@@ -427,13 +427,24 @@ rather than by a browser fetch, so that the card is in the served HTML and can b
 tooling this repository already has. And the action U2 asks for — *"asks the launchpad to test the
 repository. The test is a real clone, not a claim"* — as a POST restricted to declared repositories.
 
+*And it starts at the declaration, not at the card.* Nobody reaches a launchpad without first saying
+which repositories they want, and that step turns out to be the one with the most cases pointing at
+it and the least actually covered: twenty case blocks name U1, and every one of them exercises a
+parser or the start script. A1-2 is titled *"the section is shown in the dashboard, not hidden"* and
+asserts `sectionModeFromTitle` applied to a title string. The round trip an operator performs — type
+it in, save, see it take effect — has never been run in either direction, and it needs no browser to
+run: the view saves through a server action. The same look found that `save` re-renders the whole of
+`.env` rather than editing it, so a form that drops a key destroys a working installation and the
+operator's own act is the trigger. No case covers that either.
+
 *Why it is worth a milestone rather than a fix.* Every case before it asks what an agent can reach.
 These ask what an operator can see, which is the surface this feature is judged on and the only one
-nothing has tested. Three of the fourteen cases are manual and stay manual: what a browser does with
-HTML that A8-3 already reads is not the question, and whether a card reads as an instruction needs a
+nothing has tested. Seventeen cases in the order the operator works: declare, then the card, then the
+same path walked by a person. Three of them are manual and stay manual — what a browser does with
+HTML that A8-6 already reads is not the question, and whether a card reads as an instruction needs a
 person.
 
-*Done when:* `./tests/run.sh m-a8` is green, and A8-12, A8-13 and A8-14 have been observed by the
+*Done when:* `./tests/run.sh m-a8` is green, and A8-15, A8-16 and A8-17 have been observed by the
 operator with their screenshots recorded.
 
 ### Known gaps, decided rather than overlooked (2026-09-04)
