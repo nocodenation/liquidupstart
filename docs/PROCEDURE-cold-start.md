@@ -149,7 +149,9 @@ B=/Users/christof/repos/liquidupstart-backups
 cp -a "$B/.env.bak" .env && chmod 600 .env          # always
 tar -xf "$B/_git-secrets.tar"     -C volumes        # optional, see §1
 tar -xf "$B/_openclaw-claude.tar" -C volumes        # optional, see §1
-tar -xf "$B/_openclaw-<version>.tar" -C volumes     # only to return to an older pin
+# Only to return to an older pin. List what is there, then extract the one you want:
+ls "$B"/_openclaw-*.tar
+tar -xf "$B/_openclaw-2026.7.1.tar" -C volumes      # a real example, not a placeholder
 ```
 
 ### Step 1 — record what the moving tags point at today
