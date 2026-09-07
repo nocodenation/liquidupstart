@@ -19,6 +19,7 @@ import { test, expect, afterAll } from 'bun:test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import '../lib/svelte';
 
 const PUB = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREPUBLICKEYFIXTUREPUBLICKEY liquidupstart';
 const PRIV = '-----BEGIN OPENSSH PRIVATE KEY-----\nFIXTUREPRIVATEMATERIAL\n-----END OPENSSH PRIVATE KEY-----\n';
