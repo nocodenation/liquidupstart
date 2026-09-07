@@ -2326,6 +2326,13 @@ written with `curl` and the tooling this repository already has. Put it in the c
 of them needs a browser. The same fact, in two places, is the difference between nine automated cases
 and three.
 
+*These are integration cases, not system ones.* Section 3 reserves **system** for the running stack
+driven through `docker compose exec`. A8-6, A8-7 and A8-14 drive the **dashboard**, which is not the
+stack and which a test can start for itself against a fixture — and must, because two of the three
+describe states a working installation does not have. They were labelled system in this section's
+first draft, which would have put them behind the stack guard and dropped them from `--no-system`
+for a dependency they do not have.
+
 *No browser automation is introduced.* Playwright would be a new dependency on a project whose entire
 test command is `bun test src`, and it would assert what a browser does with HTML that A8-6 already
 reads directly. What genuinely needs a browser — that the key is selectable and copyable, that the
@@ -2355,19 +2362,19 @@ inside A8-16 as an observation rather than as a case.
 | A8-3 | Component **unhappy** | The save loses nothing it was not asked about | `save` re-renders the whole file, so every key in the installation passes through it. A form that drops one destroys a working installation, and the operator's own act is the trigger |
 | A8-4 | Component | The launchpad's page data carries every declared repository | Each declared repository reaches the page with its label, access, policy and public key — the case that would have caught a route nobody calls |
 | A8-5 | Component **unhappy** | No private key material in that data | The keys sit one filename apart in the same directory; a second path to them is a second chance to publish the wrong one |
-| A8-6 | System | The served launchpad names each repository and shows its key | Fetched over HTTP from the running dashboard: the label, the fingerprint and the public key are in the HTML, not merely in a JSON route |
-| A8-7 | System **unhappy** | Before the first start there is nothing to show | The card says the stack has to run once, in the shape FR20 asks for — a refusal that names the next step, not an empty list |
+| A8-6 | Integration | The served launchpad names each repository and shows its key | Fetched over HTTP from a dashboard the test starts against a fixture: the label, the fingerprint and the public key are in the HTML, not merely in a JSON route |
+| A8-7 | Integration **unhappy** | Before the first start there is nothing to show | The card says the stack has to run once, in the shape FR20 asks for — a refusal that names the next step, not an empty list |
 | A8-8 | Component | A repository whose clone failed is presented as unreachable, with its error and its key | U11's whole substance: which repository, why, and the key to register — without leaving the page |
 | A8-9 | Component **unhappy** | A repository that cloned is not presented as needing attention | Without this, A8-8 passes on a card that flags everything |
 | A8-10 | Contract | The instruction printed matches the declared access | `write` says write access is needed, `read` says read-only. Registering a read-only key with write access is a real and silent over-grant |
 | A8-11 | Component | The retry action re-clones exactly the repository named | U2's "ask the launchpad to test it": the manifest afterwards reports that repository as cloned, and no other entry changed |
 | A8-12 | Component **unhappy** | The retry refuses a name that is not declared | A name that arrives over HTTP must not reach `git clone`. Refused before anything runs, whatever it says |
 | A8-13 | Integration | A retry that still cannot authenticate leaves the repository unreachable and says so | The command ran; the clone failed. Reporting success because a process exited is the failure this case exists to catch |
-| A8-14 | System **unhappy** | A declaration that exists while the manifest does not | `GIT_REPOSITORIES` names two repositories and `repositories.json` is missing or unreadable. "No repositories declared" would be a lie; the page must say the two are declared and unaccounted for |
+| A8-14 | Integration **unhappy** | A declaration that exists while the manifest does not | `GIT_REPOSITORIES` names two repositories and `repositories.json` is missing or unreadable. "No repositories declared" would be a lie; the page must say the two are declared and unaccounted for |
 | A8-15 | **Manual** | U1 in the browser: declare a repository in the configuration view | Section 10 renders with its help text, an entry saves into `.env`, and reopening the view shows it. Then an `https://` entry: the case records where the operator learns it is refused |
 | A8-16 | **Manual** | U2 in the browser: key from the launchpad, registered, tested | The operator never opens a terminal — copy the key from the card, register it at the host, press the card's test, watch the repository turn reachable |
 | A8-17 | **Manual unhappy** | U11 in the browser: a key that no longer works | With the deploy key removed at the host, the launchpad names that repository as unreachable and offers its current key, the start does not read as success, and the state survives a reload |
-| A8-18 | Contract | The dashboard compiles | `run.sh` rebuilds the dashboard image on every launch and the image build runs `bun run build`. A component that does not compile passes `bun test src` and breaks the launcher instead — with no interface left to fix it from |
+| A8-18 | Integration | The dashboard image still builds | `run.sh` rebuilds the dashboard image on every launch and the image build runs `bun run build`. A component that does not compile passes `bun test src` and breaks the launcher instead — with no interface left to fix it from |
 
 #### Detail per case
 
@@ -2449,8 +2456,8 @@ drive it, which is a thing worth knowing before reaching for one.
 | | |
 |---|---|
 | **Premise** | A8-4 proves the data reaches the page object. It does not prove anything renders it: a `load` returning a field no template reads is the same defect one layer up. |
-| **Component** | The running dashboard, over HTTP. |
-| **Test data** | The stack's own declared repositories, whatever they are — the case reads the manifest to learn what to expect rather than hard-coding names, so it does not fail when the declaration changes. |
+| **Component** | The dashboard, started by the test against a fixture project and reached over HTTP. |
+| **Test data** | A fixture project with two declared repositories and their generated keys. The case reads the manifest to learn what to expect rather than hard-coding names, so the fixture can change without the assertion rotting. |
 | **Steps** | `GET` the launchpad. Parse the manifest. For each declared repository, search the served HTML. |
 | **Expected** | Each repository's label and public key appear in the HTML, and so does its fingerprint. |
 | **Unhappy twin** | A8-7. |
@@ -2461,7 +2468,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | | |
 |---|---|
 | **Premise** | Keys are made at start, not at build, so between `cleanup.sh` and the first `start.sh` there is a declaration and no keys — the window A7-5 discovered and four cases fell into. An empty card there reads as "nothing declared", which is false and leaves the operator with nothing to do next. |
-| **Component** | The running dashboard, with `_git-secrets` absent. |
+| **Component** | The same, against a fixture whose `_git-secrets` does not exist. |
 | **Steps** | Point the dashboard at a project directory with no secrets directory. `GET` the launchpad. |
 | **Expected** | The card is present and says the stack must be started once for the keys to be generated. It names that as the next step, in the shape FR20 requires, rather than rendering an empty list or an error. |
 | **Covers** | FR3, FR20, U2. |
@@ -2530,7 +2537,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | | |
 |---|---|
 | **Premise** | The route already swallows a missing or malformed manifest and answers with an empty list. That is safe and it is a lie: `GIT_REPOSITORIES` may name two repositories while the manifest says nothing, and "no repositories declared" sends the operator looking at their configuration for a mistake that is not there. |
-| **Component** | The running dashboard, with `GIT_REPOSITORIES` naming two repositories and `repositories.json` absent, then present but truncated mid-JSON. |
+| **Component** | The same, against a fixture whose `.env` names two repositories while `repositories.json` is absent, then present but truncated mid-JSON. |
 | **Steps** | `GET` the launchpad in both states. |
 | **Expected** | Both times the page says two repositories are declared and their state is unknown, and names starting the stack as the next step. Neither an empty card nor a stack trace. |
 | **Covers** | FR10, FR11, FR20. |
@@ -2576,10 +2583,12 @@ drive it, which is a thing worth knowing before reaching for one.
 
 | | |
 |---|---|
-| **Premise** | `run.sh` runs `docker build` on `dashboard/` at **every** launch, and that image's build runs `bun run test && bun run build`. So the launcher's first act depends on the interface compiling — and if it does not, `run.sh` stops at *"Building the dashboard image…"* and the operator has no interface left to repair it from. Nothing outside that image build ever compiles the UI: `bun run build` and `svelte-check` appear nowhere in `tests/`, `scripts/` or `config/scripts/`, `build.sh` does not build the dashboard at all, so not even a cold start does it, and the 27 dashboard tests import library modules rather than components. A Svelte file that does not compile is therefore green everywhere until an operator launches. |
-| **Component** | The dashboard project, on its own. |
-| **Steps** | `bun run build` in `dashboard/`. |
-| **Expected** | `EXIT=0`, and the adapter's output directory exists. No stack, no containers, no fixtures. |
+| **Premise** | `run.sh` runs `docker build` on `dashboard/` at **every** launch, and that image's build runs `bun run test && bun run build`. So the launcher's first act depends on the interface compiling — and if it does not, `run.sh` stops at *"Building the dashboard image…"* and the operator has no interface left to repair it from. Nothing outside that image build ever compiles the UI: `bun run build` and `svelte-check` appear nowhere in `tests/`, `scripts/` or `config/scripts/`, `build.sh` does not build the dashboard at all, so not even a cold start does it, and the 27 dashboard tests import library modules rather than components. A Svelte file that does not compile is therefore green everywhere until an operator launches — and, as the row below records, it cannot even be compiled by hand in a fresh checkout. |
+| **Component** | `docker build` on `dashboard/`, the command `run.sh` itself runs. |
+| **Steps** | Build the image to a throwaway tag, and remove it afterwards. |
+| **Expected** | `EXIT=0`. Measured on 2026-09-07 against an empty cache: **20 seconds**, and a warm cache makes it a no-op. |
+| **Why not `bun run build` on the host** | Because it does not work, and finding that out is half of why this case exists. There is no `dashboard/node_modules` in a checkout — `bun run build` answers `vite: command not found`, exit 127. Asserting that would be asserting a broken host command, not the gate the launcher passes through. `docker build` runs `bun install --frozen-lockfile`, then `bun run test && bun run build`, which is precisely what an operator's launch does. |
+| **Why integration rather than contract** | Contract is defined here as reading a declaration, with no Docker. This runs one. It needs no stack, so it is not system either. |
 | **Why it is in this milestone** | It guards the whole dashboard rather than this card, so strictly it belongs to no feature. Until now the exposure was theoretical: nothing in this repository had ever touched a Svelte component. M-A8 changes `+page.svelte` and `+page.server.ts`, which makes it real, and the milestone that creates a risk is the honest place to answer it. |
 | **Covers** | FR3, FR10. |
 
@@ -3716,10 +3725,13 @@ cd /path/to/liquidupstart
 curl -s http://localhost:7777/git-auth | jq -r '.repositories[] | .label'
 curl -s http://localhost:7777/ | grep -o 'github\.com/[a-zA-Z0-9_.-]*/[a-zA-Z0-9_.-]*' | sort -u
 
-# 3b. The launcher's own gate, by hand: the image build runs this, and if it
-#     fails there the operator has no interface left to fix it from. Expect:
-#     EXIT=0. This is A8-18 without the harness around it.
-(cd dashboard && bun run build); echo "EXIT=$?"
+# 3b. The launcher's own gate, by hand -- the same command run.sh runs, and if
+#     it fails there the operator has no interface left to fix it from.
+#     Expect: EXIT=0, about 20s cold and near-instant warm. This is A8-18
+#     without the harness around it. Note that `bun run build` on the host is
+#     NOT the check: a checkout has no dashboard/node_modules and it exits 127.
+docker build -q -t liquidupstart/dashboard:probe dashboard; echo "EXIT=$?"
+docker rmi -f liquidupstart/dashboard:probe >/dev/null
 
 # 4. The private half is nowhere in what the page serves. Expect: no output.
 #    Compared against the real key on disk rather than against a pattern, so it
@@ -3737,10 +3749,11 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7777/
 mv /tmp/repositories.json.aside volumes/_git-secrets/repositories.json
 ./tests/run.sh m-a8; echo "EXIT=$?"
 
-# 6. Negative control: are the system cases real? A8-6, A8-7 and A8-14 talk to
-#    the dashboard rather than to a container, so the stack guard does not cover
-#    them -- stop the dashboard instead. Expect EXIT=1 naming the dashboard as
-#    unreachable, then EXIT=0 once it is back.
+# 6. Negative control: do A8-6, A8-7 and A8-14 read a real page? They start
+#    their own dashboard against a fixture, so there is nothing to stop -- break
+#    the fixture instead. Remove the public key file the manifest points at and
+#    expect A8-6 red with the key missing from the HTML, not green on a page
+#    that renders the label alone; then EXIT=0 once it is back.
 ```
 
 #### A8-15 — the operator's procedure · the configuration view
