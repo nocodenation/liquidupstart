@@ -3838,6 +3838,73 @@ mv /tmp/repositories.json.aside volumes/_git-secrets/repositories.json
 #    that renders the label alone; then EXIT=0 once it is back.
 ```
 
+#### A8-15 to A8-17 — the starting state, and how to reach it
+
+These three run against the **operator's own installation**, because that is what they are about, and
+two of them change it: A8-15 edits `GIT_REPOSITORIES` and A8-17 deletes a deploy key at the host and
+a key directory on disk. Neither is destructive if the steps below are taken first, and both are
+unpleasant if they are not. Do this once, before any of the three.
+
+**What they need.** A working installation on this branch: a `.env`, a stack that has been started at
+least once on this checkout so the keys and the manifest exist, and the dashboard running. The stack's
+containers do **not** have to be up for A8-15; A8-16 and A8-17 start it themselves.
+
+**Check it, and read the answer before going on:**
+
+```bash
+cd /path/to/liquidupstart
+
+# 1. The right branch, and the git integration present in it.
+git branch --show-current            # feature/git-integration or a branch containing it
+ls config/scripts/start/git.sh       # must exist; it does not on main
+
+# 2. A configured installation.
+grep -c '^GIT_REPOSITORIES=' .env    # 1
+grep -c '^DATABASE_PASSWORD=' .env   # 1
+
+# 3. What a previous start prepared. Absent is fine and is A8-16's own subject;
+#    what matters is that you know which case you are in before you start.
+ls volumes/_git-secrets/repositories.json 2>/dev/null || echo "no manifest yet"
+ls volumes/_git-secrets/repos/ 2>/dev/null || echo "no per-repository keys yet"
+
+# 4. The dashboard. 200 if it is up; 000 if nothing answered -- curl writes the
+#    code either way, so an empty line is not one of the outcomes.
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:7777/
+```
+
+**If any of it is missing:**
+
+| What check 4 or 2 said | What to do |
+|---|---|
+| `000` on 7777 | `./run.sh` — it builds the dashboard image and opens the browser. It takes the first free port from 7777; use the port it prints |
+| The dashboard answers but on another port | Use that port everywhere below. `run.sh` prints it, and so does the terminal it runs in |
+| `.env` is missing | `cp .env.example .env`, then open the configuration view and set at least a database password before anything else |
+| No manifest, no keys | Press **Start** once in the dashboard and let it finish. That is also the first half of A8-16 |
+| `git.sh` is missing | You are on `main` or a branch that does not carry the feature. Switch to `feature/git-integration` |
+
+**Back up what these cases touch, and restore it afterwards.** `.env` holds real credentials, and
+`GIT_REPOSITORIES` holds the declaration your installation actually runs on:
+
+```bash
+mkdir -p ../liquidupstart-backups
+cp .env ../liquidupstart-backups/.env.before-a8
+tar -cf ../liquidupstart-backups/_git-secrets.before-a8.tar -C volumes _git-secrets
+```
+
+`tar` rather than a directory copy, for the reason `PROCEDURE-cold-start.md` §1 gives: an archive is
+one file, overwritten rather than deleted, and `volumes/_openclaw-claude/skills` is not the only
+directory on this host that resists `rm -rf`.
+
+**Restoring, if a case leaves something wrong:**
+
+```bash
+cp ../liquidupstart-backups/.env.before-a8 .env
+rm -rf volumes/_git-secrets && tar -xf ../liquidupstart-backups/_git-secrets.before-a8.tar -C volumes
+```
+
+Then press **Start** once so the manifest matches the declaration again — which, since A8-20, the
+card will tell you if it does not.
+
 #### A8-15 — the operator's procedure · the configuration view
 
 The browser is the instrument here, so the evidence is screenshots. Save them under
@@ -3867,23 +3934,43 @@ The browser is the instrument here, so the evidence is screenshots. Save them un
    *Expect:* the value is shown as saved. A form that writes correctly and reads back empty is a
    defect an operator meets on their second visit, not their first.
 
-5. **The second half.** Replace the entry with its HTTPS form:
+5. **The second half — and it is louder than it looks.** *Append* one more entry, keeping everything
+   already there, in its HTTPS form:
 
-       https://github.com/nocodenation/agent-skills.git|read|protected
+       ,https://github.com/nocodenation/agent-skills.git|read|protected
 
-   Save, then start the stack.
-   *Expect:* it is refused — `git-repos.sh` rejects `https://` deliberately, because the stack has
-   keys and not passwords. **Record where the operator learns this**: in the form, on the launchpad,
-   or only in the start log. The case does not require any particular answer; it requires the answer
-   to be written down. If it is the start log alone, that is this milestone's finding.
+   Save, then reload the launchpad **before** starting anything.
+   *Expect:* the card says the declaration could not be read, and quotes the refusal —
+   `git-repos.sh` rejects `https://` deliberately, because the stack has keys and not passwords.
+   **Record where the operator learns it**: on the launchpad, in the form, or only in the start log.
+   No particular answer is required; the answer has to be written down.
 
-6. Put the declaration back the way it was.
+   *Then press Start, and know what to expect first.* `lu_git_reject` exits 2, `git.sh` inherits it,
+   and `start.sh` runs under `set -euo pipefail` with the git step fourteen lines before
+   `docker compose up -d`. **The start aborts, and no container is touched** — a stack that was up
+   stays up, because the teardown never runs either. Nothing here is destroyed; what is being
+   observed is whether the abort explains itself or merely stops.
+
+6. **Put it back, and confirm.** Remove the HTTPS entry — or restore the backup the preamble made:
+
+   ```bash
+   cp ../liquidupstart-backups/.env.before-a8 .env
+   grep '^GIT_REPOSITORIES=' .env
+   ```
+
+   Then press **Start** once more.
+   *Expect:* it completes, and the card reports every declared repository again. If it reports one
+   as declared and not yet prepared, that is A8-20 working, not a failure — press its test.
 
 #### A8-16 — the operator's procedure · enabling a repository
 
 The claim under test is that this can be done **without a terminal**. Every step below is in the
 browser except the confirmations, which exist only because a case needs evidence. If a step cannot be
 completed in the browser, that is the finding.
+
+*Starting state:* the preamble above, and nothing more. This case is happy to find no manifest and no
+keys — step 2 is what creates them, and an installation that has never been started on this branch is
+the most honest arrangement for it.
 
 1. Declare a repository in `/config`, as A8-15 step 2 does, if one is not declared already.
 
@@ -3916,6 +4003,17 @@ completed in the browser, that is the finding.
 The twin of A8-16, entered from the failure. It is also the only rehearsal this feature has of what
 a reset does to a running installation, short of a full cold start.
 
+*Starting state:* the preamble above, **and A8-16 already walked** — this case needs a repository that
+is currently reachable, so that taking it away means something. Check before you begin:
+
+```bash
+ls volumes/repos/                                   # the clone is there
+grep -o '"cloned": *true' volumes/_git-secrets/repositories.json | wc -l   # at least 1
+```
+
+If neither is true, run A8-16 first. And make sure the preamble's two backups exist: step 2 deletes a
+key directory, and the archived copy is the only way back to the key you registered at the host.
+
 1. Delete the deploy key for one declared repository at the host — the same settings page as
    A8-16 step 4. Leave the declaration and everything else alone.
 
@@ -3939,4 +4037,19 @@ a reset does to a running installation, short of a full cold start.
 6. Register the new key at the host and press the card's test.
    *Expect:* reachable, and the clone back on disk.
 
-7. Leave the installation as you found it: the key registered, the repository cloned.
+7. Leave the installation as you found it: the key registered, the repository cloned. Confirm it
+   rather than assuming — the same two commands the starting state used, plus the card:
+
+   ```bash
+   ls volumes/repos/
+   grep -o '"cloned": *true' volumes/_git-secrets/repositories.json | wc -l
+   ```
+
+   If step 6 did not restore it, the preamble's archive holds the keys the host still knows:
+
+   ```bash
+   rm -rf volumes/_git-secrets && tar -xf ../liquidupstart-backups/_git-secrets.before-a8.tar -C volumes
+   ```
+
+   Then press **Start**. Registering a fresh key at the host is the other way back, and is what a real
+   U11 costs; the archive exists so this case does not charge you that twice.
