@@ -60,7 +60,7 @@ here; each is executed where its subject exists.
 | OC-17 | unit | positive | The version probe reports `2026.9.1` for the 2026.9.1 image |
 | OC-18 | unit | positive | The version probe reports `2026.7.1` for the 2026.7.1 image |
 | OC-19 | unit | **negative** | A probe that cannot determine the version refuses rather than writing a config for a guess |
-| OC-20 | system, **manual** | positive | A full cold start on 2026.9.1: the OC-BASE acceptance, all seven checks |
+| OC-20 | system, **manual** | positive | A full cold start on 2026.9.1: all seven checks — **passed 2026-09-07**, `verification/RESULT-cold-start-2026.9.1.md` |
 | OC-21 | system | **negative** | After 2026.9.1 has written the state directory, 2026.7.1 refuses to start — the one-way door, documented |
 | OC-22 | system | positive | `claude-cli/claude-opus-5` is offered with its 1M context window intact |
 | **OC-28** | system, **manual** | **negative** | Starting 2026.9.1 against a state directory written by 2026.7.1 **fails** until the workspace is migrated — the upgrade path, which no cold start can reach |
@@ -202,6 +202,7 @@ here; each is executed where its subject exists.
 |---|---|
 | **Premise** | Every other case runs against a stack that is already up. This is the path a new operator takes, on the new version, and the counterpart to the baseline run of 2026-09-05 — every claim in the feature document is a difference from that run, and this is where the difference is actually measured. |
 | **Component** | The whole stack, from a reset checkout. |
+| **What it found** | **Passed**, including the browser half. All seven checks green, `doctor` free of critical findings, legacy keys and codex errors, and no tag moved during the run. On a state directory twenty minutes old the Control UI loaded with **no pairing prompt**, the model could be set — the same action answered `model not allowed` that morning — and a turn returned the exact probe string in five seconds. The interactive sign-in was exercised rather than restored, which is the choice §1 of the procedure asks for. |
 | **Test data** | The procedure in `PROCEDURE-cold-start.md`. It no longer names a version: it reads the pin out of `config/openclaw/templates/Dockerfile` and requires the container to report *that*, so the same document serves OC-BASE and OC-20 and whatever is pinned next. Its corrected step 4 has never been run — this is its first execution. |
 | **Expected** | The same seven checks, with two differences from the 2026-09-05 run: OpenClaw reports **2026.9.1**, and the Control UI answers 200 **without any browser having paired**. `openclaw config validate` valid, `doctor` free of critical findings and legacy keys, the Claude CLI at 2.1.x, `bun_runner` healthy, and every service running with **zero restarts and every healthcheck green** — check 6 is the restart-aware one from OC-30, not the sweep that reported a crash-looping gateway as sound. |
 | **Failure** | Any of the seven, or a device-pairing demand. |

@@ -13,7 +13,7 @@ Dockerfile's comment.
 | Run | Pin | Record |
 |---|---|---|
 | **OC-BASE**, 2026-09-05 — the baseline the migration is measured against | 2026.7.1 | `verification/RESULT-cold-start-2026.7.1.md` |
-| **OC-20** — the same path on the new version | 2026.9.1 | **not yet run**; its record will be `verification/RESULT-cold-start-2026.9.1.md` |
+| **OC-20**, 2026-09-07 — the same path on the new version | 2026.9.1 | `verification/RESULT-cold-start-2026.9.1.md` |
 
 Written to be run by the operator, in one sitting, from this checkout. It is **destructive** — read
 §1 before starting.
