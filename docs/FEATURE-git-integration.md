@@ -1410,7 +1410,8 @@ covers the documentation the development rules require, not the code alone.
 Outcome: 23 scenarios across 10 files, EXIT=0; the full suite runs 196 stack tests plus the 27
 dashboard tests, also EXIT=0. Three files changed — `compose.yml`, `config/scripts/start/git.sh` and
 `config/agents/bin/git-repo-info.sh` — two amended from earlier milestones, and eight added, one of
-them the hook. A4-15 is manual and still to be observed by the operator.
+them the hook. A4-15 is manual; it was carried out on 2026-09-02 and **failed**, and the section
+below records why and what eventually answered its question.
 
 **The hook is one file at `config/agents/hooks/pre-push`**, POSIX `sh`, installed by the start script
 to `volumes/_git-secrets/hooks/pre-push` — inside the secrets mount the agent containers already

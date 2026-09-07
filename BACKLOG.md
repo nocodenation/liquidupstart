@@ -51,7 +51,7 @@ checking something adjacent to it, and the remaining theory was then written dow
 the install is what corrected it, which is the same discipline this project applies everywhere else:
 reproduce before concluding.
 
-**`bun_runner` reports unhealthy with no app, and says nothing about it.**
+**`bun_runner` reports unhealthy with no app, and says nothing about it.** *The first half was fixed by #12 on 2026-09-06; the second half stands.*
 Seen during A7-5 on 2026-09-05, thirty minutes into a cold start. Its healthcheck probes port 3000;
 `volumes/bun_app` is empty because the reset removed it, so nothing listens and the container is
 marked unhealthy. Its log is **completely empty** — not a line about starting, about finding no app,
@@ -73,6 +73,15 @@ added" — would settle it either way.
 Not this feature's, so recorded rather than fixed. The causal chain is strongly suggested by the
 empty directory, the port the check probes and the silent log, but has not been confirmed by watching
 the service become healthy once an app exists.
+
+**#12 closed the part that makes a working stack look broken.** The check no longer probes port 3000
+when `/bun_app/package.json` is absent, so a stack with no application deployed reports healthy —
+five cases in `docs/CASES-bun-runner-health.md` on that branch, signed off before the one line
+changed. This branch does not carry the fix; it is cut from `main` alongside it.
+
+What is left is the silence: the log still says nothing, and the check still infers the state instead
+of reading one the entrypoint publishes. That alternative is on `feature/openclaw-2026-9-1`'s
+`BACKLOG.md`, where #12's own record could reach a backlog file.
 
 **The harness models one precondition where there are two.**
 Found during A7-5 on 2026-09-05, in the window between `cleanup.sh` and the first `start.sh`. Four
