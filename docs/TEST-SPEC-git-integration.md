@@ -61,6 +61,13 @@ result is still recorded rather than felt.
 | **Contract** | An assertion that a declaration appears in every place the configuration contract requires | No |
 | **Integration** | Several parts together on the host — start script, rendered config, directory state | No |
 | **System** | The running stack, driven through `docker compose exec` | Yes |
+| **End-to-end** | The whole path in one chain, from the declaration to the artefact on the remote, with no step performed by the test | Yes |
+
+The **end-to-end** level was added by M-A7 on 2026-09-04, when counting the suite showed 345 tests
+across five levels and not one that walks a whole path. It is separated from **system** because the
+two answer different questions: a system test drives one part inside the running stack, an end-to-end
+test drives every part in sequence and passes only if each hands over to the next. It runs with the
+system level and after it — the stack has to be up either way — so `--no-system` drops both.
 
 The **contract** level is not in Philipp's list but is added deliberately: the project's own
 `.env.example` contract ("a start script injects a key only if the service template declares it") is
@@ -85,6 +92,7 @@ tests/
   contract/
   integration/
   system/
+  e2e/
   run.sh        entry point
 ```
 
@@ -2207,6 +2215,7 @@ none has tested that the parts hand over to each other.
 | **Steps** | Run the start script's git step against the throwaway declaration; assert the clone exists and carries `access`, `policy` and `core.hooksPath`; commit in the container; run `git-publish`; read the branch back out of the bare repository. |
 | **Expected** | The commit is on the bare remote under `agent/probe`, carrying the configured identity, and every intermediate state was produced by the stack rather than by the test. |
 | **Covers** | FR32, U1, U2, U3, U4. |
+| **What it found** | **Passed, and the joins held**: nothing had to be repaired to make the chain run end to end, which is the first time anything in this suite could have said so. `tests/e2e/m-a7.chain.test.ts`, at the new end-to-end level. The start script clones `git@localhost:e2e.git` into `volumes/repos/.a7-chain-<pid>/project` and configures `liquidupstart.access=write`, `liquidupstart.policy=protected`, `core.hooksPath` and `liquidupstart.identity`; the `pre-push` it installs is byte-identical to `config/agents/hooks/pre-push`, and inside `openclaw-gateway` the hook at that path and the key at that identity are both reachable. `git-publish` resolves to `/usr/local/bin/git-publish`, exits 0, and `e2e.git` holds `agent/probe` **at the clone's own sha**, carrying `notes.md` with `probe` and the author the containers are configured with — read out of the container rather than out of `compose.yml`, as A1-6 was amended to do. No token remains. **What it cannot do is cross a network:** the declaration parser accepts SSH URLs only, by design, and no sshd runs on the host or in the container, so `ssh` is stood in for on `PATH` in both places and routes `git-upload-pack` and `git-receive-pack` to the local bare repository. That is the transport; every step the milestone names is still performed by the stack. |
 
 ##### A7-2 — the chain stops where it should
 
@@ -2217,6 +2226,7 @@ none has tested that the parts hand over to each other.
 | **Test data** | The A7-1 fixture, with the commit made on `main` and published from there. |
 | **Expected** | `git-publish` refuses, naming `main` and `protected`; the bare repository's `main` still holds `seed`; and `agent/probe` does not appear. |
 | **Covers** | FR32, §1.3, U4. |
+| **What it found** | Passed. `tests/e2e/m-a7.chain-refused.test.ts`, on its own instance of the fixture rather than A7-1's, so that "`agent/probe` never appears" is a statement about this run and not a leftover from that one. The refusal reads `git-publish refused: main is the default branch here and this repository's policy is protected`, offers `git switch -c agent/<name>`, and the remote is exactly as the seed left it: `main` at `seed`, no `direct.md` in it, no `agent/probe` at all. It also asserts that **nothing was minted** — the command refuses before it writes a permission — which is what makes the refusal attributable: under §9's check 6, with the hook made permissive, A7-2 stays green, so its refusal is demonstrably the command's and not the hook's. |
 
 ##### A7-3 — two clones do not interfere
 
@@ -2227,6 +2237,7 @@ none has tested that the parts hand over to each other.
 | **Test data** | `alpha.git` and `beta.git`, each seeded as in A7-1, each with its own clone; a commit in each on `agent/probe`; both `git-publish` invocations started before either has returned. |
 | **Expected** | Both succeed. Each remote holds its own commit and neither holds the other's. |
 | **Covers** | FR33. |
+| **What it found** | Passed, and the design claim is now checked instead of assumed. `tests/integration/m-a7.two-clones.test.ts`, on the host: one declaration names `alpha.git` and `beta.git`, the start script makes both clones, and each publishes `agent/probe` — **the same branch name in both, on purpose**, so that a permission read across clones would have somewhere to go wrong. Both land; `alpha.git` holds `notes.md` with `alpha` and `beta.git` with `beta`, and neither bare repository can name the other's commit at all (`git cat-file -e` fails in both directions). The overlap is asserted rather than hoped for: the second publication is shown to have begun before the first returned. **The half that earns the case is the closing probe.** A permission is written by hand into alpha's clone and a raw `git push` in beta's is still refused by the hook, with alpha's permission untouched afterwards. Without it, "two clones share no token" would rest on two publications that would equally have succeeded if they had shared one — and §9's check 6 confirms the probe is what carries it: with the hook permissive, this is one of the two cases that go red. |
 
 ##### A7-4 — one clone, two publications, one permission each
 
@@ -2238,6 +2249,7 @@ none has tested that the parts hand over to each other.
 | **Expected** | Both branches reach the remote, or one is refused with a message naming what happened. **What must not happen** is a push accepted by a token another invocation minted — asserted by requiring each accepted push to correspond to a token that was created and then consumed, not by counting successes. |
 | **Failure** | A push that reached the remote without a token of its own, or a token left behind after both invocations returned. |
 | **Covers** | FR33, FR18. |
+| **What it found** | Passed, and it converted the assumption it was written for into a fact. `tests/integration/m-a7.overlapping-publish.test.ts`, on the host, in the clone the start script made: `agent/probe-1` and `agent/probe-2` publish concurrently, and the case asserts that both invocations minted, that every branch that landed belongs to an invocation whose own permission was consumed, that any invocation that did not land said why, and that no permission remained. Counting is done from what the two invocations printed, because the permission is **one path per clone and two writes to it collapse into one file**: an invocation printing `git-publish refused:` never minted, and one printing the hook's `did not come through git-publish` minted a permission something else consumed. The overlap is made certain rather than hoped for — the `ssh` stand-in holds the connection for half a second, and the case asserts the second began before the first returned. **What it found about the design:** because the file is per clone and not per invocation, a permission one invocation mints can be consumed by the other's hook or removed by the other's cleanup — `git-publish` removes the token after its push whether or not the push was accepted. Both outcomes appear in practice and both are safe: on the host both branches landed, and in §9's check 5, run in the container with a longer stagger, the second was refused in the hook's words with nothing left behind. It **fails closed**, which is what FR18 asks for, but which of two well-behaved publications succeeds is decided by timing. That is recorded in `BACKLOG.md` rather than fixed here: no requirement is violated, and a fix — a per-invocation permission — is a change to the mechanism M-A6 signed off. |
 
 ##### A7-5 — a cold start · **manual**
 
@@ -2245,10 +2257,21 @@ none has tested that the parts hand over to each other.
 |---|---|
 | **Premise** | The path every new operator takes first, and the only one nothing has ever run: a clean checkout, `.env` from the example, build, start. Every test in this suite runs against a stack that is already up and volumes that are already populated, so anything that only works because of a state an earlier run left behind is invisible to all of them. |
 | **Component** | The whole stack, from a clean checkout. |
+| **Not reproducible, by design** | Seven of the seventeen images a cold start pulls hang on moving tags, so the run assembles what those tags point at today rather than restoring what was here. A failure therefore has two candidate causes — this repository, or an upstream move — and the procedure says to compare digests before blaming the stack. It is also the only thing here that would ever notice such a move. |
 | **Why it is manual** | `compose.yml` fixes 23 container names and the project runs one instance per host, so no test can stand a second stack beside the operator's, and one that tore down the running stack would take NextCloud, OpenProject and every volume with it. The constraint is the stack's design, not an oversight in the suite, and it is recorded rather than worked around. |
 | **Test data** | The procedure is in §9 and names the steps and what to look for. |
-| **Expected** | After `build.sh` and `start.sh`: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, and `git-repo-info`, `git-publish` and `nar-build` answer inside the agent containers. |
+| **Expected** | After `build.sh` and `start.sh`: every service is running and none is restarting — a cold start that lays the workspace out correctly while OpenProject loops would otherwise pass. Then: `volumes/repos` exists, each declared repository has a key and a clone, the hook is installed and every clone points at it, the rendered `config/nginx/nginx.conf` and the per-service files under `config/` are back, and `git-repo-info` and `git-publish` answer inside the agent containers. `nar-build` belongs to `FEATURE-liquid-java-extensions.md` and is present only where that work is: checking for it on this branch would fail a cold start that succeeded. |
+| **Amended again 2026-09-05** | The procedure did not mention that a reset invalidates the deploy keys. `cleanup.sh` removes `volumes/_git-secrets`, so the first start generates new ones and both clones fail — which reads as a failed cold start and is not. Step 4b now walks it: print the public halves, register them, start again. That step is U11 performed by hand, and running it is the closest thing this feature has to a rehearsal of what the launchpad card should do instead. |
+| **Amended 2026-09-04, twice** | First: the procedure removed only `volumes/`, which is not a cold start. Five generated files live outside it — the rendered `config/nginx/nginx.conf`, `config/openclaw/.env`, `config/pgadmin/{pgpass,config_distro.py}` and `config/nextcloud/set_trusted_proxies.sh` — and each is enough on its own to make a start script appear to produce a file it no longer produces. It now clears everything git does not track except `.env`, with a dry run first so the operator reads the list before it goes, and step 5 asserts those files came back rather than only the workspace. Then: the operator pointed out that the stack already has a full reset, `./cleanup.sh`, and it is more thorough than the deletion this case had invented — it also removes the rendered files for pgadmin, nginx, nextcloud, liquid, hermes and openclaw, stale containers from other checkouts, and the images. The procedure uses it, and `git clean -nffdx` is demoted from the tool to the **check**: git decides whether the reset worked, rather than the script vouching for itself. A side effect worth naming — this is the only thing in the repository that exercises `cleanup.sh` at all. |
 | **Covers** | FR32, NFR6, U1, U2, U7. |
+| **What it found** | **Passed on 2026-09-05 — and only because three defects it found were fixed while it ran.** The first attempt failed twice before reaching step 5. That distinction belongs in the record: a cold start that works on the first try and one that works after three repairs are different results, and this was the second. |
+| **Four defects in the product** | *The Claude CLI install could not fail.* npm 12 blocks install scripts unless `allowScripts` names the package, and `@anthropic-ai/claude-code` fetches its native binary in a `postinstall`; the install succeeded with a warning and the image shipped a launcher with nothing to launch, while the start reported `EXIT=0` and printed every URL. *The start then hung indefinitely.* OpenClaw 2026.9.1 retired `agents.defaults.cliBackends`, so the config this stack writes failed validation, and with a pty attached OpenClaw offers `Run "openclaw doctor --fix" now? [Y/n]` — a prompt no one could answer, on a call with no time bound. Both are fixed in PR #11, cut from `main`, because they break the **released** stack and must not wait for this review. *`bun_runner` reports unhealthy with an empty app directory and logs nothing at all*, and *`cleanup.sh` asks for a sudo password four minutes into a reset that need not ask at all* — both in `BACKLOG.md`. |
+| **And the harness gap** | Between `cleanup.sh` and the first `start.sh`, four cases fail that `--no-system` does not skip: they assert the start script's *output*, not the running containers, and nothing models that precondition. No run before this one had ever occupied that window. Recorded in `BACKLOG.md`. |
+| **Six defects in this procedure, all found by running it** | It removed only `volumes/`, which is not a cold start — five generated files live outside it. It counted the images from memory, and the computed replacement was wrong too, listing `hermes` which `build.sh` has commented out. It checked for `nar-build`, which belongs to the other branch, and would have failed a cold start that succeeded. Its health check was wrong **twice** in the same way, reporting a clean stack while `bun_runner` was unhealthy — both attempts were negative filters, and only naming the two positive conditions fixed it. It did not say that a reset invalidates the deploy keys, so an expected failure would have read as a failed run. And it did not warn that running the suite between the reset and the first start puts back what the reset removed, which happened. **Every one of these was invisible until someone executed the document line by line**, and the operator found four of the six by asking what a line was for. |
+| **The moving tags it named produced an incident within hours** | This case recorded that seven of the seventeen images hang on tags that can move. `ghcr.io/openclaw/openclaw:latest` moved the same morning to 2026.9.1 and broke four things in a stack whose own code had not changed since June: the Claude CLI shipped without its binary, the start hung indefinitely on a config the new version rejects, the Control UI refused every request as unattributable, and browsers then demanded a device pairing whose approval path is unreachable here. The repair is not the four symptoms but the pin — PR #11 fixes the base image at 2026.7.1, so moving off it is a decision rather than an event. **Chasing the symptoms was treating the effects of a choice nobody made**, and it took the operator asking "why is it broken at all?" to stop it. |
+| **And a property nobody knew, found while downgrading** | OpenClaw refuses to start when its state directory was last written by a newer version — *"Refusing to run automatic gateway startup migrations."* A downgrade is therefore never only a tag change: the state has to go with it. Anyone repeating this needs to know it before they try, which is why it is here rather than only in a commit message. |
+| **What the run proves that nothing else could** | That a new operator's first path works at all; that the pinned image tags still exist and still work together, since all seventeen were re-pulled; and that everything under `config/` which the stack generates is genuinely generated rather than inherited from a previous run. On a warm machine none of the three is observable. |
+| **What it found** | Not yet run. It is the operator's, it tears the stack down, and the procedure is in §9. It was deliberately not automated: `compose.yml` fixes 23 container names and one instance runs per host, so a test could only run it by destroying the stack it runs in. |
 
 ---
 
@@ -3131,7 +3154,13 @@ sentence apart here, and a one-line verdict cannot carry the difference.
 ### M-A7 — the paths nothing walks
 
 Run at the project root with the stack up. Nothing here touches `.env`, GitHub, or the operator's
-clones; the chain builds its own throwaway declaration and local remotes.
+clones; the chain builds its own throwaway declaration and local bare remotes under `/repos/.a7-*`
+and removes them again.
+
+`./tests/verify/m-a7.sh` runs the eight checks below in order, judges each one, restores everything
+it changed — including on `Ctrl-C` — and writes a log and a pull-request comment into `.pr-drafts/`.
+Run it, or run the commands by hand; the script is the same procedure with its judgements written
+down.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
@@ -3143,53 +3172,71 @@ cd /Users/christof/repos/liquidupstart
 ./tests/run.sh; echo "EXIT=$?"
 
 # 3. The chain by hand, bypassing the suite. Expect: PUBLISH EXIT=0 and the commit
-#    on the bare remote, every intermediate state produced by the stack.
+#    on the bare remote, every intermediate state produced by the stack. The bare
+#    remote is seeded by cloning rather than by pushing: inside the container the
+#    hook governs every repository, so a seeding push would itself need the
+#    sanctioned path.
 docker compose exec -T openclaw-gateway sh -lc '
 set -e; rm -rf /repos/.a7-hand; mkdir -p /repos/.a7-hand; cd /repos/.a7-hand
-git init -q --bare --initial-branch=main e2e.git
-git init -q -b main seed; cd seed; echo seed > README.md; git add README.md
-git -c user.name=Seed -c user.email=seed@local commit -qm seed
-git remote add origin ../e2e.git; git push -q origin main; cd ..
+git init -q -b main seed; cd seed
+git config user.name Seed; git config user.email seed@local
+echo seed > README.md; git add README.md; git commit -qm seed; cd ..
+git clone -q --bare seed e2e.git
 git clone -q e2e.git work; cd work
 git config liquidupstart.access write; git config liquidupstart.policy protected
 git checkout -q -b agent/probe; echo probe > notes.md; git add notes.md
-git commit -qm "add probe note"
+git -c core.pager=cat commit -qm "add probe note"
+echo "HOOKSPATH: $(git config --get core.hooksPath)"
 set +e
 git-publish >/tmp/e2e.out 2>&1; echo "PUBLISH EXIT=$?"; tail -3 /tmp/e2e.out
-echo "ON REMOTE: $(git -C ../e2e.git log -1 --format=%s agent/probe 2>/dev/null || echo MISSING)"'
+echo "ON REMOTE: $(git -C ../e2e.git log -1 --format=%s agent/probe 2>/dev/null || echo MISSING)"
+echo "TOKEN: $(test -e .git/liquidupstart-publish && echo present || echo none)"'
 
 # 4. The same chain aimed at main. Expect: non-zero, the refusal naming main and
 #    protected, and the remote unchanged.
 docker compose exec -T openclaw-gateway sh -lc '
 cd /repos/.a7-hand/work; set +e
-git checkout -q main; echo direct > direct.md; git add direct.md; git commit -qm "add direct note"
+git checkout -q main; echo direct > direct.md; git add direct.md
+git -c core.pager=cat commit -qm "add direct note"
 git-publish >/tmp/e2e-main.out 2>&1; echo "PUBLISH EXIT=$?"; head -3 /tmp/e2e-main.out
-echo "REMOTE MAIN: $(git -C ../e2e.git log -1 --format=%s main)"'
+echo "REMOTE MAIN: $(git -C ../e2e.git log -1 --format=%s main)"
+echo "REMOTE DIRECT: $(git -C ../e2e.git rev-parse --verify --quiet main:direct.md >/dev/null && echo present || echo absent)"'
 
 # 5. Two publications in one clone, overlapping. Expect: both branches on the
 #    remote or one refused with a message -- and no token left behind afterwards.
 docker compose exec -T openclaw-gateway sh -lc '
 cd /repos/.a7-hand/work; set +e
-git checkout -q -b agent/probe-1 agent/probe; echo one > one.md; git add one.md; git commit -qm one
-git checkout -q -b agent/probe-2 agent/probe; echo two > two.md; git add two.md; git commit -qm two
+git checkout -q -b agent/probe-1 agent/probe; echo one > one.md; git add one.md
+git -c core.pager=cat commit -qm one
+git checkout -q -b agent/probe-2 agent/probe; echo two > two.md; git add two.md
+git -c core.pager=cat commit -qm two
 ( git checkout -q agent/probe-1 && git-publish ) >/tmp/p1.out 2>&1 &
 ( sleep 0.2; git checkout -q agent/probe-2 && git-publish ) >/tmp/p2.out 2>&1 &
 wait
 echo "P1: $(tail -1 /tmp/p1.out)"; echo "P2: $(tail -1 /tmp/p2.out)"
+echo "REFUSALS: $(cat /tmp/p1.out /tmp/p2.out | grep -c refused)"
 echo "BRANCHES: $(git -C ../e2e.git branch --list "agent/*" | tr -d " " | tr "\n" " ")"
-ls .git/liquidupstart-publish 2>/dev/null && echo "TOKEN LEFT BEHIND -- FR18 violated" || echo "no token left"'
+test -e .git/liquidupstart-publish && echo "TOKEN LEFT BEHIND -- FR18 violated" || echo "no token left"'
 
-# 6. Negative control: does the hook decide? Same form as elsewhere -- truncate
-#    the command in place, never rename it; a single-file mount follows the inode.
-mv volumes/_git-secrets/hooks/pre-push volumes/_git-secrets/hooks/pre-push.aside
-mv config/agents/hooks/pre-push config/agents/hooks/pre-push.aside
+# 6. Negative control: does the hook decide? Truncate it in place to a permissive
+#    stub, never rename it -- it is bind-mounted as a single file and a single-file
+#    mount follows the inode. Expect A7-3 and A7-4 red, A7-1 and A7-2 green.
+cp config/agents/hooks/pre-push /tmp/pre-push.bak
+printf '#!/bin/sh\nexit 0\n' > config/agents/hooks/pre-push
 ./tests/run.sh m-a7; echo "EXIT=$?"
-mv volumes/_git-secrets/hooks/pre-push.aside volumes/_git-secrets/hooks/pre-push
-mv config/agents/hooks/pre-push.aside config/agents/hooks/pre-push
+cat /tmp/pre-push.bak > config/agents/hooks/pre-push; chmod 755 config/agents/hooks/pre-push
 ./tests/run.sh m-a7; echo "EXIT=$?"
 
-# 7. Clean up and confirm. Expect EXIT=0.
+# 7. Negative control: does git-publish decide? Same form. Expect all four red.
+cp config/agents/bin/git-publish.sh /tmp/git-publish.sh.bak
+printf '#!/bin/sh\nexit 90\n' > config/agents/bin/git-publish.sh
+./tests/run.sh m-a7; echo "EXIT=$?"
+cat /tmp/git-publish.sh.bak > config/agents/bin/git-publish.sh; chmod 755 config/agents/bin/git-publish.sh
+./tests/run.sh m-a7; echo "EXIT=$?"
+
+# 8. Clean up and confirm. Expect EXIT=0.
 docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.a7-hand'
+rm -rf volumes/repos/.a7-*
 ./tests/run.sh; echo "EXIT=$?"
 ```
 
@@ -3198,6 +3245,16 @@ question is not whether both succeed — either outcome is acceptable — but wh
 by a token another invocation minted. The last line is the assertion that matters: a token left behind
 after both have returned means one was written and never consumed, which is the shape a stolen
 permission takes.
+
+**Two corrections made while implementing the milestone, recorded rather than tidied away.** Check 3
+as signed off seeded the bare remote with `git push`, which the hook refuses inside the container for
+exactly the reason M-A6 established — the same correction A4-14, A5-3 and A6-12's fixtures needed —
+so it now seeds by cloning. And check 6 as signed off *moved* both copies of the hook aside; that
+makes the start script's `install` fail, so all four cases go red and the control cannot tell the
+cases that need the hook from the ones that do not. Truncating the source in place to a permissive
+stub separates them, which is what a negative control is for, and it matches the wording the check
+already carried. Check 7 was added for the same reason: two controls between them say which artefact
+decides which case.
 
 #### A7-5 — the operator's procedure · a cold start
 
@@ -3211,34 +3268,125 @@ left behind is invisible to all of them. This is the path a new operator takes, 
 run it.
 
 ```bash
-# 1. Back up anything you want to keep. This removes every volume.
+# 1. Back up .env. cleanup.sh removes it, deliberately -- it is generated from
+#    .env.example and a full reset treats it as generated. Yours is not.
 cp .env /tmp/lu-env.bak
 
-# 2. Tear down and clear the state.
-./scripts/linux/down.sh
-sudo rm -rf volumes/
+# 2. The supported full reset. This is the stack's own tool, not a recipe
+#    invented for this case: it downs the containers with their volumes, removes
+#    stale ones from older checkouts, deletes every rendered config file, removes
+#    volumes/ (with sudo if container-owned files need it), deletes .env, and
+#    removes the project images and every base image compose.yml names.
+#    Expect a long re-pull afterwards -- NextCloud and OpenProject come down
+#    again. --keep-images exists and is NOT used here: an image that survives is
+#    a build nobody watched.
+./cleanup.sh
 
-# 3. Build the five images from scratch.
+# 2b. Do NOT run the test suite between here and step 4. Several cases invoke
+#     git.sh, which recreates volumes/repos, so running the suite in this window
+#     puts back part of what step 2 removed. It happened on 2026-09-05, while
+#     investigating an unrelated question, and left two empty directories that
+#     had to be removed by hand.
+#
+#     Verify the reset independently, with git as the arbiter rather than the
+#     script's own word. Expect NOTHING except .pr-drafts/. Anything else listed
+#     is state cleanup.sh does not know about, and is the finding.
+git clean -nffdx -e .env
+
+# 2c. The network can outlive the containers. Expect no output.
+docker network ls --filter name=liquid --format '{{.Name}}'
+
+# 2d. Put .env back. From here on, every file that appears is the stack's work.
+cp /tmp/lu-env.bak .env
+
+# 3. Build the images this checkout declares -- do not count them from memory,
+#    the number differs by branch: the Java extensions add a fifth, nar_builder,
+#    which does not exist here.
+grep -v '^[[:space:]]*#' scripts/linux/build.sh | grep -o 'build/[a-z-]*\.sh'
 ./scripts/linux/build.sh --no-cache; echo "BUILD EXIT=$?"
 
 # 4. Start, with the .env you had. Expect every URL and credential printed at the
 #    end, and no error above them.
 ./scripts/linux/start.sh; echo "START EXIT=$?"
 
-# 5. What a cold start must have produced. Expect: the workspace, a key and a
-#    clone per declared repository, the hook installed, and all three commands
-#    answering from inside the container an agent works in.
+# 4b. EXPECTED, not a failure: both clones fail on this first start. cleanup.sh
+#     removed volumes/_git-secrets, so step 4 generated NEW deploy keys, and the
+#     ones registered at the host belong to keys that no longer exist. The start
+#     names the path and the remedy for each repository:
+#       Warning: could not clone git@github.com:... :
+#         Register <project>/volumes/_git-secrets/repos/<slug>/id_ed25519.pub
+#         as a deploy key, then start again.
+#     This is U11 -- re-enabling a repository whose key no longer works -- walked
+#     by hand, and it is the friction the launchpad card in U2 exists to remove.
+#     Print both public halves, register them at the host, and start again. The
+#     write-capable repository needs "Allow write access" ticked; the read-only
+#     one must not have it. Delete the stale entries at the host while you are
+#     there: their private halves no longer exist anywhere.
+for f in volumes/_git-secrets/repos/*/id_ed25519.pub; do echo "--- $f"; cat "$f"; done
+./scripts/linux/start.sh; echo "START EXIT=$?"
+#     Expect this second start to report "Cloned ..." for each repository.
+
+# 5a. Did the stack come up at all? Every base image was removed in step 2, so
+#     this is also the only check in the repository that the pinned tags still
+#     exist and still work together -- nextcloud:34, openproject:17-slim,
+#     postgres:17, redis:8, dpage/pgadmin4 and the rest are in a warm machine's
+#     cache and nobody notices when one moves. Expect every service running or
+#     healthy, and none restarting.
+docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}'
+docker compose ps --format '{{.Service}}\t{{.State}}\t{{.Status}}' \
+  | awk -F'\t' '$2 != "running" || $3 ~ /unhealthy|Restarting/' \
+  | grep . || echo "  nothing to report"
+#     Two positive conditions, named on the fields they belong to: State must be
+#     'running', and Status must not say unhealthy or restarting. Both earlier
+#     versions of this check were negative filters -- "show me what is not fine"
+#     -- and both were wrong in the same way, reporting a clean stack on
+#     2026-09-05 while bun_runner was '(unhealthy)'. State and health are
+#     different fields, and a filter matching 'running' removes the unhealthy
+#     rows along with the healthy ones.
+#     Known and not a failure: bun_runner is unhealthy while volumes/bun_app is
+#     empty. Its healthcheck probes port 3000 and there is no app to serve, so a
+#     cold start reaches this state by definition. It logs nothing at all, which
+#     is recorded in BACKLOG.md as its own problem.
+
+# 5b. What a cold start must have produced. Every path below was absent after
+#     step 2, so each one appearing is the start script's own work and not a
+#     survivor. That is the whole point of the case.
+ls -l config/nginx/nginx.conf config/openclaw/.env config/pgadmin/pgpass
 ls volumes/repos/
 ls volumes/_git-secrets/repos/*/id_ed25519.pub
 ls -l volumes/_git-secrets/hooks/pre-push
 docker compose exec -T openclaw-gateway sh -lc '
   git-repo-info | head -3
-  command -v git-publish nar-build
+  command -v git-publish
   cd /repos/liquidupstart 2>/dev/null && git config --get core.hooksPath'
+# nar-build belongs to the Java extensions and is absent on this branch. Check it
+# only where its service exists:
+[ -d config/nar_builder ] && docker compose exec -T openclaw-gateway sh -lc 'command -v nar-build'
 
 # 6. And the suite, against a stack that has never done anything else.
 ./tests/run.sh; echo "EXIT=$?"
 ```
+
+**What comes down the wire, and why a failure here has two possible causes.** `cleanup.sh` removes
+every base image `compose.yml` names, not only the four this project builds, so a cold start pulls
+**seventeen** distinct images: eleven that compose uses directly — `postgres:17` (three services),
+`pgvector/pgvector:pg17`, `dpage/pgadmin4`, `postgrest/postgrest`, `swaggerapi/swagger-ui`,
+`nginx:latest`, `openproject/openproject:17-slim` (four services), `memcached:1.6-alpine`,
+`nextcloud:34`, `redis:8` and `ghcr.io/euro-office/documentserver:latest` — and six more that the
+four local builds take as their base: `ubuntu:24.04`, `debian:bookworm-slim`, `node:lts-slim`,
+`oven/bun:latest`, `ghcr.io/nocodenation/liquid-nifi:latest` and `ghcr.io/openclaw/openclaw:latest`.
+
+**Seven of the seventeen hang on moving tags** — the two `ghcr.io` ones, `nginx:latest`,
+`oven/bun:latest`, and `dpage/pgadmin4`, `postgrest/postgrest` and `swaggerapi/swagger-ui`, which
+carry no tag at all and therefore mean `latest`. A cold start does not restore the stack that was
+here; it assembles whatever those tags point at today.
+
+That cuts both ways, and the reader should know which way to look first. **A failure here has two
+possible causes** — this repository, or something upstream that moved — and they are not
+distinguishable from the error alone. Before filing a defect against the stack, compare the image
+digests with what a working machine has. And the same property is why the case is worth running at
+all: on a warm machine those tags sit in the cache, and **this is the only thing in the repository
+that would ever notice one of them moving.** Nothing else re-pulls.
 
 **Pass:** every command in step 5 answers, and step 6 is `EXIT=0`. **Fail:** anything that needs a
 second `start.sh` to appear — that is a first-run defect, and it is exactly what a warm stack hides.

@@ -3,13 +3,18 @@
 Evidence that the milestones were actually verified, not only declared verified.
 
 **A reviewer does not need to read this directory.** The findings are already folded into
-`docs/TEST-SPEC-liquid-java-extensions.md`, in each case's *"What it found"* row. What lives here is
-the material behind those rows.
+`docs/TEST-SPEC-git-integration.md` and `docs/TEST-SPEC-liquid-java-extensions.md`, in each case's
+*"What it found"* row. What lives here is the material behind those rows.
+
+Since `feature/git-integration` was merged forward into this branch on 2026-09-07, both sets are
+here: **M-A5 to M-A7** for the git integration and **M-B1 to M-B2** for the Java extensions. The
+earlier version of this file said they would arrive when that merge happened; they have.
 
 | | |
 |---|---|
 | `M-*-verification.md` | The record: what was run, what it produced, what it found, what was left. English, written to be read. |
 | `M-*-verification.log` | The raw terminal transcript of that run. Not written to be read — it is what the record is checkable against. |
+| `A6-13.md` | An operator procedure, kept because the case it belongs to is manual and the steps are the test. |
 
 ## Why the logs are here
 
@@ -28,6 +33,5 @@ it is finished. The distinction is deliberate — everything in this directory i
 
 M-B3 has no record because it is not built.
 
-The git integration's own records — M-A5, M-A6, M-A7 and the A6-13 procedure — live on
-`feature/git-integration`, which this branch is cut from. They arrive here when that branch is
-merged forward.
+The OpenClaw 2026.9.1 migration keeps its records on `feature/openclaw-2026-9-1`, with the
+specification they belong to.
