@@ -18,7 +18,8 @@ documents since 2026-09-03.
 
 **The OpenClaw 2026.9.1 migration** (#13) moves the stack off the version #11 pinned it to, and makes
 the version something the stack reads rather than assumes. Started and largely finished on
-2026-09-06.
+2026-09-06, reviewed and **merged into `fix/openclaw-2026-9-1` on 2026-09-08** — which is #11, not
+`main`.
 
 **The two repairs** are #11 (the pin, after a floating tag moved) and #12 (`bun_runner`'s health
 check, which asked whether the runner had been used rather than whether it works).
@@ -49,19 +50,28 @@ than tidied away.
 migration documents are on `feature/openclaw-2026-9-1`; the git and Java documents on their own
 branches.
 
-## The five branches, and how they relate
+## The branches, and how they relate
+
+Current as of 2026-09-08 evening, after #12 and #13 landed. **Nothing has reached `main` yet**: both
+merged into `fix/openclaw-2026-9-1`, which is #11 — so #11 is now the only door to `main`, and it
+carries **36 commits** rather than the one-line pin its title suggests.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
-| `feature/git-integration` | **#9** (draft) | `main` | M-A0 to M-A8 |
-| `feature/liquid-java-extensions` | **#10** (draft) | `feature/git-integration` | M-B1 to M-B3 |
-| `fix/openclaw-2026-9-1` | **#11** | `main` | The pin to 2026.7.1 |
-| `fix/bun-runner-health` | **#12** | `main` | One line: the health check |
-| `feature/openclaw-2026-9-1` | **#13** | `fix/openclaw-2026-9-1` | The migration, with #12 merged |
+| `feature/git-integration` | **#9**, open | `main` | M-A0 to M-A8 |
+| `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B3 |
+| `fix/openclaw-2026-9-1` | **#11**, open | `main` | The pin to 2026.7.1 — **and now the migration and #12 with it** |
+| `fix/openclaw-start-stdin` | **#14**, open | `fix/openclaw-2026-9-1` | The `SIGTTIN` hang the migration's own verification found |
+| ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | **Merged** into #13. The branch exists only locally now; the remote one is gone |
+| ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`, remote branch deleted |
 | `integration/oc-2026-9-1` | — | — | **Not a merge candidate.** #13 + #9 + #10 in one place, so the compatibility cases can be *executed* rather than asserted |
 
 Cutting a branch from another is how each PR shows only its own diff. GitHub retargets a stacked PR
-by itself once its base lands, so **Timur can review the four in any order and nothing waits.**
+by itself once its base lands, so **the open ones can be reviewed in any order and nothing waits.**
+
+**A merged branch is not a landed change.** #12 and #13 are merged and neither is in `main`; they sit
+inside #11, and reading their PRs as "done" would misstate what production carries. The same will be
+true of #14 the moment it lands.
 
 **#9 must be merged with a merge commit, not squashed.** GitHub retargets #10 by itself, but only
 cleanly if the commits it already carries survive — and the individual messages are part of what this
@@ -76,10 +86,10 @@ assumed. Bringing it level is three merges, of which two are clean and one confl
 `docs/verification/README.md`, where both sides rewrote the same paragraph.
 
 **The rule, decided 2026-09-07: nothing reaches `main` without Timur's review. Merging forward
-inside the stack is fine** — #11 into #13, #9 into #10, the three into the integration branch — and
-is how each branch stays reviewable against what it actually builds on. Whoever runs anything on the
-integration branch must merge the three forward *first*, or they are measuring a stand that no longer
-exists.
+inside the stack is fine** — #12 and #13 into `fix/openclaw-2026-9-1`, #9 into #10, the three into
+the integration branch — and is how each branch stays reviewable against what it actually builds on.
+Whoever runs anything on the integration branch must merge the open ones forward *first*, or they are
+measuring a stand that no longer exists. The rule held today: two PRs merged and `main` is untouched.
 
 ## One working copy, one stack
 
@@ -105,7 +115,7 @@ rebuilds them, and a suite run against them measures the containers.
 |---|---|---|
 | `feature/git-integration` | `docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'` | The stack predates the git integration |
 | `feature/liquid-java-extensions` | `docker compose exec -T opencode sh -lc 'command -v nar-build'` | The stack has no `nar_builder`, and every M-B case is red for that reason alone |
-| `feature/openclaw-2026-9-1` | `docker compose exec -T openclaw-gateway openclaw --version` | The gateway is not the migrated one |
+| `fix/openclaw-2026-9-1` or `fix/openclaw-start-stdin` | `docker compose exec -T openclaw-gateway openclaw --version` | Anything but `2026.9.1` means the gateway is not the migrated one |
 
 **And an image is not built just because a service is declared.** `feature/liquid-java-extensions`
 adds `nar_builder`, whose image `liquidupstart/nar-builder:latest` exists on no host that has not
@@ -117,10 +127,16 @@ indistinguishable from a fix that works.
 
 ## State
 
-**The stack runs OpenClaw 2026.7.1**, rebuilt from this branch on 2026-09-08. Twenty containers,
-zero restarts, every healthcheck green. It ran 2026.9.1 for a day because images live on the host and
-not in the branch — see *"A locally built image can belong to another branch"* below, which cost two
-hangs before it was understood.
+**The stack runs OpenClaw 2026.9.1**, rebuilt from `fix/openclaw-start-stdin` on 2026-09-08 evening
+and migrated from a state 2026.7.1 had written — the path a real installation takes, not a cold
+start. Nineteen services, every healthcheck green. It ran 2026.7.1 for most of that day, for M-A8 and
+M-B3, and was moved forward only to verify the migration; images live on the host and not in the
+branch, which is what *"A locally built image can belong to another branch"* below is about and what
+cost two hangs before it was understood.
+
+**`volumes/_openclaw` now holds a 2026.9.1 state, so the way back is not a checkout.** 2026.7.1
+refuses it — OC-21's one-way door. Returning to #9 or #10 means clearing that directory and
+restoring `_openclaw.bak-2026.7.1`.
 
 **The git integration is complete.** M-A0 to M-A8 built, each verified independently and posted to
 #9. All four manual cases observed, including the three that failed.
@@ -328,6 +344,14 @@ operator's, on the same commit, because `/usr/bin/git` has no message catalogues
 whose output is parsed must be pinned to `C`, which `tests/lib/shell.ts` had done since M-A1 and the
 dashboard had not.
 
+**And it happened twice the same day, by a different mechanism.** The start hung silently for five
+minutes at the state migration, because GNU `timeout` — present only where Homebrew put it — runs its
+command in its own process group, `docker compose run` then reads a terminal it no longer owns, and
+the kernel stops it with `SIGTTIN`. The call was *bounded*, which is what OC-3 requires, and the
+bound did not save it. Both defects are the same lesson at two levels: **what is installed on the
+operator's machine is part of the system under test**, and neither `PATH` nor locale is a detail a
+suite can leave to chance. Neither would ever have surfaced on CI.
+
 **A suite is green about the paths it walks.** 334 cases passed while the dashboard's Start button
 could not bring up a stack, a malformed declaration destroyed a running installation, and a start
 that left a repository broken ended in the word *succeeded*. Nothing was wrong with the cases. They
@@ -416,9 +440,22 @@ route, and the pairing decision happens only after a browser signs a challenge.
    **Nobody has triggered a mismatched processor.** The `NoClassDefFoundError` that should follow is
    inferred from how the JVM resolves method signatures, not observed. It is in `BACKLOG.md`, and it
    is the one loose end M-B3 leaves.
-2. **Timur's reviews** of #9, #10, #11, #12 and #13. They run in parallel and block nothing; that is
-   what the branch stacking is for.
-3. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
+2. **Timur's reviews.** #12 and #13 were reviewed and merged on 2026-09-08; **#9, #10, #11 and #14
+   are open.** They run in parallel and block nothing, which is what the stacking is for — with one
+   exception now: **#11 is the only door to `main`**, and it has stopped being a one-line pin. It
+   carries 36 commits, the whole migration and #12 among them, and #14 will join them if it lands
+   first. Reviewing it as though its title were still accurate would be reviewing the wrong thing.
+
+   The working copy is currently on `fix/openclaw-start-stdin` and the stack is 2026.9.1-shaped.
+   `volumes/_openclaw` holds a state 2026.9.1 has written, so **going back to #9 or #10 means
+   clearing it and restoring `_openclaw.bak-2026.7.1`** — OC-21's one-way door, and the discriminators
+   above say which stack is running.
+3. **The repaired migration path has never been executed.** #14 fixes the `SIGTTIN` hang, the case
+   asserts it at the text level and its control was run — but the start that verified it *skipped*
+   `openclaw_migrate_state`, because the state was already 2026.9.1 by then. Running it in anger
+   needs a 2026.7.1 state restored first, which is OC-28's replay. After a day in which eight of nine
+   defects sat in code nobody had ever run, this is the obvious loose end.
+4. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
    was the one without, and its file holds the four things 2026.9.1 deferred plus the `bun_runner`
    entrypoint alternative that #12 had nowhere to record. Two entries on #9 and #10 are answered
    rather than open — the Claude CLI install, fixed 2026-09-05, and `bun_runner` reporting unhealthy
