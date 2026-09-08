@@ -92,7 +92,6 @@ function writeConfig(env: Env): any {
     ENABLE_GROK: '0',
     ENABLE_LOCAL: '0',
     LU_NETWORK_SUBNET: '172.18.0.0/16',
-    OC_DEVICE_AUTO_APPROVE_SCOPES: 'operator.read,operator.write',
     PLUGIN_PATHS: '',
     MODEL_WILDCARDS: '',
     OPENROUTER_MODELS_JSON: '[]',
@@ -136,14 +135,20 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     expect(cfg.gateway.controlUi.dangerouslyDisableDeviceAuth).toBeUndefined();
     expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove).toEqual({
       enabled: true,
-      scopes: ['operator.read', 'operator.write'],
+      scopes: [
+        'operator.read',
+        'operator.write',
+        'operator.talk',
+        'operator.pairing',
+        'operator.approvals',
+        'operator.questions',
+      ],
     });
   });
 
-  test('OC-12 the scope set never contains operator.admin by default', () => {
+  test('OC-12 the scope set never contains operator.admin', () => {
     // operator.admin makes doctor raise a critical finding by design (OC-10).
-    const dflt = writeConfig({ OC_SCHEMA_NEW: '1', OC_DEVICE_AUTO_APPROVE_SCOPES: '' });
-    expect(dflt.gateway.auth.trustedProxy.deviceAutoApprove.scopes).not.toContain('operator.admin');
+    expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes).not.toContain('operator.admin');
   });
 });
 
@@ -226,7 +231,6 @@ describe('OC-31 a plugin the operator did not ask for does not stay enabled', ()
       '-e', 'ENABLE_GROK=0', '-e', 'ENABLE_LOCAL=0',
       '-e', 'LU_NETWORK_SUBNET=172.18.0.0/16', '-e', 'PLUGIN_PATHS=',
       '-e', 'MODEL_WILDCARDS=', '-e', 'OPENROUTER_MODELS_JSON=[]', '-e', 'LOCAL_LLM_MODELS_JSON=[]',
-      '-e', 'OC_DEVICE_AUTO_APPROVE_SCOPES=operator.read',
       '--entrypoint', 'node', IMAGE_NEW, '/state/writer.js',
     ]);
     expect(r.code).toBe(0);
@@ -261,7 +265,6 @@ describe('the sweep: a key left by the other version does not survive', () => {
       '-e', 'ENABLE_GROK=0', '-e', 'ENABLE_LOCAL=0',
       '-e', 'LU_NETWORK_SUBNET=172.18.0.0/16', '-e', 'PLUGIN_PATHS=',
       '-e', 'MODEL_WILDCARDS=', '-e', 'OPENROUTER_MODELS_JSON=[]', '-e', 'LOCAL_LLM_MODELS_JSON=[]',
-      '-e', 'OC_DEVICE_AUTO_APPROVE_SCOPES=operator.read',
       '--entrypoint', 'node', IMAGE_NEW, '/state/writer.js',
     ]);
     expect(r.code).toBe(0);

@@ -370,7 +370,6 @@ else
     -e LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET}" \
     -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
     -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
-    -e OC_DEVICE_AUTO_APPROVE_SCOPES="${OC_DEVICE_AUTO_APPROVE_SCOPES:-operator.read,operator.write,operator.talk,operator.pairing,operator.approvals,operator.questions}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
@@ -430,8 +429,14 @@ else
         delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
         c.gateway.auth.trustedProxy.deviceAutoApprove = {
           enabled: true,
-          scopes: (process.env.OC_DEVICE_AUTO_APPROVE_SCOPES || "")
-            .split(",").map((s) => s.trim()).filter(Boolean),
+          scopes: [
+            "operator.read",
+            "operator.write",
+            "operator.talk",
+            "operator.pairing",
+            "operator.approvals",
+            "operator.questions",
+          ],
         };
       } else {
         delete c.gateway.auth.trustedProxy.deviceAutoApprove;
