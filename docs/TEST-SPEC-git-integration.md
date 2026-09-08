@@ -2420,6 +2420,7 @@ render, on a page that must answer while the stack is down — so it is recorded
 | A8-22 | Integration | The control that reaches the retry is drawn, and only where it is needed | Between A8-9, which proves the flag, and A8-8, which proves the action, nothing asked whether a button exists between them. The same shape as the route this milestone was built for: correct, and called by nothing |
 | A8-23 | Unit **unhappy** | A path that cannot be a repository path is refused | A URL pasted twice parses as host plus a path containing the second URL. GitHub answered *"is not a valid repository name"* — a message about the remote, for a mistake in `.env` |
 | A8-24 | Unit **unhappy** | A fixture-based test is handed a project, not the operator's `.env` | Bun loads the repository's `.env` into `process.env`, `sh()` forwarded it, and `git.sh` prefers the variable over the file. Five cases across M-A1 and M-A3 went red for a declaration none of them names |
+| A8-25 | Integration | The unreachable state survives a fresh request | A8-17 step 5 asks an operator to reload and see it still named. The card is rendered server-side from the manifest, so a second request with no prior exchange is the same claim — made without an installation to break |
 
 #### Detail per case
 
@@ -2637,7 +2638,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | The procedure is in §9. |
 | **Expected** | The next start still reports every URL and credential — it must not block — **and** the launchpad names that repository as unreachable, with the error and the current key. The state survives a page reload, because it lives in the manifest and not in a session. Re-registering the key and pressing the card's test restores it. |
 | **The failure to watch for** | A start that reads as success. If the operator can reach the end of a start and see nothing amiss while a repository is broken, the case has found what it was written to find, whatever the card does afterwards. |
-| **What it found** | **Not yet run.** A8-16 passed on 2026-09-08 and left the arrangement this case needs: `git-autosync` is declared `read|protected`, reachable, and its deploy key is registered at the host — the disposable one of the three, which is what to take away rather than a repository the stack itself depends on. `ScreenCaps/Stills/A8-17` exists and is empty. |
+| **What it found** | **Walked 2026-09-08, and partly unevidenced.** `git-autosync` was chosen as the disposable one of the three; its key was deleted at the host and its clone and key directory removed. Steps 1, 2, 6 and 7 are verified against disk: all three repositories are cloned again, all three key directories are back, and the manifest reports no error. The operator's verdict on the middle was *"seems to work"*. **Screenshots for A8-17 are all terminal**, so steps 3 and 4 — whether the start read as success, and what the card said — rest on that verdict rather than on a record, and **step 5 was not performed properly**. Its property is now A8-25 instead, which asks the same question of a second request. What remains genuinely open is step 3, and it is the reason this case exists: nobody can say from the evidence whether a start that leaves a repository broken looks any different from one that does not. |
 | **Covers** | FR3, FR20, U11. |
 
 **Part 4 — the paths the operator's buttons take.**
@@ -2711,6 +2712,17 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Why the second half is the unhappy one** | Stripping the environment wholesale would trade a silent coupling for a loud breakage, which is how this kind of repair usually goes wrong. |
 | **What it means for the earlier milestones** | Their green was partly luck. Nothing is known to have been wrong, but between M-A1 and 2026-09-08 no case that ran the start script against a fixture was reading only its fixture, and no case said so. |
 | **Covers** | NFR1. |
+
+##### A8-25 — the state is in the manifest, not in a session
+
+| | |
+|---|---|
+| **Premise** | U11 requires the failure to stay visible: *"the state lives in the repositories manifest rather than in a session"*. A8-17 step 5 asks the operator to reload and confirm it, and on 2026-09-08 that step was not performed properly — which is a good reason to stop asking a person for it. Nothing about the claim needs a browser: the card is rendered by `+page.server.ts` from `repositories.json`, so a second request carrying nothing from the first is exactly the same question. |
+| **Component** | The served launchpad, fetched twice on the fixture A8-6 already stands up. |
+| **Steps** | Fetch, fetch again, and compare the unreachable repository's block. |
+| **Expected** | Status 200 both times, the block still says `unreachable`, and the two are **identical** — not merely both present, since a card that regenerated something per request would satisfy the weaker assertion. |
+| **What it replaces** | A manual reload that costs a destroyed and rebuilt repository to reach. A8-17 keeps the step, because an operator watching a browser sees things a fetch does not, but the property no longer depends on it being done. |
+| **Covers** | FR11, U11. |
 
 **And one guard under all three parts.**
 

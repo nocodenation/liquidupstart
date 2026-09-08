@@ -26,7 +26,7 @@
  *           next step; and the third says both repositories are declared and
  *           their state unknown, in both broken-manifest states, with the page
  *           still answering 200.
- * Covers:   A8-6, A8-7, A8-14, A8-20, A8-22, FR3, FR10, FR11, FR20, U2, U11
+ * Covers:   A8-6, A8-7, A8-14, A8-20, A8-22, A8-25, FR3, FR10, FR11, FR20, U2, U11
  * Unhappy:  A8-7 and A8-14 are the unhappy twins of A8-6: an empty card in
  *           either state reads as "nothing declared", which is false and leaves
  *           the operator with nothing to do next.
@@ -69,6 +69,7 @@ let unpreparedPage: { status: number; html: string };
 let unknownPage: { status: number; html: string };
 let truncatedPage: { status: number; html: string };
 let driftedPage: { status: number; html: string };
+let reloadedPage: { status: number; html: string };
 
 beforeAll(async () => {
   const built = buildDashboardImage(TAG);
@@ -102,6 +103,8 @@ beforeAll(async () => {
   // declaration names, which is what a save without a restart leaves and what a
   // scoped retry passes through. The page has to draw the pending list, not
   // merely carry it -- the same claim A8-6 makes about the repositories.
+  reloadedPage = await get(a, '/');
+
   const whole = readFileSync(manifestPath(ready), 'utf8');
   const narrowed = JSON.parse(whole);
   narrowed.repositories = narrowed.repositories.slice(0, 1);
@@ -200,4 +203,19 @@ test('A8-22 and the cloned one is not, because it needs no test', () => {
   const of = (label: string) => blocks.find((b) => b.includes(label)) ?? '';
 
   expect(of(`${FLOWS.host}/${FLOWS.path}`)).not.toContain('Test this repository');
+});
+
+test('A8-25 a second fetch reports the same state, because it is not held in a session', () => {
+  // A8-17 step 5 asks an operator to reload and see the unreachable repository
+  // still named. It was not performed on 2026-09-08, and it need not be: the
+  // card is rendered server-side from the manifest, so a fresh request with no
+  // prior exchange is the same claim, made without an installation to break.
+  const first = withoutScripts(readyPage.html);
+  const again = withoutScripts(reloadedPage.html);
+  const block = (html: string) =>
+    html.split('<li').find((b) => b.includes(`${SKILLS.host}/${SKILLS.path}`)) ?? '';
+
+  expect(reloadedPage.status).toBe(200);
+  expect(block(again)).toContain('unreachable');
+  expect(block(again)).toBe(block(first));
 });
