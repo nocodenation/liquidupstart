@@ -1,4 +1,6 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+
+const C_LOCALE = { LC_ALL: 'C', LANG: 'C', LANGUAGE: 'C' };
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parseEnvValues } from '../env-file';
@@ -88,6 +90,7 @@ export function fingerprint(path: string): string | null {
   try {
     return execFileSync('ssh-keygen', ['-l', '-f', path], {
       encoding: 'utf8',
+      env: { ...process.env, ...C_LOCALE },
       stdio: ['ignore', 'pipe', 'ignore']
     }).trim();
   } catch {
@@ -138,7 +141,11 @@ export function declaredRepositories(): {
     };
   }
 
-  const parsed = spawnSync('bash', [parser, 'parse', value], { encoding: 'utf8', timeout: 20_000 });
+  const parsed = spawnSync('bash', [parser, 'parse', value], {
+    encoding: 'utf8',
+    env: { ...process.env, ...C_LOCALE },
+    timeout: 20_000
+  });
   if (parsed.status !== 0) {
     const detail = (parsed.stderr ?? '').trim();
     return {
@@ -278,6 +285,7 @@ function runStartGitStep(dir: string, entry: ManifestEntry): Promise<string> {
       cwd: dir,
       env: {
         ...process.env,
+        ...C_LOCALE,
         GIT_REPOSITORIES: `${entry.url}|${entry.access}|${entry.policy}`
       }
     });
