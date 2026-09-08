@@ -63,7 +63,8 @@ restore() {
   fi
   rm -rf "$WORK"
 }
-trap restore EXIT INT TERM
+trap restore EXIT
+trap 'exit 130' INT TERM
 
 banner() {
   printf '\n%s=== %s ===%s\n' "$BOLD" "$1" "$RST"

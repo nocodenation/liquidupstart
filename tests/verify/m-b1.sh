@@ -44,7 +44,8 @@ restore() {
   done
   rm -rf "$WORK"
 }
-trap restore EXIT INT TERM
+trap restore EXIT
+trap 'exit 130' INT TERM
 
 await_builder() {
   local i

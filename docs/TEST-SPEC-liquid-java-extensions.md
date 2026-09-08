@@ -564,6 +564,47 @@ The two verification records are left as they were written — they are records 
 them afterwards would hide the thing worth keeping: a check whose failure mode was to quietly become
 destructive, in the scripts written to make verification trustworthy.
 
+**And the same run found that none of them could be interrupted either.** `trap restore EXIT INT TERM`
+runs the handler on `Ctrl-C` and then **resumes the script where it was**, with the fixtures it has
+just deleted; `EXIT` then runs it a second time at the end. Since `restore` may restart Liquid and
+wait up to five minutes for it, the operator's `Ctrl-C` looks like nothing happening at all, and every
+further `Ctrl-C` starts the same wait again. That is what happened on 2026-09-08 — the script could
+not be stopped. It is now `trap restore EXIT` plus `trap 'exit 130' INT TERM`, so an interrupt exits
+and the exit trap restores exactly once. The goal that commissioned `m-b2.sh` asked for "everything
+restored including on Ctrl-C"; it was written, reviewed and recorded as done, and it had never been
+tried, because nobody had needed to interrupt one of these scripts until now.
+
+**And then it asked the wrong port, having already computed the right one.** NiFi's default HTTPS
+port is 8443; this stack sets `SYSTEM_HTTPS_PORT=8833`, which is what `nifi.properties` inside the
+container says and what `nar-build` itself uses. The §4 block written on 2026-09-04 typed 8443 in six
+places, the M-B3 run copied it into `m-b3.sh` — and copied it while **also** reading
+`SYSTEM_HTTPS_PORT` out of `.env` two lines earlier and then not using it. `await_liquid` therefore
+waited 300 seconds for an answer that could not come, before any check had run. `m-b2.sh` does not
+have the defect: it uses the value it reads. Both the script and the block now do the same, and the
+block sources `.env` at the top so the port is a value rather than a number to remember.
+
+This is the project's own rule turned against it: *prefer a computed answer to a rule an agent has to
+remember*. The computed answer was right there, in the same file, three lines up.
+
+**And with the port right, the address was still wrong — which produced a false finding rather than a
+hang.** On the run of 2026-09-08 15:55, check 3 reported `occurrences of
+org.nocodenation.probe.ProbeProcessor: 0` and failed, over a build that had exited 0 and a NAR that
+was **byte-identical in `lib/` by SHA-256**. It read as the milestone's headline result. It was not:
+`https://127.0.0.1:${SYSTEM_HTTPS_PORT}` is answered by Jetty with `400 Invalid SNI`, because an IP
+address sends no TLS server name and NiFi's keystore covers `localhost`, `liquid.localhost` and the
+container id. The token request returned an HTML error page, `processor_types` checked only that the
+token was **non-empty** — an error page is non-empty — and the `Bearer <html>…` header was refused in
+turn. Every count was zero because the catalogue was never read. Asked as `localhost`, the same
+instance answers with a 451-character token and **297 processor types**.
+
+**The repair is not the hostname.** That is one line. What was missing is a control: a count of zero
+means nothing unless something that *must* be listed is listed. Checks 3 and 5 now count
+`org.apache.nifi.processors.standard.GenerateFlowFile` first — a processor every NiFi ships — and
+refuse to draw a conclusion when it is absent, and `processor_types` rejects a token that begins with
+`<` instead of putting it in a header. Check 5 needed it as much as check 3 did: it asserts the type
+is **gone**, which a broken query satisfies perfectly. Check 4 already had its control, in the form
+of check 3's probe having to still be there.
+
 ### M-B1 — the NAR builder
 
 Run at the project root with the stack up. Checks 5 and 6 move something and put it back, and each
@@ -860,6 +901,16 @@ against what the jar in Liquid's `lib/` actually holds — before asking whether
 ```bash
 cd /Users/christof/repos/liquidupstart
 
+# Liquid's HTTPS port is configured, not fixed: NiFi's default is 8443 and this
+# stack sets 8833. Read it rather than typing either -- an earlier draft of this
+# block typed 8443 and every request in checks 3 and 4 went nowhere.
+source .env 2>/dev/null
+
+# And ask by name, never by IP. Jetty rejects a request whose TLS SNI does not
+# match with "400 Invalid SNI", and an IP address sends no SNI at all. The
+# keystore covers localhost, liquid.localhost and the container id.
+LIQUID_API="https://localhost:${SYSTEM_HTTPS_PORT}"
+
 # 1. The milestone suite (the concurrency cases). Expect: EXIT=0
 ./tests/run.sh m-b3; echo "EXIT=$?"
 
@@ -891,15 +942,20 @@ shasum -a 256 volumes/nar_extensions/b3-hand-nar-1.0.0.nar
 docker compose restart liquid
 # Wait for Liquid to answer before asking it anything -- the mistake M-B2's
 # verification script made was treating "container up" as "NiFi listening".
-until docker compose exec -T liquid sh -c \
-  'curl -sk -o /dev/null https://127.0.0.1:8443/nifi-api/access/token' 2>/dev/null; do sleep 5; done
-docker compose exec -T liquid sh -c 'sha256sum /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar'
-source .env 2>/dev/null
-TOKEN=$(docker compose exec -T liquid sh -c "curl -sk -X POST \
+# Wait until Liquid issues a TOKEN, not until it answers. Jetty replies 405 to a
+# GET here the moment it binds, while NiFi is still loading its extensions, and
+# in that window the POST below returns an HTML error page -- which reads back as
+# "no processor types" and looks exactly like a NAR that failed to load.
+until TOKEN=$(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
   -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
-  https://127.0.0.1:8443/nifi-api/access/token" | tr -d '\r')
+  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r'); [ -n "$TOKEN" ] && [ "${TOKEN#<}" = "$TOKEN" ]; do sleep 5; done
+docker compose exec -T liquid sh -c 'sha256sum /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar'
 docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${TOKEN}' \
-  https://127.0.0.1:8443/nifi-api/flow/processor-types" | grep -c 'org.nocodenation.probe.ProbeProcessor'
+  https://localhost:${SYSTEM_HTTPS_PORT}/nifi-api/flow/processor-types" > /tmp/types.json
+# The control first: if a processor every NiFi ships is not listed either, the
+# query answered nothing and a count of 0 says nothing about our NAR.
+grep -c 'org.apache.nifi.processors.standard.GenerateFlowFile' /tmp/types.json
+grep -c 'org.nocodenation.probe.ProbeProcessor' /tmp/types.json
 # Expect 1. Expect the two SHA-256 values above to match: the NAR in lib/ must be
 # the one this build produced, not a leftover from an earlier run.
 
@@ -991,13 +1047,20 @@ done
 rm -rf "$W"'
 rm -f volumes/nar_builder/m2/.b3-liquid-api.jar
 docker compose restart liquid
-until docker compose exec -T liquid sh -c \
-  'curl -sk -o /dev/null https://127.0.0.1:8443/nifi-api/access/token' 2>/dev/null; do sleep 5; done
+# Wait until Liquid issues a TOKEN, not until it answers. Jetty replies 405 to a
+# GET here the moment it binds, while NiFi is still loading its extensions, and
+# in that window the POST below returns an HTML error page -- which reads back as
+# "no processor types" and looks exactly like a NAR that failed to load.
+until TOKEN=$(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
+  -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
+  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r'); [ -n "$TOKEN" ] && [ "${TOKEN#<}" = "$TOKEN" ]; do sleep 5; done
 TOKEN=$(docker compose exec -T liquid sh -c "curl -sk -X POST \
   -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
-  https://127.0.0.1:8443/nifi-api/access/token" | tr -d '\r')
+  https://localhost:${SYSTEM_HTTPS_PORT}/nifi-api/access/token" | tr -d '\r')
 docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${TOKEN}' \
-  https://127.0.0.1:8443/nifi-api/flow/processor-types" | grep -c 'org.nocodenation.probe.MismatchProcessor'
+  https://localhost:${SYSTEM_HTTPS_PORT}/nifi-api/flow/processor-types" > /tmp/types.json
+grep -c 'org.apache.nifi.processors.standard.GenerateFlowFile' /tmp/types.json
+grep -c 'org.nocodenation.probe.MismatchProcessor' /tmp/types.json
 docker compose logs liquid --since 5m | grep -iE 'NoClassDefFound|NoSuchMethod|could not.*load|unable to load|bundle' | head -10
 # Expect 0 for the mismatched type -- and 1 still for ProbeProcessor from check 3,
 # which stays in lib/ and is the positive half of the same restart. Record what

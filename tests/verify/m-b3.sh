@@ -35,13 +35,25 @@ HTTPS_PORT="$(sed -n 's/^SYSTEM_HTTPS_PORT=\(.*\)$/\1/p' .env 2>/dev/null | tail
 HTTPS_PORT="${HTTPS_PORT:-8833}"
 LIQUID_USERNAME="$(sed -n 's/^LIQUID_USERNAME=\(.*\)$/\1/p' .env 2>/dev/null | tail -1)"
 LIQUID_PASSWORD="$(sed -n 's/^LIQUID_PASSWORD=\(.*\)$/\1/p' .env 2>/dev/null | tail -1)"
+LIQUID_HOST="${NAR_VERIFY_LIQUID_HOST:-localhost}"
+
+API="https://${LIQUID_HOST}:${HTTPS_PORT}"
+CONTROL_TYPE="org.apache.nifi.processors.standard.GenerateFlowFile"
+
+liquid_token() {
+  docker compose exec -T liquid sh -c \
+    "curl -sk --max-time 20 -X POST -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
+     ${API}/nifi-api/access/token" 2>/dev/null | tr -d '\r'
+}
 
 await_liquid() {
-  local i
+  local i token
   for i in $(seq 1 150); do
-    docker compose exec -T liquid sh -c \
-      'curl -sk --max-time 5 -o /dev/null https://127.0.0.1:8443/nifi-api/access/token' \
-      >/dev/null 2>&1 && return 0
+    token="$(liquid_token)"
+    case "$token" in
+      ""|"<"*) ;;
+      *) return 0 ;;
+    esac
     sleep 2
   done
   return 1
@@ -49,13 +61,14 @@ await_liquid() {
 
 processor_types() {
   local token
-  token="$(docker compose exec -T liquid sh -c \
-    "curl -sk --max-time 20 -X POST -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
-     https://127.0.0.1:8443/nifi-api/access/token" 2>/dev/null | tr -d '\r')"
-  [[ -n "$token" ]] || { echo "NO-TOKEN"; return 1; }
+  token="$(liquid_token)"
+  case "$token" in
+    "") echo "NO-TOKEN"; return 1 ;;
+    "<"*) echo "NOT-A-TOKEN ${token}"; return 1 ;;
+  esac
   docker compose exec -T liquid sh -c \
     "curl -sk --max-time 30 -H 'Authorization: Bearer ${token}' \
-     https://127.0.0.1:8443/nifi-api/flow/processor-types" 2>/dev/null
+     ${API}/nifi-api/flow/processor-types" 2>/dev/null
 }
 
 restore() {
@@ -76,7 +89,8 @@ restore() {
   fi
   rm -rf "$WORK"
 }
-trap restore EXIT INT TERM
+trap restore EXIT
+trap 'exit 130' INT TERM
 
 banner() {
   printf '\n%s=== %s ===%s\n' "$BOLD" "$1" "$RST"
@@ -185,7 +199,8 @@ await_liquid || verdict "3 Liquid came back" no "liquid did not answer on its HT
 SHA_LIB="$(docker compose exec -T liquid sh -c "sha256sum ${LIB}/${GOOD_NAR}" 2>/dev/null | awk '{print $1}')"
 C3_TYPES="$(processor_types)"
 C3_COUNT="$(grep -c "$GOOD_TYPE" <<< "$C3_TYPES")"
-C3_OUT="${C3_BUILD}"$'\n'"sha256 ${DROP}/${GOOD_NAR}: ${SHA_DROP:-none}"$'\n'"sha256 ${LIB}/${GOOD_NAR}: ${SHA_LIB:-none}"$'\n'"occurrences of ${GOOD_TYPE} in /nifi-api/flow/processor-types: ${C3_COUNT}"
+C3_CONTROL="$(grep -c "$CONTROL_TYPE" <<< "$C3_TYPES")"
+C3_OUT="${C3_BUILD}"$'\n'"sha256 ${DROP}/${GOOD_NAR}: ${SHA_DROP:-none}"$'\n'"sha256 ${LIB}/${GOOD_NAR}: ${SHA_LIB:-none}"$'\n'"occurrences of ${CONTROL_TYPE} (the control): ${C3_CONTROL}"$'\n'"occurrences of ${GOOD_TYPE} in /nifi-api/flow/processor-types: ${C3_COUNT}"
 echo "sha256 drop: ${SHA_DROP:-none}"
 echo "sha256 lib:  ${SHA_LIB:-none}"
 echo "type listed: ${C3_COUNT}"
@@ -196,6 +211,7 @@ grep -q '^BUILD EXIT=0$' <<< "$C3_BUILD" || C3_WHY="${C3_WHY}nar-build did not e
 [[ -n "$SHA_DROP" ]] || C3_WHY="${C3_WHY}no ${GOOD_NAR} in ${DROP}; "
 [[ -n "$SHA_LIB" ]] || C3_WHY="${C3_WHY}${GOOD_NAR} did not reach ${LIB}; "
 [[ -n "$SHA_DROP" && "$SHA_DROP" == "$SHA_LIB" ]] || C3_WHY="${C3_WHY}the NAR in ${LIB} is not the one this build produced; "
+[[ "$C3_CONTROL" -ge 1 ]] || C3_WHY="${C3_WHY}the API listed no ${CONTROL_TYPE} either, so it answered nothing and a count of 0 says nothing about our NAR; "
 [[ "$C3_COUNT" -ge 1 ]] || C3_WHY="${C3_WHY}Liquid does not list ${GOOD_TYPE}; "
 [[ -z "$C3_WHY" ]] && verdict "3 Liquid loads what we build" yes \
                               "${GOOD_TYPE} is listed, and ${LIB}/${GOOD_NAR} is this build's artifact by SHA-256" \
@@ -316,12 +332,14 @@ await_liquid || verdict "5 Liquid came back" no "liquid did not answer on its HT
 unset LIB_TOUCHED
 C5_TYPES="$(processor_types)"
 C5_COUNT="$(grep -c "$GOOD_TYPE" <<< "$C5_TYPES")"
+C5_CONTROL="$(grep -c "$CONTROL_TYPE" <<< "$C5_TYPES")"
 run_suite "" C5_OUT_RUN C5_CODE
 echo "$C5_OUT_RUN" | tail -4
 C5_LS="$(ls -1a "$DROP" | sort | tr '\n' ' ')"
-C5_OUT="${DROP} after cleanup: ${C5_LS}"$'\n'"occurrences of ${GOOD_TYPE} once both NARs are gone: ${C5_COUNT}"$'\n'"$(echo "$C5_OUT_RUN" | tail -6)"$'\n'"EXIT=${C5_CODE}"
+C5_OUT="${DROP} after cleanup: ${C5_LS}"$'\n'"occurrences of ${CONTROL_TYPE} (the control): ${C5_CONTROL}"$'\n'"occurrences of ${GOOD_TYPE} once both NARs are gone: ${C5_COUNT}"$'\n'"$(echo "$C5_OUT_RUN" | tail -6)"$'\n'"EXIT=${C5_CODE}"
 log "$C5_OUT"
 C5_WHY=""
+[[ "$C5_CONTROL" -ge 1 ]] || C5_WHY="${C5_WHY}the API listed no ${CONTROL_TYPE} either, so the type being gone proves nothing; "
 [[ "$C5_COUNT" == "0" ]] || C5_WHY="${C5_WHY}Liquid still lists ${GOOD_TYPE} with the NAR removed from ${LIB} — check 3 was reading something else; "
 [[ $C5_CODE -eq 0 ]] || C5_WHY="${C5_WHY}the suite is not green with the fixtures gone (EXIT=${C5_CODE}); "
 [[ -z "$C5_WHY" ]] && verdict "5 the type is listed because the NAR is loaded, and the suite is green again" yes \
