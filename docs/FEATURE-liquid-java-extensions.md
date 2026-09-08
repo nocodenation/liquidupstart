@@ -547,3 +547,135 @@ Done when `./tests/run.sh m-b2; echo EXIT=$?` shows EXIT=0 in this transcript an
 `./tests/run.sh; echo EXIT=$?` does too. Or stop after 50 turns -- a bound set
 where M-B1 landed, having been exceeded three times in the same direction.
 ```
+
+### M-B3 — does Liquid load what we build · posed 2026-09-08
+
+The outcome paragraph belongs above this one and is the run's to write, in the form M-B1's and
+M-B2's take. Unlike those two, this goal was written into the document **before** the run rather
+than after it: a goal that exists only in a chat until step 7 is one nobody can read while it is
+being executed, and this feature's whole argument is against records that live in transcripts.
+
+**The state it was posed against, measured rather than assumed.** The working copy was on
+`feature/liquid-java-extensions` with the stack rebuilt from it — `liquidupstart/nar-builder:latest`
+built for the first time on this host, `liquidupstart/liquid:latest` rebuilt.
+
+| Checked | Answer |
+|---|---|
+| `docker compose exec -T opencode sh -lc 'command -v nar-build'` | `/usr/local/bin/nar-build` |
+| the entrypoint the `liquid` container runs, against `config/liquid/entrypoint.sh` | identical — **38 lines apart** before the rebuild, the container still carrying the `\|\| true` M-B2 removed |
+| `docker compose ps` | twenty containers, `nar_builder` healthy |
+| `docker compose exec -T openclaw-gateway openclaw --version` | `OpenClaw 2026.7.1`, matching this branch's pin |
+| `./tests/run.sh` | **440 pass, 0 fail** across 105 files in 285s, plus 27 dashboard tests |
+| `volumes/nar_builder/m2` | 85 MB, refilled by B1-9 after OC-20 destroyed it — holding `nifi-api` **2.10.0 only**, since M-B2 stopped pulling 2.11.0 transitively |
+
+That §4 check 3b would have caught the entrypoint is not hypothetical here: it was 38 lines wrong at
+the moment the branch was checked out, and `B2-5` and `B2-6` read the file rather than the container,
+so both would have been green over it.
+
+```
+/goal Implement M-B3 from docs/FEATURE-liquid-java-extensions.md. Acceptance is
+cases B3-3 and B3-4 in section 3 of docs/TEST-SPEC-liquid-java-extensions.md,
+specified 2026-09-04 and signed off with M-A7's. Write those tests first, then
+make them pass.
+
+B3-1 and B3-2 are section 4 checks and are NOT this run's acceptance: they
+restart Liquid, which interrupts every running flow, and the restart is the
+operator's. Do not automate them, and run no `docker compose restart liquid` at
+any point.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes. Bound: 50 turns.
+
+Four things.
+
+1. Two builds at once, different sources -- B3-3. Nothing in this stack has ever
+run two builds together. What is shared is /m2, one Maven local repository, whose
+concurrency safety is the thing in question, and /nar_extensions. What is not
+shared is the project: config/nar_builder/build.sh gives each build its own
+mktemp -d. Both must exit 0, both artifacts must be in the drop directory, each
+must hold its own processor and not the other's, and a third build afterwards
+must resolve everything from the cache -- the `downloads 0` line B1-9 already
+asserts.
+
+2. Two builds at once, one source -- B3-4, and the sharper half. Read the write
+at the end of build_command in config/nar_builder/build.sh: it copies to
+part="${DROP}/.${base}.part" and then moves it into place. That temp name comes
+from the artifact base name and nothing else, and the artifact name comes from
+basename of the source directory -- so two builds of the SAME directory copy into
+the SAME temp path at the same time, and the trap on INT/TERM removes that path,
+which by then may belong to the other build. Either both builds succeed and what
+lands in the drop directory is a readable archive, or one refuses and says what
+to do about it. What must NOT happen is a partial or unreadable .nar, or a
+leftover .part beside it: the entrypoint copies whatever it finds into lib/ on
+the next restart, so a torn NAR does not fail the build -- it fails the
+deployment later, on a restart nobody connects to it. Assert it by opening the
+archive, not by counting files.
+
+How the write is made safe is yours to decide -- a temp name that cannot collide,
+a lock on the drop path, a lock in BuildServer keyed by the source. Take the
+decision and write it down with the reason rather than letting it fall out of the
+code. FR24 and FR25 do not move: a failed build still leaves no artifact, and the
+builder still holds no credentials.
+
+3. The harness cannot yet run two builds at once. sh() in tests/lib/shell.ts is
+synchronous and narBuild() in tests/lib/narfixture.ts goes through it. Extend
+those rather than building a second path beside them -- B1's integration cases
+use seedSource, narBuild, dropContents and cacheIsPopulated, and two copies of a
+fixture helper are two copies to drift.
+
+Two things the new helper must do. It must surface BOTH children's exit status,
+not only their output: on 2026-09-08 a helper in this repository read stdout
+alone, bash refused the script it ran, empty came back -- and empty is exactly
+what "nothing to report" looks like. And the test must establish that the two
+builds actually OVERLAPPED, rather than assuming it. BuildServer.java serves on
+Executors.newFixedThreadPool(2): two fit and a third queues, so a pair that
+happened to serialise would pass a test that checks only that both succeeded, and
+would be measuring the queue instead of the collision. Say in the test header how
+you established overlap.
+
+4. Section 4 of the test specification is provisional in one place and must stop
+being. Its check 4 sets NAR_BUILD_API_PROBE_VERSION=99.99.99, which is B2-3's
+unresolvable version: resolve_api_version fails, the build refuses with exit 3,
+and no mismatched NAR is ever produced. The block itself says so -- "If that
+refuses, the mismatch has to be produced another way". Produce it. Establish by
+building, not by reasoning, a fixture whose NAR links against a nifi-api the
+running Liquid does not provide; the pom.xml escape hatch B1-6 keeps is the
+obvious lever, and the running Liquid is NiFi 2.11.0 on Java 21 loading nifi-api
+2.10.0. Prove at build time that the mismatch is real -- what the built classes
+reference, against what the jar in Liquid's lib/ actually holds -- because
+whether it then fails to load is the operator's observation, and that observation
+is the whole point of B3-2. Write the fixture and the commands into the section 4
+block so it runs top to bottom with nothing to fill in, and write
+tests/verify/m-b3.sh as its executable equivalent in the shape of
+tests/verify/m-b2.sh. Run neither: both restart Liquid.
+
+The cache is warm: the branch's full suite ran green before this goal was posed
+and B1-9 filled volumes/nar_builder/m2, 85 MB of it. So a concurrent pair
+measures the collision the cases name rather than a download storm -- but assert
+that rather than trusting this sentence, because it is the difference between the
+two. It holds nifi-api 2.10.0 and nothing else: a build aimed at a different API
+goes to Maven Central. B1's build tests carry 1_200_000 ms timeouts and two at
+once are not faster.
+
+Leave the evidence on disk, not only in this transcript. Write
+.pr-drafts/M-B3-run.md as you finish, holding: elapsed time and turn count; the
+final lines of `./tests/run.sh m-b3` and `./tests/run.sh` verbatim with their EXIT
+status; the decision you took on the drop-directory write and the reason for it;
+how you established that the two builds actually overlapped; and what the B3-2
+fixture turned out to be, including whichever nifi-api version produced a real
+mismatch. A result that exists only in a transcript has to be carried by hand,
+and that is where it is lost -- on 2026-09-08 the operator pasted a start log
+into a chat because the stack keeps none, and the case that came out of it exists
+only because they bothered.
+
+Record the outcome where the next session will find it, not only in this chat:
+the process log row in section 5, an outcome paragraph in the appendix above this
+goal, section 2's traceability rows, and each case's "What it found" block.
+
+Search the codebase before assuming anything is missing; full implementations
+only, no placeholders.
+
+Done when `./tests/run.sh m-b3; echo EXIT=$?` shows EXIT=0 in this transcript and
+`./tests/run.sh; echo EXIT=$?` does too -- the branch stood at 440 pass, 0 fail
+before this goal was posed. Or stop after 50 turns.
+```
