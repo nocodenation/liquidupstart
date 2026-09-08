@@ -2417,6 +2417,9 @@ render, on a page that must answer while the stack is down — so it is recorded
 | A8-19 | Integration | The git step runs inside the toolbox, which is where the Start button runs it | Found by running it: the toolbox carried no `git` and no `openssh`, so `git.sh` died at line 17 with `ssh-keygen: command not found` — under `set -euo pipefail`, fourteen lines before `docker compose up` |
 | A8-20 | Component + integration **unhappy** | The card compares the manifest against the declaration | A repository declared in `.env` and absent from the manifest was not reported as missing — it was not reported at all, under a message saying everything was cloned |
 | A8-21 | Unit + contract **unhappy** | A refused declaration costs a message, not the stack | `start.sh` tears the stack down on line 16 and reaches the git step on line 139, so one malformed entry removed every container and then aborted before `docker compose up`. Found by A8-16, on the operator's own installation |
+| A8-22 | Integration | The control that reaches the retry is drawn, and only where it is needed | Between A8-9, which proves the flag, and A8-8, which proves the action, nothing asked whether a button exists between them. The same shape as the route this milestone was built for: correct, and called by nothing |
+| A8-23 | Unit **unhappy** | A path that cannot be a repository path is refused | A URL pasted twice parses as host plus a path containing the second URL. GitHub answered *"is not a valid repository name"* — a message about the remote, for a mistake in `.env` |
+| A8-24 | Unit **unhappy** | A fixture-based test is handed a project, not the operator's `.env` | Bun loads the repository's `.env` into `process.env`, `sh()` forwarded it, and `git.sh` prefers the variable over the file. Five cases across M-A1 and M-A3 went red for a declaration none of them names |
 
 #### Detail per case
 
@@ -2673,6 +2676,40 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Why the empty declaration is in the list** | It is the assertion that keeps the other four honest. An installation that declares no repositories has to start, and a check that refused it would break every stack not using this feature. |
 | **What it found** | Itself, in the sense that matters: this case exists because **A8-16 met the defect on the operator's own installation** on 2026-09-08. One entry pasted without `\|read\|protected`, one press of Start from the dashboard, and the log read `Container postgres Removed`, `Container openproject-db Removed`, `Network … Removed`, then `Error: repository entry … expected <ssh-url>\|<access>\|<policy>` and `[start failed with exit code 2]`. The card had the answer all along — asked directly it returns the entry, the reason and the next step — but nobody asks a card on the way to a button. |
 | **Covers** | FR11, FR20, U1. |
+
+##### A8-22 — a control between the flag and the action
+
+| | |
+|---|---|
+| **Premise** | Asked on 2026-09-08, by an operator reading A8-16 step 5 and asking where the Test button was. It was correctly absent — both repositories were cloned and A8-9 requires that — but the question exposed that **nothing asserts it is ever present**. A8-9 proves `canRetry` is false on a cloned repository; A8-8 and A8-11 prove the action clones for real. Between the flag and the action sits a button, and no case had looked at it. That is the defect this whole milestone was written for, one layer further out: `/git-auth` was complete and called by nothing, and here the retry is complete and reached by nothing anyone had checked. |
+| **Component** | The served launchpad, on the fixture A8-6 already stands up — one repository cloned, one not. No new container. |
+| **Steps** | Split the markup into its repository blocks with the hydration payload stripped, and look inside each. |
+| **Expected** | The unreachable repository's block carries the control; the cloned one's does not. Two blocks, so the split is asserted rather than assumed — a selector that matched nothing would otherwise satisfy both halves. |
+| **Negative control** | Run with the control's condition forced false: the first assertion goes red and the second stays green, which is the shape a real guard has. Done before the case was accepted. |
+| **Covers** | FR3, U2, U11. |
+
+##### A8-23 — a path that cannot be a repository path
+
+| | |
+|---|---|
+| **Premise** | `git-repos.sh` refuses `https://` and an entry missing its `\|access\|policy`, and then takes everything after the colon as the path without asking whether it could be one. Found on 2026-09-08, on the fourth attempt at A8-16: the URL had been pasted twice, so the entry read `git@host:owner/repo.gitgit@host:owner/repo.git`. It parsed. GitHub answered *"is not a valid repository name"* — a message about the remote for a mistake in `.env` — and the slug, the key directory and the key's own comment were all built from the doubled string, so the typo was written to disk three times over. |
+| **Component** | `lu_git_parse`, through `git.sh --check-declaration`. |
+| **Steps** | The doubled URL, a path containing a space, and then the three shapes that must survive: an ordinary path, a GitLab subgroup two segments deep, and the `ssh://` form. |
+| **Expected** | Exit 2 with *"is not a repository path"* and the words *"pasted twice"* for the first two, because the message has to name the shape of the mistake rather than the rule it broke. Exit 0 for the other three. |
+| **Why the accepted shapes are in the case** | A check aimed at `@` and whitespace is one careless character class away from rejecting a subgroup path or the `ssh://` form that A3c-2 already covers. The refusals prove the check works; these prove it did not overreach. |
+| **Covers** | FR11, FR20, U1. |
+
+##### A8-24 — a fixture-based test is handed a project, not the operator's `.env`
+
+| | |
+|---|---|
+| **Premise** | Bun loads the repository's own `.env` into `process.env`. `tests/lib/shell.ts` forwarded all of it, and `git.sh` prefers `$GIT_REPOSITORIES` over the file in the project directory it is given. So every case that builds a fixture and runs the start script against it was reading **the developer's live declaration** instead of its own — for as long as that declaration was valid, which it always had been. On 2026-09-08 a malformed one turned five cases red across M-A1 and M-A3, none of which had changed and none of which mentions `.env` anywhere. |
+| **Component** | `sh()`, the helper every script-level case runs through. |
+| **Steps** | Set the variable on the test process the way Bun's loading sets it, and ask a child what it inherited. Then check that an unrelated variable still arrives. |
+| **Expected** | No `GIT_REPOSITORIES` in the child, and everything else still there. |
+| **Why the second half is the unhappy one** | Stripping the environment wholesale would trade a silent coupling for a loud breakage, which is how this kind of repair usually goes wrong. |
+| **What it means for the earlier milestones** | Their green was partly luck. Nothing is known to have been wrong, but between M-A1 and 2026-09-08 no case that ran the start script against a fixture was reading only its fixture, and no case said so. |
+| **Covers** | NFR1. |
 
 **And one guard under all three parts.**
 

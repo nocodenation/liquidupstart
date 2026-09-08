@@ -74,6 +74,19 @@ lu_git_parse() {
     name="${path##*/}"
     [[ -n "$name" ]] || lu_git_reject "$entry" "'${url}' names no repository"
 
+    # A path carrying @, : or whitespace cannot be one, and the shapes that
+    # produce them are ordinary: a URL pasted twice parses as host plus a path
+    # containing the second URL, which is what reached GitHub on 2026-09-08 and
+    # came back as "is not a valid repository name" -- a message about the remote
+    # for a mistake in .env. The slug, the key directory and the key's comment
+    # are built from this, so a bad path leaves its shape on disk as well.
+    case "$path" in
+      *[@:]*|*[[:space:]]*|*//*)
+        lu_git_reject "$entry" \
+          "'${path}' is not a repository path; expected owner/repository, so check for a URL pasted twice"
+        ;;
+    esac
+
     case "$field_access" in
       read|write) ;;
       *) lu_git_reject "$entry" "access must be read or write, not '${field_access}'" ;;

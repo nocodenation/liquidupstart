@@ -26,7 +26,7 @@
  *           next step; and the third says both repositories are declared and
  *           their state unknown, in both broken-manifest states, with the page
  *           still answering 200.
- * Covers:   A8-6, A8-7, A8-14, A8-20, FR3, FR10, FR11, FR20, U2, U11
+ * Covers:   A8-6, A8-7, A8-14, A8-20, A8-22, FR3, FR10, FR11, FR20, U2, U11
  * Unhappy:  A8-7 and A8-14 are the unhappy twins of A8-6: an empty card in
  *           either state reads as "nothing declared", which is false and leaves
  *           the operator with nothing to do next.
@@ -179,4 +179,25 @@ test('A8-20 a repository the manifest lost is still drawn, and named as pending'
   expect(markup).toContain('github.com/nocodenation/agent-skills');
   expect(markup).toContain('not yet prepared');
   expect(markup).toContain('no deploy key yet');
+});
+
+test('A8-22 the unreachable repository is served with the control that tests it', () => {
+  // Between A8-9 (canRetry is false on the cloned one) and A8-8 (the action
+  // really clones) sits the question neither asks: is a control drawn that
+  // reaches the action. The same defect that started this milestone -- a route
+  // that was correct and called by nothing -- one layer further out.
+  const markup = withoutScripts(readyPage.html);
+  const blocks = markup.split('<li').filter((b) => b.includes('gitrepo-head'));
+  const of = (label: string) => blocks.find((b) => b.includes(label)) ?? '';
+
+  expect(blocks.length).toBe(2);
+  expect(of(`${SKILLS.host}/${SKILLS.path}`)).toContain('Test this repository');
+});
+
+test('A8-22 and the cloned one is not, because it needs no test', () => {
+  const markup = withoutScripts(readyPage.html);
+  const blocks = markup.split('<li').filter((b) => b.includes('gitrepo-head'));
+  const of = (label: string) => blocks.find((b) => b.includes(label)) ?? '';
+
+  expect(of(`${FLOWS.host}/${FLOWS.path}`)).not.toContain('Test this repository');
 });

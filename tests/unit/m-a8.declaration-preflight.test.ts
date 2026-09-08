@@ -16,7 +16,7 @@
  * Then:     Zero for the two that are acceptable, the parser's own message and
  *           exit 2 for the two that are not, and **no directory created either
  *           way** — a pre-flight that prepares state is not a pre-flight.
- * Covers:   A8-21, FR11, FR20, U1
+ * Covers:   A8-21, A8-23, FR11, FR20, U1
  * Unhappy:  Both refusals are the point. The empty declaration is the case that
  *           keeps them honest: an installation that declares no repositories
  *           must start, and a check that refused it would break every stack
@@ -66,4 +66,34 @@ test('A8-21 the check prepares nothing — it only judges', () => {
   check('git@github.com:a/b.git|read|protected');
   check('https://github.com/a/b.git|read|protected');
   expect(readdirSync(project)).toEqual([]);
+});
+
+/**
+ * A8-23 — a path that cannot be a repository path.
+ *
+ * Found on 2026-09-08 walking A8-16: the URL was pasted twice, so the entry read
+ * `git@host:owner/repo.gitgit@host:owner/repo.git`. The parser took everything
+ * after the first colon as the path and accepted it. GitHub answered "is not a
+ * valid repository name" -- a message about the remote, for a mistake in .env --
+ * and the slug, the key directory and the key's comment were all built from the
+ * doubled string, so the typo was written to disk three times over.
+ */
+test('A8-23 a URL pasted twice is refused, and says so', () => {
+  const { code, output } = check('git@github.com:owner/repo.gitgit@github.com:owner/repo.git|read|protected');
+  expect(code).toBe(2);
+  expect(output).toContain('is not a repository path');
+  expect(output).toContain('pasted twice');
+});
+
+test('A8-23 and so is a path with a space in it', () => {
+  expect(check('git@github.com:owner/repo with space.git|read|protected').code).toBe(2);
+});
+
+test('A8-23 while the shapes that are real still pass', () => {
+  // A subgroup path is two segments deep and legitimate on GitLab; the ssh://
+  // form is one of the three A3c-2 already covers. Neither may be caught by a
+  // check aimed at @ and whitespace.
+  expect(check('git@github.com:owner/repo.git|read|protected').code).toBe(0);
+  expect(check('git@gitlab.com:group/sub/repo.git|write|direct').code).toBe(0);
+  expect(check('ssh://git@github.com/owner/repo.git|read|protected').code).toBe(0);
 });
