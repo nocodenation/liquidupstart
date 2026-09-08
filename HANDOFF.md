@@ -97,6 +97,24 @@ docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'
 Silence means the running stack predates the git integration, and the red tests describe the
 containers rather than the code.
 
+**Each branch has its own discriminator, because each adds something to the stack.** Naming the
+branch a milestone lives on is not enough: the containers are the previous branch's until something
+rebuilds them, and a suite run against them measures the containers.
+
+| Working on | Check the running stack with | Absent means |
+|---|---|---|
+| `feature/git-integration` | `docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'` | The stack predates the git integration |
+| `feature/liquid-java-extensions` | `docker compose exec -T opencode sh -lc 'command -v nar-build'` | The stack has no `nar_builder`, and every M-B case is red for that reason alone |
+| `feature/openclaw-2026-9-1` | `docker compose exec -T openclaw-gateway openclaw --version` | The gateway is not the migrated one |
+
+**And an image is not built just because a service is declared.** `feature/liquid-java-extensions`
+adds `nar_builder`, whose image `liquidupstart/nar-builder:latest` exists on no host that has not
+built it — `./config/scripts/build/nar-builder.sh` — and changes `config/liquid/entrypoint.sh`, which
+is `COPY`ed into `liquidupstart/liquid:latest` rather than mounted, so that image has to be rebuilt
+too. §4 check 3b of the Java test specification compares the entrypoint the container runs against
+the file on disk, and it exists because a green test over a container running something else is
+indistinguishable from a fix that works.
+
 ## State
 
 **The stack runs OpenClaw 2026.7.1**, rebuilt from this branch on 2026-09-08. Twenty containers,
@@ -314,6 +332,22 @@ route, and the pairing decision happens only after a browser signs a challenge.
 1. **M-B3** — the only unbuilt milestone, on `feature/liquid-java-extensions`. It asks whether Liquid
    loads what we build, and its negative control — a NAR built against the wrong API must *not* load —
    is the case, not an addition to it.
+
+   **Work on it from that branch, with the stack rebuilt from it.** Checking it out is the small
+   half; the stack is the half that bites. Four commands, then the two checks in *"One working copy,
+   one stack"*:
+
+   ```bash
+   git checkout feature/liquid-java-extensions
+   ./config/scripts/build/nar-builder.sh
+   ./config/scripts/build/liquid.sh
+   ./scripts/linux/start.sh
+   ```
+
+   **The Maven cache is gone.** `volumes/nar_builder/m2` went with the rest of `volumes/` in OC-20,
+   so the first build downloads the whole plugin chain and the NiFi API from Maven Central — minutes,
+   and they belong before anything is measured, because a cold pair of concurrent builds measures a
+   download storm rather than the collision B3-3 names.
 2. **Timur's reviews** of #9, #10, #11, #12 and #13. They run in parallel and block nothing; that is
    what the branch stacking is for.
 3. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
