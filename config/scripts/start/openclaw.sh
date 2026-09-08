@@ -23,11 +23,11 @@ sed_inplace() {
 with_timeout() {
   local secs="$1"; shift
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$secs" "$@"
+    timeout "$secs" "$@" </dev/null
   elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$secs" "$@"
+    gtimeout "$secs" "$@" </dev/null
   else
-    "$@"
+    "$@" </dev/null
   fi
 }
 

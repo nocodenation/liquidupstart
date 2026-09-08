@@ -8,9 +8,34 @@
  * turned it into a hang rather than an error.
  *
  * Given  config/scripts/start/openclaw.sh
- * When   every `docker run` and `docker compose run` in it is examined
- * Then   each one is either bounded by `with_timeout`, or named here as a
- *        deliberate exception with the reason it is allowed to wait.
+ * When   every `docker run` and `docker compose run` in it is examined, and the
+ *        body of `with_timeout` with it
+ * Then   each call is either bounded by `with_timeout`, or named here as a
+ *        deliberate exception with the reason it is allowed to wait — and every
+ *        invocation inside `with_timeout` reads from `/dev/null`.
+ *
+ * **Bounded turned out not to be enough, on 2026-09-08.** The state migration
+ * `docker compose run` was bounded, and the start still stopped dead for five
+ * minutes with no output at all until somebody sent it `SIGCONT` by hand. GNU
+ * `timeout` runs its command in its own process group, so the command is no
+ * longer in the terminal's foreground group; `docker compose run` attaches
+ * stdin; and a background process reading the terminal is stopped by `SIGTTIN`.
+ * The call redirected stdout and stderr to `/dev/null` and left stdin attached.
+ *
+ * It only bites where GNU coreutils is installed, which is why it had never
+ * shown up: without `timeout` on `PATH`, `with_timeout` runs the command in the
+ * foreground group and nothing stops it. Whether the 600s bound would eventually
+ * have fired against a *stopped* child was not measured — the process was
+ * resumed after about five minutes — so the honest statement is that the bound
+ * was never observed to save it.
+ *
+ * The fix is in `with_timeout` rather than at the call site, and the script's own
+ * comments make the argument: every caller of it is by construction an unattended
+ * step ("no unattended step may wait forever on input that cannot arrive"), and
+ * the interactive siblings — `claude_cli`, `copilot_cli`, `codex_cli`, `grok_cli`
+ * — deliberately do not go through it. Closing stdin is also better than the
+ * bound it complements: the read returns EOF at once instead of stalling until a
+ * timer kills it.
  *
  * **This case replaces the one originally specified**, which was to reproduce the
  * hang itself. That was attempted on 2026-09-07 and abandoned as the wrong test:
@@ -127,5 +152,18 @@ describe('OC-3 every unattended docker call in the start script is bounded', () 
       expect(region).toContain('docker rm -f');
       expect(region).toContain('124');
     }
+  });
+
+  test('with_timeout hands its command no terminal to read', () => {
+    const body = readFileSync(join(repoRoot, SCRIPT), 'utf8');
+    const start = body.indexOf('with_timeout() {');
+    expect(start).toBeGreaterThan(-1);
+    const end = body.indexOf('\n}', start);
+    const invocations = body
+      .slice(start, end)
+      .split('\n')
+      .filter((l) => /(timeout "\$secs"|^\s*"\$@")/.test(l));
+    expect(invocations.length).toBe(3);
+    expect(invocations.filter((l) => !l.includes('</dev/null'))).toEqual([]);
   });
 });
