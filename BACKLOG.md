@@ -10,6 +10,27 @@ that branch is cut from `main`, where no backlog file exists.
 
 ## Open findings
 
+**`down.sh` leaves behind every container the current branch does not declare.**
+Met on 2026-09-08 while switching from `feature/liquid-java-extensions` to this branch: `nar_builder`
+survived the teardown and kept running alongside a stack that has no such service, because
+`docker compose down` acts on the services in the **current** `compose.yml` and that branch's service
+is not in this one. It is the branch-shaped-stack problem from `HANDOFF.md`, one layer down — the
+containers that come *up* are this branch's, and the ones that were already there are not
+reconsidered.
+
+**It is the one thing this week that announced itself.** Every compose invocation prints
+`WARN Found orphan containers (nar_builder) for this project … you can run this command with the
+--remove-orphans flag`. Nothing had to be diagnosed; the tool names the problem and the flag. That is
+also the risk: a warning on every call that nobody acts on is how a project learns to read past
+warnings, which is the failure `HANDOFF.md` records as *a check that cries wolf*.
+
+**Not fixed here on purpose.** `scripts/linux/down.sh` is **byte-identical on `main`, #9, #10 and
+#13** — one `docker compose down`, ten lines. Adding `--remove-orphans` on this branch alone leaves
+the other three, and the same repair arriving separately in several places is how one file becomes
+two that differ. It also changes what teardown means for every stack: `--remove-orphans` removes
+whatever the current file does not declare, which is right here and worth a deliberate decision
+rather than a drive-by. The orphan itself was removed by hand with `docker rm -f nar_builder`.
+
 **The Claude login expires, and the one idea that might remove the expiry is unmeasured.**
 The login lives only in `volumes/_openclaw-claude` and does not survive a reset; the migration cost
 four interactive sign-ins in two days. A long-lived `CLAUDE_CODE_OAUTH_TOKEN` was measured and
