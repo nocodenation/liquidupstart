@@ -1,4 +1,4 @@
-# Handover — 2026-09-08 (evening)
+# Handover — 2026-09-09 (evening)
 
 Read this first. It is the map and the current state; the specifications are the documents in
 `docs/`. Everything here was true at the end of 2026-09-08.
@@ -18,7 +18,8 @@ documents since 2026-09-03.
 
 **The OpenClaw 2026.9.1 migration** (#13) moves the stack off the version #11 pinned it to, and makes
 the version something the stack reads rather than assumes. Started and largely finished on
-2026-09-06.
+2026-09-06, reviewed and **merged into `fix/openclaw-2026-9-1` on 2026-09-08** — which is #11, not
+`main`.
 
 **The two repairs** are #11 (the pin, after a floating tag moved) and #12 (`bun_runner`'s health
 check, which asked whether the runner had been used rather than whether it works).
@@ -49,19 +50,35 @@ than tidied away.
 migration documents are on `feature/openclaw-2026-9-1`; the git and Java documents on their own
 branches.
 
-## The five branches, and how they relate
+## The branches, and how they relate
+
+Current as of 2026-09-08 evening, after #12, #13 and #14 landed. **Nothing has reached `main` yet**:
+all three merged into `fix/openclaw-2026-9-1`, which is #11 — so #11 is now the only door to `main`,
+and it carries far more than the one-line pin its title suggests. Do not take a number from this
+document; it moves every time something lands. Ask:
+
+```bash
+git fetch -q origin && git rev-list --count origin/main..origin/fix/openclaw-2026-9-1
+```
+
+It answered **39** on the evening of 2026-09-08, having answered 36 two hours earlier.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
-| `feature/git-integration` | **#9** (draft) | `main` | M-A0 to M-A8 |
-| `feature/liquid-java-extensions` | **#10** (draft) | `feature/git-integration` | M-B1 to M-B3 |
-| `fix/openclaw-2026-9-1` | **#11** | `main` | The pin to 2026.7.1 |
-| `fix/bun-runner-health` | **#12** | `main` | One line: the health check |
-| `feature/openclaw-2026-9-1` | **#13** | `fix/openclaw-2026-9-1` | The migration, with #12 merged |
+| `feature/git-integration` | **#9**, open | `main` | M-A0 to M-A8 |
+| `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B3 |
+| `fix/openclaw-2026-9-1` | **#11**, open | `main` | The pin to 2026.7.1 — **and now the migration and #12 with it** |
+| ~~`fix/openclaw-start-stdin`~~ | ~~#14~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`. The `SIGTTIN` hang the migration's own verification found |
+| ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | **Merged** into #13. The branch exists only locally now; the remote one is gone |
+| ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`, remote branch deleted |
 | `integration/oc-2026-9-1` | — | — | **Not a merge candidate.** #13 + #9 + #10 in one place, so the compatibility cases can be *executed* rather than asserted |
 
 Cutting a branch from another is how each PR shows only its own diff. GitHub retargets a stacked PR
-by itself once its base lands, so **Timur can review the four in any order and nothing waits.**
+by itself once its base lands, so **the open ones can be reviewed in any order and nothing waits.**
+
+**A merged branch is not a landed change.** #12 and #13 are merged and neither is in `main`; they sit
+inside #11, and reading their PRs as "done" would misstate what production carries. The same will be
+true of #14 the moment it lands.
 
 **#9 must be merged with a merge commit, not squashed.** GitHub retargets #10 by itself, but only
 cleanly if the commits it already carries survive — and the individual messages are part of what this
@@ -76,10 +93,10 @@ assumed. Bringing it level is three merges, of which two are clean and one confl
 `docs/verification/README.md`, where both sides rewrote the same paragraph.
 
 **The rule, decided 2026-09-07: nothing reaches `main` without Timur's review. Merging forward
-inside the stack is fine** — #11 into #13, #9 into #10, the three into the integration branch — and
-is how each branch stays reviewable against what it actually builds on. Whoever runs anything on the
-integration branch must merge the three forward *first*, or they are measuring a stand that no longer
-exists.
+inside the stack is fine** — #12 and #13 into `fix/openclaw-2026-9-1`, #9 into #10, the three into
+the integration branch — and is how each branch stays reviewable against what it actually builds on.
+Whoever runs anything on the integration branch must merge the open ones forward *first*, or they are
+measuring a stand that no longer exists. The rule held today: two PRs merged and `main` is untouched.
 
 ## One working copy, one stack
 
@@ -105,7 +122,7 @@ rebuilds them, and a suite run against them measures the containers.
 |---|---|---|
 | `feature/git-integration` | `docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'` | The stack predates the git integration |
 | `feature/liquid-java-extensions` | `docker compose exec -T opencode sh -lc 'command -v nar-build'` | The stack has no `nar_builder`, and every M-B case is red for that reason alone |
-| `feature/openclaw-2026-9-1` | `docker compose exec -T openclaw-gateway openclaw --version` | The gateway is not the migrated one |
+| `fix/openclaw-2026-9-1` or `fix/openclaw-start-stdin` | `docker compose exec -T openclaw-gateway openclaw --version` | Anything but `2026.9.1` means the gateway is not the migrated one |
 
 **And an image is not built just because a service is declared.** `feature/liquid-java-extensions`
 adds `nar_builder`, whose image `liquidupstart/nar-builder:latest` exists on no host that has not
@@ -117,10 +134,16 @@ indistinguishable from a fix that works.
 
 ## State
 
-**The stack runs OpenClaw 2026.7.1**, rebuilt from this branch on 2026-09-08. Twenty containers,
-zero restarts, every healthcheck green. It ran 2026.9.1 for a day because images live on the host and
-not in the branch — see *"A locally built image can belong to another branch"* below, which cost two
-hangs before it was understood.
+**The stack runs OpenClaw 2026.9.1**, rebuilt from `fix/openclaw-start-stdin` on 2026-09-08 evening
+and migrated from a state 2026.7.1 had written — the path a real installation takes, not a cold
+start. Nineteen services, every healthcheck green. It ran 2026.7.1 for most of that day, for M-A8 and
+M-B3, and was moved forward only to verify the migration; images live on the host and not in the
+branch, which is what *"A locally built image can belong to another branch"* below is about and what
+cost two hangs before it was understood.
+
+**`volumes/_openclaw` now holds a 2026.9.1 state, so the way back is not a checkout.** 2026.7.1
+refuses it — OC-21's one-way door. Returning to #9 or #10 means clearing that directory and
+restoring `_openclaw.bak-2026.7.1`.
 
 **The git integration is complete.** M-A0 to M-A8 built, each verified independently and posted to
 #9. All four manual cases observed, including the three that failed.
@@ -186,15 +209,27 @@ refuses a state written by `2026.9.1`, which is OC-21's one-way door. Archived a
 `_openclaw.was-2026.9.1.tar` first. The Claude login lives in `volumes/_openclaw-claude`, a different
 directory, and survived.
 
-**And the reason `volumes/_openclaw` would not delete is now known.** `openclaw-gateway` has nested
-bind mounts — `volumes/_openclaw/workspace` and `config/agents/skills` mount *into*
-`/home/node/.openclaw` — so those paths are live mount points and `rm` is refused for the owner, for
-root, and inside another container. It releases **shortly after** the container is gone, not
-immediately: a `rm -rf` run seconds after `docker rm -f` still fails, and a minute later `rmdir`
-succeeds. That delay is what made the cause look disproved. The same shape as
-`volumes/_openclaw-claude/skills`, which `BACKLOG.md` recorded as unexplained.
+**Why `volumes/_openclaw` will not delete is still unexplained, and the explanation this document
+carried was wrong.** It said `openclaw-gateway`'s nested bind mounts hold `workspace` and `skills`,
+and that they release shortly after the container is gone. Retested on 2026-09-09 while restoring a
+2026.7.1 state, and it does not hold:
 
-### A mismatched NAR loads, and nothing says so
+- `rm -rf` was retried every five seconds for **200 seconds** with the whole stack down. `workspace`
+  and `skills` survived; everything else in the directory was deleted.
+- No container existed at all — not one from the compose project, and not `liquidupstart-dashboard`,
+  which mounts the whole repository and was stopped as a test. Both `rmdir` calls still returned
+  `Permission denied`.
+- `df` puts them on the same filesystem as their parent, so they are **not mount points**. Owner is
+  `501:20`, the parent is writable, and `ls -lO` shows no file flags.
+- **`mv` on the parent worked immediately.** The directory entry is free; the two children are not.
+
+**What works is moving it aside, not deleting it**: `mv volumes/_openclaw volumes/_openclaw.stuck`,
+then restore. Whatever holds those two paths survives every container that could plausibly hold them,
+which is the part no hypothesis so far explains. `BACKLOG.md` records
+`volumes/_openclaw-claude/skills` as the same shape, and it stays unexplained too — the difference is
+that it is now unexplained *on purpose* rather than by an answer that sounded right.
+
+### A mismatched NAR loads, and then tells the operator the wrong thing
 
 **M-B3's answer, and it is not the one five milestones had been written around.** FR23 and FR27 both
 said a NAR compiled against an API Liquid does not provide is *silently never loaded* and the
@@ -210,10 +245,32 @@ is exactly the silent failure this feature exists to remove. The requirements st
 stronger than the one they carried, and every statement of the old mechanism was corrected —
 including the refusal `nar-build` prints to an agent, which would have carried the error onward.
 
-**Why it loads is inferred, not observed.** The missing class sits in a method signature and the JVM
-resolves those on first use, so NiFi's discovery never touches it. Nobody has triggered such a
-processor. `BACKLOG.md` carries it, along with the fact that nothing in the stack would notice a NAR
-of this kind arriving by hand.
+**Triggered on 2026-09-09, and the inference was wrong about when.** It does not wait for a flow. The
+processor is catalogued and selectable, and **adding it from the canvas fails**:
+`POST /nifi-api/process-groups/<id>/processors` answers **500** with
+`java.lang.NoClassDefFoundError: org/apache/nifi/controller/NodeConnectionState`. The predicted error
+was right; the predicted moment was not. It never reaches the canvas, so it never runs.
+
+**Two things came out of that which are worse than the original finding.**
+
+The error is written to **`nifi-user.log`**, not `nifi-app.log` — zero occurrences in the one every
+check in this repository reads, four in the one none of them did. *"The framework says nothing"* was
+a conclusion drawn from a single log, not an observation. Both §4 and `tests/verify/m-b3.sh` now read
+both.
+
+And **what the operator is told is false**. The UI turns the 500 into `/nifi/#/error`: *"Your session
+has expired. Please click on the Home button to renew the session."* It has not. The message sends
+them to authenticate again and retry, which reproduces the failure exactly. An operator meeting this
+has no path from what they are shown to what is wrong.
+
+**The control ran beside it and was flawless**: the same processor built against the resolved 2.10.0
+was added, started, and reached **4,114,541 invocations in five minutes** with no error and no
+bulletin. The two differ in one class.
+
+What stays open is a check at deployment time — the entrypoint already walks every `*.nar` into
+`lib/`, and the `javap` comparison §4 performs would turn a 500 with a misleading message into a
+refusal where an operator can act on it. It is in `BACKLOG.md`, along with the fact that nothing in
+the stack notices a NAR of this kind arriving by hand.
 
 **And the check that was supposed to prove this could not.** B3-2 was written as B3-1's control — the
 run that shows the check can fail. It cannot be, because it comes back listing its processor exactly
@@ -244,6 +301,36 @@ SHA-256. That is the dangerous shape: a broken measurement that answers instead 
 `GenerateFlowFile` — a processor every NiFi ships — before drawing any conclusion, and refuse to
 conclude when it is absent. The check that most needed it was the one asserting a type is **gone**,
 which a broken query satisfies perfectly.
+
+### Tomorrow's first question: Liquid autoloads, and M-B4 guards the other path
+
+**The largest open question this project has, found on 2026-09-09 by a check that refused to be
+explained.** `nifi.nar.library.autoload.directory` points at `nar_extensions`, so NiFi loads a NAR
+**out of the drop directory, at runtime, without a restart and without `lib/`**. Measured: a NAR built
+there and otherwise left alone was listed by the API after **20 seconds**, container `StartedAt`
+unchanged, file not in `lib/`. And the catalogue was already carrying `ProbeA` and `ProbeB` —
+B3-3's fixtures, which the suite writes there and deletes, which were never in `lib/`, and which
+no restart followed. NiFi loads them and never unloads them.
+
+**What is in question, and none of it is settled:**
+
+| | |
+|---|---|
+| **FR36 / M-B4** | Built, 32 cases green — and it refuses to copy into `lib/` while NiFi loads from the drop directory anyway. It guards a path that does not load |
+| **FR29** | The restart it makes the operator's is not required |
+| **`nar-build`'s own words** | *"Liquid loads NARs from /nar_extensions at startup only. Ask the operator to restart it"* — printed to every agent, and false |
+| **FR30** | The copy into `lib/` holds and looks redundant |
+| **M-B3 check 3** | Established that Liquid lists what we build; never separated which path did it |
+| **Where the setting lives** | `volumes/liquid/conf/nifi.properties:37` — local state. The stock image says `./extensions`, and nothing in the repository sets it, so **a fresh installation may behave differently and no branch carries the difference** |
+
+**Deliberately not repaired.** Two explanations for the red check were offered and withdrawn the same
+day — a leftover unpacked bundle, and an answer from the instance being replaced. Both were wrong,
+both were tested, and the second was tested *before* being written down. The third rests on a
+configuration value read out of the running container. What the deployment path should be is a
+decision to take with a clear head, not a guard to adjust until a check goes green.
+
+**M-B4 is otherwise finished**: `narcheck.py` parses the constant pool properly, 487 + 27 green, and
+§4's checks 0, 1, 2, 4 and 5 pass. Check 3 is the one that found this.
 
 ### Things on disk that matter
 
@@ -303,6 +390,23 @@ that exists only in a transcript has to be carried by hand, and that is where it
 
 ## What the failures taught
 
+**Look in the log the failure belongs to, not the one you know.** For a day this project recorded
+that a mismatched NAR is reported nowhere. It is reported — in `nifi-user.log`, by the web layer that
+refused the request, while `nifi-app.log` holds nothing. Every check here read `docker compose logs`
+and concluded silence, which is a claim about where we looked dressed up as a claim about the system.
+The same trap as *a suite is green about the paths it walks*, one layer over: **a log is quiet about
+the failures it does not receive.**
+
+**An explanation that fits every observation is not the cause.** On 2026-09-08 this document
+recorded, with confidence and a mechanism, why `volumes/_openclaw` would not delete: nested bind
+mounts, released shortly after the container. It fit everything seen — the refusal, the paths
+involved, the fact that it worked later. On 2026-09-09 it took four measurements to break: the whole
+stack down, every container gone including the one that mounts the repository, `df` showing no mount
+point, and `mv` succeeding on the same directory `rmdir` refused. The wrong answer had survived a day
+of being believed because nobody had tried to disprove it — only to explain what had already
+happened. A cause is what survives an attempt to break it, not what accounts for the evidence you
+happen to hold.
+
 **A tool that has never been run is not a tool.** The verification scripts were written to make
 verification trustworthy, were reviewed, were recorded as passing, and carried seven defects between
 them — one of which made them delete the directory they promised to protect. Every one surfaced on
@@ -327,6 +431,14 @@ operator's, on the same commit, because `/usr/bin/git` has no message catalogues
 `/opt/homebrew/bin/git` has German ones. Nothing about the code differed; the `PATH` did. Anything
 whose output is parsed must be pinned to `C`, which `tests/lib/shell.ts` had done since M-A1 and the
 dashboard had not.
+
+**And it happened twice the same day, by a different mechanism.** The start hung silently for five
+minutes at the state migration, because GNU `timeout` — present only where Homebrew put it — runs its
+command in its own process group, `docker compose run` then reads a terminal it no longer owns, and
+the kernel stops it with `SIGTTIN`. The call was *bounded*, which is what OC-3 requires, and the
+bound did not save it. Both defects are the same lesson at two levels: **what is installed on the
+operator's machine is part of the system under test**, and neither `PATH` nor locale is a detail a
+suite can leave to chance. Neither would ever have surfaced on CI.
 
 **A suite is green about the paths it walks.** 334 cases passed while the dashboard's Start button
 could not bring up a stack, a malformed declaration destroyed a running installation, and a start
@@ -407,18 +519,41 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
+0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
+   matters until it is decided, because M-B4 and part of M-B2 rest on it.
 1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
    for, and that is the milestone's result rather than a defect in it: see *"A mismatched NAR loads,
    and nothing says so"* below. The stack on this machine is now `feature/liquid-java-extensions`-shaped
    and its Maven cache is warm again; the four commands that got it there are in the branch table's
    discriminators above.
 
-   **Nobody has triggered a mismatched processor.** The `NoClassDefFoundError` that should follow is
-   inferred from how the JVM resolves method signatures, not observed. It is in `BACKLOG.md`, and it
-   is the one loose end M-B3 leaves.
-2. **Timur's reviews** of #9, #10, #11, #12 and #13. They run in parallel and block nothing; that is
-   what the branch stacking is for.
-3. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
+   ~~**Nobody has triggered a mismatched processor.**~~ — triggered 2026-09-09. It fails at
+   *instantiation*, not at trigger; the error lands in `nifi-user.log` where nothing looked; and the
+   operator is told their session expired. See *"A mismatched NAR loads, and then tells the operator
+   the wrong thing"* above.
+3. ~~**The repaired migration path had never been executed.**~~ — run 2026-09-09. A 2026.7.1 state
+   was restored from `_openclaw.bak-2026.7.1` and `./scripts/linux/start.sh` migrated it with GNU
+   `timeout` on `PATH`, which is the condition that produces the hang: `state migrated.` inside a
+   minute, no `SIGCONT`, no stall. The whole upgrade path came with it — `deviceAutoApprove` written
+   into a state that had never carried it, `plugins.entries.codex` removed as a key 2026.9.1 refuses,
+   and the config shape moved to 2026.9. `tests/run.sh oc` then ran **50 pass, 0 fail** against a
+   state that had just been migrated rather than one already on 2026.9.1.
+2. **Timur's reviews.** #12, #13 and #14 were reviewed and merged on 2026-09-08; **#9, #10 and #11
+   are open**, and #11 is next — it is on his list for 2026-09-09. They run in parallel and block
+   nothing, which is what the stacking is for, with one exception: **#11 is the only door to `main`**,
+   and it has stopped being a one-line pin. The whole migration, #12 and #14 sit inside it. Reviewing
+   it as though its title were still accurate would be reviewing the wrong thing.
+
+   The working copy is currently on `fix/openclaw-start-stdin` and the stack is 2026.9.1-shaped.
+   `volumes/_openclaw` holds a state 2026.9.1 has written, so **going back to #9 or #10 means
+   clearing it and restoring `_openclaw.bak-2026.7.1`** — OC-21's one-way door, and the discriminators
+   above say which stack is running.
+3. **The repaired migration path has never been executed.** #14 fixes the `SIGTTIN` hang, the case
+   asserts it at the text level and its control was run — but the start that verified it *skipped*
+   `openclaw_migrate_state`, because the state was already 2026.9.1 by then. Running it in anger
+   needs a 2026.7.1 state restored first, which is OC-28's replay. After a day in which eight of nine
+   defects sat in code nobody had ever run, this is the obvious loose end.
+4. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
    was the one without, and its file holds the four things 2026.9.1 deferred plus the `bun_runner`
    entrypoint alternative that #12 had nowhere to record. Two entries on #9 and #10 are answered
    rather than open — the Claude CLI install, fixed 2026-09-05, and `bun_runner` reporting unhealthy
