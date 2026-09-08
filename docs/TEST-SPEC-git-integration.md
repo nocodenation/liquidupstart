@@ -2421,6 +2421,7 @@ render, on a page that must answer while the stack is down — so it is recorded
 | A8-23 | Unit **unhappy** | A path that cannot be a repository path is refused | A URL pasted twice parses as host plus a path containing the second URL. GitHub answered *"is not a valid repository name"* — a message about the remote, for a mistake in `.env` |
 | A8-24 | Unit **unhappy** | A fixture-based test is handed a project, not the operator's `.env` | Bun loads the repository's `.env` into `process.env`, `sh()` forwarded it, and `git.sh` prefers the variable over the file. Five cases across M-A1 and M-A3 went red for a declaration none of them names |
 | A8-25 | Integration | The unreachable state survives a fresh request | A8-17 step 5 asks an operator to reload and see it still named. The card is rendered server-side from the manifest, so a second request with no prior exchange is the same claim — made without an installation to break |
+| A8-26 | Unit **unhappy** | The start says at the end what did not come up | A8-17 found the shape U11 names: the warning printed, then 250 lines, then a banner of URLs and passwords and the word *succeeded*. `.install-result` recorded `start_ok=1` |
 
 #### Detail per case
 
@@ -2638,7 +2639,8 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | The procedure is in §9. |
 | **Expected** | The next start still reports every URL and credential — it must not block — **and** the launchpad names that repository as unreachable, with the error and the current key. The state survives a page reload, because it lives in the manifest and not in a session. Re-registering the key and pressing the card's test restores it. |
 | **The failure to watch for** | A start that reads as success. If the operator can reach the end of a start and see nothing amiss while a repository is broken, the case has found what it was written to find, whatever the card does afterwards. |
-| **What it found** | **Walked 2026-09-08, and partly unevidenced.** `git-autosync` was chosen as the disposable one of the three; its key was deleted at the host and its clone and key directory removed. Steps 1, 2, 6 and 7 are verified against disk: all three repositories are cloned again, all three key directories are back, and the manifest reports no error. The operator's verdict on the middle was *"seems to work"*. **Screenshots for A8-17 are all terminal**, so steps 3 and 4 — whether the start read as success, and what the card said — rest on that verdict rather than on a record, and **step 5 was not performed properly**. Its property is now A8-25 instead, which asks the same question of a second request. What remains genuinely open is step 3, and it is the reason this case exists: nobody can say from the evidence whether a start that leaves a repository broken looks any different from one that does not. |
+| **What it found** | **Walked 2026-09-08, and partly unevidenced.** `git-autosync` was chosen as the disposable one of the three; its key was deleted at the host and its clone and key directory removed. Steps 1, 2, 6 and 7 are verified against disk: all three repositories are cloned again, all three key directories are back, and the manifest reports no error. The operator's verdict on the middle was *"seems to work"*. **Screenshots for A8-17 are all terminal**, so steps 3 and 4 — whether the start read as success, and what the card said — rest on that verdict rather than on a record, and **step 5 was not performed properly**. Its property is now A8-25 instead, which asks the same question of a second request. What remained open was step 3, and it is the reason this case exists. |
+| **Step 3, answered 2026-09-08 · the finding** | The operator pasted the start log, which the stack itself does not keep — the toolbox container runs with `--rm` and only `.install-result` survives, holding `start_ok=1` and no output. The warning is there: *"could not clone … Register … as a deploy key, then start again"*. It is then followed by roughly **250 lines** — certificate-generation dots, a hundred container lines — and the run ends with the full banner of URLs and credentials and `[start succeeded]`. **Asked whether they could have walked away without noticing, the operator said yes.** That is the shape U11 forbids, reached on the operator's own installation, and it is what this case was written to catch. Answered by A8-26. |
 | **Covers** | FR3, FR20, U11. |
 
 **Part 4 — the paths the operator's buttons take.**
@@ -2724,6 +2726,20 @@ drive it, which is a thing worth knowing before reaching for one.
 | **What it replaces** | A manual reload that costs a destroyed and rebuilt repository to reach. A8-17 keeps the step, because an operator watching a browser sees things a fetch does not, but the property no longer depends on it being done. |
 | **Covers** | FR11, U11. |
 
+##### A8-26 — the start says at the end what did not come up
+
+| | |
+|---|---|
+| **Premise** | U11 names the shape it exists to prevent: *"a start that ends in a list of URLs and passwords while two repositories are unreachable"*. On 2026-09-08 A8-17 produced exactly it. The warning **was** printed — *"could not clone … Register … as a deploy key, then start again"* — and then roughly 250 lines went by: two screens of certificate-generation dots, a hundred `Container … Created/Starting/Started` lines, and finally the banner of URLs and credentials followed by `[start succeeded]`. `.install-result` recorded `start_ok=1`. The operator could have walked away without noticing, and reported afterwards that they could. |
+| **What is not the fix** | A louder warning where it already is. It is in the right place for a reader following along and the wrong place for anyone who looks at the end, which is everyone. The answer is a section **after** the credentials, computed from `repositories.json` — the file the git step wrote twenty lines earlier and the dashboard already reads, so there is no second source and nothing to remember. |
+| **Component** | `unreachable_repositories` in `scripts/linux/start.sh`, over a manifest of the shape `git.sh` writes. |
+| **Test data** | Two repositories, in four arrangements: one cloned and one refused with `git@github.com: Permission denied (publickey).`; both cloned; no manifest at all; and both refused. |
+| **Expected** | One tab-separated line per unreachable repository — label, the public key to register, the error the clone gave — and **nothing at all** in the other two states. |
+| **Why the silent cases are the unhappy ones** | A section that appears when nothing is wrong is noise, and after two starts nobody reads it. That is how the buried warning became invisible in the first place, so reproducing it one screen lower would be no gain. And a stack that declares no repositories must not grow a section about them. |
+| **Why both-unreachable is its own row** | U11 speaks of *two* repositories. A report that stopped at the first would satisfy every assertion above this one. |
+| **What it found in its own harness** | The first version of its helper joined the extracted shell function to its call with a semicolon, which put one at the start of a line. `bash` refused the whole script, stdout came back empty, and *"nothing needs attention"* is exactly what an empty result looks like. The helper now asserts the child's exit status, because a test that reads only stdout cannot tell silence from failure. |
+| **Covers** | FR20, U11. |
+
 **And one guard under all three parts.**
 
 ##### A8-18 — the dashboard compiles
@@ -2790,7 +2806,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR17 One sanctioned publishing path | A6-1, A6-2, A6-3, A6-5, A6-12 |
 | FR18 A push outside that path is refused | A6-6, A6-7, A6-8, A6-9, A6-13 |
 | FR19 Agent branches are recognisable | A6-3, A6-4 |
-| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14, A8-20 |
+| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14, A8-20, A8-21, A8-26 |
 | FR32 One test walks the whole path | A7-1, A7-2, A7-5 |
 | FR33 Concurrent publication is safe or refuses | A7-3, A7-4 |
 | NFR1 Credentials via `.env` | A1-9, A6-10, A8-3, A8-5 |
