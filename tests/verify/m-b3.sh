@@ -31,10 +31,14 @@ while IFS= read -r line; do DROP_BEFORE+=("$line"); done < <(ls -1 "$DROP" 2>/de
 
 log() { printf '%s\n' "$*" >> "$LOG"; }
 
-HTTPS_PORT="$(sed -n 's/^SYSTEM_HTTPS_PORT=\(.*\)$/\1/p' .env 2>/dev/null | tail -1)"
+get_env() {
+  grep -E "^${1}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "'\"" || true
+}
+
+HTTPS_PORT="$(get_env SYSTEM_HTTPS_PORT)"
 HTTPS_PORT="${HTTPS_PORT:-8833}"
-LIQUID_USERNAME="$(sed -n 's/^LIQUID_USERNAME=\(.*\)$/\1/p' .env 2>/dev/null | tail -1)"
-LIQUID_PASSWORD="$(sed -n 's/^LIQUID_PASSWORD=\(.*\)$/\1/p' .env 2>/dev/null | tail -1)"
+LIQUID_USERNAME="$(get_env LIQUID_USERNAME)"
+LIQUID_PASSWORD="$(get_env LIQUID_PASSWORD)"
 LIQUID_HOST="${NAR_VERIFY_LIQUID_HOST:-localhost}"
 
 API="https://${LIQUID_HOST}:${HTTPS_PORT}"
@@ -46,29 +50,30 @@ liquid_token() {
      ${API}/nifi-api/access/token" 2>/dev/null | tr -d '\r'
 }
 
-await_liquid() {
-  local i token
-  for i in $(seq 1 150); do
-    token="$(liquid_token)"
-    case "$token" in
-      ""|"<"*) ;;
-      *) return 0 ;;
-    esac
-    sleep 2
-  done
-  return 1
-}
-
 processor_types() {
   local token
   token="$(liquid_token)"
   case "$token" in
     "") echo "NO-TOKEN"; return 1 ;;
-    "<"*) echo "NOT-A-TOKEN ${token}"; return 1 ;;
+    "<"*|*" "*) echo "NOT-A-TOKEN ${token}"; return 1 ;;
+    *.*.*) ;;
+    *) echo "NOT-A-TOKEN ${token}"; return 1 ;;
   esac
   docker compose exec -T liquid sh -c \
     "curl -sk --max-time 30 -H 'Authorization: Bearer ${token}' \
      ${API}/nifi-api/flow/processor-types" 2>/dev/null
+}
+
+await_liquid() {
+  local i types
+  for i in $(seq 1 150); do
+    types="$(processor_types)"
+    case "$types" in
+      *"${CONTROL_TYPE}"*) return 0 ;;
+    esac
+    sleep 2
+  done
+  return 1
 }
 
 restore() {
@@ -200,7 +205,7 @@ SHA_LIB="$(docker compose exec -T liquid sh -c "sha256sum ${LIB}/${GOOD_NAR}" 2>
 C3_TYPES="$(processor_types)"
 C3_COUNT="$(grep -c "$GOOD_TYPE" <<< "$C3_TYPES")"
 C3_CONTROL="$(grep -c "$CONTROL_TYPE" <<< "$C3_TYPES")"
-C3_OUT="${C3_BUILD}"$'\n'"sha256 ${DROP}/${GOOD_NAR}: ${SHA_DROP:-none}"$'\n'"sha256 ${LIB}/${GOOD_NAR}: ${SHA_LIB:-none}"$'\n'"occurrences of ${CONTROL_TYPE} (the control): ${C3_CONTROL}"$'\n'"occurrences of ${GOOD_TYPE} in /nifi-api/flow/processor-types: ${C3_COUNT}"
+C3_OUT="${C3_BUILD}"$'\n'"sha256 ${DROP}/${GOOD_NAR}: ${SHA_DROP:-none}"$'\n'"sha256 ${LIB}/${GOOD_NAR}: ${SHA_LIB:-none}"$'\n'"occurrences of ${CONTROL_TYPE} (the control): ${C3_CONTROL}"$'\n'"occurrences of ${GOOD_TYPE} in /nifi-api/flow/processor-types: ${C3_COUNT}"$'\n'"what the API answered, first 300 characters:"$'\n'"${C3_TYPES:0:300}"
 echo "sha256 drop: ${SHA_DROP:-none}"
 echo "sha256 lib:  ${SHA_LIB:-none}"
 echo "type listed: ${C3_COUNT}"
@@ -217,7 +222,7 @@ grep -q '^BUILD EXIT=0$' <<< "$C3_BUILD" || C3_WHY="${C3_WHY}nar-build did not e
                               "${GOOD_TYPE} is listed, and ${LIB}/${GOOD_NAR} is this build's artifact by SHA-256" \
                    || verdict "3 Liquid loads what we build" no "${C3_WHY%; }"
 
-banner "Check 4 — the control: a NAR built against an API Liquid does not provide"
+banner "Check 4 — what a NAR built against an API Liquid does not provide actually does"
 C4_BUILD="$(docker compose exec -T openclaw-gateway sh -lc "
 set -e
 D=${BAD}
@@ -306,7 +311,8 @@ C4_TYPES="$(processor_types)"
 C4_BAD_COUNT="$(grep -c "$BAD_TYPE" <<< "$C4_TYPES")"
 C4_GOOD_COUNT="$(grep -c "$GOOD_TYPE" <<< "$C4_TYPES")"
 C4_LOG="$(docker compose logs liquid --since 6m 2>&1 \
-  | grep -iE 'NoClassDefFound|NoSuchMethod|could not.*load|unable to load|bundle' | tail -10)"
+  | grep -iE 'NoClassDefFound|NoSuchMethod|could not.*load|unable to load|bundle' \
+  | grep -v 'bundled-dependencies' | tail -10)"
 C4_OUT="${C4_BUILD}"$'\n'"the jar Liquid loads: ${API_JAR}"$'\n'"${C4_REFS}"$'\n'"occurrences of ${BAD_TYPE}: ${C4_BAD_COUNT}"$'\n'"occurrences of ${GOOD_TYPE} (still from check 3): ${C4_GOOD_COUNT}"$'\n'"what the framework log said:"$'\n'"${C4_LOG:-(nothing matched)}"
 echo "mismatched type listed: ${C4_BAD_COUNT}   probe from check 3 still listed: ${C4_GOOD_COUNT}"
 echo "${C4_LOG:-(the log said nothing matching NoClassDefFound / bundle / could not load)}"
@@ -315,11 +321,11 @@ log "$C4_OUT"
 C4_WHY=""
 grep -q '^BUILD EXIT=0$' <<< "$C4_BUILD" || C4_WHY="${C4_WHY}the mismatch fixture did not build, so there is no control; "
 grep -q "^ABSENT   ${MISSING_CLASS}$" <<< "$C4_REFS" || C4_WHY="${C4_WHY}the built class does not reference a type missing from ${API_JAR}, so the mismatch is nominal rather than real; "
-[[ "$C4_BAD_COUNT" == "0" ]] || C4_WHY="${C4_WHY}Liquid lists ${BAD_TYPE} despite the mismatch — a finding about FR23, not a broken check: record it; "
+[[ "$C4_BAD_COUNT" -ge 1 ]] || C4_WHY="${C4_WHY}Liquid did NOT list ${BAD_TYPE} — the framework now refuses a mismatched bundle, which it did not on 2026-09-08. That changes what FR23 defends against: read the log and rewrite the requirement; "
 [[ "$C4_GOOD_COUNT" -ge 1 ]] || C4_WHY="${C4_WHY}${GOOD_TYPE} is gone too, so this restart proves nothing about the mismatch; "
-[[ -z "$C4_WHY" ]] && verdict "4 a NAR built against an API Liquid does not provide is not loaded" yes \
-                              "${MISSING_CLASS} is absent from ${API_JAR}, ${BAD_TYPE} is not listed, and ${GOOD_TYPE} still is" \
-                   || verdict "4 a NAR built against an API Liquid does not provide is not loaded" no "${C4_WHY%; }"
+[[ -z "$C4_WHY" ]] && verdict "4 a NAR built against an API Liquid does not provide loads anyway" yes \
+                              "${MISSING_CLASS} is absent from ${API_JAR}, ${BAD_TYPE} is listed regardless and the log says nothing, and ${GOOD_TYPE} still is — the behaviour B3-2 recorded" \
+                   || verdict "4 a NAR built against an API Liquid does not provide loads anyway" no "${C4_WHY%; }"
 
 banner "Check 5 — clean up what this run created, and confirm"
 docker compose exec -T openclaw-gateway sh -c "rm -rf ${GOOD} ${BAD}" >/dev/null 2>&1
@@ -336,7 +342,7 @@ C5_CONTROL="$(grep -c "$CONTROL_TYPE" <<< "$C5_TYPES")"
 run_suite "" C5_OUT_RUN C5_CODE
 echo "$C5_OUT_RUN" | tail -4
 C5_LS="$(ls -1a "$DROP" | sort | tr '\n' ' ')"
-C5_OUT="${DROP} after cleanup: ${C5_LS}"$'\n'"occurrences of ${CONTROL_TYPE} (the control): ${C5_CONTROL}"$'\n'"occurrences of ${GOOD_TYPE} once both NARs are gone: ${C5_COUNT}"$'\n'"$(echo "$C5_OUT_RUN" | tail -6)"$'\n'"EXIT=${C5_CODE}"
+C5_OUT="${DROP} after cleanup: ${C5_LS}"$'\n'"occurrences of ${CONTROL_TYPE} (the control): ${C5_CONTROL}"$'\n'"occurrences of ${GOOD_TYPE} once both NARs are gone: ${C5_COUNT}"$'\n'"what the API answered, first 300 characters:"$'\n'"${C5_TYPES:0:300}"$'\n'"$(echo "$C5_OUT_RUN" | tail -6)"$'\n'"EXIT=${C5_CODE}"
 log "$C5_OUT"
 C5_WHY=""
 [[ "$C5_CONTROL" -ge 1 ]] || C5_WHY="${C5_WHY}the API listed no ${CONTROL_TYPE} either, so the type being gone proves nothing; "
@@ -376,7 +382,7 @@ fence() { printf '```\n%s\n```\n' "$1"; }
   fence "$(echo "$C2_OUT" | tail -25)"; echo "</details>"; echo
   echo "<details><summary>Check 3 — Liquid lists the processor</summary>"; echo
   fence "${C3_OUT:-}"; echo "</details>"; echo
-  echo "<details><summary>Check 4 — the control: the mismatched NAR</summary>"; echo
+  echo "<details><summary>Check 4 — what the mismatched NAR actually does</summary>"; echo
   fence "${C4_OUT:-}"; echo "</details>"; echo
   echo "<details><summary>Check 5 — cleanup, the negative control on check 3, and the suite again</summary>"; echo
   fence "${C5_OUT:-}"; echo "</details>"; echo

@@ -62,9 +62,15 @@ mistake is available here and is cheaper to avoid than to repeat.
   file afterwards, because an answer that has to be fetched is one an agent will report without
   having.
 - **FR23 — The target version is computed, never declared.** The NiFi and Java versions come from the
-  running Liquid, not from `.env`. A NAR built against the wrong `nifi-api` loads silently as nothing
-  at all, which is the failure class this feature has spent six milestones removing. If the version
-  cannot be read, the build refuses rather than guesses.
+  running Liquid, not from `.env`. If the version cannot be read, the build refuses rather than
+  guesses. **What a wrong `nifi-api` actually does was measured on 2026-09-08 by B3-2, and it is not
+  what this requirement said for five milestones.** The claim was that such a NAR is silently never
+  loaded. Observed: it loads, the processor is **listed in the catalogue**, and the framework log says
+  nothing. The missing class sits in a method signature, and the JVM resolves those on first use — so
+  the artifact is indistinguishable from a working one until a flow runs it. That is worse than never
+  appearing, not better: an operator drags a processor onto the canvas and it breaks in production
+  rather than at deployment. The requirement stands, and its reason is stronger than the one it
+  carried.
 - **FR24 — A failed build leaves no artifact.** No partial NAR, and no previous NAR left looking
   current. The drop directory is what Liquid loads on restart, so a stale file there is worse than an
   empty one.
@@ -205,10 +211,11 @@ the builder through the `proxy` with a `Host:` header, as every container-to-con
 stack does.
 
 **The target version is read from the running Liquid, not written in `.env` (FR23).** Liquid is NiFi
-2.11.0 on OpenJDK 21 today, and a NAR compiled against a different `nifi-api` does not fail loudly —
-it is simply never loaded, and the processor never appears. That is precisely the silent failure this
-feature has spent six milestones learning to refuse, so the version is computed at build time and a
-build that cannot read it stops.
+2.11.0 on OpenJDK 21 today, and a NAR compiled against a different `nifi-api` does not fail loudly.
+*How* it fails was assumed here and measured only in M-B3: not "never loaded", but loaded, listed and
+broken on first use — see FR23, rewritten 2026-09-08 against B3-2's observation. The conclusion is
+unchanged and the reason is sharper, so the version is computed at build time and a build that cannot
+read it stops.
 
 **The trust surface is §3.2, not a footnote.** The builder holds no credentials (FR25) and its
 dependency cache lives under `volumes/` like all other state (FR26).
@@ -271,7 +278,7 @@ two features' runs stay comparable. Wall clock is local time.
 |---|---|---|---|---|---|---|---|
 | M-B1 | 55 / 45 | 2026-09-03 18:16–19:16 (local), 1h00 | 20: `compose.yml`, `config/nar_builder/{Dockerfile,build.sh,BuildServer.java,entrypoint.sh}`, `config/agents/bin/nar-build.sh`, `config/scripts/build/nar-builder.sh`, `scripts/linux/build.sh`, `config/nginx/templates/nginx.conf`, `CLAUDE.md`, 12 test files + `tests/lib/narfixture.ts`, `tests/verify/m-b1.sh`, this document, the test specification | No — the suite was run in the transcript and the two defects it found are recorded in B1-5 and B1-9 | None. The operator's verification ran 2026-09-03 19:45, all eight checks PASS — `verification/M-B1-verification.md` | No — the four fixed decisions held; one addition, the read-only `volumes/liquid/logs` mount, is declared in §3.2 | No |
 | M-B2 | ~70 / 50 — over, and the bound was set at where M-B1 landed | 2026-09-03 21:57–22:47 (local), 0h50 | 21: `config/nar_builder/{build.sh,BuildServer.java}`, `config/agents/bin/nar-build.sh`, `config/liquid/entrypoint.sh`, `config/agents/skills/liquid/SKILL.md`, 9 test files + `tests/lib/{entrypointfixture.ts,narfixture.ts,shell.ts}`, `tests/verify/m-b2.sh`, this document, the test specification | No — the suite was run in the transcript, and the two things it could have passed over were caught before the run: a contract test green over an entrypoint the container does not execute (§4 check 3b), and a negative control reading the artifact the previous check had left in `lib/` (§4 check 5) | None. Verified 2026-09-05 16:01, every check PASS — `verification/M-B2-verification.md`. B2-10 was observed the same day and passed, and its failure criterion was corrected in the process | No — the three things the goal named were built as posed, and the one decision it left open (whether Liquid starts after a failed copy) was taken and written down | No |
-| M-B3 | 33 / 50 | 2026-09-08 10:14–10:43 (local), 0h29 | 8: `config/nar_builder/build.sh`, `tests/lib/{shell.ts,narfixture.ts}`, 2 test files, `tests/verify/m-b3.sh`, this document, the test specification | No — but it came close twice, and both were caught inside the run: the overlap sample would have been satisfied by a single build (`build.sh`'s own `$(...)` sub-shell inherits the cmdline), and §4's check 4 could not have produced a mismatch at all, because the version it named refuses | None | No — the three things the goal named were built as posed, and the one decision it left open (how the drop-directory write is made safe) was taken and written down | No |
+| M-B3 | 33 / 50 | 2026-09-08 10:14–10:43 (local), 0h29 | 8: `config/nar_builder/build.sh`, `tests/lib/{shell.ts,narfixture.ts}`, 2 test files, `tests/verify/m-b3.sh`, this document, the test specification | No — but it came close twice, and both were caught inside the run: the overlap sample would have been satisfied by a single build (`build.sh`'s own `$(...)` sub-shell inherits the cmdline), and §4's check 4 could not have produced a mismatch at all, because the version it named refuses | Yes, and it took five runs to reach the milestone's question. `tests/verify/m-b3.sh` was executed for the first time on 2026-09-08 and exposed seven defects in the verification path, none of them in the product: `mapfile` (bash 4, so the restore step deleted the whole drop directory rather than protecting it), a `trap` that resumed instead of exiting, a hardcoded 8443 beside a `SYSTEM_HTTPS_PORT` it had just read, an IP address that Jetty answers with `400 Invalid SNI`, readiness taken from Jetty answering and then from a token being issued rather than from the catalogue, credentials read with `sed` so `.env`'s quotes went into the password, and a token guard that rejected HTML but accepted *"The supplied username and password are not valid"*. Two of those produced **false findings** rather than errors. Plus A8-13 on #9: the manifest carried git's German error text, because the dashboard spawned the script with the operator's locale | No — the three things the goal named were built as posed, and the one decision it left open (how the drop-directory write is made safe) was taken and written down | No |
 
 ---
 
@@ -356,7 +363,8 @@ The target version is read from the running Liquid, never declared. It is NiFi
 21 -- and not the literal, so the next image bump does not fail the suite for a
 reason that has nothing to do with this tool. A build that cannot read the
 version stops and says so; it never guesses, because a NAR compiled against the
-wrong nifi-api is not rejected by Liquid, it is silently never loaded.
+wrong nifi-api is not rejected by Liquid -- B3-2 observed it loading and being
+listed, with nothing in the log, and failing only when the processor runs.
 
 The build synthesises the Maven project, unless the source directory already
 holds a pom.xml, in which case that one is used unchanged. Both are positive
@@ -614,8 +622,39 @@ touch Liquid. The image was rebuilt on this branch before B3-4 was run, so the c
 **What remains is the operator's, and it is the milestone's point.** §4 checks 3, 4 and 5 restart
 Liquid. They are written out with the fixture, the build, the build-time proof of the mismatch, the API
 query and the cleanup, and `tests/verify/m-b3.sh` performs and judges the same sequence. Until they
-run, FR34 is specified and not observed, and the sentence M-B2 could only argue —  that a NAR built
-against an API Liquid does not provide is silently never loaded — is still an argument.
+run, FR34 is specified and not observed, and the sentence M-B2 could only argue — that a NAR built
+against an API Liquid does not provide is silently never loaded — is still an argument. **They ran on
+2026-09-08, and it turned out to be false.** FR34 is observed: Liquid lists what `nar-build` produces.
+And the mismatch does not refuse to load; it loads and says nothing. The argument was right about the
+danger and wrong about its shape.
+
+**§4 ran on 2026-09-08 at 17:04 and answered the milestone's question in both directions.** Check 3:
+**Liquid loads what we build.** The processor `nar-build` produced is listed by the API, and the NAR
+in `lib/` is that build's artifact by SHA-256. FR34 is observed rather than argued, for the first
+time in this feature. Check 5 is what earns it: with both NARs removed the type disappears and the
+suite is green again.
+
+**Check 4 overturned the reason FR23 and FR27 were written.** Both said a NAR built against an API
+Liquid does not provide is silently never loaded and the processor never appears. It is not: the
+bundle **loads**, the processor **is listed**, and the log says nothing — with the mismatch proven
+real beforehand, `NodeConnectionState` absent from the `nifi-api-2.10.0.jar` Liquid loads. The
+requirements stand and their reason is stronger: an artifact that never appears is visible the moment
+an operator looks, while one that appears and fails on first use is the silent failure this feature
+exists to remove. Every statement of the old mechanism was corrected, including the refusal
+`nar-build` prints to an agent, and the record is `verification/M-B3-verification.md`.
+
+**Reaching that answer took five runs of `tests/verify/m-b3.sh` and cost more than building the
+milestone did.** The script had never been executed; neither had `m-b1.sh`'s and `m-b2.sh`'s shared
+line. Seven defects came out of it, all in the verification path and none in the product, and two of
+them produced **findings that were false rather than errors that were obvious** — a check reporting
+"Liquid does not list our processor" over a NAR that was byte-identical in `lib/`. §4 of the test
+specification records each one. The repair that mattered was not any of the seven: it was giving the
+checks a control, so that a count of zero cannot be read as a result until something that must be
+listed is listed.
+
+**What is not established:** why a mismatched bundle loads. Lazy resolution of method signatures
+predicts a `NoClassDefFoundError` at trigger time; nobody has triggered one. `BACKLOG.md` carries it,
+together with the observation that nothing in the stack would notice such a NAR arriving by hand.
 
 ### M-B3 — does Liquid load what we build · posed 2026-09-08
 

@@ -5,6 +5,24 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**Nothing in the stack notices a NAR built against an API Liquid does not provide.**
+Established by B3-2 on 2026-09-08, and the reason FR23 was rewritten the same day. A NAR compiled
+against `nifi-api` 2.11.0, referencing a class the loaded 2.10.0 jar does not contain, is accepted:
+the bundle loads, the processor is listed in the catalogue, and `nifi-app.log` says nothing. The
+break waits for the first run of the processor — inferred from how the JVM resolves method
+signatures, and **not yet tested**.
+
+`nar-build` prevents it at the source by resolving the API through `nifi-utils`, which is FR27, and
+that covers every NAR this stack builds. It does not cover a NAR built elsewhere and dropped into
+`volumes/nar_extensions` by hand, which is a documented path in the `liquid` skill.
+
+**Two things are worth doing and neither is urgent.** A case that triggers a mismatched processor and
+records what the operator actually sees, so the inferred `NoClassDefFoundError` stops being an
+inference. And a check at deployment time — the entrypoint already walks every `*.nar` on its way
+into `lib/`, and comparing the API a bundle links against with the one the distribution ships is the
+same `javap` comparison §4 check 4b already performs. Left because M-B3 is closed and this is a new
+requirement, not a repair.
+
 **Nothing sweeps a staging file the builder abandoned.**
 Introduced by M-B3's own fix on 2026-09-08, and recorded because it is a property the milestone
 changed rather than one it found. `config/nar_builder/build.sh` used to stage into

@@ -78,10 +78,11 @@ cases; a milestone with only the generated path would ship a tool that silently 
 author wrote.
 
 *The target version is read from the running Liquid, never declared.* Liquid is NiFi 2.11.0 on
-OpenJDK 21 today. A NAR compiled against a different `nifi-api` does not fail loudly: it is never
-loaded, the processor never appears, and nothing says why. That is the silent-failure class this
-feature has spent six milestones refusing, so the version is computed and a build that cannot read it
-stops rather than guessing.
+OpenJDK 21 today. A NAR compiled against a different `nifi-api` does not fail loudly, and B3-2
+measured what it does instead on 2026-09-08: it loads, the processor **is** listed, and nothing says
+why — the break waits for the first run of the processor. This paragraph claimed the opposite until
+then, on argument alone. The silent-failure class is the same and the instance is worse, so the
+version is computed and a build that cannot read it stops rather than guessing.
 
 *A refused build says what to do next.* FR20 was written for the git guardrail and its reasoning is
 not git-specific: a message arriving at the moment of need does not have to be found first, which
@@ -499,10 +500,10 @@ conditional: that the artifact is loadable at all.
 | **Premise** | The control that gives B3-1 meaning, and the observation M-B2's correction never had. M-B1 compiled against `nifi-api` 2.11.0 while Liquid loads 2.10.0; the argument that this is dangerous is sound and was never once seen to be true. This is where it becomes evidence. |
 | **Component** | The same path, with the resolution overridden. |
 | **Test data** | `/repos/.b3-mismatch`, carrying its **own `pom.xml`** — the escape hatch B1-6 keeps, which `nar-build` uses unchanged and which is therefore the only lever that produces a mismatch at all. The pom is a single-module `nar`-packaged project, `org.nocodenation.probe:probe-mismatch:1.0.0`, `maven.compiler.release` 21, depending on `org.apache.nifi:nifi-api` **2.11.0** at `provided` scope and building with `nifi-nar-maven-plugin` 2.4.0; the artifact is `probe-mismatch-1.0.0.nar`. Its processor is `org.nocodenation.probe.MismatchProcessor`, an `AbstractProcessor` with a `public NodeConnectionState state()` returning `NodeConnectionState.CONNECTED` and an `onTrigger` that logs it, and an SPI descriptor holding that one class name. `org.apache.nifi.controller.NodeConnectionState` is the deliberate part: on 2026-09-08 both jars were listed, and it is the **only** class present in `nifi-api` 2.11.0 and absent from the `nifi-api-2.10.0.jar` Liquid loads — 437 classes against 436. A version difference alone would be nominal, because NiFi raises `nifi-api` only when the API changes.<br><br>**What must not be used:** `NAR_BUILD_API_PROBE_VERSION=99.99.99`, which the earlier draft of §4 proposed. That is B2-3's unresolvable version: `resolve_api_version` fails, the build refuses with exit 3 and writes no NAR, so it produces no control at all — it produces FR23 working. |
-| **Expected** | The type is **not** listed after the restart, and `nifi-app.log` names the failure. Whether it is a `NoClassDefFoundError`, a bundle-loading error or silence is recorded as found rather than predicted: the point is to learn what this failure actually looks like, because an operator will meet it before anyone else does. The mismatch itself is not predicted either: before the restart, §4 check 4b `javap`s the compiled class, lists every `org.apache.nifi` type it references, and looks each one up in the `nifi-api` jar Liquid actually loads. |
+| **Expected** | **Rewritten 2026-09-08, after the case was run.** It expected the type to be absent and the framework log to name a failure. Neither happens, and the case now expects what was observed: the mismatched NAR **loads**, `org.nocodenation.probe.MismatchProcessor` **is listed** among the processor types, and nothing is written to the log. What must still hold is that the mismatch is real, proven before the restart by `javap` on the built class against the jar Liquid loads — `NodeConnectionState` **ABSENT**. If a future NiFi does refuse such a bundle, this case must go red and say so, because that would make FR23 defend against something the framework already catches. Changing an expectation after seeing the result is only honest when the old one was a prediction and the new one is a record; that is the case here, and the prediction is preserved above rather than deleted. |
 | **Covers** | FR34, FR27. |
 | **Implemented by** | §4 checks 4 and 4b, and `tests/verify/m-b3.sh`. Not in the suite: it restarts Liquid. |
-| **What it found** | The restart half is not yet run — the M-B3 run of 2026-09-08 was told not to restart Liquid. The **fixture half was**, and it found that the case as specified could not have been performed: the `NAR_BUILD_API_PROBE_VERSION` lever the block named refuses rather than mismatching, which the block itself suspected. Built instead through the pom escape hatch, and the mismatch was established rather than argued — `javap` on the NAR's `MismatchProcessor.class` names `org/apache/nifi/controller/NodeConnectionState`, `org/apache/nifi/logging/ComponentLog` and `org/apache/nifi/processor/AbstractProcessor`, and against `/opt/nifi/nifi-current/lib/nifi-api-2.10.0.jar` the first is **ABSENT** and the other two present. The build itself reports `pom author` and `downloads 8`: `nifi-api` 2.11.0 is not in `volumes/nar_builder/m2`, so it came from Maven Central, which is the cache proving it holds only what the resolution asks for. |
+| **What it found** | **The finding this milestone exists for, and it is not the one that was expected.** A NAR compiled against `nifi-api` 2.11.0 and referencing a class absent from the 2.10.0 jar Liquid loads is not rejected: the bundle loads, the processor is listed in `/nifi-api/flow/processor-types`, and `nifi-app.log` carries no `NoClassDefFoundError`, no bundle error, no warning of any kind. Check 3's probe was still listed at the same moment, so the restart worked and the catalogue was read. The mismatch was proven real beforehand and not assumed: `ABSENT   org/apache/nifi/controller/NodeConnectionState`, against `present` for `ComponentLog` and `AbstractProcessor`.<br><br>**The mechanism is inferred, not observed.** The missing class appears only in a method's signature, and the JVM resolves a method's types on first use rather than at class load, so NiFi's discovery — which instantiates the processor and reads its annotations — never touches it. That predicts a `NoClassDefFoundError` when the processor is triggered. **That prediction has not been tested**, and it is worth a case of its own before anyone relies on it.<br><br>**Why this matters more than the expected result would have.** FR23 and FR27 were written around a NAR that is *never loaded and never appears* — annoying, and visible the moment the operator looks. What actually happens is an artifact indistinguishable from a working one: it is listed, it can be dragged onto a canvas, and it fails in production. Every statement of the old mechanism in these documents was corrected on 2026-09-08, including the refusal message `nar-build` prints to an agent. B3-1 keeps its meaning through check 5, not through this case: with both NARs removed from `lib/` the type disappears, which is the control that proves check 3 was reading the catalogue. |
 
 ##### B3-3 — two builds at once, different sources
 
@@ -604,6 +605,17 @@ refuse to draw a conclusion when it is absent, and `processor_types` rejects a t
 `<` instead of putting it in a header. Check 5 needed it as much as check 3 did: it asserts the type
 is **gone**, which a broken query satisfies perfectly. Check 4 already had its control, in the form
 of check 3's probe having to still be there.
+
+**A token is a proxy too, and that cost a third run.** With the address right, checks 3 to 5 still
+reported the control absent: NiFi issues an access token before it has finished loading its
+extensions, so `await_liquid` returned into a window where `/nifi-api/flow/processor-types` answers
+without the catalogue in it. Asked twenty minutes later, the same instance returns the full list.
+The readiness criterion is now the thing the checks actually read — the catalogue, with
+`GenerateFlowFile` in it — rather than anything that merely correlates with it. Three criteria were
+tried before that one: the container being up (M-B2 recorded it), Jetty answering, and a token being
+issued. Each was a step closer and each was still a proxy. And when the control is missing the check
+now records the first 300 characters of what the API did answer, so the next run does not need
+somebody to reproduce the query by hand.
 
 ### M-B1 — the NAR builder
 
@@ -942,13 +954,21 @@ shasum -a 256 volumes/nar_extensions/b3-hand-nar-1.0.0.nar
 docker compose restart liquid
 # Wait for Liquid to answer before asking it anything -- the mistake M-B2's
 # verification script made was treating "container up" as "NiFi listening".
-# Wait until Liquid issues a TOKEN, not until it answers. Jetty replies 405 to a
-# GET here the moment it binds, while NiFi is still loading its extensions, and
-# in that window the POST below returns an HTML error page -- which reads back as
-# "no processor types" and looks exactly like a NAR that failed to load.
-until TOKEN=$(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
+# Wait for the thing you are about to read: the processor catalogue with a
+# processor every NiFi ships in it. Jetty answers 405 to a GET on the token
+# endpoint the moment it binds; a token is issued before the extensions finish
+# loading; and in both windows the catalogue comes back empty -- which is
+# indistinguishable from a NAR that failed to load. Two runs on 2026-09-08 were
+# read as findings about our NAR before this loop asked the right question.
+until docker compose exec -T liquid sh -c "curl -sk --max-time 30 -H \
+  \"Authorization: Bearer $(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
   -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
-  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r'); [ -n "$TOKEN" ] && [ "${TOKEN#<}" = "$TOKEN" ]; do sleep 5; done
+  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r')\" \
+  ${LIQUID_API}/nifi-api/flow/processor-types" 2>/dev/null \
+  | grep -q 'org.apache.nifi.processors.standard.GenerateFlowFile'; do sleep 5; done
+TOKEN=$(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
+  -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
+  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r')
 docker compose exec -T liquid sh -c 'sha256sum /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar'
 docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${TOKEN}' \
   https://localhost:${SYSTEM_HTTPS_PORT}/nifi-api/flow/processor-types" > /tmp/types.json
@@ -959,7 +979,9 @@ grep -c 'org.nocodenation.probe.ProbeProcessor' /tmp/types.json
 # Expect 1. Expect the two SHA-256 values above to match: the NAR in lib/ must be
 # the one this build produced, not a leftover from an earlier run.
 
-# 4. The control that gives check 3 its meaning: build against an API the
+# 4. What a mismatched NAR actually does -- measured 2026-09-08, and not what
+#    this block predicted. It is NOT the control for check 3; check 5 is.
+#    Build against an API the
 #    framework does not provide, restart, and expect the type NOT to appear.
 #    The fixture carries its own pom.xml, so nar-build uses it unchanged and the
 #    resolution FR23 performs is bypassed on purpose -- that is the escape hatch
@@ -1047,13 +1069,21 @@ done
 rm -rf "$W"'
 rm -f volumes/nar_builder/m2/.b3-liquid-api.jar
 docker compose restart liquid
-# Wait until Liquid issues a TOKEN, not until it answers. Jetty replies 405 to a
-# GET here the moment it binds, while NiFi is still loading its extensions, and
-# in that window the POST below returns an HTML error page -- which reads back as
-# "no processor types" and looks exactly like a NAR that failed to load.
-until TOKEN=$(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
+# Wait for the thing you are about to read: the processor catalogue with a
+# processor every NiFi ships in it. Jetty answers 405 to a GET on the token
+# endpoint the moment it binds; a token is issued before the extensions finish
+# loading; and in both windows the catalogue comes back empty -- which is
+# indistinguishable from a NAR that failed to load. Two runs on 2026-09-08 were
+# read as findings about our NAR before this loop asked the right question.
+until docker compose exec -T liquid sh -c "curl -sk --max-time 30 -H \
+  \"Authorization: Bearer $(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
   -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
-  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r'); [ -n "$TOKEN" ] && [ "${TOKEN#<}" = "$TOKEN" ]; do sleep 5; done
+  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r')\" \
+  ${LIQUID_API}/nifi-api/flow/processor-types" 2>/dev/null \
+  | grep -q 'org.apache.nifi.processors.standard.GenerateFlowFile'; do sleep 5; done
+TOKEN=$(docker compose exec -T liquid sh -c "curl -sk --max-time 20 -X POST \
+  -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
+  ${LIQUID_API}/nifi-api/access/token" | tr -d '\r')
 TOKEN=$(docker compose exec -T liquid sh -c "curl -sk -X POST \
   -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
   https://localhost:${SYSTEM_HTTPS_PORT}/nifi-api/access/token" | tr -d '\r')
@@ -1093,11 +1123,17 @@ in a container recreated from a rebuilt image. `./config/scripts/build/nar-build
 up -d --no-deps nar_builder` is what makes B3-4 assert the fix rather than the code that preceded it,
 and that rebuild does not touch Liquid.
 
-Check 4 is the point of the milestone, not an addition to it. Check 3 alone would prove that *a*
-processor appeared; only check 4 shows that the check can fail, and therefore that its passing means
-anything. **Record what check 4 actually produces even if it surprises you** — if a mismatched NAR
-loads without complaint, that is a finding about FR23 rather than a broken check, and the requirement
-should be rewritten to say what it really defends against.
+Check 4 was the point of the milestone, and it did not do the job it was written for. It was meant to
+be check 3's control — the run that shows the check can fail. It cannot be: **a mismatched NAR loads
+without complaint**, so check 4 comes back listing its processor exactly as check 3 does. The control
+is **check 5**, which removes both NARs from `lib/`, restarts, and requires the type to disappear;
+that ran and passed, so check 3's pass is earned.
+
+**And this block asked for exactly this.** It said: record what check 4 actually produces even if it
+surprises you — if a mismatched NAR loads without complaint, that is a finding about FR23 rather than
+a broken check, and the requirement should be rewritten to say what it really defends against. On
+2026-09-08 that is what happened, and FR23 was rewritten. The instruction was worth more than the
+prediction it accompanied.
 
 The two SHA-256 comparisons in check 3 are not ceremony. `lib/` accumulates: a NAR from an earlier run
 with the same artifact name would make the check pass without this build having contributed anything.

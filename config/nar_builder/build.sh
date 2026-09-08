@@ -70,8 +70,9 @@ resolve_target() {
     cat <<UNREACHABLE
 nar-build refused: the target version could not be read, because Liquid does not
 answer at ${LIQUID_HOST}:${LIQUID_PORT}.
-A NAR compiled against the wrong nifi-api is not rejected by Liquid — it is
-silently never loaded — so this build stops rather than guessing a version.
+A NAR compiled against the wrong nifi-api is not rejected by Liquid: it loads,
+the processor appears in the catalogue, nothing is logged, and it breaks the
+first time it runs — so this build stops rather than guessing a version.
 Start the stack and run nar-build again: ./scripts/linux/start.sh, or
 docker compose start liquid when the rest of the stack is already up.
 Nothing was built and nothing was written to ${DROP}.
