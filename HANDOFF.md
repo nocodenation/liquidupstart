@@ -1,7 +1,7 @@
-# Handover — 2026-09-07 (afternoon)
+# Handover — 2026-09-08 (morning)
 
 Read this first. It is the map and the current state; the specifications are the documents in
-`docs/`. Everything here was true at the end of 2026-09-07.
+`docs/`. Everything here was true at the end of 2026-09-08.
 
 ## What is being built
 
@@ -99,17 +99,23 @@ containers rather than the code.
 
 ## State
 
-**The stack runs OpenClaw 2026.9.1.** Every service running, zero restarts, every healthcheck green.
-Control UI answering 200 with no pairing prompt, configuration valid, Claude CLI 2.1.263, and a full
-agent turn verified end to end through the subscription route.
+**The stack runs OpenClaw 2026.7.1**, rebuilt from this branch on 2026-09-08. Twenty containers,
+zero restarts, every healthcheck green. It ran 2026.9.1 for a day because images live on the host and
+not in the branch — see *"A locally built image can belong to another branch"* below, which cost two
+hangs before it was understood.
 
 **The git integration is complete.** M-A0 to M-A8 built, each verified independently and posted to
 #9. All four manual cases observed, including the three that failed.
 
-**M-A8 was built on 2026-09-07** — the launchpad card, the retry, and the configuration round trip
-nothing had ever run. Fourteen automated cases green; **A8-15, A8-16 and A8-17 are manual and still
-owed**, and their procedures are in §9 of the test specification. The card can be seen without them:
-`./run.sh` and look under the service tiles.
+**M-A8 is complete, including its three manual cases.** Built 2026-09-07 as the launchpad card, the
+retry and the configuration round trip nothing had ever run — fourteen cases. It is **twenty-six**
+now, 65 tests across 14 files, and the twelve that were added came from walking the manual ones. See
+*"What 2026-09-08 cost and bought"* below: the card was right from the first screenshot, and
+everything around it was not.
+
+A8-15 passed. A8-16 passed on its **fifth** attempt. A8-17 was walked and answered the question it
+exists for, in the worst way available: **a start that leaves a repository broken read as success**,
+and the operator confirmed they could have walked away without noticing. A8-26 is the answer.
 
 **The Java extensions:** M-B1 and M-B2 built and verified. **M-B3 is specified and not built.**
 
@@ -121,6 +127,52 @@ seconds. Records in `docs/verification/`.
 
 Nothing in the migration is open. OC-3 was **replaced** by a contract case — assert the guard, not
 the hazard — and the reasons are in the test specification.
+
+### What 2026-09-08 cost and bought
+
+Three manual cases, five attempts at one of them, and **six defects none of the 334 automated cases
+could see** — because every one of them lived on a path no case had ever walked: the operator's.
+
+| | What it was |
+|---|---|
+| **A8-19** | `config/toolbox/Dockerfile` carried no `git` and no `openssh`, and the dashboard's **Start** button runs the start script inside the toolbox. `git.sh` died at line 17 with `ssh-keygen: command not found`. The button brought up no stack at all, and had not since the git integration was cut |
+| **A8-21** | `start.sh` runs `down.sh` on **line 16** and reaches the git step on 139 under `set -euo pipefail`. One malformed declaration removed every container and aborted a hundred lines before anything came back — and did it again on every retry. The declaration is now judged before the teardown |
+| **A8-23** | The parser took everything after the colon as the repository path. A URL pasted twice parsed, GitHub answered *"is not a valid repository name"* — a message about the remote, for a mistake in `.env` — and the slug, the key directory and the key's comment were all built from the doubled string |
+| **A8-24** | Bun loads the repository's `.env` into `process.env`, `sh()` forwarded it, and `git.sh` prefers the variable over the file. **Every fixture-based case had been reading the operator's live declaration since M-A1.** Invisible while it was valid; a malformed one turned five cases red in milestones nobody had touched |
+| **A8-22** | Nothing asserted the retry's control is drawn. Found by the operator asking where the Test button was — correctly absent, because both repositories were cloned. The same shape as the defect this milestone was built for: `/git-auth` complete and called by nothing |
+| **A8-26** | The start printed its warning and then 250 lines of certificates and containers, ending in URLs, passwords and `[start succeeded]`. `.install-result` said `start_ok=1`. Exactly the shape U11 forbids |
+
+**None of them was about the card.** It was right in the first screenshot taken of it: both
+repositories named, the per-access instruction, the key, the fingerprint matching GitHub's. Five
+attempts were spent on everything between the operator and it.
+
+Two things worth carrying beyond this milestone. **The retry produces a *governed* clone** — its own
+key selected, `core.hooksPath` set — because it runs `git.sh` with `GIT_REPOSITORIES` narrowed to one
+entry rather than calling `git clone` itself. That is what reusing the mechanism buys, observed
+rather than argued. And **the stack keeps no start log**: the toolbox runs with `--rm`, and
+`.install-result` holds a verdict rather than output. A8-26 exists because the operator pasted the
+log by hand.
+
+### A locally built image can belong to another branch
+
+Met twice on 2026-09-08 before it was understood, and written up in `BACKLOG.md`. This branch pins
+`ghcr.io/openclaw/openclaw:2026.7.1`; `liquidupstart/openclaw:latest` on the machine was **2026.9.1**,
+built from the migration branch. The start wrote a `cliBackends` key, the newer binary rejected it,
+and under a pty it asked `Run "openclaw doctor --fix" now? [Y/n]` in a container with no stdin. **The
+only symptom was a container that did not come back.**
+
+Repaired by `./scripts/linux/build.sh`, and the state directory had to go with it — `2026.7.1`
+refuses a state written by `2026.9.1`, which is OC-21's one-way door. Archived as
+`_openclaw.was-2026.9.1.tar` first. The Claude login lives in `volumes/_openclaw-claude`, a different
+directory, and survived.
+
+**And the reason `volumes/_openclaw` would not delete is now known.** `openclaw-gateway` has nested
+bind mounts — `volumes/_openclaw/workspace` and `config/agents/skills` mount *into*
+`/home/node/.openclaw` — so those paths are live mount points and `rm` is refused for the owner, for
+root, and inside another container. It releases **shortly after** the container is gone, not
+immediately: a `rm -rf` run seconds after `docker rm -f` still fails, and a minute later `rmdir`
+succeeds. That delay is what made the cause look disproved. The same shape as
+`volumes/_openclaw-claude/skills`, which `BACKLOG.md` recorded as unexplained.
 
 ### Things on disk that matter
 
@@ -136,6 +188,8 @@ root `./cleanup.sh` deletes `volumes/` wholesale and a backup kept inside it die
 | `_openclaw.working-2026.9.1` | The migrated state, before the upgrade test replayed it |
 | `digests-{before,after}.txt` | Registry digests of every image, so a later difference can be told from an upstream move |
 | `pr-drafts-2026-09-05/` | The scratch directory before its records were promoted into `docs/verification/` |
+| `_openclaw.was-2026.9.1.tar` | The state directory 2026.9.1 left, archived before the rebuild to 2026.7.1 |
+| `.env.before-a8`, `.env.before-a8-repair`, `.env.before-a8-repair2` | The declaration before A8-15 touched it, and twice after a malformed entry had to be taken out |
 
 `volumes/repos/csv-columns` is a leftover from the A2-5 observation. **Leave it**: A4-16 uses it as a
 clone the feature did not create.
@@ -177,6 +231,20 @@ accumulating conversation; executing them is better served by a clean context an
 that exists only in a transcript has to be carried by hand, and that is where it is lost.
 
 ## What the failures taught
+
+**A suite is green about the paths it walks.** 334 cases passed while the dashboard's Start button
+could not bring up a stack, a malformed declaration destroyed a running installation, and a start
+that left a repository broken ended in the word *succeeded*. Nothing was wrong with the cases. They
+had simply never been on that path, because until M-A8 no case asked what an **operator** does — and
+the milestone that finally did found six defects in three sittings. The lesson is not "write more
+tests"; it is that coverage is a claim about *routes*, and this suite's routes were an agent's.
+
+**A test that reads only stdout cannot tell silence from failure.** A8-26's own helper joined a shell
+function to its call with a semicolon, which put one at the start of a line. `bash` refused the whole
+script, stdout came back empty — and empty is exactly what *"nothing needs attention"* looks like.
+The helper now asserts the child's exit status. The same day, five unrelated cases went red because
+`sh()` forwarded the operator's `.env`; both are the harness being wrong in a way no assertion was
+watching.
 
 **Assert the property, not the circumstance.** Tests were green and wrong the same way: they encoded
 what had *not* been done. The newest instance is from 2026-09-06 and was written that same morning —
@@ -241,9 +309,8 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
 
-0. **A8-15, A8-16 and A8-17** — the three manual cases M-A8 owes, in a browser. A8-17 is the one to
-   run first: it is the only rehearsal this feature has of a revoked key, and its step 3 asks whether
-   a start that leaves a repository broken *reads* as success.
+0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
+   finding, not the pass.
 1. **M-B3** — the only unbuilt milestone, on `feature/liquid-java-extensions`. It asks whether Liquid
    loads what we build, and its negative control — a NAR built against the wrong API must *not* load —
    is the case, not an addition to it.
