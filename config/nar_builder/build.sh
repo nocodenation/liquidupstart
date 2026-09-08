@@ -350,9 +350,21 @@ NONAR
   fi
 
   base="$(basename "$nar")"
-  part="${DROP}/.${base}.part"
   mkdir -p "$DROP"
-  cp "$nar" "$part"
+  part="${DROP}/.${base}.$$.part"
+  if ! cp "$nar" "$part"; then
+    rm -f "$part"
+    part=""
+    cat >&2 <<NOWRITE
+
+nar-build refused: the build of /repos/${rel} succeeded but ${base} could not be
+written to ${DROP}, so nothing was deployed and the artifact that was there
+before, if any, is untouched.
+Ask the operator whether ${DROP} is writable: docker compose exec nar_builder ls -ld /nar_extensions
+NOWRITE
+    rm -rf "$work"
+    return 2
+  fi
   mv "$part" "${DROP}/${base}"
   part=""
 

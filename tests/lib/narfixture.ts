@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from './paths';
-import { sh, type Result } from './shell';
+import { sh, shAsync, type Result, type Timed } from './shell';
 
 export const DROP_HOST = join(repoRoot, 'volumes/nar_extensions');
 export const REPOS_HOST = join(repoRoot, 'volumes/repos');
@@ -23,14 +23,16 @@ const PROBE_BODY = '    public void onTrigger(ProcessContext context, ProcessSes
 const BROKEN_BODY =
   '    public void onTrigger(ProcessContext context, ProcessSession session) { int probe = "probe"; }';
 
-function probeSource(body: string): string {
+export const PROBE_SIMPLE_NAME = 'ProbeProcessor';
+
+function probeSource(body: string, simpleName: string = PROBE_SIMPLE_NAME): string {
   return `package ${PROBE_PACKAGE};
 
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 
-public class ProbeProcessor extends AbstractProcessor {
+public class ${simpleName} extends AbstractProcessor {
     @Override
 ${body}
 }
@@ -84,12 +86,19 @@ export function ownPom(nifiVersion: string, javaMajor: string): string {
 `;
 }
 
-export type Fixture = { host: string; container: string; name: string };
+export type Fixture = {
+  host: string;
+  container: string;
+  name: string;
+  processor: string;
+  artifact: string;
+};
 
 export function seedSource(
   name: string,
-  opts: { broken?: boolean; pom?: string } = {}
+  opts: { broken?: boolean; pom?: string; className?: string } = {}
 ): Fixture {
+  const simpleName = opts.className ?? PROBE_SIMPLE_NAME;
   const host = join(REPOS_HOST, name);
   rmSync(host, { recursive: true, force: true });
   const javaDir = join(host, 'src/main/java', ...PROBE_PACKAGE.split('.'));
@@ -97,26 +106,40 @@ export function seedSource(
   mkdirSync(javaDir, { recursive: true });
   mkdirSync(resDir, { recursive: true });
   writeFileSync(
-    join(javaDir, 'ProbeProcessor.java'),
-    opts.broken ? BROKEN_SOURCE : PROBE_SOURCE
+    join(javaDir, `${simpleName}.java`),
+    probeSource(opts.broken ? BROKEN_BODY : PROBE_BODY, simpleName)
   );
-  writeFileSync(join(resDir, 'org.apache.nifi.processor.Processor'), `${PROBE_CLASS}\n`);
+  const processor = `${PROBE_PACKAGE}.${simpleName}`;
+  writeFileSync(join(resDir, 'org.apache.nifi.processor.Processor'), `${processor}\n`);
   if (opts.pom) writeFileSync(join(host, 'pom.xml'), opts.pom);
-  return { host, container: `/repos/${name}`, name };
+  return { host, container: `/repos/${name}`, name, processor, artifact: artifactName(name) };
+}
+
+// build.sh derives the artifact name from the source directory alone, so a case
+// can name the file it expects without parsing the build's output for it.
+export function artifactName(dir: string): string {
+  const art = dir
+    .split('/')
+    .pop()!
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/^[.-]+/, '')
+    .replace(/[.-]+$/, '');
+  return `${art || 'liquid-processor'}-nar-1.0.0.nar`;
 }
 
 export function dropFixture(fx: Fixture): void {
   rmSync(fx.host, { recursive: true, force: true });
 }
 
-export function narBuild(
+function narBuildArgv(
   service: string,
   arg: string,
-  env: Record<string, string> = {},
-  extraArgs: string[] = []
-): Result {
+  env: Record<string, string>,
+  extraArgs: string[]
+): string[] {
   const envArgs = Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
-  return sh([
+  return [
     'docker',
     'compose',
     'exec',
@@ -126,7 +149,94 @@ export function narBuild(
     'nar-build',
     ...extraArgs,
     ...(arg ? [arg] : [])
+  ];
+}
+
+export function narBuild(
+  service: string,
+  arg: string,
+  env: Record<string, string> = {},
+  extraArgs: string[] = []
+): Result {
+  return sh(narBuildArgv(service, arg, env, extraArgs));
+}
+
+// The same invocation, started rather than waited for, so two builds can be in
+// flight at once. It carries the child's exit status, both its streams and the
+// wall clock either side of it -- everything a concurrency case needs to say
+// what happened rather than only that something did.
+export function narBuildAsync(
+  service: string,
+  arg: string,
+  env: Record<string, string> = {},
+  extraArgs: string[] = []
+): Promise<Timed> {
+  return shAsync(narBuildArgv(service, arg, env, extraArgs));
+}
+
+// What the builder is running right now, read from /proc inside the container.
+// BuildServer serves on a fixed pool of two, so two requests fit and a third
+// queues: a pair that happened to serialise would still both succeed, and a case
+// checking only exit status would be measuring the queue instead of the
+// collision. Sampling this while the builds run is how a case establishes that
+// they were genuinely concurrent.
+//
+// Only the build.sh processes the BuildServer itself started are counted. This is
+// not fastidiousness: build.sh calls resolve_target through $(...), and the
+// sub-shell inherits its parent's cmdline verbatim, so one build shows up as two
+// entries for part of its run. Counting entries would make a single build
+// indistinguishable from an overlapping pair, which is precisely the thing the
+// sample exists to tell apart. Parentage says which is which.
+export type BuildProcess = { pid: string; source: string };
+
+const SERVER_CMD = '/opt/builder/BuildServer.java';
+
+export async function buildsInFlight(): Promise<BuildProcess[]> {
+  const r = await shAsync([
+    'docker',
+    'compose',
+    'exec',
+    '-T',
+    BUILDER_SERVICE,
+    'sh',
+    '-c',
+    'for d in /proc/[0-9]*; do ' +
+      'c=$(tr "\\0" " " < "$d/cmdline" 2>/dev/null); ' +
+      '[ -n "$c" ] || continue; ' +
+      'p=$(sed -n "s/^PPid:[[:space:]]*//p" "$d/status" 2>/dev/null); ' +
+      'echo "${d#/proc/} ${p} ${c}"; done'
   ]);
+  const rows = r.stdout.split('\n').map((line) => {
+    const m = line.match(/^(\d+) (\d+) (.*)$/);
+    return m ? { pid: m[1], ppid: m[2], cmd: m[3] } : null;
+  });
+  const server = rows.find((row) => row !== null && row.cmd.includes(SERVER_CMD));
+  if (!server) return [];
+  return rows
+    .filter((row) => row !== null && row.ppid === server.pid)
+    .map((row) => ({ row: row!, m: row!.cmd.match(/\/opt\/builder\/build\.sh build (\S+)/) }))
+    .filter(({ m }) => m !== null)
+    .map(({ row, m }) => ({ pid: row.pid, source: m![1] }));
+}
+
+export type Observation = { samples: BuildProcess[][]; concurrent: BuildProcess[][] };
+
+export function observeBuilds(intervalMs = 150): { stop: () => Promise<Observation> } {
+  let running = true;
+  const samples: BuildProcess[][] = [];
+  const loop = (async () => {
+    while (running) {
+      samples.push(await buildsInFlight());
+      await Bun.sleep(intervalMs);
+    }
+  })();
+  return {
+    stop: async () => {
+      running = false;
+      await loop;
+      return { samples, concurrent: samples.filter((s) => s.length > 1) };
+    }
+  };
 }
 
 export function target(service = 'opencode', env: Record<string, string> = {}): Result {
@@ -149,6 +259,13 @@ export function sha256(path: string): string {
 
 export function clearDrop(): void {
   for (const f of dropContents()) rmSync(join(DROP_HOST, f), { recursive: true, force: true });
+}
+
+// Opening the archive, not counting the files beside it. A NAR half-written by a
+// concurrent build lists nothing and fails the CRC check its central directory
+// carries; the entrypoint would copy it into lib/ regardless.
+export function narIntegrity(nar: string): Result {
+  return sh(['unzip', '-t', nar]);
 }
 
 export function narEntries(nar: string): string[] {

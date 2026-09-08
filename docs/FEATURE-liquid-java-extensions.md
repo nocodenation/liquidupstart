@@ -271,6 +271,7 @@ two features' runs stay comparable. Wall clock is local time.
 |---|---|---|---|---|---|---|---|
 | M-B1 | 55 / 45 | 2026-09-03 18:16–19:16 (local), 1h00 | 20: `compose.yml`, `config/nar_builder/{Dockerfile,build.sh,BuildServer.java,entrypoint.sh}`, `config/agents/bin/nar-build.sh`, `config/scripts/build/nar-builder.sh`, `scripts/linux/build.sh`, `config/nginx/templates/nginx.conf`, `CLAUDE.md`, 12 test files + `tests/lib/narfixture.ts`, `tests/verify/m-b1.sh`, this document, the test specification | No — the suite was run in the transcript and the two defects it found are recorded in B1-5 and B1-9 | None. The operator's verification ran 2026-09-03 19:45, all eight checks PASS — `verification/M-B1-verification.md` | No — the four fixed decisions held; one addition, the read-only `volumes/liquid/logs` mount, is declared in §3.2 | No |
 | M-B2 | ~70 / 50 — over, and the bound was set at where M-B1 landed | 2026-09-03 21:57–22:47 (local), 0h50 | 21: `config/nar_builder/{build.sh,BuildServer.java}`, `config/agents/bin/nar-build.sh`, `config/liquid/entrypoint.sh`, `config/agents/skills/liquid/SKILL.md`, 9 test files + `tests/lib/{entrypointfixture.ts,narfixture.ts,shell.ts}`, `tests/verify/m-b2.sh`, this document, the test specification | No — the suite was run in the transcript, and the two things it could have passed over were caught before the run: a contract test green over an entrypoint the container does not execute (§4 check 3b), and a negative control reading the artifact the previous check had left in `lib/` (§4 check 5) | None. Verified 2026-09-05 16:01, every check PASS — `verification/M-B2-verification.md`. B2-10 was observed the same day and passed, and its failure criterion was corrected in the process | No — the three things the goal named were built as posed, and the one decision it left open (whether Liquid starts after a failed copy) was taken and written down | No |
+| M-B3 | 33 / 50 | 2026-09-08 10:14–10:43 (local), 0h29 | 8: `config/nar_builder/build.sh`, `tests/lib/{shell.ts,narfixture.ts}`, 2 test files, `tests/verify/m-b3.sh`, this document, the test specification | No — but it came close twice, and both were caught inside the run: the overlap sample would have been satisfied by a single build (`build.sh`'s own `$(...)` sub-shell inherits the cmdline), and §4's check 4 could not have produced a mismatch at all, because the version it named refuses | None | No — the three things the goal named were built as posed, and the one decision it left open (how the drop-directory write is made safe) was taken and written down | No |
 
 ---
 
@@ -547,6 +548,74 @@ Done when `./tests/run.sh m-b2; echo EXIT=$?` shows EXIT=0 in this transcript an
 `./tests/run.sh; echo EXIT=$?` does too. Or stop after 50 turns -- a bound set
 where M-B1 landed, having been exceeded three times in the same direction.
 ```
+
+### M-B3 — outcome
+
+`./tests/run.sh m-b3` is green at 15 tests across 2 files, and `./tests/run.sh` at **455 + 27** against
+the 440 + 27 the branch stood at, so nothing regressed. Built: the two concurrency cases B3-3 and B3-4,
+a fix to the drop-directory write they found, a concurrent path through the existing test harness
+rather than beside it, and §4's load checks written out so they run top to bottom. The load checks
+themselves were not run — they restart Liquid, and the restart is the operator's.
+
+**The write at the end of `build_command` was broken, and the case found it rather than confirming
+it.** It copied into `${DROP}/.${base}.part`, a name derived from the artifact name and nothing else,
+and the artifact name comes from the source directory — so two builds of one directory copied into one
+file at the same time, and the `INT`/`TERM` trap removed a path that by then could belong to the other
+build. The consequence is the shape this feature keeps meeting: a torn NAR does not fail the build,
+because Liquid's entrypoint copies whatever it finds into `lib/` on the next restart. It fails a
+deployment, later, on a restart nobody connects to it.
+
+**The decision, and why it was that one.** The temporary path is now private to the build process —
+`${DROP}/.${base}.$$.part` — and the final placement stays a single `mv`, which is `rename(2)` on the
+shared bind mount and therefore atomic: a reader, Liquid's entrypoint included, sees either the
+previous artifact or the complete new one, never a partial. The two builds are of the same source, so
+which one wins the rename does not matter. The alternatives were a lock on the drop path and a lock in
+`BuildServer` keyed by the source; both were rejected for the same reason. They convert a case that can
+simply succeed into one that refuses, which means a refusal message to write, an agent that has to
+handle it, and legitimate concurrent work serialised — to buy a property `rename(2)` already provides.
+FR24 and FR25 do not move: a failed build still writes nothing, and the builder still holds no
+credentials.
+
+**Establishing the overlap was the harder half, and the first attempt was nearly worthless.**
+`BuildServer` serves on `Executors.newFixedThreadPool(2)`, so two requests fit and a third queues: a
+pair that happened to serialise would still both exit 0, and a case checking only that would be
+measuring the queue rather than the collision. The overlap is therefore sampled, not assumed — the
+builder's `/proc` is read every 150 ms while the pair runs. The first version matched cmdlines against
+`/opt/builder/build.sh build <source>` and required more than one, and it would have passed with a
+single build running: `build.sh` calls `resolve_target` through `$(...)`, the sub-shell inherits its
+parent's cmdline verbatim, and in B3-4 both builds carry the *same* source path anyway, so one build
+alone showed up as **four** matching lines. The sample now carries the process id and the parent and
+counts only the `build.sh` processes `BuildServer` itself started. The observed pair is two distinct
+pids — 13120 and 13121 — present together in 23 of 24 samples across a 7.5 s build.
+
+**What §4 check 4 could not have done, and what replaced it.** The block set
+`NAR_BUILD_API_PROBE_VERSION=99.99.99` and admitted it might refuse. It does: that is B2-3's
+unresolvable version, `resolve_api_version` fails, the build stops with exit 3 and no NAR is written,
+so the check would have produced FR23 working rather than a control. The mismatch is produced instead
+through the escape hatch B1-6 keeps — a source directory carrying its own `pom.xml`, used unchanged,
+naming `nifi-api` **2.11.0** while Liquid loads **2.10.0**. A version difference alone would prove
+nothing, because NiFi raises `nifi-api` only when the API changes:
+`org.apache.nifi.controller.NodeConnectionState` is the **only** class present in 2.11.0 and absent
+from 2.10.0, 437 against 436, established by listing both jars. The fixture's processor references it,
+and the built NAR was inspected rather than argued about — `javap` on `MismatchProcessor.class` names
+`org/apache/nifi/controller/NodeConnectionState`, `org/apache/nifi/logging/ComponentLog` and
+`org/apache/nifi/processor/AbstractProcessor`, and against
+`/opt/nifi/nifi-current/lib/nifi-api-2.10.0.jar` the first is ABSENT and the other two present. That
+build reports `pom author` and `downloads 8`, because `nifi-api` 2.11.0 was not in the cache and came
+from Maven Central — which is the cache confirming it holds only what the resolution asks for.
+
+**`nar_builder` has M-B2's check 3b problem, and now has M-B2's check 3b.** `config/nar_builder/build.sh`
+is `COPY`ed into the image, not mounted, so B3-4 would have been green over a container still running
+the write that preceded the fix. `tests/verify/m-b3.sh` opens by diffing `/opt/builder/build.sh` out of
+the running container against the file on disk, and names the remedy —
+`./config/scripts/build/nar-builder.sh && docker compose up -d --no-deps nar_builder`, which does not
+touch Liquid. The image was rebuilt on this branch before B3-4 was run, so the case asserts the fix.
+
+**What remains is the operator's, and it is the milestone's point.** §4 checks 3, 4 and 5 restart
+Liquid. They are written out with the fixture, the build, the build-time proof of the mismatch, the API
+query and the cleanup, and `tests/verify/m-b3.sh` performs and judges the same sequence. Until they
+run, FR34 is specified and not observed, and the sentence M-B2 could only argue —  that a NAR built
+against an API Liquid does not provide is silently never loaded — is still an argument.
 
 ### M-B3 — does Liquid load what we build · posed 2026-09-08
 

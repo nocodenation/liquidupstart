@@ -20,7 +20,8 @@ BOLD=$'\033[1m'; RED=$'\033[31m'; GREEN=$'\033[32m'; DIM=$'\033[2m'; RST=$'\033[
 declare -a VERDICTS=()
 FAILED=0
 
-mapfile -t DROP_BEFORE < <(ls -1 "$DROP" 2>/dev/null | sort)
+DROP_BEFORE=()
+while IFS= read -r line; do DROP_BEFORE+=("$line"); done < <(ls -1 "$DROP" 2>/dev/null | sort)
 
 restore() {
   if [[ -s "$BACKUP" ]]; then

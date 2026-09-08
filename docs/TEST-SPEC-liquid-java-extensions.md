@@ -36,15 +36,15 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR21 Building is one command | B1-2, B1-5, B1-10 |
 | FR22 The answer is synchronous and determinate | B1-5, B1-7, B1-11 |
 | FR23 The target version is computed | B1-3, B1-4 |
-| FR24 A failed build leaves no artifact | B1-4, B1-7, B1-8 |
+| FR24 A failed build leaves no artifact | B1-4, B1-7, B1-8, B3-4 |
 | FR25 The builder holds no credentials | B1-1, B1-12 |
-| FR26 The dependency cache lives under `volumes/` | B1-9 |
+| FR26 The dependency cache lives under `volumes/` | B1-9, B3-3 |
 | FR27 The API compiled against is resolved and stated | B2-1, B2-2, B2-3, B2-4 |
 | FR28 The deployment cycle is one documented path | B2-7 |
 | FR29 The restart is the operator's, and the agent asks | B2-8, B2-9, B2-10 |
 | FR30 The drop directory reaches Liquid's load path | B2-5 |
 | FR31 A deployment step that fails says so | B2-6 |
-| FR34 What is built is proven loadable | B3-1, B3-2 |
+| FR34 What is built is proven loadable | B3-1, B3-2 — both §4 checks, written out in full and not yet run |
 | FR35 Concurrent builds do not corrupt each other | B3-3, B3-4 |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
 
@@ -204,7 +204,7 @@ says why not.
 | **Expected** | The second build fails, the existing `.nar` has the same SHA-256 as before, and no other file — partial, temporary or otherwise — is left in the directory. |
 | **Covers** | FR24. |
 | **Implemented by** | `tests/integration/m-b1.stale-artifact.test.ts`. |
-| **What it found** | Green. The SHA-256 recorded before the failing build is the SHA-256 after it, and the directory listing is identical. The builder only copies into the drop directory after Maven has succeeded, and it stages through `.<name>.part` in the same directory so the visible file is never a partial one. |
+| **What it found** | Green. The SHA-256 recorded before the failing build is the SHA-256 after it, and the directory listing is identical. The builder only copies into the drop directory after Maven has succeeded, and it stages through a temporary file in the same directory so the visible file is never a partial one. B3-4 later found that the staging name was shared between concurrent builds of one source and made it private to the build process; the property this case asserts is unchanged. |
 
 ##### B1-9 — the dependency cache is state, and lives where state lives
 
@@ -489,6 +489,8 @@ conditional: that the artifact is loadable at all.
 | **Test data** | The `ProbeProcessor` fixture of B1-5 — `org.nocodenation.probe.ProbeProcessor`, an empty `onTrigger`, its SPI descriptor — built with `nar-build`, restarted into, and looked for by that fully-qualified name in the processor types the API returns. |
 | **Expected** | The type is listed. The artifact in `lib/` is the one the build produced, by SHA-256, so the case cannot pass on a leftover from an earlier run. |
 | **Covers** | FR34, U9, U10. |
+| **Implemented by** | §4 check 3, and `tests/verify/m-b3.sh` as its executable equivalent. Not in the suite: it restarts Liquid, and the restart is the operator's. |
+| **What it found** | Not yet run — it restarts Liquid, and the M-B3 run of 2026-09-08 was told not to. The fixture and the commands are written out in §4 with nothing left to fill in, and §4 check 5 gives the case its negative control: with both NARs removed from `lib/` the type must disappear, or check 3 was reading whatever `lib/` had accumulated. |
 
 ##### B3-2 — a NAR built against the wrong API does not load · §4 check
 
@@ -496,9 +498,11 @@ conditional: that the artifact is loadable at all.
 |---|---|
 | **Premise** | The control that gives B3-1 meaning, and the observation M-B2's correction never had. M-B1 compiled against `nifi-api` 2.11.0 while Liquid loads 2.10.0; the argument that this is dangerous is sound and was never once seen to be true. This is where it becomes evidence. |
 | **Component** | The same path, with the resolution overridden. |
-| **Test data** | The same fixture, built with the API version forced to something the framework does not provide — the `NAR_BUILD_API_PROBE_VERSION` lever B2-3 already uses — and a processor body that calls something only that version has, so the mismatch is real rather than nominal. |
-| **Expected** | The type is **not** listed after the restart, and `nifi-app.log` names the failure. Whether it is a `NoClassDefFoundError`, a bundle-loading error or silence is recorded as found rather than predicted: the point is to learn what this failure actually looks like, because an operator will meet it before anyone else does. |
+| **Test data** | `/repos/.b3-mismatch`, carrying its **own `pom.xml`** — the escape hatch B1-6 keeps, which `nar-build` uses unchanged and which is therefore the only lever that produces a mismatch at all. The pom is a single-module `nar`-packaged project, `org.nocodenation.probe:probe-mismatch:1.0.0`, `maven.compiler.release` 21, depending on `org.apache.nifi:nifi-api` **2.11.0** at `provided` scope and building with `nifi-nar-maven-plugin` 2.4.0; the artifact is `probe-mismatch-1.0.0.nar`. Its processor is `org.nocodenation.probe.MismatchProcessor`, an `AbstractProcessor` with a `public NodeConnectionState state()` returning `NodeConnectionState.CONNECTED` and an `onTrigger` that logs it, and an SPI descriptor holding that one class name. `org.apache.nifi.controller.NodeConnectionState` is the deliberate part: on 2026-09-08 both jars were listed, and it is the **only** class present in `nifi-api` 2.11.0 and absent from the `nifi-api-2.10.0.jar` Liquid loads — 437 classes against 436. A version difference alone would be nominal, because NiFi raises `nifi-api` only when the API changes.<br><br>**What must not be used:** `NAR_BUILD_API_PROBE_VERSION=99.99.99`, which the earlier draft of §4 proposed. That is B2-3's unresolvable version: `resolve_api_version` fails, the build refuses with exit 3 and writes no NAR, so it produces no control at all — it produces FR23 working. |
+| **Expected** | The type is **not** listed after the restart, and `nifi-app.log` names the failure. Whether it is a `NoClassDefFoundError`, a bundle-loading error or silence is recorded as found rather than predicted: the point is to learn what this failure actually looks like, because an operator will meet it before anyone else does. The mismatch itself is not predicted either: before the restart, §4 check 4b `javap`s the compiled class, lists every `org.apache.nifi` type it references, and looks each one up in the `nifi-api` jar Liquid actually loads. |
 | **Covers** | FR34, FR27. |
+| **Implemented by** | §4 checks 4 and 4b, and `tests/verify/m-b3.sh`. Not in the suite: it restarts Liquid. |
+| **What it found** | The restart half is not yet run — the M-B3 run of 2026-09-08 was told not to restart Liquid. The **fixture half was**, and it found that the case as specified could not have been performed: the `NAR_BUILD_API_PROBE_VERSION` lever the block named refuses rather than mismatching, which the block itself suspected. Built instead through the pom escape hatch, and the mismatch was established rather than argued — `javap` on the NAR's `MismatchProcessor.class` names `org/apache/nifi/controller/NodeConnectionState`, `org/apache/nifi/logging/ComponentLog` and `org/apache/nifi/processor/AbstractProcessor`, and against `/opt/nifi/nifi-current/lib/nifi-api-2.10.0.jar` the first is **ABSENT** and the other two present. The build itself reports `pom author` and `downloads 8`: `nifi-api` 2.11.0 is not in `volumes/nar_builder/m2`, so it came from Maven Central, which is the cache proving it holds only what the resolution asks for. |
 
 ##### B3-3 — two builds at once, different sources
 
@@ -507,8 +511,11 @@ conditional: that the artifact is loadable at all.
 | **Premise** | One builder, one `volumes/nar_builder/m2`, one `/repos`. Two agents working is the ordinary case, not an exotic one, and Maven's local repository is famously not concurrency-safe. Nothing has ever run two builds together. |
 | **Component** | `nar_builder` under two simultaneous requests. |
 | **Test data** | Two copies of the B1-5 fixture under different directories and artifact names, `probe-a` and `probe-b`, both started before either returns. |
+| **Test data** | Two copies of the B1-5 fixture under different directories and artifact names. `/repos/.b3-a` holds `src/main/java/org/nocodenation/probe/ProbeA.java` — an `AbstractProcessor` with an empty `onTrigger` — and an SPI descriptor whose single line is `org.nocodenation.probe.ProbeA`; `/repos/.b3-b` the same with `ProbeB`. Neither carries a `pom.xml`, so both projects are synthesised and `build.sh` takes the artifact name from the directory: `b3-a-nar-1.0.0.nar` and `b3-b-nar-1.0.0.nar`. Distinct class names are the point — with one shared `ProbeProcessor` the case could not tell an artifact holding its own processor from one holding the other's. The cache at `volumes/nar_builder/m2` must already hold `org/apache/nifi/nifi-api`, and the case asserts that rather than assuming it: over a cold cache this would measure two download storms instead of the collision. |
 | **Expected** | Both exit 0, both artifacts are in the drop directory, each contains its own processor and not the other's, and the cache is intact afterwards — asserted by a third build succeeding without re-resolving. |
-| **Covers** | FR35. |
+| **Covers** | FR35, FR26. |
+| **Implemented by** | `tests/integration/m-b3.concurrent-different-sources.test.ts`. |
+| **What it found** | Green, and nothing shared broke. Two builds started before either returned both exit 0, `b3-a-nar-1.0.0.nar` and `b3-b-nar-1.0.0.nar` both land, each SPI descriptor names its own class and not the other's, and the third build reports `downloads 0` — so one Maven local repository under two concurrent `mvn package` runs came through intact, which had never been established. What it also found is that establishing the overlap is harder than it looks: see B3-4, whose note applies to this case too. |
 
 ##### B3-4 — two builds at once, one source
 
@@ -520,6 +527,8 @@ conditional: that the artifact is loadable at all.
 | **Expected** | Either both succeed and the artifact is a valid archive, or one refuses and says so. **What must not happen** is an unreadable or partial `.nar` in the drop directory — asserted by opening the archive afterwards, not by counting files. |
 | **Failure** | An archive that cannot be listed, or a temporary file left beside it. |
 | **Covers** | FR35, FR24. |
+| **Implemented by** | `tests/integration/m-b3.concurrent-same-source.test.ts`. |
+| **What it found** | Green — over a `build.sh` that had to be changed first, and the defect was real. The write at the end of `build_command` copied into `${DROP}/.${base}.part`, a name derived from the artifact name and nothing else, so two builds of one directory copied into one file at once; and the `INT`/`TERM` trap removed that path, which by then could belong to the other build. A torn NAR does not fail the build — Liquid's entrypoint copies whatever it finds into `lib/` on the next restart — so it fails a deployment later, which is the class of silent failure this feature exists to refuse. The temporary path is now private to the build process, `${DROP}/.${base}.$$.part`, and the final placement stays a single `mv`: `rename(2)` on the shared bind mount, and therefore atomic. Under that fix both builds succeed and the artifact opens — `unzip -t` clean, SPI descriptor `org.nocodenation.probe.ProbeSame` — with no `.part` beside it. The fix trades one property away, which `BACKLOG.md` records: the old shared name was overwritten by the next build of the same artifact, so a staging file abandoned by a `SIGKILL` cleaned itself up, and a private name never does. It is litter rather than a hazard — the entrypoint matches `*.nar` and reaches neither a leading dot nor a `.part` suffix — and this case asserts the directory only after a normal pair, because nothing sweeps after an abandoned one.<br><br>It also found that the overlap evidence was nearly worthless. The first version sampled the builder's `/proc` for lines matching `/opt/builder/build.sh build .b3-same` and required more than one: with both builds carrying the *same* source path, and with `build.sh` calling `resolve_target` through `$(...)` — whose sub-shell inherits its parent's cmdline verbatim — one build alone shows up as **four** such lines for part of its run. A single build would have satisfied the check. The sample now carries the process id and the parent, and counts only the `build.sh` processes the `BuildServer` itself started; the observed pair is two distinct pids, in 23 of 24 samples across a 7.5 s build. |
 
 ---
 
@@ -537,6 +546,23 @@ The form is the one established by M-A5 and M-A6 in the git integration: the che
 form, run by the operator rather than by the session that wrote the code, with the negative controls
 carrying the weight. A milestone's executable equivalent, `./tests/verify/m-b1.sh`, is written with
 the milestone and does not replace the block — it is written by the same hand as the tests it checks.
+
+**All three of these scripts were unable to protect the drop directory, and said so once each time
+without anyone hearing it.** Found on 2026-09-08, when `./tests/verify/m-b3.sh` was run for the first
+time and answered `line 29: mapfile: command not found`. `mapfile` is a bash 4 builtin; macOS ships
+bash 3.2 and this host has no other. The scripts run under `set -uo pipefail` — deliberately without
+`-e`, because they must continue through a failing check in order to judge it — so the missing builtin
+was not an abort but a line of noise, and `DROP_BEFORE` simply stayed unset. The `${VAR[@]+...}`
+expansion that keeps `set -u` happy over an empty array then made the damage invisible: with nothing
+in `DROP_BEFORE`, the restore step's `grep -qx` never matches, and **every** file in
+`volumes/nar_extensions` is removed rather than only the ones the run created. `M-B1-verification.md`
+opens by promising the opposite in as many words. The promise never held on this machine; it went
+unnoticed because the directory was empty each time, which is the same reason nobody saw the message.
+
+Replaced in `m-b1.sh`, `m-b2.sh` and `m-b3.sh` by a `while IFS= read -r` loop, which bash 3.2 has.
+The two verification records are left as they were written — they are records of runs, and correcting
+them afterwards would hide the thing worth keeping: a check whose failure mode was to quietly become
+destructive, in the scripts written to make verification trustworthy.
 
 ### M-B1 — the NAR builder
 
@@ -815,7 +841,21 @@ what A3-10 caught after A6-13.
 
 **Checks 3 and 4 restart Liquid twice**, which interrupts every running flow. Run them when nothing is
 mid-flight. They are the reason this milestone exists, and they are also the slowest thing in this
-document.
+document. `./tests/verify/m-b3.sh` is this section executed, judged and cleaned up, in the shape
+`m-b2.sh` takes; the block below is the same procedure by hand and nothing in it is left to fill in.
+
+**On the mismatch fixture.** Check 4 used to set `NAR_BUILD_API_PROBE_VERSION=99.99.99` and say that
+if the build refused, the mismatch had to be produced another way. It refuses: 99.99.99 is B2-3's
+unresolvable version, `resolve_api_version` fails, the build stops with exit 3 and no NAR is written
+at all — which is FR23 working, not a control. The mismatch is therefore produced through the escape
+hatch B1-6 keeps: a source directory carrying **its own `pom.xml`**, which `nar-build` uses unchanged,
+naming `nifi-api` **2.11.0** while Liquid loads **2.10.0**. A version difference on its own proves
+nothing — NiFi raises `nifi-api` only when the API changes, so 2.11.0 and 2.10.0 are compatible almost
+everywhere. `org.apache.nifi.controller.NodeConnectionState` is the exception, and on 2026-09-08 it was
+established by listing both jars that it is the **only** class present in `nifi-api` 2.11.0 and absent
+from 2.10.0 (437 classes against 436). The fixture's processor references it, so the mismatch is real
+rather than nominal, and check 4 proves that at build time — what the compiled class references,
+against what the jar in Liquid's `lib/` actually holds — before asking whether Liquid loads it.
 
 ```bash
 cd /Users/christof/repos/liquidupstart
@@ -847,17 +887,17 @@ public class ProbeProcessor extends AbstractProcessor {
 EOF
 echo org.nocodenation.probe.ProbeProcessor > "$R/org.apache.nifi.processor.Processor"
 cd /repos/.b3-hand && nar-build'
-shasum -a 256 volumes/nar_extensions/*.nar
+shasum -a 256 volumes/nar_extensions/b3-hand-nar-1.0.0.nar
 docker compose restart liquid
 # Wait for Liquid to answer before asking it anything -- the mistake M-B2's
 # verification script made was treating "container up" as "NiFi listening".
 until docker compose exec -T liquid sh -c \
   'curl -sk -o /dev/null https://127.0.0.1:8443/nifi-api/access/token' 2>/dev/null; do sleep 5; done
-docker compose exec -T liquid sh -c 'sha256sum /opt/nifi/nifi-current/lib/*probe*.nar'
+docker compose exec -T liquid sh -c 'sha256sum /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar'
 source .env 2>/dev/null
 TOKEN=$(docker compose exec -T liquid sh -c "curl -sk -X POST \
   -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
-  https://127.0.0.1:8443/nifi-api/access/token")
+  https://127.0.0.1:8443/nifi-api/access/token" | tr -d '\r')
 docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${TOKEN}' \
   https://127.0.0.1:8443/nifi-api/flow/processor-types" | grep -c 'org.nocodenation.probe.ProbeProcessor'
 # Expect 1. Expect the two SHA-256 values above to match: the NAR in lib/ must be
@@ -865,22 +905,111 @@ docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${TOKEN}
 
 # 4. The control that gives check 3 its meaning: build against an API the
 #    framework does not provide, restart, and expect the type NOT to appear.
+#    The fixture carries its own pom.xml, so nar-build uses it unchanged and the
+#    resolution FR23 performs is bypassed on purpose -- that is the escape hatch
+#    B1-6 keeps, and it is the only lever that produces a mismatch at all.
 docker compose exec -T openclaw-gateway sh -lc '
-cd /repos/.b3-hand
-NAR_BUILD_API_PROBE_VERSION=99.99.99 nar-build 2>&1 | tail -3'
-# If that refuses, the mismatch has to be produced another way -- see B3-2, whose
-# fixture calls a method only the wrong version provides. Record which happened.
+set -e
+D=/repos/.b3-mismatch
+P=$D/src/main/java/org/nocodenation/probe
+R=$D/src/main/resources/META-INF/services
+rm -rf $D; mkdir -p "$P" "$R"
+cat > "$P/MismatchProcessor.java" <<EOF
+package org.nocodenation.probe;
+
+import org.apache.nifi.controller.NodeConnectionState;
+import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+
+public class MismatchProcessor extends AbstractProcessor {
+    public NodeConnectionState state() {
+        return NodeConnectionState.CONNECTED;
+    }
+
+    @Override
+    public void onTrigger(ProcessContext context, ProcessSession session) {
+        getLogger().debug("probe {}", new Object[] { state() });
+    }
+}
+EOF
+echo org.nocodenation.probe.MismatchProcessor > "$R/org.apache.nifi.processor.Processor"
+cat > "$D/pom.xml" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.nocodenation.probe</groupId>
+  <artifactId>probe-mismatch</artifactId>
+  <version>1.0.0</version>
+  <packaging>nar</packaging>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>21</maven.compiler.release>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.nifi</groupId>
+      <artifactId>nifi-api</artifactId>
+      <version>2.11.0</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.nifi</groupId>
+        <artifactId>nifi-nar-maven-plugin</artifactId>
+        <version>2.4.0</version>
+        <extensions>true</extensions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
+cd $D && nar-build'
+# 4b. Prove at build time that the mismatch is real, before asking Liquid
+#     anything: what the compiled class references, against what the jar in
+#     Liquid's lib/ actually holds. Expect ABSENT on NodeConnectionState and
+#     present on everything else it names.
+docker compose cp \
+  "liquid:$(docker compose exec -T liquid sh -c 'ls /opt/nifi/nifi-current/lib/nifi-api-*.jar' | tr -d '\r')" \
+  ./volumes/nar_builder/m2/.b3-liquid-api.jar
+docker compose exec -T nar_builder sh -c '
+set -e
+W=$(mktemp -d); cd "$W"
+jar xf /nar_extensions/probe-mismatch-1.0.0.nar
+for c in $(javap -p -c org/nocodenation/probe/MismatchProcessor.class \
+           | grep -o "org/apache/nifi/[A-Za-z0-9/$]*" | sort -u); do
+  if jar tf /m2/.b3-liquid-api.jar | grep -qx "${c}.class"; then
+    echo "present  $c"
+  else
+    echo "ABSENT   $c"
+  fi
+done
+rm -rf "$W"'
+rm -f volumes/nar_builder/m2/.b3-liquid-api.jar
 docker compose restart liquid
 until docker compose exec -T liquid sh -c \
   'curl -sk -o /dev/null https://127.0.0.1:8443/nifi-api/access/token' 2>/dev/null; do sleep 5; done
-docker compose logs liquid --since 3m | grep -iE 'NoClassDefFound|could not.*load|bundle' | head -5
-# Expect: the type absent from processor-types, and a reason in the log. Record
-# what the failure actually looks like -- an operator meets it before anyone else.
+TOKEN=$(docker compose exec -T liquid sh -c "curl -sk -X POST \
+  -d 'username=${LIQUID_USERNAME}&password=${LIQUID_PASSWORD}' \
+  https://127.0.0.1:8443/nifi-api/access/token" | tr -d '\r')
+docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${TOKEN}' \
+  https://127.0.0.1:8443/nifi-api/flow/processor-types" | grep -c 'org.nocodenation.probe.MismatchProcessor'
+docker compose logs liquid --since 5m | grep -iE 'NoClassDefFound|NoSuchMethod|could not.*load|unable to load|bundle' | head -10
+# Expect 0 for the mismatched type -- and 1 still for ProbeProcessor from check 3,
+# which stays in lib/ and is the positive half of the same restart. Record what
+# the failure actually looks like in the log: an operator meets it before anyone
+# else, and if the mismatched NAR loads without complaint that is a finding about
+# FR23, not a broken check.
 
 # 5. Clean up and confirm. Expect EXIT=0.
-docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.b3-hand'
-rm -f volumes/nar_extensions/*probe*.nar
-docker compose exec -T liquid sh -c 'rm -f /opt/nifi/nifi-current/lib/*probe*.nar'
+docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.b3-hand /repos/.b3-mismatch'
+rm -f volumes/nar_extensions/b3-hand-nar-1.0.0.nar volumes/nar_extensions/probe-mismatch-1.0.0.nar
+docker compose exec -T liquid sh -c \
+  'rm -f /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar /opt/nifi/nifi-current/lib/probe-mismatch-1.0.0.nar'
 docker compose restart liquid
 ./tests/run.sh; echo "EXIT=$?"
 ```
@@ -894,6 +1023,12 @@ running something else — which is exactly the failure 3b exists to catch, met 
 was not written for. **A stack built from one branch and asserted from another is indistinguishable
 from a broken fix**, and only a check that reads the running container can tell them apart. The
 remedy is to rebuild the image on the branch being verified; `HANDOFF.md` records the general rule.
+
+The same rule applies to `nar_builder`: `config/nar_builder/build.sh` is `COPY`ed into
+`liquidupstart/nar-builder:latest`, not mounted, so the drop-directory write M-B3 changed is only live
+in a container recreated from a rebuilt image. `./config/scripts/build/nar-builder.sh && docker compose
+up -d --no-deps nar_builder` is what makes B3-4 assert the fix rather than the code that preceded it,
+and that rebuild does not touch Liquid.
 
 Check 4 is the point of the milestone, not an addition to it. Check 3 alone would prove that *a*
 processor appeared; only check 4 shows that the check can fail, and therefore that its passing means

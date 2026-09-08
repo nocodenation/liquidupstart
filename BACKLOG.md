@@ -5,6 +5,30 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**Nothing sweeps a staging file the builder abandoned.**
+Introduced by M-B3's own fix on 2026-09-08, and recorded because it is a property the milestone
+changed rather than one it found. `config/nar_builder/build.sh` used to stage into
+`${DROP}/.${base}.part`, a name derived from the artifact alone: two concurrent builds of one source
+wrote into a single file, which is the defect B3-4 exists for. The staging path is now private to the
+build process, `${DROP}/.${base}.$$.part` — and with that, the old name's one accidental virtue is
+gone. A leftover used to be overwritten by the next build of the same artifact; now every abandoned
+attempt keeps a name of its own and nothing ever touches it again. The `trap` covers `INT` and
+`TERM`, so a `SIGKILL`, a container stop mid-copy or a `docker compose down` during a build leaves a
+file in `volumes/nar_extensions` for good.
+
+**It is litter, not a hazard, and that was checked rather than assumed.** Liquid's entrypoint counts
+with `find -name "*.nar"` and iterates `"$DROP_DIR"/*.nar`; a name with a leading dot and a `.part`
+suffix matches neither, so nothing reaches `lib/`. B3-4 asserts the directory is clean after a normal
+pair, which is the case that matters for the fix; nothing asserts it after an abandoned build,
+because nothing cleans up after one.
+
+**Left because the cheap fix is not obviously the right one.** A sweep of `.*.part` at the start of
+`build_command` would delete the staging file of a build running concurrently — the very situation
+this milestone made safe. Sweeping only files older than some age reintroduces a criterion that
+depends on when you look, which this project has already removed once. The honest options are an age
+the builder itself owns, or leaving the directory's hygiene to `cleanup.sh`, and neither is worth
+deciding under a milestone that is otherwise closed.
+
 **A locally built image can belong to another branch, and nothing on this one says so.**
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
