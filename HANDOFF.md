@@ -52,16 +52,23 @@ branches.
 
 ## The branches, and how they relate
 
-Current as of 2026-09-08 evening, after #12 and #13 landed. **Nothing has reached `main` yet**: both
-merged into `fix/openclaw-2026-9-1`, which is #11 — so #11 is now the only door to `main`, and it
-carries **36 commits** rather than the one-line pin its title suggests.
+Current as of 2026-09-08 evening, after #12, #13 and #14 landed. **Nothing has reached `main` yet**:
+all three merged into `fix/openclaw-2026-9-1`, which is #11 — so #11 is now the only door to `main`,
+and it carries far more than the one-line pin its title suggests. Do not take a number from this
+document; it moves every time something lands. Ask:
+
+```bash
+git fetch -q origin && git rev-list --count origin/main..origin/fix/openclaw-2026-9-1
+```
+
+It answered **39** on the evening of 2026-09-08, having answered 36 two hours earlier.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
 | `feature/git-integration` | **#9**, open | `main` | M-A0 to M-A8 |
 | `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B3 |
 | `fix/openclaw-2026-9-1` | **#11**, open | `main` | The pin to 2026.7.1 — **and now the migration and #12 with it** |
-| `fix/openclaw-start-stdin` | **#14**, open | `fix/openclaw-2026-9-1` | The `SIGTTIN` hang the migration's own verification found |
+| ~~`fix/openclaw-start-stdin`~~ | ~~#14~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`. The `SIGTTIN` hang the migration's own verification found |
 | ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | **Merged** into #13. The branch exists only locally now; the remote one is gone |
 | ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`, remote branch deleted |
 | `integration/oc-2026-9-1` | — | — | **Not a merge candidate.** #13 + #9 + #10 in one place, so the compatibility cases can be *executed* rather than asserted |
@@ -440,11 +447,11 @@ route, and the pairing decision happens only after a browser signs a challenge.
    **Nobody has triggered a mismatched processor.** The `NoClassDefFoundError` that should follow is
    inferred from how the JVM resolves method signatures, not observed. It is in `BACKLOG.md`, and it
    is the one loose end M-B3 leaves.
-2. **Timur's reviews.** #12 and #13 were reviewed and merged on 2026-09-08; **#9, #10, #11 and #14
-   are open.** They run in parallel and block nothing, which is what the stacking is for — with one
-   exception now: **#11 is the only door to `main`**, and it has stopped being a one-line pin. It
-   carries 36 commits, the whole migration and #12 among them, and #14 will join them if it lands
-   first. Reviewing it as though its title were still accurate would be reviewing the wrong thing.
+2. **Timur's reviews.** #12, #13 and #14 were reviewed and merged on 2026-09-08; **#9, #10 and #11
+   are open**, and #11 is next — it is on his list for 2026-09-09. They run in parallel and block
+   nothing, which is what the stacking is for, with one exception: **#11 is the only door to `main`**,
+   and it has stopped being a one-line pin. The whole migration, #12 and #14 sit inside it. Reviewing
+   it as though its title were still accurate would be reviewing the wrong thing.
 
    The working copy is currently on `fix/openclaw-start-stdin` and the stack is 2026.9.1-shaped.
    `volumes/_openclaw` holds a state 2026.9.1 has written, so **going back to #9 or #10 means
