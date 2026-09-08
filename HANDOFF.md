@@ -1,4 +1,4 @@
-# Handover — 2026-09-08 (morning)
+# Handover — 2026-09-08 (evening)
 
 Read this first. It is the map and the current state; the specifications are the documents in
 `docs/`. Everything here was true at the end of 2026-09-08.
@@ -135,7 +135,9 @@ A8-15 passed. A8-16 passed on its **fifth** attempt. A8-17 was walked and answer
 exists for, in the worst way available: **a start that leaves a repository broken read as success**,
 and the operator confirmed they could have walked away without noticing. A8-26 is the answer.
 
-**The Java extensions:** M-B1 and M-B2 built and verified. **M-B3 is specified and not built.**
+**The Java extensions are complete.** M-B1, M-B2 and M-B3 built and verified — M-B3 on 2026-09-08,
+with §4's load checks run by the operator, which is the half that answers the question. **Every
+milestone in this project is now built.** What remains is review.
 
 **The migration is verified.** 42 automated cases on the branch itself; **Suite 2 — 424 cases, 0
 failures** — on `integration/oc-2026-9-1`, proving it breaks neither feature in flight; and **OC-20**,
@@ -191,6 +193,57 @@ root, and inside another container. It releases **shortly after** the container 
 immediately: a `rm -rf` run seconds after `docker rm -f` still fails, and a minute later `rmdir`
 succeeds. That delay is what made the cause look disproved. The same shape as
 `volumes/_openclaw-claude/skills`, which `BACKLOG.md` recorded as unexplained.
+
+### A mismatched NAR loads, and nothing says so
+
+**M-B3's answer, and it is not the one five milestones had been written around.** FR23 and FR27 both
+said a NAR compiled against an API Liquid does not provide is *silently never loaded* and the
+processor *never appears*. Measured on 2026-09-08 against a fixture built for it: the bundle **loads**,
+the processor **is listed** in the API's catalogue, and `nifi-app.log` says nothing at all. The
+mismatch was proven real first — `org.apache.nifi.controller.NodeConnectionState`, the only class
+`nifi-api` 2.11.0 holds that the loaded 2.10.0 jar does not, 437 against 436, absent from the built
+class's references by `javap`.
+
+**That is worse than never appearing.** A processor that does not show up is annoying and visible the
+moment an operator looks for it. One that shows up, drags onto a canvas and breaks when a flow runs
+is exactly the silent failure this feature exists to remove. The requirements stand; their reason is
+stronger than the one they carried, and every statement of the old mechanism was corrected —
+including the refusal `nar-build` prints to an agent, which would have carried the error onward.
+
+**Why it loads is inferred, not observed.** The missing class sits in a method signature and the JVM
+resolves those on first use, so NiFi's discovery never touches it. Nobody has triggered such a
+processor. `BACKLOG.md` carries it, along with the fact that nothing in the stack would notice a NAR
+of this kind arriving by hand.
+
+**And the check that was supposed to prove this could not.** B3-2 was written as B3-1's control — the
+run that shows the check can fail. It cannot be, because it comes back listing its processor exactly
+as the positive case does. The control is the third check, which removes both NARs and requires the
+type to disappear. It ran, and it is what earns the positive result.
+
+### The verification path had never been run, and it cost more than the milestone
+
+**Seven defects on 2026-09-08, all in `tests/verify/m-b*.sh` and the block they mirror, none in the
+product.** `./tests/verify/m-b3.sh` was executed for the first time and did not reach its first check.
+Five runs were needed to reach the milestone's question.
+
+| | |
+|---|---|
+| `mapfile` | A bash 4 builtin; macOS ships 3.2. The scripts run without `set -e` on purpose, so it was noise rather than an abort — `DROP_BEFORE` stayed unset and the restore step deleted **every** file in the drop directory instead of protecting what was there. `M-B1-verification.md` opens by promising the opposite |
+| `trap … INT` | Ran the handler and then **resumed**, with `EXIT` running it again at the end. Since restore may restart Liquid and wait, `Ctrl-C` looked like nothing happening. The goal that commissioned `m-b2.sh` asked for "everything restored including on Ctrl-C"; it had never been tried |
+| Port 8443 | NiFi's default, not this stack's 8833 — hardcoded two lines below a `SYSTEM_HTTPS_PORT` the script had just read from `.env` |
+| `127.0.0.1` | An IP sends no TLS server name, so Jetty answers `400 Invalid SNI`. The token came back as an HTML error page and **every count was zero** |
+| Readiness | Taken from Jetty answering (`405` the moment it binds), then from a token being issued — both proxies. NiFi issues tokens before its extensions finish loading |
+| Credentials | Read with `sed`, so `.env`'s quotes went into the password. The rejection *"The supplied username and password are not valid"* is not HTML, so the guard passed it into an `Authorization` header |
+| A8-13, on #9 | The manifest carried git's **German** error text: the dashboard spawned the script with the operator's locale. It hid because this host has two gits — `/usr/bin/git` without message catalogues and `/opt/homebrew/bin/git` with them, and only the operator's `PATH` finds the second first |
+
+**Two of those produced findings that were false rather than errors that were obvious.** A check
+reported *"Liquid does not list our processor"* over a NAR that was byte-identical in `lib/` by
+SHA-256. That is the dangerous shape: a broken measurement that answers instead of failing.
+
+**The repair that mattered was none of the seven.** It was giving the checks a control: they now count
+`GenerateFlowFile` — a processor every NiFi ships — before drawing any conclusion, and refuse to
+conclude when it is absent. The check that most needed it was the one asserting a type is **gone**,
+which a broken query satisfies perfectly.
 
 ### Things on disk that matter
 
@@ -249,6 +302,31 @@ accumulating conversation; executing them is better served by a clean context an
 that exists only in a transcript has to be carried by hand, and that is where it is lost.
 
 ## What the failures taught
+
+**A tool that has never been run is not a tool.** The verification scripts were written to make
+verification trustworthy, were reviewed, were recorded as passing, and carried seven defects between
+them — one of which made them delete the directory they promised to protect. Every one surfaced on
+the first actual execution, and the milestone they were meant to check took less effort than they
+did. The suite has the same property but hides it better: a case nobody runs is a claim, and the
+whole point of this project is the difference between the two.
+
+**A count of zero is not a result until something that must be there is counted.** Twice on
+2026-09-08 a check answered *"Liquid does not list our processor"* over a NAR that was byte-identical
+in `lib/` — once because the request went to an IP that Jetty refuses, once because the catalogue had
+not finished loading. Neither failed; both **answered**. A negative reading needs a positive control
+in the same breath, and the check that needed it most was the one asserting something is absent,
+which any broken query satisfies.
+
+**Readiness is not a proxy you like the look of.** Four criteria were tried in one afternoon: the
+container being up, Jetty answering, a token being issued, and finally the catalogue containing a
+processor every NiFi ships. Each was closer and each was still standing in for the thing the check
+actually reads. The last one is not clever — it is simply the same question the check asks.
+
+**A machine can hold two of the same tool.** A8-13 was green in every session and red in the
+operator's, on the same commit, because `/usr/bin/git` has no message catalogues and
+`/opt/homebrew/bin/git` has German ones. Nothing about the code differed; the `PATH` did. Anything
+whose output is parsed must be pinned to `C`, which `tests/lib/shell.ts` had done since M-A1 and the
+dashboard had not.
 
 **A suite is green about the paths it walks.** 334 cases passed while the dashboard's Start button
 could not bring up a stack, a malformed declaration destroyed a running installation, and a start
@@ -329,25 +407,15 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
-1. **M-B3** — the only unbuilt milestone, on `feature/liquid-java-extensions`. It asks whether Liquid
-   loads what we build, and its negative control — a NAR built against the wrong API must *not* load —
-   is the case, not an addition to it.
+1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
+   for, and that is the milestone's result rather than a defect in it: see *"A mismatched NAR loads,
+   and nothing says so"* below. The stack on this machine is now `feature/liquid-java-extensions`-shaped
+   and its Maven cache is warm again; the four commands that got it there are in the branch table's
+   discriminators above.
 
-   **Work on it from that branch, with the stack rebuilt from it.** Checking it out is the small
-   half; the stack is the half that bites. Four commands, then the two checks in *"One working copy,
-   one stack"*:
-
-   ```bash
-   git checkout feature/liquid-java-extensions
-   ./config/scripts/build/nar-builder.sh
-   ./config/scripts/build/liquid.sh
-   ./scripts/linux/start.sh
-   ```
-
-   **The Maven cache is gone.** `volumes/nar_builder/m2` went with the rest of `volumes/` in OC-20,
-   so the first build downloads the whole plugin chain and the NiFi API from Maven Central — minutes,
-   and they belong before anything is measured, because a cold pair of concurrent builds measures a
-   download storm rather than the collision B3-3 names.
+   **Nobody has triggered a mismatched processor.** The `NoClassDefFoundError` that should follow is
+   inferred from how the JVM resolves method signatures, not observed. It is in `BACKLOG.md`, and it
+   is the one loose end M-B3 leaves.
 2. **Timur's reviews** of #9, #10, #11, #12 and #13. They run in parallel and block nothing; that is
    what the branch stacking is for.
 3. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
