@@ -2416,6 +2416,7 @@ render, on a page that must answer while the stack is down — so it is recorded
 | A8-18 | Integration | The dashboard image still builds | `run.sh` rebuilds the dashboard image on every launch and the image build runs `bun run build`. A component that does not compile passes `bun test src` and breaks the launcher instead — with no interface left to fix it from |
 | A8-19 | Integration | The git step runs inside the toolbox, which is where the Start button runs it | Found by running it: the toolbox carried no `git` and no `openssh`, so `git.sh` died at line 17 with `ssh-keygen: command not found` — under `set -euo pipefail`, fourteen lines before `docker compose up` |
 | A8-20 | Component + integration **unhappy** | The card compares the manifest against the declaration | A repository declared in `.env` and absent from the manifest was not reported as missing — it was not reported at all, under a message saying everything was cloned |
+| A8-21 | Unit + contract **unhappy** | A refused declaration costs a message, not the stack | `start.sh` tears the stack down on line 16 and reaches the git step on line 139, so one malformed entry removed every container and then aborted before `docker compose up`. Found by A8-16, on the operator's own installation |
 
 #### Detail per case
 
@@ -2608,6 +2609,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | The procedure is in §9. |
 | **Expected** | Section 10 is findable, its heading and help text are legible, and all three fields are visible and editable. An entry typed into `GIT_REPOSITORIES` is still shown when the view is reopened — asserted by A8-2 through the action, confirmed here through the screen, because those are different claims. |
 | **And the second half** | An `https://` entry is refused by `git-repos.sh`, not by the form. The case records **where** the operator learns it: if the only place is the start log, that is the finding, and it belongs in the record rather than being fixed inside this case. |
+| **What it found** | **Passed 2026-09-08**, screenshots in `ScreenCaps/Stills/A8-15`. Section 10 rendered with all three fields and their help text, the appended entry reached `.env` and came back on reopening, and the declaration was restored. **The answer step 5 asks for:** the launchpad *does* say it — asked directly with a malformed entry present, the card returns the entry, the reason, and *"Correct GIT_REPOSITORIES in .env in the configuration, then start the stack"*. Nobody consulted it, because the path from the form leads to a button. That is the finding rather than a silent card: the right words, in a place the operator has already walked past. |
 | **Covers** | FR10, U1. |
 
 ##### A8-16 — U2 in the browser · **manual**
@@ -2619,6 +2621,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | The procedure is in §9. |
 | **Expected** | The card lists the declared repository as unreachable; its key can be selected and copied from the page; the instruction says whether write access is needed; after registering it at the host, the card's test turns the repository reachable, and the clone is on disk. |
 | **Observed rather than asserted** | Whether the copy control works, and whether the card reads as an instruction rather than as a status display. Screenshots are the evidence, as they are for OC-8 and OC-20. |
+| **What it found** | **Failed 2026-09-08 at step 2, and the failure was worth more than a pass would have been.** Screenshots in `ScreenCaps/Stills/A8-16`. The card itself was right: both repositories named, marked `cloned`, *"read-only — the agents only read it"* against *"with write access — the agents push to it"*, each key with a Copy control, and the fingerprint matching the one GitHub showed for the registered key. What failed was around it. **Step 1 as written was wrong** — it said to declare a repository "if one is not declared already", and both declared repositories were already cloned, so step 3 had nothing to find; the operator added a third, supplying the case's own premise by hand. And **that entry, pasted without `\|read\|protected`, destroyed the installation**: `start.sh` removed every container on line 16 and aborted at the git step with `[start failed with exit code 2]`, leaving the stack down until it was repaired. Both are fixed — step 1 now asks for a repository that is declared and unreachable, and A8-21 judges the declaration before the teardown. **Re-run required.** |
 | **Covers** | FR3, U2. |
 
 ##### A8-17 — U11 in the browser · **manual unhappy**
@@ -2630,6 +2633,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Test data** | The procedure is in §9. |
 | **Expected** | The next start still reports every URL and credential — it must not block — **and** the launchpad names that repository as unreachable, with the error and the current key. The state survives a page reload, because it lives in the manifest and not in a session. Re-registering the key and pressing the card's test restores it. |
 | **The failure to watch for** | A start that reads as success. If the operator can reach the end of a start and see nothing amiss while a repository is broken, the case has found what it was written to find, whatever the card does afterwards. |
+| **What it found** | **Not yet run.** A8-16 failed before reaching it, and this case needs A8-16's arrangement in order to take it away. `ScreenCaps/Stills/A8-17` exists and is empty. |
 | **Covers** | FR3, FR20, U11. |
 
 **Part 4 — the paths the operator's buttons take.**
@@ -2657,6 +2661,18 @@ drive it, which is a thing worth knowing before reaching for one.
 | **And what it found in its own fix** | The singular branch of the new message read *"All prepared repository is cloned"*. Written, run, red, corrected — which is the argument for asserting the wording rather than eyeballing it. |
 | **Covers** | FR11, FR20, U1, U11. |
 
+
+##### A8-21 — a refused declaration costs a message, not the installation
+
+| | |
+|---|---|
+| **Premise** | `scripts/linux/start.sh` runs `down.sh` as its **second action**, on line 16, and reaches `config/scripts/start/git.sh` on line 139 under `set -euo pipefail`, with `docker compose up -d` on 153. A declaration the parser refuses therefore removed every container and aborted a hundred lines before anything came back — and did it again on every retry, until whoever pressed Start found the entry. |
+| **Component** | `git.sh --check-declaration`, the pre-flight `start.sh` now runs first, and the position it runs in. |
+| **Steps** | Hand the check a well-formed declaration, an entry missing its `\|access\|policy`, an `https://` URL that is otherwise well-formed, and an empty declaration. Then read `start.sh` and locate the check against the teardown. |
+| **Expected** | Zero, two, two, zero — with the parser's own message on both refusals, because a second message would be a second reader. **Nothing created either way**: a pre-flight that prepares state is not a pre-flight. And in `start.sh` the check precedes `down.sh` while the git step still follows it, since the pre-flight judges rather than replaces. |
+| **Why the empty declaration is in the list** | It is the assertion that keeps the other four honest. An installation that declares no repositories has to start, and a check that refused it would break every stack not using this feature. |
+| **What it found** | Itself, in the sense that matters: this case exists because **A8-16 met the defect on the operator's own installation** on 2026-09-08. One entry pasted without `\|read\|protected`, one press of Start from the dashboard, and the log read `Container postgres Removed`, `Container openproject-db Removed`, `Network … Removed`, then `Error: repository entry … expected <ssh-url>\|<access>\|<policy>` and `[start failed with exit code 2]`. The card had the answer all along — asked directly it returns the entry, the reason and the next step — but nobody asks a card on the way to a button. |
+| **Covers** | FR11, FR20, U1. |
 
 **And one guard under all three parts.**
 
@@ -3945,11 +3961,14 @@ The browser is the instrument here, so the evidence is screenshots. Save them un
    **Record where the operator learns it**: on the launchpad, in the form, or only in the start log.
    No particular answer is required; the answer has to be written down.
 
-   *Then press Start, and know what to expect first.* `lu_git_reject` exits 2, `git.sh` inherits it,
-   and `start.sh` runs under `set -euo pipefail` with the git step fourteen lines before
-   `docker compose up -d`. **The start aborts, and no container is touched** — a stack that was up
-   stays up, because the teardown never runs either. Nothing here is destroyed; what is being
-   observed is whether the abort explains itself or merely stops.
+   *Then press Start.* **This paragraph said the opposite until 2026-09-08, and it was wrong.** It
+   claimed no container would be touched, reasoning from two line numbers — the git step at 139,
+   `docker compose up -d` at 153 — without looking at what runs before 139. `start.sh` calls
+   `down.sh` on **line 16**. A refused declaration used to remove every container and then abort a
+   hundred lines before anything came back, which A8-16 met for real. Since A8-21 the declaration is
+   judged *before* the teardown, so the refusal now costs a message and nothing else.
+   *Expect:* `[start failed with exit code 2]`, the parser's message naming the entry, and **the
+   stack still running** — check it, because that is the fix under test.
 
 6. **Put it back, and confirm.** Remove the HTTPS entry — or restore the backup the preamble made:
 
@@ -3972,7 +3991,19 @@ completed in the browser, that is the finding.
 keys — step 2 is what creates them, and an installation that has never been started on this branch is
 the most honest arrangement for it.
 
-1. Declare a repository in `/config`, as A8-15 step 2 does, if one is not declared already.
+1. **Make sure there is something to enable.** Not "if one is not declared already" — that wording
+   sent the 2026-09-08 run into an installation whose two repositories were both declared *and
+   already cloned*, so step 3 had nothing to find. What this case needs is a repository that is
+   declared and **not** reachable:
+
+   ```bash
+   grep -o '"cloned": *false' volumes/_git-secrets/repositories.json | wc -l   # at least 1
+   ```
+
+   If that is zero, declare a fresh one in `/config` as A8-15 step 2 does — SSH form,
+   `git@github.com:owner/repo.git|read|protected`, appended to the list — and do not register its key
+   at the host yet. That is the whole point: the key it will offer you in step 3 is one the host has
+   never seen.
 
 2. Start the stack from the launchpad.
    *Expect:* the start completes and prints its URLs and credentials. A repository that cannot be

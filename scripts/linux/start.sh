@@ -13,6 +13,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+"${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
+
 "${PROJECT_DIR}/scripts/linux/down.sh"
 
 # --- Pre-flight: the host ports the proxy publishes must be free -------------

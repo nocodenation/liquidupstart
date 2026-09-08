@@ -3,6 +3,25 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${1:-$(cd "${SCRIPT_DIR}/../../.." && pwd)}"
+MODE="${2:-}"
+
+# start.sh runs down.sh as its second action, 123 lines before this script. A
+# declaration it refuses therefore used to cost the whole running stack: every
+# container removed, and the abort here long before `docker compose up`. Observed
+# on 2026-09-08 during A8-16, from the dashboard's own Start button. So start.sh
+# calls this first, with nothing torn down yet, and the refusal is the parser's
+# own -- one reader, one message, whichever way it is reached.
+if [[ "$MODE" == "--check-declaration" ]]; then
+  # shellcheck source=lib/git-repos.sh
+  source "${SCRIPT_DIR}/lib/git-repos.sh"
+  declaration="${GIT_REPOSITORIES:-}"
+  if [[ -z "$declaration" && -f "${PROJECT_DIR}/.env" ]]; then
+    declaration="$(grep -E '^GIT_REPOSITORIES=' "${PROJECT_DIR}/.env" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
+  fi
+  lu_git_parse "$declaration" >/dev/null
+  exit 0
+fi
+
 REPOS_DIR="${PROJECT_DIR}/volumes/repos"
 SECRETS_DIR="${PROJECT_DIR}/volumes/_git-secrets"
 KEY="${SECRETS_DIR}/id_ed25519"
