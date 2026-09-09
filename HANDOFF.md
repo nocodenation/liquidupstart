@@ -209,13 +209,25 @@ refuses a state written by `2026.9.1`, which is OC-21's one-way door. Archived a
 `_openclaw.was-2026.9.1.tar` first. The Claude login lives in `volumes/_openclaw-claude`, a different
 directory, and survived.
 
-**And the reason `volumes/_openclaw` would not delete is now known.** `openclaw-gateway` has nested
-bind mounts — `volumes/_openclaw/workspace` and `config/agents/skills` mount *into*
-`/home/node/.openclaw` — so those paths are live mount points and `rm` is refused for the owner, for
-root, and inside another container. It releases **shortly after** the container is gone, not
-immediately: a `rm -rf` run seconds after `docker rm -f` still fails, and a minute later `rmdir`
-succeeds. That delay is what made the cause look disproved. The same shape as
-`volumes/_openclaw-claude/skills`, which `BACKLOG.md` recorded as unexplained.
+**Why `volumes/_openclaw` will not delete is still unexplained, and the explanation this document
+carried was wrong.** It said `openclaw-gateway`'s nested bind mounts hold `workspace` and `skills`,
+and that they release shortly after the container is gone. Retested on 2026-09-09 while restoring a
+2026.7.1 state, and it does not hold:
+
+- `rm -rf` was retried every five seconds for **200 seconds** with the whole stack down. `workspace`
+  and `skills` survived; everything else in the directory was deleted.
+- No container existed at all — not one from the compose project, and not `liquidupstart-dashboard`,
+  which mounts the whole repository and was stopped as a test. Both `rmdir` calls still returned
+  `Permission denied`.
+- `df` puts them on the same filesystem as their parent, so they are **not mount points**. Owner is
+  `501:20`, the parent is writable, and `ls -lO` shows no file flags.
+- **`mv` on the parent worked immediately.** The directory entry is free; the two children are not.
+
+**What works is moving it aside, not deleting it**: `mv volumes/_openclaw volumes/_openclaw.stuck`,
+then restore. Whatever holds those two paths survives every container that could plausibly hold them,
+which is the part no hypothesis so far explains. `BACKLOG.md` records
+`volumes/_openclaw-claude/skills` as the same shape, and it stays unexplained too — the difference is
+that it is now unexplained *on purpose* rather than by an answer that sounded right.
 
 ### A mismatched NAR loads, and nothing says so
 
@@ -325,6 +337,16 @@ accumulating conversation; executing them is better served by a clean context an
 that exists only in a transcript has to be carried by hand, and that is where it is lost.
 
 ## What the failures taught
+
+**An explanation that fits every observation is not the cause.** On 2026-09-08 this document
+recorded, with confidence and a mechanism, why `volumes/_openclaw` would not delete: nested bind
+mounts, released shortly after the container. It fit everything seen — the refusal, the paths
+involved, the fact that it worked later. On 2026-09-09 it took four measurements to break: the whole
+stack down, every container gone including the one that mounts the repository, `df` showing no mount
+point, and `mv` succeeding on the same directory `rmdir` refused. The wrong answer had survived a day
+of being believed because nobody had tried to disprove it — only to explain what had already
+happened. A cause is what survives an attempt to break it, not what accounts for the evidence you
+happen to hold.
 
 **A tool that has never been run is not a tool.** The verification scripts were written to make
 verification trustworthy, were reviewed, were recorded as passing, and carried seven defects between
@@ -447,6 +469,13 @@ route, and the pairing decision happens only after a browser signs a challenge.
    **Nobody has triggered a mismatched processor.** The `NoClassDefFoundError` that should follow is
    inferred from how the JVM resolves method signatures, not observed. It is in `BACKLOG.md`, and it
    is the one loose end M-B3 leaves.
+3. ~~**The repaired migration path had never been executed.**~~ — run 2026-09-09. A 2026.7.1 state
+   was restored from `_openclaw.bak-2026.7.1` and `./scripts/linux/start.sh` migrated it with GNU
+   `timeout` on `PATH`, which is the condition that produces the hang: `state migrated.` inside a
+   minute, no `SIGCONT`, no stall. The whole upgrade path came with it — `deviceAutoApprove` written
+   into a state that had never carried it, `plugins.entries.codex` removed as a key 2026.9.1 refuses,
+   and the config shape moved to 2026.9. `tests/run.sh oc` then ran **50 pass, 0 fail** against a
+   state that had just been migrated rather than one already on 2026.9.1.
 2. **Timur's reviews.** #12, #13 and #14 were reviewed and merged on 2026-09-08; **#9, #10 and #11
    are open**, and #11 is next — it is on his list for 2026-09-09. They run in parallel and block
    nothing, which is what the stacking is for, with one exception: **#11 is the only door to `main`**,
