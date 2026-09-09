@@ -1,4 +1,4 @@
-# Handover — 2026-09-08 (evening)
+# Handover — 2026-09-09 (evening)
 
 Read this first. It is the map and the current state; the specifications are the documents in
 `docs/`. Everything here was true at the end of 2026-09-08.
@@ -302,6 +302,36 @@ SHA-256. That is the dangerous shape: a broken measurement that answers instead 
 conclude when it is absent. The check that most needed it was the one asserting a type is **gone**,
 which a broken query satisfies perfectly.
 
+### Tomorrow's first question: Liquid autoloads, and M-B4 guards the other path
+
+**The largest open question this project has, found on 2026-09-09 by a check that refused to be
+explained.** `nifi.nar.library.autoload.directory` points at `nar_extensions`, so NiFi loads a NAR
+**out of the drop directory, at runtime, without a restart and without `lib/`**. Measured: a NAR built
+there and otherwise left alone was listed by the API after **20 seconds**, container `StartedAt`
+unchanged, file not in `lib/`. And the catalogue was already carrying `ProbeA` and `ProbeB` —
+B3-3's fixtures, which the suite writes there and deletes, which were never in `lib/`, and which
+no restart followed. NiFi loads them and never unloads them.
+
+**What is in question, and none of it is settled:**
+
+| | |
+|---|---|
+| **FR36 / M-B4** | Built, 32 cases green — and it refuses to copy into `lib/` while NiFi loads from the drop directory anyway. It guards a path that does not load |
+| **FR29** | The restart it makes the operator's is not required |
+| **`nar-build`'s own words** | *"Liquid loads NARs from /nar_extensions at startup only. Ask the operator to restart it"* — printed to every agent, and false |
+| **FR30** | The copy into `lib/` holds and looks redundant |
+| **M-B3 check 3** | Established that Liquid lists what we build; never separated which path did it |
+| **Where the setting lives** | `volumes/liquid/conf/nifi.properties:37` — local state. The stock image says `./extensions`, and nothing in the repository sets it, so **a fresh installation may behave differently and no branch carries the difference** |
+
+**Deliberately not repaired.** Two explanations for the red check were offered and withdrawn the same
+day — a leftover unpacked bundle, and an answer from the instance being replaced. Both were wrong,
+both were tested, and the second was tested *before* being written down. The third rests on a
+configuration value read out of the running container. What the deployment path should be is a
+decision to take with a clear head, not a guard to adjust until a check goes green.
+
+**M-B4 is otherwise finished**: `narcheck.py` parses the constant pool properly, 487 + 27 green, and
+§4's checks 0, 1, 2, 4 and 5 pass. Check 3 is the one that found this.
+
 ### Things on disk that matter
 
 `/Users/christof/repos/liquidupstart-backups/` — **outside the repository on purpose**, because the
@@ -489,6 +519,8 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
+0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
+   matters until it is decided, because M-B4 and part of M-B2 rest on it.
 1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
    for, and that is the milestone's result rather than a defect in it: see *"A mismatched NAR loads,
    and nothing says so"* below. The stack on this machine is now `feature/liquid-java-extensions`-shaped
