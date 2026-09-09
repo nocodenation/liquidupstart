@@ -16,12 +16,26 @@ signatures, and **not yet tested**.
 that covers every NAR this stack builds. It does not cover a NAR built elsewhere and dropped into
 `volumes/nar_extensions` by hand, which is a documented path in the `liquid` skill.
 
-**Two things are worth doing and neither is urgent.** A case that triggers a mismatched processor and
-records what the operator actually sees, so the inferred `NoClassDefFoundError` stops being an
-inference. And a check at deployment time — the entrypoint already walks every `*.nar` on its way
-into `lib/`, and comparing the API a bundle links against with the one the distribution ships is the
-same `javap` comparison §4 check 4b already performs. Left because M-B3 is closed and this is a new
-requirement, not a repair.
+**The first half was done on 2026-09-09, and the inference was wrong about when.** A mismatched
+processor was added from the canvas against a stack built from this branch. It fails at
+**instantiation**, not at trigger: `POST /nifi-api/process-groups/<id>/processors` answers **500**
+with `java.lang.NoClassDefFoundError: org/apache/nifi/controller/NodeConnectionState`. The processor
+never reaches the canvas, so it never runs — the predicted error type was right and the predicted
+moment was not. The control ran beside it flawlessly: the same processor built against the resolved
+2.10.0 reached 4,114,541 invocations in five minutes.
+
+**Two things came out of it that are worse than the original finding.** The error is written to
+`nifi-user.log` and **not** to `nifi-app.log`, which is where every check in this repository looks —
+so "the framework says nothing" was a conclusion drawn from one log rather than an observation. And
+the UI turns the 500 into `/nifi/#/error` reading *"Your session has expired. Please click on the
+Home button to renew the session."* That is false, and it points the operator at re-authentication,
+which reproduces the failure. Both are recorded in B3-2 and in §4, and §4 now reads both logs.
+
+**What is still open is the deployment-time check.** The entrypoint already walks every `*.nar` on
+its way into `lib/`, and comparing the API a bundle links against with the one the distribution ships
+is the same `javap` comparison §4 check 4b performs. It would turn a 500 with a misleading message
+into a refusal at the moment of deployment, which is where an operator can act on it. Left because
+this is a new requirement rather than a repair, and M-B3 is closed.
 
 **Nothing sweeps a staging file the builder abandoned.**
 Introduced by M-B3's own fix on 2026-09-08, and recorded because it is a property the milestone

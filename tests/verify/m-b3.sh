@@ -313,7 +313,8 @@ C4_GOOD_COUNT="$(grep -c "$GOOD_TYPE" <<< "$C4_TYPES")"
 C4_LOG="$(docker compose logs liquid --since 6m 2>&1 \
   | grep -iE 'NoClassDefFound|NoSuchMethod|could not.*load|unable to load|bundle' \
   | grep -v 'bundled-dependencies' | tail -10)"
-C4_OUT="${C4_BUILD}"$'\n'"the jar Liquid loads: ${API_JAR}"$'\n'"${C4_REFS}"$'\n'"occurrences of ${BAD_TYPE}: ${C4_BAD_COUNT}"$'\n'"occurrences of ${GOOD_TYPE} (still from check 3): ${C4_GOOD_COUNT}"$'\n'"what the framework log said:"$'\n'"${C4_LOG:-(nothing matched)}"
+C4_USERLOG="$(grep -iE 'NoClassDefFound|ClassNotFound' volumes/liquid/logs/nifi-user.log 2>/dev/null | tail -5)"
+C4_OUT="${C4_BUILD}"$'\n'"the jar Liquid loads: ${API_JAR}"$'\n'"${C4_REFS}"$'\n'"occurrences of ${BAD_TYPE}: ${C4_BAD_COUNT}"$'\n'"occurrences of ${GOOD_TYPE} (still from check 3): ${C4_GOOD_COUNT}"$'\n'"what nifi-app.log said:"$'\n'"${C4_LOG:-(nothing matched)}"$'\n'"what nifi-user.log said, which is where the web layer reports it:"$'\n'"${C4_USERLOG:-(nothing matched)}"
 echo "mismatched type listed: ${C4_BAD_COUNT}   probe from check 3 still listed: ${C4_GOOD_COUNT}"
 echo "${C4_LOG:-(the log said nothing matching NoClassDefFound / bundle / could not load)}"
 log "$C4_OUT"
