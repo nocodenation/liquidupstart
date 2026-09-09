@@ -56,18 +56,6 @@ Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-r
 ./scripts/linux/down.sh        # docker compose down
 ```
 
-## Writing into files
-
-**Write code with ZERO comments by default.** This applies everywhere — new files, edits,
-config (compose.yml, .env, YAML), shell scripts, and subtle one-off workarounds. Do NOT add:
-- explanatory or "why" comments, even a single line;
-- multi-line rationale blocks above tricky code;
-- section headers, banners, or "what this does" notes.
-
-Assume a senior developer reads the code and understands it without hand-holding. If
-something is genuinely non-obvious, explain it in the chat reply — never in the file. Add a
-comment ONLY when the user explicitly asks for one. When in doubt, no comment.
-
 ## GIT
 
 Do not commit any code into project's git repository. You can suggest when to commit, and a commit
