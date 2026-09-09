@@ -102,6 +102,18 @@ mistake is available here and is cheaper to avoid than to repeat.
 - **FR35 — Concurrent builds do not corrupt each other.** One builder, one dependency cache, one
   `/repos`. Two builds at once is the ordinary case the moment two agents work, and nothing has ever
   run it.
+- **FR36 — A bundle that cannot link against the API Liquid loads is refused at deployment.** The
+  entrypoint already walks every `*.nar` in the drop directory on its way into `lib/`; before it
+  copies one, it reads the classes the bundle carries and refuses any whose `org.apache.nifi`
+  references cannot be resolved from the bundle itself or from `${NIFI_HOME}/lib`. Refused means **not
+  copied**: the processor never enters the catalogue, and the operator is told which bundle, which
+  class, and what to do. Measured on 2026-09-09, this is what the alternative looks like — the bundle
+  loads, the type is catalogued, adding it answers `500` with a `NoClassDefFoundError` that goes to
+  `nifi-user.log`, and the operator is shown *"Your session has expired."* The failure is real either
+  way; the requirement is about **where** it surfaces, and deployment is the only moment at which the
+  operator can act on it. The file in the drop directory is left alone — it is the operator's, and
+  FR24 governs what the *builder* writes, not what the entrypoint finds.
+
 - **NFR7 — The build's trust surface is stated, not assumed.** A Maven build downloads plugins from
   the internet and executes them. This is a new trust surface in the stack and is treated the way
   §3.1 treated the write key: named, bounded, and decided rather than slipped in. See §3.2.
@@ -266,6 +278,34 @@ situation, and the collision surface has never been touched.
 
 *Done when:* `./tests/run.sh m-b3` is green, and §4's load checks — which restart Liquid, and so live
 there rather than in the suite — have been run.
+
+**M-B4 · A mismatch is refused where the operator can see it**
+The requirement M-B3's observation produced. `nar-build` already prevents this for everything it
+builds — FR27 resolves the API through `nifi-utils` — so the gap is exactly the path §6.4 of the
+`liquid` skill documents and nobody here had walked: **a NAR built elsewhere and dropped into
+`volumes/nar_extensions` by hand.** For that NAR nothing in the stack looks, and what the operator
+eventually meets is a `500` labelled as an expired session.
+
+*Three decisions, taken 2026-09-09 before any case was written:*
+
+**It refuses rather than warns.** A warning leaves the bundle in `lib/`, the type in the catalogue,
+and the misleading `500` waiting. Refusing means the processor never appears, which is what the
+operator can act on — and it is the same shape as B2-6's decision: the failure is reported, the other
+extensions still deploy, and Liquid still starts.
+
+**It parses the constant pool, it does not scan for strings.** A text scan is shorter and reports a
+class name that appears in a string literal, which would refuse a **good** bundle. A false refusal is
+worse here than a missed mismatch, because it breaks a deployment that was correct. B4-2 is that
+case, and it is the reason the decision is not free.
+
+**It starts at `nifi-api`.** A reference is judged only when its package is one the loaded
+`nifi-api-*.jar` provides. That catches the measured case — `org.apache.nifi.controller` exists in
+2.10.0, `NodeConnectionState` does not — without pronouncing on classes that reach a NAR through a
+parent bundle, which this check cannot see. B4-6 holds that line.
+
+*Done when:* `./tests/run.sh m-b4` is green, and §4's deployment checks have been run — a
+hand-dropped mismatched NAR refused and named, a good one still deployed, and the catalogue
+unchanged by the refused one.
 
 ---
 
