@@ -827,3 +827,106 @@ Done when `./tests/run.sh m-b3; echo EXIT=$?` shows EXIT=0 in this transcript an
 `./tests/run.sh; echo EXIT=$?` does too -- the branch stood at 440 pass, 0 fail
 before this goal was posed. Or stop after 50 turns.
 ```
+
+### M-B4 — a mismatch is refused where the operator can see it · posed 2026-09-09
+
+Written into this document before the run, as M-B3's was. The outcome paragraph belongs above this
+one and is the run's to write.
+
+**The state it was posed against, measured rather than assumed.**
+
+| Checked | Answer |
+|---|---|
+| `./tests/run.sh` | **455 pass, 0 fail** across 107 files, plus 27 dashboard tests |
+| the `liquid` container's entrypoint vs. `config/liquid/entrypoint.sh` | identical |
+| `volumes/nar_extensions` | empty; no probe NAR left in `lib/` |
+| what the `liquid` container has | **`python3` 3.11.2 and `unzip` — no `java`, no `javap`** |
+| the API jar Liquid loads | `nifi-api-2.10.0.jar` |
+| Maven cache | warm, holding `nifi-api` 2.10.0 **and** 2.11.0, so the mismatch fixture builds offline |
+
+The missing JDK is the constraint that decides the implementation: the parser has to be Python, in
+the container the entrypoint runs in. The copy loop it belongs in is at
+`config/liquid/entrypoint.sh:20`.
+
+```
+/goal Implement M-B4 from docs/FEATURE-liquid-java-extensions.md. Acceptance is
+FR36 and cases B4-1 to B4-8 in section 3 of
+docs/TEST-SPEC-liquid-java-extensions.md, signed off 2026-09-09. Write those
+tests first, then make them pass. B4-8 is a section 4 check: it restarts Liquid,
+the restart is the operator's, and it must not be automated or run.
+
+Note the wall-clock time before your first action, and report elapsed time and
+turn count when the goal completes. Bound: 50 turns.
+
+Four things.
+
+1. The parser. config/liquid/entrypoint.sh runs in a container with python3
+3.11.2, unzip, and NO java and NO javap -- checked, not assumed. So the constant
+pool is read in Python: for every .class a NAR carries, collect the
+CONSTANT_Class entries whose name begins with org/apache/nifi/. Parse the pool;
+do not scan the bytes for strings. B4-2 is a class whose only mention of
+org/apache/nifi/controller/NodeConnectionState is a string literal, and a scan
+refuses that bundle -- a false refusal breaks a deployment that was correct,
+which is worse here than admitting a broken one. A class file that does not
+begin with 0xCAFEBABE, or that cannot be parsed, refuses the bundle and says so
+(B4-3): a check that cannot read something and treats silence as consent is the
+failure this repository met four times this week.
+
+2. The guard. In the copy loop at config/liquid/entrypoint.sh:20, before the cp
+at line 21. A reference resolves if the class is inside the NAR itself -- its own
+entries or any jar under NAR-INF/bundled-dependencies -- or inside any jar in
+${NIFI_HOME}/lib. A reference is only JUDGED when its package is one the loaded
+nifi-api-*.jar provides; org.apache.nifi.controller is such a package and
+NodeConnectionState is absent from it, which is the measured case, while
+org.apache.nifi.web is not, which is B4-6. Refused means not copied: the file
+stays in the drop directory, it is the operator's. Name the file, name the class,
+and give the next step -- nar-build --target prints the version this Liquid
+loads. The other NARs still deploy and Liquid still starts, which is the decision
+B2-6 already took for a failed copy; keep it and say so.
+
+3. The entrypoint is COPYed into liquidupstart/liquid:latest, not mounted. B4-7
+reads it as text and would be green over a container running the old one -- that
+happened on 2026-09-08, 38 lines apart. So rebuild the image
+(config/scripts/build/liquid.sh) and recreate the container before the
+integration cases run, and have B4-7 compare the file in the container against
+the file on disk, not only assert the file's content.
+
+4. Section 4 gains an M-B4 block in the shape the others take: the checks in
+copy-and-paste form, the negative controls carrying the weight, and
+tests/verify/m-b4.sh as its executable equivalent in the shape of
+tests/verify/m-b3.sh. Read the corrections that script carries -- it waits for
+the processor catalogue rather than for a token or for Jetty, it reads
+credentials with get_env so .env's quotes do not reach the password, it asks by
+hostname because an IP gets 400 Invalid SNI, and it counts
+org.apache.nifi.processors.standard.GenerateFlowFile before drawing any
+conclusion from a count of zero. Do not repeat any of those. Run neither the
+block nor the script: both restart Liquid.
+
+Test data for the fixtures is stated in the cases and is not yours to invent.
+B4-4 uses the probe-mismatch NAR exactly as section 4 builds it, nifi-api 2.11.0
+with NodeConnectionState called from onTrigger; B4-5 uses the B1-5 fixture built
+by nar-build; B4-6 references org.apache.nifi.web.NiFiWebConfigurationContext and
+must assert that package's absence from the live jar rather than assuming it.
+
+The two cases that decide whether this milestone is worth having are B4-2 and
+B4-6. B4-4 is satisfied by a guard that refuses everything. If B4-2 and B4-6 pass
+on the first attempt, be suspicious of them before being pleased.
+
+Leave the evidence on disk, not only in this transcript. Write
+.pr-drafts/M-B4-run.md as you finish: elapsed time and turn count; the final
+lines of `./tests/run.sh m-b4` and `./tests/run.sh` verbatim with their EXIT
+status; the decision you took on where the check sits and why; what B4-2 and B4-6
+did on their first run; and anything the parser turned out to need that the cases
+did not anticipate.
+
+Record the outcome where the next session will find it: the process log row in
+section 5, an outcome paragraph in the appendix above this goal, section 2's
+traceability, and each case's "What it found" block.
+
+Search the codebase before assuming anything is missing; full implementations
+only, no placeholders.
+
+Done when `./tests/run.sh m-b4; echo EXIT=$?` shows EXIT=0 in this transcript and
+`./tests/run.sh; echo EXIT=$?` does too -- the branch stood at 455 pass, 0 fail
+before this goal was posed. Or stop after 50 turns.
+```
