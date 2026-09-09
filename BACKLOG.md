@@ -5,6 +5,47 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**Liquid autoloads from the drop directory, and everything this feature says about deployment is
+built on the assumption that it does not.**
+Measured 2026-09-09, while a red check in `tests/verify/m-b4.sh` refused to be explained. It is the
+largest open question this feature has.
+
+```
+nifi.nar.library.autoload.directory=/opt/nifi/nifi-current/nar_extensions
+```
+
+**The measurement.** A NAR named `b4-autoload-nar-1.0.0.nar` was built into
+`volumes/nar_extensions` and nothing else was done — no restart, no copy. After **20 seconds**
+`org.nocodenation.probe.AutoloadProbe` was listed by `/nifi-api/flow/processor-types`, the container's
+`StartedAt` was unchanged, and the NAR was **not** in `lib/`. Independently, the catalogue was already
+listing `ProbeA` and `ProbeB` — B3-3's concurrency fixtures, which the suite writes into the drop
+directory and deletes again, which were never in `lib/`, and which no restart followed. NiFi loads
+them and does not unload them.
+
+**What that puts in question, none of it settled:**
+
+- **FR36 and M-B4.** The guard refuses to copy a mismatched bundle into `lib/`. NiFi loads it from the
+  drop directory anyway, about twenty seconds later. The milestone is built, its 32 cases are green,
+  and it guards a path that is not the one that loads. This is why §4's check 3 stayed red through two
+  repairs of the check.
+- **FR29, and what `nar-build` prints to an agent.** *"Liquid loads NARs from /nar_extensions at
+  startup only. Ask the operator to restart it"* — the restart is not required. That sentence reaches
+  every agent that builds a NAR.
+- **FR30.** *"On start, every `*.nar` in it is copied into `lib/`"* holds, and appears to be
+  redundant: the autoload directory would have reached the load path without it.
+- **M-B3's check 3.** It established that Liquid lists what `nar-build` produces. It never separated
+  whether that was the copy into `lib/` or the autoload directory.
+- **Where the setting lives.** `volumes/liquid/conf/nifi.properties:37` — persistent local state. The
+  stock `apache/nifi:2.11.0` image says `./extensions`. Nothing in `config/liquid/`, `compose.yml`,
+  `.env.example` or a `NIFI_*` variable sets it, so **a fresh installation may not behave the way this
+  one does**, and no branch carries the difference.
+
+**Deliberately not repaired on 2026-09-09.** Two explanations for the red check were offered and
+withdrawn that day — a leftover unpacked bundle, and an answer from the instance being replaced — and
+the third is the first that rests on a measured configuration value rather than on reasoning about
+behaviour. The right next step is to decide what the deployment path *should* be, not to adjust a
+guard until a check goes green.
+
 **Nothing in the stack notices a NAR built against an API Liquid does not provide.**
 Established by B3-2 on 2026-09-08, and the reason FR23 was rewritten the same day. A NAR compiled
 against `nifi-api` 2.11.0, referencing a class the loaded 2.10.0 jar does not contain, is accepted:

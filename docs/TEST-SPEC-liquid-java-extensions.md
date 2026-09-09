@@ -1284,6 +1284,23 @@ with the same artifact name would make the check pass without this build having 
 
 ### M-B4 — a mismatch is refused where the operator can see it
 
+**Two things were measured on 2026-09-09 and are recorded here so nobody re-derives them.**
+
+*NiFi does not load an extension from its unpacked working copy.* With
+`b4-hand-nar-1.0.0.nar` removed from `lib/` and
+`work/nar/extensions/b4-hand-nar-1.0.0.nar-unpacked` deliberately left in place, the restart listed
+the type **zero** times and NiFi removed the unpacked directory itself. The hypothesis that a
+leftover unpacked bundle keeps a processor in the catalogue was put forward to explain a red check
+and is **false**; it is written down as false because it is the obvious explanation and it will be
+proposed again.
+
+*A restart is not a fact until the container's `StartedAt` says so.* `docker compose restart` returns
+before the replacement is serving, and the instance being replaced answers `/flow/processor-types`
+with the catalogue it already had. Waiting for `GenerateFlowFile` does not separate the two, because
+both have it. The first run of this block reported a refused NAR as listed while `ls` showed `lib/`
+did not contain it — an answer from the wrong instance is the leading explanation and was never
+confirmed, so the checks now make the question impossible rather than settle it.
+
 **Checks 3, 4 and 5 restart Liquid three times**, which interrupts every running flow. Run them when
 nothing is depending on it. `./tests/verify/m-b4.sh` performs and judges this same sequence and
 restores everything it moved; it is written by the same hand as the tests, so it does not replace the
@@ -1323,6 +1340,23 @@ types() {
 # every NiFi ships in it. Jetty answers the moment it binds and a token is
 # issued before the extensions have loaded; in both windows the catalogue comes
 # back empty, which is indistinguishable from a NAR that was refused.
+# Waiting for the catalogue is not enough on its own: the instance being
+# replaced answers it too. `restart` is asynchronous, so a poll fired straight
+# after it can be served by the dying process, whose catalogue still holds
+# whatever was deployed before. Prove the container actually restarted first --
+# StartedAt is the only value that changes -- and only then wait for the
+# catalogue. On 2026-09-09 a check without this reported a refused NAR as
+# listed, over a lib/ that demonstrably did not contain it.
+restarted() {
+  local b a i; b="$(docker compose ps -q liquid | xargs -r docker inspect -f '{{.State.StartedAt}}')"
+  docker compose restart liquid >/dev/null
+  for i in $(seq 1 60); do
+    a="$(docker compose ps -q liquid | xargs -r docker inspect -f '{{.State.StartedAt}}')"
+    [ -n "$a" ] && [ "$a" != "$b" ] && return 0
+    sleep 2
+  done
+  return 1
+}
 await() { for i in $(seq 1 150); do types | grep -q 'GenerateFlowFile' && return 0; sleep 2; done; return 1; }
 await; echo "ready=$?"
 
@@ -1356,7 +1390,7 @@ nar-build /repos/.b4-hand'
 # present in nifi-api 2.11.0 and absent from the 2.10.0 jar in lib/ -- 437
 # against 436. The source and the pom.xml are M-B3 §4 check 4's, unchanged.
 #   (build it exactly as tests/verify/m-b4.sh check 3 does)
-docker compose restart liquid && await; echo "ready=$?"
+restarted && await; echo "ready=$?"
 
 types > /tmp/b4-types.json
 grep -c 'org.apache.nifi.processors.standard.GenerateFlowFile' /tmp/b4-types.json  # the control, expect >= 1
@@ -1378,7 +1412,7 @@ docker compose logs liquid --since 10m | grep -E 'REFUSED|NodeConnectionState'
 #    measured behaviour, and if it is absent here then something other than the
 #    refusal was keeping it out and check 3 proves nothing.
 docker compose cp volumes/nar_extensions/probe-mismatch-1.0.0.nar liquid:/opt/nifi/nifi-current/lib/
-docker compose restart liquid && await; echo "ready=$?"
+restarted && await; echo "ready=$?"
 types | grep -c 'org.nocodenation.probe.MismatchProcessor'   # expect >= 1
 
 # 5. Clean up and confirm. Both NARs out of lib/ -- a restart never deletes from
@@ -1387,7 +1421,7 @@ types | grep -c 'org.nocodenation.probe.MismatchProcessor'   # expect >= 1
 rm -f volumes/nar_extensions/b3-hand-nar-1.0.0.nar volumes/nar_extensions/probe-mismatch-1.0.0.nar
 docker compose exec -T liquid sh -c 'rm -f /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar /opt/nifi/nifi-current/lib/probe-mismatch-1.0.0.nar'
 docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.b4-hand /repos/.b4-mismatch'
-docker compose restart liquid && await; echo "ready=$?"
+restarted && await; echo "ready=$?"
 types | grep -c 'org.nocodenation.probe'   # expect 0
 ./tests/run.sh; echo "EXIT=$?"
 ```

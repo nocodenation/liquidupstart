@@ -8,7 +8,7 @@ DROP="volumes/nar_extensions"
 LIB="/opt/nifi/nifi-current/lib"
 GOOD="/repos/.b4-hand"
 BAD="/repos/.b4-mismatch"
-GOOD_NAR="b3-hand-nar-1.0.0.nar"
+GOOD_NAR="b4-hand-nar-1.0.0.nar"
 BAD_NAR="probe-mismatch-1.0.0.nar"
 GOOD_TYPE="org.nocodenation.probe.ProbeProcessor"
 BAD_TYPE="org.nocodenation.probe.MismatchProcessor"
@@ -63,6 +63,18 @@ processor_types() {
      ${API}/nifi-api/flow/processor-types" 2>/dev/null
 }
 
+restart_liquid() {
+  local before after i
+  before="$(docker compose ps -q liquid | xargs -r docker inspect -f '{{.State.StartedAt}}' 2>/dev/null)"
+  docker compose restart liquid >/dev/null 2>&1
+  for i in $(seq 1 60); do
+    after="$(docker compose ps -q liquid | xargs -r docker inspect -f '{{.State.StartedAt}}' 2>/dev/null)"
+    [[ -n "$after" && "$after" != "$before" ]] && return 0
+    sleep 2
+  done
+  return 1
+}
+
 await_liquid() {
   local i types
   for i in $(seq 1 150); do
@@ -86,7 +98,7 @@ restore() {
   done
   if [[ -n "${LIB_TOUCHED:-}" ]]; then
     docker compose exec -T liquid sh -c "rm -f ${LIB}/${GOOD_NAR} ${LIB}/${BAD_NAR}" >/dev/null 2>&1
-    docker compose restart liquid >/dev/null 2>&1
+    restart_liquid || { echo "liquid did not restart" >&2; }
     await_liquid
     echo "${BOLD}restarted${RST} liquid with both hand-built NARs removed from ${LIB}"
   fi
@@ -257,7 +269,7 @@ grep -E '^(nifi_api_version|wrote) ' /tmp/b4good.out /tmp/b4bad.out" 2>&1)"
 echo "$C3_BUILD"
 
 LIB_TOUCHED=1
-docker compose restart liquid >/dev/null 2>&1
+restart_liquid || { echo "liquid did not restart" >&2; }
 await_liquid || verdict "3 Liquid came back" no "liquid did not answer on its HTTPS API within 300s"
 C3_TYPES="$(processor_types)"
 C3_CONTROL="$(grep -c "$CONTROL_TYPE" <<< "$C3_TYPES")"
@@ -286,7 +298,7 @@ grep -q "${MISSING_CLASS}" <<< "$C3_LOG" || C3_WHY="${C3_WHY}the message does no
 
 banner "Check 4 — negative control: is check 3 measuring the refusal, or something else?"
 docker compose cp "${DROP}/${BAD_NAR}" "liquid:${LIB}/${BAD_NAR}" >/dev/null 2>&1
-docker compose restart liquid >/dev/null 2>&1
+restart_liquid || { echo "liquid did not restart" >&2; }
 await_liquid || verdict "4 Liquid came back" no "liquid did not answer on its HTTPS API within 300s"
 C4_TYPES="$(processor_types)"
 C4_CONTROL="$(grep -c "$CONTROL_TYPE" <<< "$C4_TYPES")"
@@ -307,7 +319,7 @@ for f in $(ls -1 "$DROP" 2>/dev/null | sort); do
   printf '%s\n' "${DROP_BEFORE[@]+"${DROP_BEFORE[@]}"}" | grep -qx "$f" || rm -f "${DROP}/${f}"
 done
 docker compose exec -T liquid sh -c "rm -f ${LIB}/${GOOD_NAR} ${LIB}/${BAD_NAR}" >/dev/null 2>&1
-docker compose restart liquid >/dev/null 2>&1
+restart_liquid || { echo "liquid did not restart" >&2; }
 await_liquid || verdict "5 Liquid came back" no "liquid did not answer on its HTTPS API within 300s"
 unset LIB_TOUCHED
 C5_TYPES="$(processor_types)"
