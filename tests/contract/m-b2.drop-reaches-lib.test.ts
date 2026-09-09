@@ -10,9 +10,13 @@
  *           failure here.
  * Given:    config/liquid/entrypoint.sh, run against a sandbox instead of the
  *           image: a temporary NIFI_BASE_DIR holding nifi-current/nar_extensions
- *           with two files, b2-probe.nar and b2-second.nar, each holding the
- *           single line `probe` — the entrypoint copies files and never opens
- *           them, so a real archive would prove nothing a byte would not — an
+ *           with two files, b2-probe.nar and b2-second.nar, each a real archive
+ *           carrying one entry, probe.txt, holding the single line `probe`.
+ *           Until M-B4 those were the bare bytes, because the entrypoint copied
+ *           files and never opened one; FR36's check does open them, and a file
+ *           that is not an archive is now refused rather than copied. There is
+ *           no class in either, so there is nothing for that check to judge and
+ *           the copy is what is left being asserted. Beside them an
  *           empty nifi-current/lib, and scripts/start.sh standing in for
  *           Liquid's launcher, which records the listing of lib/ at the moment
  *           it is executed. That recording is what makes "before the launch"

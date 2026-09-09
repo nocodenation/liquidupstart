@@ -319,6 +319,7 @@ two features' runs stay comparable. Wall clock is local time.
 | M-B1 | 55 / 45 | 2026-09-03 18:16–19:16 (local), 1h00 | 20: `compose.yml`, `config/nar_builder/{Dockerfile,build.sh,BuildServer.java,entrypoint.sh}`, `config/agents/bin/nar-build.sh`, `config/scripts/build/nar-builder.sh`, `scripts/linux/build.sh`, `config/nginx/templates/nginx.conf`, `CLAUDE.md`, 12 test files + `tests/lib/narfixture.ts`, `tests/verify/m-b1.sh`, this document, the test specification | No — the suite was run in the transcript and the two defects it found are recorded in B1-5 and B1-9 | None. The operator's verification ran 2026-09-03 19:45, all eight checks PASS — `verification/M-B1-verification.md` | No — the four fixed decisions held; one addition, the read-only `volumes/liquid/logs` mount, is declared in §3.2 | No |
 | M-B2 | ~70 / 50 — over, and the bound was set at where M-B1 landed | 2026-09-03 21:57–22:47 (local), 0h50 | 21: `config/nar_builder/{build.sh,BuildServer.java}`, `config/agents/bin/nar-build.sh`, `config/liquid/entrypoint.sh`, `config/agents/skills/liquid/SKILL.md`, 9 test files + `tests/lib/{entrypointfixture.ts,narfixture.ts,shell.ts}`, `tests/verify/m-b2.sh`, this document, the test specification | No — the suite was run in the transcript, and the two things it could have passed over were caught before the run: a contract test green over an entrypoint the container does not execute (§4 check 3b), and a negative control reading the artifact the previous check had left in `lib/` (§4 check 5) | None. Verified 2026-09-05 16:01, every check PASS — `verification/M-B2-verification.md`. B2-10 was observed the same day and passed, and its failure criterion was corrected in the process | No — the three things the goal named were built as posed, and the one decision it left open (whether Liquid starts after a failed copy) was taken and written down | No |
 | M-B3 | 33 / 50 | 2026-09-08 10:14–10:43 (local), 0h29 | 8: `config/nar_builder/build.sh`, `tests/lib/{shell.ts,narfixture.ts}`, 2 test files, `tests/verify/m-b3.sh`, this document, the test specification | No — but it came close twice, and both were caught inside the run: the overlap sample would have been satisfied by a single build (`build.sh`'s own `$(...)` sub-shell inherits the cmdline), and §4's check 4 could not have produced a mismatch at all, because the version it named refuses | Yes, and it took five runs to reach the milestone's question. `tests/verify/m-b3.sh` was executed for the first time on 2026-09-08 and exposed seven defects in the verification path, none of them in the product: `mapfile` (bash 4, so the restore step deleted the whole drop directory rather than protecting it), a `trap` that resumed instead of exiting, a hardcoded 8443 beside a `SYSTEM_HTTPS_PORT` it had just read, an IP address that Jetty answers with `400 Invalid SNI`, readiness taken from Jetty answering and then from a token being issued rather than from the catalogue, credentials read with `sed` so `.env`'s quotes went into the password, and a token guard that rejected HTML but accepted *"The supplied username and password are not valid"*. Two of those produced **false findings** rather than errors. Plus A8-13 on #9: the manifest carried git's German error text, because the dashboard spawned the script with the operator's locale | No — the three things the goal named were built as posed, and the one decision it left open (how the drop-directory write is made safe) was taken and written down | No |
+| M-B4 | 50 / 50 | 2026-09-09 16:03–16:31 (local), 0h28 | 16: `config/liquid/narcheck.py` (new), `config/liquid/entrypoint.sh`, `config/liquid/templates/Dockerfile`, 6 test files + `tests/lib/{narcheckfixture.ts,entrypointfixture.ts}`, `tests/contract/m-b2.drop-reaches-lib.test.ts`, `tests/verify/m-b4.sh`, this document, the test specification, `.pr-drafts/M-B4-run.md` | No — but it would have, twice, and both were caught inside the run: B4-1's expected reference set was wrong in the specification (four classes, of which two are descriptor text and not references), and B4-6's premise was false (`org.apache.nifi.web` **is** a package `nifi-api-2.10.0.jar` provides), so the case as written would have passed for a reason nobody had checked | None yet. §4's B4-8 was written out and not run: it restarts Liquid, and the restart is the operator's. `tests/verify/m-b4.sh` is its executable equivalent | No — the guard sits where the goal placed it, in the copy loop before the `cp`, and the parser reads the constant pool as decided. One decision the goal left open was taken and written down: a reference the check cannot judge is permitted, and an API jar it cannot find means nothing is judged at all | No |
 
 ---
 
@@ -827,6 +828,78 @@ Done when `./tests/run.sh m-b3; echo EXIT=$?` shows EXIT=0 in this transcript an
 `./tests/run.sh; echo EXIT=$?` does too -- the branch stood at 440 pass, 0 fail
 before this goal was posed. Or stop after 50 turns.
 ```
+
+### M-B4 — outcome
+
+`./tests/run.sh m-b4` is green at 32 tests across 6 files, and `./tests/run.sh` at **487 + 27** against
+the 455 + 27 the branch stood at, so nothing regressed. Built: the constant-pool parser
+`config/liquid/narcheck.py`, the guard in the copy loop of `config/liquid/entrypoint.sh` ahead of the
+`cp`, the `COPY` that puts the parser into the image beside the entrypoint, seven cases B4-1 to B4-7,
+§4's M-B4 block and `tests/verify/m-b4.sh`. B4-8 was not run — it restarts Liquid, and the restart is
+the operator's.
+
+**The two cases the goal said would decide the milestone did decide it, and neither did what was
+expected.** B4-2 — the class name that appears only in a string literal — passed on the first attempt,
+and the instruction was to be suspicious of that before being pleased. The suspicion is answered by
+the case's structure rather than by its result: it establishes first that the name **is** in the class
+file's bytes, so a text scan would report it and refuse a correct bundle, and only then that the
+parser does not report it. Those two assertions cannot both hold for the implementation the decision
+rejected. B4-6 failed before it was written, in the specification. It asserted that
+`org.apache.nifi.web` is not a package the loaded `nifi-api-2.10.0.jar` provides; measured, the jar
+provides four classes in that package. The stated fixture therefore never touched the package filter
+it was written for — `NiFiWebConfigurationContext` is judged, and permitted because
+`nifi-framework-api-2.11.0.jar` in the same `lib/` carries it. Written as specified, the case would
+have been green over an untested branch.
+
+**The check has two floors, and the case now asserts both.** A reference resolves if the bundle
+carries it — its own entries or any jar under `NAR-INF/bundled-dependencies` — or if any jar in
+`${NIFI_HOME}/lib` carries it. A reference is judged at all only where its package is one the loaded
+`nifi-api-*.jar` provides, which is what keeps the check from pronouncing on classes that reach a NAR
+through a parent bundle. The second floor is now covered by its own pair: `probe-mismatch-1.0.0.nar`
+against an API jar carrying only `org/apache/nifi/processor/AbstractProcessor.class` is permitted,
+because `org.apache.nifi.controller` is then a package nothing claims to provide; the same NAR against
+the real `lib/` is refused. One branch each way, on one bundle, with the package boundary as the only
+variable.
+
+**What the parser needed that the cases did not anticipate.** B4-1 expected four references and the
+compiled class carries two. A class file holds a `CONSTANT_Class` only where a type is used by an
+instruction or named in the class header; a parameter type lives in the method descriptor, which is a
+`Utf8` constant. `ProcessContext` and `ProcessSession` are in the file as text and are not references,
+and a parser that reported them would refuse bundles for accepting arguments. That correction is held
+in place by an assertion rather than by a note: B4-1 asserts both that the descriptor text is present
+and that it is not reported. The measured behaviour also settles what M-B3's `javap` reading had shown
+without explaining — it named `AbstractProcessor`, `ComponentLog` and `NodeConnectionState`, and never
+the two parameter types.
+
+**The decision on where the check sits, and what it costs.** In the copy loop, before the `cp`, one
+`python3` invocation per NAR — 0.078 s for a bundle carrying 93 classes, because the whole of
+`nifi-utils` is read and every one of its `org.apache.nifi` references resolves. Refused means not
+copied and nothing else: the file stays in the drop directory, the other NARs still deploy, and Liquid
+still starts, which is the decision B2-6 took for a failed copy and this milestone keeps rather than
+reopens. A NAR that cannot be opened, or a class that does not begin with `0xCAFEBABE`, refuses the
+bundle and says which file it could not read — a check that treats silence as consent is the failure
+this repository met four times this week, and it is not being added deliberately.
+
+**M-B2's fixture had to move, and that is worth recording rather than hiding.** `tests/lib/entrypointfixture.ts`
+wrote the bytes `probe` under a `.nar` name, and B2-5's header said in as many words that a real
+archive would prove nothing a byte would not. That was true while the entrypoint never opened a NAR.
+It is false now, and the sandbox writes a real archive carrying `probe.txt` with those bytes in it —
+no class, so nothing for FR36 to judge, and the copy B2-5 and B2-6 are about is still what they
+assert. The header was corrected with the fixture.
+
+**B4-7 failed first, and that is the only reason the rest is worth anything.** Run against the
+container as it stood, the entrypoint differed from the file on disk and `/opt/nifi/scripts/narcheck.py`
+did not exist at all — while every other case in the milestone was green, reading files the running
+Liquid had never seen. The image was rebuilt with `./config/scripts/build/liquid.sh` and the container
+recreated with `docker compose up -d --no-deps liquid` before the integration cases were run, and the
+case compares two files now, because the parser is `COPY`ed beside the entrypoint and carries the same
+trap.
+
+**What remains is the operator's.** §4's M-B4 block and `tests/verify/m-b4.sh` restart Liquid three
+times: B4-8 reads the catalogue with both NARs dropped by hand, and check 4 is the control that gives
+it meaning — the same refused NAR placed into `lib/` past the entrypoint must be listed, or the
+absence in check 3 was never caused by the refusal. Until that runs, what Liquid offers after a
+restart is inference from what the entrypoint does with a file.
 
 ### M-B4 — a mismatch is refused where the operator can see it · posed 2026-09-09
 

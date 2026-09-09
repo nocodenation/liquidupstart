@@ -8,11 +8,28 @@ export const entrypointPath = join(repoRoot, 'config/liquid/entrypoint.sh');
 export const LIQUID_SERVICE = 'liquid';
 export const CONTAINER_ENTRYPOINT = '/opt/nifi/scripts/entrypoint.sh';
 export const NAR_NAMES = ['b2-probe.nar', 'b2-second.nar'];
+export const NAR_ENTRY = 'probe.txt';
 export const NAR_CONTENT = 'probe\n';
 export const LIB_AS_FILE_CONTENT = 'not a directory\n';
 
 export function entrypointText(): string {
   return readFileSync(entrypointPath, 'utf8');
+}
+
+// A NAR the entrypoint is willing to open. Until M-B4 the sandbox wrote the
+// bytes `probe\n` under a .nar name, because the entrypoint copied files and
+// never looked inside one. FR36's check does look: it reads every class the
+// bundle carries, and a file that is not an archive is refused rather than
+// copied. So the fixture is now a real archive carrying a single entry,
+// probe.txt, with those same bytes in it -- no classes, therefore nothing to
+// judge, and the copy B2-5 and B2-6 are about is what is left being asserted.
+export function writeNar(path: string): void {
+  const script = `import zipfile,sys
+z = zipfile.ZipFile(sys.argv[1], "w")
+z.writestr(sys.argv[2], sys.argv[3])
+z.close()`;
+  const r = sh(['python3', '-c', script, path, NAR_ENTRY, NAR_CONTENT]);
+  if (r.code !== 0) throw new Error(`could not write the sandbox NAR ${path}: ${r.output}`);
 }
 
 export type Sandbox = { base: string; home: string; drop: string; lib: string; launched: string };
@@ -27,7 +44,7 @@ export function sandbox(opts: { nars?: string[]; libIsFile?: boolean } = {}): Sa
   mkdirSync(join(base, 'scripts'), { recursive: true });
   if (opts.libIsFile) writeFileSync(lib, LIB_AS_FILE_CONTENT);
   else mkdirSync(lib, { recursive: true });
-  for (const nar of opts.nars ?? []) writeFileSync(join(drop, nar), NAR_CONTENT);
+  for (const nar of opts.nars ?? []) writeNar(join(drop, nar));
   writeFileSync(
     join(base, 'scripts/start.sh'),
     `#!/bin/sh\nls -1 ${lib} > ${launched} 2>&1 || echo "(lib is not a directory)" > ${launched}\nexit 0\n`,

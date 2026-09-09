@@ -6,11 +6,12 @@ NIFI_BASE_DIR="${NIFI_BASE_DIR:-/opt/nifi}"
 NIFI_HOME="${NIFI_HOME:-${NIFI_BASE_DIR}/nifi-current}"
 DROP_DIR="${NIFI_HOME}/nar_extensions"
 LIB_DIR="${NIFI_HOME}/lib"
+NAR_CHECK="$(cd "$(dirname "$0")" && pwd)/narcheck.py"
 
 echo "Liquid Playground - Starting..."
 
 if [ -d "$DROP_DIR" ]; then
-    NAR_COUNT=$(find "$DROP_DIR" -maxdepth 1 -name "*.nar" 2>/dev/null | wc -l)
+    NAR_COUNT=$(find "$DROP_DIR" -maxdepth 1 -name "*.nar" 2>/dev/null | wc -l | tr -d "[:space:]")
 
     if [ "$NAR_COUNT" -gt 0 ]; then
         echo "Found $NAR_COUNT NAR file(s) in nar_extensions directory"
@@ -18,6 +19,13 @@ if [ -d "$DROP_DIR" ]; then
 
         FAILED=0
         for NAR in "$DROP_DIR"/*.nar; do
+            if ! REFUSAL="$(python3 "$NAR_CHECK" check "$NAR" "$LIB_DIR" 2>&1)"; then
+                FAILED=$((FAILED + 1))
+                echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LIB_DIR}/" >&2
+                echo "$REFUSAL" >&2
+                echo "  The file stays in ${DROP_DIR}: it is yours, and nothing here deletes it." >&2
+                continue
+            fi
             if cp -v "$NAR" "${LIB_DIR}/"; then
                 continue
             fi

@@ -47,7 +47,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR31 A deployment step that fails says so | B2-6 |
 | FR34 What is built is proven loadable | B3-1, B3-2 — both §4 checks, written out in full and not yet run |
 | FR35 Concurrent builds do not corrupt each other | B3-3, B3-4 |
-| FR36 A bundle that cannot link is refused at deployment | B4-1 to B4-8 |
+| FR36 A bundle that cannot link is refused at deployment | B4-1, B4-2, B4-3, B4-4, B4-5, B4-6, B4-7 in the suite; B4-8 in §4, run by the operator because it restarts Liquid |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
 
 ---
@@ -560,12 +560,12 @@ floor, not an oversight, and B4-6 is what keeps it there.
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
-| B4-1 | Unit | The parser reads a real class's constant pool | Exactly the `org/apache/nifi` classes the source names, and nothing else |
+| B4-1 | Unit | The parser reads a real class's constant pool | Exactly the `org/apache/nifi` classes the compiled class *references*: `org/apache/nifi/processor/AbstractProcessor` and `org/apache/nifi/logging/ComponentLog`, and nothing else |
 | B4-2 | Unit **negative** | A class name that appears only as a string literal | **Not** reported. This is the case the parser decision exists for: a text scan reports it and refuses a correct bundle |
 | B4-3 | Unit **unhappy** | A file that is not a readable class | The check refuses the bundle and says why. An unreadable bundle is not a clean one |
 | B4-4 | Integration **negative** | The mismatched NAR, dropped by hand | Not copied into `lib/`, named on stderr with its class and the next step, and still present in the drop directory |
 | B4-5 | Integration | A NAR `nar-build` produced, dropped the same way | Copied. The guard permits, and without this B4-4 proves only that something was refused |
-| B4-6 | Integration | A NAR referencing `org.apache.nifi` outside any package `nifi-api` provides | Copied. The check does not pronounce on what it cannot see |
+| B4-6 | Integration | A NAR referencing an `org.apache.nifi` class the check cannot judge or can resolve elsewhere | Copied. The check does not pronounce on what it cannot see, and does not refuse what `lib/` provides |
 | B4-7 | Contract | The entrypoint on disk checks before it copies, and the container runs that entrypoint | Both, compared as text — §4 check 3b's lesson, which caught a green case over a stale container on 2026-09-08 |
 | B4-8 | **End-to-end** · §4 | Restart with both NARs in the drop directory | The good type is in the catalogue, the mismatched one is not, the refusal is in `docker compose logs liquid`, and Liquid started |
 
@@ -577,9 +577,11 @@ floor, not an oversight, and B4-6 is what keeps it there.
 |---|---|
 | **Premise** | Everything rests on this list being right. Too small and a mismatch ships; too large and a correct deployment is refused. |
 | **Component** | The parser alone, no container. |
-| **Test data** | `ProbeProcessor.class` as `nar-build` produces it from the B1-5 fixture — the source is in §4, an `AbstractProcessor` with `getLogger().debug("probe alive")`. Expected exactly: `org/apache/nifi/processor/AbstractProcessor`, `org/apache/nifi/processor/ProcessContext`, `org/apache/nifi/processor/ProcessSession`, `org/apache/nifi/logging/ComponentLog`. Read from a NAR the case builds, not from a checked-in binary, so it cannot go stale against the builder. |
-| **Expected** | That set, and no `org/apache/nifi` entry beyond it. |
+| **Test data** | `ProbeProcessor.class` as `nar-build` produces it from the B1-5 fixture — the source is in §4, an `AbstractProcessor` with `getLogger().debug("probe alive")`, built here into `b4-probe-nar-1.0.0.nar` and read out of the jar the `nar-maven-plugin` bundles under `NAR-INF`. Read from a NAR the case builds, not from a checked-in binary, so it cannot go stale against the builder. |
+| **Expected** | Exactly `org/apache/nifi/processor/AbstractProcessor` and `org/apache/nifi/logging/ComponentLog`, and no `org/apache/nifi` entry beyond them. **Corrected against the compiled class on 2026-09-09.** This block predicted four, adding `ProcessContext` and `ProcessSession`; a class file carries a `CONSTANT_Class` only where a type is used by an instruction or in the class header, and a parameter type lives in the method descriptor, which is a `Utf8`. Both names are in the file's bytes and neither is a reference — the case asserts that difference, so the correction is held in place rather than remembered. |
 | **Covers** | FR36. |
+| **Implemented by** | `tests/unit/m-b4.parser-references.test.ts`. |
+| **What it found** | Green, after correcting its own expectation. The compiled class references two `org/apache/nifi` classes, not four: `AbstractProcessor` from the class header and `ComponentLog` from the `getLogger().debug(...)` call. `ProcessContext` and `ProcessSession` are in the file as text — they are the method descriptor — and are not class constants. A parser that reported them would report every parameter type of every method, and a check built on that would refuse bundles for referencing types they only accept as arguments. |
 
 ##### B4-2 — a name in a string is not a reference · **negative**
 
@@ -590,6 +592,8 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | **Test data** | A processor whose `onTrigger` body is `getLogger().debug("org/apache/nifi/controller/NodeConnectionState");` — the literal, in the only place that makes the two methods disagree. The class is compiled by `nar-build` so the constant pool is real. |
 | **Expected** | `org/apache/nifi/controller/NodeConnectionState` is **not** among the references. The class's genuine references are, so the case cannot pass by returning nothing. |
 | **Covers** | FR36. |
+| **Implemented by** | `tests/unit/m-b4.string-literal.test.ts`. |
+| **What it found** | Green on the first run, which the goal said to be suspicious of before being pleased about. The suspicion is answered by the case's middle assertion: it first establishes that `org/apache/nifi/controller/NodeConnectionState` **is** in the class file's bytes, so a scan-based check would report it and refuse the bundle, and only then that the parser does not. The two assertions cannot both hold for a text scan, so the case fails against the implementation the decision rejected rather than merely passing against the one it chose. Its references are identical to B4-1's, which is the whole point: the literal changed the source and did not change the constant pool. |
 
 ##### B4-3 — an unreadable bundle is not a clean bundle · **unhappy**
 
@@ -600,6 +604,8 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | **Test data** | A `.nar` whose `org/nocodenation/probe/Broken.class` holds the four bytes `not a class file` — no `0xCAFEBABE` magic. |
 | **Expected** | The bundle is **refused**, and the message says the class could not be read rather than naming a missing class. Not skipped, not copied. |
 | **Covers** | FR36, and the standard §4 exists for. |
+| **Implemented by** | `tests/unit/m-b4.unreadable-class.test.ts`. |
+| **What it found** | Green. The refusal names the archive, names `org/nocodenation/probe/Broken.class`, says it does not begin with `0xCAFEBABE`, names no missing class, and gives `nar-build --target` as the next step. The case carries its own positive counterpart — `b4-empty.nar`, a valid archive holding one text entry and no class at all, which is permitted — so the refusal is a judgement about the file rather than about anything it cannot open. It also changed M-B2's fixture: the sandbox in `tests/lib/entrypointfixture.ts` used to write the bytes `probe` under a `.nar` name, which was sound while the entrypoint never opened a NAR and is refused now that it does. B2-5 and B2-6 now hand it a real archive carrying `probe.txt`, and their premise line was corrected with it. |
 
 ##### B4-4 — the mismatched NAR is refused, and named · **negative**
 
@@ -611,6 +617,8 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | **Expected** | `probe-mismatch-1.0.0.nar` is not in `lib/`. stderr names the file, names `org/apache/nifi/controller/NodeConnectionState`, and says what to do — rebuild it against the version this Liquid loads, which `nar-build --target` prints. The file stays in the drop directory: it is the operator's. |
 | **Failure** | The NAR reaching `lib/`, or a message that does not name the class. |
 | **Covers** | FR36, U10. |
+| **Implemented by** | `tests/integration/m-b4.mismatch-refused.test.ts`, together with B4-5. |
+| **What it found** | Green. `probe-mismatch-1.0.0.nar` does not reach `lib/`, the message names the file, names `org.apache.nifi.controller.NodeConnectionState` and the directory that does not provide it, and names `nar-build --target`; the file is still in the drop directory afterwards. One deviation from this block: the class is named in dotted form rather than as `org/apache/nifi/controller/NodeConnectionState`, because that is how it appears in the source an operator wrote and in the `NoClassDefFoundError` they would otherwise have met. |
 
 ##### B4-5 — and a good NAR still deploys
 
@@ -621,16 +629,20 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | **Test data** | `b3-hand-nar-1.0.0.nar` from the B1-5 fixture, built by `nar-build` so its API is the resolved 2.10.0. Dropped beside the mismatched one, so one pass over the directory decides both. |
 | **Expected** | Copied into `lib/`, and the run reports it deployed. |
 | **Covers** | FR36, FR30. |
+| **Implemented by** | `tests/integration/m-b4.mismatch-refused.test.ts`, the same run as B4-4. |
+| **What it found** | Green. `b3-hand-nar-1.0.0.nar` reaches `lib/` in the same pass that refuses the other, the run reports `1 of 2` refused, and the launcher records `lib/` already holding the good NAR — so B2-6's decision survives M-B4: the rest deploys and Liquid still starts. The bundle carries `nifi-utils-2.11.0.jar` with 93 classes in it, every one of which the check reads and every one of which resolves against `nifi-api` 2.10.0; had one not, this case would have caught the guard refusing what `nar-build` itself produces. |
 
 ##### B4-6 — what the check cannot see, it does not judge
 
 | | |
 |---|---|
-| **Premise** | The floor under the decision to start at `nifi-api`. A NAR may legitimately reference `org.apache.nifi` classes that reach it through a parent bundle, which this check cannot resolve; refusing those would break working deployments to catch a case nobody has met. |
-| **Component** | The parser's package filter. |
-| **Test data** | A processor referencing `org.apache.nifi.web.NiFiWebConfigurationContext` — an `org.apache.nifi` class whose package `org.apache.nifi.web` is **not** provided by `nifi-api-2.10.0.jar`; the case asserts that absence from the live jar rather than assuming it, so it cannot rot when the distribution moves. |
-| **Expected** | The bundle is **not** refused on account of that reference. |
+| **Premise** | The floor under the decision to start at `nifi-api`. A NAR may legitimately reference `org.apache.nifi` classes it does not carry; refusing those would break working deployments to catch a case nobody has met. There are two floors, and the case asserts both: a reference whose package the loaded `nifi-api-*.jar` does not provide is **not judged**, and a reference any jar in `lib/` carries **resolves**. |
+| **Component** | The parser's package filter, and the resolution against `lib/`. |
+| **Test data** | `probe-web-1.0.0.nar`: a `WebProcessor` whose `onTrigger` logs `NiFiWebConfigurationContext.class`, so `org/apache/nifi/web/NiFiWebConfigurationContext` is a real class constant and not a string; its own `pom.xml` names `nifi-api` 2.10.0 and `nifi-framework-api` 2.11.0 at `provided`, because the class cannot be compiled against `nifi-api` alone. The sixteen jars of the running container's `lib/`. And for the package filter, B4-4's `probe-mismatch-1.0.0.nar` run a second time against a `lib/` holding one jar, `nifi-api-0.0.0-probe.jar`, carrying the single entry `org/apache/nifi/processor/AbstractProcessor.class` — an API jar that provides `org.apache.nifi.processor` and does not reach into `org.apache.nifi.controller`. |
+| **Expected** | The bundle is **not** refused on account of that reference. **Corrected on 2026-09-09.** This block said `org.apache.nifi.web` is not a package `nifi-api-2.10.0.jar` provides; measured, it provides four classes in it, so the reference *is* judged and is permitted because `nifi-framework-api-2.11.0.jar` in the same `lib/` carries the class. The case asserts what is true — the class absent from the API jar, the package present, the bundle permitted, and a jar in `lib/` named as the reason — and then asserts the package filter on its own, where the same NAR that B4-4 refuses is permitted against an API jar that does not provide its package. |
 | **Covers** | FR36. |
+| **Implemented by** | `tests/integration/m-b4.unjudged-reference.test.ts`. |
+| **What it found** | Green, and it found the specification wrong before it found the code right. This block asserted that `org.apache.nifi.web` is not a package `nifi-api-2.10.0.jar` provides; it provides `ConnectorWebMethod`, `ConnectorWebMethod$AccessType`, `NiFiConnectorWebContext` and `NiFiConnectorWebContext$ConnectorWebContext`. So the stated fixture never exercised the package filter — it exercises the other floor, resolution against `lib/`, where `nifi-framework-api-2.11.0.jar` carries the class. Written as stated it would have passed for a reason nobody had checked, which is the failure this milestone is about. The case now asserts the measured facts and names the jar that resolves it, and covers the package filter separately with the one bundle known to be refused: `probe-mismatch-1.0.0.nar` against an API jar that does not provide `org.apache.nifi.controller` is permitted, and against the real `lib/` is refused. That pair is the filter's two branches. |
 
 ##### B4-7 — the container runs the entrypoint the cases read
 
@@ -641,6 +653,8 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | **Test data** | Both, byte for byte, plus the ordering: the check appears before the `cp` into `lib/`, not after it. |
 | **Expected** | Identical, and the check precedes the copy. |
 | **Covers** | FR36, and §4 check 3b. |
+| **Implemented by** | `tests/contract/m-b4.entrypoint-in-container.test.ts`. |
+| **What it found** | It failed first, which is what it is for. Run against the container as it stood, the entrypoint differed and `/opt/nifi/scripts/narcheck.py` did not exist at all — every other case in the milestone was green at that moment. Green after `./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`. The case compares two files now, not one: the parser is `COPY`ed beside the entrypoint, so it carries the same trap. |
 
 ##### B4-8 — the catalogue, after a restart · §4 check
 
@@ -651,6 +665,8 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | **Test data** | Both NARs from B4-4 and B4-5 in the drop directory, one restart. The catalogue is read with `org.apache.nifi.processors.standard.GenerateFlowFile` counted first, because a count of zero says nothing until something that must be listed is listed. |
 | **Expected** | `org.nocodenation.probe.ProbeProcessor` listed, `org.nocodenation.probe.MismatchProcessor` **not** listed, the refusal readable in `docker compose logs liquid`, and Liquid running. |
 | **Covers** | FR36, FR31, U10. |
+| **Implemented by** | §4's M-B4 block, and `tests/verify/m-b4.sh` check 3 as its executable equivalent. |
+| **What it found** | Not yet run. It restarts Liquid, which interrupts every running flow, so the restart is the operator's and this case was written out rather than executed. Everything above it asserts what the entrypoint does with a file; until this runs, what Liquid then offers is inference. §4 check 4 is the control it depends on. |
 
 ---
 
@@ -1263,3 +1279,130 @@ prediction it accompanied.
 
 The two SHA-256 comparisons in check 3 are not ceremony. `lib/` accumulates: a NAR from an earlier run
 with the same artifact name would make the check pass without this build having contributed anything.
+
+---
+
+### M-B4 — a mismatch is refused where the operator can see it
+
+**Checks 3, 4 and 5 restart Liquid three times**, which interrupts every running flow. Run them when
+nothing is depending on it. `./tests/verify/m-b4.sh` performs and judges this same sequence and
+restores everything it moved; it is written by the same hand as the tests, so it does not replace the
+block.
+
+```bash
+# Check 0 first, and not as a formality. config/liquid/entrypoint.sh and
+# config/liquid/narcheck.py are COPYed into liquidupstart/liquid:latest, not
+# mounted. Every case from B4-1 to B4-6 reads the files on disk, so all of them
+# can be green over a container running what preceded them -- which is what
+# happened on 2026-09-08, thirty-eight lines apart. Expect: no output from diff.
+docker compose exec -T liquid cat /opt/nifi/scripts/entrypoint.sh | diff - config/liquid/entrypoint.sh
+docker compose exec -T liquid cat /opt/nifi/scripts/narcheck.py   | diff - config/liquid/narcheck.py
+# If either differs:
+#   ./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid
+
+# 1. The milestone suite. Expect: EXIT=0
+./tests/run.sh m-b4; echo "EXIT=$?"
+
+# 2. No regression across everything before it. Expect: EXIT=0
+./tests/run.sh; echo "EXIT=$?"
+
+# Liquid's HTTPS port is configured, not fixed: NiFi's default is 8443 and this
+# stack sets 8833. Read it rather than typing either. And ask by name, never by
+# IP -- Jetty answers a request whose TLS SNI does not match with "400 Invalid
+# SNI", and an IP address sends no SNI at all. Read the credentials with cut and
+# tr, not sed: .env's quotes otherwise go into the password.
+PORT=$(grep -E '^SYSTEM_HTTPS_PORT=' .env | tail -1 | cut -d= -f2- | tr -d "'\"")
+U=$(grep -E '^LIQUID_USERNAME=' .env | tail -1 | cut -d= -f2- | tr -d "'\"")
+P=$(grep -E '^LIQUID_PASSWORD=' .env | tail -1 | cut -d= -f2- | tr -d "'\"")
+API="https://localhost:${PORT:-8833}"
+types() {
+  T=$(docker compose exec -T liquid sh -c "curl -sk -X POST -d 'username=${U}&password=${P}' ${API}/nifi-api/access/token")
+  docker compose exec -T liquid sh -c "curl -sk -H 'Authorization: Bearer ${T}' ${API}/nifi-api/flow/processor-types"
+}
+# Wait for the thing you are about to read: the catalogue, with a processor
+# every NiFi ships in it. Jetty answers the moment it binds and a token is
+# issued before the extensions have loaded; in both windows the catalogue comes
+# back empty, which is indistinguishable from a NAR that was refused.
+await() { for i in $(seq 1 150); do types | grep -q 'GenerateFlowFile' && return 0; sleep 2; done; return 1; }
+await; echo "ready=$?"
+
+# 3. B4-8. Build both fixtures -- the good one plain, so nar-build resolves the
+#    API the distribution provides; the mismatched one with its own pom.xml
+#    naming nifi-api 2.11.0, which is the escape hatch B1-6 keeps and the only
+#    lever that produces a mismatch at all. Both land in volumes/nar_extensions,
+#    which is the hand-drop path §6.4 of the liquid skill documents and the one
+#    with no other guard. Then one restart.
+docker compose exec -T openclaw-gateway sh -lc '
+set -e
+P=/repos/.b4-hand/src/main/java/org/nocodenation/probe
+R=/repos/.b4-hand/src/main/resources/META-INF/services
+rm -rf /repos/.b4-hand; mkdir -p "$P" "$R"
+cat > "$P/ProbeProcessor.java" <<JAVA
+package org.nocodenation.probe;
+
+import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+
+public class ProbeProcessor extends AbstractProcessor {
+    @Override
+    public void onTrigger(ProcessContext context, ProcessSession session) { }
+}
+JAVA
+echo org.nocodenation.probe.ProbeProcessor > "$R/org.apache.nifi.processor.Processor"
+nar-build /repos/.b4-hand'
+# The mismatched one: MismatchProcessor calls NodeConnectionState.CONNECTED from
+# onTrigger, and org/apache/nifi/controller/NodeConnectionState is the one class
+# present in nifi-api 2.11.0 and absent from the 2.10.0 jar in lib/ -- 437
+# against 436. The source and the pom.xml are M-B3 §4 check 4's, unchanged.
+#   (build it exactly as tests/verify/m-b4.sh check 3 does)
+docker compose restart liquid && await; echo "ready=$?"
+
+types > /tmp/b4-types.json
+grep -c 'org.apache.nifi.processors.standard.GenerateFlowFile' /tmp/b4-types.json  # the control, expect >= 1
+grep -c 'org.nocodenation.probe.ProbeProcessor'                /tmp/b4-types.json  # expect 1
+grep -c 'org.nocodenation.probe.MismatchProcessor'             /tmp/b4-types.json  # expect 0
+docker compose exec -T liquid ls /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar     # expect it
+docker compose exec -T liquid ls /opt/nifi/nifi-current/lib/probe-mismatch-1.0.0.nar  # expect: No such file
+ls -1 volumes/nar_extensions                    # expect BOTH -- the refused file is the operator's
+docker compose logs liquid --since 10m | grep -E 'REFUSED|NodeConnectionState'
+# Expect the refusal to name the file, the class org.apache.nifi.controller.NodeConnectionState,
+# the directory that does not provide it, and `nar-build --target` as the next step.
+# Read the control first: if GenerateFlowFile is not listed either, the query
+# answered nothing and a count of 0 says nothing about either NAR.
+
+# 4. The negative control, and the check that carries the weight. A processor
+#    missing from the catalogue means the guard refused it only if the same
+#    bundle would otherwise have been listed. Put the identical NAR into lib/ by
+#    hand, past the entrypoint, and restart. Expect it LISTED -- that is M-B3's
+#    measured behaviour, and if it is absent here then something other than the
+#    refusal was keeping it out and check 3 proves nothing.
+docker compose cp volumes/nar_extensions/probe-mismatch-1.0.0.nar liquid:/opt/nifi/nifi-current/lib/
+docker compose restart liquid && await; echo "ready=$?"
+types | grep -c 'org.nocodenation.probe.MismatchProcessor'   # expect >= 1
+
+# 5. Clean up and confirm. Both NARs out of lib/ -- a restart never deletes from
+#    it -- and out of the drop directory, then restart: both types must be gone
+#    while GenerateFlowFile is still listed. Expect EXIT=0.
+rm -f volumes/nar_extensions/b3-hand-nar-1.0.0.nar volumes/nar_extensions/probe-mismatch-1.0.0.nar
+docker compose exec -T liquid sh -c 'rm -f /opt/nifi/nifi-current/lib/b3-hand-nar-1.0.0.nar /opt/nifi/nifi-current/lib/probe-mismatch-1.0.0.nar'
+docker compose exec -T openclaw-gateway sh -c 'rm -rf /repos/.b4-hand /repos/.b4-mismatch'
+docker compose restart liquid && await; echo "ready=$?"
+types | grep -c 'org.nocodenation.probe'   # expect 0
+./tests/run.sh; echo "EXIT=$?"
+```
+
+**The negative controls are checks 0 and 4, and they carry the block.** Check 0 is M-B2's check 3b
+with the parser added beside the entrypoint: two files are `COPY`ed now, and a suite green over a
+container carrying neither is exactly the failure of 2026-09-08. Check 4 is the one that makes check
+3 a measurement. Every other statement in this milestone is of the form *the processor did not
+appear*, and a processor fails to appear for many reasons — a build that produced nothing, a NAR that
+the framework rejects, a catalogue read too early. Only the same bundle appearing when it is placed
+past the guard establishes that the guard is what removed it.
+
+**What check 4 is also worth.** It re-runs M-B3's finding as a control: a mismatched NAR loads,
+is catalogued, and says nothing, failing later with a `NoClassDefFoundError` the operator meets as
+*"Your session has expired."* If that has changed — if the framework now refuses the bundle itself —
+check 4 goes red, and that is a finding about FR36's premise rather than a broken check: the
+requirement would then be defending against something the framework already handles, and should say
+so.
