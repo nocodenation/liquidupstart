@@ -229,7 +229,7 @@ which is the part no hypothesis so far explains. `BACKLOG.md` records
 `volumes/_openclaw-claude/skills` as the same shape, and it stays unexplained too — the difference is
 that it is now unexplained *on purpose* rather than by an answer that sounded right.
 
-### A mismatched NAR loads, and nothing says so
+### A mismatched NAR loads, and then tells the operator the wrong thing
 
 **M-B3's answer, and it is not the one five milestones had been written around.** FR23 and FR27 both
 said a NAR compiled against an API Liquid does not provide is *silently never loaded* and the
@@ -245,10 +245,32 @@ is exactly the silent failure this feature exists to remove. The requirements st
 stronger than the one they carried, and every statement of the old mechanism was corrected —
 including the refusal `nar-build` prints to an agent, which would have carried the error onward.
 
-**Why it loads is inferred, not observed.** The missing class sits in a method signature and the JVM
-resolves those on first use, so NiFi's discovery never touches it. Nobody has triggered such a
-processor. `BACKLOG.md` carries it, along with the fact that nothing in the stack would notice a NAR
-of this kind arriving by hand.
+**Triggered on 2026-09-09, and the inference was wrong about when.** It does not wait for a flow. The
+processor is catalogued and selectable, and **adding it from the canvas fails**:
+`POST /nifi-api/process-groups/<id>/processors` answers **500** with
+`java.lang.NoClassDefFoundError: org/apache/nifi/controller/NodeConnectionState`. The predicted error
+was right; the predicted moment was not. It never reaches the canvas, so it never runs.
+
+**Two things came out of that which are worse than the original finding.**
+
+The error is written to **`nifi-user.log`**, not `nifi-app.log` — zero occurrences in the one every
+check in this repository reads, four in the one none of them did. *"The framework says nothing"* was
+a conclusion drawn from a single log, not an observation. Both §4 and `tests/verify/m-b3.sh` now read
+both.
+
+And **what the operator is told is false**. The UI turns the 500 into `/nifi/#/error`: *"Your session
+has expired. Please click on the Home button to renew the session."* It has not. The message sends
+them to authenticate again and retry, which reproduces the failure exactly. An operator meeting this
+has no path from what they are shown to what is wrong.
+
+**The control ran beside it and was flawless**: the same processor built against the resolved 2.10.0
+was added, started, and reached **4,114,541 invocations in five minutes** with no error and no
+bulletin. The two differ in one class.
+
+What stays open is a check at deployment time — the entrypoint already walks every `*.nar` into
+`lib/`, and the `javap` comparison §4 performs would turn a 500 with a misleading message into a
+refusal where an operator can act on it. It is in `BACKLOG.md`, along with the fact that nothing in
+the stack notices a NAR of this kind arriving by hand.
 
 **And the check that was supposed to prove this could not.** B3-2 was written as B3-1's control — the
 run that shows the check can fail. It cannot be, because it comes back listing its processor exactly
@@ -337,6 +359,13 @@ accumulating conversation; executing them is better served by a clean context an
 that exists only in a transcript has to be carried by hand, and that is where it is lost.
 
 ## What the failures taught
+
+**Look in the log the failure belongs to, not the one you know.** For a day this project recorded
+that a mismatched NAR is reported nowhere. It is reported — in `nifi-user.log`, by the web layer that
+refused the request, while `nifi-app.log` holds nothing. Every check here read `docker compose logs`
+and concluded silence, which is a claim about where we looked dressed up as a claim about the system.
+The same trap as *a suite is green about the paths it walks*, one layer over: **a log is quiet about
+the failures it does not receive.**
 
 **An explanation that fits every observation is not the cause.** On 2026-09-08 this document
 recorded, with confidence and a mechanism, why `volumes/_openclaw` would not delete: nested bind
@@ -466,9 +495,10 @@ route, and the pairing decision happens only after a browser signs a challenge.
    and its Maven cache is warm again; the four commands that got it there are in the branch table's
    discriminators above.
 
-   **Nobody has triggered a mismatched processor.** The `NoClassDefFoundError` that should follow is
-   inferred from how the JVM resolves method signatures, not observed. It is in `BACKLOG.md`, and it
-   is the one loose end M-B3 leaves.
+   ~~**Nobody has triggered a mismatched processor.**~~ — triggered 2026-09-09. It fails at
+   *instantiation*, not at trigger; the error lands in `nifi-user.log` where nothing looked; and the
+   operator is told their session expired. See *"A mismatched NAR loads, and then tells the operator
+   the wrong thing"* above.
 3. ~~**The repaired migration path had never been executed.**~~ — run 2026-09-09. A 2026.7.1 state
    was restored from `_openclaw.bak-2026.7.1` and `./scripts/linux/start.sh` migrated it with GNU
    `timeout` on `PATH`, which is the condition that produces the hang: `state migrated.` inside a
