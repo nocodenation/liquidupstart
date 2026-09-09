@@ -278,11 +278,15 @@ machine under `volumes/privacy-proxy/`.
 - **With the Claude subscription on** (`ENABLE_ANTHROPIC_CLAUDE_CODE=1`, section 8),
   `privacy-anthropic` runs through your Claude login, not the API key — exactly as OpenClaw's own
   `anthropic/*` does. The Anthropic key is then used only to list the catalogue.
-- **Knobs** (section 7): `PRIVACY_PROXY_GATE_MODE` (`log` notes a message that could still
-  identify someone, `block` refuses to send it), the optional local-LLM second pass and semantic
-  rewriting (section 6 endpoint), and the vault retention.
+- **How it is meant to run** (section 7): your local model (section 6) is part of every
+  message — it reads what the built-in detectors cannot, rewords what would still identify
+  someone, and judges every outgoing message for trickery. When a reworded message is still
+  too identifying, the proxy pauses and asks you in the chat (`PRIVACY_PROXY_SEMANTIC_MODE=
+  interactive`); the egress judge's verdict is recorded on every turn (`PRIVACY_PROXY_GATE_MODE=
+  log`) and the decision stays yours. The `0` / `off` values of those keys exist to debug the
+  built-in detectors on their own, not to run the product.
 - **What it catches, and when.** Built-in detectors (names, e-mails, phones, IBANs, ids,
-  dates) run on every message; the optional local-LLM second pass adds what a model notices on
+  dates) run on every message; the local-LLM second pass adds what a model notices on
   that call, which varies from call to call. Anything masked once stays masked for the whole
   conversation. For the terms that matter to you — project names, codes, study ids — name them
   on the settings page (`privacy.localhost`), which catches them on first sight instead of
