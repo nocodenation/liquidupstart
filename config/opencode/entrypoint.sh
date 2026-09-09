@@ -111,6 +111,55 @@ if [ -n "${OPENROUTER_API_KEY}" ]; then
     }"
 fi
 
+if [ -n "${PRIVACY_PROXY_URL:-}" ]; then
+    _discover_ids() {
+        _i=0
+        while [ "$_i" -lt 10 ]; do
+            _c="$(curl -s -o /tmp/privacy_models.json -w '%{http_code}' "$1" 2>/dev/null || true)"
+            [ "$_c" = "200" ] && { jq -r ".data[].id | select(test(\"${2:-.}\"))" /tmp/privacy_models.json 2>/dev/null; return; }
+            [ "$_c" = "401" ] && { echo "WARNING: ${1} -> HTTP 401: no key for that provider in .env section 5 — provider skipped." >&2; return; }
+            _i=$((_i + 1)); sleep 3
+        done
+        echo "WARNING: ${1} unreachable (HTTP ${_c}) — provider skipped." >&2
+    }
+    _privacy_provider() {
+        _map=""
+        for _m in $4; do
+            [ -z "$_map" ] || _map="${_map},"
+            _map="${_map}
+        \"${_m}\": {
+          \"name\": \"${1}: ${_m}\",
+          \"modalities\": {
+            \"input\": [\"text\", \"image\"],
+            \"output\": [\"text\"]
+          }
+        }"
+        done
+        [ -z "$_map" ] && return
+        _PROVIDERS="${_PROVIDERS},
+    \"${1}\": {
+      \"npm\": \"${2}\",
+      \"name\": \"${1}\",
+      \"options\": {
+        \"baseURL\": \"${3}\",
+        \"apiKey\": \"local-no-auth\",
+        \"timeout\": ${_TIMEOUT},
+        \"chunkTimeout\": ${_CHUNK_TIMEOUT}
+      },
+      \"models\": {${_map}
+      }
+    }"
+    }
+    _privacy_provider privacy-openai "@ai-sdk/openai-compatible" "${PRIVACY_PROXY_URL}/openai/v1" \
+        "$(_discover_ids "${PRIVACY_PROXY_URL}/openai/v1/models" "^(gpt-[0-9]|o[0-9]|chatgpt)" | grep -vE "audio|realtime|transcribe|tts|image|search|instruct|moderation|embed|-[0-9]{4}-[0-9]{2}-[0-9]{2}$")"
+    _privacy_provider privacy-anthropic "@ai-sdk/anthropic" "${PRIVACY_PROXY_URL}/anthropic" \
+        "$(_discover_ids "${PRIVACY_PROXY_URL}/anthropic/v1/models")"
+    if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
+        _privacy_provider privacy "@ai-sdk/openai-compatible" "${PRIVACY_PROXY_URL}/v1" \
+            "private-claude private-claude-opus private-claude-sonnet private-claude-fable"
+    fi
+fi
+
 # The providers below are resolved from the bundled models.dev registry (npm
 # package + base URL come from there), so only the apiKey is supplied — same as
 # the blocks above. Google accepts either GOOGLE_API_KEY or GEMINI_API_KEY.

@@ -1,6 +1,11 @@
 // "Finish" button target: reply, then exit so the installer container (--rm)
 // exits and run.sh continues.
-export function POST() {
+import { requireSameOrigin } from '$lib/server/origin';
+
+export function POST({ request }) {
+  const blocked = requireSameOrigin(request);
+  if (blocked) return blocked;
+
   setTimeout(() => process.exit(0), 250);
   return new Response(
     `<!doctype html>
