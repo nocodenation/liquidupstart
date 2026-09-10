@@ -154,6 +154,18 @@ fi
 # printed often enough that people stop reading warnings. The key is compose.yml's
 # network key, not the port-suffixed name it resolves to.
 LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
+# An existing network without the labels is not merely noisy, it is permanent:
+# compose refuses to remove a network it did not create, and the `create` below
+# never runs while `inspect` succeeds. So an unlabelled one is replaced here --
+# down.sh has already removed the containers, so nothing is attached. Met on
+# 2026-09-10, created by the first version of this very block.
+if docker network inspect "$LU_NETWORK" >/dev/null 2>&1; then
+  if [ -z "$(docker network inspect "$LU_NETWORK" \
+       --format '{{index .Labels "com.docker.compose.network"}}' 2>/dev/null)" ]; then
+    echo "Replacing ${LU_NETWORK}: it exists without compose labels, which compose will not clean up."
+    docker network rm "$LU_NETWORK" >/dev/null 2>&1 || true
+  fi
+fi
 docker network inspect "$LU_NETWORK" >/dev/null 2>&1 || docker network create \
   --label com.docker.compose.project=liquidupstart \
   --label com.docker.compose.network=nocodenation_liquid_upstart_network \

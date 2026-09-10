@@ -40,6 +40,11 @@ stackGuard(['openclaw-gateway']);
 const CONFIG = join(repoRoot, 'volumes/_openclaw/openclaw.json');
 const original = readFileSync(CONFIG, 'utf8');
 
+// Each of these two cases restarts the gateway and then waits for `openclaw
+// doctor`, which on a cold daemon took 91s against the suite-wide 60s bound on
+// 2026-09-10 — red for a reason that has nothing to do with the code, which is
+// how a suite teaches people to ignore red. Bounded per case rather than by
+// raising the default for everything.
 function restartWith(cfg: any): void {
   Bun.write(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
   compose(['restart', 'openclaw-gateway']);
@@ -65,12 +70,12 @@ describe('OC-31 the codex plugin error', () => {
     cfg.plugins.entries.codex = { enabled: true };
     restartWith(cfg);
     expect(doctorPluginErrors()).toContain('ERROR codex:');
-  });
+  }, 180_000);
 
   test('and with the key removed, as the start script now does, it reports none', () => {
     const cfg = JSON.parse(original);
     if (cfg.plugins?.entries) delete cfg.plugins.entries.codex;
     restartWith(cfg);
     expect(doctorPluginErrors()).not.toContain('ERROR codex:');
-  });
+  }, 180_000);
 });

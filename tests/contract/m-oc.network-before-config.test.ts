@@ -74,6 +74,21 @@ describe('OC-32 the network is created before the configuration is written', () 
     expect(stmt).toContain('com.docker.compose.network=nocodenation_liquid_upstart_network');
   });
 
+  test('and an existing network without those labels is replaced, not tolerated', () => {
+    // The labels are not only about noise. Compose refuses to remove a network it
+    // did not create, so an unlabelled one survives every `down` — while the
+    // `create` above never runs, because `inspect` succeeds. The first version of
+    // this repair produced exactly that on 2026-09-10: a stale network that
+    // nothing could clean up, keeping its own warning alive. The start replaces
+    // it, which is safe here because down.sh has already removed the containers.
+    expect(start).toContain('com.docker.compose.network');
+    expect(start).toMatch(/docker network rm "\$LU_NETWORK"/);
+    const rm = start.split('\n').findIndex((l) => l.includes('docker network rm "$LU_NETWORK"'));
+    const create = start.split('\n').findIndex((l) => l.includes('docker network create'));
+    expect(rm).toBeGreaterThan(-1);
+    expect(rm).toBeLessThan(create);
+  });
+
   test('and no block after `up` rewrites trustedProxies a second time', () => {
     // The race this removes: the correction and the gateway's own startup write,
     // which stamps meta.lastTouchedVersion and modelPolicy. Whichever lands last

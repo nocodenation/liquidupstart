@@ -132,3 +132,34 @@ describe('OC-37 a failing probe does not end the start in silence', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('OC-40 the embedded node programs survive the shell that carries them', () => {
+  // openclaw.sh passes JavaScript to `node -e '...'` inside SINGLE quotes, so one
+  // apostrophe in a comment ends the string early and node receives a truncated
+  // program: "Expected '}', got '<eof>'". It happened twice on 2026-09-10, both
+  // times in a comment explaining a repair — "the gateway's", "the operator's".
+  //
+  // Nothing else catches it. `bash -n` is happy, because the quotes still balance
+  // — just around different text. And the component case that runs this writer
+  // extracts the block and hands it to node in a FILE, which is the right way to
+  // test the program and the wrong way to test its transport. The break is in the
+  // shell, and only a check on the shell text sees it.
+  const blocks: { line: number; text: string }[] = [];
+  let open = false;
+  lines.forEach((text, i) => {
+    if (/-e '\s*$/.test(text)) { open = true; return; }
+    if (open && /^\s*'/.test(text)) { open = false; return; }
+    if (open) blocks.push({ line: i + 1, text });
+  });
+
+  test('the scan found the embedded programs', () => {
+    expect(blocks.length).toBeGreaterThan(20);
+  });
+
+  test('and none of them contains an apostrophe', () => {
+    const offenders = blocks
+      .filter(({ text }) => text.includes("'"))
+      .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
+    expect(offenders).toEqual([]);
+  });
+});
