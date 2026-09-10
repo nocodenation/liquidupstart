@@ -440,9 +440,28 @@ else
       // gateway.auth.identityScopes for the one configured identity.
       if (schemaNew) {
         delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
+        // The Control UI requests operator.admin among its default scopes, and
+        // this list is a CAP on what an auto-approval may grant -- not the set a
+        // device receives. Leave admin out and a fresh browser does not lose a
+        // few pages: it cannot connect at all. Measured 2026-09-10 by revoking
+        // the operator's device and reconnecting -- "Role upgrade pending, this
+        // browser is already known, but the requested access changed" -- and the
+        // recovery the UI names, `openclaw devices approve`, answers
+        // `unauthorized` from the gateway container and from openclaw-cli alike,
+        // because trusted-proxy auth wants a header the CLI does not send. There
+        // was no documented way back in.
+        //
+        // Granting it restores the posture 2026.7.1 had with
+        // dangerouslyDisableDeviceAuth, which the migration gave up by accident
+        // rather than by decision. It is not a new exposure: this stack's nginx
+        // authenticates nobody, it sets a constant X-Forwarded-User, so whoever
+        // reaches the proxy is already the operator. The gateway logs a SECURITY
+        // WARNING naming operator.admin when it is here, which is what OC-10
+        // asserts, and that warning is the honest record of the trade.
         c.gateway.auth.trustedProxy.deviceAutoApprove = {
           enabled: true,
           scopes: [
+            "operator.admin",
             "operator.read",
             "operator.write",
             "operator.talk",

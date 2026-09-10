@@ -136,6 +136,7 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove).toEqual({
       enabled: true,
       scopes: [
+        'operator.admin',
         'operator.read',
         'operator.write',
         'operator.talk',
@@ -146,9 +147,18 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     });
   });
 
-  test('OC-12 the scope set never contains operator.admin', () => {
-    // operator.admin makes doctor raise a critical finding by design (OC-10).
-    expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes).not.toContain('operator.admin');
+  test('OC-12 the scope set contains operator.admin, and that is the decision', () => {
+    // Reversed on 2026-09-10, by measurement rather than by preference. This list
+    // is a CAP on what an auto-approval may grant, and the Control UI requests
+    // operator.admin: without it a freshly approved browser does not lose pages,
+    // it cannot connect at all — "Role upgrade pending" — and the recovery the
+    // interface names answers `unauthorized` from every container that could run
+    // it. OC-38 is that measurement; §5.3 of the feature document carries the
+    // reasoning it overturned. The price is a SECURITY WARNING from the gateway,
+    // which OC-11 now requires to be present rather than absent: if it ever
+    // disappears, somebody has taken the scope back out and the next fresh
+    // browser is locked out.
+    expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes).toContain('operator.admin');
   });
 });
 

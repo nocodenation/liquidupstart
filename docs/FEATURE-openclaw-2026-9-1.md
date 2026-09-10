@@ -198,14 +198,47 @@ Two things make that defensible and one makes it dangerous:
   browser device with full admin, and requests without scopes receive full admin automatically.
   Remove `operator.admin` and grant admin per identity via `gateway.auth.identityScopes` instead."*
 
-**Proposal:** enable auto-approval with the **least scopes that make the Control UI usable**, and
-determine that set by measurement rather than by guessing. `operator.admin` is excluded unless a
-case proves the interface unusable without it, in which case it moves to `gateway.auth.identityScopes`
-for the single configured identity. The available scopes are `operator.read`, `operator.write`,
-`operator.talk`, `operator.pairing`, `operator.approvals`, `operator.questions`, `operator.admin`.
+**Decided by measurement on 2026-09-10, and it is the opposite of what was proposed here.** The
+proposal was the least scopes that make the Control UI usable, with `operator.admin` excluded *unless
+a case proves the interface unusable without it*. That case now exists, it was run, and it does not
+prove a degraded interface — it proves no interface at all.
+
+**What was measured.** With the six non-admin scopes configured, the operator's device was revoked
+from the Devices page and the browser reconnected. It did not lose the admin-gated pages; it did not
+connect:
+
+> *Role upgrade pending. This browser is already known, but the requested access changed and needs a
+> fresh approval.*
+
+The Control UI requests `operator.admin` among its default scopes, and this list is a **cap on what an
+auto-approval may grant**, not the set a device receives — so the upgrade stays pending forever. The
+gateway logs `security audit: device access upgrade requested reason=role-upgrade` on every attempt
+and nothing approves it.
+
+**And the documented way back does not work here.** The interface names
+`openclaw devices approve <id>`; it answers `unauthorized` from inside the gateway container **and**
+from `openclaw-cli`, which shares the gateway's network namespace, for the reason this section
+already gives above — `trusted-proxy` mode wants a header the CLI does not send. An operator who
+revokes their own device has no path back through any documented route.
+
+**Why the earlier measurement missed it.** The device in use had been granted `operator.admin` under
+2026.7.1's `dangerouslyDisableDeviceAuth` and kept it: `scopes: … operator.admin` on a configuration
+that never granted it, while `operator.talk` — which *was* configured — is absent from the same
+device. Every page worked, a `config.patch` write from the UI succeeded, and the interface looked
+sound. Only a **fresh** approval exercises the cap, and until 2026-09-10 nobody had asked for one.
+
+**So `operator.admin` is in `deviceAutoApprove.scopes`**, written by
+`config/scripts/start/openclaw.sh`. `gateway.auth.identityScopes` was tried first, as this section
+suggested, and changes nothing: it grants scopes to an identity, while what blocks is the cap on the
+device approval.
+
+The trade is stated rather than hidden. The gateway logs a SECURITY WARNING naming `operator.admin`
+whenever it is in this list, which is exactly what OC-10 asserts, and that warning is now expected
+output rather than a finding. It restores the posture 2026.7.1 had; the migration gave that up by
+accident, not by decision, and this is where the accident was found.
 
 This is the one place where the migration adds a security decision rather than a translation, and it
-is flagged here so it is reviewed as one.
+is flagged here so it is reviewed as one — now with the measurement that decided it.
 
 ### 5.4 Trusted proxy attribution · **already repaired, kept**
 

@@ -73,6 +73,7 @@ here; each is executed where its subject exists.
 | **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
 | **OC-36** | contract + unit | **negative** | `with_timeout` is never handed a shell function, because `timeout` cannot see one |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
+| **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
 
 ### Suite 2 — compatibility
 
@@ -435,4 +436,19 @@ then `trustedProxies = ["127.0.0.1/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0
 | **Expected** | Every `"$(…)"` assignment in the start scripts whose right-hand side may fail either tolerates the failure or is named as an exception with the reason a failure should stop the start. The message at lines 195 to 198 — *"Build the image first"* — must be reachable, which today it is not. |
 | **Unhappy** | The counterpart is that a probe which *should* abort the start is allowed to: the exception list is what distinguishes a decision from an oversight. |
 | **Covers** | OC-G4, F4 of the #11 review. |
+
+### OC-38 — the scopes are a cap, and a browser that is not capped in is locked out
+
+*Timur's F3, measured on 2026-09-10. It is the case §5.3 of the feature document asked for and did
+not have: "operator.admin is excluded unless a case proves the interface unusable without it."*
+
+| | |
+|---|---|
+| **Premise** | The Control UI requests `operator.admin` among its default scopes. `deviceAutoApprove.scopes` is a **cap on what an approval may grant**, not the set a device receives. Leave admin out and the effect is not a degraded interface — the approval never completes. |
+| **Component** | The gateway's device approval, through the browser. Manual: it requires revoking a device and reconnecting, and a wrong turn locks the operator out of the UI. |
+| **Test data** | The six non-admin scopes as `config/scripts/start/openclaw.sh` wrote them until 2026-09-10 — `operator.read, write, talk, pairing, approvals, questions` — against a browser whose device has been revoked from the Devices page. |
+| **Expected, and measured** | The browser does **not** connect. It shows *"Role upgrade pending. This browser is already known, but the requested access changed and needs a fresh approval."* The gateway logs `security audit: device access upgrade requested reason=role-upgrade device=<id>` on each attempt and never approves. With `operator.admin` added to the cap and the gateway restarted, a **new** device — a private window, since revocation is sticky per device — connects, and the gateway logs `SECURITY WARNING: gateway.auth.trustedProxy.deviceAutoApprove.scopes includes operator.admin`, which is what OC-10 asserts. |
+| **What must not be trusted** | An existing device. The one in use on 2026-09-10 carried `operator.admin` from a grant made under 2026.7.1's `dangerouslyDisableDeviceAuth` and kept it — while `operator.talk`, which *was* configured, was absent from the same device. Every page worked and a `config.patch` write from the UI succeeded. **Only a fresh approval exercises the cap.** A run that checks the interface with the device it already has proves nothing, which is why this went unnoticed through the whole migration. |
+| **The recovery is part of the case** | The interface names `openclaw devices approve <id>`. It answers `unauthorized` from inside the gateway container and from `openclaw-cli`, which shares the gateway's network namespace: `trusted-proxy` mode wants a header the CLI does not send. `gateway.auth.identityScopes` was tried and changes nothing — it grants scopes to an identity, while what blocks is the cap on the approval. The way back is to add the scope to the cap, restart the gateway, and connect from a browser with no stored device identity. Anyone running this case should know that before running it. |
+| **Covers** | OC-G1, OC-G3, F3 of the #11 review, §5.3. |
 

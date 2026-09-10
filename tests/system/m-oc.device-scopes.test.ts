@@ -87,18 +87,29 @@ afterAll(() => {
 });
 
 describe('OC-11 the scopes we grant', () => {
-  test('auto-approval is on, and operator.admin is not among the scopes', () => {
+  test('auto-approval is on, and operator.admin is among the scopes', () => {
+    // Reversed on 2026-09-10 by OC-38, which measured what the old assertion
+    // protected: with admin left out, a freshly approved browser does not lose
+    // the admin-gated pages — it cannot connect at all, and no documented
+    // recovery works. The list is a cap on what an approval may grant, and the
+    // Control UI asks for admin.
     const d = readConfig().gateway.auth.trustedProxy.deviceAutoApprove;
     expect(d.enabled).toBe(true);
-    expect(d.scopes).not.toContain('operator.admin');
+    expect(d.scopes).toContain('operator.admin');
     expect(d.scopes.length).toBeGreaterThan(0);
   });
 
-  test('OC-11 the gateway raises no admin warning with the scopes we write', () => {
-    // The positive counterpart to OC-10. Restarted here so the log line, if it
-    // were coming, would be recent rather than left over from another case.
+  test('OC-11 the gateway raises the admin warning, and it stays visible', () => {
+    // This is not the old assertion turned around. It used to require the
+    // warning's ABSENCE as the guard against granting admin by accident; that
+    // decision is reversed, so the guard has to be too. Requiring its PRESENCE
+    // is what notices the reversal being undone: if the line disappears,
+    // somebody has taken operator.admin back out of the cap, and the next
+    // browser without a stored device identity is locked out with no way back.
+    // The warning is the price of the decision, and a price nobody can see is
+    // one nobody weighs.
     const since = writeConfig(readConfig());
-    expect(gatewayLogSince(since)).not.toContain('deviceAutoApprove.scopes includes operator.admin');
+    expect(gatewayLogSince(since)).toContain('deviceAutoApprove.scopes includes operator.admin');
   });
 
   test('OC-11 doctor reports no critical finding against the live configuration', () => {
