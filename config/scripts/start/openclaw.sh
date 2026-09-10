@@ -18,6 +18,19 @@ sed_inplace() {
   fi
 }
 
+# Bound a command (mirrors config/scripts/start/git.sh). Exit 124 means it hit
+# the limit. Without coreutils' timeout the command runs unbounded, as there.
+with_timeout() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$secs" "$@"
+  else
+    "$@"
+  fi
+}
+
 # Read a KEY=value from the project-root .env (empty if unset).
 # `|| true`: a missing key makes grep exit 1, aborting under set -e/pipefail.
 get_env() {
@@ -116,9 +129,9 @@ fi
 #      trustworthy because nothing but the proxy/CLI can reach the gateway.
 #   2. gateway.controlUi.allowedOrigins=["*"] — otherwise the dashboard's WebSocket
 #      origin is rejected. Safe (only a CSRF-style guard); no env var exists.
-#   3. gateway.controlUi.dangerouslyDisableDeviceAuth — behind the proxy the gateway
-#      sees the proxy IP not localhost, so allowInsecureAuth (localhost-only) can't
-#      apply and every browser would otherwise be forced to pair.
+#   3. removal of keys OpenClaw 2026.9.1 retired (see below) — the config is
+#      rewritten every start, so an upgraded install self-heals instead of
+#      tripping the validator.
 #   4. per-backend provider/runtime wiring — each enabled backend routes its
 #      provider/* through the right runtime and adds it to the picker. No primary
 #      model is pinned; the user chooses the model in OpenClaw's UI.
@@ -218,8 +231,19 @@ else
 
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
+  # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute, and
+  # demands a narrow gateway.trustedProxies. This stack's own docker network is
+  # narrow enough; the three RFC1918 ranges written until 2026-09-05 are not.
+  # Empty on a cold start, where the network does not exist until `docker compose
+  # up` -- start.sh corrects the config after that and restarts the gateway.
+  LU_NETWORK_SUBNET="$(docker network ls --filter name=nocodenation_liquid_upstart_network \
+      --format '{{.Name}}' | head -1 \
+      | xargs -r -I{} docker network inspect {} \
+          --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
+
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
+    -e LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
@@ -249,14 +273,16 @@ else
       c.gateway.auth.trustedProxy = c.gateway.auth.trustedProxy || {};
       c.gateway.auth.trustedProxy.userHeader = "x-forwarded-user";
       c.gateway.auth.trustedProxy.allowLoopback = true;
-      c.gateway.trustedProxies = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
+      c.gateway.trustedProxies = process.env.LU_NETWORK_SUBNET
+        ? ["127.0.0.1/32", process.env.LU_NETWORK_SUBNET]
+        : ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
 
       // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};
       c.gateway.controlUi.allowedOrigins = ["*"];
 
-      // Disable per-browser device pairing (see header comment): allowInsecureAuth
-      // is localhost-only and useless behind the proxy.
+      // Retired in OpenClaw 2026.9.1 (accepted by the schema, ignored at runtime,
+      // and reported by doctor). Control UI browsers pair through the device flow.
       c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
 
       // Per-backend provider/runtime wiring. No primary model is pinned; each
@@ -276,8 +302,10 @@ else
       if (enableClaudeCli) {
         c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
         c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
-        // Run the CLI through our wrapper, which re-injects CLAUDE_CONFIG_DIR,
-        // IS_SANDBOX, and an optional OAuth token that OpenClaw otherwise strips.
+        // The bundled anthropic plugin registers the claude-cli backend itself and
+        // hardcodes `command: "claude"`; 2026.9.1 dropped agents.defaults.cliBackends
+        // and offers no replacement knob. The wrapper is applied in the image instead,
+        // as the `claude` first on PATH (config/openclaw/templates/Dockerfile).
         c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
         c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
         c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
@@ -340,7 +368,9 @@ else
       }
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
-      // memorySearch at github-copilot.
+      // memory search at github-copilot. 2026.7.1 reads agents.defaults.memorySearch;
+      // 2026.9.1 moved it to the top-level memory.search, which is why the base
+      // image is pinned rather than followed.
       if (enableCopilot) {
         c.gateway = c.gateway || {};
         c.gateway.http = c.gateway.http || {};
@@ -432,7 +462,6 @@ else
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
       console.log("openclaw.json: auth.mode =", c.gateway.auth.mode, "; trustedProxies =", JSON.stringify(c.gateway.trustedProxies));
       console.log("openclaw.json: allowedOrigins =", JSON.stringify(c.gateway.controlUi.allowedOrigins));
-      console.log("openclaw.json: dangerouslyDisableDeviceAuth =", c.gateway.controlUi.dangerouslyDisableDeviceAuth);
       if (pluginPaths.length) {
         console.log("openclaw.json: plugins.load.paths =", JSON.stringify(c.plugins.load.paths));
       }
@@ -450,7 +479,7 @@ else
       }
       if (enableCopilot) {
         console.log("openclaw.json: routed github-copilot/* through the copilot runtime");
-        console.log("openclaw.json: enabled gateway /v1/embeddings + memorySearch.provider = github-copilot (model", c.agents.defaults.memorySearch.model + ") for RAG embeddings");
+        console.log("openclaw.json: enabled gateway /v1/embeddings + memory.search.provider = github-copilot (model", c.memory.search.model + ") for RAG embeddings");
       }
       if (enableCodex) {
         console.log("openclaw.json: routed openai/* through the codex runtime");
@@ -497,19 +526,42 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   # Run the bundled claude through the wrapper in a throwaway container with the
   # credential volume mounted (no gateway needed). First arg is extra `docker run`
   # flags (e.g. "-it"); the rest are passed to claude.
+  CLAUDE_RUN_ARGS=(
+    --user 0:0
+    -e HOME=/home/node
+    -v "${CLAUDE_DIR}:/home/node/.claude"
+    --entrypoint /usr/local/bin/openclaw-claude
+    "${OPENCLAW_IMAGE}"
+  )
+
   claude_cli() {
     local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} --user 0:0 \
-      -e HOME=/home/node \
-      -v "${CLAUDE_DIR}:/home/node/.claude" \
-      --entrypoint /usr/local/bin/openclaw-claude \
-      "${OPENCLAW_IMAGE}" "$@"
+    docker run --rm ${docker_flags} "${CLAUDE_RUN_ARGS[@]}" "$@"
+  }
+
+  # Same, but bounded: no unattended step may wait forever on input that cannot
+  # arrive. `timeout` only kills the docker client, so name the container and
+  # force-remove it — otherwise it keeps running and holding the state dir.
+  claude_cli_bounded() {
+    local secs="$1" docker_flags="$2"; shift 2
+    local name="openclaw-claude-step-$$-${RANDOM}" rc=0
+    with_timeout "$secs" docker run --rm --name "$name" ${docker_flags} \
+      "${CLAUDE_RUN_ARGS[@]}" "$@" || rc=$?
+    if (( rc == 124 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
+    return $rc
   }
 
   if [[ -n "$OAUTH_TOKEN" ]]; then
     echo "Claude CLI: using CLAUDE_CODE_OAUTH_TOKEN from .env (forwarded to the CLI; no interactive login needed)."
-  elif claude_cli "" auth status >/dev/null 2>&1; then
+  elif claude_cli_bounded 60 "" auth status >/dev/null 2>&1; then
     echo "Claude CLI: already authenticated (login persists in ${CLAUDE_DIR})."
+  elif ! claude_cli_bounded 60 "" --version >/dev/null 2>&1; then
+    echo "Claude CLI: the binary in ${OPENCLAW_IMAGE} does not run — sign-in skipped." >&2
+    echo "  'auth status' fails both when unauthenticated and when the CLI is broken;" >&2
+    echo "  this is the second case, so there is nothing to sign in to." >&2
+    echo "  Rebuild the image, then start again:" >&2
+    echo "    ./config/scripts/build/openclaw.sh" >&2
+    echo "  OpenClaw requests will fail until this is fixed." >&2
   elif [[ -t 0 && -t 1 ]]; then
     echo "Claude CLI: not authenticated — starting interactive Claude Code sign-in."
     echo "  A sign-in URL appears below. Open it, authorize, then paste the code here."
@@ -559,7 +611,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       return $rc
     }
 
-    if login_with_masked_paste || claude_cli "" auth status >/dev/null 2>&1; then
+    if login_with_masked_paste || claude_cli_bounded 60 "" auth status >/dev/null 2>&1; then
       echo "Claude CLI: login complete."
     elif claude_cli "-it" auth login --claudeai; then
       # Fallback when masked-paste didn't complete: run claude's own login directly.
@@ -593,7 +645,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "" >&2
 
     _deadline=$(( $(date +%s) + 900 ))
-    until claude_cli "" auth status >/dev/null 2>&1; do
+    until claude_cli_bounded 60 "" auth status >/dev/null 2>&1; do
       if (( $(date +%s) >= _deadline )); then
         echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
         echo "  Anthropic models won't be listed until you sign in and start again." >&2
@@ -601,11 +653,16 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       fi
       sleep 8
     done
-    claude_cli "" auth status >/dev/null 2>&1 && echo "Claude CLI: sign-in detected — continuing startup."
+    claude_cli_bounded 60 "" auth status >/dev/null 2>&1 && echo "Claude CLI: sign-in detected — continuing startup."
   fi
 
+  # `models auth login` refuses to run without a TTY, so it gets a pty from
+  # `script`. That pty is also what lets OpenClaw offer interactive prompts (e.g.
+  # 'Run "openclaw doctor --fix" now? [Y/n]' on a config it rejects) that nothing
+  # can answer here — hence the timeout and the forced container removal.
   register_anthropic_cli_profile() {
-    docker run --rm --user 0:0 \
+    local name="openclaw-anthropic-profile-$$" rc=0
+    with_timeout 240 docker run --rm --name "$name" --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -617,14 +674,25 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       --entrypoint script \
       "${OPENCLAW_IMAGE}" -qec \
-      'openclaw models auth login --provider anthropic --method cli' /dev/null
+      'openclaw models auth login --provider anthropic --method cli' /dev/null < /dev/null || rc=$?
+    if (( rc == 124 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
+    return $rc
   }
 
-  if [[ -n "$OAUTH_TOKEN" ]] || claude_cli "" auth status >/dev/null 2>&1; then
-    if register_anthropic_cli_profile >/dev/null 2>&1; then
+  if [[ -n "$OAUTH_TOKEN" ]] || claude_cli_bounded 60 "" auth status >/dev/null 2>&1; then
+    _reg_rc=0
+    register_anthropic_cli_profile >/dev/null 2>&1 || _reg_rc=$?
+    if (( _reg_rc == 0 )); then
       echo "Claude CLI: registered Anthropic auth profile in OpenClaw (anthropic/* models now appear in the picker)."
     else
-      echo "Warning: could not register the Anthropic auth profile in OpenClaw; Claude models may not appear in the picker." >&2
+      if (( _reg_rc == 124 )); then
+        echo "Warning: registering the Anthropic auth profile timed out after 240s and was aborted." >&2
+        echo "  It most likely stopped on an interactive prompt; check 'openclaw config validate'." >&2
+      else
+        echo "Warning: could not register the Anthropic auth profile in OpenClaw (exit ${_reg_rc})." >&2
+      fi
+      echo "  Claude models may not appear in the picker. Retry after startup:" >&2
+      echo "    docker compose exec -it openclaw-gateway openclaw models auth login --provider anthropic --method cli" >&2
     fi
   fi
 
@@ -634,9 +702,13 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   # is NOT in bundleMcp mode (default); bundleMcp forces --strict-mcp-config and
   # ignores user scope.
   CLAUDE_MCP_JSON='{"type":"stdio","command":"node","args":["/home/node/.claude-tools/ingest-pdf/dist/index.mjs"]}'
-  claude_cli "" mcp remove -s user ingest-pdf >/dev/null 2>&1 || true
-  if claude_cli "" mcp add-json -s user ingest-pdf "$CLAUDE_MCP_JSON" >/dev/null 2>&1; then
+  claude_cli_bounded 120 "" mcp remove -s user ingest-pdf >/dev/null 2>&1 || true
+  _mcp_rc=0
+  claude_cli_bounded 120 "" mcp add-json -s user ingest-pdf "$CLAUDE_MCP_JSON" >/dev/null 2>&1 || _mcp_rc=$?
+  if (( _mcp_rc == 0 )); then
     echo "Claude CLI: registered ingest_pdf MCP tool (user scope)."
+  elif (( _mcp_rc == 124 )); then
+    echo "Warning: registering the ingest_pdf MCP tool timed out after 120s; it will be unavailable to claude." >&2
   else
     echo "Warning: failed to register the ingest_pdf MCP tool; it will be unavailable to claude." >&2
   fi

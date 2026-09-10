@@ -281,6 +281,13 @@ services:
     extra_hosts:
       - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
     environment:
+      GIT_SSH_COMMAND: "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |') -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+      GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
+      GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_AUTHOR_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
+      GIT_COMMITTER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_COMMITTER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       OPENCODE_SERVER_PORT: "4096"
       OPENCODE_USERNAME: ${OPENCODE_USERNAME:-}
       OPENCODE_PASSWORD: ${OPENCODE_PASSWORD:-}
@@ -303,8 +310,13 @@ services:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
     volumes:
+      - ./volumes/_git-secrets:/git-secrets
+      - ./volumes/_git-secrets/gitconfig:/etc/gitconfig:ro
+      - ./volumes/repos:/repos
       - ./config/agents/instructions.md:/opencode/instructions.md:ro
       - ./config/agents/skills:/root/.config/opencode/skills
+      - ./config/agents/bin/git-repo-info.sh:/usr/local/bin/git-repo-info:ro
+      - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro
       - ./config/opencode/package.json:/root/.config/opencode/package.json
       - ./config/opencode/tools:/root/.config/opencode/tools:ro
       - ./volumes/logs/postgres:/logs/postgres:ro
@@ -691,6 +703,13 @@ services:
       - path: config/openclaw/.env
         required: false
     environment:
+      GIT_SSH_COMMAND: "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |') -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+      GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
+      GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_AUTHOR_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
+      GIT_COMMITTER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_COMMITTER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       HOME: /home/node
       OPENCLAW_HOME: /home/node
       TERM: xterm-256color
@@ -726,11 +745,16 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
+      - ./volumes/_git-secrets:/git-secrets
+      - ./volumes/_git-secrets/gitconfig:/etc/gitconfig:ro
+      - ./volumes/repos:/repos
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
       - ./volumes/_openclaw-claude:/home/node/.claude
       - ./config/agents/skills:/home/node/.claude/skills:ro
+      - ./config/agents/bin/git-repo-info.sh:/usr/local/bin/git-repo-info:ro
+      - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
@@ -796,6 +820,13 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      GIT_SSH_COMMAND: "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |') -o IdentitiesOnly=yes -o UserKnownHostsFile=/git-secrets/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
+      GIT_USER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
+      GIT_AUTHOR_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_AUTHOR_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
+      GIT_COMMITTER_NAME: ${GIT_USER_NAME:-Liquid Upstart Agent}
+      GIT_COMMITTER_EMAIL: ${GIT_USER_EMAIL:-agent@liquidupstart.local}
       HOME: /home/node
       OPENCLAW_HOME: /home/node
       TERM: xterm-256color
@@ -823,11 +854,16 @@ services:
       LIQUID_KEYSTORE_PASSWORD: ${LIQUID_KEYSTORE_PASSWORD}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
     volumes:
+      - ./volumes/_git-secrets:/git-secrets
+      - ./volumes/_git-secrets/gitconfig:/etc/gitconfig:ro
+      - ./volumes/repos:/repos
       - ./volumes/_openclaw:/home/node/.openclaw
       - ./volumes/_openclaw/workspace:/home/node/.openclaw/workspace
       - ./volumes/_openclaw-auth-profile-secrets:/home/node/.config/openclaw
       - ./volumes/_openclaw-claude:/home/node/.claude
       - ./config/agents/skills:/home/node/.claude/skills:ro
+      - ./config/agents/bin/git-repo-info.sh:/usr/local/bin/git-repo-info:ro
+      - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
