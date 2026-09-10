@@ -68,7 +68,7 @@ here; each is executed where its subject exists.
 | **OC-30** | system | **negative** | The acceptance sweep reports a crash-looping service as a failure, whenever it is sampled |
 | **OC-31** | component + system | **negative** | A plugin 2026.9.1 enables by itself, and cannot load, does not stay enabled — and the removal is what silences the error |
 | **OC-32** | contract | positive | The stack's network exists before `openclaw.sh` writes the configuration, so one writer suffices |
-| **OC-33** | system | **negative** | A start on a host with nothing foreign on the network never writes the wide RFC1918 list, and prints no narrowing line |
+| **OC-33** | system, **manual** | **negative** | A start on a host with nothing foreign on the network never writes the wide RFC1918 list, and prints no narrowing line |
 | **OC-34** | contract | **negative** | No `docker compose restart` in the start scripts drags its dependants along |
 | **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
 
@@ -337,6 +337,48 @@ the released stack, belongs in a repair cut from `main`, and is recorded in
 | **Expected** | OC-32: the network is created before `openclaw.sh` is invoked, and no post-`up` narrowing block remains. OC-33: after a start, `gateway.trustedProxies` is exactly `["127.0.0.1/32", "<the stack's subnet>"]`, the run's output contains **no** narrowing line, and the gateway was not restarted after `up` — its `StartedAt` is not later than the services `up` brought with it. |
 | **Precondition OC-33 must assert, not assume** | That **no container outside this branch's `compose.yml` is attached to the network** before the start. On 2026-09-10 the defect was invisible across two full starts because `nar_builder`, an orphan from `feature/liquid-java-extensions`, held the network open: `docker compose down` reported `Resource is still in use`, the network survived, the lookup succeeded, and the wide list was never written. Three explanations were offered for that and the first two were wrong. A case that does not assert the precondition will one day report this defect as fixed when it is merely hidden. |
 | **Covers** | OC-G3, F2 of the #11 review. |
+
+**OC-33, run by hand.** It needs a full `start.sh`, which tears the whole stack down; no other system
+case does that, so it stays out of the suite for the same reason OC-20 and OC-28 do.
+
+```bash
+cd /Users/christof/repos/liquidupstart
+source .env
+
+# The precondition, asserted rather than assumed. Anything on the network that
+# this branch's compose.yml does not declare keeps `down` from removing it, the
+# lookup then succeeds, and the defect is invisible. That is what happened on
+# 2026-09-10, twice, before it was noticed.
+NET="nocodenation_liquid_upstart_network_${SYSTEM_HTTP_PORT:-8888}"
+docker network inspect "$NET" --format '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' 2>/dev/null \
+  | grep -v '^$' | sort > /tmp/oc33-onnet.txt
+docker compose config --services | sort > /tmp/oc33-declared.txt
+comm -23 /tmp/oc33-onnet.txt /tmp/oc33-declared.txt
+# Expect no output. Anything listed is an orphan: remove it before going on,
+# or this check reports a defect as absent that is merely hidden.
+
+./scripts/linux/start.sh 2>&1 | tee /tmp/oc33.log
+
+grep -c 'Narrowing OpenClaw trustedProxies' /tmp/oc33.log        # expect 0
+grep -o 'trustedProxies = \[[^]]*\]' /tmp/oc33.log              # expect the stack subnet, not RFC1918
+python3 - <<'EOF'
+import json
+d = json.load(open('volumes/_openclaw/openclaw.json'))
+print('trustedProxies:', d['gateway']['trustedProxies'])
+EOF
+# Expect ["127.0.0.1/32", "<this stack's subnet>"] and nothing wider.
+
+# And the gateway was not restarted after `up`: its StartedAt is not later than
+# a service `up` brought with it.
+for c in postgres proxy openclaw-gateway; do
+  printf '%-18s %s\n' "$c" "$(docker inspect -f '{{.State.StartedAt}}' "$(docker compose ps -q $c)")"
+done
+```
+
+**What the run of 2026-09-10 produced before the repair**, for comparison: `Network ... Removed`,
+then `trustedProxies = ["127.0.0.1/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]`, then
+`Narrowing OpenClaw trustedProxies to 172.18.0.0/16 (the network exists only now)...`, and
+`proxy` restarted at `08:17:13` against `postgres` at `08:16:13`.
 
 ### OC-34 — a restart that takes the proxy with it
 

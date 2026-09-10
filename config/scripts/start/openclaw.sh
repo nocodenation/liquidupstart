@@ -339,12 +339,17 @@ else
   # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute, and
   # demands a narrow gateway.trustedProxies. This stack's own docker network is
   # narrow enough; the three RFC1918 ranges written until 2026-09-05 are not.
-  # Empty on a cold start, where the network does not exist until `docker compose
-  # up` -- start.sh corrects the config after that and restarts the gateway.
-  LU_NETWORK_SUBNET="$(docker network ls --filter name=nocodenation_liquid_upstart_network \
-      --format '{{.Name}}' | head -1 \
-      | xargs -r -I{} docker network inspect {} \
-          --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
+  # start.sh creates this network before calling us, so the lookup is expected to
+  # succeed and the wide fallback below is for a hand-run of this script alone.
+  # Inspect the exact name: `--filter name=` is a substring match, so a leftover
+  # network from another port or a second checkout sorts first and its subnet
+  # would be written instead. And take the first IPAM entry rather than
+  # concatenating them -- a dual-stack network yields two, which joined with no
+  # separator make one bogus CIDR.
+  LU_HTTP_PORT="$(get_env SYSTEM_HTTP_PORT)"
+  LU_NETWORK_NAME="nocodenation_liquid_upstart_network_${LU_HTTP_PORT:-8888}"
+  LU_NETWORK_SUBNET="$(docker network inspect "$LU_NETWORK_NAME" \
+      --format '{{(index .IPAM.Config 0).Subnet}}' 2>/dev/null || true)"
 
   # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
   # relocated agents.defaults.memorySearch to memory.search, and retired
