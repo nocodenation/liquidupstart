@@ -62,20 +62,11 @@ Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-r
 
 ## Writing into files
 
-**Write code with ZERO comments by default.** This applies everywhere — new files, edits,
-config (compose.yml, .env, YAML), shell scripts, and subtle one-off workarounds. Do NOT add:
-- explanatory or "why" comments, even a single line;
-- multi-line rationale blocks above tricky code;
-- section headers, banners, or "what this does" notes.
-
-Assume a senior developer reads the code and understands it without hand-holding. If
-something is genuinely non-obvious, explain it in the chat reply — never in the file. Add a
-comment ONLY when the user explicitly asks for one. When in doubt, no comment.
-
-**One carve-out: test files.** Every test file opens with a documented header block (purpose,
-given/when/then, requirements covered) — see `docs/TEST-SPEC-git-integration.md` §4.2. The
-zero-comment rule still governs the body of the test and all implementation code; the header
-is the exception, because a reviewer must understand what a test proves without reading it.
+**Every test file opens with a documented header block** — purpose, given/when/then, requirements
+covered; see `docs/TEST-SPEC-git-integration.md` §4.2. A reviewer has to be able to understand what a
+test proves without reading its body, and a one-line name does not carry that. This is a
+documentation requirement rather than a comment style, and it is the one place in the repository
+where the block is mandatory rather than a matter of density.
 
 ## Development rules
 
