@@ -60,6 +60,20 @@ describe('OC-32 the network is created before the configuration is written', () 
     expect(call).toBeLessThan(up);
   });
 
+  test('the network it creates is labelled the way compose labels its own', () => {
+    // Without these, every later compose command warns that the network "exists
+    // but was not created by compose" — true, useless, and frequent enough to
+    // train people past warnings. Found on 2026-09-10 as a side effect of the
+    // repair above: creating the network by hand fixed one noise and made
+    // another. The key is compose.yml's network key, not the port-suffixed name.
+    const create = start.split('\n').find((l) => l.includes('docker network create'));
+    const idx = start.split('\n').findIndex((l) => l.includes('docker network create'));
+    const stmt = start.split('\n').slice(idx, idx + 5).join('\n');
+    expect({ found: Boolean(create) }).toEqual({ found: true });
+    expect(stmt).toContain('com.docker.compose.project=liquidupstart');
+    expect(stmt).toContain('com.docker.compose.network=nocodenation_liquid_upstart_network');
+  });
+
   test('and no block after `up` rewrites trustedProxies a second time', () => {
     // The race this removes: the correction and the gateway's own startup write,
     // which stamps meta.lastTouchedVersion and modelPolicy. Whichever lands last

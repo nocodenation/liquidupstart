@@ -25,31 +25,41 @@ import { repoRoot } from '../lib/paths';
 
 const SCRIPT = 'config/scripts/start/openclaw.sh';
 
-// Source only the helper definitions: the script's body needs .env and a stack.
-function probe(image: string): { code: number; out: string } {
-  const snippet = `
-    set -uo pipefail
-    eval "$(sed -n '/^with_timeout() {/,/^}/p;/^openclaw_version() {/,/^}/p;/^version_at_least() {/,/^}/p' ${SCRIPT})"
-    OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
-    openclaw_version ${JSON.stringify(image)}
-  `;
-  const r = sh(['bash', '-c', snippet], repoRoot);
-  return { code: r.code, out: r.stdout.trim() };
+/**
+ * OC-17/18 parse a string; they do not need an image, and until 2026-09-10 they
+ * pulled one. A unit-tier file ran the real probe against
+ * ghcr.io/openclaw/openclaw:2026.7.1 and :2026.9.1, several gigabytes each, with
+ * no `--pull never` — while `tests/run.sh` classifies `unit/` as needing no
+ * stack. On a host without them cached the pull outruns the 60s bound, timeout
+ * kills the client, `|| return 0` yields an empty string, and the case reports
+ * `expected '2026.7.1', received ''` — which reads as a broken parser rather
+ * than a missing image. Timur's F9 in the #11 review.
+ *
+ * The parsing is the decision, so it is asserted against the exact strings the
+ * two versions print. The probe against real images is a different tier and
+ * lives in tests/integration/m-oc.version-probe-images.test.ts, where needing
+ * docker is declared rather than smuggled in.
+ */
+function parse(line: string): string {
+  const snippet = `printf '%s\n' ${JSON.stringify(line)} | sed -n 's/^OpenClaw \\([0-9][0-9.]*\\).*$/\\1/p'`;
+  return sh(['bash', '-c', snippet], repoRoot).stdout.trim();
 }
 
-describe('OC-17/18/19 the version probe', () => {
-  test('OC-17 reports 2026.9.1 for the 2026.9.1 image, tolerating its commit suffix', () => {
-    // 2026.9.1 prints "OpenClaw 2026.9.1 (ad6fe23)"; the parser must not keep the hash.
-    expect(probe('ghcr.io/openclaw/openclaw:2026.9.1').out).toBe('2026.9.1');
+describe('OC-17/18 the version line is parsed, not guessed', () => {
+  test('OC-17 keeps the version and drops the commit suffix 2026.9.1 prints', () => {
+    expect(parse('OpenClaw 2026.9.1 (ad6fe23)')).toBe('2026.9.1');
   });
 
-  test('OC-18 reports 2026.7.1 for the 2026.7.1 image', () => {
-    expect(probe('ghcr.io/openclaw/openclaw:2026.7.1').out).toBe('2026.7.1');
+  test('OC-18 reads the bare form 2026.7.1 prints', () => {
+    expect(parse('OpenClaw 2026.7.1')).toBe('2026.7.1');
   });
 
-  test('OC-19 reports nothing for an image that cannot be identified', () => {
-    // A tag no registry can supply by accident.
-    expect(probe('ghcr.io/openclaw/openclaw:0.0.0-does-not-exist').out).toBe('');
+  test('OC-19 yields nothing for a line that is not a version line', () => {
+    // The property the whole migration rests on: no version rather than a wrong
+    // one. A probe that falls back to a default reproduces the September hang.
+    expect(parse('Error: No such image')).toBe('');
+    expect(parse('')).toBe('');
+    expect(parse('OpenClaw')).toBe('');
   });
 });
 

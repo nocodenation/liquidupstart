@@ -230,8 +230,16 @@ describe('OC-31 a plugin the operator did not ask for does not stay enabled', ()
     // and gone from the 2026.9.1 one. The operator sees a permanent plugin error
     // for a feature they switched off.
     const dir = mkdtempSync(join(workRoot, 'codex-'));
+    // The route is the part that matters, and it was missing from this fixture:
+    // agents.defaults.models["openai/*"].agentRuntime.id === "codex" is what
+    // makes the gateway re-enable the plugin on the next boot, and a config
+    // holding only the entry could never show that. OC-39 is the assertion.
     writeFileSync(join(dir, 'openclaw.json'), JSON.stringify({
       plugins: { entries: { codex: { enabled: true }, xai: { enabled: true } } },
+      agents: { defaults: { models: {
+        'openai/*': { agentRuntime: { id: 'codex' } },
+        'xai/*': { agentRuntime: { id: 'xai' } },
+      } } },
     }));
     writeFileSync(join(dir, 'writer.js'), program);
     const r = sh([
@@ -245,8 +253,15 @@ describe('OC-31 a plugin the operator did not ask for does not stay enabled', ()
     ]);
     expect(r.code).toBe(0);
     const cfg = JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
-    expect(cfg.plugins?.entries?.codex).toBeUndefined();
-    expect(cfg.plugins?.entries?.xai).toBeUndefined();
+    // OC-39. Deleting the entry does not stop the re-enable: the gateway runs
+    // applyPluginAutoEnable on every boot and takes any harness named by an
+    // agentRuntime route as a candidate, and the only skip in the built image is
+    // an explicit `enabled === false`. So both halves are required — the route is
+    // gone, and the decision is recorded where the auto-enable reads it.
+    expect(cfg.agents?.defaults?.models?.['openai/*']).toBeUndefined();
+    expect(cfg.agents?.defaults?.models?.['xai/*']).toBeUndefined();
+    expect(cfg.plugins?.entries?.codex).toEqual({ enabled: false });
+    expect(cfg.plugins?.entries?.xai).toEqual({ enabled: false });
   });
 
   test('OC-31 and it stays enabled when the operator did ask for it', () => {

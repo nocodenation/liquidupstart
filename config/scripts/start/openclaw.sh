@@ -707,11 +707,31 @@ else
       // feature they never asked for. The enable is ours to own either way: the
       // block above writes it when the flag is on, so this removes it when it is
       // off, whoever put it there.
+      // Deleting the entry is not enough, and that was measured rather than
+      // assumed: applyPluginAutoEnable in the gateway runs on every boot and
+      // re-enables a harness whenever agents.defaults.models[<wildcard>]
+      // .agentRuntime.id names it. This script writes that route when the flag is
+      // on and used to leave it behind when the flag went off, so a boot not
+      // preceded by start.sh -- docker compose restart, a crash, a host reboot
+      // under restart: unless-stopped -- brought the plugin and its load error
+      // back. In the built image the only skip is an explicit
+      // `enabled === false`; a deleted entry has nothing to skip.
+      //
+      // So both halves: drop the route that makes it a candidate, and record the
+      // decision the auto-enable honours. Either alone leaves a hole. The route
+      // without the flag would resurrect it; the flag without the route would
+      // leave the config claiming codex handles openai/* turns.
       if (!enableCodex && c.plugins && c.plugins.entries) {
-        retired.push(["plugins", "entries", "codex"]);
+        if (c.agents && c.agents.defaults && c.agents.defaults.models) {
+          delete c.agents.defaults.models["openai/*"];
+        }
+        c.plugins.entries.codex = { enabled: false };
       }
       if (!enableGrok && c.plugins && c.plugins.entries) {
-        retired.push(["plugins", "entries", "xai"]);
+        if (c.agents && c.agents.defaults && c.agents.defaults.models) {
+          delete c.agents.defaults.models["xai/*"];
+        }
+        c.plugins.entries.xai = { enabled: false };
       }
       const sweptKeys = [];
       for (const path of retired) {

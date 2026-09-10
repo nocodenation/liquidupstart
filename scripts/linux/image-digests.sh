@@ -46,6 +46,15 @@ digest() {
   fi
 }
 
+require_jq() {
+  command -v jq >/dev/null 2>&1 && return 0
+  echo "Error: jq is required and was not found on PATH." >&2
+  echo "  This script reads compose.yml through 'docker compose config --format json | jq'." >&2
+  echo "  Install it and run the same command again." >&2
+  echo "  Nothing was written, so no later run can diff against a stub." >&2
+  exit 3
+}
+
 emit() {
   echo "# Registry digests, $(date -u +%Y-%m-%dT%H:%M:%SZ), branch $(git branch --show-current 2>/dev/null || echo '?')"
 
@@ -137,7 +146,21 @@ case "${1:-}" in
     OUT="${OUT_DIR}/digests-${STAMP}-before.txt"
     # The previous run's "before", if there is one, chosen before this one exists.
     PREV="$(ls -1 "${OUT_DIR}"/digests-*-before.txt 2>/dev/null | tail -1 || true)"
-    emit > "$OUT"
+    # Write through a temporary file and rename only on success. Under
+    # set -euo pipefail a failure inside emit aborts the script with whatever was
+    # already written left in place, and the -incomplete rename below never runs
+    # because it is checked after emit returns. The next `before` then picks that
+    # stub up through the digests-*-before.txt glob and reports every image as an
+    # upstream move -- the false alarm the "(lookup failed)" guard exists to
+    # prevent. Measured 2026-09-10 with jq and docker off PATH: a two-line stub,
+    # exit 0, no .digest-run.
+    require_jq
+    if ! emit > "${OUT}.partial"; then
+      rm -f "${OUT}.partial"
+      echo "Error: the digest snapshot failed; nothing was written." >&2
+      exit 4
+    fi
+    mv "${OUT}.partial" "$OUT"
     F="$(grep -c '(lookup failed)' "$OUT" || true)"
     # `(( F > 0 )) && echo` would abort under set -e when F is zero.
     if (( F > 0 )); then
@@ -168,7 +191,21 @@ Any other difference is an upstream move — understand it before building on to
     BEFORE="${OUT_DIR}/digests-${STAMP}-before.txt"
     [[ -f "$BEFORE" ]] || { echo "missing $BEFORE" >&2; exit 2; }
     OUT="${OUT_DIR}/digests-${STAMP}-after.txt"
-    emit > "$OUT"
+    # Write through a temporary file and rename only on success. Under
+    # set -euo pipefail a failure inside emit aborts the script with whatever was
+    # already written left in place, and the -incomplete rename below never runs
+    # because it is checked after emit returns. The next `before` then picks that
+    # stub up through the digests-*-before.txt glob and reports every image as an
+    # upstream move -- the false alarm the "(lookup failed)" guard exists to
+    # prevent. Measured 2026-09-10 with jq and docker off PATH: a two-line stub,
+    # exit 0, no .digest-run.
+    require_jq
+    if ! emit > "${OUT}.partial"; then
+      rm -f "${OUT}.partial"
+      echo "Error: the digest snapshot failed; nothing was written." >&2
+      exit 4
+    fi
+    mv "${OUT}.partial" "$OUT"
     echo "wrote $OUT"
     compare "$BEFORE" "$OUT" \
       "A tag moved while the run was in progress. Rare, and worth recording in the result."

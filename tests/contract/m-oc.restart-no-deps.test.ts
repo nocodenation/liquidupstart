@@ -52,7 +52,12 @@ function composeRestarts(): { file: string; line: number; text: string }[] {
       .split('\n')
       .map((text, i) => ({ file, line: i + 1, text }))
       .filter(({ text }) => /docker compose restart\b/.test(text))
-      .filter(({ text }) => !/^\s*#/.test(text))
+      // Comments in three flavours, because this file embeds a node program in a
+      // shell script: `#` for the shell, `//` and ` * ` for the JavaScript. On
+      // 2026-09-10 the case went red over a sentence explaining a different
+      // finding — prose read as an invocation. A scan that cannot tell code from
+      // the text about code reports its own documentation.
+      .filter(({ text }) => !/^\s*(#|\/\/|\*)/.test(text))
   );
 }
 

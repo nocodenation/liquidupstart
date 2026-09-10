@@ -148,8 +148,16 @@ fi
 # to be corrected afterwards. The name is compose.yml's, which the line this
 # replaces got wrong: it created nocodenation_playground_network_*, which
 # nothing joins.
+# Labelled the way compose labels its own networks. Without them every later
+# compose command warns "a network with name ... exists but was not created by
+# compose. Set `external: true` to use an existing network" -- true, useless, and
+# printed often enough that people stop reading warnings. The key is compose.yml's
+# network key, not the port-suffixed name it resolves to.
 LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
-docker network inspect "$LU_NETWORK" >/dev/null 2>&1 || docker network create "$LU_NETWORK"
+docker network inspect "$LU_NETWORK" >/dev/null 2>&1 || docker network create \
+  --label com.docker.compose.project=liquidupstart \
+  --label com.docker.compose.network=nocodenation_liquid_upstart_network \
+  "$LU_NETWORK"
 
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
