@@ -22,6 +22,9 @@ sed_inplace() {
 # the limit. Without coreutils' timeout the command runs unbounded, as there.
 with_timeout() {
   local secs="$1"; shift
+  # 0 means no bound, and no stdin redirect either: this is the branch the
+  # interactive sign-ins take, and they must be able to read the terminal.
+  if [[ "$secs" == "0" ]]; then "$@"; return $?; fi
   if command -v timeout >/dev/null 2>&1; then
     timeout "$secs" "$@" </dev/null
   elif command -v gtimeout >/dev/null 2>&1; then
@@ -144,13 +147,18 @@ fi
 # records it in meta.lastTouchedVersion; empty when the config predates the field.
 openclaw_state_version() {
   [[ -f "$CONFIG_JSON" ]] || return 0
+  # `|| return 0` for the same reason openclaw_version has it: under set -e a
+  # failing docker run -- image absent, daemon erroring, timeout 124/125 -- would
+  # end the script at the caller's assignment, with 2>/dev/null having discarded
+  # the reason and down.sh having emptied the stack a hundred lines earlier. An
+  # unreadable state version is "unknown", not a reason to stop without a word.
   with_timeout 60 docker run --rm --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
     try {
       const c = JSON.parse(require("fs").readFileSync("/state/openclaw.json", "utf8"));
       const v = c && c.meta && c.meta.lastTouchedVersion;
       if (typeof v === "string") process.stdout.write(v);
     } catch (e) {}
-  ' 2>/dev/null
+  ' 2>/dev/null || return 0
 }
 
 # Carry a state directory written by an older OpenClaw across to this one.
@@ -190,7 +198,7 @@ openclaw_migrate_state() {
 }
 
 if [[ -f "$CONFIG_JSON" ]]; then
-  STATE_VERSION="$(openclaw_state_version)"
+  STATE_VERSION="$(openclaw_state_version || true)"
   IMAGE_VERSION="$(openclaw_version)"
   if [[ -z "$IMAGE_VERSION" ]]; then
     echo "Error: could not determine the OpenClaw version in ${OPENCLAW_IMAGE}." >&2
@@ -978,8 +986,15 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
   # Run an openclaw CLI command against the shared auth store without the gateway.
   # The plugins mount is required: openclaw validates the full config (including
   # plugins.load.paths) before any subcommand.
+  # BOUND_SECS bounds the docker run from inside. Wrapping the call in
+  # with_timeout does not work: timeout execs its argument, a shell function
+  # is not a program, and it exits 127 with "failed to run command" -- which
+  # the _authed helpers capture with 2>&1 and read as "not signed in". A
+  # valid persisted login looked like none, and the start then waited 900s
+  # for a sign-in that had already happened.
   copilot_cli() {
-    docker run --rm --user 0:0 --entrypoint openclaw \
+    local rc=0 cname="openclaw-copilot-$$-${RANDOM}"
+    with_timeout "${BOUND_SECS:-0}" docker run --rm --name "$cname" --user 0:0 --entrypoint openclaw \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -989,7 +1004,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  copilot_authed() { local out; out="$(with_timeout 60 copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
+  copilot_authed() { local out; out="$(BOUND_SECS=60 copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
 
   if copilot_authed; then
     echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
@@ -1018,9 +1033,16 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
 fi
 
 if [[ "$ENABLE_CODEX" == "1" ]]; then
+  # BOUND_SECS bounds the docker run from inside. Wrapping the call in
+  # with_timeout does not work: timeout execs its argument, a shell function
+  # is not a program, and it exits 127 with "failed to run command" -- which
+  # the _authed helpers capture with 2>&1 and read as "not signed in". A
+  # valid persisted login looked like none, and the start then waited 900s
+  # for a sign-in that had already happened.
   codex_cli() {
     local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} --user 0:0 \
+    local rc=0 cname="openclaw-codex-$$-${RANDOM}"
+    with_timeout "${BOUND_SECS:-0}" docker run --rm --name "$cname" ${docker_flags} --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -1030,7 +1052,7 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  codex_authed() { local out; out="$(with_timeout 60 codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
+  codex_authed() { local out; out="$(BOUND_SECS=60 codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if codex_authed; then
     echo "OpenAI Codex: already authenticated (ChatGPT/Codex login persists in ${STATE_DIR})."
@@ -1072,9 +1094,16 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
 fi
 
 if [[ "$ENABLE_GROK" == "1" ]]; then
+  # BOUND_SECS bounds the docker run from inside. Wrapping the call in
+  # with_timeout does not work: timeout execs its argument, a shell function
+  # is not a program, and it exits 127 with "failed to run command" -- which
+  # the _authed helpers capture with 2>&1 and read as "not signed in". A
+  # valid persisted login looked like none, and the start then waited 900s
+  # for a sign-in that had already happened.
   grok_cli() {
     local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} --user 0:0 \
+    local rc=0 cname="openclaw-grok-$$-${RANDOM}"
+    with_timeout "${BOUND_SECS:-0}" docker run --rm --name "$cname" ${docker_flags} --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -1084,7 +1113,7 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       "${OPENCLAW_IMAGE}" "$@"
   }
-  grok_authed() { local out; out="$(with_timeout 60 grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
+  grok_authed() { local out; out="$(BOUND_SECS=60 grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if grok_authed; then
     echo "xAI Grok: already authenticated (Grok login persists in ${STATE_DIR})."

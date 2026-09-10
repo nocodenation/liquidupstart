@@ -71,6 +71,8 @@ here; each is executed where its subject exists.
 | **OC-33** | system, **manual** | **negative** | A start on a host with nothing foreign on the network never writes the wide RFC1918 list, and prints no narrowing line |
 | **OC-34** | contract | **negative** | No `docker compose restart` in the start scripts drags its dependants along |
 | **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
+| **OC-36** | contract + unit | **negative** | `with_timeout` is never handed a shell function, because `timeout` cannot see one |
+| **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 
 ### Suite 2 — compatibility
 
@@ -407,4 +409,30 @@ then `trustedProxies = ["127.0.0.1/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0
 | **Unhappy** | The counterpart is that the case must still pass once the name is corrected — a case that only forbids would be satisfied by deleting the creation altogether, which is the opposite of what F2 needs. |
 | **Note** | This is why the defect survived: a leftover network is invisible. It costs nothing, breaks nothing, and answers `docker network ls` like any other. It was found only because F2 sent someone to read the lines around the network lookup. |
 | **Covers** | OC-G3. |
+
+### OC-36 — a bound that cannot run what it is given
+
+*Timur's F1 in #11, reproduced on 2026-09-10 before anything was changed.*
+
+| | |
+|---|---|
+| **Premise** | `with_timeout` passes its argument to coreutils `timeout`, which **execs** it. A shell function is not a program, so `timeout 5 copilot_cli` fails with `failed to run command: No such file or directory` and exit **127**. `copilot_authed`, `codex_authed` and `grok_authed` each wrap such a call, capture its output with `2>&1`, and decide by `grep`. The 127 never surfaces: the error text lands *inside* the captured string, the grep does not match, and the helper answers **false**. A valid persisted login reads as "not signed in". |
+| **Component** | `config/scripts/start/openclaw.sh` as text, plus the behaviour of `timeout` itself. |
+| **Test data** | `bash -c 'f(){ echo x; }; timeout 5 f; echo $?'` → `timeout: failed to run command ‘f’: No such file or directory`, `127`. Against `timeout 5 echo x` → `x`, `0`. Both measured on 2026-09-10 with GNU coreutils on `PATH`; without `timeout` installed, `with_timeout` runs the argument in the current shell and the function is found, which is why this never showed on a host without coreutils. |
+| **Expected** | Every argument `with_timeout` is given is a program on the `PATH` or an absolute path, never a name defined as a shell function in the same file. The unit half asserts the underlying fact — that `timeout` cannot exec a function — so the contract half is not resting on a claim about a tool nobody re-checked. |
+| **Impact if unfixed** | With `ENABLE_GITHUB_COPILOT=1` and a valid login, every start prints `::aiw-copilot-auth-required::`, loops `until copilot_authed` for the full 900 s, then continues with "sign-in not completed". With a TTY and Codex or Grok enabled, an interactive sign-in is forced on every start and reported as failed afterwards. |
+| **Covers** | OC-G4, F1 of the #11 review. |
+
+### OC-37 — a failing probe does not take the start down with it
+
+*Timur's F4, and it is the same silence one layer over.*
+
+| | |
+|---|---|
+| **Premise** | `openclaw_version` ends its `docker run` with `\|\| return 0` and its caller tolerates an empty answer. `openclaw_state_version` does neither: no `\|\| return 0` inside, no `\|\| true` on `STATE_VERSION="$(openclaw_state_version)"`. Under `set -euo pipefail` a failing `docker run` — image absent, daemon erroring, `timeout` returning 124 or 125 — ends the script at that assignment. `2>/dev/null` has already discarded the reason, and `start.sh` ran `down.sh` a hundred lines earlier, so the stack is left down with no explanation and no message. |
+| **Component** | `config/scripts/start/openclaw.sh` as text. |
+| **Test data** | `bash -c 'set -euo pipefail; f(){ timeout 5 false 2>/dev/null; }; V="$(f)"; echo reached'` prints nothing — measured 2026-09-10. And the two functions side by side: line 51 carries `\|\| return 0`, line 147 does not. |
+| **Expected** | Every `"$(…)"` assignment in the start scripts whose right-hand side may fail either tolerates the failure or is named as an exception with the reason a failure should stop the start. The message at lines 195 to 198 — *"Build the image first"* — must be reachable, which today it is not. |
+| **Unhappy** | The counterpart is that a probe which *should* abort the start is allowed to: the exception list is what distinguishes a decision from an oversight. |
+| **Covers** | OC-G4, F4 of the #11 review. |
 
