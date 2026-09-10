@@ -67,6 +67,10 @@ here; each is executed where its subject exists.
 | **OC-29** | system | positive | After the migration, that same upgraded stack starts and passes the OC-20 acceptance |
 | **OC-30** | system | **negative** | The acceptance sweep reports a crash-looping service as a failure, whenever it is sampled |
 | **OC-31** | component + system | **negative** | A plugin 2026.9.1 enables by itself, and cannot load, does not stay enabled — and the removal is what silences the error |
+| **OC-32** | contract | positive | The stack's network exists before `openclaw.sh` writes the configuration, so one writer suffices |
+| **OC-33** | system | **negative** | A start on a host with nothing foreign on the network never writes the wide RFC1918 list, and prints no narrowing line |
+| **OC-34** | contract | **negative** | No `docker compose restart` in the start scripts drags its dependants along |
+| **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
 
 ### Suite 2 — compatibility
 
@@ -320,3 +324,45 @@ the released stack, belongs in a repair cut from `main`, and is recorded in
 | §5.3 device pairing | OC-8, OC-9, OC-10, OC-11, OC-12 |
 | §5.4 proxy attribution | OC-13, OC-14 |
 | §5.5 npm allowScripts | OC-15, OC-16 |
+
+### OC-32 / OC-33 — the configuration is written once, by someone who can see the network
+
+*Timur's F2 in #11, measured on 2026-09-10 before anything was changed.*
+
+| | |
+|---|---|
+| **Premise** | `scripts/linux/start.sh` runs `down.sh` at line 16, which removes the compose network, and `config/scripts/start/openclaw.sh` at line 144, which looks the network up at line 344 to write `gateway.trustedProxies`. With the network gone the lookup is empty and the **wide RFC1918 list** is written; a block after `docker compose up` then rewrites the gateway's configuration and restarts it. The comment above that block says *"on every ordinary start it already matches and nothing happens"*, which is the opposite of what was measured. Two writers race: the correction and the gateway's own startup write, which stamps `meta.lastTouchedVersion` and `modelPolicy`. |
+| **Component** | OC-32: `scripts/linux/start.sh` as text. OC-33: a real start, end to end. |
+| **Test data** | The measurement this case is built on, from `/tmp/start-3-clean.log` of 2026-09-10: line 83 `Network nocodenation_liquid_upstart_network_8888 Removed`; line 110 `trustedProxies = ["127.0.0.1/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]`; line 240 `Narrowing OpenClaw trustedProxies to 172.18.0.0/16 (the network exists only now)...`. Those three lines in one run are the defect. |
+| **Expected** | OC-32: the network is created before `openclaw.sh` is invoked, and no post-`up` narrowing block remains. OC-33: after a start, `gateway.trustedProxies` is exactly `["127.0.0.1/32", "<the stack's subnet>"]`, the run's output contains **no** narrowing line, and the gateway was not restarted after `up` — its `StartedAt` is not later than the services `up` brought with it. |
+| **Precondition OC-33 must assert, not assume** | That **no container outside this branch's `compose.yml` is attached to the network** before the start. On 2026-09-10 the defect was invisible across two full starts because `nar_builder`, an orphan from `feature/liquid-java-extensions`, held the network open: `docker compose down` reported `Resource is still in use`, the network survived, the lookup succeeded, and the wide list was never written. Three explanations were offered for that and the first two were wrong. A case that does not assert the precondition will one day report this defect as fixed when it is merely hidden. |
+| **Covers** | OC-G3, F2 of the #11 review. |
+
+### OC-34 — a restart that takes the proxy with it
+
+*Timur's F7, and it is the same start.*
+
+| | |
+|---|---|
+| **Premise** | `docker compose restart <service>` restarts that service's dependants from Compose v2.20 on; `--no-deps` is the opt-out. `proxy` declares `depends_on: openclaw-gateway`, so narrowing the trusted proxies bounces nginx — and the next line's `nginx -s reload` runs against a proxy that is still coming back, swallowed by `|| true`. The URL table is printed two lines later, and the dashboard reports success. |
+| **Component** | `scripts/linux/start.sh` and `config/scripts/start/*.sh` as text. |
+| **Test data** | The container start times measured on 2026-09-10 after a clean start: `postgres` and `liquid` at `08:16:13`, `proxy` at `08:17:13`, `openclaw-gateway` at `08:17:16`. The proxy restarted a minute after the stack came up and **three seconds before** the gateway it was supposed to be a bystander to — Compose restarts dependants first. |
+| **Expected** | Every `docker compose restart` in the start path either carries `--no-deps` or is named here as a deliberate exception with its reason, in the shape OC-3 established for unbounded calls. `docker restart <container>` is permitted: it addresses one container and knows nothing of `depends_on`. |
+| **Unhappy** | The positive counterpart is the exception list itself: a restart that *should* take its dependants along is allowed and must say so, otherwise the case reads as a ban rather than a decision. |
+| **Covers** | OC-G3, F7 of the #11 review. |
+| **Note** | If F2's fix removes the post-`up` block entirely, this case has nothing left to catch **in that block** — and it stays, because it is about the shape of every restart in the start path, not about this one. |
+
+### OC-35 — a network nobody joins
+
+*Found on 2026-09-10 while measuring F2, and not part of the #11 review.*
+
+| | |
+|---|---|
+| **Premise** | `scripts/linux/start.sh:147` creates `nocodenation_playground_network_${HTTP_PORT}` on every start. `compose.yml:851` names the stack's network `nocodenation_liquid_upstart_network_${SYSTEM_HTTP_PORT}`. Nothing joins the first: on the host it was measured on it held **0 containers** and had been sitting there long enough that nobody remembers creating it. The name comes from an earlier name for this project. The intention — have the network before the containers — was right and is what F2's fix needs; it simply names a network that does not exist in `compose.yml` and does it three lines *after* `openclaw.sh` has already looked one up. |
+| **Component** | `scripts/linux/start.sh` and `compose.yml` as text, plus the live daemon. |
+| **Test data** | The exact strings: `compose.yml` declares `name: nocodenation_liquid_upstart_network_${SYSTEM_HTTP_PORT:-8888}`; `start.sh` creates `nocodenation_playground_network_${HTTP_PORT}`. On the measured host both existed, the second with `0 Container`. |
+| **Expected** | Every network name the start scripts create or inspect appears in `compose.yml`'s `networks:` block. A name that appears in neither fails the case and is named in the failure, so the next stray one is found by the same assertion rather than by somebody reading line 147 for another reason. |
+| **Unhappy** | The counterpart is that the case must still pass once the name is corrected — a case that only forbids would be satisfied by deleting the creation altogether, which is the opposite of what F2 needs. |
+| **Note** | This is why the defect survived: a leftover network is invisible. It costs nothing, breaks nothing, and answers `docker network ls` like any other. It was found only because F2 sent someone to read the lines around the network lookup. |
+| **Covers** | OC-G3. |
+
