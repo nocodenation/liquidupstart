@@ -9,7 +9,8 @@ RUN apt-get install -y python3 python3-pip __SYSTEM_DEPENDENCIES__
 # ENVIRONMENT_VARIABLES_EXPORTS
 
 COPY --chown=nifi:nifi ./entrypoint.sh /opt/nifi/scripts/entrypoint.sh
-RUN chmod 775 /opt/nifi/scripts/entrypoint.sh
+COPY --chown=nifi:nifi ./narcheck.py /opt/nifi/scripts/narcheck.py
+RUN chmod 775 /opt/nifi/scripts/entrypoint.sh /opt/nifi/scripts/narcheck.py
 
 
 USER nifi:nifi

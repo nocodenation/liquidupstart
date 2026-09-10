@@ -26,7 +26,8 @@ from the browser.
 
 ## Services & images
 
-Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-runner,liquid,openclaw}:latest`.
+Most images are pulled; five are built locally as
+`liquidupstart/{opencode,bun-runner,liquid,openclaw,nar-builder}:latest`.
 `hermes` exists in config but is **disabled** (commented out in `compose.yml`, `build.sh`,
 `start.sh`). Service UIs are reached at `http://<name>.localhost:${SYSTEM_HTTP_PORT}`
 (HTTP default 8888; Liquid over HTTPS on `${SYSTEM_HTTPS_PORT}`, default 8833).

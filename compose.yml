@@ -137,6 +137,8 @@ services:
         condition: service_started
       bun_runner:
         condition: service_started
+      nar_builder:
+        condition: service_started
       openclaw-gateway:
         condition: service_healthy
       # hermes disabled: omitted here too (else compose errors on undefined service)
@@ -151,6 +153,7 @@ services:
           - postgrest.localhost
           - swagger.localhost
           - opencode.localhost
+          - nar-builder.localhost
           - openclaw.localhost
           - bridge.openclaw.localhost
           - msteams.openclaw.localhost
@@ -317,6 +320,7 @@ services:
       - ./config/agents/skills:/root/.config/opencode/skills
       - ./config/agents/bin/git-repo-info.sh:/usr/local/bin/git-repo-info:ro
       - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro
+      - ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro
       - ./config/opencode/package.json:/root/.config/opencode/package.json
       - ./config/opencode/tools:/root/.config/opencode/tools:ro
       - ./volumes/logs/postgres:/logs/postgres:ro
@@ -350,6 +354,26 @@ services:
       timeout: 5s
       retries: 10
       start_period: 5m
+    networks:
+      - nocodenation_liquid_upstart_network
+
+  nar_builder:
+    image: liquidupstart/nar-builder:latest
+    container_name: nar_builder
+    restart: unless-stopped
+    environment:
+      SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
+    volumes:
+      - ./volumes/repos:/repos
+      - ./volumes/nar_extensions:/nar_extensions
+      - ./volumes/nar_builder/m2:/m2
+      - ./volumes/liquid/logs:/liquid/logs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8770/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - nocodenation_liquid_upstart_network
 
@@ -755,6 +779,7 @@ services:
       - ./config/agents/skills:/home/node/.claude/skills:ro
       - ./config/agents/bin/git-repo-info.sh:/usr/local/bin/git-repo-info:ro
       - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro
+      - ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro
@@ -864,6 +889,7 @@ services:
       - ./config/agents/skills:/home/node/.claude/skills:ro
       - ./config/agents/bin/git-repo-info.sh:/usr/local/bin/git-repo-info:ro
       - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro
+      - ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro
       - ./config/agents/skills:/home/node/.openclaw/skills:ro
       - ./config/openclaw/plugins:/opt/plugins:ro
       - ./config/openclaw/claude_tools:/home/node/.claude-tools:ro

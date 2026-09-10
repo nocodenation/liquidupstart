@@ -5,6 +5,103 @@ decision rather than an omission. Each entry says what, where, and why it was le
 
 ## Open findings
 
+**Liquid autoloads from the drop directory, and everything this feature says about deployment is
+built on the assumption that it does not.**
+Measured 2026-09-09, while a red check in `tests/verify/m-b4.sh` refused to be explained. It is the
+largest open question this feature has.
+
+```
+nifi.nar.library.autoload.directory=/opt/nifi/nifi-current/nar_extensions
+```
+
+**The measurement.** A NAR named `b4-autoload-nar-1.0.0.nar` was built into
+`volumes/nar_extensions` and nothing else was done — no restart, no copy. After **20 seconds**
+`org.nocodenation.probe.AutoloadProbe` was listed by `/nifi-api/flow/processor-types`, the container's
+`StartedAt` was unchanged, and the NAR was **not** in `lib/`. Independently, the catalogue was already
+listing `ProbeA` and `ProbeB` — B3-3's concurrency fixtures, which the suite writes into the drop
+directory and deletes again, which were never in `lib/`, and which no restart followed. NiFi loads
+them and does not unload them.
+
+**What that puts in question, none of it settled:**
+
+- **FR36 and M-B4.** The guard refuses to copy a mismatched bundle into `lib/`. NiFi loads it from the
+  drop directory anyway, about twenty seconds later. The milestone is built, its 32 cases are green,
+  and it guards a path that is not the one that loads. This is why §4's check 3 stayed red through two
+  repairs of the check.
+- **FR29, and what `nar-build` prints to an agent.** *"Liquid loads NARs from /nar_extensions at
+  startup only. Ask the operator to restart it"* — the restart is not required. That sentence reaches
+  every agent that builds a NAR.
+- **FR30.** *"On start, every `*.nar` in it is copied into `lib/`"* holds, and appears to be
+  redundant: the autoload directory would have reached the load path without it.
+- **M-B3's check 3.** It established that Liquid lists what `nar-build` produces. It never separated
+  whether that was the copy into `lib/` or the autoload directory.
+- **Where the setting lives.** `volumes/liquid/conf/nifi.properties:37` — persistent local state. The
+  stock `apache/nifi:2.11.0` image says `./extensions`. Nothing in `config/liquid/`, `compose.yml`,
+  `.env.example` or a `NIFI_*` variable sets it, so **a fresh installation may not behave the way this
+  one does**, and no branch carries the difference.
+
+**Deliberately not repaired on 2026-09-09.** Two explanations for the red check were offered and
+withdrawn that day — a leftover unpacked bundle, and an answer from the instance being replaced — and
+the third is the first that rests on a measured configuration value rather than on reasoning about
+behaviour. The right next step is to decide what the deployment path *should* be, not to adjust a
+guard until a check goes green.
+
+**Nothing in the stack notices a NAR built against an API Liquid does not provide.**
+Established by B3-2 on 2026-09-08, and the reason FR23 was rewritten the same day. A NAR compiled
+against `nifi-api` 2.11.0, referencing a class the loaded 2.10.0 jar does not contain, is accepted:
+the bundle loads, the processor is listed in the catalogue, and `nifi-app.log` says nothing. The
+break waits for the first run of the processor — inferred from how the JVM resolves method
+signatures, and **not yet tested**.
+
+`nar-build` prevents it at the source by resolving the API through `nifi-utils`, which is FR27, and
+that covers every NAR this stack builds. It does not cover a NAR built elsewhere and dropped into
+`volumes/nar_extensions` by hand, which is a documented path in the `liquid` skill.
+
+**The first half was done on 2026-09-09, and the inference was wrong about when.** A mismatched
+processor was added from the canvas against a stack built from this branch. It fails at
+**instantiation**, not at trigger: `POST /nifi-api/process-groups/<id>/processors` answers **500**
+with `java.lang.NoClassDefFoundError: org/apache/nifi/controller/NodeConnectionState`. The processor
+never reaches the canvas, so it never runs — the predicted error type was right and the predicted
+moment was not. The control ran beside it flawlessly: the same processor built against the resolved
+2.10.0 reached 4,114,541 invocations in five minutes.
+
+**Two things came out of it that are worse than the original finding.** The error is written to
+`nifi-user.log` and **not** to `nifi-app.log`, which is where every check in this repository looks —
+so "the framework says nothing" was a conclusion drawn from one log rather than an observation. And
+the UI turns the 500 into `/nifi/#/error` reading *"Your session has expired. Please click on the
+Home button to renew the session."* That is false, and it points the operator at re-authentication,
+which reproduces the failure. Both are recorded in B3-2 and in §4, and §4 now reads both logs.
+
+**What is still open is the deployment-time check.** The entrypoint already walks every `*.nar` on
+its way into `lib/`, and comparing the API a bundle links against with the one the distribution ships
+is the same `javap` comparison §4 check 4b performs. It would turn a 500 with a misleading message
+into a refusal at the moment of deployment, which is where an operator can act on it. Left because
+this is a new requirement rather than a repair, and M-B3 is closed.
+
+**Nothing sweeps a staging file the builder abandoned.**
+Introduced by M-B3's own fix on 2026-09-08, and recorded because it is a property the milestone
+changed rather than one it found. `config/nar_builder/build.sh` used to stage into
+`${DROP}/.${base}.part`, a name derived from the artifact alone: two concurrent builds of one source
+wrote into a single file, which is the defect B3-4 exists for. The staging path is now private to the
+build process, `${DROP}/.${base}.$$.part` — and with that, the old name's one accidental virtue is
+gone. A leftover used to be overwritten by the next build of the same artifact; now every abandoned
+attempt keeps a name of its own and nothing ever touches it again. The `trap` covers `INT` and
+`TERM`, so a `SIGKILL`, a container stop mid-copy or a `docker compose down` during a build leaves a
+file in `volumes/nar_extensions` for good.
+
+**It is litter, not a hazard, and that was checked rather than assumed.** Liquid's entrypoint counts
+with `find -name "*.nar"` and iterates `"$DROP_DIR"/*.nar`; a name with a leading dot and a `.part`
+suffix matches neither, so nothing reaches `lib/`. B3-4 asserts the directory is clean after a normal
+pair, which is the case that matters for the fix; nothing asserts it after an abandoned build,
+because nothing cleans up after one.
+
+**Left because the cheap fix is not obviously the right one.** A sweep of `.*.part` at the start of
+`build_command` would delete the staging file of a build running concurrently — the very situation
+this milestone made safe. Sweeping only files older than some age reintroduces a criterion that
+depends on when you look, which this project has already removed once. The honest options are an age
+the builder itself owns, or leaving the directory's hygiene to `cleanup.sh`, and neither is worth
+deciding under a milestone that is otherwise closed.
+
 **A locally built image can belong to another branch, and nothing on this one says so.**
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
@@ -58,6 +155,25 @@ image rather than listing what the image should contain — so the next start sc
 dependency fails there too. The same gap existed in `dashboard/Dockerfile` and was fixed by M-A8, and
 M-A3 found it in the agent images. Three images, one mistake, three separate discoveries: nothing
 compares what the scripts invoke against what the images carry.
+
+**nginx appends to `X-Forwarded-For` instead of overwriting it.**
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` has been in this repository since
+2026-06-01, arriving with the original webdb-playground base, and appears seventeen times: sixteen in
+`config/nginx/templates/nginx.conf` and once in the generator that emits the hundred Liquid ingress
+blocks. It preserves whatever the client sent and appends the real address, so a request arriving with
+its own `X-Forwarded-For` has that value passed downstream as the first hop.
+
+**Not a defect anyone has demonstrated.** It surfaced on 2026-09-05 while repairing OpenClaw's
+`proxy_attribution_required`, and was changed to `$remote_addr` on the assumption it was part of that
+fix. It was not: measured afterwards, appending with a narrow `gateway.trustedProxies` answers HTTP
+200 exactly as overwriting does. The change was reverted, because a hotfix for a released stack
+should carry only what the break requires.
+
+What would settle it: whether anything downstream reads the first entry and trusts it — NextCloud,
+OpenProject and pgAdmin all have their own trusted-proxy handling, and none has been checked. Against
+that stands a real cost: overwriting discards the true client address for an operator who puts their
+own reverse proxy in front of this stack. Decide it on those two facts, not on the tidiness of the
+directive.
 
 **`cleanup.sh` asks for a sudo password in the middle of a long run, and need not ask at all.**
 Noticed during A7-5 on 2026-09-05. Under rootless Docker the host user maps to container root, so
