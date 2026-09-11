@@ -51,7 +51,7 @@ OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 # Empty when it cannot be determined -- the caller must refuse, not guess.
 openclaw_version() {
   local image="${1:-$OPENCLAW_IMAGE}" out
-  out="$(with_timeout 60 docker run --rm --entrypoint openclaw "$image" --version 2>/dev/null | head -n1)" || return 0
+  out="$(with_timeout 60 docker run --rm --init --entrypoint openclaw "$image" --version 2>/dev/null | head -n1)" || return 0
   # "OpenClaw 2026.7.1" and "OpenClaw 2026.9.1 (ad6fe23)" both parse.
   printf '%s' "$out" | sed -n 's/^OpenClaw \([0-9][0-9.]*\).*$/\1/p'
 }
@@ -152,7 +152,7 @@ openclaw_state_version() {
   # end the script at the caller's assignment, with 2>/dev/null having discarded
   # the reason and down.sh having emptied the stack a hundred lines earlier. An
   # unreadable state version is "unknown", not a reason to stop without a word.
-  with_timeout 60 docker run --rm --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
+  with_timeout 60 docker run --rm --init --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
     try {
       const c = JSON.parse(require("fs").readFileSync("/state/openclaw.json", "utf8"));
       const v = c && c.meta && c.meta.lastTouchedVersion;
@@ -291,7 +291,7 @@ else
     _llm_host="${LOCAL_LLM_API_BASE#*://}"; _llm_host="${_llm_host%%[:/]*}"
     _addhost=()
     [[ -n "$_llm_host" && -n "$LOCAL_LLM_HOST_IP" ]] && _addhost=(--add-host "${_llm_host}:${LOCAL_LLM_HOST_IP}")
-    LOCAL_LLM_MODELS_JSON="$(with_timeout 60 docker run --rm ${_addhost[@]+"${_addhost[@]}"} \
+    LOCAL_LLM_MODELS_JSON="$(with_timeout 60 docker run --rm --init ${_addhost[@]+"${_addhost[@]}"} \
       -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
       -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
       --entrypoint node \
@@ -319,7 +319,7 @@ else
   OPENROUTER_MODELS_JSON="[]"
   OPENROUTER_KEY="$(get_env OPENROUTER_API_KEY)"
   if [[ -n "$OPENROUTER_KEY" ]]; then
-    OPENROUTER_MODELS_JSON="$(with_timeout 60 docker run --rm \
+    OPENROUTER_MODELS_JSON="$(with_timeout 60 docker run --rm --init \
       -e OPENROUTER_API_KEY="${OPENROUTER_KEY}" \
       --entrypoint node \
       "${OPENCLAW_IMAGE}" \
@@ -721,16 +721,31 @@ else
       // decision the auto-enable honours. Either alone leaves a hole. The route
       // without the flag would resurrect it; the flag without the route would
       // leave the config claiming codex handles openai/* turns.
-      if (!enableCodex && c.plugins && c.plugins.entries) {
-        if (c.agents && c.agents.defaults && c.agents.defaults.models) {
-          delete c.agents.defaults.models["openai/*"];
-        }
+      // Drop only the codex ROUTE, not the wildcard: openai/* is also written by
+      // the plain OPENAI_API_KEY path (line 252 maps the key to openai, it lands
+      // in MODEL_WILDCARDS, and the loop above creates the entry). Deleting the
+      // whole entry took the API-key models away on every start and left
+      // modelPolicy.allow still listing openai/*, so the log claimed an allowlist
+      // for models the map no longer had. And create plugins.entries rather than
+      // guarding on it: with the map absent, both halves were skipped and the
+      // route stayed behind for applyPluginAutoEnable to find.
+      const unroute = (wildcard, runtimeId) => {
+        const models = c.agents && c.agents.defaults && c.agents.defaults.models;
+        const entry = models && models[wildcard];
+        if (!entry || !entry.agentRuntime || entry.agentRuntime.id !== runtimeId) return;
+        delete entry.agentRuntime;
+        if (Object.keys(entry).length === 0) models[wildcard] = {};
+      };
+      if (!enableCodex) {
+        unroute("openai/*", "codex");
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
         c.plugins.entries.codex = { enabled: false };
       }
-      if (!enableGrok && c.plugins && c.plugins.entries) {
-        if (c.agents && c.agents.defaults && c.agents.defaults.models) {
-          delete c.agents.defaults.models["xai/*"];
-        }
+      if (!enableGrok) {
+        unroute("xai/*", "xai");
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
         c.plugins.entries.xai = { enabled: false };
       }
       const sweptKeys = [];
@@ -847,9 +862,9 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   claude_cli_bounded() {
     local secs="$1" docker_flags="$2"; shift 2
     local name="openclaw-claude-step-$$-${RANDOM}" rc=0
-    with_timeout "$secs" docker run --rm --name "$name" ${docker_flags} \
+    with_timeout "$secs" docker run --rm --init --name "$name" ${docker_flags} \
       "${CLAUDE_RUN_ARGS[@]}" "$@" || rc=$?
-    if (( rc == 124 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
+    if (( rc != 0 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
     return $rc
   }
 
@@ -964,7 +979,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   # can answer here — hence the timeout and the forced container removal.
   register_anthropic_cli_profile() {
     local name="openclaw-anthropic-profile-$$" rc=0
-    with_timeout 240 docker run --rm --name "$name" --user 0:0 \
+    with_timeout 240 docker run --rm --init --name "$name" --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -977,7 +992,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       --entrypoint script \
       "${OPENCLAW_IMAGE}" -qec \
       'openclaw models auth login --provider anthropic --method cli' /dev/null < /dev/null || rc=$?
-    if (( rc == 124 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
+    if (( rc != 0 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
     return $rc
   }
 
@@ -1031,9 +1046,25 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
   # the _authed helpers capture with 2>&1 and read as "not signed in". A
   # valid persisted login looked like none, and the start then waited 900s
   # for a sign-in that had already happened.
-  copilot_cli() {
-    local rc=0 cname="openclaw-copilot-$$-${RANDOM}"
-    with_timeout "${BOUND_SECS:-0}" docker run --rm --name "$cname" --user 0:0 --entrypoint openclaw \
+  # One bounded runner for the three harness CLIs, which differed only in the
+  # container name. Two things it does that the three separate copies did not:
+  #
+  # --init, because without it the bound is decorative. coreutils timeout sends
+  # one SIGTERM to the docker client, the client passes it to the container, and
+  # a node PID 1 with no handler ignores it -- so the client stays attached and
+  # timeout blocks past its limit. Measured 2026-09-11: without --init still
+  # blocked after two minutes with the container Up; with it, rc 124 after 16s
+  # and nothing left behind. The state migration escaped this only because
+  # compose gives that service init: true.
+  #
+  # And a forced removal on any non-zero rc. `--rm` fires when the container
+  # exits, which is exactly what does not happen when the bound expires; the
+  # 900s sign-in wait loops would otherwise leave a dozen containers per provider
+  # holding the state, secrets and plugin mounts.
+  harness_cli() {
+    local label="$1" docker_flags="$2"; shift 2
+    local rc=0 cname="openclaw-${label}-$$-${RANDOM}"
+    with_timeout "${BOUND_SECS:-0}" docker run --rm --init --name "$cname" ${docker_flags} --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -1041,8 +1072,12 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
       -v "${STATE_DIR}:/home/node/.openclaw" \
       -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-      "${OPENCLAW_IMAGE}" "$@"
+      "${OPENCLAW_IMAGE}" "$@" || rc=$?
+    if (( rc != 0 )); then docker rm -f "$cname" >/dev/null 2>&1 || true; fi
+    return $rc
   }
+
+  copilot_cli() { harness_cli copilot "--entrypoint openclaw" "$@"; }
   copilot_authed() { local out; out="$(BOUND_SECS=60 copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
 
   if copilot_authed; then
@@ -1078,19 +1113,7 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
   # the _authed helpers capture with 2>&1 and read as "not signed in". A
   # valid persisted login looked like none, and the start then waited 900s
   # for a sign-in that had already happened.
-  codex_cli() {
-    local docker_flags="$1"; shift
-    local rc=0 cname="openclaw-codex-$$-${RANDOM}"
-    with_timeout "${BOUND_SECS:-0}" docker run --rm --name "$cname" ${docker_flags} --user 0:0 \
-      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
-      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
-      -v "${STATE_DIR}:/home/node/.openclaw" \
-      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
-      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-      "${OPENCLAW_IMAGE}" "$@"
-  }
+  codex_cli() { local f="$1"; shift; harness_cli codex "$f" "$@"; }
   codex_authed() { local out; out="$(BOUND_SECS=60 codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if codex_authed; then
@@ -1139,19 +1162,7 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
   # the _authed helpers capture with 2>&1 and read as "not signed in". A
   # valid persisted login looked like none, and the start then waited 900s
   # for a sign-in that had already happened.
-  grok_cli() {
-    local docker_flags="$1"; shift
-    local rc=0 cname="openclaw-grok-$$-${RANDOM}"
-    with_timeout "${BOUND_SECS:-0}" docker run --rm --name "$cname" ${docker_flags} --user 0:0 \
-      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
-      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
-      -v "${STATE_DIR}:/home/node/.openclaw" \
-      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
-      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-      "${OPENCLAW_IMAGE}" "$@"
-  }
+  grok_cli() { local f="$1"; shift; harness_cli grok "$f" "$@"; }
   grok_authed() { local out; out="$(BOUND_SECS=60 grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if grok_authed; then

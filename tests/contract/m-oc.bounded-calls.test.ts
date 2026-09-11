@@ -143,14 +143,24 @@ describe('OC-3 every unattended docker call in the start script is bounded', () 
     // holding the state directory. #11 recorded this, and a probe written on
     // 2026-09-07 fell into it anyway — a throwaway container outlived its own
     // timeout by five minutes.
+    //
+    // Re-founded 2026-09-11. It used to require the literal `124` in each helper,
+    // which is the circumstance rather than the property: N1 measured that a
+    // bound docker run does not return 124 at all without --init, and that a
+    // client killed any other way leaves the container too. The helpers now clean
+    // up on any non-zero status, so asserting the magic number would have failed
+    // a stricter fix. What must hold is that a named container is removed when
+    // the run does not end by itself.
+    //
+    // harness_cli joined the list when the three byte-identical copilot, codex
+    // and grok helpers were collapsed into it.
     const body = readFileSync(join(repoRoot, SCRIPT), 'utf8');
-    for (const fn of ['claude_cli_bounded', 'openclaw_migrate_state']) {
+    for (const fn of ['claude_cli_bounded', 'openclaw_migrate_state', 'harness_cli']) {
       const start = body.indexOf(`${fn}()`);
-      expect(start).toBeGreaterThan(-1);
+      expect({ fn, found: start > -1 }).toEqual({ fn, found: true });
       const region = body.slice(start, start + 1400);
-      expect(region).toContain('--name');
-      expect(region).toContain('docker rm -f');
-      expect(region).toContain('124');
+      expect({ fn, named: region.includes('--name') }).toEqual({ fn, named: true });
+      expect({ fn, removes: region.includes('docker rm -f') }).toEqual({ fn, removes: true });
     }
   });
 

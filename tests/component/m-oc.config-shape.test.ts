@@ -258,10 +258,62 @@ describe('OC-31 a plugin the operator did not ask for does not stay enabled', ()
     // agentRuntime route as a candidate, and the only skip in the built image is
     // an explicit `enabled === false`. So both halves are required — the route is
     // gone, and the decision is recorded where the auto-enable reads it.
-    expect(cfg.agents?.defaults?.models?.['openai/*']).toBeUndefined();
-    expect(cfg.agents?.defaults?.models?.['xai/*']).toBeUndefined();
+    // N2 corrected this on 2026-09-11. The first version deleted the whole
+    // wildcard entry, and openai/* is also written by the plain OPENAI_API_KEY
+    // route — so an API-key user with codex off lost their models on every start
+    // while modelPolicy.allow still listed openai/*. Only the route goes.
+    expect(cfg.agents?.defaults?.models?.['openai/*']).toEqual({});
+    expect(cfg.agents?.defaults?.models?.['xai/*']).toEqual({});
     expect(cfg.plugins?.entries?.codex).toEqual({ enabled: false });
     expect(cfg.plugins?.entries?.xai).toEqual({ enabled: false });
+  });
+
+  test('N2 a wildcard that is not a codex route is left alone', () => {
+    // The counterpart. A cleanup that removes the wildcard whenever codex is off
+    // passes the case above and takes the API-key route with it.
+    const dir = mkdtempSync(join(workRoot, 'apikey-'));
+    writeFileSync(join(dir, 'openclaw.json'), JSON.stringify({
+      plugins: { entries: { xai: { enabled: true } } },
+      agents: { defaults: { models: { 'openai/*': { some: 'setting' } } } },
+    }));
+    writeFileSync(join(dir, 'writer.js'), program);
+    const r = sh([
+      'docker', 'run', '--rm', '--init', '--user', '0:0', '-v', `${dir}:/state`,
+      '-e', 'OC_SCHEMA_NEW=1', '-e', 'OPENCLAW_VERSION=test',
+      '-e', 'ENABLE_CLAUDE_CLI=0', '-e', 'ENABLE_COPILOT=0', '-e', 'ENABLE_CODEX=0',
+      '-e', 'ENABLE_GROK=0', '-e', 'ENABLE_LOCAL=0',
+      '-e', 'LU_NETWORK_SUBNET=172.18.0.0/16', '-e', 'PLUGIN_PATHS=',
+      '-e', 'MODEL_WILDCARDS=openai/*', '-e', 'OPENROUTER_MODELS_JSON=[]',
+      '-e', 'LOCAL_LLM_MODELS_JSON=[]',
+      '--entrypoint', 'node', IMAGE_NEW, '/state/writer.js',
+    ]);
+    expect(r.code).toBe(0);
+    const cfg = JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
+    expect(cfg.agents.defaults.models['openai/*']).toEqual({ some: 'setting' });
+  });
+
+  test('N2 plugins.entries is created rather than required', () => {
+    // With the map absent both halves used to be skipped, so the route stayed
+    // behind for applyPluginAutoEnable to find — the very hole the fix describes.
+    const dir = mkdtempSync(join(workRoot, 'noentries-'));
+    writeFileSync(join(dir, 'openclaw.json'), JSON.stringify({
+      agents: { defaults: { models: { 'openai/*': { agentRuntime: { id: 'codex' } } } } },
+    }));
+    writeFileSync(join(dir, 'writer.js'), program);
+    const r = sh([
+      'docker', 'run', '--rm', '--init', '--user', '0:0', '-v', `${dir}:/state`,
+      '-e', 'OC_SCHEMA_NEW=1', '-e', 'OPENCLAW_VERSION=test',
+      '-e', 'ENABLE_CLAUDE_CLI=0', '-e', 'ENABLE_COPILOT=0', '-e', 'ENABLE_CODEX=0',
+      '-e', 'ENABLE_GROK=0', '-e', 'ENABLE_LOCAL=0',
+      '-e', 'LU_NETWORK_SUBNET=172.18.0.0/16', '-e', 'PLUGIN_PATHS=',
+      '-e', 'MODEL_WILDCARDS=', '-e', 'OPENROUTER_MODELS_JSON=[]',
+      '-e', 'LOCAL_LLM_MODELS_JSON=[]',
+      '--entrypoint', 'node', IMAGE_NEW, '/state/writer.js',
+    ]);
+    expect(r.code).toBe(0);
+    const cfg = JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
+    expect(cfg.plugins.entries.codex).toEqual({ enabled: false });
+    expect(cfg.agents.defaults.models['openai/*'].agentRuntime).toBeUndefined();
   });
 
   test('OC-31 and it stays enabled when the operator did ask for it', () => {
