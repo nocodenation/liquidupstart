@@ -20,12 +20,22 @@ fi
 # a half-started stack. Probe each via a throwaway container: the bind happens
 # on the real host, so this works from inside the toolbox container too. Our
 # proxy was just stopped by down.sh, so a conflict here is some other process.
-HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+# One reader for .env, tolerant and quote-agnostic. Two failures it removes:
+# a key that is absent makes grep exit 1, pipefail passes it through and set -e
+# ends the start without a word, after down.sh has already emptied the stack; and
+# `tr -d '"'` left single quotes in place, which compose accepts and this script
+# then carried into a network name. openclaw.sh has had this shape all along, and
+# the two scripts now agree because they derive the same network name.
+get_env() {
+  grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d "'\"" || true
+}
+
+HTTP_PORT="$(get_env SYSTEM_HTTP_PORT)"
 HTTP_PORT="${HTTP_PORT:-8888}"
-HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+HTTPS_PORT="$(get_env SYSTEM_HTTPS_PORT)"
 HTTPS_PORT="${HTTPS_PORT:-8833}"
 
-LOCAL_LLM_API_BASE="$(grep -E '^LOCAL_LLM_API_BASE=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"' || true)"
+LOCAL_LLM_API_BASE="$(get_env LOCAL_LLM_API_BASE)"
 LOCAL_LLM_HOST="${LOCAL_LLM_API_BASE#*://}"
 LOCAL_LLM_HOST="${LOCAL_LLM_HOST%%[:/]*}"
 export LOCAL_LLM_HOST="${LOCAL_LLM_HOST:-local_llm}"
@@ -141,11 +151,51 @@ fi
 "${PROJECT_DIR}/config/scripts/start/liquid.sh"
 # hermes disabled: not started
 # "${PROJECT_DIR}/config/scripts/start/hermes.sh"
+# The gateway's trustedProxies must name this stack's subnet, and openclaw.sh
+# reads it from the live network. down.sh removed that network at line 16, so
+# create it here -- before openclaw.sh, not after `up`. Compose adopts an
+# existing network of the declared name, so one writer suffices and nothing has
+# to be corrected afterwards. The name is compose.yml's, which the line this
+# replaces got wrong: it created nocodenation_playground_network_*, which
+# nothing joins.
+# Labelled the way compose labels its own networks. Without them every later
+# compose command warns "a network with name ... exists but was not created by
+# compose. Set `external: true` to use an existing network" -- true, useless, and
+# printed often enough that people stop reading warnings. The key is compose.yml's
+# network key, not the port-suffixed name it resolves to.
+LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
+# The CIDR is pinned, not left to docker. openclaw.sh reads whatever range the
+# network has and writes it into gateway.trustedProxies; if a later recreation
+# lands on a different one -- a freed range taken by a second checkout, a plain
+# `docker compose up` after a down -- the gateway answers 403 for every proxied
+# request until the next start. compose.yml declares the same value, so both
+# creators agree.
+# `|| true`: an .env written before this key existed -- every installation that
+# predates it -- makes grep exit 1, pipefail passes that through, and set -e ends
+# the start here without a word, after down.sh has already emptied the stack. The
+# same shape as the state-probe abort this branch fixed one commit earlier.
+LU_SUBNET_CIDR="$(get_env SYSTEM_NETWORK_SUBNET)"
+LU_SUBNET_CIDR="${LU_SUBNET_CIDR:-172.18.0.0/16}"
+# An existing network without the labels is not merely noisy, it is permanent:
+# compose refuses to remove a network it did not create, and the `create` below
+# never runs while `inspect` succeeds. So an unlabelled one is replaced here --
+# down.sh has already removed the containers, so nothing is attached. Met on
+# 2026-09-10, created by the first version of this very block.
+if docker network inspect "$LU_NETWORK" >/dev/null 2>&1; then
+  if [ -z "$(docker network inspect "$LU_NETWORK" \
+       --format '{{index .Labels "com.docker.compose.network"}}' 2>/dev/null)" ]; then
+    echo "Replacing ${LU_NETWORK}: it exists without compose labels, which compose will not clean up."
+    docker network rm "$LU_NETWORK" >/dev/null 2>&1 || true
+  fi
+fi
+docker network inspect "$LU_NETWORK" >/dev/null 2>&1 || docker network create \
+  --label com.docker.compose.project=liquidupstart \
+  --label com.docker.compose.network=nocodenation_liquid_upstart_network \
+  --subnet "$LU_SUBNET_CIDR" \
+  "$LU_NETWORK"
+
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
-
-docker network inspect nocodenation_playground_network_${HTTP_PORT} >/dev/null 2>&1 \
-  || docker network create nocodenation_playground_network_${HTTP_PORT}
 
 echo "Starting containers..."
 set +e
@@ -166,9 +216,9 @@ if [[ $UP_RC -ne 0 ]]; then
   exit $UP_RC
 fi
 
-PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-LIQUID_USERNAME="$(grep -E '^LIQUID_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-LIQUID_PASSWORD="$(grep -E '^LIQUID_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+PGADMIN_DEFAULT_EMAIL="$(get_env PGADMIN_DEFAULT_EMAIL)"
+LIQUID_USERNAME="$(get_env LIQUID_USERNAME)"
+LIQUID_PASSWORD="$(get_env LIQUID_PASSWORD)"
 # hermes disabled: HERMES_API_KEY="$(grep -E '^HERMES_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
 # Colors only when stdout is a terminal (stays plain when piped/redirected).
