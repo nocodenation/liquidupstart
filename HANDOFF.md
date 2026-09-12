@@ -543,7 +543,7 @@ route, and the pairing decision happens only after a browser signs a challenge.
    including `grep -v` under `pipefail` for the third time: it exits 1 when nothing is left, which
    ends `image-digests.sh show` for a stack that pulls no images. `awk` has no such opinion.
 
-   **The reply to the second review is not posted and the branch is not pushed.**
+   Both replies are posted; `fix/openclaw-2026-9-1` is pushed through `b9a64fb`.
 0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
    matters until it is decided, because M-B4 and part of M-B2 rest on it.
 1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
