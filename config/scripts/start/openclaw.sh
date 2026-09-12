@@ -5,6 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENV_FILE="${PROJECT_DIR}/.env"
 
+# Every `docker compose` below needs compose.yml, which compose looks for in the
+# working directory. This used to be set inside the first-run branch only -- the
+# one start where there is no state to migrate -- so the state migration, which
+# runs on every start after that, borrowed whatever directory the caller was in.
+# start.sh cds first, so it never fired through the ordinary path.
+cd "${PROJECT_DIR}"
+
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: .env file not found at ${ENV_FILE}" >&2
   exit 1
@@ -54,6 +61,17 @@ openclaw_version() {
   out="$(with_timeout 60 docker run --rm --init --entrypoint openclaw "$image" --version 2>/dev/null | head -n1)" || return 0
   # "OpenClaw 2026.7.1" and "OpenClaw 2026.9.1 (ad6fe23)" both parse.
   printf '%s' "$out" | sed -n 's/^OpenClaw \([0-9][0-9.]*\).*$/\1/p'
+}
+
+# Does the image resolve a bare `claude` to our wrapper? Checked the way the
+# gateway resolves it -- a login shell under HOME=/home/node -- not by testing the
+# path we would call ourselves, which is what made the gap invisible.
+claude_wrapper_shadowed() {
+  local image="${1:-$OPENCLAW_IMAGE}"
+  with_timeout 60 docker run --rm --init --user 0:0 -e HOME=/home/node \
+    --entrypoint /bin/sh "$image" -c \
+    'test -x /home/node/.local/bin/claude && [ "$(sh -lc "command -v claude")" = /home/node/.local/bin/claude ]' \
+    >/dev/null 2>&1
 }
 
 # True when $1 is at least $2, comparing as versions rather than as strings
@@ -136,7 +154,6 @@ ENABLE_LOCAL=0
 # source of truth for the primary model.
 CONFIG_JSON="${STATE_DIR}/openclaw.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
-  cd "${PROJECT_DIR}"
   docker compose run --rm -T --user 0:0 openclaw-cli onboard --non-interactive --accept-risk --skip-health
   docker compose rm -sf openclaw-gateway >/dev/null 2>&1 || true
 else
@@ -431,13 +448,8 @@ else
       // `openclaw devices approve` needs a gateway token this stack does not set.
       //
       // The 2026.9.1 replacement auto-approves a browser once the proxy has
-      // authenticated the user. Our nginx does not authenticate anyone -- it sets
-      // a constant X-Forwarded-User -- so this admits whoever reaches the proxy.
-      // That is the posture 2026.7.1 already has with the check disabled, not a
-      // new exposure, and the stack binds to localhost on one host. The scopes are
-      // what is new: operator.admin makes doctor raise a critical finding by
-      // design, so it is excluded and admin, if ever needed, goes to
-      // gateway.auth.identityScopes for the one configured identity.
+      // authenticated the user. Which scopes that may grant, and why the list
+      // includes operator.admin, is at the deviceAutoApprove block below.
       if (schemaNew) {
         delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
         // The Control UI requests operator.admin among its default scopes, and
@@ -820,6 +832,24 @@ fi
 # CLAUDE_CODE_OAUTH_TOKEN skips login and is forwarded to the CLI.
 if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   OAUTH_TOKEN="$(get_env CLAUDE_CODE_OAUTH_TOKEN)"
+
+  # On the 2026.9 schema the backend command is not configurable -- cliBackends is
+  # deleted above -- so the only thing that still routes claude through the wrapper
+  # is a file baked into the image at build time. An image built before that step
+  # existed has none, and nothing rebuilds on a Dockerfile change. Then bare claude
+  # is spawned as root with bypassPermissions and no IS_SANDBOX, which Claude Code
+  # refuses on every turn, while this start reports success: the preflight below
+  # names the wrapper by absolute path and so passes either way.
+  if [[ "${OC_SCHEMA_NEW:-0}" == "1" ]] && ! claude_wrapper_shadowed; then
+    echo "Error: ${OPENCLAW_IMAGE} runs OpenClaw ${OPENCLAW_VERSION}, where the Claude" >&2
+    echo "  backend command can no longer be configured, and the image has no" >&2
+    echo "  /home/node/.local/bin/claude to take its place." >&2
+    echo "  The gateway would run Claude Code directly instead of the wrapper, and it" >&2
+    echo "  refuses every request made that way -- with nothing in this start to say so." >&2
+    echo "  Rebuild the image, then start again:" >&2
+    echo "    ./config/scripts/build/openclaw.sh" >&2
+    exit 1
+  fi
 
   # Install instructions.md as Claude Code's global ~/.claude/CLAUDE.md. Copied
   # (not bind-mounted) because a nested single-FILE mount in the .claude volume

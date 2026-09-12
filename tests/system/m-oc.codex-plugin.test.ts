@@ -28,7 +28,7 @@
  * Requirements covered: OC-G1, OC-G4.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
@@ -46,7 +46,9 @@ const original = readFileSync(CONFIG, 'utf8');
 // how a suite teaches people to ignore red. Bounded per case rather than by
 // raising the default for everything.
 function restartWith(cfg: any): void {
-  Bun.write(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
+  // Synchronous: Bun.write returns a promise, and the restart below blocks the
+  // JS thread without draining it, so the gateway could boot on the old config.
+  writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
   compose(['restart', 'openclaw-gateway']);
   sh(['sh', '-c', 'for i in $(seq 1 60); do docker inspect openclaw-gateway --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done']);
 }
@@ -57,7 +59,7 @@ function doctorPluginErrors(): string {
 }
 
 afterAll(() => {
-  Bun.write(CONFIG, original);
+  writeFileSync(CONFIG, original);
   compose(['restart', 'openclaw-gateway']);
   sh(['sh', '-c', 'for i in $(seq 1 60); do docker inspect openclaw-gateway --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done']);
 });

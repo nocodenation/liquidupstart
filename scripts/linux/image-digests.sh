@@ -35,13 +35,14 @@ USAGE
 # "(lookup failed)" -- which, diffed against a good snapshot, reads as though
 # every tag in the stack had moved at once. A check that cries wolf is worse
 # than no check, so failures are counted and the verdict is withheld.
-FAILED=0
 digest() {
   local out
   if out="$(docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null)" && [[ -n "$out" ]]; then
     printf '%s' "$out"
   else
-    FAILED=$((FAILED + 1))
+    # No counter here: digest() runs inside $(...), so an increment lands in a
+    # subshell and the parent never sees it. The callers count the marker in the
+    # written file instead, which is the only place it survives.
     printf '(lookup failed)'
   fi
 }
@@ -58,8 +59,24 @@ require_jq() {
 emit() {
   echo "# Registry digests, $(date -u +%Y-%m-%dT%H:%M:%SZ), branch $(git branch --show-current 2>/dev/null || echo '?')"
 
+  # Read the service list into a variable first, so a failure here fails emit.
+  # As a pipeline inside `if ! emit`, it could not: bash suspends errexit for the
+  # condition, the stage failed, the later stages ran, and emit returned the
+  # status of its last loop. The snapshot then had an empty "Service images"
+  # section, passed the (lookup failed) count of zero, and was stamped as the
+  # reference -- the poisoning the temp file was added to prevent, in a new form.
+  # Reproduced 2026-09-11 with a stub docker whose `compose config` exits 1.
+  #
+  # `select(. != null)`: jq emits null for a build-only service, which would
+  # otherwise be looked up as an image name.
+  local services
+  services="$(docker compose config --format json | jq -r '.services[].image | select(. != null)')" || return 1
+
   echo "# Service images (compose.yml)"
-  docker compose config --format json | jq -r '.services[].image' | sort -u | grep -v '^liquidupstart/' \
+  # awk rather than `grep -v`: grep exits 1 when nothing is left, which under
+  # pipefail is a failed emit and now, correctly, a rejected snapshot -- for a
+  # stack whose images are all built locally, which is not an error.
+  printf '%s\n' "$services" | sort -u | awk 'NF && !/^liquidupstart\//' \
     | while read -r img; do printf '%s\t%s\n' "$img" "$(digest "$img")"; done
 
   echo "# Base images of the locally built ones"

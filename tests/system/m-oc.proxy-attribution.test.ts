@@ -24,7 +24,7 @@
  * Requirements covered: OC-G4, FEATURE-openclaw-2026-9-1.md §5.4.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
@@ -54,7 +54,9 @@ function controlUi(): { code: number; status: string; body: string } {
 function setTrustedProxies(list: string[]): void {
   const cfg = JSON.parse(readFileSync(CONFIG, 'utf8'));
   cfg.gateway.trustedProxies = list;
-  Bun.write(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
+  // Synchronous: Bun.write returns a promise, and the restart below blocks the
+  // JS thread without draining it, so the gateway could boot on the old config.
+  writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
   compose(['restart', 'openclaw-gateway']);
   // The gateway needs a moment to listen again before a request means anything.
   sh(['sh', '-c', 'for i in $(seq 1 60); do docker inspect openclaw-gateway --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done']);

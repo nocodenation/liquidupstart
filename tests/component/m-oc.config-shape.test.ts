@@ -160,6 +160,17 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     // browser is locked out.
     expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes).toContain('operator.admin');
   });
+
+  test('N10 and no rationale in the writer still says the opposite', () => {
+    // The paragraph above the block kept the pre-measurement reasoning --
+    // operator.admin "is excluded" and admin goes to identityScopes -- while the
+    // code three lines down granted it. A reader or a security review takes the
+    // prose at face value; the code is what runs. Whichever one is wrong, they
+    // must not disagree.
+    const script = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
+    const claimsExcluded = /operator\.admin[\s\S]{0,200}?(so it is excluded|is excluded)/.test(script);
+    expect({ granted: true, claimsExcluded }).toEqual({ granted: true, claimsExcluded: false });
+  });
 });
 
 describe('OC-2 the retired key really is refused', () => {

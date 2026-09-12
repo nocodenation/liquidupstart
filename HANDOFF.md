@@ -505,6 +505,20 @@ Hub's rate limit and reported every image as unreadable — which, diffed agains
 as though every tag had moved at once. Failures are now excluded from both sides, incomplete snapshots
 are named so they cannot become a later reference, and the verdict says what was actually compared.
 
+**An `if` condition is where `errexit` goes to die.** `if ! emit > "$OUT.partial"` reads like a guard
+and is not one: bash suspends `set -e` for everything the condition calls, so a failed
+`docker compose config | jq` ran on, the later stages produced their lines, and `emit` returned the
+status of its last loop. The result was a stub snapshot *stamped as the reference* — the exact
+poisoning the temporary file had been added to prevent, one layer up. A stage whose failure must
+count has to be read into a variable and checked, or the guard is decoration. Sibling of *a bound
+that cannot bind*: both looked right in the diff and did nothing when run.
+
+**`grep` under `pipefail` has now cost three findings.** It exits 1 when nothing matches, which is
+not an error but is indistinguishable from one: it aborted a start for an `.env` predating a key,
+truncated a script that searched for an absent line, and ends `image-digests.sh show` for a stack
+whose images are all built locally. `awk` filters without an opinion about emptiness, and where
+`grep` is the right tool the exit has to be handled where it happens.
+
 **Do not let a document exist twice.** Promoting the cold-start procedure from `.pr-drafts/` to
 `docs/` left two copies; every repair went into one while the operator worked from the other, so a
 fix that had been reported as done was hit again. It is the same failure the tests are explicitly
@@ -519,6 +533,17 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
+0. ~~**Timur's two reviews of #11**~~ — answered 2026-09-10 (F1–F10) and 2026-09-11 (N1–N10), every
+   finding reproduced before it was touched and every fix carried by a case run against its control.
+   Two of the fixes were the interesting ones. The bound on every `docker run` was decorative:
+   coreutils `timeout` reaches the docker *client*, and a node PID 1 without a handler ignores the
+   SIGTERM it forwards — `--init` is what makes a bound a bound. And `if ! emit` cannot see a failing
+   pipeline stage, because bash suspends `errexit` for the condition of an `if`; the F10 repair had
+   turned a rejected snapshot into an accepted stub. Three of my own came out of the same work,
+   including `grep -v` under `pipefail` for the third time: it exits 1 when nothing is left, which
+   ends `image-digests.sh show` for a stack that pulls no images. `awk` has no such opinion.
+
+   **The reply to the second review is not posted and the branch is not pushed.**
 0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
    matters until it is decided, because M-B4 and part of M-B2 rest on it.
 1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
