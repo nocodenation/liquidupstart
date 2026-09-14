@@ -94,3 +94,11 @@ spend an hour on it as this run did.
 invokes. The plugin's bundle is checked in, so rebuilding it to remove a papercut carries more risk
 than the papercut warrants. Every fallback on a path the stack actually walks was removed during the
 migration; these two are what is left.
+
+**`timeout -k` on the bounded docker runs.**
+Suggested in the third review of #11 as an optional improvement to N1. Every bounded run in
+`config/scripts/start/openclaw.sh` carries `--init` now, so PID 1 forwards SIGTERM and the container
+ends; `-k 10` would add a SIGKILL after a grace period for a process that catches SIGTERM and refuses
+to stop. Real, but the case that would justify it — a bounded run whose process ignores SIGTERM
+*through* an init — is one this branch cannot currently produce, so it would be a change with no
+control. Take it up with a reproduction, or not at all.
