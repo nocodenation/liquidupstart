@@ -274,10 +274,16 @@ invokes. The plugin's bundle is checked in, so rebuilding it to remove a papercu
 than the papercut warrants. Every fallback on a path the stack actually walks was removed during the
 migration; these two are what is left.
 
-**`timeout -k` on the bounded docker runs.**
-Suggested in the third review of #11 as an optional improvement to N1. Every bounded run in
-`config/scripts/start/openclaw.sh` carries `--init` now, so PID 1 forwards SIGTERM and the container
-ends; `-k 10` would add a SIGKILL after a grace period for a process that catches SIGTERM and refuses
-to stop. Real, but the case that would justify it — a bounded run whose process ignores SIGTERM
-*through* an init — is one this branch cannot currently produce, so it would be a change with no
-control. Take it up with a reproduction, or not at all.
+**~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
+Suggested in the third review of #11 as an optional improvement to N1, and deferred here on the
+grounds that the situation justifying it could not be produced. It produced itself two days later: a
+suite run hung fifteen minutes on the N1 case itself, a hand-run of the same command sat attached to
+a live container for eight minutes, and an outer `timeout 40` around the whole thing did not return
+either — GNU timeout waits for its child after signalling. In that window three of four attempts
+needed the kill (rc 137 after the grace) rather than the signal (rc 124). It is **intermittent and
+state-dependent**: an hour later, four of four ended at SIGTERM in eight seconds, same host, same
+stack, and the four control runs of the case passed without `-k`. So the rate is not a property of
+the system, and no cause was established. What is established is that the bound can fail to return
+at all, and that without `-k` the start then hangs forever. The lesson is not about `-k`:
+**"I cannot reproduce it" is a statement about the attempt, not about the system**, and it is a weak
+reason to defer something whose cost was one flag.

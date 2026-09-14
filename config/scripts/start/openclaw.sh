@@ -27,15 +27,27 @@ sed_inplace() {
 
 # Bound a command (mirrors config/scripts/start/git.sh). Exit 124 means it hit
 # the limit. Without coreutils' timeout the command runs unbounded, as there.
+# -k: SIGTERM alone does not end a `docker run` on this host. `timeout` signals
+# the docker *client*, the client is supposed to forward it to the container, and
+# measured on 2026-09-14 that failed three times in four: rc 137 after the grace
+# period rather than 124 after the limit, and one run that was still attached to
+# a live container eight minutes later. GNU timeout waits for its child after
+# signalling, so without -k the bound never returns and neither does the start --
+# an outer `timeout 40` around the whole thing did not return either. The kill is
+# what makes a bound a bound; --init was only half of it.
+#
+# Every caller therefore has to treat any non-zero status as "the bound expired",
+# not the literal 124, and force-remove the container it named: a client killed
+# with SIGKILL cleans nothing up, so --rm never fires.
 with_timeout() {
   local secs="$1"; shift
   # 0 means no bound, and no stdin redirect either: this is the branch the
   # interactive sign-ins take, and they must be able to read the terminal.
   if [[ "$secs" == "0" ]]; then "$@"; return $?; fi
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$secs" "$@" </dev/null
+    timeout -k 10 "$secs" "$@" </dev/null
   elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$secs" "$@" </dev/null
+    gtimeout -k 10 "$secs" "$@" </dev/null
   else
     "$@" </dev/null
   fi
@@ -201,7 +213,8 @@ openclaw_migrate_state() {
         chmod -R go-w /home/node/openclaw-plugins 2>/dev/null || true
         openclaw doctor --fix
       ' >/dev/null 2>&1 || _mrc=$?
-  if (( _mrc == 124 )); then docker rm -f "$_mig" >/dev/null 2>&1 || true; fi
+  # Any non-zero status, not 124: with -k an expired bound reports 137.
+  if (( _mrc != 0 )); then docker rm -f "$_mig" >/dev/null 2>&1 || true; fi
   if (( _mrc == 0 )); then
     echo "OpenClaw: state migrated."
   else
@@ -1037,7 +1050,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     if (( _reg_rc == 0 )); then
       echo "Claude CLI: registered Anthropic auth profile in OpenClaw (anthropic/* models now appear in the picker)."
     else
-      if (( _reg_rc == 124 )); then
+      if (( _reg_rc == 124 || _reg_rc == 137 )); then
         echo "Warning: registering the Anthropic auth profile timed out after 240s and was aborted." >&2
         echo "  It most likely stopped on an interactive prompt; check 'openclaw config validate'." >&2
       else
@@ -1059,7 +1072,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   claude_cli_bounded 120 "" mcp add-json -s user ingest-pdf "$CLAUDE_MCP_JSON" >/dev/null 2>&1 || _mcp_rc=$?
   if (( _mcp_rc == 0 )); then
     echo "Claude CLI: registered ingest_pdf MCP tool (user scope)."
-  elif (( _mcp_rc == 124 )); then
+  elif (( _mcp_rc == 124 || _mcp_rc == 137 )); then
     echo "Warning: registering the ingest_pdf MCP tool timed out after 120s; it will be unavailable to claude." >&2
   else
     echo "Warning: failed to register the ingest_pdf MCP tool; it will be unavailable to claude." >&2

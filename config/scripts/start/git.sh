@@ -93,12 +93,19 @@ if [[ -z "$DECLARATION" && -f "$ENV_FILE" ]]; then
   DECLARATION="$(grep -E '^GIT_REPOSITORIES=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
 fi
 
+# -k: the same helper in openclaw.sh was measured on 2026-09-14 failing to return
+# at all -- SIGTERM went nowhere and GNU timeout waits for its child after
+# signalling, so the bound outlived its limit by minutes and the start with it.
+# That was a `docker run`, and nothing here reproduces it for `git clone`: this
+# flag is insurance, not a repair. It is taken because the failure it forecloses
+# is a start that never comes back, and because a kill after a grace period costs
+# nothing when the signal already worked.
 with_timeout() {
   local secs="$1"; shift
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$secs" "$@"
+    timeout -k 10 "$secs" "$@"
   elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$secs" "$@"
+    gtimeout -k 10 "$secs" "$@"
   else
     "$@"
   fi
