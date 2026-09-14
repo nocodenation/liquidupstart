@@ -1,20 +1,28 @@
 # Verification records
 
-Evidence that the milestones were actually verified, not only declared verified.
+Evidence that something was actually verified, not only declared verified.
 
 **A reviewer does not need to read this directory.** The findings are already folded into
-`docs/TEST-SPEC-git-integration.md` and `docs/TEST-SPEC-liquid-java-extensions.md`, in each case's
-*"What it found"* row. What lives here is the material behind those rows.
+`docs/TEST-SPEC-git-integration.md`, `docs/TEST-SPEC-liquid-java-extensions.md` and
+`docs/TEST-SPEC-openclaw-2026-9-1.md`, in each case's *"What it found"* row. What lives here is the
+material behind those rows.
 
-Since `feature/git-integration` was merged forward into this branch on 2026-09-07, both sets are
-here: **M-A5 to M-A7** for the git integration and **M-B1 to M-B2** for the Java extensions. The
-earlier version of this file said they would arrive when that merge happened; they have.
+Three sets of records share the directory, because this branch sits at the end of the stack:
+**M-A5 to M-A7** for the git integration, **M-B1 to M-B2** for the Java extensions, and — since #11
+merged into `main` on 2026-09-14 and `main` was merged forward from there — the OpenClaw 2026.9.1
+migration, the cold starts and the `bun_runner` health check. The two naming conventions are what
+that history looks like on disk:
 
 | | |
 |---|---|
-| `M-*-verification.md` | The record: what was run, what it produced, what it found, what was left. English, written to be read. |
+| `M-*-verification.md` | The record for a milestone of this stack's features: what was run, what it produced, what it found, what was left. |
 | `M-*-verification.log` | The raw terminal transcript of that run. Not written to be read — it is what the record is checkable against. |
+| `RESULT-*.md` | The same thing for the work that arrived through `main`. |
 | `A6-13.md` | An operator procedure, kept because the case it belongs to is manual and the steps are the test. |
+
+Specifications live one level up, in `docs/`, and are written and signed off **before** the work they
+describe — `../CASES-bun-runner-health.md` and `../PROCEDURE-cold-start.md` are the two that came
+with the merge.
 
 ## Why the logs are here
 
@@ -28,10 +36,6 @@ watch it happen. That is the whole reason to keep the evidence rather than the c
 
 ## What is not here
 
-Drafts. `.pr-drafts/` stays gitignored and is the scratch area; a record is **promoted** here when
-it is finished. The distinction is deliberate — everything in this directory is final.
-
-M-B3 has no record because it is not built.
-
-The OpenClaw 2026.9.1 migration keeps its records on `feature/openclaw-2026-9-1`, with the
-specification they belong to.
+Drafts. Everything in this directory is **final**; a record is promoted here when the run it
+describes has happened, and `.pr-drafts/` stays the scratch area. On this branch that directory is
+gitignored; on `main` it is **not**, so work there stages files by name and never `git add -A`.

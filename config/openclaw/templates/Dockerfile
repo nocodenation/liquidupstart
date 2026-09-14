@@ -1,8 +1,13 @@
-# Pinned deliberately. A floating tag moved this stack under us on 2026-09-05:
-# 2026.9.1 arrived unannounced and broke four things at once. 2026.7.1 is the
-# version this stack is known to work with, and moving off it is a decision
-# someone makes, not something that happens.
-FROM ghcr.io/openclaw/openclaw:2026.7.1
+# Pinned deliberately, and this line is the decision. A floating tag moved this
+# stack under us on 2026-09-05 and broke four things at once; #11 pinned to
+# 2026.7.1 so that moving would be a choice rather than an event. This is that
+# choice, made: docs/FEATURE-openclaw-2026-9-1.md says what it costs and
+# docs/TEST-SPEC-openclaw-2026-9-1.md is what it was checked against.
+#
+# The start script reads the version out of the built image rather than from
+# this line, so changing the pin -- forward or back to 2026.7.1 -- writes the
+# matching configuration by itself. Never point it at a moving tag again.
+FROM ghcr.io/openclaw/openclaw:2026.9.1
 
 USER root
 

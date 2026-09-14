@@ -15,6 +15,71 @@ fi
 
 "${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
 
+# One reader for .env, tolerant and quote-agnostic. Two failures it removes:
+# a key that is absent makes grep exit 1, pipefail passes it through and set -e
+# ends the start without a word, after down.sh has already emptied the stack; and
+# `tr -d '"'` left single quotes in place, which compose accepts and this script
+# then carried into a network name. openclaw.sh has had this shape all along, and
+# the two scripts now agree because they derive the same network name.
+get_env() {
+  grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d "'\"" || true
+}
+
+HTTP_PORT="$(get_env SYSTEM_HTTP_PORT)"
+HTTP_PORT="${HTTP_PORT:-8888}"
+HTTPS_PORT="$(get_env SYSTEM_HTTPS_PORT)"
+HTTPS_PORT="${HTTPS_PORT:-8833}"
+
+# --- Pre-flight: the pinned network range has to be available ----------------
+# Before down.sh, not after. A range that is already taken ends this script, and
+# by then down.sh has emptied the stack -- which is how the previous version of
+# this block failed: it created the network at line 191 with no error handling.
+#
+# main's start script creates nocodenation_playground_network_<port> with no
+# --subnet, so docker hands it the first free range: 172.18.0.0/16 on an ordinary
+# host, which is exactly what this stack pinned until 2026-09-14. Nothing joins
+# that network and nothing removes it, so every host that ever ran main kept a
+# collision lying in wait.
+# Remove main's leftover when nothing is attached to it. Nothing joins it: it is
+# created under a name no service in this compose file references.
+lu_drop_legacy_network() {  # lu_drop_legacy_network <name>
+  docker network inspect "$1" >/dev/null 2>&1 || return 0
+  [[ "$(docker network inspect "$1" --format '{{len .Containers}}' 2>/dev/null)" == "0" ]] || return 0
+  echo "Removing $1: main's start script left it behind and nothing is attached."
+  docker network rm "$1" >/dev/null 2>&1 || true
+}
+
+# Ask docker whether the range is free instead of reimplementing its pool
+# arithmetic: create a throwaway network on it, then remove it again. Skipped
+# when the stack's own network already holds exactly that range -- the ordinary
+# case, which would otherwise be reported as overlapping with itself.
+lu_require_free_subnet() {  # lu_require_free_subnet <own-network> <cidr>
+  local own="$1" cidr="$2" have probe err
+  have="$(docker network inspect "$own" --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | awk '{print $1}')"
+  [[ "$have" == "$cidr" ]] && return 0
+  probe="lu-subnet-probe-$$-${RANDOM}"
+  if ! err="$(docker network create --subnet "$cidr" "$probe" 2>&1)"; then
+    echo "Error: the network range ${cidr} is not available on this host." >&2
+    echo "  docker: ${err}" >&2
+    echo "  Something else holds it: another project, a VPN, or a network an earlier" >&2
+    echo "  version of this stack left behind. Nothing has been stopped -- the stack" >&2
+    echo "  is as it was." >&2
+    echo "  Pick a free range for SYSTEM_NETWORK_SUBNET in .env, for example:" >&2
+    echo "    SYSTEM_NETWORK_SUBNET=10.99.1.0/24" >&2
+    echo "  'docker network ls' and 'docker network inspect <name>' show what is taken." >&2
+    return 1
+  fi
+  docker network rm "$probe" >/dev/null 2>&1 || true
+  return 0
+}
+
+LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
+LU_SUBNET_CIDR="$(get_env SYSTEM_NETWORK_SUBNET)"
+LU_SUBNET_CIDR="${LU_SUBNET_CIDR:-10.99.0.0/24}"
+
+lu_drop_legacy_network "nocodenation_playground_network_${HTTP_PORT}"
+lu_require_free_subnet "$LU_NETWORK" "$LU_SUBNET_CIDR" || exit 1
+
 "${PROJECT_DIR}/scripts/linux/down.sh"
 
 # --- Pre-flight: the host ports the proxy publishes must be free -------------
@@ -22,12 +87,7 @@ fi
 # a half-started stack. Probe each via a throwaway container: the bind happens
 # on the real host, so this works from inside the toolbox container too. Our
 # proxy was just stopped by down.sh, so a conflict here is some other process.
-HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-HTTP_PORT="${HTTP_PORT:-8888}"
-HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-HTTPS_PORT="${HTTPS_PORT:-8833}"
-
-LOCAL_LLM_API_BASE="$(grep -E '^LOCAL_LLM_API_BASE=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"' || true)"
+LOCAL_LLM_API_BASE="$(get_env LOCAL_LLM_API_BASE)"
 LOCAL_LLM_HOST="${LOCAL_LLM_API_BASE#*://}"
 LOCAL_LLM_HOST="${LOCAL_LLM_HOST%%[:/]*}"
 export LOCAL_LLM_HOST="${LOCAL_LLM_HOST:-local_llm}"
@@ -144,11 +204,14 @@ fi
 "${PROJECT_DIR}/config/scripts/start/liquid.sh"
 # hermes disabled: not started
 # "${PROJECT_DIR}/config/scripts/start/hermes.sh"
+# No network is created here any more. It existed only so openclaw.sh could read
+# the subnet off the live network before compose brought it up; openclaw.sh reads
+# SYSTEM_NETWORK_SUBNET from .env now, which is the same value compose declares as
+# ipam, so compose can create the network at `up` like any other. That also
+# removes the ordering dependency between this script and openclaw.sh.
+
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
-
-docker network inspect nocodenation_playground_network_${HTTP_PORT} >/dev/null 2>&1 \
-  || docker network create nocodenation_playground_network_${HTTP_PORT}
 
 echo "Starting containers..."
 set +e
@@ -169,38 +232,9 @@ if [[ $UP_RC -ne 0 ]]; then
   exit $UP_RC
 fi
 
-# OpenClaw 2026.9.1 refuses proxy-shaped traffic unless gateway.trustedProxies is
-# narrow. config/scripts/start/openclaw.sh writes this stack's docker network when
-# it can, but on a cold start the network does not exist until the `up` above, so
-# it fell back to the wide RFC1918 list. Correct it here, and restart the gateway
-# only when the value actually changed -- on every ordinary start it already
-# matches and nothing happens.
-LU_SUBNET="$(docker network ls --filter name=nocodenation_liquid_upstart_network \
-    --format '{{.Name}}' | head -1 \
-    | xargs -r -I{} docker network inspect {} \
-        --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
-OC_CONFIG="${PROJECT_DIR}/volumes/_openclaw/openclaw.json"
-if [[ -n "$LU_SUBNET" && -f "$OC_CONFIG" ]] \
-   && ! grep -q "\"${LU_SUBNET}\"" "$OC_CONFIG"; then
-  echo "Narrowing OpenClaw trustedProxies to ${LU_SUBNET} (the network exists only now)..."
-  if docker compose exec -T -e LU_SUBNET="$LU_SUBNET" openclaw-gateway node -e '
-      const fs = require("fs");
-      const p = process.env.OPENCLAW_HOME + "/.openclaw/openclaw.json";
-      const c = JSON.parse(fs.readFileSync(p, "utf8"));
-      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_SUBNET];
-      fs.writeFileSync(p, JSON.stringify(c, null, 2));
-    ' 2>/dev/null; then
-    docker compose restart openclaw-gateway >/dev/null 2>&1 || true
-    docker compose exec -T proxy nginx -s reload >/dev/null 2>&1 || true
-  else
-    echo "Warning: could not narrow trustedProxies; the OpenClaw UI will answer" >&2
-    echo "  'proxy_attribution_required' until it is set to ${LU_SUBNET}." >&2
-  fi
-fi
-
-PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-LIQUID_USERNAME="$(grep -E '^LIQUID_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-LIQUID_PASSWORD="$(grep -E '^LIQUID_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+PGADMIN_DEFAULT_EMAIL="$(get_env PGADMIN_DEFAULT_EMAIL)"
+LIQUID_USERNAME="$(get_env LIQUID_USERNAME)"
+LIQUID_PASSWORD="$(get_env LIQUID_PASSWORD)"
 # hermes disabled: HERMES_API_KEY="$(grep -E '^HERMES_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
 # Colors only when stdout is a terminal (stays plain when piped/redirected).
