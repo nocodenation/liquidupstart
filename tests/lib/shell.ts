@@ -9,12 +9,16 @@ export type Result = { code: number; stdout: string; stderr: string; output: str
 // declaration happened to be valid; on 2026-09-08 a malformed one turned five
 // unrelated cases red. A test is handed a project directory: what is in it is
 // the input, and what is in the operator's .env is not.
-export function sh(argv: string[], cwd: string = repoRoot): Result {
+//
+// extraEnv is the deliberate exception: a case that has to hand the script a
+// stub PATH or an output directory says so explicitly.
+export function sh(argv: string[], cwd: string = repoRoot, extraEnv: Record<string, string> = {}): Result {
   const env: Record<string, string | undefined> = {
     ...process.env,
     LC_ALL: 'C',
     LANG: 'C',
-    LANGUAGE: 'C'
+    LANGUAGE: 'C',
+    ...extraEnv
   };
   delete env.GIT_REPOSITORIES;
   const p = Bun.spawnSync(argv, { cwd, env, stdout: 'pipe', stderr: 'pipe' });
