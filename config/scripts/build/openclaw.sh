@@ -52,7 +52,13 @@ sed_inplace() {
 
 if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
     echo "ENABLE_ANTHROPIC_CLAUDE_CODE=1: installing Claude Code CLI into the image."
-    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g @anthropic-ai/claude-code|' "${DOCKERFILE}"
+    sed_inplace -e 's|^# CLAUDE_CLI_INSTALL$|RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code \&\& claude --version|' "${DOCKERFILE}"
+    # Shadow the npm-installed `claude` with the wrapper on /home/node/.local/bin,
+    # which precedes /usr/local/bin in the image PATH. OpenClaw 2026.9.1 dropped
+    # agents.defaults.cliBackends, so the backend command is no longer configurable
+    # and this is the only way the wrapper still runs. The wrapper execs
+    # /usr/local/bin/claude by absolute path, so it does not re-enter itself.
+    sed_inplace -e 's|^# CLAUDE_CLI_WRAPPER$|RUN mkdir -p /home/node/.local/bin \&\& cp /usr/local/bin/openclaw-claude /home/node/.local/bin/claude \&\& chmod 0755 /home/node/.local/bin/claude \&\& chown -R node:node /home/node/.local|' "${DOCKERFILE}"
 fi
 
 IMAGE="liquidupstart/openclaw:latest"
