@@ -513,6 +513,12 @@ poisoning the temporary file had been added to prevent, one layer up. A stage wh
 count has to be read into a variable and checked, or the guard is decoration. Sibling of *a bound
 that cannot bind*: both looked right in the diff and did nothing when run.
 
+**A pin is only as good as the range it pins to.** Pinning the subnet fixed a real defect — a gateway
+trusting a range no container was in — and chose the one value guaranteed to collide: 172.18.0.0/16
+is what docker hands out first, so it is what every leftover network on the host already holds. The
+fix and the collision came from the same fact about docker, read once and used in only one
+direction. Ask what else knows the number you just wrote down.
+
 **`grep` under `pipefail` has now cost three findings.** It exits 1 when nothing matches, which is
 not an error but is indistinguishable from one: it aborted a start for an `.env` predating a key,
 truncated a script that searched for an absent line, and ends `image-digests.sh show` for a stack
@@ -544,6 +550,16 @@ route, and the pairing decision happens only after a browser signs a challenge.
    ends `image-digests.sh show` for a stack that pulls no images. `awk` has no such opinion.
 
    Both replies are posted; `fix/openclaw-2026-9-1` is pushed through `b9a64fb`.
+
+   **A third review followed on 2026-09-14** and marked N1–N10 resolved, with four new findings. The
+   one that mattered: pinning the subnet to 172.18.0.0/16 pinned it to the range docker hands out
+   first, which is the range `main`'s start script takes for a network nothing joins and nothing
+   removes. Any host that had ever run `main` would have failed the start — after `down.sh` had
+   emptied the stack, because the create had no error handling. The default is 10.99.0.0/24 now, the
+   check runs before anything is stopped, and the pre-created network is gone entirely: `openclaw.sh`
+   reads the range from `.env`, which is what compose declares as ipam, so the ordering dependency
+   between the two scripts no longer exists. Verified by starting: compose created the network on
+   10.99.0.0/24, `trustedProxies` names it, and the gateway answers from 10.99.0.3.
 0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
    matters until it is decided, because M-B4 and part of M-B2 rest on it.
 1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written

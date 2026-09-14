@@ -1,34 +1,29 @@
 /**
- * OC-32, OC-35 — the network exists before anything reads it, and every network
- * the start creates is one the stack joins.
+ * OC-32, OC-35 — the configuration does not depend on a network being there,
+ * and no network the start touches is one nothing joins.
  *
- * Purpose: `scripts/linux/start.sh` runs `down.sh`, which removes the compose
- * network, and then `config/scripts/start/openclaw.sh`, which reads that
- * network to write `gateway.trustedProxies`. With the network gone the read is
- * empty, the wide RFC1918 list is written, and a block after `docker compose up`
- * rewrites the gateway's configuration and restarts it — a second writer racing
- * the gateway's own startup write. Measured on 2026-09-10: `Network ... Removed`,
- * then `trustedProxies = ["127.0.0.1/32","10.0.0.0/8","172.16.0.0/12",
- * "192.168.0.0/16"]`, then `Narrowing OpenClaw trustedProxies to 172.18.0.0/16`.
+ * History, because these cases have outlived two designs:
  *
- * Given  scripts/linux/start.sh and compose.yml as text
- * When   the order of the network creation, the openclaw.sh call and `up` is read
- * Then   the network is created first, under the name compose.yml declares, and
- *        no post-`up` narrowing block remains
+ * F2 (first review) — `down.sh` removed the compose network and `openclaw.sh`
+ * then read that network to write `gateway.trustedProxies`. The read came back
+ * empty, the wide RFC1918 list was written, and a block after `docker compose up`
+ * rewrote the configuration and restarted the gateway, racing the gateway's own
+ * startup write. The repair created the network early, with compose's labels.
  *
- * OC-35 is the second half and was not in the #11 review. The line this replaces
- * created `nocodenation_playground_network_${HTTP_PORT}` — a name from an earlier
- * name for this project, which nothing joins; on the host it was found on it held
- * zero containers. The intention was right and is what OC-32 needs; the name was
- * not. Asserting that every network named in the start scripts appears in
- * compose.yml is what finds the next stray one without anybody reading the line
- * for another reason.
+ * R2 (third review) — that pre-creation existed *only* for the lookup. The range
+ * is now read from `.env`, which is the same value compose declares as ipam, so
+ * the lookup, the early creation, the labels, the unlabelled-network self-heal
+ * and the ordering dependency between the two scripts are all gone. What the
+ * original cases protected is unchanged; what they were written against is not,
+ * so they are re-founded here rather than adjusted until they pass.
  *
- * Test data: the exact strings. compose.yml declares
- * `nocodenation_liquid_upstart_network_${SYSTEM_HTTP_PORT:-8888}`; start.sh must
- * create that name and no other, before `config/scripts/start/openclaw.sh`.
+ * Given  the two start scripts and compose.yml as text
+ * When   they are read for who creates a network and who reads one
+ * Then   openclaw.sh reads no network at all, start.sh leaves the creation to
+ *        compose, nothing rewrites trustedProxies after `up`, and any name
+ *        compose does not declare is only ever removed, never created
  *
- * Requirements covered: OC-G3, F2 and F5 of the #11 review.
+ * Requirements covered: OC-G3, F2 and F5 of the first review, R1 and R2 of the third.
  */
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -46,47 +41,31 @@ const openclaw = readFileSync(join(repoRoot, OPENCLAW), 'utf8');
 const lineOf = (body: string, needle: string) =>
   body.split('\n').findIndex((l) => l.includes(needle)) + 1;
 
-describe('OC-32 the network is created before the configuration is written', () => {
-  test('start.sh creates a network, calls openclaw.sh, and does so in that order', () => {
-    const create = lineOf(start, 'docker network create');
-    const call = lineOf(start, 'config/scripts/start/openclaw.sh');
-    const up = lineOf(start, 'docker compose up -d');
-    expect({ create: create > 0, call: call > 0, up: up > 0 }).toEqual({
-      create: true,
-      call: true,
-      up: true
-    });
-    expect(create).toBeLessThan(call);
-    expect(call).toBeLessThan(up);
+describe('OC-32 the configuration is written without consulting a network', () => {
+  test('openclaw.sh inspects no network, and reads the range from .env', () => {
+    // The lookup is what forced the ordering: it needed the network to exist
+    // before this script ran, and answered "" when it did not — silently, which
+    // is how the wide list got written.
+    expect(openclaw).not.toContain('docker network inspect');
+    expect(openclaw).toMatch(/LU_NETWORK_SUBNET="\$\(get_env SYSTEM_NETWORK_SUBNET\)"/);
   });
 
-  test('the network it creates is labelled the way compose labels its own', () => {
-    // Without these, every later compose command warns that the network "exists
-    // but was not created by compose" — true, useless, and frequent enough to
-    // train people past warnings. Found on 2026-09-10 as a side effect of the
-    // repair above: creating the network by hand fixed one noise and made
-    // another. The key is compose.yml's network key, not the port-suffixed name.
-    const create = start.split('\n').find((l) => l.includes('docker network create'));
-    const idx = start.split('\n').findIndex((l) => l.includes('docker network create'));
-    const stmt = start.split('\n').slice(idx, idx + 5).join('\n');
-    expect({ found: Boolean(create) }).toEqual({ found: true });
-    expect(stmt).toContain('com.docker.compose.project=liquidupstart');
-    expect(stmt).toContain('com.docker.compose.network=nocodenation_liquid_upstart_network');
+  test('and refuses a value that is not a CIDR rather than writing it', () => {
+    // trustedProxies is matched by the gateway, not parsed by us: a malformed
+    // range is a 403 on every proxied request with nothing to read.
+    expect(openclaw).toMatch(/SYSTEM_NETWORK_SUBNET in .* is not a CIDR/);
   });
 
-  test('and an existing network without those labels is replaced, not tolerated', () => {
-    // The labels are not only about noise. Compose refuses to remove a network it
-    // did not create, so an unlabelled one survives every `down` — while the
-    // `create` above never runs, because `inspect` succeeds. The first version of
-    // this repair produced exactly that on 2026-09-10: a stale network that
-    // nothing could clean up, keeping its own warning alive. The start replaces
-    // it, which is safe here because down.sh has already removed the containers.
-    expect(start).toContain('com.docker.compose.network');
-    expect(start).toMatch(/docker network rm "\$LU_NETWORK"/);
-    const rm = start.split('\n').findIndex((l) => l.includes('docker network rm "$LU_NETWORK"'));
-    const create = start.split('\n').findIndex((l) => l.includes('docker network create'));
-    expect(rm).toBeGreaterThan(-1);
-    expect(rm).toBeLessThan(create);
+  test('start.sh leaves the compose network to compose', () => {
+    // Nothing pre-creates it any more, so nothing has to label it like compose,
+    // and the unlabelled-network trap of 2026-09-10 cannot recur.
+    const creates = start
+      .split('\n')
+      .map((text, i) => ({ line: i + 1, text }))
+      .filter(({ text }) => /docker network create/.test(text) && !text.trim().startsWith('#'))
+      .filter(({ text }) => !/"\$probe"/.test(text))
+      .map(({ line, text }) => `${START}:${line}  ${text.trim()}`);
+    expect(creates).toEqual([]);
   });
 
   test('and no block after `up` rewrites trustedProxies a second time', () => {
@@ -101,23 +80,9 @@ describe('OC-32 the network is created before the configuration is written', () 
       .map(({ line, text }) => `${START}:${line}  ${text.trim()}`);
     expect(offenders).toEqual([]);
   });
-
-  test('openclaw.sh inspects one network by its exact name, not by substring', () => {
-    // `--filter name=` matches substrings, so a leftover network from another
-    // port or a second checkout sorts first and its subnet is written instead.
-    expect(openclaw).not.toContain('--filter name=nocodenation_liquid_upstart_network');
-    expect(openclaw).toContain('docker network inspect "$LU_NETWORK_NAME"');
-  });
-
-  test('and takes one IPAM entry, because a dual-stack network has two', () => {
-    // {{range .IPAM.Config}}{{.Subnet}}{{end}} concatenates with no separator:
-    // 172.31.250.0/24fd00:dead:beef::/64 written verbatim into trustedProxies.
-    expect(openclaw).toContain('{{(index .IPAM.Config 0).Subnet}}');
-    expect(openclaw).not.toContain('{{range .IPAM.Config}}{{.Subnet}}{{end}}');
-  });
 });
 
-describe('OC-35 every network the start creates is one the stack joins', () => {
+describe('OC-35 a network compose does not declare is removed, never created', () => {
   const declared = [...compose.matchAll(/name:\s*(\S*network\S*)/g)].map((m) =>
     m[1].replace(/\$\{[^}]*\}/g, '')
   );
@@ -127,13 +92,35 @@ describe('OC-35 every network the start creates is one the stack joins', () => {
     expect(declared.length).toBeGreaterThan(0);
   });
 
-  test('no start script creates or inspects a network compose.yml does not name', () => {
-    const used = [...`${start}\n${openclaw}`.matchAll(/([A-Za-z0-9_]*network[A-Za-z0-9_]*)_?\$\{?[A-Z_]*/g)]
-      .map((m) => m[1])
-      .filter((n) => n.startsWith('nocodenation'));
-    const stray = [...new Set(used)].filter(
-      (n) => !declared.some((d) => d.startsWith(n) || n.startsWith(d.replace(/_$/, '')))
+  test('the stray names the start scripts mention appear only in a removal', () => {
+    // The line F2 replaced created nocodenation_playground_network_<port> — a
+    // name from an earlier name for this project, which nothing joins and which
+    // no `down` removes. R1 showed what that leftover costs: it holds the range
+    // this stack pins. So the name is still here, and must be, but only to take
+    // it away.
+    const offenders = `${start}\n${openclaw}`
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('#'))
+      .filter((l) => /nocodenation_[A-Za-z0-9_]*network/.test(l))
+      .filter((l) => {
+        const name = l.match(/nocodenation_[A-Za-z0-9_]*network/)![0];
+        const isDeclared = declared.some((d) => d.replace(/_$/, '') === name);
+        if (isDeclared) return false;
+        return !/network rm|network inspect|lu_drop_legacy_network|^\s*LEGACY/.test(l);
+      })
+      .map((l) => l.trim());
+    expect(offenders).toEqual([]);
+  });
+
+  test('and the only network the start creates itself is removed in the same helper', () => {
+    // The subnet probe: created to ask docker whether the range is free, removed
+    // immediately. A probe that survives its own function is a leftover like any
+    // other — and would hold the very range it was checking.
+    const fn = start.slice(
+      start.indexOf('lu_require_free_subnet() {'),
+      start.indexOf('\n}', start.indexOf('lu_require_free_subnet() {'))
     );
-    expect(stray).toEqual([]);
+    expect(fn).toContain('docker network create --subnet "$cidr" "$probe"');
+    expect(fn).toContain('docker network rm "$probe"');
   });
 });

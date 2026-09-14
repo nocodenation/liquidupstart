@@ -85,3 +85,41 @@ describe('N9 both start scripts read .env through one tolerant helper', () => {
     }
   });
 });
+
+/**
+ * R1/OC-41 — one default range, written in four places.
+ *
+ * The value lives in `.env.example` (what an installation gets), `compose.yml`'s
+ * ipam fallback (what creates the network), and both start scripts (what they
+ * assume when the key is absent). Three of them disagreeing is invisible until a
+ * gateway trusts a range no container is in, which is N3 in a new costume.
+ */
+describe('R1 the default subnet is one value', () => {
+  test('.env.example, compose.yml and both start scripts agree on it', () => {
+    const read = (f: string) => readFileSync(join(repoRoot, f), 'utf8');
+    const found = {
+      env: read('.env.example').match(/^SYSTEM_NETWORK_SUBNET=(\S+)/m)?.[1],
+      compose: read('compose.yml').match(/subnet:\s*\$\{SYSTEM_NETWORK_SUBNET:-([^}]+)\}/)?.[1],
+      start: read('scripts/linux/start.sh').match(/LU_SUBNET_CIDR:-([^}]+)\}/)?.[1],
+      openclaw: read('config/scripts/start/openclaw.sh').match(/LU_NETWORK_SUBNET:-([^}]+)\}/)?.[1]
+    };
+    const distinct = [...new Set(Object.values(found))];
+    expect({ distinct, found }).toEqual({ distinct: [distinct[0]], found });
+    expect(distinct[0]).toBeTruthy();
+  });
+
+  test('and it is outside the ranges docker hands out by itself', () => {
+    // Docker's default pools are 172.17-172.31 as /16s and 192.168.0.0/16 as
+    // /20s. A default inside them collides with whatever docker allocated first
+    // — which is exactly how main's leftover network broke this branch's start.
+    const value = readFileSync(join(repoRoot, '.env.example'), 'utf8').match(
+      /^SYSTEM_NETWORK_SUBNET=(\S+)/m
+    )?.[1];
+    expect(value).toBeTruthy();
+    const octets = (value as string).split('/')[0].split('.').map(Number);
+    const inDockerPool =
+      (octets[0] === 172 && octets[1] >= 17 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168);
+    expect({ value, inDockerPool }).toEqual({ value, inDockerPool: false });
+  });
+});

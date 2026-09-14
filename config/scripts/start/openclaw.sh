@@ -364,17 +364,21 @@ else
   # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute, and
   # demands a narrow gateway.trustedProxies. This stack's own docker network is
   # narrow enough; the three RFC1918 ranges written until 2026-09-05 are not.
-  # start.sh creates this network before calling us, so the lookup is expected to
-  # succeed and the wide fallback below is for a hand-run of this script alone.
-  # Inspect the exact name: `--filter name=` is a substring match, so a leftover
-  # network from another port or a second checkout sorts first and its subnet
-  # would be written instead. And take the first IPAM entry rather than
-  # concatenating them -- a dual-stack network yields two, which joined with no
-  # separator make one bogus CIDR.
-  LU_HTTP_PORT="$(get_env SYSTEM_HTTP_PORT)"
-  LU_NETWORK_NAME="nocodenation_liquid_upstart_network_${LU_HTTP_PORT:-8888}"
-  LU_NETWORK_SUBNET="$(docker network inspect "$LU_NETWORK_NAME" \
-      --format '{{(index .IPAM.Config 0).Subnet}}' 2>/dev/null || true)"
+  #
+  # Read from .env, not off the live network. The lookup needed the network to
+  # exist before this script ran, which is why start.sh created it early -- and
+  # a lookup that came back empty wrote the wide list instead, silently. .env is
+  # the same value compose declares as ipam, so it is known before anything runs.
+  # The default has to match compose.yml's and start.sh's; OC-41 holds them
+  # together.
+  LU_NETWORK_SUBNET="$(get_env SYSTEM_NETWORK_SUBNET)"
+  LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET:-10.99.0.0/24}"
+  if [[ ! "$LU_NETWORK_SUBNET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
+    echo "Error: SYSTEM_NETWORK_SUBNET in ${ENV_FILE} is not a CIDR: ${LU_NETWORK_SUBNET}" >&2
+    echo "  The gateway trusts this range by name; a malformed one makes every" >&2
+    echo "  proxied request answer 403. Expected something like 10.99.0.0/24." >&2
+    exit 1
+  fi
 
   # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
   # relocated agents.defaults.memorySearch to memory.search, and retired
@@ -429,9 +433,10 @@ else
       c.gateway.auth.trustedProxy = c.gateway.auth.trustedProxy || {};
       c.gateway.auth.trustedProxy.userHeader = "x-forwarded-user";
       c.gateway.auth.trustedProxy.allowLoopback = true;
-      c.gateway.trustedProxies = process.env.LU_NETWORK_SUBNET
-        ? ["127.0.0.1/32", process.env.LU_NETWORK_SUBNET]
-        : ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
+      // No wide fallback: the range is read from .env and validated before we get
+      // here, so an empty value is a bug to fail on rather than to paper over
+      // with three RFC1918 ranges nobody chose.
+      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_NETWORK_SUBNET];
 
       // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};

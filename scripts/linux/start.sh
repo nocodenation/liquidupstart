@@ -13,13 +13,6 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-"${PROJECT_DIR}/scripts/linux/down.sh"
-
-# --- Pre-flight: the host ports the proxy publishes must be free -------------
-# If SYSTEM_HTTP_PORT / SYSTEM_HTTPS_PORT are taken, `docker compose up` leaves
-# a half-started stack. Probe each via a throwaway container: the bind happens
-# on the real host, so this works from inside the toolbox container too. Our
-# proxy was just stopped by down.sh, so a conflict here is some other process.
 # One reader for .env, tolerant and quote-agnostic. Two failures it removes:
 # a key that is absent makes grep exit 1, pipefail passes it through and set -e
 # ends the start without a word, after down.sh has already emptied the stack; and
@@ -35,6 +28,63 @@ HTTP_PORT="${HTTP_PORT:-8888}"
 HTTPS_PORT="$(get_env SYSTEM_HTTPS_PORT)"
 HTTPS_PORT="${HTTPS_PORT:-8833}"
 
+# --- Pre-flight: the pinned network range has to be available ----------------
+# Before down.sh, not after. A range that is already taken ends this script, and
+# by then down.sh has emptied the stack -- which is how the previous version of
+# this block failed: it created the network at line 191 with no error handling.
+#
+# main's start script creates nocodenation_playground_network_<port> with no
+# --subnet, so docker hands it the first free range: 172.18.0.0/16 on an ordinary
+# host, which is exactly what this stack pinned until 2026-09-14. Nothing joins
+# that network and nothing removes it, so every host that ever ran main kept a
+# collision lying in wait.
+# Remove main's leftover when nothing is attached to it. Nothing joins it: it is
+# created under a name no service in this compose file references.
+lu_drop_legacy_network() {  # lu_drop_legacy_network <name>
+  docker network inspect "$1" >/dev/null 2>&1 || return 0
+  [[ "$(docker network inspect "$1" --format '{{len .Containers}}' 2>/dev/null)" == "0" ]] || return 0
+  echo "Removing $1: main's start script left it behind and nothing is attached."
+  docker network rm "$1" >/dev/null 2>&1 || true
+}
+
+# Ask docker whether the range is free instead of reimplementing its pool
+# arithmetic: create a throwaway network on it, then remove it again. Skipped
+# when the stack's own network already holds exactly that range -- the ordinary
+# case, which would otherwise be reported as overlapping with itself.
+lu_require_free_subnet() {  # lu_require_free_subnet <own-network> <cidr>
+  local own="$1" cidr="$2" have probe err
+  have="$(docker network inspect "$own" --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | awk '{print $1}')"
+  [[ "$have" == "$cidr" ]] && return 0
+  probe="lu-subnet-probe-$$-${RANDOM}"
+  if ! err="$(docker network create --subnet "$cidr" "$probe" 2>&1)"; then
+    echo "Error: the network range ${cidr} is not available on this host." >&2
+    echo "  docker: ${err}" >&2
+    echo "  Something else holds it: another project, a VPN, or a network an earlier" >&2
+    echo "  version of this stack left behind. Nothing has been stopped -- the stack" >&2
+    echo "  is as it was." >&2
+    echo "  Pick a free range for SYSTEM_NETWORK_SUBNET in .env, for example:" >&2
+    echo "    SYSTEM_NETWORK_SUBNET=10.99.1.0/24" >&2
+    echo "  'docker network ls' and 'docker network inspect <name>' show what is taken." >&2
+    return 1
+  fi
+  docker network rm "$probe" >/dev/null 2>&1 || true
+  return 0
+}
+
+LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
+LU_SUBNET_CIDR="$(get_env SYSTEM_NETWORK_SUBNET)"
+LU_SUBNET_CIDR="${LU_SUBNET_CIDR:-10.99.0.0/24}"
+
+lu_drop_legacy_network "nocodenation_playground_network_${HTTP_PORT}"
+lu_require_free_subnet "$LU_NETWORK" "$LU_SUBNET_CIDR" || exit 1
+
+"${PROJECT_DIR}/scripts/linux/down.sh"
+
+# --- Pre-flight: the host ports the proxy publishes must be free -------------
+# If SYSTEM_HTTP_PORT / SYSTEM_HTTPS_PORT are taken, `docker compose up` leaves
+# a half-started stack. Probe each via a throwaway container: the bind happens
+# on the real host, so this works from inside the toolbox container too. Our
+# proxy was just stopped by down.sh, so a conflict here is some other process.
 LOCAL_LLM_API_BASE="$(get_env LOCAL_LLM_API_BASE)"
 LOCAL_LLM_HOST="${LOCAL_LLM_API_BASE#*://}"
 LOCAL_LLM_HOST="${LOCAL_LLM_HOST%%[:/]*}"
@@ -151,48 +201,11 @@ fi
 "${PROJECT_DIR}/config/scripts/start/liquid.sh"
 # hermes disabled: not started
 # "${PROJECT_DIR}/config/scripts/start/hermes.sh"
-# The gateway's trustedProxies must name this stack's subnet, and openclaw.sh
-# reads it from the live network. down.sh removed that network at line 16, so
-# create it here -- before openclaw.sh, not after `up`. Compose adopts an
-# existing network of the declared name, so one writer suffices and nothing has
-# to be corrected afterwards. The name is compose.yml's, which the line this
-# replaces got wrong: it created nocodenation_playground_network_*, which
-# nothing joins.
-# Labelled the way compose labels its own networks. Without them every later
-# compose command warns "a network with name ... exists but was not created by
-# compose. Set `external: true` to use an existing network" -- true, useless, and
-# printed often enough that people stop reading warnings. The key is compose.yml's
-# network key, not the port-suffixed name it resolves to.
-LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
-# The CIDR is pinned, not left to docker. openclaw.sh reads whatever range the
-# network has and writes it into gateway.trustedProxies; if a later recreation
-# lands on a different one -- a freed range taken by a second checkout, a plain
-# `docker compose up` after a down -- the gateway answers 403 for every proxied
-# request until the next start. compose.yml declares the same value, so both
-# creators agree.
-# `|| true`: an .env written before this key existed -- every installation that
-# predates it -- makes grep exit 1, pipefail passes that through, and set -e ends
-# the start here without a word, after down.sh has already emptied the stack. The
-# same shape as the state-probe abort this branch fixed one commit earlier.
-LU_SUBNET_CIDR="$(get_env SYSTEM_NETWORK_SUBNET)"
-LU_SUBNET_CIDR="${LU_SUBNET_CIDR:-172.18.0.0/16}"
-# An existing network without the labels is not merely noisy, it is permanent:
-# compose refuses to remove a network it did not create, and the `create` below
-# never runs while `inspect` succeeds. So an unlabelled one is replaced here --
-# down.sh has already removed the containers, so nothing is attached. Met on
-# 2026-09-10, created by the first version of this very block.
-if docker network inspect "$LU_NETWORK" >/dev/null 2>&1; then
-  if [ -z "$(docker network inspect "$LU_NETWORK" \
-       --format '{{index .Labels "com.docker.compose.network"}}' 2>/dev/null)" ]; then
-    echo "Replacing ${LU_NETWORK}: it exists without compose labels, which compose will not clean up."
-    docker network rm "$LU_NETWORK" >/dev/null 2>&1 || true
-  fi
-fi
-docker network inspect "$LU_NETWORK" >/dev/null 2>&1 || docker network create \
-  --label com.docker.compose.project=liquidupstart \
-  --label com.docker.compose.network=nocodenation_liquid_upstart_network \
-  --subnet "$LU_SUBNET_CIDR" \
-  "$LU_NETWORK"
+# No network is created here any more. It existed only so openclaw.sh could read
+# the subnet off the live network before compose brought it up; openclaw.sh reads
+# SYSTEM_NETWORK_SUBNET from .env now, which is the same value compose declares as
+# ipam, so compose can create the network at `up` like any other. That also
+# removes the ordering dependency between this script and openclaw.sh.
 
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
