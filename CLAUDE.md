@@ -7,9 +7,14 @@ engine based on Apache NiFi), and AI coding agents (OpenClaw, OpenCode) behind a
 **SvelteKit dashboard** (`dashboard/`) configures, builds, starts, and stops the stack
 from the browser.
 
-> **Active work:** the agent git integration (branch `feature/git-integration`) is mid-stream.
-> Read **`HANDOFF.md`** in the project root before continuing it — current state, where the
-> specification lives, how the milestone cycle works, and what the failures so far have taught.
+> **Continuing this work?** Features are built on stacked branches, and **`HANDOFF.md`** in the
+> project root is the working handover for whoever picks one up on *this machine*: what is next, how
+> the milestone cycle works, and what the failures so far have taught. Its state claims describe one
+> installation at a moment in time, each dated.
+>
+> **Reviewing, or reading to understand the product? You do not need it.** The specifications are
+> `docs/FEATURE-*.md` and `docs/TEST-SPEC-*.md`, written and signed off before the work they
+> describe, and they are the documents the code answers to.
 
 ## Layout
 
