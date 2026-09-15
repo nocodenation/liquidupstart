@@ -361,13 +361,61 @@ directory wired into the container's startup:
 - Container path: `/opt/nifi/nifi-current/nar_extensions`
 
 On every container start the entrypoint copies all `*.nar` from `nar_extensions/` into
-`/opt/nifi/nifi-current/lib/` before launching Liquid. So the deploy procedure is:
+`/opt/nifi/nifi-current/lib/` before launching Liquid, and says on the log what it copied
+or which file failed to arrive. So the deploy procedure is:
 
-1. Build the NAR(s).
-2. Place the `.nar` file(s) in `./volumes/nar_extensions/`.
-3. Restart the container: `docker compose restart liquid` (or `up -d --force-recreate liquid`).
-4. Confirm the component appears (list controller-service / processor types via the API,
-   or check the canvas).
+1. Build the NAR with `nar-build`, from the source directory in a clone under `/repos`:
+
+   ```bash
+   cd /repos/<repository>/<processor>   # git-repo-info <repository> names the clone
+   nar-build
+   ```
+
+   `nar-build` compiles the source against the NiFi and Java versions the running Liquid
+   reports and the `nifi-api` version resolved from that distribution — nothing is declared
+   — and it writes the finished `.nar` straight into the drop directory. It prints the file
+   it wrote. If it refuses, the message names the next step; a failed build writes nothing,
+   so whatever was in the drop directory before is still what Liquid would load.
+   `nar-build --help` for the whole surface, `nar-build --target` for the versions alone.
+
+2. The artifact is now in `./volumes/nar_extensions/` (`/opt/nifi/nifi-current/nar_extensions`
+   inside the container). Place NARs you did not build with `nar-build` there yourself, and
+   put every NAR of a dependency chain there together (§6.5).
+
+3. **Check whether it loaded — do not assume either way.** The drop directory is also NiFi's
+   auto-load directory, and NiFi watches it while running. A **new** bundle is usually picked
+   up within seconds and needs no restart; Liquid's log says so plainly:
+
+   ```
+   NarAutoLoaderTask   Found .../nar_extensions/<file>.nar in auto-load directory
+   ExtensionDiscovery  Loaded extensions for <group>:<artifact>:<version> in NN millis
+   ```
+
+   Then confirm the type is really there — list processor types through the API, or drop one
+   on the canvas and check `extensionMissing: false` before removing it again. §1.1 applies:
+   back the canvas up first.
+
+   **A restart is required when you are replacing a version that is already loaded**, because
+   the entrypoint's copy into `lib/` wins over the auto-load directory and the old bundle
+   stays. That is the case where the auto-loader will not help you.
+
+4. **When a restart is needed, it is the operator's — ask, and never take it yourself.**
+   It interrupts every running flow in this Liquid — every flow anyone else is running, not
+   only yours — so it is not a step an agent takes on its own timing, and you have no way to
+   take it in any case: no Docker socket is mounted in your container.
+
+   > Built `my-processors-1.0.0.nar` into `./volumes/nar_extensions/`. It replaces a bundle
+   > Liquid has already loaded, so it needs a restart (`docker compose restart liquid`),
+   > which interrupts every running flow — tell me when you want it and I will confirm the
+   > processor afterwards.
+
+   **Say what you checked, not what you expect.** "Built, not deployed" is the right report
+   when you looked and it had not loaded; it is a false report when you did not look. Never
+   describe the restart as something you have done or are about to do.
+
+5. After the operator's restart, confirm the component appears (list controller-service /
+   processor types via the API, or check the canvas), and check the entrypoint's own lines in
+   `docker compose logs liquid` — a NAR that failed to reach `lib/` is named there.
 
 NARs in `lib/` are loaded once at boot — adding a NAR always requires a **restart**, not
 just a schema reload. (Liquid also supports hot-loading from an autoload directory, but in

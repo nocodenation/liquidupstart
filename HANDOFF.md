@@ -1,7 +1,20 @@
-# Handover — 2026-09-09 (evening)
+# Handover — maintained continuously, last touched 2026-09-15
 
-Read this first. It is the map and the current state; the specifications are the documents in
-`docs/`. Everything here was true at the end of 2026-09-08.
+**What this file is.** The working handover between the operator and the agent, on **one machine**.
+It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
+which stack is running, how many services are up, which version is on disk — describe that machine at
+the moment they were written, and each carries its own date. They are not project facts and a second
+installation will not match them.
+
+**What it is not.** It is not a specification and not a requirement. Those are
+`docs/FEATURE-*.md` and `docs/TEST-SPEC-*.md`, which are written and signed off before the work they
+describe. **Reviewing a pull request does not require this file**, and nothing in it should be read
+as a promise the code has to keep.
+
+**Which copy is current.** The one on the topmost branch of the stack. Merges flow upward only
+(`main` → `#9` → `#10`), so a copy on a lower branch is a snapshot from the last forward merge and is
+expected to be behind. There is no rule that the copies match, and trying to make them match by
+editing downward is work that the merge direction undoes.
 
 ## What is being built
 
@@ -134,16 +147,22 @@ indistinguishable from a fix that works.
 
 ## State
 
-**The stack runs OpenClaw 2026.9.1**, rebuilt from `fix/openclaw-start-stdin` on 2026-09-08 evening
-and migrated from a state 2026.7.1 had written — the path a real installation takes, not a cold
-start. Nineteen services, every healthcheck green. It ran 2026.7.1 for most of that day, for M-A8 and
-M-B3, and was moved forward only to verify the migration; images live on the host and not in the
-branch, which is what *"A locally built image can belong to another branch"* below is about and what
-cost two hangs before it was understood.
+**The stack runs OpenClaw 2026.9.1 and is shaped by `feature/liquid-java-extensions`**, rebuilt and
+started there on 2026-09-14 after `main` was merged forward through the stack. Twenty services,
+including `nar_builder`. It was first migrated from a state 2026.7.1 had written — the path a real
+installation takes, not a cold start — which is why the state in `volumes/_openclaw` is a migrated
+one rather than a fresh one.
 
-**`volumes/_openclaw` now holds a 2026.9.1 state, so the way back is not a checkout.** 2026.7.1
-refuses it — OC-21's one-way door. Returning to #9 or #10 means clearing that directory and
-restoring `_openclaw.bak-2026.7.1`.
+**The version hazard that used to sit here is gone, and this paragraph replaces it.** Until
+2026-09-14 `volumes/_openclaw` held a 2026.9.1 state while #9 and #10 still pinned 2026.7.1, so
+switching to either meant clearing that directory and restoring `_openclaw.bak-2026.7.1` — OC-21's
+one-way door. Both branches now carry 2026.9.1 through the forward merge, so a checkout is just a
+checkout. **The backup that instruction named no longer exists**: it was consumed on 2026-09-09
+replaying the migration. Anyone who finds that sentence quoted elsewhere should know both halves.
+
+**Images live on the host, not in the branch**, which is what *"A locally built image can belong to
+another branch"* below is about and what cost two hangs before it was understood. Switching branches
+therefore means rebuilding: `./scripts/linux/build.sh`, then `./scripts/linux/start.sh`.
 
 **The git integration is complete.** M-A0 to M-A8 built, each verified independently and posted to
 #9. All four manual cases observed, including the three that failed.
@@ -505,6 +524,15 @@ Hub's rate limit and reported every image as unreadable — which, diffed agains
 as though every tag had moved at once. Failures are now excluded from both sides, incomplete snapshots
 are named so they cannot become a later reference, and the verdict says what was actually compared.
 
+**A check that cannot run looks exactly like a check that ran.** Three times in two days, in three
+disguises: `if ! emit` could not see a failing stage, so a stub snapshot was stamped as the
+reference; a deployment guard was added to `build.sh` and the image was not rebuilt, so the first
+"green" proof run proved nothing; and a negative control could not stage its own fixture, said so
+only into `/dev/null`, and reported the silence as a finding about NiFi. The common shape is a
+success path and a did-not-happen path that produce the same output. Every guard needs the question
+asked of it once: **what would I see if this never ran?** If the answer is "the same thing", the
+guard is decoration.
+
 **An `if` condition is where `errexit` goes to die.** `if ! emit > "$OUT.partial"` reads like a guard
 and is not one: bash suspends `set -e` for everything the condition calls, so a failed
 `docker compose config | jq` ran on, the later stages produced their lines, and `emit` returned the
@@ -549,9 +577,41 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
 
-0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
-   finding, not the pass.
-0. ~~**Timur's two reviews of #11**~~ — answered 2026-09-10 (F1–F10) and 2026-09-11 (N1–N10), every
+Everything below is live. Finished items moved to *"Done, and what each turned up"* on
+2026-09-15, because the list had grown three items numbered 0, two numbered 3, and a contradiction
+between them.
+
+1. **Timur's reviews of #9 and #10.** Requested 2026-09-15; he is assigned on both and has read
+   neither before — #11 was the only one he had seen. Both descriptions were rewritten that day,
+   because they still described the state at M-A0 and M-B1 respectively. #9 first: #10 sits on it.
+   Nothing here is blocked in the meantime; the branches are complete and pushed.
+2. **PR #1, `GIT Versioning`, is superseded and should be closed.** Opened by Timur on 2026-06-19 and
+   untouched since 2026-06-22. It is not a second version of #9: it puts a **Gitea** server inside the
+   stack — its own service, nginx route and start script — and gives agents a `publish-to-git` skill
+   pointing at it, where #9 uses real GitHub remotes with a deploy key per repository.
+
+   **The decision, taken 2026-09-15: a self-hosted git server is still wanted, but it will be Forgejo
+   rather than Gitea.** So the intent survives and the implementation in #1 does not. Nothing in the
+   repository says this, which is why it is written here.
+
+   What made it stale regardless: 112 commits behind `main` and seven of its files also changed by
+   #9 — `compose.yml`, `CLAUDE.md`, `.env.example`, `scripts/linux/start.sh` and
+   `config/scripts/start/openclaw.sh` among them, the last rewritten twice since June. Reviving it
+   would be a fresh implementation, not a merge. It also carries a second skill for the same job,
+   which would leave an agent with two instructions describing different paths.
+3. **The second clone on `feature/privacy-gateway` — the operator's, not the agent's.** A separate
+   checkout of this repository, started by hand on 2026-09-11 on Timur's instruction, which took over
+   the shared stack and invalidated a set of measurements before the `privacy-proxy` container gave it
+   away. It is stopped. **The operator intends to test the privacy gateway there when time allows**
+   (stated 2026-09-15), so it stays.
+
+   What matters for anyone else on this machine is *One working copy, one stack* above: starting that
+   clone takes the stack over, and measurements taken here while it runs are measurements of it. The
+   discriminator is the `privacy-proxy` container.
+
+## Done, and what each turned up
+
+- ~~**Timur's two reviews of #11**~~ — answered 2026-09-10 (F1–F10) and 2026-09-11 (N1–N10), every
    finding reproduced before it was touched and every fix carried by a case run against its control.
    Two of the fixes were the interesting ones. The bound on every `docker run` was decorative:
    coreutils `timeout` reaches the docker *client*, and a node PID 1 without a handler ignores the
@@ -572,9 +632,22 @@ route, and the pairing decision happens only after a browser signs a challenge.
    reads the range from `.env`, which is what compose declares as ipam, so the ordering dependency
    between the two scripts no longer exists. Verified by starting: compose created the network on
    10.99.0.0/24, `trustedProxies` names it, and the gateway answers from 10.99.0.3.
-0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
-   matters until it is decided, because M-B4 and part of M-B2 rest on it.
-1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
+
+- ~~**The autoload finding**~~ — decided and built 2026-09-14/15 on `feature/liquid-java-extensions`.
+   The answer was not to argue with the auto-loader but to move the check to where deployment
+   happens: `nar-build` judges a bundle between writing it as a dot-file the auto-loader skips and
+   renaming it into place, and a refused one goes to `refused/`, which the auto-loader does not
+   descend into. FR29 is corrected — there is no restart, and `nar-build` had been telling every
+   agent to ask for one. Verified by hand: `./tests/verify/m-b4.sh`, all six checks PASS,
+   `docs/verification/M-B4-verification.md`.
+
+   The record carries the first run of that script too, where the negative control reported a
+   finding about NiFi that was really a finding about its own broken setup, silenced by
+   `>/dev/null 2>&1`. That is the third time in two days that **a check which cannot run looked
+   exactly like a check that ran and passed** — see the `if ! emit` and the unrebuilt-image entries
+   below.
+
+- ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
    for, and that is the milestone's result rather than a defect in it: see *"A mismatched NAR loads,
    and nothing says so"* below. The stack on this machine is now `feature/liquid-java-extensions`-shaped
    and its Maven cache is warm again; the four commands that got it there are in the branch table's
@@ -584,29 +657,19 @@ route, and the pairing decision happens only after a browser signs a challenge.
    *instantiation*, not at trigger; the error lands in `nifi-user.log` where nothing looked; and the
    operator is told their session expired. See *"A mismatched NAR loads, and then tells the operator
    the wrong thing"* above.
-3. ~~**The repaired migration path had never been executed.**~~ — run 2026-09-09. A 2026.7.1 state
+
+- ~~**The repaired migration path had never been executed.**~~ — run 2026-09-09. A 2026.7.1 state
    was restored from `_openclaw.bak-2026.7.1` and `./scripts/linux/start.sh` migrated it with GNU
    `timeout` on `PATH`, which is the condition that produces the hang: `state migrated.` inside a
    minute, no `SIGCONT`, no stall. The whole upgrade path came with it — `deviceAutoApprove` written
    into a state that had never carried it, `plugins.entries.codex` removed as a key 2026.9.1 refuses,
    and the config shape moved to 2026.9. `tests/run.sh oc` then ran **50 pass, 0 fail** against a
    state that had just been migrated rather than one already on 2026.9.1.
-2. **Timur's reviews.** #12, #13 and #14 were reviewed and merged on 2026-09-08; **#9, #10 and #11
-   are open**, and #11 is next — it is on his list for 2026-09-09. They run in parallel and block
-   nothing, which is what the stacking is for, with one exception: **#11 is the only door to `main`**,
-   and it has stopped being a one-line pin. The whole migration, #12 and #14 sit inside it. Reviewing
-   it as though its title were still accurate would be reviewing the wrong thing.
 
-   The working copy is currently on `fix/openclaw-start-stdin` and the stack is 2026.9.1-shaped.
-   `volumes/_openclaw` holds a state 2026.9.1 has written, so **going back to #9 or #10 means
-   clearing it and restoring `_openclaw.bak-2026.7.1`** — OC-21's one-way door, and the discriminators
-   above say which stack is running.
-3. **The repaired migration path has never been executed.** #14 fixes the `SIGTTIN` hang, the case
-   asserts it at the text level and its control was run — but the start that verified it *skipped*
-   `openclaw_migrate_state`, because the state was already 2026.9.1 by then. Running it in anger
-   needs a 2026.7.1 state restored first, which is OC-28's replay. After a day in which eight of nine
-   defects sat in code nobody had ever run, this is the obvious loose end.
-4. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
+- ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
+   finding, not the pass.
+
+- ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
    was the one without, and its file holds the four things 2026.9.1 deferred plus the `bun_runner`
    entrypoint alternative that #12 had nowhere to record. Two entries on #9 and #10 are answered
    rather than open — the Claude CLI install, fixed 2026-09-05, and `bun_runner` reporting unhealthy
