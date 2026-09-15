@@ -290,7 +290,11 @@ machine under `volumes/privacy-proxy/`.
   that call, which varies from call to call. Anything masked once stays masked for the whole
   conversation. For the terms that matter to you — project names, codes, study ids — name them
   on the settings page (`privacy.localhost`), which catches them on first sight instead of
-  relying on the model to find them.
+  relying on the model to find them. The page tells you when your description mentions an
+  identifier the term list does not carry, and when it names what is confidential without
+  naming a single term. The harness's own plumbing — OpenClaw's turn stamp and its
+  sender id — is never treated as your data: the stamp goes through unchanged and the sender id
+  is a stable placeholder.
 - **The local model is the trust boundary.** The second pass and the judges read your messages
   in full before anything is masked, so whatever `LOCAL_LLM_API_BASE` (section 6) points at sees
   the real data. Keep it on your own machine or network; only the masked text goes to the cloud.
