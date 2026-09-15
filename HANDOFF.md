@@ -505,6 +505,15 @@ Hub's rate limit and reported every image as unreadable — which, diffed agains
 as though every tag had moved at once. Failures are now excluded from both sides, incomplete snapshots
 are named so they cannot become a later reference, and the verdict says what was actually compared.
 
+**A check that cannot run looks exactly like a check that ran.** Three times in two days, in three
+disguises: `if ! emit` could not see a failing stage, so a stub snapshot was stamped as the
+reference; a deployment guard was added to `build.sh` and the image was not rebuilt, so the first
+"green" proof run proved nothing; and a negative control could not stage its own fixture, said so
+only into `/dev/null`, and reported the silence as a finding about NiFi. The common shape is a
+success path and a did-not-happen path that produce the same output. Every guard needs the question
+asked of it once: **what would I see if this never ran?** If the answer is "the same thing", the
+guard is decoration.
+
 **An `if` condition is where `errexit` goes to die.** `if ! emit > "$OUT.partial"` reads like a guard
 and is not one: bash suspends `set -e` for everything the condition calls, so a failed
 `docker compose config | jq` ran on, the later stages produced their lines, and `emit` returned the
@@ -572,8 +581,19 @@ route, and the pairing decision happens only after a browser signs a challenge.
    reads the range from `.env`, which is what compose declares as ipam, so the ordering dependency
    between the two scripts no longer exists. Verified by starting: compose created the network on
    10.99.0.0/24, `trustedProxies` names it, and the gateway answers from 10.99.0.3.
-0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
-   matters until it is decided, because M-B4 and part of M-B2 rest on it.
+0. ~~**The autoload finding**~~ — decided and built 2026-09-14/15 on `feature/liquid-java-extensions`.
+   The answer was not to argue with the auto-loader but to move the check to where deployment
+   happens: `nar-build` judges a bundle between writing it as a dot-file the auto-loader skips and
+   renaming it into place, and a refused one goes to `refused/`, which the auto-loader does not
+   descend into. FR29 is corrected — there is no restart, and `nar-build` had been telling every
+   agent to ask for one. Verified by hand: `./tests/verify/m-b4.sh`, all six checks PASS,
+   `docs/verification/M-B4-verification.md`.
+
+   The record carries the first run of that script too, where the negative control reported a
+   finding about NiFi that was really a finding about its own broken setup, silenced by
+   `>/dev/null 2>&1`. That is the third time in two days that **a check which cannot run looked
+   exactly like a check that ran and passed** — see the `if ! emit` and the unrebuilt-image entries
+   below.
 1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
    for, and that is the milestone's result rather than a defect in it: see *"A mismatched NAR loads,
    and nothing says so"* below. The stack on this machine is now `feature/liquid-java-extensions`-shaped

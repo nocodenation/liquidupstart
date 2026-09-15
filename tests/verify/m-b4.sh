@@ -307,7 +307,16 @@ grep -q "${MISSING_CLASS}" <<< "$C3_LOG" || C3_WHY="${C3_WHY}the message does no
                    || verdict "3 the mismatch is refused where the operator can see it, and the good NAR still deploys" no "${C3_WHY%; }"
 
 banner "Check 4 — negative control: is check 3 measuring the refusal, or something else?"
-docker compose cp "${DROP}/${BAD_NAR}" "liquid:${LIB}/${BAD_NAR}" >/dev/null 2>&1
+# From refused/, which is where the bundle is by now: check 3 put it back into the
+# drop directory by hand and the entrypoint set it aside again. Reading it from
+# the drop directory silently copied nothing on 2026-09-15, and the control then
+# reported that the guard was not what kept the type out -- a check measuring its
+# own broken path and calling it a finding.
+C4_CP="$(docker compose cp "${DROP}/refused/${BAD_NAR}" "liquid:${LIB}/${BAD_NAR}" 2>&1)"
+C4_CP_RC=$?
+# Not silenced: a negative control that could not set up its own precondition has
+# to say so, or its failure reads as a statement about the system.
+[[ $C4_CP_RC -eq 0 ]] || echo "could not stage ${BAD_NAR} into ${LIB}: ${C4_CP}" >&2
 restart_liquid || { echo "liquid did not restart" >&2; }
 await_liquid || verdict "4 Liquid came back" no "liquid did not answer on its HTTPS API within 300s"
 C4_TYPES="$(processor_types)"
@@ -318,6 +327,7 @@ echo "control ${C4_CONTROL}  mismatched, placed by hand: ${C4_BAD}"
 log "$C4_OUT"
 C4_WHY=""
 [[ "$C4_CONTROL" -ge 1 ]] || C4_WHY="${C4_WHY}the API listed no ${CONTROL_TYPE} either, so this proves nothing; "
+[[ $C4_CP_RC -eq 0 ]] || C4_WHY="${C4_WHY}${BAD_NAR} could not be staged into ${LIB} (${C4_CP}), so this control never ran and says nothing about check 3; "
 [[ "$C4_BAD" -ge 1 ]] || C4_WHY="${C4_WHY}${BAD_TYPE} is absent even with the NAR in ${LIB}, so check 3's absence was never caused by the refusal — something else is keeping this bundle out, and M-B3's finding that a mismatched NAR loads has changed; "
 [[ -z "$C4_WHY" ]] && verdict "4 the type is absent because the guard refused it, not because it cannot load" yes \
                               "${BAD_TYPE} is listed the moment the same NAR is put into ${LIB} by hand" \
