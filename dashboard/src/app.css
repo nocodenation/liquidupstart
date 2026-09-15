@@ -831,3 +831,96 @@ footer.version {
 footer.version code {
   font-size: 0.85rem;
 }
+
+.gitcard .gitmessage {
+  margin: 0 0 1rem;
+}
+
+.gitlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.gitrepo {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg);
+}
+
+.gitrepo.unreachable {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+}
+
+.gitrepo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.gitrepo-label {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.gitrepo-state {
+  font-size: 0.8rem;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.5rem;
+}
+
+.gitrepo.unreachable .gitrepo-state {
+  border-color: var(--warn-border);
+}
+
+.gitrepo-error,
+.gitrepo-instructions {
+  margin: 0.5rem 0 0;
+}
+
+.gitrepo-error {
+  word-break: break-word;
+}
+
+.gitkey {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.gitkey-value {
+  flex: 1;
+  overflow-wrap: anywhere;
+  user-select: all;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.gitkey-copy {
+  white-space: nowrap;
+}
+
+.gitkey-fingerprint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.gitrepo-test {
+  margin-top: 0.75rem;
+}
+
+.gitresult {
+  margin: 0.5rem 0 0;
+}
