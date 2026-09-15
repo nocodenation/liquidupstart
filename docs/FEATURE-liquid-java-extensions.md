@@ -125,6 +125,42 @@ mistake is available here and is cheaper to avoid than to repeat.
   way; the requirement is about **where** it surfaces, and deployment is the only moment at which the
   operator can act on it.
 
+  **Why nothing is logged at load time, measured again on 2026-09-15 with the stack running.** The
+  bundle was placed into the drop directory by hand, the way an operator would, and then added to the
+  canvas through the API:
+
+  | | |
+  |---|---|
+  | 06:43:13 | copied in — `Found /opt/nifi/nifi-current/nar_extensions/probe-live-1.0.0.nar in auto-load directory` |
+  | 06:43:18 | `Loaded extensions for org.nocodenation.probe:probe-live:1.0.0 in 21 millis` |
+  | | the type is in `/nifi-api/flow/processor-types` |
+  | 06:43:37 | `POST /nifi-api/process-groups/<root>/processors` → **HTTP 500** |
+
+  At load time `nifi-app.log` reports **success**. `NoClassDefFoundError` appears **0** times there and
+  **2** times in `nifi-user.log`, and the stack says where the resolution finally happens:
+
+  ```
+  ERROR [NiFi Web Server-45] o.a.nifi.web.api.config.ThrowableMapper
+  java.lang.NoClassDefFoundError: org/apache/nifi/controller/NodeConnectionState
+      at java.base/java.lang.Class.getDeclaredMethods0(Native Method)
+      at java.base/java.lang.Class.privateGetPublicMethods(Class.java:3605)
+  ```
+
+  **NiFi is not being quiet: at load time nothing has failed yet.** The JVM resolves symbolic
+  references lazily, so loading the class does not touch `NodeConnectionState`. It is touched
+  twenty-four seconds later, when NiFi *reflects over the processor's methods* to build its property
+  descriptors — and by then the failure belongs to the web layer, which is why `ThrowableMapper`
+  writes it to `nifi-user.log` rather than to the log every check in this repository reads.
+
+  Two details that bound the damage and sharpen the diagnosis. The caller is told *"An unexpected
+  error has occurred. Please check the logs for additional details."* — **without being told which
+  log**. And despite the 500, no half-built processor is left behind: the root group still holds zero
+  processors afterwards. This is a diagnosis failure, not a data failure.
+
+  **That is the argument for checking at deployment, and it is not "NiFi should log more".** There is
+  nothing earlier to observe. A guard that waits for a warning waits for something the JVM never
+  emits, so the moment a bundle is placed is the only one before a human clicks.
+
   **Two corrections, 2026-09-14, both found by running it.**
 
   *"Refused means not copied" was not a refusal.* NiFi auto-loads from the drop directory, so a
