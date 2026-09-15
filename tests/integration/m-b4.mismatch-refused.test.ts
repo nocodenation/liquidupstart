@@ -27,8 +27,10 @@
  * Then:     b3-hand reaches lib/ and probe-mismatch does not; the message names
  *           the file, names org.apache.nifi.controller.NodeConnectionState and
  *           the directory that does not provide it, and gives the next step,
- *           which is nar-build --target; the refused file is still in the drop
- *           directory, because it is the operator's; and Liquid is launched
+ *           which is nar-build --target; the refused file is moved into the
+ *           refused/ subdirectory, kept because it is the operator's and out of
+ *           the drop directory because NiFi auto-loads from there at runtime --
+ *           leaving it in place was never a refusal; and Liquid is launched
  *           anyway with the good NAR already in lib/, which is the decision
  *           B2-6 took for a failed copy and this milestone keeps.
  * Covers:   B4-4, B4-5, FR36, FR30, FR31, U10
@@ -88,18 +90,32 @@ test('B4-5 the good NAR is', () => {
 });
 
 test('B4-4 the message names the file, the class and the directory', () => {
+  // On the refusal line itself, not somewhere in the output. Asserting the three
+  // strings against the whole run passed on 2026-09-14 while that line was
+  // broken: narcheck printed the class file's own path where the library
+  // belongs, and `sb.lib` appeared anyway in the entrypoint's "did not reach"
+  // line above it. A case that can be satisfied by a neighbouring line is not
+  // about the line it names.
+  const refusal = run.output.split('\n').find((l) => l.includes(DOTTED));
+  expect(refusal).toBeTruthy();
+  expect(refusal).toContain(sb.lib);
   expect(run.output).toContain(BAD_NAR);
-  expect(run.output).toContain(DOTTED);
-  expect(run.output).toContain(sb.lib);
 });
 
 test('B4-4 the message names the next step', () => {
   expect(run.output).toContain('nar-build --target');
 });
 
-test('B4-4 the refused file stays in the drop directory', () => {
-  expect(readdirSync(sb.drop).sort()).toEqual([BAD_NAR, GOOD_NAR].sort());
-  expect(existsSync(join(sb.drop, BAD_NAR))).toBe(true);
+test('B4-4 the refused file is out of the load path, not merely out of lib/', () => {
+  // It used to stay where it was dropped, and that was not a refusal at all:
+  // nifi.nar.library.autoload.directory points at the drop directory, so NiFi
+  // loads whatever remains there at runtime -- no restart, no lib/. Measured
+  // 2026-09-09. The auto-loader skips a subdirectory ("Skipping non-nar file
+  // refused", 2026-09-14), so that is where a refused bundle goes: kept, because
+  // it is the author's, and out of reach, because it did not pass.
+  expect(readdirSync(sb.drop).sort()).toEqual([GOOD_NAR, 'refused'].sort());
+  expect(existsSync(join(sb.drop, 'refused', BAD_NAR))).toBe(true);
+  expect(existsSync(join(sb.drop, BAD_NAR))).toBe(false);
 });
 
 test('B4-5 the run reports the good NAR deployed, and one of two refused', () => {

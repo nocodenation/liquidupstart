@@ -5,6 +5,12 @@ REPOS=/repos
 DROP=/nar_extensions
 CACHE=/m2
 LIQUID_LOGS=/liquid/logs
+# What a bundle is judged against, and what does the judging. Both are mounted:
+# the index of everything the running Liquid can load, written by its entrypoint
+# on every start, and the checker itself -- the same file the liquid container
+# runs, so a bundle gets the same answer on either side.
+LIQUID_INDEX=/liquid/api
+NAR_CHECK=/opt/builder/narcheck.py
 LIQUID_HOST="${NAR_BUILD_LIQUID_HOST:-liquid}"
 LIQUID_PORT="${SYSTEM_HTTPS_PORT:-8833}"
 NAR_PLUGIN_VERSION="${NAR_BUILD_PLUGIN_VERSION:-2.4.0}"
@@ -366,6 +372,56 @@ NOWRITE
     rm -rf "$work"
     return 2
   fi
+  # Judge it here, while it is still a dot-file the autoload scanner ignores.
+  # Measured 2026-09-14 in nifi-app.log, and this is why the check sits between
+  # the copy and the rename rather than after it:
+  #
+  #   20:07:48,586  Skipping non-nar file .probe-good-...nar.39.part
+  #   20:07:48,634  Found .../probe-good-...nar in auto-load directory
+  #   20:07:53,648  Loaded NAR file: ...-unpacked
+  #
+  # Five seconds from `mv` to loaded, no restart. So `mv` is the moment the
+  # bundle becomes live, and the only moment before it at which a refusal still
+  # means anything. The same check runs in
+  # liquid's entrypoint for whatever was placed there by hand; this one is for
+  # everything nar-build itself writes, which is the path agents actually take.
+  if [ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]; then
+    if ! refusal="$(python3 "$NAR_CHECK" check-index "$part" "$LIQUID_INDEX" 2>&1)"; then
+      # Only after the status is known: a `| sed` in the line above would hand the
+      # `if` sed's status instead of the check's, and every bundle would pass.
+      refusal="$(printf '%s\n' "$refusal" | sed "s|${part}|${DROP}/${base}|g")"
+      # Kept rather than deleted, in the subdirectory the auto-loader skips: the
+      # bundle is the author's work and the only thing they can inspect to see
+      # what the refusal is about. It is out of the load path, which is the part
+      # that matters.
+      kept=""
+      if mkdir -p "${DROP}/refused" && mv "$part" "${DROP}/refused/${base}"; then
+        kept="${DROP}/refused/${base}"
+      else
+        rm -f "$part"
+      fi
+      part=""
+      cat >&2 <<REFUSED
+
+nar-build refused: ${base} was built, but it cannot link against the NiFi API the
+running Liquid loads, so it was not deployed. Nothing was placed in ${DROP}, so
+Liquid never sees it, and whatever was there before is untouched.
+
+${refusal}
+REFUSED
+      if [ -n "$kept" ]; then
+        echo "The bundle itself is at ${kept}, outside the load path." >&2
+      fi
+      rm -rf "$work"
+      return 2
+    fi
+  else
+    # Say it rather than deploy silently unchecked. A check that quietly does not
+    # run is worse than none: everything downstream reads a deployment as proof
+    # the bundle was judged.
+    out "Warning: ${NAR_CHECK} or ${LIQUID_INDEX}/lib-classes.txt is missing; ${base} is deployed unchecked."
+  fi
+
   mv "$part" "${DROP}/${base}"
   part=""
 
@@ -378,8 +434,9 @@ NOWRITE
   out "downloads ${downloads}"
   out "cache ${CACHE}"
   out ""
-  out "Liquid loads NARs from ${DROP} at startup only. Ask the operator to restart it:"
-  out "docker compose restart liquid"
+  out "Liquid autoloads from ${DROP}; the processor is in the catalogue within"
+  out "seconds. No restart, and none should be asked for: a restart interrupts"
+  out "every flow the instance is running."
   rm -rf "$work"
 }
 

@@ -185,7 +185,7 @@ echo "$C2_OUT" | tail -6
 [[ $C2_CODE -eq 0 ]] && verdict "2 no regression across everything before it" yes "EXIT=0" \
                      || verdict "2 no regression across everything before it" no "EXIT=${C2_CODE}"
 
-banner "Check 3 — B4-8: both NARs in the drop directory, one restart (this interrupts every running flow)"
+banner "Check 3 — B4-8: the mismatch is refused at placement; the good NAR auto-loads without a restart"
 C3_BUILD="$(docker compose exec -T openclaw-gateway sh -lc "
 set -e
 P=${GOOD}/src/main/java/org/nocodenation/probe
@@ -269,6 +269,11 @@ grep -E '^(nifi_api_version|wrote) ' /tmp/b4good.out /tmp/b4bad.out" 2>&1)"
 echo "$C3_BUILD"
 
 LIB_TOUCHED=1
+# The mismatch no longer reaches the drop directory at all: nar-build judges it
+# before the rename and keeps it in refused/. Put it back by hand, because that
+# is the one path the entrypoint still guards -- an operator copying a bundle in
+# themselves -- and it is what this check is here to exercise.
+cp "${DROP}/refused/${BAD_NAR}" "${DROP}/" 2>/dev/null || true
 restart_liquid || { echo "liquid did not restart" >&2; }
 await_liquid || verdict "3 Liquid came back" no "liquid did not answer on its HTTPS API within 300s"
 C3_TYPES="$(processor_types)"
@@ -285,15 +290,20 @@ log "$C3_OUT"
 
 C3_WHY=""
 grep -q '^GOOD BUILD EXIT=0$' <<< "$C3_BUILD" || C3_WHY="${C3_WHY}the good fixture did not build; "
-grep -q '^BAD BUILD EXIT=0$' <<< "$C3_BUILD" || C3_WHY="${C3_WHY}the mismatch fixture did not build, so there is no negative half; "
+# Not EXIT=0 any more, and that is the point: nar-build builds the bundle and
+# then refuses to place it, which is a non-zero exit with the artifact kept.
+grep -q '^BAD BUILD EXIT=0$' <<< "$C3_BUILD" && C3_WHY="${C3_WHY}nar-build deployed the mismatched bundle instead of refusing it at placement; "
 [[ "$C3_CONTROL" -ge 1 ]] || C3_WHY="${C3_WHY}the API listed no ${CONTROL_TYPE} either, so it answered nothing and a count of 0 says nothing about either NAR; "
 [[ "$C3_GOOD" -ge 1 ]] || C3_WHY="${C3_WHY}Liquid does not list ${GOOD_TYPE}, so the guard refused a correct bundle — that is a false refusal and it breaks a working deployment; "
 [[ "$C3_BAD" -eq 0 ]] || C3_WHY="${C3_WHY}Liquid lists ${BAD_TYPE}, so the mismatched NAR reached ${LIB} anyway; "
-grep -q "${BAD_NAR}" <<< "$C3_DROP" || C3_WHY="${C3_WHY}${BAD_NAR} is no longer in ${DROP} — the refusal deleted the operator's file; "
+# In refused/, not in the drop directory itself: NiFi auto-loads from the drop
+# directory at runtime, so leaving a refused bundle there was never a refusal.
+[[ -f "${DROP}/refused/${BAD_NAR}" ]] || C3_WHY="${C3_WHY}${BAD_NAR} is not in ${DROP}/refused — the refusal deleted the operator's file instead of setting it aside; "
+[[ -f "${DROP}/${BAD_NAR}" ]] && C3_WHY="${C3_WHY}${BAD_NAR} is still in ${DROP}, where the auto-loader picks it up within seconds — the refusal did not take it out of the load path; "
 grep -q "REFUSED" <<< "$C3_LOG" || C3_WHY="${C3_WHY}the refusal is not in docker compose logs liquid, which is the only place an operator would read it; "
 grep -q "${MISSING_CLASS}" <<< "$C3_LOG" || C3_WHY="${C3_WHY}the message does not name ${MISSING_CLASS}; "
 [[ -z "$C3_WHY" ]] && verdict "3 the mismatch is refused where the operator can see it, and the good NAR still deploys" yes \
-                              "${GOOD_TYPE} listed, ${BAD_TYPE} not, the refusal names ${MISSING_CLASS}, and ${BAD_NAR} is still in ${DROP}" \
+                              "${GOOD_TYPE} listed, ${BAD_TYPE} not, the refusal names ${MISSING_CLASS}, and ${BAD_NAR} is set aside in ${DROP}/refused" \
                    || verdict "3 the mismatch is refused where the operator can see it, and the good NAR still deploys" no "${C3_WHY%; }"
 
 banner "Check 4 — negative control: is check 3 measuring the refusal, or something else?"

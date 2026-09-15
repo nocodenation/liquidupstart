@@ -368,6 +368,13 @@ services:
       - ./volumes/nar_extensions:/nar_extensions
       - ./volumes/nar_builder/m2:/m2
       - ./volumes/liquid/logs:/liquid/logs:ro
+      # The deployment check, and the one thing it needs to judge against: the
+      # nifi-api jar of the Liquid that is actually running, which its entrypoint
+      # copies out on every start. Reading the API from the running distribution
+      # rather than from the author's pom.xml is the whole point -- a bundle that
+      # compiles against one version and is loaded by another is the M-B2 defect.
+      - ./config/liquid/narcheck.py:/opt/builder/narcheck.py:ro
+      - ./volumes/liquid/api:/liquid/api:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8770/health >/dev/null"]
       interval: 30s
@@ -657,6 +664,8 @@ services:
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/nifi/nifi-current/python_extensions
       - ./volumes/nar_extensions:/opt/nifi/nifi-current/nar_extensions
+      # Written here on every start, read by nar_builder. See entrypoint.sh.
+      - ./volumes/liquid/api:/opt/nifi/nifi-current/api
       - ./volumes/liquid/conf:/opt/nifi/nifi-current/conf
       - ./volumes/liquid/database_repository:/opt/nifi/nifi-current/database_repository
       - ./volumes/liquid/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository

@@ -149,13 +149,29 @@ def provided_packages(lib_dir):
     return packages
 
 
-def check(nar, lib_dir):
-    """Returns a list of refusal lines. Empty means the bundle may be copied."""
-    carried = bundle_classes(nar)
-    resolvable = set(carried)
+def lib_index(lib_dir):
+    """The two sets the decision is made from: what lib/ can resolve, and which
+    packages are the API's. Split out so the nar_builder can be handed the same
+    two sets as text instead of 764MB of jars -- one decision, one implementation,
+    two ways in."""
+    resolvable = set()
     for jar in lib_jars(lib_dir):
         resolvable |= jar_class_names(jar)
-    judged = provided_packages(lib_dir)
+    return resolvable, provided_packages(lib_dir)
+
+
+def check(nar, lib_dir):
+    """Returns a list of refusal lines. Empty means the bundle may be copied."""
+    resolvable, judged = lib_index(lib_dir)
+    return check_against(nar, resolvable, judged, lib_dir)
+
+
+def check_against(nar, lib_resolvable, judged, provider):
+    # `provider` and not `where`: the loop below unpacks a `where` of its own out
+    # of carried[owner], and a parameter by that name is silently overwritten --
+    # which put the class file's path into the refusal where the library belongs.
+    carried = bundle_classes(nar)
+    resolvable = set(carried) | lib_resolvable
     unresolved = []
     for owner in sorted(carried):
         data, where = carried[owner]
@@ -171,10 +187,13 @@ def check(nar, lib_dir):
     for owner, ref in unresolved:
         lines.append(
             "  %s references %s, which the bundle does not carry and %s does not provide."
-            % (owner.replace("/", "."), ref.replace("/", "."), lib_dir)
+            % (owner.replace("/", "."), ref.replace("/", "."), provider)
         )
     return lines
 
+
+CLASSES_FILE = "lib-classes.txt"
+PACKAGES_FILE = "api-packages.txt"
 
 NEXT_STEP = (
     "Rebuild it against the API this Liquid loads and drop it in again. "
@@ -184,7 +203,12 @@ NEXT_STEP = (
 
 def main(argv):
     if len(argv) < 2:
-        sys.stderr.write("usage: narcheck.py refs <class-file> | narcheck.py check <nar> <lib-dir>\n")
+        sys.stderr.write(
+            "usage: narcheck.py refs <class-file>\n"
+            "       narcheck.py check <nar> <lib-dir>\n"
+            "       narcheck.py index <lib-dir> <out-dir>\n"
+            "       narcheck.py check-index <nar> <index-dir>\n"
+        )
         return 2
     mode = argv[0]
     if mode == "refs":
@@ -196,6 +220,55 @@ def main(argv):
         except Unreadable as exc:
             sys.stderr.write("UNREADABLE %s\n" % exc)
             return 2
+        return 0
+    if mode == "index":
+        # Write what a reader elsewhere needs to make the same decision. Produced
+        # by the same functions that read lib/ directly, so the two cannot drift.
+        if len(argv) != 3:
+            sys.stderr.write("usage: narcheck.py index <lib-dir> <out-dir>\n")
+            return 2
+        lib_dir, out_dir = argv[1], argv[2]
+        resolvable, judged = lib_index(lib_dir)
+        if not judged:
+            sys.stderr.write("no nifi-api jar in %s; nothing to write\n" % lib_dir)
+            return 2
+        with open(os.path.join(out_dir, CLASSES_FILE), "w") as fh:
+            fh.write("\n".join(sorted(resolvable)) + "\n")
+        with open(os.path.join(out_dir, PACKAGES_FILE), "w") as fh:
+            fh.write("\n".join(sorted(judged)) + "\n")
+        sys.stdout.write("%d classes, %d api packages\n" % (len(resolvable), len(judged)))
+        return 0
+    if mode == "check-index":
+        if len(argv) != 3:
+            sys.stderr.write("usage: narcheck.py check-index <nar> <index-dir>\n")
+            return 2
+        nar, index_dir = argv[1], argv[2]
+        try:
+            with open(os.path.join(index_dir, CLASSES_FILE)) as fh:
+                resolvable = set(fh.read().split())
+            with open(os.path.join(index_dir, PACKAGES_FILE)) as fh:
+                judged = set(fh.read().split())
+        except OSError as exc:
+            sys.stdout.write("REFUSED %s\n" % nar)
+            sys.stdout.write("  the index of what Liquid can load is not readable: %s\n" % exc)
+            sys.stdout.write(
+                "  Without it nothing here can tell a sound bundle from a broken one.\n"
+                "  Silence is not consent: it is not deployed.\n"
+            )
+            return 1
+        try:
+            lines = check_against(nar, resolvable, judged, "the running Liquid")
+        except Unreadable as exc:
+            sys.stdout.write("REFUSED %s\n" % nar)
+            sys.stdout.write("  %s\n" % exc)
+            sys.stdout.write("  %s\n" % NEXT_STEP)
+            return 1
+        if lines:
+            sys.stdout.write("REFUSED %s\n" % nar)
+            for line in lines:
+                sys.stdout.write(line + "\n")
+            sys.stdout.write("  %s\n" % NEXT_STEP)
+            return 1
         return 0
     if mode == "check":
         if len(argv) != 3:

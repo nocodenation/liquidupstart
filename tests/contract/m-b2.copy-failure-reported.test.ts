@@ -62,7 +62,14 @@ test('B2-6 it names the destination the NAR did not reach', () => {
   expect(run.output).toContain(`${sb.home}/lib`);
 });
 
-test('B2-6 it names a next step', () => {
+test('B2-6 it names a next step, and the one that fits this failure', () => {
+  // A copy into lib/ that failed is not the same situation as a refusal, and
+  // since 2026-09-14 the message says so. The bundle this case dropped is still
+  // in the drop directory, where NiFi auto-loads it regardless -- so the restart
+  // is offered for getting it into lib/ as well, not as the way to make the
+  // processor appear. Naming a restart for a *refused* bundle would be the false
+  // advice FR29 was corrected for.
+  expect(run.output).toMatch(/Copy failed:/);
   expect(run.output).toMatch(/docker compose restart liquid/);
 });
 

@@ -144,9 +144,15 @@ export function buildNar(
   writeFileSync(join(resDir, 'org.apache.nifi.processor.Processor'), `${PROBE_PACKAGE}.${className}\n`);
   if (ownPom) writeFileSync(join(host, 'pom.xml'), ownPom);
   const build = sh(['docker', 'compose', 'exec', '-T', BUILD_SERVICE, 'nar-build', `/repos/${dir}`]);
+  // Either place: since 2026-09-14 nar-build checks a bundle before it renames it
+  // into the drop directory, and a refused one is kept in the subdirectory the
+  // auto-loader skips. A fixture that deliberately builds an unloadable bundle --
+  // which is most of M-B4 -- collects it from there.
   const produced = join(DROP_HOST, artifact);
+  const refused = join(DROP_HOST, 'refused', artifact);
   const kept = join(scratch(), artifact);
   if (existsSync(produced)) renameSync(produced, kept);
+  else if (existsSync(refused)) renameSync(refused, kept);
   rmSync(host, { recursive: true, force: true });
   return { nar: kept, artifact, build };
 }
@@ -265,9 +271,13 @@ z.close()`;
 // A failed build must say why here rather than leaving a case reporting
 // "expected 0, received 1": the build runs in another container, and its output
 // is the only record of what went wrong.
+//
+// The artifact rather than the exit code, since 2026-09-14: a bundle that is
+// built and then deliberately refused at deployment exits non-zero and is still
+// exactly what these cases need. What a case cannot proceed without is the file.
 export function requireBuilt(...built: Built[]): void {
   for (const b of built) {
-    if (b.build.code !== 0) {
+    if (!existsSync(b.nar)) {
       throw new Error(`nar-build did not produce ${b.artifact} (exit ${b.build.code}):\n${b.build.output}`);
     }
   }

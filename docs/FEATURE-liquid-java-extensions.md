@@ -86,11 +86,23 @@ mistake is available here and is cheaper to avoid than to repeat.
 - **FR28 — The deployment cycle is documented as one path.** §6.4 of the `liquid` skill opens with
   "Build the NAR(s)" and does not say how. From the source to the processor appearing, in one place,
   naming `nar-build` as the first step.
-- **FR29 — The restart is the operator's, and the agent asks for it.** It interrupts every running
-  flow. The agent says what it placed and what it needs, and stops there.
-- **FR30 — What the drop directory holds reaches Liquid's load path.** The mechanism that makes
-  `nar_extensions` mean anything: on start, every `*.nar` in it is copied into `lib/` before Liquid
-  launches.
+- **FR29 — ~~The restart is the operator's, and the agent asks for it.~~ There is no restart, and
+  asking for one is a defect.** *Corrected 2026-09-14 by measurement.* The premise was that Liquid
+  loads NARs at startup only. It does not: `nifi.nar.library.autoload.directory` is set to the drop
+  directory by the image's own `start.sh` — upstream's decision, with the comment *"Setup NiFi to
+  scan for new NARs in nar_extensions"* — so a bundle placed there is loaded at runtime. Measured in
+  `nifi-app.log` on 2026-09-14: `Found ... in auto-load directory` at 20:07:48, `Loaded NAR file` at
+  20:07:53. **Five seconds, no restart.** `nar-build` printed *"Liquid loads NARs from
+  /nar_extensions at startup only. Ask the operator to restart it"* to every agent that ever used it;
+  the message was false, and it asked operators to interrupt every running flow for nothing.
+- **FR30 — ~~What the drop directory holds reaches Liquid's load path.~~ The drop directory *is* the
+  load path, and what is placed there is judged before it lands.** *Rewritten 2026-09-14.* The
+  entrypoint's copy into `lib/` is still there and still runs; it is no longer the mechanism that
+  makes `nar_extensions` mean something, because NiFi auto-loads from that directory whether or not
+  anything copies it. The consequence is where the check has to live: at the moment of placement,
+  not at the next container start. `nar-build` now judges a bundle between writing it as a dot-file —
+  which the auto-loader skips, measured: *"Skipping non-nar file .probe-good-...nar.39.part"* — and
+  renaming it into place.
 - **FR31 — A deployment step that fails says so.** The copy in the entrypoint currently ends in
   `|| true`, so a failure is swallowed and Liquid starts without the processor with nothing to read.
   A step whose failure is invisible is worse than one that has none.
@@ -111,8 +123,26 @@ mistake is available here and is cheaper to avoid than to repeat.
   loads, the type is catalogued, adding it answers `500` with a `NoClassDefFoundError` that goes to
   `nifi-user.log`, and the operator is shown *"Your session has expired."* The failure is real either
   way; the requirement is about **where** it surfaces, and deployment is the only moment at which the
-  operator can act on it. The file in the drop directory is left alone — it is the operator's, and
-  FR24 governs what the *builder* writes, not what the entrypoint finds.
+  operator can act on it.
+
+  **Two corrections, 2026-09-14, both found by running it.**
+
+  *"Refused means not copied" was not a refusal.* NiFi auto-loads from the drop directory, so a
+  bundle the entrypoint declined to copy into `lib/` was loaded from where it lay, within seconds,
+  with nothing said. A refused bundle is now **moved out of the drop directory** into `refused/` —
+  kept, because it is the author's work and the only thing they can inspect, and out of the load path,
+  because that is what refusing means. The auto-loader does not descend into it: *"Skipping non-nar
+  file refused"*, measured.
+
+  *The check ran where deployment does not happen.* The entrypoint walks the drop directory at
+  container start; agents reach Liquid through `nar-build`, which writes into that directory at
+  runtime and was never checked. The check now runs there too, against an index of the running
+  distribution's `lib/` that `narcheck.py` writes on every Liquid start — 1512 class names and 49 API
+  packages, 75KB — so the builder and the entrypoint reach the same verdict from one implementation.
+  Handing the builder the `nifi-api` jar instead was tried first and is wrong: `check` resolves
+  references against *every* jar in `lib/` while judging only the API's packages, and **85 classes
+  live in an API package without being in the API jar**. A builder holding only that jar would refuse
+  bundles this Liquid loads, and a false refusal is worse than no check.
 
 - **NFR7 — The build's trust surface is stated, not assumed.** A Maven build downloads plugins from
   the internet and executes them. This is a new trust surface in the stack and is treated the way
