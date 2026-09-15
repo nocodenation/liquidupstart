@@ -9,8 +9,12 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
-**Liquid autoloads from the drop directory, and everything this feature says about deployment is
-built on the assumption that it does not.**
+**~~Liquid autoloads from the drop directory, and everything this feature says about deployment is
+built on the assumption that it does not.~~** *Answered 2026-09-14/15. Kept because how the answer
+was reached is the point; FR29, FR30 and FR36 in `docs/FEATURE-liquid-java-extensions.md` carry the
+outcome, and `docs/verification/M-B4-verification.md` the evidence. The decision was not to argue
+with the auto-loader but to move the check to the moment of placement, and to take a refused bundle
+out of the load path into `refused/` rather than leave it lying where NiFi would load it.*
 Measured 2026-09-09, while a red check in `tests/verify/m-b4.sh` refused to be explained. It is the
 largest open question this feature has.
 
@@ -50,7 +54,10 @@ the third is the first that rests on a measured configuration value rather than 
 behaviour. The right next step is to decide what the deployment path *should* be, not to adjust a
 guard until a check goes green.
 
-**Nothing in the stack notices a NAR built against an API Liquid does not provide.**
+**~~Nothing in the stack notices a NAR built against an API Liquid does not provide.~~** *Closed
+2026-09-15: `nar-build` now refuses such a bundle before it enters the drop directory, judging it
+against an index of the running distribution's `lib/`. The entrypoint keeps its own check for
+bundles placed by hand. What follows was the case for doing it, and it still reads true.*
 Established by B3-2 on 2026-09-08, and the reason FR23 was rewritten the same day. A NAR compiled
 against `nifi-api` 2.11.0, referencing a class the loaded 2.10.0 jar does not contain, is accepted:
 the bundle loads, the processor is listed in the catalogue, and `nifi-app.log` says nothing. The
@@ -76,11 +83,13 @@ the UI turns the 500 into `/nifi/#/error` reading *"Your session has expired. Pl
 Home button to renew the session."* That is false, and it points the operator at re-authentication,
 which reproduces the failure. Both are recorded in B3-2 and in §4, and §4 now reads both logs.
 
-**What is still open is the deployment-time check.** The entrypoint already walks every `*.nar` on
-its way into `lib/`, and comparing the API a bundle links against with the one the distribution ships
-is the same `javap` comparison §4 check 4b performs. It would turn a 500 with a misleading message
-into a refusal at the moment of deployment, which is where an operator can act on it. Left because
-this is a new requirement rather than a repair, and M-B3 is closed.
+**~~What is still open is the deployment-time check.~~** *Built as M-B4 and, on 2026-09-15, moved to
+where deployment actually happens.* The entrypoint's walk into `lib/` turned out not to be that
+place: NiFi auto-loads from the drop directory, so a bundle refused there was loaded anyway. The
+check now runs in `nar-build`, between writing the artifact as a dot-file the auto-loader skips and
+renaming it into place, and a refused bundle is moved to `refused/` — a subdirectory the auto-loader
+does not descend into. Measured on 2026-09-15: placed 06:43:13, loaded 06:43:18, `500` at 06:43:37
+with the real error in `nifi-user.log` and nothing in `nifi-app.log`.
 
 **Nothing sweeps a staging file the builder abandoned.**
 Introduced by M-B3's own fix on 2026-09-08, and recorded because it is a property the milestone

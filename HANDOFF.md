@@ -599,10 +599,15 @@ between them.
    `config/scripts/start/openclaw.sh` among them, the last rewritten twice since June. Reviving it
    would be a fresh implementation, not a merge. It also carries a second skill for the same job,
    which would leave an agent with two instructions describing different paths.
-3. **The second clone on `feature/privacy-gateway`.** A separate checkout of this repository, started
-   by hand on 2026-09-11, which took over the shared stack and invalidated a set of measurements
-   before the `privacy-proxy` container gave it away. It is stopped. *One working copy, one stack*
-   above says why this matters; what to do with that clone has not been decided.
+3. **The second clone on `feature/privacy-gateway` — the operator's, not the agent's.** A separate
+   checkout of this repository, started by hand on 2026-09-11 on Timur's instruction, which took over
+   the shared stack and invalidated a set of measurements before the `privacy-proxy` container gave it
+   away. It is stopped. **The operator intends to test the privacy gateway there when time allows**
+   (stated 2026-09-15), so it stays.
+
+   What matters for anyone else on this machine is *One working copy, one stack* above: starting that
+   clone takes the stack over, and measurements taken here while it runs are measurements of it. The
+   discriminator is the `privacy-proxy` container.
 
 ## Done, and what each turned up
 
