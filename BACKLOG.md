@@ -403,3 +403,15 @@ the system, and no cause was established. What is established is that the bound 
 at all, and that without `-k` the start then hangs forever. The lesson is not about `-k`:
 **"I cannot reproduce it" is a statement about the attempt, not about the system**, and it is a weak
 reason to defer something whose cost was one flag.
+
+**`HANDOFF.md` mixes two kinds of content, and only one of them ages.**
+It carries durable project knowledge — the lessons, which four other documents already cite as rules
+(*"`HANDOFF.md` records the general rule"*) — alongside the state of one machine at one moment. The
+second kind goes stale, and because both live in one file, all of it reads as stale. Splitting the
+lessons into `docs/LESSONS.md` would leave the handover holding state and plans only, and would put
+the cited rules where a citation expects to find them.
+
+Deferred on 2026-09-15 rather than done: it touches four cross-references while #9 and #10 are under
+review, and moving files under a reviewer mid-review is how a review gets read twice. The cheap half
+was done instead — the file and `CLAUDE.md` now say what the handover is, what it is not, and which
+copy is current.

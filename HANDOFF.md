@@ -1,7 +1,20 @@
-# Handover — 2026-09-09 (evening)
+# Handover — maintained continuously, last touched 2026-09-15
 
-Read this first. It is the map and the current state; the specifications are the documents in
-`docs/`. Everything here was true at the end of 2026-09-08.
+**What this file is.** The working handover between the operator and the agent, on **one machine**.
+It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
+which stack is running, how many services are up, which version is on disk — describe that machine at
+the moment they were written, and each carries its own date. They are not project facts and a second
+installation will not match them.
+
+**What it is not.** It is not a specification and not a requirement. Those are
+`docs/FEATURE-*.md` and `docs/TEST-SPEC-*.md`, which are written and signed off before the work they
+describe. **Reviewing a pull request does not require this file**, and nothing in it should be read
+as a promise the code has to keep.
+
+**Which copy is current.** The one on the topmost branch of the stack. Merges flow upward only
+(`main` → `#9` → `#10`), so a copy on a lower branch is a snapshot from the last forward merge and is
+expected to be behind. There is no rule that the copies match, and trying to make them match by
+editing downward is work that the merge direction undoes.
 
 ## What is being built
 
