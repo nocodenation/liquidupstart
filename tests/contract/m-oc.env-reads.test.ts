@@ -150,6 +150,25 @@ describe('OC-42 the proxy address', () => {
     expect(distinct[0]).toBeTruthy();
   });
 
+  test('and lies outside the range docker allocates from', () => {
+    // The first attempt pinned .2 with no pool declared. Docker allocates from
+    // the bottom up and the proxy starts last -- everything else is its
+    // dependency -- so eurooffice had taken .2 by the time the proxy asked for
+    // it, and the start failed with "Address already in use". Found by starting,
+    // not by reading.
+    const ip = read('.env.example').match(/^SYSTEM_PROXY_IP=(\S+)/m)?.[1] as string;
+    const pool = read('.env.example').match(/^SYSTEM_NETWORK_POOL=(\S+)/m)?.[1] as string;
+    const r = sh([
+      'bash', '-c',
+      `eval "$(sed -n '/^lu_ip_in_cidr() {/,/^}/p' scripts/linux/start.sh)"; lu_ip_in_cidr ${ip} ${pool}`
+    ]);
+    expect({ ip, pool, insidePool: r.code === 0 }).toEqual({ ip, pool, insidePool: false });
+  });
+
+  test('and compose hands docker that range and no more', () => {
+    expect(read('compose.yml')).toMatch(/ip_range:\s*\$\{SYSTEM_NETWORK_POOL:-/);
+  });
+
   test('and the default lies inside the default subnet', () => {
     const ip = read('.env.example').match(/^SYSTEM_PROXY_IP=(\S+)/m)?.[1] as string;
     const cidr = read('.env.example').match(/^SYSTEM_NETWORK_SUBNET=(\S+)/m)?.[1] as string;

@@ -100,6 +100,22 @@ lu_ip_in_cidr() {  # lu_ip_in_cidr <ip> <cidr>
     }'
 }
 
+LU_NETWORK_POOL="$(get_env SYSTEM_NETWORK_POOL)"
+LU_NETWORK_POOL="${LU_NETWORK_POOL:-10.99.0.128/25}"
+
+# Inside the pool docker allocates by itself, so a pinned address there is a
+# collision waiting for the right start order -- and the proxy starts last,
+# because everything else is its dependency.
+if lu_ip_in_cidr "$LU_PROXY_IP" "$LU_NETWORK_POOL"; then
+  echo "Error: SYSTEM_PROXY_IP ${LU_PROXY_IP} is inside SYSTEM_NETWORK_POOL ${LU_NETWORK_POOL}." >&2
+  echo "  That range is what docker hands out on its own; an address pinned there" >&2
+  echo "  is taken by whichever container starts first, and the proxy starts last." >&2
+  echo "  Measured 2026-09-16: 'Address already in use', with eurooffice holding it." >&2
+  echo "  Pick an address outside the pool -- for ${LU_SUBNET_CIDR} with the default" >&2
+  echo "  pool, anything from .2 to .127. Nothing has been stopped." >&2
+  exit 1
+fi
+
 if ! lu_ip_in_cidr "$LU_PROXY_IP" "$LU_SUBNET_CIDR"; then
   echo "Error: SYSTEM_PROXY_IP ${LU_PROXY_IP} is not inside SYSTEM_NETWORK_SUBNET ${LU_SUBNET_CIDR}." >&2
   echo "  The proxy takes that address on the stack network, and the OpenClaw gateway" >&2
