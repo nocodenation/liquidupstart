@@ -146,6 +146,9 @@ services:
         condition: service_healthy
     networks:
       nocodenation_liquid_upstart_network:
+        # Fixed, because gateway.trustedProxies has to name this address and
+        # nothing can look it up before the container exists. See .env.example.
+        ipv4_address: ${SYSTEM_PROXY_IP:-10.99.0.2}
         aliases:
           - pgadmin.localhost
           - postgrest.localhost

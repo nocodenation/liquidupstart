@@ -123,3 +123,65 @@ describe('R1 the default subnet is one value', () => {
     expect({ value, inDockerPool }).toEqual({ value, inDockerPool: false });
   });
 });
+
+/**
+ * OC-42 — the proxy address is one value, and it lies where it has to.
+ *
+ * `gateway.trustedProxies` names the proxy by address, so that address has to be
+ * fixed before anything starts: compose gives it to the container, openclaw.sh
+ * writes it into the gateway's configuration, and neither can look it up because
+ * the container does not exist yet. Two keys therefore have to agree —
+ * SYSTEM_PROXY_IP must fall inside SYSTEM_NETWORK_SUBNET — and compose refuses
+ * the pair only at `up`, with a message that names neither key and after down.sh
+ * has emptied the stack.
+ */
+describe('OC-42 the proxy address', () => {
+  const read = (f: string) => readFileSync(join(repoRoot, f), 'utf8');
+
+  test('is one default, written the same in every place that carries it', () => {
+    const found = {
+      env: read('.env.example').match(/^SYSTEM_PROXY_IP=(\S+)/m)?.[1],
+      compose: read('compose.yml').match(/ipv4_address:\s*\$\{SYSTEM_PROXY_IP:-([^}]+)\}/)?.[1],
+      start: read('scripts/linux/start.sh').match(/LU_PROXY_IP:-([^}]+)\}/)?.[1],
+      openclaw: read('config/scripts/start/openclaw.sh').match(/LU_PROXY_IP:-([^}]+)\}/)?.[1]
+    };
+    const distinct = [...new Set(Object.values(found))];
+    expect({ distinct, found }).toEqual({ distinct: [distinct[0]], found });
+    expect(distinct[0]).toBeTruthy();
+  });
+
+  test('and the default lies inside the default subnet', () => {
+    const ip = read('.env.example').match(/^SYSTEM_PROXY_IP=(\S+)/m)?.[1] as string;
+    const cidr = read('.env.example').match(/^SYSTEM_NETWORK_SUBNET=(\S+)/m)?.[1] as string;
+    const r = sh([
+      'bash', '-c',
+      `eval "$(sed -n '/^lu_ip_in_cidr() {/,/^}/p' scripts/linux/start.sh)"; lu_ip_in_cidr ${ip} ${cidr}`
+    ]);
+    expect({ ip, cidr, inside: r.code === 0 }).toEqual({ ip, cidr, inside: true });
+  });
+
+  test('and the start refuses a pair that does not agree, before anything is stopped', () => {
+    // The guard, run against values that do not match. Ordering matters as much
+    // as the check: compose would refuse the same pair at `up`, by which time
+    // down.sh has already removed every container.
+    const r = sh([
+      'bash', '-c',
+      `eval "$(sed -n '/^lu_ip_in_cidr() {/,/^}/p' scripts/linux/start.sh)"; lu_ip_in_cidr 10.99.1.2 10.99.0.0/24`
+    ]);
+    expect(r.code).not.toBe(0);
+    const start = read('scripts/linux/start.sh');
+    const guard = start.indexOf('lu_ip_in_cidr "$LU_PROXY_IP"');
+    const down = start.indexOf('scripts/linux/down.sh"');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(down);
+  });
+
+  test('and trustedProxies is written as that address, not as the range around it', () => {
+    // The defect this replaces: trusting the subnet trusts the client, and a
+    // trusted hop is discarded. Measured 2026-09-16 -- a container in the stack
+    // got 403 while the host got 200, on the same configuration.
+    const oc = read('config/scripts/start/openclaw.sh');
+    expect(oc).toContain('c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_PROXY_IP + "/32"]');
+    expect(oc).not.toContain('process.env.LU_NETWORK_SUBNET');
+  });
+});
