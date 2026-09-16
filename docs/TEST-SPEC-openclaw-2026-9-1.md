@@ -53,8 +53,8 @@ here; each is executed where its subject exists.
 | OC-10 | system | **negative** | `deviceAutoApprove.scopes` including `operator.admin` makes the **gateway** log its security warning |
 | OC-11 | system | positive | With the chosen scopes, it does not, and `doctor` raises no critical finding |
 | OC-12 | component | positive | `gateway.controlUi.dangerouslyDisableDeviceAuth` is not written on 2026.9.1; `doctor` reports no legacy key |
-| OC-13 | system | positive | `gateway.trustedProxies` naming the docker network: Control UI answers 200 |
-| OC-14 | system | **negative** | The wide RFC1918 list on 2026.9.1: Control UI answers 403 `proxy_attribution_required` |
+| OC-13 | system | positive | `gateway.trustedProxies` naming the proxy address: a client inside the stack network **and** one on the host both answer 200 |
+| OC-14 | system | **negative** | The client's own range in the list: 403 `proxy_attribution_required`, which is what makes the single address a decision |
 | OC-15 | component | positive | The image built on 2026.9.1 runs `claude --version` |
 | OC-16 | component | **negative** | The same build **without** `--allow-scripts` on npm 12 fails at the version check instead of shipping |
 | OC-17 | unit | positive | The version probe reports `2026.9.1` for the 2026.9.1 image |
@@ -173,14 +173,17 @@ here; each is executed where its subject exists.
 | **Failure** | The key is present — the configuration would then carry a claim about device auth that the running version ignores. |
 | **Covers** | §5.3 |
 
-### OC-13 / OC-14 — proxy attribution, kept rather than changed
+### OC-13 / OC-14 — proxy attribution: membership, not width
 
 | | |
 |---|---|
-| **Premise** | #11 already narrowed `gateway.trustedProxies` and kept it through the downgrade. Nothing changes here, so what is needed is a **regression** case — and its negative counterpart, because "we narrowed it" is only interesting if the wide list actually still fails on 2026.9.1. |
-| **Test data** | OC-13: `["127.0.0.1/32", "<this stack's docker network>/16"]`, resolved from the network. OC-14: `["127.0.0.1/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]` — the list this repository carried from 2026-06-06 until #11, stated as a literal because after the change it is not read from anywhere. |
-| **Expected** | OC-13: `HTTP 200`. OC-14: `HTTP 403` with `"type":"proxy_attribution_required"`, and the gateway log line `observed unattributable proxy-shaped traffic from <proxy ip>`. |
-| **Failure** | OC-14 answering 200 would mean 2026.9.1 no longer enforces this and the narrowing is no longer load-bearing — worth knowing, and it would relax `start.sh`'s post-`up` correction. |
+| **Premise** | Re-founded 2026-09-16. These cases asserted that a *wide* `trustedProxies` is refused and a *narrow* one accepted, and both observations were real. The rule behind them is not width: `resolveForwardedClientIp` walks `X-Forwarded-For` right to left, discards every hop that is loopback or trusted, and refuses the request when nothing is left. What decides is whether the **client** is in the list. |
+| **Component** | The running stack: nginx, the gateway, and its live `trustedProxies`. |
+| **Test data** | OC-13: what the start script wrote, read from the live config — `["127.0.0.1/32", "<SYSTEM_PROXY_IP>/32"]`. Two clients: a container on the stack network, and the host. OC-14: `["127.0.0.1/32", "<SYSTEM_NETWORK_SUBNET>"]`, which is exactly what this repository wrote until 2026-09-16. |
+| **Expected** | OC-13: both clients `HTTP 200`. OC-14: the client inside the subnet `HTTP 403` with `"type":"proxy_attribution_required"`, and the gateway log line `observed unattributable proxy-shaped traffic from <proxy ip>`. |
+| **Failure** | OC-14 answering 200 would mean the single address is no longer load-bearing. OC-13's in-network half answering 403 is the defect itself: every agent in this stack reaches the gateway that way. |
+| **Why the host alone was not enough** | The old OC-13 asked only the host. On Docker Desktop that client is `192.168.65.1`, outside the stack subnet, so it answered 200 while every container got 403 — and on rootless docker with the `builtin` port driver the host arrives as `10.99.0.1`, inside it, and even a browser gets 403. A case that asks one kind of client cannot see the rule. |
+| **What it found** | **Run 2026-09-16.** Before the fix, with the subnet trusted: host `192.168.65.1` → 200, container `10.99.0.11` → **403**. After it, with `10.99.0.2/32` trusted: container `10.99.0.136` → **200**, host → 200, and no further `unattributable` line in the gateway log. The negative half reproduces the 403 on demand by putting the subnet back. |
 | **Covers** | §5.4 |
 
 ### OC-15 / OC-16 — the npm major version
