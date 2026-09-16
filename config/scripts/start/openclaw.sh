@@ -374,22 +374,33 @@ else
 
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
-  # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute, and
-  # demands a narrow gateway.trustedProxies. This stack's own docker network is
-  # narrow enough; the three RFC1918 ranges written until 2026-09-05 are not.
+  # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute. What it
+  # needs is not a *narrow* trustedProxies -- it is a list that does not contain
+  # the client. resolveForwardedClientIp walks X-Forwarded-For right to left and
+  # discards every hop that is loopback or trusted; whatever is left is the
+  # client, and if nothing is left the request is 403.
   #
-  # Read from .env, not off the live network. The lookup needed the network to
-  # exist before this script ran, which is why start.sh created it early -- and
-  # a lookup that came back empty wrote the wide list instead, silently. .env is
-  # the same value compose declares as ipam, so it is known before anything runs.
-  # The default has to match compose.yml's and start.sh's; OC-41 holds them
-  # together.
-  LU_NETWORK_SUBNET="$(get_env SYSTEM_NETWORK_SUBNET)"
-  LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET:-10.99.0.0/24}"
-  if [[ ! "$LU_NETWORK_SUBNET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
-    echo "Error: SYSTEM_NETWORK_SUBNET in ${ENV_FILE} is not a CIDR: ${LU_NETWORK_SUBNET}" >&2
-    echo "  The gateway trusts this range by name; a malformed one makes every" >&2
-    echo "  proxied request answer 403. Expected something like 10.99.0.0/24." >&2
+  # So trust the proxy, not the network it sits in. Until 2026-09-16 this wrote
+  # the whole subnet, which works only while the client happens to be outside it:
+  #
+  #   from the host on Docker Desktop   192.168.65.1  outside 10.99.0.0/24  -> 200
+  #   from any container in the stack   10.99.0.11    inside               -> 403
+  #
+  # Both measured here on 2026-09-16, and the second is every agent in this stack
+  # that talks to the gateway through the proxy. On rootless docker with the
+  # builtin port driver the host arrives as 10.99.0.1 and even a browser gets the
+  # 403 -- which is how Timur found it, and why #11's §5.4 read the rule as being
+  # about width. It is not; it is about membership.
+  #
+  # Read from .env rather than off the live container: the address has to be known
+  # before anything is started, and compose gives the proxy the same fixed value.
+  LU_PROXY_IP="$(get_env SYSTEM_PROXY_IP)"
+  LU_PROXY_IP="${LU_PROXY_IP:-10.99.0.2}"
+  if [[ ! "$LU_PROXY_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: SYSTEM_PROXY_IP in ${ENV_FILE} is not an address: ${LU_PROXY_IP}" >&2
+    echo "  The gateway trusts this one address and treats every other hop as the" >&2
+    echo "  client; a malformed value makes every proxied request answer 403." >&2
+    echo "  Expected something like 10.99.0.2, inside SYSTEM_NETWORK_SUBNET." >&2
     exit 1
   fi
 
@@ -414,7 +425,7 @@ else
 
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
-    -e LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET}" \
+    -e LU_PROXY_IP="${LU_PROXY_IP}" \
     -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
     -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
@@ -449,7 +460,9 @@ else
       // No wide fallback: the range is read from .env and validated before we get
       // here, so an empty value is a bug to fail on rather than to paper over
       // with three RFC1918 ranges nobody chose.
-      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_NETWORK_SUBNET];
+      // The proxy as a single address, not the range it lives in: a trusted hop
+      // is discarded, so anything the gateway trusts can never be the client.
+      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_PROXY_IP + "/32"];
 
       // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};

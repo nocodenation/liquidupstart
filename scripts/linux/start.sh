@@ -76,6 +76,39 @@ lu_require_free_subnet() {  # lu_require_free_subnet <own-network> <cidr>
 LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
 LU_SUBNET_CIDR="$(get_env SYSTEM_NETWORK_SUBNET)"
 LU_SUBNET_CIDR="${LU_SUBNET_CIDR:-10.99.0.0/24}"
+LU_PROXY_IP="$(get_env SYSTEM_PROXY_IP)"
+LU_PROXY_IP="${LU_PROXY_IP:-10.99.0.2}"
+
+# The proxy takes a fixed address so the gateway can name it in trustedProxies.
+# Two keys that have to agree: compose refuses an ipv4_address outside the
+# network's subnet, and it refuses it at `up`, long after down.sh has emptied the
+# stack -- with a message that names neither key. Checked here instead, before
+# anything is stopped.
+#
+# Arithmetic rather than bit operations: macOS awk has no and()/compl().
+lu_ip_in_cidr() {  # lu_ip_in_cidr <ip> <cidr>
+  awk -v ip="$1" -v cidr="$2" '
+    function toint(a,  p) { split(a, p, "."); return p[1]*16777216 + p[2]*65536 + p[3]*256 + p[4] }
+    BEGIN {
+      split(cidr, c, "/")
+      bits = c[2] + 0
+      if (bits < 0 || bits > 32) exit 1
+      size = 2 ^ (32 - bits)
+      base = int(toint(c[1]) / size) * size
+      v = toint(ip)
+      exit (v >= base && v < base + size) ? 0 : 1
+    }'
+}
+
+if ! lu_ip_in_cidr "$LU_PROXY_IP" "$LU_SUBNET_CIDR"; then
+  echo "Error: SYSTEM_PROXY_IP ${LU_PROXY_IP} is not inside SYSTEM_NETWORK_SUBNET ${LU_SUBNET_CIDR}." >&2
+  echo "  The proxy takes that address on the stack network, and the OpenClaw gateway" >&2
+  echo "  trusts exactly it; the two keys have to agree or nothing starts." >&2
+  echo "  Change one of them in .env so the address falls inside the range -- for" >&2
+  echo "  ${LU_SUBNET_CIDR}, the first address docker leaves free is the .2." >&2
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
 
 lu_drop_legacy_network "nocodenation_playground_network_${HTTP_PORT}"
 lu_require_free_subnet "$LU_NETWORK" "$LU_SUBNET_CIDR" || exit 1
