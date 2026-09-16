@@ -891,3 +891,8 @@ networks:
     ipam:
       config:
         - subnet: ${SYSTEM_NETWORK_SUBNET:-10.99.0.0/24}
+          # Dynamic allocation happens inside ip_range only, which leaves the rest
+          # of the subnet for addresses this stack pins. Without it docker hands
+          # out .2 to whichever container starts first and the proxy, which starts
+          # last, cannot take the address the gateway trusts.
+          ip_range: ${SYSTEM_NETWORK_POOL:-10.99.0.128/25}
