@@ -282,17 +282,21 @@ machine under `volumes/privacy-proxy/`.
   message — it reads what the built-in detectors cannot, rewords what would still identify
   someone, and judges every outgoing message for trickery. When a reworded message is still
   too identifying, the proxy pauses and asks you in the chat (`PRIVACY_PROXY_SEMANTIC_MODE=
-  interactive`); the egress judge's verdict is recorded on every turn (`PRIVACY_PROXY_GATE_MODE=
-  log`) and the decision stays yours. The `0` / `off` values of those keys exist to debug the
-  built-in detectors on their own, not to run the product.
+  interactive`); when the egress judge rates a message high, it pauses and asks the same way
+  (`PRIVACY_PROXY_GATE_MODE=ask`) and `send-original` sends it as masked — measured on the
+  recommended models: no honest turn held in twelve, both injection probes held and, once
+  released, refused by the cloud model itself. The decision stays yours. The `0` / `off` /
+  `log` / `block` values of those keys exist to debug the detectors and the judge on their
+  own, not to run the product.
 - **What it catches, and when.** Built-in detectors (names, e-mails, phones, IBANs, ids,
   dates) run on every message; the local-LLM second pass adds what a model notices on
   that call, which varies from call to call. Anything masked once stays masked for the whole
   conversation. For the terms that matter to you — project names, codes, study ids — name them
   on the settings page (`privacy.localhost`), which catches them on first sight instead of
-  relying on the model to find them. The page tells you when your description mentions an
-  identifier the term list does not carry, and when it names what is confidential without
-  naming a single term. The harness's own plumbing — OpenClaw's turn stamp and its
+  relying on the model to find them; a document you upload there also proposes every code and
+  study id it carries, whatever the model made of it, for you to tick. The page tells you when
+  your description mentions an identifier the term list does not carry, and when it names what
+  is confidential without naming a single term. The harness's own plumbing — OpenClaw's turn stamp and its
   sender id — is never treated as your data: the stamp goes through unchanged and the sender id
   is a stable placeholder.
 - **The local model is the trust boundary.** The second pass and the judges read your messages
