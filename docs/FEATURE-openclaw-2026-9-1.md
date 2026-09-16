@@ -240,22 +240,45 @@ accident, not by decision, and this is where the accident was found.
 This is the one place where the migration adds a security decision rather than a translation, and it
 is flagged here so it is reviewed as one — now with the measurement that decided it.
 
-### 5.4 Trusted proxy attribution · **already repaired, kept**
+### 5.4 Trusted proxy attribution · **repaired again 2026-09-16 — the rule was misread**
 
 **How it worked.** `gateway.trustedProxies` listed loopback plus the three RFC1918 ranges, and had
 since 2026-06-06.
 
 **What changed.** 2026.9.1 rejects proxy-shaped traffic it cannot attribute — HTTP 403,
 `proxy_attribution_required`, with the gateway logging *"observed unattributable proxy-shaped traffic
-from 172.18.0.21"*. A list that wide is refused **even when the peer falls inside it**: measured in
-#11, the proxy at `172.18.0.21` sits within `172.16.0.0/12` and was still refused. A single `/16` is
-accepted, so "narrowly" means one network, not one address — measured too.
+from 172.18.0.21"*.
 
-**What must be adapted: nothing.** #11 kept this fix because it was worth having regardless of
-version. `gateway.trustedProxies` now names this stack's own docker network, resolved from the
-network name, and `scripts/linux/start.sh` corrects it after `docker compose up` on a cold start,
-where the network does not exist yet. It is valid on both versions. **Zero footprint**, and it needs
-a regression case rather than a change.
+**The rule this section stated was wrong, and was corrected on 2026-09-16.** It read: *"a list that
+wide is refused even when the peer falls inside it … a single /16 is accepted, so narrowly means one
+network, not one address."* Both measurements were real; the rule drawn from them was not. The
+mechanism is **membership, not width**. `resolveForwardedClientIp` walks `X-Forwarded-For` right to
+left and discards every hop that is loopback or listed in `trustedProxies`; whatever remains is the
+client, and **if nothing remains the request is refused**. A wide list and a narrow list differ only
+in whether they happen to contain the client.
+
+On Docker Desktop a request from the host arrives as `192.168.65.1` — inside the old wide list
+(`192.168.0.0/16`), outside the stack's own subnet. Narrowing therefore fixed it here by coincidence,
+and the coincidence was read as a mechanism. Two consequences were invisible from this host:
+
+- **On rootless docker with the `builtin` port driver the host arrives as `10.99.0.1`**, inside the
+  stack subnet, so the Control UI answers 403 to a browser and OpenClaw never comes up at all. Found
+  by Timur on 2026-09-16 (#9, review point 5), on a host this repository had never run on.
+- **Every container in this stack was already affected here**, and nobody noticed. Measured
+  2026-09-16 with the subnet trusted: from the host `192.168.65.1` → 200, from a stack container
+  `10.99.0.11` → 403. The gateway had been logging the rejection since 2026-09-15.
+
+**What must be adapted: trust the proxy, not the network it sits in.** `compose.yml` gives the proxy
+a fixed `ipv4_address` from `SYSTEM_PROXY_IP`, and `openclaw.sh` writes
+`trustedProxies = ["127.0.0.1/32", "<that address>/32"]`. One address is discarded as a hop; every
+other client survives the walk and is attributed. Verified 2026-09-16: the container client went from
+403 to 200, the host client stayed at 200, and the gateway logged nothing further.
+
+A third key comes with it. Docker allocates from the bottom of the subnet and the proxy starts last —
+every other service is its dependency — so a pinned `.2` was already taken and the start failed with
+*"Address already in use"*. `SYSTEM_NETWORK_POOL` declares the range docker may allocate from
+(`ip_range`), leaving the rest for pinned addresses. `start.sh` refuses a proxy address inside the
+pool, or outside the subnet, **before** `down.sh` empties the stack.
 
 ### 5.5 The npm major version · **already repaired, kept**
 
