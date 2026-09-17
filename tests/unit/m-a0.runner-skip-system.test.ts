@@ -16,6 +16,16 @@
  *           same reason system does, so --no-system has to drop it too; a level
  *           the flag did not know about would fail on a machine with no Docker
  *           and the flag would be reported as broken rather than the level.
+ *
+ *           Amended 2026-09-17 for M-A11, which reversed the default. These
+ *           levels write into volumes/ and restart containers on the machine the
+ *           suite runs on, and they ran unless someone remembered --no-system;
+ *           on 2026-09-17 one forgotten flag left the operator's gateway exited
+ *           127 and its configuration short of a key. So --system asks for them,
+ *           --no-system now describes the default, and the case below that
+ *           asserted "without the flag both are selected" asserts the opposite
+ *           — same subject, reversed expectation, and the reason is here rather
+ *           than in a commit nobody will read again.
  */
 import { test, expect, afterAll } from 'bun:test';
 import { runner } from '../lib/shell';
@@ -50,8 +60,20 @@ test('A0-4 --no-system drops only the stack-level files from a mixed tree', () =
   expect(r.stdout).not.toContain('m-fx.chain.test.ts');
 });
 
-test('A0-4 without the flag both stack-level files are selected', () => {
+test('A0-4 without the flag neither stack-level file is selected', () => {
   const r = runner(['--root', systemOnly, '--list']);
+  expect(r.code).toBe(0);
+  expect(r.stdout).not.toContain('m-fx.stack.test.ts');
+  expect(r.stdout).not.toContain('m-fx.chain.test.ts');
+  // And it says so, rather than leaving a tree that produced nothing looking
+  // like a tree that held nothing.
+  expect(r.output).toContain('SKIPPED');
+});
+
+test('A0-4 --system selects both stack-level files', () => {
+  // The counterpart to the reversal: the flag has to reach them, or the tier is
+  // unreachable and the suite has stopped testing the running product.
+  const r = runner(['--root', systemOnly, '--system', '--list']);
   expect(r.code).toBe(0);
   expect(r.stdout).toContain('m-fx.stack.test.ts');
   expect(r.stdout).toContain('m-fx.chain.test.ts');
