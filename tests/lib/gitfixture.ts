@@ -13,14 +13,22 @@ export function tempProject(prefix = 'lu-a3c-'): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-export function seedKnownHosts(project: string): void {
+// `extraHosts` since 2026-09-17: a clone is now refused for a host known_hosts
+// says nothing about, so a case whose subject is something else -- the insteadOf
+// rewrite, the hook path, the warning text -- has to seed the hosts its own
+// scenario uses. The fixture key is syntactically a host key and belongs to
+// nothing; the fake ssh stand-in never checks it.
+export function seedKnownHosts(project: string, extraHosts: string[] = []): void {
   const dir = join(project, 'volumes', '_git-secrets');
   mkdirSync(dir, { recursive: true });
   const real = join(repoRoot, 'volumes', '_git-secrets', 'known_hosts');
   const body = existsSync(real)
     ? readFileSync(real, 'utf8')
     : 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREHOSTKEYFIXTUREHOSTKEY\n';
-  writeFileSync(join(dir, 'known_hosts'), body);
+  const extra = extraHosts
+    .map((h) => `${h} ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFIXTUREHOSTKEYFIXTUREHOSTKEY\n`)
+    .join('');
+  writeFileSync(join(dir, 'known_hosts'), `${body}${extra}`);
 }
 
 export function seedRepo(root: string, name: string): string {
@@ -161,12 +169,22 @@ export function askRepoCommand(manifestPath: string, args: string[]): Result {
 export const hooksSource = join(repoRoot, 'config/agents/hooks');
 export const HOOKS_MOUNT = '/git-secrets/hooks';
 
-const FIXTURE_IDENTITY = {
+// Exported so a case that spawns git itself cannot leave the ceiling out.
+export const FIXTURE_IDENTITY = {
   GIT_AUTHOR_NAME: 'Fixture',
   GIT_AUTHOR_EMAIL: 'fixture@local',
   GIT_COMMITTER_NAME: 'Fixture',
   GIT_COMMITTER_EMAIL: 'fixture@local',
-  GIT_CONFIG_NOSYSTEM: '1'
+  GIT_CONFIG_NOSYSTEM: '1',
+  // The upward search stops before this working copy. Without it a fixture
+  // directory that exists but holds no repository -- which is what a chain
+  // fixture leaves behind when its stack start fails -- makes git walk up and
+  // find *this* repository, and every command then acts on the operator's own
+  // checkout. Measured 2026-09-17: a suite run committed the working tree as
+  // "1" onto feature/liquid-java-extensions, created agent/probe-2 and
+  // agent/probe-3 from main, and left HEAD on the last of them. Nothing was
+  // lost and nothing was pushed, and neither of those was to the suite's credit.
+  GIT_CEILING_DIRECTORIES: repoRoot
 };
 
 export function git(dir: string, args: string[], env: Record<string, string> = {}): Result {
@@ -383,7 +401,11 @@ export function chainFixture(
     sh(['git', 'clone', '-q', '--bare', seed, join(root, `${name}.git`)], root);
   }
 
-  seedKnownHosts(project);
+  // localhost is the host this fixture's own declaration uses, and a clone is
+  // refused for a host known_hosts says nothing about (finding 5 of the #9
+  // review). Without it the fixture clones nothing, and every git command that
+  // follows runs in a directory that holds no repository.
+  seedKnownHosts(project, ['localhost']);
   const mountRoot = view === 'container' ? containerRoot : root;
   const declaration = names.map((n) => `git@localhost:${n}.git|write|protected`).join(',');
   const start = runStart(project, declaration, {

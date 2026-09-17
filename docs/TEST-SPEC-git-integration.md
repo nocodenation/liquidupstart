@@ -2875,6 +2875,125 @@ through `git.sh` itself.
 
 ---
 
+### M-A10 — the eight findings of the code review
+
+**What this milestone is for.** A second review arrived six minutes after the one M-A9 answers, from
+a reading of the shell scripts, the pre-push hook, compose, the Dockerfiles and the dashboard's
+server, route and component. Eight findings. Two of them destroy work that existed before the start,
+one is a hole in a guardrail, one breaks a promise `.env.example` makes to every fresh installation,
+and the rest make the product lie about what is wrong. They are covered in the order the reviewer
+suggested — 2, 3 → 4 → 1 → 6 → 8 → 5 → 7 — and every case here was run against the unfixed code
+first, so each one is known to fail for the reason it names.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A10-1 | Integration **unhappy** | A directory that is not a clone is left alone | `-d "$dest/.git"` missed it, `git clone` failed, and `rm -rf "$dest"` then deleted an agent's scratch work. The manifest says what is in the way and how to clear it |
+| A10-2 | Integration | A destination this run created is still cleaned up | git leaves the partial checkout behind when a clone fails. Without this the fix would be "never delete anything" |
+| A10-3 | Integration **unhappy** | A worktree survives, because its `.git` is a file | `-e` sees what `-d` does not; a worktree is a clone and is judged like one |
+| A10-4 | Integration **unhappy** | A clone of another repository is refused, not adopted | The declared key, access, policy and `insteadOf` were written into whatever `.git` was there — so a renamed declaration pushed to the old remote with a key nobody registered |
+| A10-5 | Integration | A clone of the declared URL is adopted without a network call | The counterpart: an existing clone must not need the network to count |
+| A10-6 | Integration **unhappy** | The origin is read raw, not through `insteadOf` | `git remote get-url` applies the rewrite this stack itself writes, so it answers with the declared URL for a clone of something else |
+| A10-7 | Integration **unhappy** | A start that declares nothing needs nothing from GitHub | It exited 1 when github.com was unreachable — after `down.sh`, so an offline first start lost the whole stack over a section of `.env` it never filled in |
+| A10-8 | Integration **unhappy** | A seeding failure is an error per repository, not an abort | And no clone is attempted: with no `known_hosts`, `StrictHostKeyChecking=yes` could only produce a message about a key |
+| A10-9 | Integration | With GitHub reachable the seeding happens — and only when something is declared | The ordering asserted as behaviour rather than as a line number |
+| A10-10 | Integration **unhappy** | A host key GitHub does not publish is still refused | The refusal stays; what changes is that it costs one repository rather than the stack |
+| A10-11 | Component **unhappy** | The dashboard's Test uses the folder a full start uses | With two declared repositories sharing a name it cloned into a third folder, and the next Test adopted that clone as its own |
+| A10-12 | Component | With no collision the plain name is still used | A fix that renamed every folder to a slug would move every existing installation's clones |
+| A10-13 | Component | The second repository can be addressed at all | Same cause: the lookup was by name, and two declared repositories can share one. Slug, then path, then a unique name |
+| A10-14 | Unit | A checked-in template reaches the remote | `.env.*` matched `.env.example`, so this project's own hook refused every commit touching the file that documents its configuration |
+| A10-15 | Unit **unhappy** | A real env file is still refused | Four exact names are allowed; everything else beginning `.env.` stays refused |
+| A10-16 | Component **unhappy** | A Test that could not run says so | The exit status was ignored, so a script that stopped before writing the manifest was answered with the previous manifest's error |
+| A10-17 | Component | A clone that simply fails is still an ordinary answer | The counterpart: the unhappy path the card renders must keep working |
+| A10-18 | Integration **unhappy** | A host with no known host key is refused by name | `Host key verification failed` reads as a key problem and sent the operator to a settings page that cannot help |
+| A10-19 | Integration | The parser is unchanged, and github.com is unaffected | The refusal belongs at clone time; supporting another host is a host-keys change, not a parser change |
+| A10-20 | Unit **unhappy** | A key file whose name carries a space is still seen | Word splitting turned `deploy key.pem` into two words and the key header was never grepped for — the push went through |
+| A10-21 | Unit **unhappy** | A non-ASCII name is still seen | `core.quotePath` writes it in escaped quotes, which `git show` cannot resolve |
+| A10-22 | Unit | An ordinary path with a glob character still passes | The unquoted expansion also globbed; turning globbing off must not cost a file its push |
+| A10-23 | Unit **unhappy** | No fixture can reach the working copy it is testing | Found by running the suite: a fixture directory holding no repository made git walk up into this checkout, commit the working tree and switch branches |
+
+#### Detail per case
+
+##### A10-1 to A10-6 — what is already in the clone directory decides
+
+| | |
+|---|---|
+| **Premise** | Three lines carried both findings: `if [[ -d "${dest}/.git" ]]; then cloned=true; else … git clone … else rm -rf "$dest"`. The test is too narrow in one direction and too wide in the other — it does not see a worktree or an occupied directory, and it accepts any clone as the declared one. |
+| **Component** | Pass 1 of `config/scripts/start/git.sh`, run against a fake SSH remote. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected` throughout. The occupied directory is `volumes/repos/agent-skills` holding `notes.md` with the line `probe`. The foreign clone is a real clone whose `remote.origin.url` is `git@github.com:other/agent-skills.git`; for A10-6 it also carries `url.git@github.com:nocodenation/agent-skills.git.insteadOf = git@github.com:other/agent-skills.git`, which makes `git remote get-url origin` answer with the declared URL while the raw setting still says `other`. |
+| **Expected** | The occupied directory and its file survive, with the manifest naming what is in the way; a worktree survives and is judged by its origin; a clone of another repository is refused with both URLs named and **nothing** of the declaration written into it; a clone of the declared URL is adopted with no network call; and a destination this run created is still removed when its clone fails. |
+| **And none of them asks for a deploy key** | The wait M-A9 built exists for a key the remote does not have. A directory in the way, a clone of something else, a host with no known key — no key registered anywhere mends any of them, so the queue now takes only failures that attempted a clone and were refused by the remote. |
+| **What it found** | Run against the unfixed code first: eight of fourteen assertions failed, and the six that passed were the positive counterparts. A10-6 also asserts, separately, that the rewrite really does make `get-url` answer with the declared URL — without that the case could pass on a git that had stopped applying rewrites. |
+| **Covers** | Findings 2 and 3 of the #9 code review, FR11, FR12. |
+
+##### A10-7 to A10-10 — the network a start does not need
+
+| | |
+|---|---|
+| **Premise** | `known_hosts` was seeded before the declaration was read, and `exit 1`ed when `ssh-keyscan` or `api.github.com` could not be reached. `start.sh` runs `down.sh` 120 lines earlier, so a fresh installation that is offline, firewalled or rate-limited lost its stack over a section of `.env` it had never filled in — against `.env.example`'s promise that nothing there is needed to get started. |
+| **Component** | `seed_known_hosts` and pass 1 of `git.sh`, with `ssh-keyscan` and `curl` stubbed. |
+| **Test data** | A stub `ssh-keyscan` that exits 1 and a stub `curl` that prints nothing; and working stubs offering a real ed25519 key the fixture generates, with `curl` returning `{"SHA256_ED25519": "<that key's fingerprint>"}` — **without** the `SHA256:` prefix, which is how api.github.com publishes it. A10-10 publishes `AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA` instead, which no key can have. |
+| **Expected** | With nothing declared: exit 0, nothing seeded, nothing said about GitHub. With a declaration: exit 0, each entry carrying the seeding failure, no clone attempted and no deploy key asked for. With GitHub reachable: seeded when something is declared, not seeded when nothing is. With a forged key: nothing written, the entry naming it, and the start continuing. |
+| **What it found in its own fixture** | The first version published the fingerprint *with* the `SHA256:` prefix, which the script adds itself, so every comparison failed and the fixture's defect read exactly like one in the script. The corrected value is in the test data above, and the reason is in the file's header — a fixture is test data, and wrong test data is a wrong test. |
+| **Covers** | Finding 4 of the #9 code review, FR3, FR4, NFR2. |
+
+##### A10-11 to A10-13 — the Test button and a full start agree
+
+| | |
+|---|---|
+| **Premise** | `runStartGitStep` reran `git.sh` with one entry. `lu_git_parse` falls back to the slug only when a name occurs more than once *in the declaration it is given*, and one entry never collides — so the Test cloned into a folder a full start never uses, recorded that path, and the next Test found that clone and adopted it. The same collision made the second repository unaddressable: `retryRepository` looked entries up by name. |
+| **Component** | `retryRepository` and `runStartGitStep` in `dashboard/src/lib/server/git.ts`, and the `GIT_ONLY_SLUG` filter in `git.sh`. |
+| **Test data** | `git@github.com:acme/skills.git\|read\|protected` and `git@github.com:other/skills.git\|write\|protected` — slugs `github.com_acme_skills` and `github.com_other_skills`, both named `skills`. The ssh stand-in routes `acme/skills` only, so `other` stays unreachable and any change to it is the defect rather than a clone. The counterpart declares `git@github.com:acme/flows.git\|read\|protected` alone. |
+| **Expected** | The tested repository is cloned into `volumes/repos/github.com_acme_skills`, `volumes/repos/skills` never exists, the other entry does not change by a byte, and testing the other afterwards still reports it unreachable. With no collision the folder is `flows`. |
+| **What it found in its own fixture** | The shared helper that reads a manifest entry by name read the wrong one here — the same ambiguity the case is about, one layer out. It compares by slug now. |
+| **Covers** | Finding 1 of the #9 code review, U2, U11, FR3. |
+
+##### A10-14, A10-15, A10-20 to A10-22 — the scan reads every path
+
+| | |
+|---|---|
+| **Premise** | One loop, duplicated in `config/agents/hooks/pre-push` and `config/agents/bin/git-publish.sh`. `.env.*` matched `.env.example`, so a checked-in template — the file that documents which keys exist, with the values left out — could never be published; this repository ships one. And the unquoted `$(git diff-tree …)` split paths on whitespace, globbed, and could not resolve a name `core.quotePath` had escaped. |
+| **Component** | The pre-push hook, through a real push, and the same block in `git-publish.sh`. |
+| **Test data** | `.env.example`, `.env.sample`, `.env.template`, `.env.dist`, each holding `POSTGRES_PASSWORD=`; `.env`, `.env.local`, `.env.production`, each holding `POSTGRES_PASSWORD=hunter2`; `deploy key.pem` and `schlüssel.pem`, each holding `-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAFIXTURENOTAREALKEY\n-----END OPENSSH PRIVATE KEY-----`, which has the header the scan greps for and no key in it; and `notes[1].md` holding `probe`. |
+| **Expected** | The four templates reach the remote; the three env files are refused and named; both key files are refused and named; `notes[1].md` reaches the remote unexpanded. |
+| **What it found** | Against the unfixed hook the two key files *were* refused — by the M-A6 rule that a push must come through `git-publish`, not by the scan, which never saw them. A case that asserted only "the push failed" would have been green on a scan that does nothing, which is why both assert the file's name in the message. |
+| **Covers** | Findings 6 and 7 of the #9 code review, FR8, NFR1, U3, U4. |
+
+##### A10-16, A10-17 — a Test that could not run
+
+| | |
+|---|---|
+| **Premise** | `child.on('close', () => done(output))` threw the status away. `git.sh` exits 0 when a clone fails — that is a result — and non-zero only when it stopped early under `set -e`, before rewriting the manifest. The route then read the *previous* manifest and answered 200 with its error. |
+| **Component** | `runStartGitStep` and `retryRepository`. |
+| **Test data** | `git@github.com:example/probe.git\|write\|protected`, a manifest recording it failed with `git@github.com: Permission denied (publickey).`, and a stub `ssh-keygen` printing `probe: ssh-keygen unavailable` and exiting 1 — the first command `git.sh` runs that can stop it. The assertion looks for the stub's own text, so an answer merely repeating the old error cannot pass. |
+| **Expected** | A non-200 answer carrying what the script said, a manifest left byte-identical, and no *"Register the deploy key"* — while an ordinary failed clone still answers 200 with `ok: false` and that same instruction. |
+| **What it found** | Against the unfixed route: 200, with *"still unreachable: Permission denied (publickey). Register the deploy key…"* — an answer about a key, for a machine with no `ssh-keygen`. |
+| **Covers** | Finding 8 of the #9 code review, FR20, U2. |
+
+##### A10-18, A10-19 — a host nobody has keys for
+
+| | |
+|---|---|
+| **Premise** | The parser accepts any SSH host; `known_hosts` holds github.com alone. Every other host failed with `Host key verification failed`, and the banner, the manifest and the card then asked for a deploy key, which cannot fix it. §2 of the feature document says "GitHub first; plumbing stays host-agnostic (Forgejo later)", so the gap is the message, not the missing host. |
+| **Component** | Pass 1 of `git.sh`, and `lu_git_parse` for the counterpart. |
+| **Test data** | `git@gitlab.com:acme/flows.git\|read\|protected` — the shape A3c-2 already accepts — beside `git@github.com:nocodenation/agent-skills.git\|read\|protected`, routed to a seeded bare repository, so one run shows the two treated differently. |
+| **Expected** | No clone attempted, no `Host key verification failed`, no deploy key asked for, and an error naming the host and the limit; the GitLab declaration still parses; the github.com repository in the same run is cloned. |
+| **Why it asks `known_hosts` rather than comparing with "github.com"** | The reviewer's smallest fix was the literal comparison. The answer is computed from the file that actually decides instead, so seeding a second host is all it takes to support one — this project's own rule that a fact is computed rather than remembered, and the reason the line cannot go stale when Forgejo arrives. |
+| **What it cost elsewhere** | Five fixtures declare `git@localhost:` or `gitlab.com` repositories for scenarios about something else — the `insteadOf` rewrite, the hook path, the chain of clones. Each now seeds the host its own declaration uses, through `seedKnownHosts(project, [host])`. That is the honest adjustment: their subject is unchanged and their precondition is now stated. |
+| **Covers** | Finding 5 of the #9 code review, FR4, FR11, FR20. |
+
+##### A10-23 — no fixture reaches the working copy it is testing
+
+| | |
+|---|---|
+| **Premise** | Found by running the suite, not by review. The chain fixtures build under `volumes/repos/.a7-<tag>-<pid>`, inside this working copy, because the containers reach them through the `/repos` mount. They create the directories first and clone into them afterwards; when the clone does not happen the directory exists and holds no repository, and git's upward search finds the enclosing repository — this one. |
+| **Component** | `FIXTURE_IDENTITY` in `tests/lib/gitfixture.ts`, which every fixture command goes through. |
+| **Test data** | `volumes/repos/.a10-ceiling-probe`, created empty — the same shape and place as `.a7-race-<pid>` — and the commands `git status --short` and `git commit --allow-empty -m probe`, the second being what actually happened. |
+| **Expected** | git answers "not a git repository"; this working copy's `HEAD` and branch are unchanged; and a real fixture clone, inside the tree or outside it, still works. |
+| **What it found on 2026-09-17** | A suite run committed the whole working tree as `1` onto `feature/liquid-java-extensions` under the fixture identity, created `agent/probe-2` from `main`, committed `2`, checked out `agent/probe-3` and left HEAD there. Nineteen later cases then failed against a tree from another branch. Nothing was lost and nothing was pushed, and neither of those was to the suite's credit. `GIT_CEILING_DIRECTORIES` stops the search before the working copy; the one case that spawns git without the helper now carries it too. |
+| **Covers** | The 2026-09-17 incident, and the same standard as the `.start-skip` and system-tier entries in `BACKLOG.md`: a test may not change the installation it runs on. |
+
+---
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -2888,6 +3007,7 @@ through `git.sh` itself.
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
+| M-A10 | Integration for the start script's decisions, component for the dashboard's two, unit for the scan and for the fixture guard | Every finding is a decision with a wrong answer and a right one, so each is covered on both sides; the levels follow where the decision lives rather than where the finding was reported |
 | M-A9 | Unit for the helper's three outcomes, contract for the wiring and the wording, integration for the flow, one manual case | The helper is real decision logic and every return path is covered; the rest is a script's output and a component's markup, where a contract read is what can honestly be asserted without a browser |
 | M-A8 | Component and integration for the page, contract for the wording, integration for the build, three manual cases | The subject is a screen. What can be read out of served HTML is automated here; what needs eyes on a browser is manual and says so, rather than being approximated by a headless one. **"System" was corrected to "integration" on 2026-09-07**: the cases drive a dashboard the test starts against a fixture, not the running stack through `docker compose exec`, and the row said otherwise while §5 already said this |
 
@@ -2907,7 +3027,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR5 Free local operations | A1-6 |
 | FR6 Free reads | M-A3 |
 | FR7 Push on request | A2-5 (manual), M-A4 |
-| FR8 Hook guardrails | M-A4 |
+| FR8 Hook guardrails | M-A4, A10-14, A10-15, A10-20, A10-21, A10-22 |
 | FR9 Git skill | A2-1, A2-2, A2-3 |
 | FR10 Configuration contract | A1-3, A8-1, A8-2, A8-3, A8-14, A8-18 |
 | NFR1 Credentials via `.env` | A1-9 |
@@ -2915,7 +3035,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | NFR3 State under `volumes/` | A1-8 |
 | NFR4 No Docker socket | Contract test: `docker.sock` absent from `compose.yml` |
 | NFR5 Security posture | Contract test: `cap_drop` and `no-new-privileges` still present |
-| FR11 Declared repositories | A3c-1, A3c-2, A3c-3, A3c-4, A3c-11, A5-1, A8-2, A8-4, A8-8, A8-11, A8-12, A8-14 |
+| FR11 Declared repositories | A3c-1, A3c-2, A3c-3, A3c-4, A3c-11, A5-1, A8-2, A8-4, A8-8, A8-11, A8-12, A8-14, A10-4, A10-11, A10-18 |
 | FR12 Clones follow the declaration | A3c-6, A3c-7, A4-13 |
 | FR13 Explicit working mode | **Nothing — and there is nothing to test.** See below |
 | FR14 Integrate before pushing | A4-11 |
@@ -2924,7 +3044,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR17 One sanctioned publishing path | A6-1, A6-2, A6-3, A6-5, A6-12 |
 | FR18 A push outside that path is refused | A6-6, A6-7, A6-8, A6-9, A6-13 |
 | FR19 Agent branches are recognisable | A6-3, A6-4 |
-| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14, A8-20, A8-21, A8-26, A9-6, A9-13 |
+| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14, A8-20, A8-21, A8-26, A9-6, A9-13, A10-1, A10-4, A10-8, A10-16, A10-18 |
 | FR32 One test walks the whole path | A7-1, A7-2, A7-5 |
 | FR33 Concurrent publication is safe or refuses | A7-3, A7-4 |
 | NFR1 Credentials via `.env` | A1-9, A6-10, A8-3, A8-5 |

@@ -53,7 +53,7 @@ beforeAll(() => {
     expect(built.code, `toolbox build failed:\n${built.output}`).toBe(0);
   }
 
-  seedKnownHosts(project);
+  seedKnownHosts(project, ['localhost']);
   declaredEnv(project, 'git@localhost:example/one.git|read|protected');
 
   run = docker(

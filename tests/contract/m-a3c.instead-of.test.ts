@@ -35,7 +35,7 @@ const bin = fakeSsh(work, [
   { match: 'agent-skills', bare: skills },
   { match: 'tooling', bare: tooling }
 ]);
-seedKnownHosts(project);
+seedKnownHosts(project, ['gitlab.com']);
 
 const DECLARATION =
   'git@github.com:nocodenation/agent-skills.git|read|protected,' +

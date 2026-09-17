@@ -31,7 +31,7 @@ const bin = fakeSsh(work, [
   { match: 'alpha', bare: alpha },
   { match: 'beta', bare: beta }
 ]);
-seedKnownHosts(project);
+seedKnownHosts(project, ['localhost']);
 
 const DECLARATION = 'git@localhost:alpha.git|read|protected, git@localhost:beta.git|write|protected';
 const started = runStart(project, DECLARATION, { pathPrefix: bin });
