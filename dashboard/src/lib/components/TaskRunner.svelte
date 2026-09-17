@@ -77,6 +77,23 @@
   let copilotCode = $derived(copilotLog.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1] ?? '');
 
   let needCodexAuth = $state(false);
+  let skipped = $state({});
+
+  // Tells the start run in progress to stop waiting on one credential. The run
+  // clears these at the beginning of every start, so this holds for this start
+  // only -- an operator who has no phone at hand now is not opting out for good.
+  async function skipStep(step) {
+    try {
+      const res = await fetch('/start-skip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ step })
+      });
+      if (res.ok) skipped = { ...skipped, [step]: true };
+    } catch {
+      // The start times out on its own; a failed skip is not worth a dialog.
+    }
+  }
   let codexLog = $state('');
   let codexRunning = $state(false);
   let codexOk = $state(false);
@@ -530,6 +547,11 @@
         the code back here.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="back" onclick={() => skipStep('claude')} disabled={skipped['claude']}>
+          {skipped['claude'] ? 'Skipped — the start continues' : 'Skip Claude for this start'}
+        </button>
         <button type="button" class="save" disabled={authRunning} onclick={startClaudeAuth}>
           {authRunning ? 'Waiting for sign-in…' : 'Sign in to Claude'}
         </button>
@@ -579,6 +601,11 @@
         finishes on its own once you authorize. Requires an active GitHub Copilot plan.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="back" onclick={() => skipStep('copilot')} disabled={skipped['copilot']}>
+          {skipped['copilot'] ? 'Skipped — the start continues' : 'Skip GitHub Copilot for this start'}
+        </button>
         <button type="button" class="save" disabled={copilotRunning} onclick={startCopilotAuth}>
           {copilotRunning ? 'Waiting for authorization…' : 'Sign in to GitHub Copilot'}
         </button>
@@ -615,6 +642,11 @@
         link and authorize. Sign-in completes here automatically once you approve.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="back" onclick={() => skipStep('codex')} disabled={skipped['codex']}>
+          {skipped['codex'] ? 'Skipped — the start continues' : 'Skip ChatGPT/Codex for this start'}
+        </button>
         <button type="button" class="save" disabled={codexRunning} onclick={startCodexAuth}>
           {codexRunning ? 'Waiting for sign-in…' : 'Sign in with ChatGPT'}
         </button>
@@ -672,6 +704,11 @@
         authorize. Sign-in completes here automatically once you approve.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="back" onclick={() => skipStep('grok')} disabled={skipped['grok']}>
+          {skipped['grok'] ? 'Skipped — the start continues' : 'Skip Grok for this start'}
+        </button>
         <button type="button" class="save" disabled={grokRunning} onclick={startGrokAuth}>
           {grokRunning ? 'Waiting for sign-in…' : 'Sign in with Grok'}
         </button>

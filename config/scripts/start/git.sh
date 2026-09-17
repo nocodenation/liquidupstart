@@ -111,6 +111,10 @@ with_timeout() {
   fi
 }
 
+# Announce, poll, allow a skip, stop at a deadline -- the same helper the
+# OpenClaw sign-ins use, so the deploy key waits like every other credential.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/wait-for-operator.sh"
+
 json_escape() {
   printf '%s' "$1" | tr -d '\n\r\t' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
@@ -138,8 +142,60 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
       rm -rf "$dest"
       error="$(printf '%s' "$out" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g')"
       error="${error:-clone failed}"
+
+      # Shown here, in the flow, rather than left for the operator to find in the
+      # dashboard card later: this is the same kind of thing as a sign-in, and the
+      # sign-ins stop and wait. Review point 1 of #9.
+      #
+      # The marker is what the dashboard watches for, like ::aiw-codex-auth-required::.
+      # The original wording, kept verbatim: A8-19 and A3c-7 were signed off
+      # against it, and rewriting another milestone's assertion so that my own
+      # text passes would empty the assertion of its worth.
       echo "Warning: could not clone ${url}: ${error}" >&2
-      echo "  Register ${SECRETS_DIR}/repos/${slug}/id_ed25519.pub as a deploy key, then start again." >&2
+      echo "::aiw-git-key-required::${slug}" >&2
+      echo "" >&2
+      echo "=============================== ACTION REQUIRED ===============================" >&2
+      echo "Could not clone ${url}" >&2
+      echo "  ${error}" >&2
+      echo "" >&2
+      echo "Add this public key as a deploy key:" >&2
+      echo "" >&2
+      sed -e 's/^/    /' "${key}.pub" >&2 2>/dev/null || echo "    (missing ${key}.pub)" >&2
+      echo "" >&2
+      # Computed, not assembled by hand: the host and path are already in the
+      # declaration. Review point 3 of #9.
+      echo "  https://${host}/${path}/settings/keys/new" >&2
+      if [[ "$access" == "write" ]]; then
+        # The checkbox is off by default, and a key added without it clones fine
+        # and fails on push much later, inside an agent session. Review point 4.
+        echo "" >&2
+        echo "  This repository is declared with write access, so tick" >&2
+        echo "  **Allow write access** on that form. Without it the clone works" >&2
+        echo "  and the first push fails, in an agent session, much later." >&2
+      fi
+      echo "" >&2
+      echo "$(lu_skip_hint "git-key-${slug}")" >&2
+      echo "===============================================================================" >&2
+      echo "" >&2
+
+      # Retry rather than ask the operator to start again: the clone is the
+      # condition, so registering the key ends the wait by itself.
+      # `|| _wait_rc=$?` and not a bare call: the helper returns 1 for a skip and
+      # 2 for the deadline, and a bare command with a non-zero status ends the
+      # script under `set -e`. A sign-in nobody completed would have taken the
+      # whole start down with it -- found by the case below on 2026-09-17.
+      _wait_rc=0
+      lu_wait_for_operator "git-key-${slug}" 5 \
+        env GIT_SSH_COMMAND="$clone_ssh" git clone --quiet "$url" "$dest" || _wait_rc=$?
+      case $_wait_rc in
+        0) cloned=true
+           echo "Cloned ${url} into ${dest}" ;;
+        1) rm -rf "$dest"
+           echo "Warning: ${url} was skipped; it is not cloned." >&2 ;;
+        *) rm -rf "$dest"
+           echo "Warning: ${url} was not cloned: the deploy key is still not registered." >&2
+           echo "  The start continues; register it and start again." >&2 ;;
+      esac
     fi
   fi
 

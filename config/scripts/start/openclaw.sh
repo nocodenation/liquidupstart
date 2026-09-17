@@ -59,6 +59,11 @@ get_env() {
   grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
 
+# One implementation of waiting on the operator: announce, poll, allow a skip,
+# stop at a deadline. Before it, each wait below carried its own copy of the
+# deadline and none of them could be skipped.
+. "${SCRIPT_DIR}/lib/wait-for-operator.sh"
+
 OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 
 # The OpenClaw version the gateway will actually run, read from the image.
@@ -1022,16 +1027,16 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "===============================================================================" >&2
     echo "" >&2
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until claude_cli_bounded 60 "" auth status >/dev/null 2>&1; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
-        echo "  Anthropic models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    claude_cli_bounded 60 "" auth status >/dev/null 2>&1 && echo "Claude CLI: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint claude)"
+    _wait_rc=0
+    lu_wait_for_operator claude 8 claude_cli_bounded 60 "" auth status || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "Claude CLI: sign-in detected — continuing startup." ;;
+      1) echo "Warning: Claude Code sign-in skipped; starting without it." >&2
+         echo "  Anthropic models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
+         echo "  Anthropic models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 
   # `models auth login` refuses to run without a TTY, so it gets a pty from
@@ -1154,16 +1159,16 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until copilot_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: GitHub Copilot sign-in not completed in time; starting without it." >&2
-        echo "  Copilot models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    copilot_authed && echo "GitHub Copilot: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint copilot)"
+    _wait_rc=0
+    lu_wait_for_operator copilot 8 copilot_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "GitHub Copilot: sign-in detected — continuing startup." ;;
+      1) echo "Warning: GitHub Copilot sign-in skipped; starting without it." >&2
+         echo "  Copilot models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: GitHub Copilot sign-in not completed in time; starting without it." >&2
+         echo "  Copilot models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi
 
@@ -1203,16 +1208,16 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until codex_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: ChatGPT/Codex sign-in not completed in time; starting without it." >&2
-        echo "  OpenAI models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    codex_authed && echo "OpenAI Codex: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint codex)"
+    _wait_rc=0
+    lu_wait_for_operator codex 8 codex_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "OpenAI Codex: sign-in detected — continuing startup." ;;
+      1) echo "Warning: ChatGPT/Codex sign-in skipped; starting without it." >&2
+         echo "  OpenAI models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: ChatGPT/Codex sign-in not completed in time; starting without it." >&2
+         echo "  OpenAI models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi
 
@@ -1252,15 +1257,15 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until grok_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: Grok sign-in not completed in time; starting without it." >&2
-        echo "  Grok models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    grok_authed && echo "xAI Grok: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint grok)"
+    _wait_rc=0
+    lu_wait_for_operator grok 8 grok_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "xAI Grok: sign-in detected — continuing startup." ;;
+      1) echo "Warning: Grok sign-in skipped; starting without it." >&2
+         echo "  Grok models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: Grok sign-in not completed in time; starting without it." >&2
+         echo "  Grok models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi

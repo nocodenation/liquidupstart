@@ -48,6 +48,7 @@ export type CardRepository = {
   unreachable: boolean;
   canRetry: boolean;
   instructions: string;
+  deployKeyUrl: string;
 };
 
 export type GitCard = {
@@ -98,10 +99,18 @@ export function fingerprint(path: string): string | null {
   }
 }
 
+/** The page that adds a deploy key, at the fixed address every host uses. */
+export function deployKeyUrl(entry: { host: string; path: string }): string {
+  return `https://${entry.host}/${entry.path}/settings/keys/new`;
+}
+
 export function instructionFor(entry: { host: string; path: string; access: string }): string {
   const where = `${entry.host}/${entry.path}`;
+  // Names the control, not the intention. "with write access" described what the
+  // key is for; the checkbox is off by default, and a key added without it clones
+  // fine and fails on the first push, in an agent session, much later.
   return entry.access === 'write'
-    ? `Add this key as a deploy key on ${where}, with write access — the agents push to it.`
+    ? `Add this key as a deploy key on ${where} and tick "Allow write access" — the agents push to it.`
     : `Add this key as a deploy key on ${where}, read-only — the agents only read it.`;
 }
 
@@ -186,7 +195,8 @@ export function describeRepository(entry: ManifestEntry): CardRepository {
     error: entry.error,
     unreachable: !entry.cloned,
     canRetry: !entry.cloned,
-    instructions: instructionFor(entry)
+    instructions: instructionFor(entry),
+    deployKeyUrl: deployKeyUrl(entry)
   };
 }
 

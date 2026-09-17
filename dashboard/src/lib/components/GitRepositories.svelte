@@ -87,6 +87,11 @@
           {/if}
 
           <p class="gitrepo-instructions">{repo.instructions}</p>
+          <p class="gitrepo-instructions">
+            <a href={repo.deployKeyUrl} target="_blank" rel="noopener noreferrer">
+              {repo.deployKeyUrl}
+            </a>
+          </p>
 
           {#if repo.publicKey}
             <div class="gitkey">
