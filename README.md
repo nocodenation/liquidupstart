@@ -283,9 +283,12 @@ machine under `volumes/privacy-proxy/`.
   someone, and judges every outgoing message for trickery. When a reworded message is still
   too identifying, the proxy pauses and asks you in the chat (`PRIVACY_PROXY_SEMANTIC_MODE=
   interactive`); when the egress judge rates a message high, it pauses and asks the same way
-  (`PRIVACY_PROXY_GATE_MODE=ask`) and `send-original` sends it as masked — measured on the
-  recommended models: no honest turn held in twelve, both injection probes held and, once
-  released, refused by the cloud model itself. The decision stays yours. The `0` / `off` /
+  (`PRIVACY_PROXY_GATE_MODE=ask`) and `send-original` sends it as masked — no honest turn held
+  in twelve, both injection probes held and, once released, refused by the cloud model itself.
+  Those numbers were measured with a model that answers without thinking out loud on the second
+  pass and the rewording (`google/gemma-4-31b-it`) and a thinking model in both judge seats
+  (`minimax/minimax-m2.5`); other models work, these are what the numbers were drawn on. The
+  decision stays yours. The `0` / `off` /
   `log` / `block` values of those keys exist to debug the detectors and the judge on their
   own, not to run the product.
 - **What it catches, and when.** Built-in detectors (names, e-mails, phones, IBANs, ids,
