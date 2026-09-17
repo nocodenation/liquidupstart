@@ -443,21 +443,20 @@ Deferred on 2026-09-17 rather than done: M-A9 had just been observed end to end,
 4 of #9 were answered, and the reply to the review had been waiting since that morning. The
 contradiction is visible but harmless, and it lasts only as long as a wait does.
 
-**A system case did not give the operator's gateway configuration back.**
-`tests/system/m-oc.{codex-plugin,proxy-attribution,device-scopes}.test.ts` write
-`volumes/_openclaw/openclaw.json` and restart the gateway. After a run on 2026-09-17 the file had
-lost `"claude-cli/*": {}` from `agents.defaults.models` — the entry `openclaw.sh` writes so that the
-model policy it derives lists the CLI's own provider, and whose absence once produced *"Failed to
-set model: model not allowed: claude-cli/claude-opus-5"*. The policy still allowed it here, so
-nothing broke; what is wrong is that a case altered the installation it ran against and left it
-altered. The gateway was also left exited 127, which took 26 M-B4 cases down with it — they build
-their bundles through `docker compose run` and answered `service "openclaw-gateway" is not running`.
+**~~A system case did not give the operator's gateway configuration back.~~** *Done 2026-09-17, as
+M-A11.* `tests/system/m-oc.{codex-plugin,proxy-attribution,device-scopes}.test.ts` write
+`volumes/_openclaw/openclaw.json` and restart the gateway. After a run the file had lost
+`"claude-cli/*"` from `agents.defaults.models` — the entry `openclaw.sh` writes so that the model
+policy it derives lists the CLI's own provider — and the gateway was left exited 127, which took 26
+M-B4 cases down with it.
 
-Two things are owed. The cases should restore what they change — write to a copy, or put the
-original back in an `afterAll` that runs even when an assertion fails. And `tests/run.sh` should
-make the system tier harder to invoke by accident: `./tests/run.sh m-oc` runs it, `--no-system` is
-opt-out, and the tier is the one that touches the running stack. Opt-in would have prevented this.
-
-Recorded 2026-09-17, found by invoking it by accident while checking that an intermediate commit was
-green. `HANDOFF.md` already warns *"One working copy, one stack"*; this is the same hazard from
-inside the suite rather than from a second checkout.
+Both halves are now built, and the entry is kept because what it found is worth more than the fix.
+*The restores were the wrong shape twice over:* two of the three put back a **single field** into a
+document read back at restore time, so whatever else had changed in between survived wearing the
+original's name; and each file captured its own "original", so a file whose capture happened after
+another had already written held the changed state as the thing to restore.
+`tests/lib/installation.ts` captures whole files, once per path however many files ask for it, and
+A11-9 refuses a bespoke restore beside it. *And the tier was opt-out:* `./tests/run.sh m-oc` ran it,
+`--no-system` turned it off. A default that is safe only when you remember a flag is not a default,
+so `--system` is now how you ask for it, `--no-system` describes the default, and every run says how
+many files it did not run and how to run them.
