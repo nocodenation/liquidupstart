@@ -1,4 +1,4 @@
-# Handover — maintained continuously, last touched 2026-09-15
+# Handover — maintained continuously, last touched 2026-09-17
 
 **What this file is.** The working handover between the operator and the agent, on **one machine**.
 It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
@@ -585,6 +585,17 @@ between them.
    neither before — #11 was the only one he had seen. Both descriptions were rewritten that day,
    because they still described the state at M-A0 and M-B1 respectively. #9 first: #10 sits on it.
    Nothing here is blocked in the meantime; the branches are complete and pushed.
+
+   **Review 3 of #9 arrived 2026-09-16** — four start-up points and one blocker. The blocker
+   (`proxy_attribution_required`) was answered with live before-and-after evidence, and points 1 to 4
+   are M-A9: the deploy key now stops the start like every other credential, through one helper with
+   one deadline and a way out of every wait. The operator walked it in the browser on 2026-09-17 and
+   found three things no case had shown — no panel at all, a Skip that took five seconds to be
+   noticed, and a key that ran past its frame — each now a case. Their question about **more than one
+   unregistered key** turned into the last piece: all clones are attempted before any wait, so the
+   start names the whole queue up front, *Skip all* ends it in one click, and the deadline is the
+   start's budget rather than each wait's. Still owed: the reply on the pull request, and a forward
+   merge into #10.
 2. **PR #1, `GIT Versioning`, is superseded and should be closed.** Opened by Timur on 2026-06-19 and
    untouched since 2026-06-22. It is not a second version of #9: it puts a **Gitea** server inside the
    stack — its own service, nginx route and start script — and gives agents a `publish-to-git` skill

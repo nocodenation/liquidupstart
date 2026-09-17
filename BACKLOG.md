@@ -424,3 +424,21 @@ Deferred on 2026-09-15 rather than done: it touches four cross-references while 
 review, and moving files under a reviewer mid-review is how a review gets read twice. The cheap half
 was done instead — the file and `CLAUDE.md` now say what the handover is, what it is not, and which
 copy is current.
+
+**The repositories card contradicts the key panel while the start is waiting.**
+`git.sh` writes `volumes/_git-secrets/repositories.json` in its third pass, at the end. So while the
+start waits for a deploy key, the card above it still describes the **last completed** start.
+Observed by the operator on 2026-09-17: the panel said *"Add a deploy key to continue — 1 of 2"* and
+the card below it said *"1 of 4 prepared repositories could not be reached … 1 declared repository
+has no deploy key yet. Start the stack so it gets one."* — while that start was running. Nothing is
+wrong in either statement; they describe different moments, and the card cannot know about a
+repository declared since the last start.
+
+The fix is small: write the manifest provisionally after pass 1, where every clone has already been
+attempted and the outcome per repository is known, and write it again at the end. The case is
+*"while the start waits, the card does not contradict the panel"* — one start against a remote that
+refuses, the manifest read during the wait rather than after it.
+
+Deferred on 2026-09-17 rather than done: M-A9 had just been observed end to end, review points 1 to
+4 of #9 were answered, and the reply to the review had been waiting since that morning. The
+contradiction is visible but harmless, and it lasts only as long as a wait does.
