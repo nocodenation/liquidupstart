@@ -594,8 +594,16 @@ between them.
    noticed, and a key that ran past its frame — each now a case. Their question about **more than one
    unregistered key** turned into the last piece: all clones are attempted before any wait, so the
    start names the whole queue up front, *Skip all* ends it in one click, and the deadline is the
-   start's budget rather than each wait's. Still owed: the reply on the pull request, and a forward
-   merge into #10.
+   start's budget rather than each wait's.
+
+   **The second review of 2026-09-16, six minutes later, is a different document** — eight findings
+   from a reading of the scripts, the hook, compose and the dashboard. All eight are built as M-A10
+   on 2026-09-17, in the order the reviewer suggested, each case run against the unfixed code first.
+   Two of them destroyed work (`rm -rf` over a directory that was there before the start; a clone of
+   another repository adopted with the declared key), one was a hole in the secret scan (a key file
+   whose name holds a space was never read), and one broke `.env.example`'s promise that a fresh
+   installation needs nothing from the git section. Still owed: the reply on the pull request, which
+   covers both reviews together.
 2. **PR #1, `GIT Versioning`, is superseded and should be closed.** Opened by Timur on 2026-06-19 and
    untouched since 2026-06-22. It is not a second version of #9: it puts a **Gitea** server inside the
    stack — its own service, nginx route and start script — and gives agents a `publish-to-git` skill
@@ -619,6 +627,24 @@ between them.
    What matters for anyone else on this machine is *One working copy, one stack* above: starting that
    clone takes the stack over, and measurements taken here while it runs are measurements of it. The
    discriminator is the `privacy-proxy` container.
+
+### What the suite did to this machine on 2026-09-17
+
+Twice in one day the tests changed the installation they were running on, and both are worth knowing
+before running anything here.
+
+**The system tier is not a read-only tier.** `./tests/run.sh m-oc` includes it; `--no-system` is
+opt-out. Those cases write `volumes/_openclaw/openclaw.json` and restart the gateway. One run left
+the gateway exited 127 — which took 26 M-B4 cases down with it, since they build their bundles
+through `docker compose run` — and left the configuration missing `"claude-cli/*"` from
+`agents.defaults.models`. Both were repaired by hand; both are in `BACKLOG.md`.
+
+**A fixture committed into this repository.** The chain fixtures build under `volumes/repos/.a7-…`,
+inside the working copy. When their clone does not happen the directory exists and holds no
+repository, and git walks up and finds this one. A run committed the working tree as `1` onto
+`feature/liquid-java-extensions`, created `agent/probe-2` and `agent/probe-3`, and left HEAD on the
+last. Recovered with `git reset --soft` off the reflog; nothing was lost and nothing was pushed.
+`GIT_CEILING_DIRECTORIES` now stops git's search before this working copy, and A10-23 holds it.
 
 ## Done, and what each turned up
 
