@@ -33,8 +33,12 @@ const tree = makeTree({
 });
 afterAll(() => dropTree(tree));
 
+// `--system` in the three cases below, since 2026-09-17: their subject is
+// discovery -- that every level is found and the stack levels come last -- and
+// M-A11 made those levels opt-in, so the full selection is what has to be asked
+// for now. Whether they are selected by default is A0-4's subject, not this one.
 test('A0-1 lists every discovered file and exits 0', () => {
-  const r = runner(['--root', tree, '--list']);
+  const r = runner(['--root', tree, '--system', '--list']);
   expect(r.code).toBe(0);
   for (const file of ['one', 'two', 'three', 'four']) {
     expect(r.stdout).toContain(`m-fx.${file}.test.ts`);
@@ -43,13 +47,13 @@ test('A0-1 lists every discovered file and exits 0', () => {
 });
 
 test('A0-1 restricts discovery to the milestone filter', () => {
-  const r = runner(['fx', '--root', tree, '--list']);
+  const r = runner(['fx', '--root', tree, '--system', '--list']);
   expect(r.code).toBe(0);
   expect(r.stdout.trim().split('\n')).toHaveLength(4);
 });
 
 test('A0-1 the levels that need the stack are discovered, and listed last', () => {
-  const listed = runner(['--root', tree, '--list']).stdout.trim().split('\n');
+  const listed = runner(['--root', tree, '--system', '--list']).stdout.trim().split('\n');
   const level = (path: string) => path.split('/').at(-2);
   expect(listed.map(level).slice(0, 2).sort()).toEqual(['integration', 'unit']);
   expect(listed.map(level).slice(2)).toEqual(['system', 'e2e']);

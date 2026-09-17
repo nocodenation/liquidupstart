@@ -560,6 +560,51 @@ the search before the working copy, in the one place every fixture goes through.
 *Done when:* `./tests/run.sh m-a10` is green and the whole suite is, since five of the eight change
 behaviour other milestones assert.
 
+**M-A11 · The suite does not change the installation it runs on** (2026-09-17)
+
+Not planned. The suite damaged this machine twice in one afternoon, and was green both times.
+
+The stack levels write into `volumes/` and restart containers, and they ran by default —
+`--no-system` turned them off. So an ordinary `./tests/run.sh m-oc` wrote the operator's gateway
+configuration, left the gateway exited 127 and the file short of `"claude-cli/*"`, and 26 unrelated
+cases failed against it. The restores those cases carried were the wrong shape twice over: two of
+three put back a single field into a document read at restore time, so anything else that had
+changed survived wearing the original's name, and each file captured its own "original", so a
+capture taken after another file had written held the changed state as the thing to restore.
+
+`tests/lib/installation.ts` captures whole files, once per path however many files ask, and puts the
+bytes back whether the cases passed, failed or threw. `--system` is now how the stack levels are
+asked for; `--no-system` describes the default; and every run prints how many files it did not run
+and how to run them. A11-9 refuses a case at those levels that restores by hand, and A11-10 refuses
+a restart that is not waited out — which the first deliberate run of the repaired tier found, when a
+restore returned while the gateway was starting and the next file read `502`.
+
+*Why it is a milestone rather than a fix.* The trial this project is running is of test-driven
+development, and a suite that reports success while breaking the installation teaches the opposite
+of what it is for. Both incidents are written up rather than tidied away, in `BACKLOG.md` and in the
+handover, because what they found is worth more than the repair.
+
+*Done when:* `./tests/run.sh m-a11` is green, and the stack levels have been run deliberately once
+with the installation snapshotted before and compared afterwards — which was done twice on
+2026-09-17: the first run found A11-10, the second was 117 cases green with `openclaw.json`
+byte-identical to the snapshots from before both runs.
+
+**M-A12 · The card and the panel describe the same moment** (2026-09-17)
+
+Observed by the operator while walking the deploy-key flow: the panel said *"Add a deploy key to
+continue — 1 of 2"*, and the repositories card below it said *"1 of 4 prepared repositories could not
+be reached … Start the stack so it gets one"* — during that start. Neither was wrong. `git.sh` wrote
+the manifest in its third pass, at the end, so while it waited the card still described the last
+completed start, and could not know about a repository declared since.
+
+Everything the card renders is decided once pass 1 is over: every clone has been attempted. So the
+manifest is written there too, and again at the end, when a key registered during the wait or a skip
+has had its say. A12-1 reads it **while the run is waiting** — the script runs in the background and
+the case checks the marker to be sure the wait is real — and A12-2 is the counterpart that keeps the
+provisional record from becoming the final answer.
+
+*Done when:* `./tests/run.sh m-a12` is green, and the whole suite is.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

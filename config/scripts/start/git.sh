@@ -241,6 +241,56 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   R_CLONED+=("$cloned"); R_ERROR+=("$error"); R_SSH+=("$clone_ssh"); R_ASKKEY+=("$askkey")
 done <<< "$PARSED"
 
+# Written twice: once here, once when the waits are over. Everything the
+# dashboard's repository card renders is decided by the end of pass 1 -- every
+# clone has been attempted -- and writing the manifest only at the end left the
+# card describing the *previous* start while this one was waiting. The operator
+# saw it on 2026-09-17: the panel said "Add a deploy key to continue -- 1 of 2"
+# and the card below it said "1 of 4 prepared repositories could not be reached
+# ... Start the stack so it gets one", during that start. Neither was wrong; they
+# were two moments in one screen.
+lu_write_manifest() {
+  ENTRIES=""
+  local i name url host path access policy slug dir mount_key cloned error entry
+  for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+    name="${R_NAME[$i]}"; url="${R_URL[$i]}"; host="${R_HOST[$i]}"; path="${R_PATH[$i]}"
+    access="${R_ACCESS[$i]}"; policy="${R_POLICY[$i]}"; slug="${R_SLUG[$i]}"; dir="${R_DIR[$i]}"
+    mount_key="${R_MOUNTKEY[$i]}"
+    cloned="${R_CLONED[$i]}"; error="${R_ERROR[$i]}"
+    entry="$(cat <<JSON
+    {
+      "name": "$(json_escape "$name")",
+      "url": "$(json_escape "$url")",
+      "host": "$(json_escape "$host")",
+      "path": "$(json_escape "$path")",
+      "access": "$(json_escape "$access")",
+      "policy": "$(json_escape "$policy")",
+      "slug": "$(json_escape "$slug")",
+      "keyDir": "volumes/_git-secrets/repos/$(json_escape "$slug")",
+      "publicKeyFile": "volumes/_git-secrets/repos/$(json_escape "$slug")/id_ed25519.pub",
+      "clonePath": "volumes/repos/$(json_escape "$dir")",
+      "containerKey": "$(json_escape "$mount_key")",
+      "containerClone": "${REPOS_MOUNT}/$(json_escape "$dir")",
+      "cloned": ${cloned},
+      "error": $(if [[ -n "$error" ]]; then printf '"%s"' "$(json_escape "$error")"; else printf 'null'; fi)
+    }
+JSON
+)"
+    ENTRIES="${ENTRIES:+${ENTRIES},
+}${entry}"
+  done
+
+  {
+    printf '{\n  "generated": "%s",\n  "repositories": [\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    [[ -n "$ENTRIES" ]] && printf '%s\n' "$ENTRIES"
+    printf '  ]\n}\n'
+  } > "$MANIFEST"
+  chmod 644 "$MANIFEST"
+}
+
+# The provisional record: what pass 1 decided, before anyone waits.
+lu_write_manifest
+
 # --- Pass 2: ask for the keys that are missing, all of them known up front ---
 # The count guards below are not decoration: bash 3.2 (what macOS ships) treats
 # the expansion of an empty array under `set -u` as an unbound variable, and a
@@ -350,28 +400,6 @@ for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
     git -C "$dest" config liquidupstart.policy "$policy"
     git -C "$dest" config "url.${url}.insteadOf" "https://${host}/${path}"
   fi
-
-  entry="$(cat <<JSON
-    {
-      "name": "$(json_escape "$name")",
-      "url": "$(json_escape "$url")",
-      "host": "$(json_escape "$host")",
-      "path": "$(json_escape "$path")",
-      "access": "$(json_escape "$access")",
-      "policy": "$(json_escape "$policy")",
-      "slug": "$(json_escape "$slug")",
-      "keyDir": "volumes/_git-secrets/repos/$(json_escape "$slug")",
-      "publicKeyFile": "volumes/_git-secrets/repos/$(json_escape "$slug")/id_ed25519.pub",
-      "clonePath": "volumes/repos/$(json_escape "$dir")",
-      "containerKey": "$(json_escape "$mount_key")",
-      "containerClone": "${REPOS_MOUNT}/$(json_escape "$dir")",
-      "cloned": ${cloned},
-      "error": $(if [[ -n "$error" ]]; then printf '"%s"' "$(json_escape "$error")"; else printf 'null'; fi)
-    }
-JSON
-)"
-  ENTRIES="${ENTRIES:+${ENTRIES},
-}${entry}"
 done
 
 for existing in "$REPOS_DIR"/*/; do
@@ -379,9 +407,6 @@ for existing in "$REPOS_DIR"/*/; do
   git -C "$existing" config core.hooksPath "$HOOKS_MOUNT"
 done
 
-{
-  printf '{\n  "generated": "%s",\n  "repositories": [\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  [[ -n "$ENTRIES" ]] && printf '%s\n' "$ENTRIES"
-  printf '  ]\n}\n'
-} > "$MANIFEST"
-chmod 644 "$MANIFEST"
+# The record that counts: a key registered during the wait, or a skip, has had
+# its say by now.
+lu_write_manifest

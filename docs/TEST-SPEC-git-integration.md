@@ -67,7 +67,16 @@ The **end-to-end** level was added by M-A7 on 2026-09-04, when counting the suit
 across five levels and not one that walks a whole path. It is separated from **system** because the
 two answer different questions: a system test drives one part inside the running stack, an end-to-end
 test drives every part in sequence and passes only if each hands over to the next. It runs with the
-system level and after it — the stack has to be up either way — so `--no-system` drops both.
+system level and after it — the stack has to be up either way — so both are asked for together.
+
+**Both are opt-in, since 2026-09-17.** They write into `volumes/` and restart containers on the
+machine the suite runs on, which is the operator's installation and not a fixture. They used to run
+by default, with `--no-system` to turn them off; `./tests/run.sh m-oc` therefore ran them by
+accident, left the gateway exited 127 and its configuration short of a key, and took 26 unrelated
+cases down with it. A default that is safe only when you remember a flag is not a default. `--system`
+now asks for them, `--no-system` describes the default, and every run prints how many files it did
+not run and how to run them. M-A11 covers it, and A11-9 refuses a case at those levels that restores
+the installation by hand instead of through `tests/lib/installation.ts`.
 
 The **contract** level is not in Philipp's list but is added deliberately: the project's own
 `.env.example` contract ("a start script injects a key only if the service template declares it") is
@@ -99,9 +108,11 @@ tests/
 Dashboard tests stay where they are; `run.sh` runs both so one command covers the repository.
 
 ```bash
-./tests/run.sh              # everything, dashboard suite included
+./tests/run.sh              # everything except the levels that need the stack
 ./tests/run.sh m-a1         # one milestone (bare `a1` also accepted)
-./tests/run.sh --no-system  # skip everything needing the stack
+./tests/run.sh --system     # ALSO the system and e2e levels: they write into
+                            # volumes/ and restart containers on this machine
+./tests/run.sh --no-system  # accepted, and the default
 ./tests/run.sh --list       # print what would run, run nothing
 ./tests/run.sh --dashboard  # dashboard suite only
 ./tests/run.sh --root DIR   # discover under DIR instead of tests/
@@ -2994,6 +3005,85 @@ first, so each one is known to fail for the reason it names.
 
 ---
 
+### M-A11 — the suite does not change the installation it runs on
+
+**What this milestone is for.** It was not planned. On 2026-09-17 the suite damaged the machine it
+was running on twice within a few hours, and both times the cases were green while they did it. That
+is the worst shape a defect can take here: the trial this project is running is of test-driven
+development, and a suite that reports success while breaking the installation teaches exactly the
+wrong lesson.
+
+*What happened.* `./tests/run.sh m-oc` — an ordinary check of one milestone — ran the system tier,
+because that tier was opt-out. Those cases write `volumes/_openclaw/openclaw.json` and restart the
+gateway. The run left the gateway exited 127 and the configuration missing `"claude-cli/*"` from
+`agents.defaults.models`, and 26 M-B4 cases then failed against it, since they build their bundles
+through `docker compose run`. Separately, a chain fixture walked up out of a directory that held no
+repository and committed this working copy onto its own branch; that half is A10-23.
+
+*Why the restores did not hold.* Each of the three files had one. Two put back a **single field** —
+`scopes`, `trustedProxies` — into a document read back at restore time, so whatever else had changed
+in between survived wearing the original's name. And each file captured its own "original", so a
+capture taken after another file had written held the changed state as the thing to restore.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A11-1 | Unit **unhappy** | The whole file comes back, not the field the case remembered | The shape that lost `"claude-cli/*"`: a restore that writes one field into a document someone else has changed |
+| A11-2 | Unit **unhappy** | The first capture wins, however many files ask | Three files, three captures, and the last one held what an earlier case had already written |
+| A11-3 | Unit | A restore that had nothing to repair says so | The callback is a gateway restart — half a minute of a suite, every time, for nothing |
+| A11-4 | Unit **unhappy** | A file the case created is taken away again | A case that leaves a new file behind has not given the installation back |
+| A11-5 | Contract **unhappy** | The stack levels are not run unless they are asked for | `--no-system` was opt-out; a default that is safe only when you remember a flag is not a default |
+| A11-6 | Contract | And they run when they are | A tier nobody can run is as useless as one that runs by accident |
+| A11-7 | Contract | The skipped tier is named out loud, with the flag | A tier skipped silently is one nobody remembers exists, and "the suite is green" then says less than the person saying it thinks |
+| A11-8 | Contract | `--no-system` still means what it said | Documents, the handover and everyone's fingers name it; it now describes the default instead of changing it |
+| A11-9 | Contract **unhappy** | No case at those levels restores by hand | Two restores for one file is how they disagree |
+| A11-10 | Contract **unhappy** | A restart is waited out, never merely asked for | Found by the first deliberate run of the repaired tier: a restore returned while the gateway was starting, and the next file read `502` |
+
+#### Detail per case
+
+##### A11-1 to A11-4 — what a case borrows, it gives back whole
+
+| | |
+|---|---|
+| **Premise** | `tests/lib/installation.ts` captures whole files, once per path however many files ask for it, and puts the bytes back in an `afterAll` that runs whether the cases passed, failed or threw. Whole file, because the damage was never the field a case changed — it was everything else that rode along. Once per path, because three files restoring three different "originals" is how they disagree. |
+| **Component** | `capture`, `restore` and `protect` in `tests/lib/installation.ts`. |
+| **Test data** | A scratch file holding `{\n  "keep": "me",\n  "scopes": ["read"]\n}\n`, which the case then rewrites with `keep` deleted and `scopes` extended — the exact shape of what the system cases do; a second path captured while it does not exist; and a third that nothing touches. |
+| **Expected** | The captured bytes come back exactly — compared as bytes, not as a parsed document, because a restore that reformats is a change an operator sees in `git diff`; a second capture after a change does not become the original; a file that was absent at capture is removed again; and an untouched file is not rewritten, with `restore` reporting `false` so the caller can skip a restart that would cost half a minute. |
+| **Covers** | The 2026-09-17 incident; §4 of this document. |
+
+##### A11-5 to A11-10 — the tier that touches this machine is asked for
+
+| | |
+|---|---|
+| **Premise** | The stack levels are the ones that act on the installation. They ran by default; `--no-system` turned them off. So the safe path required remembering a flag, and one forgetful invocation cost the operator their gateway. |
+| **Component** | `tests/run.sh`, and every `*.test.ts` under `tests/system/` read as text. |
+| **Test data** | `./tests/run.sh m-oc --list` with no flags, with `--system` and with `--no-system` — a milestone that spans both kinds of level, so the same command discriminates. The scans look for `writeFileSync(`/`Bun.write(` without `protect(`, for `compose(['restart'` (which does not wait), and for an `afterAll` holding a `writeFileSync` of its own. |
+| **Expected** | No file at those levels by default and every file at the other levels still selected; both present with `--system`; the same selection for `--no-system` as for the default; a `SKIPPED:` line naming the count, the reason and the flag; and no case at those levels that restores by hand or restarts without waiting. |
+| **What the deliberate runs found** | The tier was run twice on purpose, with the installation snapshotted before each. The **first** run: `openclaw.json` byte-identical afterwards — the restore holds — and two OC-13 cases failing with `502`, because the restores restarted the gateway without waiting for it and the next file met a starting container. That is A11-10, and `restartAndWait` in `tests/lib/stack.ts` is now the one place that waits. The **second** run: 117 cases green, and the file byte-identical to the snapshots from before **both** runs. |
+| **Why this is asserted as text as well as behaviour** | The behaviour is only observable by running the tier against a live stack, which is the thing this milestone makes rare. The scans hold the convention on every ordinary run, where a new case at those levels would otherwise reintroduce the incident without anyone noticing until it did. |
+| **Covers** | The 2026-09-17 incident; §4 of this document. |
+
+---
+
+### M-A12 — the card and the panel describe the same moment
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A12-1 | Integration **unhappy** | The manifest is written before the waiting starts | The card rendered the previous start while this one waited: *"1 of 4"* beside a panel saying *"1 of 2"*, and *"Start the stack so it gets one"* during a start |
+| A12-2 | Integration | And the manifest written at the end is the one that counts | A provisional record that became the final answer would leave a key registered during the wait showing as unreachable until the next start |
+
+#### Detail per case
+
+| | |
+|---|---|
+| **Premise** | `git.sh` wrote `repositories.json` in pass 3. Everything the card needs is decided at the end of pass 1 — every clone has been attempted — so the gap was not knowledge but timing, and it lasted exactly as long as a wait. |
+| **Component** | `lu_write_manifest` in `config/scripts/start/git.sh`, called after pass 1 and again after pass 3. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, routed to a seeded bare repository, and `git@github.com:nocodenation/flows.git\|write\|protected`, routed nowhere — which is what an unregistered key looks like from here. `SYSTEM_SIGNIN_WAIT_SECONDS=30` gives the reading a window, and the sentinel `volumes/.start-skip/git-key-all` — what the dashboard's "Skip all" writes — ends the wait so the case never sits out the deadline. |
+| **Steps** | Run `git.sh` in the background. Poll for the manifest until it lists both repositories, and read it **there**, while the run is still waiting. Then write the sentinel, let the run finish, and read the manifest again. |
+| **Expected** | During the wait: both repositories listed, `agent-skills` cloned with no error, `flows` not cloned and carrying the error its clone gave. Afterwards: both still listed, `flows` recorded as this run left it. And the run's own output must contain `::aiw-git-key-required::`, or the case was reading the final manifest and proving nothing. |
+| **Covers** | The operator's observation of 2026-09-17, FR3, FR20, U11. |
+
+---
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -3007,6 +3097,8 @@ first, so each one is known to fail for the reason it names.
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
+| M-A12 | Integration only | The subject is when a file is written relative to a wait, which no level below can see |
+| M-A11 | Unit for the restore, contract for the runner and for the convention in the cases | The restore is real decision logic and every branch is covered; the tier's own behaviour needs a live stack, so it is held by scans on every ordinary run and observed by a deliberate one |
 | M-A10 | Integration for the start script's decisions, component for the dashboard's two, unit for the scan and for the fixture guard | Every finding is a decision with a wrong answer and a right one, so each is covered on both sides; the levels follow where the decision lives rather than where the finding was reported |
 | M-A9 | Unit for the helper's three outcomes, contract for the wiring and the wording, integration for the flow, one manual case | The helper is real decision logic and every return path is covered; the rest is a script's output and a component's markup, where a contract read is what can honestly be asserted without a browser |
 | M-A8 | Component and integration for the page, contract for the wording, integration for the build, three manual cases | The subject is a screen. What can be read out of served HTML is automated here; what needs eyes on a browser is manual and says so, rather than being approximated by a headless one. **"System" was corrected to "integration" on 2026-09-07**: the cases drive a dashboard the test starts against a fixture, not the running stack through `docker compose exec`, and the row said otherwise while §5 already said this |

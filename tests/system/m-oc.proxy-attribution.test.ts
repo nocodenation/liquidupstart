@@ -37,12 +37,13 @@
  *
  * Requirements covered: OC-G4, FEATURE-openclaw-2026-9-1.md §5.4.
  */
-import { test, expect, describe, afterAll } from 'bun:test';
+import { test, expect, describe } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { protect } from '../lib/installation';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-import { compose } from '../lib/stack';
+import { compose, restartAndWait } from '../lib/stack';
 import { stackGuard } from '../lib/guard';
 
 stackGuard(['openclaw-gateway', 'proxy', 'opencode']);
@@ -85,14 +86,18 @@ function setTrustedProxies(list: string[]): void {
   // Synchronous: Bun.write returns a promise, and the restart below blocks the
   // JS thread without draining it, so the gateway could boot on the old config.
   writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
-  compose(['restart', 'openclaw-gateway']);
-  sh(['sh', '-c', 'for i in $(seq 1 60); do docker inspect openclaw-gateway --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done']);
+  restartAndWait('openclaw-gateway');
 }
 
 const original: string[] = JSON.parse(readFileSync(CONFIG, 'utf8')).gateway.trustedProxies;
 
-afterAll(() => {
-  setTrustedProxies(original);
+// The whole file, not `trustedProxies` alone: see A11-1. The restart happens in
+// the restore, and only when there was something to repair.
+protect(CONFIG, () => {
+  // Waited out, not merely asked for: a restore that returns while the gateway
+  // is still starting hands the next file a 502, which is how OC-13 failed on
+  // 2026-09-17 against a stack that was fine.
+  restartAndWait('openclaw-gateway');
 });
 
 describe('OC-13 the list names the proxy, and both kinds of client are attributed', () => {
