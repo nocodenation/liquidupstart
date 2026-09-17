@@ -589,6 +589,22 @@ with the installation snapshotted before and compared afterwards — which was d
 2026-09-17: the first run found A11-10, the second was 117 cases green with `openclaw.json`
 byte-identical to the snapshots from before both runs.
 
+**M-A12 · The card and the panel describe the same moment** (2026-09-17)
+
+Observed by the operator while walking the deploy-key flow: the panel said *"Add a deploy key to
+continue — 1 of 2"*, and the repositories card below it said *"1 of 4 prepared repositories could not
+be reached … Start the stack so it gets one"* — during that start. Neither was wrong. `git.sh` wrote
+the manifest in its third pass, at the end, so while it waited the card still described the last
+completed start, and could not know about a repository declared since.
+
+Everything the card renders is decided once pass 1 is over: every clone has been attempted. So the
+manifest is written there too, and again at the end, when a key registered during the wait or a skip
+has had its say. A12-1 reads it **while the run is waiting** — the script runs in the background and
+the case checks the marker to be sure the wait is real — and A12-2 is the counterpart that keeps the
+provisional record from becoming the final answer.
+
+*Done when:* `./tests/run.sh m-a12` is green, and the whole suite is.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

@@ -3064,6 +3064,26 @@ capture taken after another file had written held the changed state as the thing
 
 ---
 
+### M-A12 — the card and the panel describe the same moment
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A12-1 | Integration **unhappy** | The manifest is written before the waiting starts | The card rendered the previous start while this one waited: *"1 of 4"* beside a panel saying *"1 of 2"*, and *"Start the stack so it gets one"* during a start |
+| A12-2 | Integration | And the manifest written at the end is the one that counts | A provisional record that became the final answer would leave a key registered during the wait showing as unreachable until the next start |
+
+#### Detail per case
+
+| | |
+|---|---|
+| **Premise** | `git.sh` wrote `repositories.json` in pass 3. Everything the card needs is decided at the end of pass 1 — every clone has been attempted — so the gap was not knowledge but timing, and it lasted exactly as long as a wait. |
+| **Component** | `lu_write_manifest` in `config/scripts/start/git.sh`, called after pass 1 and again after pass 3. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, routed to a seeded bare repository, and `git@github.com:nocodenation/flows.git\|write\|protected`, routed nowhere — which is what an unregistered key looks like from here. `SYSTEM_SIGNIN_WAIT_SECONDS=30` gives the reading a window, and the sentinel `volumes/.start-skip/git-key-all` — what the dashboard's "Skip all" writes — ends the wait so the case never sits out the deadline. |
+| **Steps** | Run `git.sh` in the background. Poll for the manifest until it lists both repositories, and read it **there**, while the run is still waiting. Then write the sentinel, let the run finish, and read the manifest again. |
+| **Expected** | During the wait: both repositories listed, `agent-skills` cloned with no error, `flows` not cloned and carrying the error its clone gave. Afterwards: both still listed, `flows` recorded as this run left it. And the run's own output must contain `::aiw-git-key-required::`, or the case was reading the final manifest and proving nothing. |
+| **Covers** | The operator's observation of 2026-09-17, FR3, FR20, U11. |
+
+---
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -3077,6 +3097,7 @@ capture taken after another file had written held the changed state as the thing
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
+| M-A12 | Integration only | The subject is when a file is written relative to a wait, which no level below can see |
 | M-A11 | Unit for the restore, contract for the runner and for the convention in the cases | The restore is real decision logic and every branch is covered; the tier's own behaviour needs a live stack, so it is held by scans on every ordinary run and observed by a deliberate one |
 | M-A10 | Integration for the start script's decisions, component for the dashboard's two, unit for the scan and for the fixture guard | Every finding is a decision with a wrong answer and a right one, so each is covered on both sides; the levels follow where the decision lives rather than where the finding was reported |
 | M-A9 | Unit for the helper's three outcomes, contract for the wiring and the wording, integration for the flow, one manual case | The helper is real decision logic and every return path is covered; the rest is a script's output and a component's markup, where a contract read is what can honestly be asserted without a browser |
