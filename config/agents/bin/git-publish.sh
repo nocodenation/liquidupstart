@@ -108,10 +108,28 @@ fi
 
 commits="$(git rev-list HEAD --not --remotes="$REMOTE" 2>/dev/null || true)"
 
+# Split on newlines only, with globbing off and path quoting off. Three ways a
+# path could slip past this scan, all found by review on 2026-09-16:
+#   a name with a space -- `deploy key.pem` -- split into two words, and
+#     `git show "$commit:deploy"` failed into /dev/null, so the key header was
+#     never grepped for and the push went through;
+#   an unquoted expansion also globs, so a path could be replaced by whatever it
+#     matched in the working directory;
+#   git's default core.quotePath writes a non-ASCII name in escaped quotes,
+#     which `git show` cannot resolve.
+# A path containing a newline stays unhandled, which is accepted.
+scan_ifs=$IFS
+IFS='
+'
+set -f
 for commit in $commits; do
-  for path in $(git diff-tree -r -m --root --no-commit-id --name-only --diff-filter=AM "$commit" 2>/dev/null || true); do
+  for path in $(git -c core.quotePath=false diff-tree -r -m --root --no-commit-id --name-only --diff-filter=AM "$commit" 2>/dev/null || true); do
     base="${path##*/}"
     case "$base" in
+      # A checked-in template is the opposite of a secret: it documents which
+      # keys exist, with the values left out. This repository ships one, and
+      # without this arm its own hook refused every commit that touched it.
+      .env.example|.env.sample|.env.template|.env.dist) ;;
       .env|.env.*)
         say "git-publish refused: commit $(git rev-parse --short "$commit") adds ${path}."
         say "A .env file holds this stack's credentials, and a remote never forgets what reaches it."
@@ -127,6 +145,8 @@ for commit in $commits; do
     fi
   done
 done
+set +f
+IFS=$scan_ifs
 
 if [ -z "$commits" ]; then
   out "nothing to publish: ${REMOTE} already holds every commit on ${branch}."

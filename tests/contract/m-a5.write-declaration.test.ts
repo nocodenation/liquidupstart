@@ -34,7 +34,7 @@ const bin = fakeSsh(work, [
   { match: 'alpha', bare: alpha },
   { match: 'beta', bare: beta }
 ]);
-seedKnownHosts(project);
+seedKnownHosts(project, ['localhost']);
 
 const MIXED_DECLARATION =
   'git@localhost:alpha.git|read|protected, git@localhost:beta.git|write|protected';

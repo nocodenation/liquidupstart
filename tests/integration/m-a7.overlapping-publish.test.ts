@@ -69,6 +69,7 @@ import {
   git,
   PUBLISH_TOKEN,
   publishCommand,
+  FIXTURE_IDENTITY,
   START_SCRIPT_BUDGET
 } from '../lib/gitfixture';
 
@@ -108,6 +109,10 @@ const second = (async () => {
     cwd: clone,
     env: {
       ...(process.env as Record<string, string>),
+      // The ceiling included: this is the one place a case spawns git without
+      // going through the fixture helper, and it is the case that walked up into
+      // the operator's own checkout on 2026-09-17.
+      ...FIXTURE_IDENTITY,
       LC_ALL: 'C',
       PATH: `${fx.hostBin}:${process.env.PATH}`,
       ...RACE_DELAY

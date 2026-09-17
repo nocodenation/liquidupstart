@@ -500,6 +500,66 @@ unattended host the bound exists for.
 which is where the three things no case had shown were found: the panel was missing entirely, a skip
 took five seconds to be noticed, and the key ran past the frame.
 
+**M-A10 · The eight findings of the code review** (2026-09-16)
+
+Six minutes after the review that produced M-A9, a second one arrived: eight findings from a reading
+of the shell scripts, the pre-push hook, compose, the Dockerfiles and the dashboard's server, route
+and component. Two of them destroy work, one is a hole in a guardrail, and one breaks a promise
+`.env.example` makes to every fresh installation. They are built in the order the reviewer suggested.
+
+*What is already in the clone directory decides (findings 2 and 3).* `-d "${dest}/.git"` missed a
+worktree — whose `.git` is a file — and missed a directory that is not a clone at all; either made
+`git clone` fail, and the failure branch then ran `rm -rf` over work that existed before the start.
+And any `.git` counted as the declared repository, so the declared key, access, policy and
+`insteadOf` were written into whatever clone was there: rename a repository in the declaration and
+the old clone is adopted, while every fetch and publish goes to the old remote with a key nobody
+registered. `git.sh` now reads `remote.origin.url` — raw, not through `git remote get-url`, which
+applies the very rewrite this stack writes — and only the branch that created a directory may remove
+it.
+
+*A start that declares nothing needs nothing (finding 4).* The `known_hosts` seeding ran before the
+declaration was read and exited 1 when github.com could not be reached, which under `set -e` ended
+`start.sh` — 120 lines after `down.sh` had stopped the stack. An offline first start therefore lost
+the whole stack over a section of `.env` it had never filled in. The seeding now runs after the
+declaration, only when a github.com repository is among what was declared, and a failure becomes
+each entry's error rather than the stack's end. The refusals stay: a host key GitHub does not publish
+is still refused, it simply no longer costs the start.
+
+*A host nobody has keys for says so (finding 5).* The parser accepts any SSH host and `known_hosts`
+holds github.com alone, so any other host failed with `Host key verification failed` — and the
+manifest, the banner and the card then told the operator to register a deploy key, which cannot fix
+it. The refusal is now the stack's own, and it is asked of `known_hosts` rather than compared against
+the literal `github.com`: seeding a second host is all it takes to support one, and the line cannot
+go stale when that happens.
+
+*The dashboard's Test behaves like a start (findings 1 and 8).* It reran `git.sh` with a declaration
+of one entry, so the folder rule saw no name collision and cloned into a folder a full start never
+uses; the next start cloned again under the long name and left the first behind. It now passes the
+whole declaration and names the one to act on through `GIT_ONLY_SLUG`. The same collision made the
+second repository unreachable from the dashboard at all, since the lookup was by name — it now
+resolves by slug, then path, then a name that is unique. And the exit status is read: `git.sh` exits
+0 when a clone fails, and non-zero only when it stopped before rewriting the manifest, which used to
+be answered with the previous manifest's error — *"still unreachable: Permission denied. Register the
+deploy key…"* on a machine with no `ssh-keygen`.
+
+*The secret scan reads every path, and a template is not a secret (findings 6 and 7).* `.env.*`
+matched `.env.example`, so this project's own hook refused every commit that touched the file that
+documents its own configuration. And the unquoted `$(git diff-tree …)` split paths on whitespace: a
+private key committed as `deploy key.pem` became two words, `git show` failed into `/dev/null`, and
+the key header was never grepped for — the push went through. The scan now splits on newlines with
+globbing off and `core.quotePath=false`, in both copies of it.
+
+*And one the suite found about itself.* The chain fixtures build under `volumes/repos/.a7-…`, inside
+this working copy, because the containers reach them through the `/repos` mount. When their clone
+does not happen, the directory exists and holds no repository, and git's upward search finds the
+enclosing repository — this one. On 2026-09-17 a suite run committed the working tree onto the
+current branch, created two `agent/probe-*` branches and left HEAD on one of them. Nothing was lost
+and nothing was pushed, and neither was to the suite's credit. `GIT_CEILING_DIRECTORIES` now stops
+the search before the working copy, in the one place every fixture goes through.
+
+*Done when:* `./tests/run.sh m-a10` is green and the whole suite is, since five of the eight change
+behaviour other milestones assert.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

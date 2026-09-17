@@ -288,7 +288,11 @@ function writeManifestDocument(document: ManifestDocument): void {
   renameSync(tmp, path);
 }
 
-function runStartGitStep(dir: string, entry: ManifestEntry): Promise<string> {
+function runStartGitStep(
+  dir: string,
+  entry: ManifestEntry,
+  declared: ManifestEntry[]
+): Promise<{ output: string; code: number | null }> {
   const script = join(dir, 'config', 'scripts', 'start', 'git.sh');
   return new Promise((done) => {
     const child = spawn('bash', [script, dir], {
@@ -296,7 +300,15 @@ function runStartGitStep(dir: string, entry: ManifestEntry): Promise<string> {
       env: {
         ...process.env,
         ...C_LOCALE,
-        GIT_REPOSITORIES: `${entry.url}|${entry.access}|${entry.policy}`
+        // The whole declaration, and the one to act on. With a single entry
+        // `lu_git_parse` sees no name collision and names the clone folder after
+        // the plain repository name -- a folder a full start never uses when two
+        // declared repositories share a name, so the Test cloned somewhere else
+        // and the next start left that folder behind. Finding 1 of the review.
+        GIT_REPOSITORIES: declared
+          .map((r) => `${r.url}|${r.access}|${r.policy}`)
+          .join(','),
+        GIT_ONLY_SLUG: entry.slug
       }
     });
     let output = '';
@@ -305,11 +317,16 @@ function runStartGitStep(dir: string, entry: ManifestEntry): Promise<string> {
     child.stderr.on('data', (d) => (output += d.toString()));
     child.on('error', (err) => {
       clearTimeout(timer);
-      done(`${output}${err.message}`);
+      done({ output: `${output}${err.message}`, code: -1 });
     });
-    child.on('close', () => {
+    // The status matters: git.sh exits 0 when a clone fails -- that is a result --
+    // and non-zero only when it stopped early under `set -e`, before rewriting
+    // the manifest. Ignoring it meant the previous manifest was read back and
+    // answered with as though it were this run's. `code` is null when the 420s
+    // timer killed the child.
+    child.on('close', (code) => {
       clearTimeout(timer);
-      done(output);
+      done({ output, code });
     });
   });
 }
@@ -328,12 +345,26 @@ export async function retryRepository(name: string): Promise<RetryResult> {
     };
   }
 
-  const entry = manifest.document.repositories.find((r) => r.name === name);
+  // Slug first, then host/path, then the plain name. Two declared repositories
+  // can share a name -- `acme/skills` and `other/skills` are both "skills" --
+  // and a lookup by name alone could only ever reach the first of them, so the
+  // second could not be tested at all. The card sends the slug; the other two
+  // forms stay because they are what a person types.
+  const repos = manifest.document.repositories;
+  const sameName = repos.filter((r) => r.name === name);
+  const entry =
+    repos.find((r) => r.slug === name) ??
+    repos.find((r) => r.path === name) ??
+    (sameName.length === 1 ? sameName[0] : undefined);
   if (!entry) {
+    const ambiguous =
+      sameName.length > 1
+        ? ` "${name}" names ${sameName.length} declared repositories — ask for one by its path, for example ${sameName[0].path}.`
+        : '';
     return {
       status: 404,
       ok: false,
-      message: `"${name}" is not a repository this stack declares. Repositories come from ${DECLARATION_SOURCE} — add it there and start the stack.`,
+      message: `"${name}" is not a repository this stack declares.${ambiguous} Repositories come from ${DECLARATION_SOURCE} — add it there and start the stack.`,
       repository: null
     };
   }
@@ -357,11 +388,28 @@ export async function retryRepository(name: string): Promise<RetryResult> {
   }
 
   testing = true;
-  let output: string;
+  let ran: { output: string; code: number | null };
   try {
-    output = await runStartGitStep(dir, entry);
+    ran = await runStartGitStep(dir, entry, manifest.document.repositories);
   } finally {
     testing = false;
+  }
+  const output = ran.output;
+
+  const where0 = `${entry.host}/${entry.path}`;
+  if (ran.code !== 0) {
+    // Nothing was written, so there is nothing to merge and nothing fresh to
+    // report. The script's own words are the answer -- they name what stopped it.
+    const why =
+      ran.code === null
+        ? 'it did not finish within seven minutes and was stopped'
+        : `it stopped with status ${ran.code}`;
+    return {
+      status: 502,
+      ok: false,
+      message: `Testing ${where0} could not be run: ${why}. ${output.trim() || 'The start script reported nothing.'}`,
+      repository: describeRepository(entry)
+    };
   }
 
   const after = readManifest();

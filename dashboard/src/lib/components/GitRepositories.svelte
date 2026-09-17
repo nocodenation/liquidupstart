@@ -43,7 +43,9 @@
       const res = await fetch('/git-auth', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: repo.name })
+        // The slug, not the name: two declared repositories can share a name,
+        // and then a name reaches only the first of them.
+        body: JSON.stringify({ name: repo.slug })
       });
       const body = await res.json().catch(() => ({}));
       result = {
