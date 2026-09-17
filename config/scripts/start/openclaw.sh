@@ -27,31 +27,15 @@ sed_inplace() {
 
 # Bound a command (mirrors config/scripts/start/git.sh). Exit 124 means it hit
 # the limit. Without coreutils' timeout the command runs unbounded, as there.
-# -k: SIGTERM alone does not end a `docker run` on this host. `timeout` signals
-# the docker *client*, the client is supposed to forward it to the container, and
-# measured on 2026-09-14 that failed three times in four: rc 137 after the grace
-# period rather than 124 after the limit, and one run that was still attached to
-# a live container eight minutes later. GNU timeout waits for its child after
-# signalling, so without -k the bound never returns and neither does the start --
-# an outer `timeout 40` around the whole thing did not return either. The kill is
-# what makes a bound a bound; --init was only half of it.
+# The bound every `docker run` here is wrapped in. One implementation, in
+# lib/with-timeout.sh: this file carried its own, git.sh carried a second, and
+# both ended in a branch that ran the command unbounded when GNU coreutils was
+# absent -- which is every macOS host, the operator's included.
 #
-# Every caller therefore has to treat any non-zero status as "the bound expired",
-# not the literal 124, and force-remove the container it named: a client killed
-# with SIGKILL cleans nothing up, so --rm never fires.
-with_timeout() {
-  local secs="$1"; shift
-  # 0 means no bound, and no stdin redirect either: this is the branch the
-  # interactive sign-ins take, and they must be able to read the terminal.
-  if [[ "$secs" == "0" ]]; then "$@"; return $?; fi
-  if command -v timeout >/dev/null 2>&1; then
-    timeout -k 10 "$secs" "$@" </dev/null
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout -k 10 "$secs" "$@" </dev/null
-  else
-    "$@" </dev/null
-  fi
-}
+# Every caller treats any non-zero status as "the bound expired", not the literal
+# 124, and force-removes the container it named: a client killed with SIGKILL
+# cleans nothing up, so --rm never fires.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/with-timeout.sh"
 
 # Read a KEY=value from the project-root .env (empty if unset).
 # `|| true`: a missing key makes grep exit 1, aborting under set -e/pipefail.
