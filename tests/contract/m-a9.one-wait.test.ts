@@ -66,6 +66,18 @@ describe('A9-10 every wait offers a way out', () => {
     expect(missing).toEqual([]);
   });
 
+  test('and the deploy key has a panel of its own, not only a line in the log', () => {
+    // Review point 1 asks for the key screen "the same way the Claude login
+    // screen is shown". A marker in the log that only the log renders is not
+    // that: an operator would have to scroll a running build to find it. The
+    // panel reads the key and the link from /git-auth, so it cannot drift from
+    // what the repositories card shows.
+    expect(RUNNER).toContain('::aiw-git-key-required::');
+    expect(RUNNER).toContain('gitKeyRepo?.deployKeyUrl');
+    expect(RUNNER).toContain('gitKeyRepo?.publicKey');
+    expect(RUNNER).toContain('skipStep(`git-key-${needGitKey}`)');
+  });
+
   test('and the banner in the scripts names the command that does the same', () => {
     // The dashboard is not the only way in. An operator at a terminal gets the
     // path to touch, from the same helper that reads it.

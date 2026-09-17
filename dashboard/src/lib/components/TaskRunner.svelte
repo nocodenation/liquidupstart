@@ -78,6 +78,22 @@
 
   let needCodexAuth = $state(false);
   let skipped = $state({});
+  // The deploy key, shown while the start waits for it. git.sh prints the key and
+  // the link into the log; the slug comes from the marker and the rest is read
+  // from /git-auth, so this panel cannot drift from what the card shows.
+  let needGitKey = $state(null);
+  let gitKeyRepo = $state(null);
+
+  async function loadGitKeyRepo(slug) {
+    try {
+      const res = await fetch('/git-auth');
+      if (!res.ok) return;
+      const { repositories } = await res.json();
+      gitKeyRepo = (repositories ?? []).find((r) => r.slug === slug) ?? null;
+    } catch {
+      // The log still carries the key; the panel is the convenience.
+    }
+  }
 
   // Tells the start run in progress to stop waiting on one credential. The run
   // clears these at the beginning of every start, so this holds for this start
@@ -149,6 +165,13 @@
       needCodexAuth = true;
     if (!grokOk && grokProbe === 'unknown' && task.log.includes('::aiw-grok-auth-required::'))
       needGrokAuth = true;
+    // Last marker wins: a start that waits on two repositories shows the one it
+    // is waiting on now.
+    const gitKey = [...task.log.matchAll(/::aiw-git-key-required::(\S+)/g)].pop();
+    if (gitKey && needGitKey !== gitKey[1]) {
+      needGitKey = gitKey[1];
+      loadGitKeyRepo(gitKey[1]);
+    }
   });
   $effect(() => {
     authLog;
@@ -530,6 +553,42 @@
     {TASK_LABELS[task.name] ?? task.name} in progress… {formatElapsed(task.elapsed)}
     <span class="dim">— this can take a while, the log updates live</span>
   </div>
+{/if}
+
+{#if needGitKey}
+  <section class="authbox">
+    <h2>Add a deploy key to continue</h2>
+    <p>
+      The start cannot clone
+      <code>{gitKeyRepo?.name ?? needGitKey}</code>
+      with the key it holds, and is waiting for you to register it. Registering it ends the wait by
+      itself — nothing needs restarting.
+    </p>
+    {#if gitKeyRepo?.instructions}
+      <p>{gitKeyRepo.instructions}</p>
+    {/if}
+    {#if gitKeyRepo?.deployKeyUrl}
+      <p>
+        <a href={gitKeyRepo.deployKeyUrl} target="_blank" rel="noopener noreferrer">
+          {gitKeyRepo.deployKeyUrl} ↗
+        </a>
+      </p>
+    {/if}
+    {#if gitKeyRepo?.publicKey}
+      <pre class="keybox">{gitKeyRepo.publicKey}</pre>
+    {:else}
+      <p class="dim">The key is in the log above; this panel could not read it from /git-auth.</p>
+    {/if}
+    <div class="runbar">
+      <!-- Skip: an operator without access to the repository settings right now
+           must be able to let the rest of the stack start. -->
+      <button class="back" onclick={() => skipStep(`git-key-${needGitKey}`)} disabled={skipped[`git-key-${needGitKey}`]}>
+        {skipped[`git-key-${needGitKey}`]
+          ? 'Skipped — the start continues without this repository'
+          : 'Skip this repository for this start'}
+      </button>
+    </div>
+  </section>
 {/if}
 
 {#if needClaudeAuth || authRunning || authOk}
