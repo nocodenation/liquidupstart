@@ -65,13 +65,20 @@ const skipDir = join(project, 'volumes', '.start-skip');
 // two runs below are distinguished by the sentinel and the budget rather than by
 // having no wait at all.
 mkdirSync(project, { recursive: true });
-writeFileSync(join(project, '.env'), 'SYSTEM_SIGNIN_WAIT_SECONDS=30\n');
+// 60s per wait against an 8s start budget: the two must be far enough apart that
+// a loaded machine cannot blur them. At 30s and a 2s budget this case failed once
+// in a full suite run and passed alone -- pass 1 attempts every clone before the
+// first wait begins, and under load that took longer than the whole budget, so
+// nothing was left to wait with. The numbers now leave room for that without
+// weakening what is asserted: per wait this run would take 120s, and the bound
+// below is 45s.
+writeFileSync(join(project, '.env'), 'SYSTEM_SIGNIN_WAIT_SECONDS=60\n');
 
 describe('A9-13 the queue is known before the first wait', () => {
-  // The budget file start.sh writes at the beginning of a start. Two seconds, so
-  // this run proves the second wait inherits what the first left of it.
+  // The budget file start.sh writes at the beginning of a start. Eight seconds,
+  // so this run proves the second wait inherits what the first left of it.
   mkdirSync(skipDir, { recursive: true });
-  writeFileSync(join(skipDir, '.deadline'), String(Math.floor(Date.now() / 1000) + 2));
+  writeFileSync(join(skipDir, '.deadline'), String(Math.floor(Date.now() / 1000) + 8));
   const started = Date.now();
   const run = runStart(project, THREE, { pathPrefix: partial });
   const elapsed = Date.now() - started;
@@ -117,15 +124,15 @@ describe('A9-13 the queue is known before the first wait', () => {
   });
 
   test('and the whole start stays inside one budget, not one per key', () => {
-    // Two waits, a two-second budget. Per wait this was 30s each; the operator's
-    // real setting is 900, which is where three keys became three quarters of an
-    // hour.
+    // Two waits, one eight-second budget. Per wait this would be 60s each; the
+    // operator's real setting is 900, which is where three keys became three
+    // quarters of an hour.
     // `waited` is the counterpart to `withinBudget`: a run that skipped both
     // waits outright would satisfy the bound and prove nothing about it.
     expect({
       code: run.code,
       waited: elapsed >= 2000,
-      withinBudget: elapsed < 25_000,
+      withinBudget: elapsed < 45_000,
       elapsed
     }).toEqual({ code: 0, waited: true, withinBudget: true, elapsed });
     expect(run.output).toContain('wait budget');
@@ -143,7 +150,7 @@ describe('A9-14 one sentinel ends the whole queue', () => {
   test('git-key-all skips every repository still waiting', () => {
     // What the dashboard's "Skip all" button writes, and what the banner tells an
     // operator at a terminal to touch. The budget file is removed first, so this
-    // run has the full 30s available and can only finish quickly by skipping.
+    // run has the full 60s available and can only finish quickly by skipping.
     rmSync(join(skipDir, '.deadline'), { force: true });
     rmSync(join(project, 'volumes', 'repos', 'flows'), { recursive: true, force: true });
     mkdirSync(skipDir, { recursive: true });
