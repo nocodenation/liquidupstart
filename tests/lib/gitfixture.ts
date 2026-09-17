@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, existsSync, readFileSync, rmSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { repoRoot } from './paths';
@@ -74,6 +74,16 @@ export function runStart(
     ...(extra.env ?? {})
   };
   if (extra.pathPrefix) env.PATH = `${extra.pathPrefix}:${env.PATH}`;
+  // A test run is an unattended run. Since 2026-09-17 a clone that fails stops
+  // and waits for the operator to register the deploy key -- fifteen minutes by
+  // default -- so every case that makes a clone fail on purpose would sit there.
+  // 0 means do not wait, which is what a suite wants; a case that is *about* the
+  // wait writes its own value into this file first and keeps it.
+  const envFile = join(project, '.env');
+  mkdirSync(project, { recursive: true });
+  if (!existsSync(envFile) || !readFileSync(envFile, 'utf8').includes('SYSTEM_SIGNIN_WAIT_SECONDS=')) {
+    appendFileSync(envFile, 'SYSTEM_SIGNIN_WAIT_SECONDS=0\n');
+  }
   const p = Bun.spawnSync(['bash', gitScript, project], { env, stdout: 'pipe', stderr: 'pipe' });
   const stdout = p.stdout ? p.stdout.toString() : '';
   const stderr = p.stderr ? p.stderr.toString() : '';

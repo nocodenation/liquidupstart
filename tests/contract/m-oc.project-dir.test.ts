@@ -62,6 +62,14 @@ describe('N6 the start script sets its own working directory', () => {
     const copy = join(proj, 'config', 'scripts', 'start', 'openclaw.sh');
     writeFileSync(copy, BODY);
     chmodSync(copy, 0o755);
+    // The script sources its own lib, so a tree holding only the script is not a
+    // tree the script can run in -- found on 2026-09-17, when the wait helper was
+    // added and this case failed at the source line.
+    mkdirSync(join(proj, 'config', 'scripts', 'start', 'lib'), { recursive: true });
+    writeFileSync(
+      join(proj, 'config', 'scripts', 'start', 'lib', 'wait-for-operator.sh'),
+      readFileSync(join(repoRoot, 'config/scripts/start/lib/wait-for-operator.sh'), 'utf8')
+    );
 
     const caller = mkdtempSync(join(tmpdir(), 'lu-cwd-'));
     const bin = join(caller, 'bin');

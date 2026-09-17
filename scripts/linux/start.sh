@@ -13,6 +13,11 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+# A skip is a decision about this run. Clearing the directory here is what keeps
+# it from becoming a permanent setting nobody remembers making.
+. "${PROJECT_DIR}/config/scripts/start/lib/wait-for-operator.sh"
+lu_clear_skips
+
 "${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
 
 # One reader for .env, tolerant and quote-agnostic. Two failures it removes:

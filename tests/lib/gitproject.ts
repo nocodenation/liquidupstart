@@ -21,6 +21,12 @@ export const SYSTEM_PORTS: Record<string, string> = {
 
 export function fixtureValue(key: string): string {
   if (key in SYSTEM_PORTS) return SYSTEM_PORTS[key];
+  // A test run is an unattended run. Since 2026-09-17 a clone whose deploy key is
+  // not registered stops and waits for the operator -- fifteen minutes by
+  // default, which is what .env.example carries and what this fixture would
+  // otherwise copy. 0 means do not wait; a case that is about the wait sets its
+  // own value. Found by running the suite: one case took 906 seconds.
+  if (key === 'SYSTEM_SIGNIN_WAIT_SECONDS') return '0';
   if (/^ENABLE_/.test(key)) return '1';
   return `fixture-${key}`;
 }
