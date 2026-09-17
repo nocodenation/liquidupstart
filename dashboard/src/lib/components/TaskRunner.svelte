@@ -83,6 +83,50 @@
   // from /git-auth, so this panel cannot drift from what the card shows.
   let needGitKey = $state(null);
   let gitKeyRepo = $state(null);
+  // Every repository this start is waiting on, known before the first wait
+  // begins: git.sh tries all the clones first and then names the whole set. The
+  // panel can therefore say "1 of 3" and list the other two, instead of
+  // presenting each one as a surprise once the previous is dealt with.
+  let gitKeysPending = $state([]);
+  let gitKeyNumber = $derived(needGitKey ? gitKeysPending.indexOf(needGitKey) + 1 : 0);
+  // The wait for this repository is over -- cloned, skipped, or out of budget.
+  // Derived rather than stored so the panel closes on the last one without
+  // anything having to remember which have been handled.
+  let gitKeyDone = $derived(
+    needGitKey ? task.log.includes(`::aiw-git-key-done::${needGitKey}`) : false
+  );
+
+  let gitKeyCopied = $state(false);
+  let gitKeyCopyTimer;
+
+  // The same shape as the repositories card: the clipboard API where it is
+  // available, a hidden textarea where it is not -- an operator on the way to
+  // GitHub should not have to select a wrapped key by hand.
+  async function copyGitKey() {
+    const key = gitKeyRepo?.publicKey;
+    if (!key) return;
+    clearTimeout(gitKeyCopyTimer);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(key);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = key;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (!ok) throw new Error('copy rejected');
+      }
+      gitKeyCopied = true;
+      gitKeyCopyTimer = setTimeout(() => (gitKeyCopied = false), 1500);
+    } catch {
+      gitKeyCopied = false;
+    }
+  }
 
   async function loadGitKeyRepo(slug) {
     try {
@@ -110,6 +154,15 @@
       // The start times out on its own; a failed skip is not worth a dialog.
     }
   }
+  // One click for the whole set. Each repository gets its own skip file, so the
+  // wait in progress ends on its own file like any other skip, and git-key-all
+  // covers the ones not reached yet -- including any the log has not named,
+  // since the shell checks the group file too.
+  async function skipAllGitKeys() {
+    await skipStep('git-key-all');
+    for (const slug of gitKeysPending) await skipStep(`git-key-${slug}`);
+  }
+
   let codexLog = $state('');
   let codexRunning = $state(false);
   let codexOk = $state(false);
@@ -165,6 +218,9 @@
       needCodexAuth = true;
     if (!grokOk && grokProbe === 'unknown' && task.log.includes('::aiw-grok-auth-required::'))
       needGrokAuth = true;
+    const pending = [...task.log.matchAll(/::aiw-git-keys-pending::([^\n]*)/g)].pop();
+    const slugs = pending ? pending[1].trim().split(/\s+/).filter(Boolean) : [];
+    if (slugs.join(' ') !== gitKeysPending.join(' ')) gitKeysPending = slugs;
     // Last marker wins: a start that waits on two repositories shows the one it
     // is waiting on now.
     const gitKey = [...task.log.matchAll(/::aiw-git-key-required::(\S+)/g)].pop();
@@ -555,15 +611,31 @@
   </div>
 {/if}
 
-{#if needGitKey}
+{#if needGitKey && !gitKeyDone}
   <section class="authbox">
-    <h2>Add a deploy key to continue</h2>
+    <h2>
+      Add a deploy key to continue
+      {#if gitKeysPending.length > 1}
+        <span class="dim">— {gitKeyNumber} of {gitKeysPending.length}</span>
+      {/if}
+    </h2>
     <p>
       The start cannot clone
       <code>{gitKeyRepo?.name ?? needGitKey}</code>
       with the key it holds, and is waiting for you to register it. Registering it ends the wait by
       itself — nothing needs restarting.
     </p>
+    {#if gitKeysPending.length > 1}
+      <!-- The whole queue, so an operator can decide once whether it is worth
+           fetching the other repositories' settings pages too. -->
+      <p>
+        This start is waiting on {gitKeysPending.length} repositories:
+        {#each gitKeysPending as slug, n}<!--
+       --><code class:current={slug === needGitKey}>{slug}</code>{n < gitKeysPending.length - 1
+            ? ', '
+            : ''}{/each}
+      </p>
+    {/if}
     {#if gitKeyRepo?.instructions}
       <p>{gitKeyRepo.instructions}</p>
     {/if}
@@ -575,7 +647,19 @@
       </p>
     {/if}
     {#if gitKeyRepo?.publicKey}
-      <pre class="keybox">{gitKeyRepo.publicKey}</pre>
+      <!-- The classes the repositories card uses: .gitkey-value wraps a key that
+           is wider than the panel, which a <pre> did not. -->
+      <div class="gitkey">
+        <code class="gitkey-value">{gitKeyRepo.publicKey}</code>
+        <button
+          type="button"
+          class="aux gitkey-copy"
+          onclick={copyGitKey}
+          aria-label="Copy the deploy key"
+        >
+          {gitKeyCopied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
     {:else}
       <p class="dim">The key is in the log above; this panel could not read it from /git-auth.</p>
     {/if}
@@ -587,6 +671,13 @@
           ? 'Skipped — the start continues without this repository'
           : 'Skip this repository for this start'}
       </button>
+      {#if gitKeysPending.length > 1}
+        <button class="back" onclick={skipAllGitKeys} disabled={skipped['git-key-all']}>
+          {skipped['git-key-all']
+            ? 'All skipped — the start continues'
+            : `Skip all ${gitKeysPending.length} repositories for this start`}
+        </button>
+      {/if}
     </div>
   </section>
 {/if}

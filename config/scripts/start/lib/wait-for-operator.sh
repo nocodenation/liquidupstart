@@ -27,6 +27,16 @@ lu_skip_dir() {
 lu_clear_skips() {
   rm -rf "$(lu_skip_dir)"
   mkdir -p "$(lu_skip_dir)"
+  # The budget for the whole start, fixed here so that every wait after this
+  # point shares one deadline. Per wait it was per wait: three unregistered
+  # deploy keys and four sign-ins meant seven times the deadline, so an
+  # unattended host could sit for an hour and three quarters on a setting that
+  # reads as fifteen minutes. The operator asked what happens with more than one
+  # key; this is the answer -- the number of waits no longer changes how long a
+  # start can take.
+  local secs
+  secs="$(lu_wait_seconds)"
+  printf '%s' "$(( $(date +%s) + secs ))" > "$(lu_skip_dir)/.deadline"
 }
 
 # The deadline, in seconds, from .env. 0 means do not wait at all -- which is
@@ -42,6 +52,41 @@ lu_wait_seconds() {
 
 lu_skip_hint() {  # lu_skip_hint <step>
   printf 'To skip this step and let the rest of the stack start: touch %s/%s' "$(lu_skip_dir)" "$1"
+}
+
+# The start-wide deadline written by lu_clear_skips, or nothing when this wait
+# runs outside a start -- a test, or a script invoked by hand. Then the wait
+# falls back to its own deadline, which is the old behaviour and right for a
+# single wait standing on its own.
+lu_budget_deadline() {
+  local f="$(lu_skip_dir)/.deadline" v
+  v="$(cat "$f" 2>/dev/null || true)"
+  [[ "$v" =~ ^[0-9]+$ ]] && printf '%s' "$v"
+}
+
+# What the budget actually bounds is a start in which nothing happens. An
+# operator who registers a key, or presses Skip, has shown they are there, and
+# cutting them off at a deadline set before the first wait would punish exactly
+# the person the wait exists for. So every wait that ends because someone acted
+# gives the rest of the start a full budget again; a wait that ends at the
+# deadline does not, which is the unattended case and the one that has to stay
+# bounded.
+lu_budget_refresh() {
+  local f="$(lu_skip_dir)/.deadline"
+  [[ -e "$f" ]] || return 0
+  printf '%s' "$(( $(date +%s) + $(lu_wait_seconds) ))" > "$f"
+}
+
+# True when this step is skipped: its own file, or the group file named by
+# LU_SKIP_GROUP. The group is how one click covers several waits -- the
+# dashboard's "Skip all" for deploy keys writes git-key-all, and so can an
+# operator at a terminal. It is named by the caller rather than derived from the
+# step, so a group can never take in a wait that did not ask to be part of one.
+lu_skipped() {  # lu_skipped <step>
+  local dir; dir="$(lu_skip_dir)"
+  [[ -e "${dir}/$1" ]] && return 0
+  [[ -n "${LU_SKIP_GROUP:-}" && -e "${dir}/${LU_SKIP_GROUP}" ]] && return 0
+  return 1
 }
 
 # lu_wait_for_operator <step> <poll-seconds> <condition...>
@@ -62,17 +107,42 @@ lu_wait_for_operator() {
     echo "Not waiting for ${step}: SYSTEM_SIGNIN_WAIT_SECONDS is 0." >&2
     return 2
   fi
-  if [[ -e "$skip" ]]; then
-    echo "Skipping ${step}: ${skip} is present." >&2
+  if lu_skipped "$step"; then
+    echo "Skipping ${step}: the operator asked for it." >&2
     return 1
   fi
 
-  deadline=$(( $(date +%s) + secs ))
+  deadline="$(lu_budget_deadline)"
+  deadline="${deadline:-$(( $(date +%s) + secs ))}"
+  if (( $(date +%s) >= deadline )); then
+    echo "Not waiting for ${step}: this start has used up its ${secs}s wait budget." >&2
+    return 2
+  fi
+  local slept
   while true; do
-    sleep "$interval"
-    "$@" >/dev/null 2>&1 && return 0
-    if [[ -e "$skip" ]]; then
+    # The interval is waited out in one-second steps, and the skip is checked in
+    # each of them. Sleeping the whole interval and only then looking meant a
+    # click was noticed up to interval + condition later: measured 2026-09-17,
+    # a skip at 6s was acted on at 11s, because the condition -- a clone against
+    # an unreachable host -- ran first. An operator pressed the button twice,
+    # which is what a button that seems not to work invites.
+    slept=0
+    while (( slept < interval )); do
+      if lu_skipped "$step"; then
+        echo "Skipping ${step}: the operator asked for it." >&2
+        lu_budget_refresh
+        return 1
+      fi
+      sleep 1
+      slept=$(( slept + 1 ))
+    done
+    if "$@" >/dev/null 2>&1; then
+      lu_budget_refresh
+      return 0
+    fi
+    if lu_skipped "$step"; then
       echo "Skipping ${step}: the operator asked for it." >&2
+      lu_budget_refresh
       return 1
     fi
     now="$(date +%s)"

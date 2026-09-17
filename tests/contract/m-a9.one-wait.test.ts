@@ -78,6 +78,18 @@ describe('A9-10 every wait offers a way out', () => {
     expect(RUNNER).toContain('skipStep(`git-key-${needGitKey}`)');
   });
 
+  test('and the key can be copied, and wraps inside the panel', () => {
+    // Both reported from the running dashboard on 2026-09-17: the key ran past
+    // the frame, and an operator on the way to GitHub had to select a wrapped
+    // key by hand. The repositories card had solved both -- .gitkey-value wraps
+    // with overflow-wrap:anywhere and .gitkey-copy sits beside it -- so the panel
+    // uses the same classes rather than new ones.
+    expect(RUNNER).toContain('class="gitkey-value"');
+    expect(RUNNER).toContain('gitkey-copy');
+    expect(RUNNER).toContain('copyGitKey');
+    expect(RUNNER).not.toContain('class="keybox"');
+  });
+
   test('and the banner in the scripts names the command that does the same', () => {
     // The dashboard is not the only way in. An operator at a terminal gets the
     // path to touch, from the same helper that reads it.
@@ -99,11 +111,48 @@ describe('A9-10 every wait offers a way out', () => {
         (body as string)
           .split('\n')
           .map((line, i) => ({ name, line, n: i + 1 }))
-          .filter(({ line }) => /^\s*lu_wait_for_operator /.test(line))
+          // The env prefix counts: `LU_SKIP_GROUP=… lu_wait_for_operator …` is
+          // the same call, and a guard that only sees the bare name would miss
+          // every call that joined a skip group.
+          .filter(({ line }) => /^\s*(\w+=\S*\s+)*lu_wait_for_operator /.test(line))
           .filter(({ line }) => !/\|\| _wait_rc=\$\?/.test(line) && !/\\$/.test(line))
       )
       .map(({ name, n, line }) => `${name}:${n}  ${line.trim()}`);
     expect(offenders).toEqual([]);
+  });
+
+  test('and a queue of keys is announced as a queue', () => {
+    // The operator asked what happens with more than one unregistered key. The
+    // answer has to be visible before the first wait: git.sh names the whole set
+    // in one marker, and the panel says which of them it is asking for now.
+    expect(GIT).toContain('::aiw-git-keys-pending::');
+    expect(RUNNER).toContain('::aiw-git-keys-pending::');
+    expect(RUNNER).toContain('gitKeysPending.length');
+    expect(RUNNER).toContain('gitKeyNumber');
+  });
+
+  test('and one click can end the whole queue', () => {
+    // "Skip all": every pending step gets its own sentinel, so the wait in
+    // progress ends on its own file like any other skip, and the group file
+    // covers the ones not reached yet. The shell side opts in by name --
+    // LU_SKIP_GROUP -- so no other wait can be swept up by it.
+    expect(RUNNER).toContain('skipAllGitKeys');
+    expect(RUNNER).toContain("skipStep('git-key-all')");
+    expect(RUNNER).toContain('skipStep(`git-key-${slug}`)');
+    expect(GIT).toContain('LU_SKIP_GROUP=git-key-all');
+    expect(read('config/scripts/start/lib/wait-for-operator.sh')).toContain('LU_SKIP_GROUP');
+  });
+
+  test('and the deadline is the start\'s, so keys do not multiply it', () => {
+    // Per wait, three missing keys meant three times SYSTEM_SIGNIN_WAIT_SECONDS
+    // on an unattended host. The budget is fixed once, where the skips are
+    // cleared, and every wait after that shares it.
+    const LIB = read('config/scripts/start/lib/wait-for-operator.sh');
+    expect(LIB).toContain('lu_budget_deadline');
+    const clear = LIB.indexOf('lu_clear_skips()');
+    expect(LIB.slice(clear, LIB.indexOf('}', LIB.indexOf('.deadline', clear)))).toContain(
+      '.deadline'
+    );
   });
 
   test('and the runner component stays JavaScript, because its script block is', () => {

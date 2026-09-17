@@ -2758,6 +2758,123 @@ drive it, which is a thing worth knowing before reaching for one.
 
 ---
 
+### M-A9 — the deploy key waits like every other credential
+
+**What this milestone is for.** The review of #9 on 2026-09-16 asked why the deploy key is the one
+credential in this stack that does not stop the start. Claude, Codex, Copilot and Grok each halt and
+wait for a person; a clone that could not authenticate printed *"Warning: could not clone …"* and the
+start ran on to its closing banner, leaving the operator to find the public key later in the
+launchpad card, with the repositories the agents were meant to work in absent. Making the key wait
+pulls in the rest of the milestone: a wait nobody can end is a hang, four copies of the deadline are
+four things to keep in step, and several missing keys must not multiply how long a start can take.
+
+The subject is a start script and a screen, so the cases sit at three levels. The helper's return
+values are unit-tested against conditions the case controls; the wording and the wiring are read out
+of the scripts and the component; and the flow is run end to end against a remote that refuses,
+through `git.sh` itself.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A9-1 | Contract | One deadline, read from one key, cleared once per start | Four copies of `900` lived in `openclaw.sh`. A second constant to keep in step is what review point 2 asked to remove |
+| A9-2 | Unit | A condition already met is not a wait | A credential that is already there must produce no banner and no delay |
+| A9-3 | Unit **unhappy** | A wait that is never satisfied still comes back | The reason the deadline exists: an unattended start that hangs is worse than one that reports a missing credential. With `0` it does not wait at all |
+| A9-4 | Unit | The operator can end one wait, and it is noticed at once | The sentinel ends the wait within a second, not at the next poll — measured at five seconds before the fix, which is what made an operator press the button twice |
+| A9-5 | Unit **unhappy** | A skip belongs to one run | A sentinel left from an earlier start must not skip this one, or the step goes silent for good and nobody remembers deciding it |
+| A9-6 | Integration | An unregistered key stops the start and says what to do | The key, the address of the form that takes it, the checkbox for a `write` declaration, and the command that skips the step — in the flow, not in a card discovered afterwards |
+| A9-7 | Integration **unhappy** | A key the remote accepts produces no banner at all | A banner on every start, including the ones that work, is noise an operator learns to scroll past |
+| A9-8 | Unit | The add-key address is computed from the declaration | Host and path are already declared; a URL typed into a message is a second source that can go stale |
+| A9-9 | Unit **unhappy** | The instruction names the control only where it applies | *"Allow write access"* for a `write` declaration and not for a `read` one — the opposite is a silent over-grant |
+| A9-10 | Contract | Every wait offers a way out, and no wait is called bare | Five waits, five Skip controls; and under `set -euo pipefail` a bare call to a helper that returns 1 or 2 ends the whole start — measured, with `git.sh` exiting 2 |
+| A9-11 | Unit | The wait budget belongs to the start, not to each wait | Per wait, three missing keys meant three times `SYSTEM_SIGNIN_WAIT_SECONDS`. The positive counterpart: while the budget has time, a later wait still waits |
+| A9-12 | Unit **unhappy** | A group sentinel ends only the waits that joined the group | "Skip all" must not sweep up a sign-in somewhere else in the start, so the group is named by the caller rather than derived from the step |
+| A9-13 | Integration | A queue of missing keys is known before the first wait | The reachable repository is cloned first, both missing ones are named with their count, each screen says where in the queue it is, and all three are in the manifest |
+| A9-14 | Integration | One sentinel ends the whole queue | What the dashboard's "Skip all" writes, and what an operator at a terminal can `touch` |
+| A9-15 | **Manual** | The operator walks the flow in the browser | What no case can answer: whether the panel reads as an instruction, and whether the key is usable from where it is shown |
+
+#### Detail per case
+
+##### A9-1 — one deadline, one key, cleared once
+
+| | |
+|---|---|
+| **Premise** | `openclaw.sh` carried `$(date +%s) + 900` four times. Each was a wait with its own deadline and no way out, and any change to the policy meant finding all four. The helper replaces them, but nothing stops a fifth copy being written next to it, which is the shape review point 2 objects to. |
+| **Component** | `config/scripts/start/openclaw.sh`, `config/scripts/start/git.sh`, `scripts/linux/start.sh` and `dashboard/src/lib/components/TaskRunner.svelte`, read as text. |
+| **Test data** | The literal `+ 900 ))`, the key `SYSTEM_SIGNIN_WAIT_SECONDS` in `.env.example`, and the call `lu_clear_skips` in `start.sh`. |
+| **Expected** | No literal deadline in either start script; both source `lib/wait-for-operator.sh`; the helper reads `SYSTEM_SIGNIN_WAIT_SECONDS` itself; `.env.example` declares it; and `lu_clear_skips` appears in `start.sh` **before** the line that runs `git.sh`. |
+| **Why the ordering is asserted** | Clearing the skips after the waits would be worse than not clearing them: the step would be skipped and then forgotten. The order is the whole content of the claim. |
+| **What it found** | The helper first called the caller's `get_env`, which `openclaw.sh` defines and `git.sh` does not. The deadline came back empty and the wait never ended — found by running it, not by reading it. The helper now reads `.env` itself, and this case pins that. |
+| **Covers** | Review point 2 of #9. |
+
+##### A9-2 to A9-5 — the helper returns, whatever happens
+
+| | |
+|---|---|
+| **Premise** | Three outcomes have to be distinguishable by the caller: the condition came true, the operator skipped, the deadline passed. A helper that cannot tell them apart leaves `git.sh` unable to decide whether to record a clone, a skip or a failure. |
+| **Component** | `config/scripts/start/lib/wait-for-operator.sh`, sourced into a scratch project. |
+| **Test data** | A scratch `.env` holding `SYSTEM_SIGNIN_WAIT_SECONDS` = `900`, `2` or `0` per case; the condition `test -f <scratch>/ready`; the sentinel `<scratch>/volumes/.start-skip/probe`. |
+| **Expected** | `0` at once when the condition already holds, and no banner; `2` at the deadline, inside 20s for a 2s deadline; `2` immediately with a deadline of `0`, naming the key; `1` when the sentinel is there, naming the step; and `2` rather than `1` when the sentinel was left by an earlier run and `lu_clear_skips` has run. |
+| **Why A9-3 and A9-5 carry the weight** | Both are negative. A wait that cannot time out turns an unattended start into a hang; a skip that outlives its run is a setting nobody remembers making. |
+| **What it found** | The latency half of A9-4 was written after an operator reported pressing Skip twice. The loop slept out its whole five-second interval and then ran the condition — a clone against an unreachable host — before looking at the sentinel, so a click at 6s was acted on at 11s. The interval is now waited out in one-second steps. The first version of the case did not discriminate: the click was placed at 3s, where the check *before* the loop catches it in both versions. |
+| **Covers** | Review point 2 of #9. |
+
+##### A9-6, A9-7 — the key is asked for in the flow
+
+| | |
+|---|---|
+| **Premise** | The operator used to meet the public key after the start had finished. Everything needed to end the wait — the key, the form, the checkbox, the way out — has to be present at the moment the start stops. |
+| **Component** | `config/scripts/start/git.sh`, run against a fake SSH remote. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, and the same repository declared `\|write\|protected` for the checkbox instruction. The refusing remote routes nothing, which is what an unregistered key looks like from here; the accepting remote routes to a seeded bare repository. `SYSTEM_SIGNIN_WAIT_SECONDS=2`. |
+| **Expected** | `ACTION REQUIRED`, the `ssh-ed25519` key, `https://github.com/nocodenation/agent-skills/settings/keys/new`, the marker `::aiw-git-key-required::`, a `touch …/.start-skip/git-key-…` hint, a run that waits at least the deadline and then returns `0` with no clone on disk — and, for the `write` declaration, `Allow write access`. The accepting run clones and prints neither banner nor marker. |
+| **Why A9-7 is not optional** | A banner printed on every start would satisfy A9-6 completely. |
+| **Covers** | Review points 1, 3 and 4 of #9. |
+
+##### A9-8, A9-9 — the instruction is computed, not composed
+
+| | |
+|---|---|
+| **Premise** | Review point 3 asks for the address of the form, not a description of where to find it; review point 4 for the checkbox to be named. Both are derivable from the declaration, which is this project's test for whether something should be a computed value rather than a sentence an agent or an operator has to remember. |
+| **Component** | `deployKeyUrl` and `instructionFor` in `dashboard/src/lib/server/git.ts`. |
+| **Test data** | Host `github.com`, path `nocodenation/agent-skills`, access `read` and `write`. |
+| **Expected** | `https://github.com/nocodenation/agent-skills/settings/keys/new`, built from the declared host and path; and `Allow write access` present in the `write` instruction and absent from the `read` one. |
+| **Covers** | Review points 3 and 4 of #9. |
+
+##### A9-10 — a way out of every wait, and no bare call
+
+| | |
+|---|---|
+| **Premise** | Five waits now: four sign-ins and the deploy key. A Skip that exists for four of them is not a policy. And the helper's own return values are a hazard in the caller: under `set -euo pipefail` a bare command that returns 1 or 2 ends the script. |
+| **Component** | The two start scripts and `TaskRunner.svelte`, read as text. |
+| **Test data** | `skipStep('claude')`, `skipStep('copilot')`, `skipStep('codex')`, `skipStep('grok')`, ``skipStep(`git-key-${needGitKey}`)``; the classes `gitkey-value` and `gitkey-copy`; `lu_skip_hint` in both scripts; and every line matching `lu_wait_for_operator`, including one preceded by an environment assignment. |
+| **Expected** | A Skip control per panel; a deploy-key panel that reads the key and the link from `/git-auth`; a Copy button and a key that wraps; the skip hint in both scripts; and no call to the helper whose status is not captured with `\|\| _wait_rc=$?`. |
+| **What it found** | Both halves, on the running dashboard rather than in the suite. Five bare calls aborted the start the first time a wait timed out — `git.sh` exited 2 with the stack half up. The key ran past the frame of its panel and could not be copied, which an operator reported on 2026-09-17; the repositories card had already solved both, so the panel uses its classes rather than new ones. The *"stays JavaScript"* half was written after a TypeScript annotation in a plain `<script>` block passed the whole suite and broke the image build. |
+| **Covers** | Review points 1 and 2 of #9. |
+
+##### A9-11 to A9-14 — several missing keys are one queue
+
+| | |
+|---|---|
+| **Premise** | The operator asked what happens when more than one declared repository is waiting on a key. It was worse than it looked. Each clone was attempted at the moment its own wait began, so the start learned about the second missing key only after the first had been dealt with: an operator was told *"add this key"*, did it, and was shown another screen with no warning that it was coming. A reachable repository queued behind an unreachable one for the whole deadline although nothing about it needed a person. And the deadline was per wait, so three missing keys meant three times `SYSTEM_SIGNIN_WAIT_SECONDS` on an unattended host — three quarters of an hour at the shipped default. |
+| **Component** | `config/scripts/start/git.sh`, now in three passes — try every clone, ask for what is missing, configure and record — and `lu_budget_deadline` / `lu_skipped` in the helper. |
+| **Test data** | Three declared repositories: `git@github.com:nocodenation/agent-skills.git\|read\|protected`, routed to a seeded bare repository so it clones; `git@github.com:nocodenation/flows.git\|write\|protected` and `git@github.com:nocodenation/portal.git\|read\|protected`, with no route, which is what an unregistered key looks like from here. `SYSTEM_SIGNIN_WAIT_SECONDS=30`, a start budget of 2s in `<project>/volumes/.start-skip/.deadline`, and the sentinel `git-key-all`. |
+| **Expected** | The reachable repository is cloned, and its `Cloned …` line comes **before** `ACTION REQUIRED`; `::aiw-git-keys-pending::` names exactly the two missing slugs and not the cloned one; the banner says *"2 declared repositories could not be cloned"* and lists both; the screens say *"Repository 1 of 2"* and *"Repository 2 of 2"*; `::aiw-git-key-required::` still names one repository at a time and each is followed by `::aiw-git-key-done::`; the run waits, and both waits together stay inside the one budget rather than taking 30s each; the manifest holds all three with `cloned` true, false, false. With `git-key-all` present, both waits end at once and the run is over in seconds. |
+| **Why the group is opt-in** | A9-12 is the negative half of A9-14: the same sentinel file, with no `LU_SKIP_GROUP` named, must not end a wait. Otherwise one click on the deploy-key panel could silently end a sign-in elsewhere in the start. |
+| **What the budget actually bounds** | A start in which nothing happens. A budget fixed before the first wait and never renewed would cut off the operator working through the queue — registering the second key would be racing a deadline set before the first was asked for. So a wait that ends because someone acted, whether by registering the key or by pressing Skip, gives the rest of the start a full budget again; a wait that ends at the deadline does not, and that is the unattended case the bound exists for. A9-11's third case is that refresh, and without it the setting would be a guillotine rather than a budget. |
+| **Covers** | The operator's question of 2026-09-17, and review point 2 of #9. |
+
+##### A9-15 — the operator's procedure · the key screen in the browser · **manual**
+
+| | |
+|---|---|
+| **Premise** | Whether a panel reads as an instruction needs a person. The three things the suite never showed were all found this way. |
+| **Steps** | Declare a repository whose key is not registered — a second, also unregistered, to see the queue. Press Start in the dashboard. Watch for the key panel: copy the key, register it at GitHub, and see the wait end by itself. Then let the second one appear, and press *Skip all*. |
+| **Expected** | The panel appears beside the sign-in panels while the start is still running; the key is complete inside the frame and the Copy button puts it on the clipboard; registering the key ends the wait without a restart; the panel states *"1 of 2"* and lists both repositories; *Skip all* lets the start finish. |
+| **What it found on 2026-09-17, first run** | Three things, none of which any case had shown: there was **no panel at all** — only the marker in the log; a Skip took **five seconds** to be noticed, so the operator pressed it twice; and the key **ran past the frame** and had to be selected by hand. The first two are now A9-10 and A9-4, the third A9-10. |
+| **What it found on 2026-09-17, second run · the queue** | Walked with two unregistered keys, `does-not-exist` (`read`) and `queue-probe` (`write`). Everything the queue promises was observed: the count and both names **before** the first wait, *"1 of 2"* with the current repository marked in the list, the switch to *"2 of 2"* on Skip with the second one marked, the write-access instruction on that screen and not on the first, *Skip all* ending both, and the start running on to the Claude sign-in. The budget was measured in the first attempt of the day, which ran out while the operator was still reading: the deadline stood at 15:48:27, the first wait ended there, and the manifest was written at 15:48:32 — the second wait took **five seconds**, not another 120. Per wait it would have been 240. |
+| **And two things it found that no case had** | The log printed `**Allow write access**` — markdown asterisks in a terminal, where the panel renders the same instruction properly from `/git-auth`; fixed, and A9-6 now forbids the asterisks. And the repositories card said *"1 of 4"* while the panel above it said *"1 of 2"*, because the manifest is written in the third pass: during a wait the card describes the last completed start. Recorded in `BACKLOG.md` with the fix rather than built, since it is visible, harmless, and lasts only as long as a wait. |
+| **Covers** | Review points 1 to 4 of #9. |
+
+---
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -2771,6 +2888,7 @@ drive it, which is a thing worth knowing before reaching for one.
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
+| M-A9 | Unit for the helper's three outcomes, contract for the wiring and the wording, integration for the flow, one manual case | The helper is real decision logic and every return path is covered; the rest is a script's output and a component's markup, where a contract read is what can honestly be asserted without a browser |
 | M-A8 | Component and integration for the page, contract for the wording, integration for the build, three manual cases | The subject is a screen. What can be read out of served HTML is automated here; what needs eyes on a browser is manual and says so, rather than being approximated by a headless one. **"System" was corrected to "integration" on 2026-09-07**: the cases drive a dashboard the test starts against a fixture, not the running stack through `docker compose exec`, and the row said otherwise while §5 already said this |
 
 
@@ -2784,7 +2902,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 |---|---|
 | FR1 Repo workspace | A1-4, A1-8 |
 | FR2 Git identity | A1-6, A1-7, A1-9 |
-| FR3 Key management | M-A3 (the script and the route), **M-A8** (the presentation): A8-4, A8-5, A8-6, A8-7, A8-8, A8-10, A8-11, A8-13, A8-18 — this row read `M-A3` alone until 2026-09-07, while half the requirement was unbuilt |
+| FR3 Key management | M-A3 (the script and the route), **M-A8** (the presentation): A8-4, A8-5, A8-6, A8-7, A8-8, A8-10, A8-11, A8-13, A8-18 — this row read `M-A3` alone until 2026-09-07, while half the requirement was unbuilt; **M-A9** (registering it, in the flow): A9-6, A9-7, A9-8, A9-9, A9-13, A9-15 |
 | FR4 Host key verification | M-A3 |
 | FR5 Free local operations | A1-6 |
 | FR6 Free reads | M-A3 |
@@ -2806,7 +2924,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR17 One sanctioned publishing path | A6-1, A6-2, A6-3, A6-5, A6-12 |
 | FR18 A push outside that path is refused | A6-6, A6-7, A6-8, A6-9, A6-13 |
 | FR19 Agent branches are recognisable | A6-3, A6-4 |
-| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14, A8-20, A8-21, A8-26 |
+| FR20 A refusal names the way forward | A6-2, A6-4, A6-6, A6-11, A6-13, A8-7, A8-13, A8-14, A8-20, A8-21, A8-26, A9-6, A9-13 |
 | FR32 One test walks the whole path | A7-1, A7-2, A7-5 |
 | FR33 Concurrent publication is safe or refuses | A7-3, A7-4 |
 | NFR1 Credentials via `.env` | A1-9, A6-10, A8-3, A8-5 |

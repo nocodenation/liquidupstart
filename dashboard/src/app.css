@@ -911,6 +911,14 @@ footer.version code {
   white-space: nowrap;
 }
 
+/* The one being asked for now, among the repositories still waiting. Without a
+   mark the list reads as "three things you must do" with no indication which of
+   them the panel above is about. */
+.authbox code.current {
+  background: var(--accent-soft, rgba(127, 127, 127, 0.18));
+  font-weight: 600;
+}
+
 .gitkey-fingerprint {
   margin: 0.35rem 0 0;
   font-size: 0.8rem;

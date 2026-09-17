@@ -101,6 +101,11 @@ describe('A9-6 a write declaration names the checkbox', () => {
 
   test('because it is off by default and the push fails much later', () => {
     expect(run.output).toContain('Allow write access');
+    // In quotes, not asterisks: the log is a terminal, and an operator reading it
+    // on 2026-09-17 saw `**Allow write access**` -- markdown where the emphasis
+    // was meant. The panel renders the same instruction from /git-auth, so only
+    // this copy was ever raw.
+    expect(run.output).not.toContain('**Allow write access**');
   });
 });
 

@@ -108,7 +108,22 @@ json_escape() {
 PARSED="$(lu_git_parse "$DECLARATION")"
 lu_git_keys "$SECRETS_DIR" "$DECLARATION" >/dev/null
 
+# Three passes rather than one, since 2026-09-17. One pass discovered each
+# failure only when it reached it, so the start could not say how many
+# repositories were waiting on a key, or which -- it learned about the second one
+# only after the first had been dealt with. An operator was told "add this key",
+# did it, and was shown another screen with no warning that it was coming.
+#
+# Now every clone is attempted first. That also stops a reachable repository from
+# queueing behind an unreachable one: what can be cloned is cloned immediately.
+#
+# Arrays and index loops rather than mapfile: macOS ships bash 3.2, which has
+# neither mapfile nor readarray.
 ENTRIES=""
+R_NAME=(); R_URL=(); R_HOST=(); R_PATH=(); R_ACCESS=(); R_POLICY=(); R_SLUG=(); R_DIR=()
+R_KEY=(); R_MOUNTKEY=(); R_DEST=(); R_CLONED=(); R_ERROR=(); R_SSH=()
+
+# --- Pass 1: try every clone, and remember what failed ----------------------
 while IFS=$'\t' read -r name url host path access policy slug dir; do
   [[ -n "${slug:-}" ]] || continue
   key="${SECRETS_DIR}/repos/${slug}/id_ed25519"
@@ -116,11 +131,15 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   dest="${REPOS_DIR}/${dir}"
   cloned=false
   error=""
+  # Decided once per repository and carried into the second pass: the retry after
+  # a key is registered must use the same isolation as the first attempt, and a
+  # second copy of these options is a second thing to keep in step. A3c-8 counts
+  # them for exactly that reason.
+  clone_ssh="ssh -F /dev/null -i ${key} -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
 
   if [[ -d "${dest}/.git" ]]; then
     cloned=true
   else
-    clone_ssh="ssh -F /dev/null -i ${key} -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=${KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
     if out="$(with_timeout 300 env GIT_SSH_COMMAND="$clone_ssh" git clone --quiet "$url" "$dest" 2>&1)"; then
       cloned=true
       echo "Cloned ${url} into ${dest}"
@@ -128,62 +147,115 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
       rm -rf "$dest"
       error="$(printf '%s' "$out" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g')"
       error="${error:-clone failed}"
-
-      # Shown here, in the flow, rather than left for the operator to find in the
-      # dashboard card later: this is the same kind of thing as a sign-in, and the
-      # sign-ins stop and wait. Review point 1 of #9.
-      #
-      # The marker is what the dashboard watches for, like ::aiw-codex-auth-required::.
       # The original wording, kept verbatim: A8-19 and A3c-7 were signed off
       # against it, and rewriting another milestone's assertion so that my own
       # text passes would empty the assertion of its worth.
       echo "Warning: could not clone ${url}: ${error}" >&2
-      echo "::aiw-git-key-required::${slug}" >&2
-      echo "" >&2
-      echo "=============================== ACTION REQUIRED ===============================" >&2
-      echo "Could not clone ${url}" >&2
-      echo "  ${error}" >&2
-      echo "" >&2
-      echo "Add this public key as a deploy key:" >&2
-      echo "" >&2
-      sed -e 's/^/    /' "${key}.pub" >&2 2>/dev/null || echo "    (missing ${key}.pub)" >&2
-      echo "" >&2
-      # Computed, not assembled by hand: the host and path are already in the
-      # declaration. Review point 3 of #9.
-      echo "  https://${host}/${path}/settings/keys/new" >&2
-      if [[ "$access" == "write" ]]; then
-        # The checkbox is off by default, and a key added without it clones fine
-        # and fails on push much later, inside an agent session. Review point 4.
-        echo "" >&2
-        echo "  This repository is declared with write access, so tick" >&2
-        echo "  **Allow write access** on that form. Without it the clone works" >&2
-        echo "  and the first push fails, in an agent session, much later." >&2
-      fi
-      echo "" >&2
-      echo "$(lu_skip_hint "git-key-${slug}")" >&2
-      echo "===============================================================================" >&2
-      echo "" >&2
-
-      # Retry rather than ask the operator to start again: the clone is the
-      # condition, so registering the key ends the wait by itself.
-      # `|| _wait_rc=$?` and not a bare call: the helper returns 1 for a skip and
-      # 2 for the deadline, and a bare command with a non-zero status ends the
-      # script under `set -e`. A sign-in nobody completed would have taken the
-      # whole start down with it -- found by the case below on 2026-09-17.
-      _wait_rc=0
-      lu_wait_for_operator "git-key-${slug}" 5 \
-        env GIT_SSH_COMMAND="$clone_ssh" git clone --quiet "$url" "$dest" || _wait_rc=$?
-      case $_wait_rc in
-        0) cloned=true
-           echo "Cloned ${url} into ${dest}" ;;
-        1) rm -rf "$dest"
-           echo "Warning: ${url} was skipped; it is not cloned." >&2 ;;
-        *) rm -rf "$dest"
-           echo "Warning: ${url} was not cloned: the deploy key is still not registered." >&2
-           echo "  The start continues; register it and start again." >&2 ;;
-      esac
     fi
   fi
+
+  R_NAME+=("$name"); R_URL+=("$url"); R_HOST+=("$host"); R_PATH+=("$path")
+  R_ACCESS+=("$access"); R_POLICY+=("$policy"); R_SLUG+=("$slug"); R_DIR+=("$dir")
+  R_KEY+=("$key"); R_MOUNTKEY+=("$mount_key"); R_DEST+=("$dest")
+  R_CLONED+=("$cloned"); R_ERROR+=("$error"); R_SSH+=("$clone_ssh")
+done <<< "$PARSED"
+
+# --- Pass 2: ask for the keys that are missing, all of them known up front ---
+# The count guards below are not decoration: bash 3.2 (what macOS ships) treats
+# the expansion of an empty array under `set -u` as an unbound variable, and a
+# stack that declares no repository has exactly that.
+PENDING=()
+for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+  [[ "${R_CLONED[$i]}" == true ]] || PENDING+=("$i")
+done
+
+if (( ${#PENDING[@]} > 0 )); then
+  # The whole list up front, in one line the dashboard can read: the count and
+  # the names have to be known before the first wait, or the panel can only ever
+  # say "this one" and the operator learns about the second repository after
+  # dealing with the first. ::aiw-git-key-required:: keeps its meaning -- the one
+  # being waited on now -- so nothing that reads it has to change.
+  PENDING_SLUGS=""
+  for i in "${PENDING[@]}"; do PENDING_SLUGS="${PENDING_SLUGS:+${PENDING_SLUGS} }${R_SLUG[$i]}"; done
+  echo "" >&2
+  echo "::aiw-git-keys-pending::${PENDING_SLUGS}" >&2
+  echo "=============================== ACTION REQUIRED ===============================" >&2
+  if (( ${#PENDING[@]} == 1 )); then
+    echo "One declared repository could not be cloned with the key this stack holds." >&2
+  else
+    echo "${#PENDING[@]} declared repositories could not be cloned with the keys this stack holds:" >&2
+    for i in "${PENDING[@]}"; do
+      echo "  - ${R_HOST[$i]}/${R_PATH[$i]}" >&2
+    done
+  fi
+  echo "Each is asked for in turn below. The whole start waits at most $(lu_wait_seconds)s for all" >&2
+  echo "of them together, so an unattended start is bounded however many there are." >&2
+  echo "To skip every one of them at once: touch $(lu_skip_dir)/git-key-all" >&2
+  echo "===============================================================================" >&2
+  echo "" >&2
+fi
+
+nth=0
+for (( n = 0; n < ${#PENDING[@]}; n++ )); do
+  i="${PENDING[$n]}"
+  nth=$(( n + 1 ))
+  slug="${R_SLUG[$i]}"; url="${R_URL[$i]}"; dest="${R_DEST[$i]}"; key="${R_KEY[$i]}"
+  clone_ssh="${R_SSH[$i]}"
+
+  echo "::aiw-git-key-required::${slug}" >&2
+  echo "" >&2
+  # Not "could not clone" a second time: pass 1 already said that, verbatim, for
+  # every repository it could not reach. This block says what to do about it.
+  echo "--- Repository ${nth} of ${#PENDING[@]}: ${url}" >&2
+  echo "  ${R_ERROR[$i]}" >&2
+  echo "" >&2
+  echo "Add this public key as a deploy key:" >&2
+  echo "" >&2
+  sed -e 's/^/    /' "${key}.pub" >&2 2>/dev/null || echo "    (missing ${key}.pub)" >&2
+  echo "" >&2
+  # Computed, not assembled by hand: the host and path are already in the
+  # declaration. Review point 3 of #9.
+  echo "  https://${R_HOST[$i]}/${R_PATH[$i]}/settings/keys/new" >&2
+  if [[ "${R_ACCESS[$i]}" == "write" ]]; then
+    # The checkbox is off by default, and a key added without it clones fine and
+    # fails on push much later, inside an agent session. Review point 4.
+    echo "" >&2
+    echo "  This repository is declared with write access, so tick" >&2
+    # No asterisks: this is a terminal log, and the operator saw the markdown
+    # rather than the emphasis -- reported 2026-09-17 from the running dashboard.
+    echo "  \"Allow write access\" on that form. Without it the clone works" >&2
+    echo "  and the first push fails, in an agent session, much later." >&2
+  fi
+  echo "" >&2
+  echo "$(lu_skip_hint "git-key-${slug}")" >&2
+  echo "-------------------------------------------------------------------------------" >&2
+  echo "" >&2
+
+  # `|| _wait_rc=$?` and not a bare call: the helper returns 1 for a skip and 2
+  # for the deadline, and a bare command with a non-zero status ends the script
+  # under `set -e`.
+  _wait_rc=0
+  LU_SKIP_GROUP=git-key-all lu_wait_for_operator "git-key-${slug}" 5 \
+    env GIT_SSH_COMMAND="$clone_ssh" git clone --quiet "$url" "$dest" || _wait_rc=$?
+  case $_wait_rc in
+    0) R_CLONED[$i]=true
+       R_ERROR[$i]=""
+       echo "Cloned ${url} into ${dest}" ;;
+    1) rm -rf "$dest"
+       echo "Warning: ${url} was skipped; it is not cloned." >&2 ;;
+    *) rm -rf "$dest"
+       echo "Warning: ${url} was not cloned: the deploy key is still not registered." >&2
+       echo "  The start continues; register it and start again." >&2 ;;
+  esac
+  echo "::aiw-git-key-done::${slug}" >&2
+done
+
+# --- Pass 3: configure what was cloned, and record every repository ----------
+for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+  name="${R_NAME[$i]}"; url="${R_URL[$i]}"; host="${R_HOST[$i]}"; path="${R_PATH[$i]}"
+  access="${R_ACCESS[$i]}"; policy="${R_POLICY[$i]}"; slug="${R_SLUG[$i]}"; dir="${R_DIR[$i]}"
+  mount_key="${R_MOUNTKEY[$i]}"; dest="${R_DEST[$i]}"
+  cloned="${R_CLONED[$i]}"; error="${R_ERROR[$i]}"
 
   if [[ "$cloned" == true ]]; then
     git -C "$dest" config core.sshCommand "ssh -F /dev/null -i ${mount_key} -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=${SECRETS_MOUNT}/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
@@ -215,7 +287,7 @@ JSON
 )"
   ENTRIES="${ENTRIES:+${ENTRIES},
 }${entry}"
-done <<< "$PARSED"
+done
 
 for existing in "$REPOS_DIR"/*/; do
   [[ -d "${existing}.git" ]] || continue
