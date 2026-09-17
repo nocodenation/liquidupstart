@@ -48,6 +48,9 @@ import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
 
 const SCRIPT = 'config/scripts/start/openclaw.sh';
+// with_timeout moved into a library on 2026-09-17: openclaw.sh and git.sh each
+// carried a copy, and both ended in a branch that ran the command unbounded.
+const LIB = JSON.stringify(join(repoRoot, 'config/scripts/start/lib/with-timeout.sh'));
 const body = readFileSync(join(repoRoot, SCRIPT), 'utf8');
 const lines = body.split('\n');
 
@@ -82,7 +85,7 @@ describe('N1 every bounded docker run can actually be bounded', () => {
     const name = `lu-bound-probe-${process.pid}`;
     const snippet = `
       set -uo pipefail
-      eval "$(sed -n '/^with_timeout() {/,/^}/p' ${SCRIPT})"
+. ${LIB}
       with_timeout 8 docker run --rm --init --name ${name} --entrypoint node ${image} \
         -e 'setInterval(()=>{},1000)'
       echo "rc=$?"

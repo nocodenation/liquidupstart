@@ -335,6 +335,27 @@ one probe and two branches; the extra tests are cases we would want anyway.
 **Whichever is chosen, the base image stays pinned to an exact version.** The move is from one pin
 to another, never back to `:latest`.
 
+### 6.1 The bound, repaired again 2026-09-17 — it did not exist on the operator's host
+
+The start bounds eleven `docker run` calls through `with_timeout`, which is the protection that
+replaced OC-3 and the reason the September hang cannot come back. It ended in `else "$@"`: on a host
+with neither `timeout` nor `gtimeout` — both GNU coreutils, and macOS ships neither — the command ran
+**unbounded**, with nothing said. The call site reads `with_timeout 60 docker run …`; what ran was
+`docker run …`. So on the machine the operator actually starts the stack from, none of the eleven was
+bounded.
+
+It was found by running the suite, three times in one afternoon: N1's own probe container, bounded at
+8s with a 10s grace, stood for 13 minutes and then twice for over a minute. The case could not report
+it — a bun test cannot interrupt a synchronous spawn, so the suite hung instead of going red, and it
+had been skipping silently before that because the probe image did not exist on this machine yet.
+
+`config/scripts/start/lib/with-timeout.sh` is now the one implementation for both start scripts;
+`openclaw.sh` and `git.sh` each had a copy, so the fallback existed twice. Coreutils is still
+preferred where present. Where it is not, the command runs under a watchdog — SIGTERM at the limit,
+SIGKILL after the grace — and the helper answers 124, the number coreutils uses, so a caller cannot
+tell the two hosts apart. Control in the same session: the old shape, given a 3-second bound on a
+6-second command, returned after 6.01s with rc 0; the replacement returns after 3.04s with rc 124.
+
 ## 7. Two suites, because there are two questions
 
 OC-G4 asks two different things, and one suite cannot answer both.

@@ -458,6 +458,48 @@ interface outside an image build. Measured 2026-09-07: 20 seconds cold, a no-op 
 launcher still starts — and A8-15, A8-16 and A8-17 have been observed by the operator with their
 screenshots recorded.
 
+**M-A9 · The deploy key waits like every other credential** (from the review of #9, 2026-09-16)
+
+Four credentials in this stack already stop the start and wait for a person: Claude, Codex, Copilot,
+Grok. The deploy key did not. A clone that failed printed two lines and the start moved on, so the
+operator met the public key later, in the launchpad card, with the start already finished — and with
+the repositories the agents were meant to work in missing. The review asks for the key to be treated
+the same way, and that one change pulls in three more: a wait nobody can end is a hang, four copies
+of the fifteen-minute deadline are four things to keep in step, and a queue of missing keys must not
+multiply the time a start can take.
+
+*One wait, one deadline, one way out.* `config/scripts/start/lib/wait-for-operator.sh` is the single
+implementation — announce, poll the condition, honour a skip, stop at the deadline — and both
+`git.sh` and `openclaw.sh` use it. The deadline is `SYSTEM_SIGNIN_WAIT_SECONDS` in `.env`, read
+where it is needed rather than copied; `0` means an unattended host does not wait at all. Every wait
+can be ended by a sentinel file under `volumes/.start-skip/`, which the dashboard writes on a button
+and an operator at a terminal can `touch`. The skips are cleared once per start, so a skip is a
+decision about one run and never becomes a setting nobody remembers making.
+
+*The key is asked for where it is needed.* `git.sh` prints the public key, the address of the form
+that takes it — computed from the declared host and path, not typed — and, for a repository declared
+`write`, the sentence about the checkbox that is off by default and whose absence surfaces as a
+failed push inside an agent session hours later. The dashboard renders the same thing as a panel
+beside the Claude and Codex panels, with a Copy button, reading the key from `/git-auth` so it
+cannot drift from the card.
+
+*And a queue is a queue.* All the clones are attempted before any wait begins, so the start knows
+how many keys are missing and which, and says so before asking for the first. A reachable repository
+is cloned immediately instead of queueing behind an unreachable one; the operator sees *"Repository 1
+of 3"* with the whole list; one button skips all of them; and the deadline is the **start's** budget
+rather than each wait's, so three missing keys no longer mean three times the wait. That last part is
+the operator's own question from 2026-09-17, and the answer had to be built rather than explained.
+
+What the budget bounds is a start in which nothing happens. A wait that ends because someone acted —
+the key registered, or Skip pressed — gives the rest of the start a full budget again, because
+otherwise an operator working through three keys would be racing a deadline that was set before the
+first of them was asked for. A wait that ends at the deadline renews nothing, and that is the
+unattended host the bound exists for.
+
+*Done when:* `./tests/run.sh m-a9` is green, and an operator has walked the flow in the browser —
+which is where the three things no case had shown were found: the panel was missing entirely, a skip
+took five seconds to be noticed, and the key ran past the frame.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not
