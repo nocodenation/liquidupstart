@@ -41,6 +41,24 @@ plugin({
       exports: {
         redirect(status: number, location: string): never {
           throw new Redirect(status, location);
+        },
+        // `json` and `error` since 2026-09-18: routes that answer with data
+        // rather than a redirect could not be imported at all, so start-skip --
+        // the route behind every Skip button -- had no case of its own until a
+        // reviewer found that it refuses a capital letter.
+        json(data: unknown, init?: ResponseInit): Response {
+          return new Response(JSON.stringify(data), {
+            ...init,
+            headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) }
+          });
+        },
+        error(status: number, body?: unknown): never {
+          // SvelteKit throws an object carrying the status; a case reads that
+          // status, so the shape matters more than the class.
+          throw Object.assign(new Error(typeof body === 'string' ? body : 'error'), {
+            status,
+            body: typeof body === 'string' ? { message: body } : body
+          });
         }
       },
       loader: 'object'

@@ -996,6 +996,12 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     # completes, so the auth-profile registration below runs against a live login
     # (mirrors the Copilot/Codex/Grok branches).
     echo "" >&2
+    # A marker of its own, like Copilot, Codex and Grok have. The dashboard used
+    # to open the Claude panel on the bare "ACTION REQUIRED" text, which any step
+    # may print -- and since M-A9 the git step prints it for a missing deploy key,
+    # so a missing key opened the Claude sign-in panel on an installation with
+    # ENABLE_ANTHROPIC_CLAUDE_CODE=0. Finding 4 of the 2026-09-18 follow-up.
+    echo "::aiw-claude-auth-required::"
     echo "=============================== ACTION REQUIRED ===============================" >&2
     echo "OpenClaw is set to use the Claude Code CLI, but it is not authenticated yet" >&2
     echo "and this start run has no terminal attached for interactive sign-in." >&2

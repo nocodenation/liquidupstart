@@ -288,8 +288,15 @@ JSON
   chmod 644 "$MANIFEST"
 }
 
-# The provisional record: what pass 1 decided, before anyone waits.
-lu_write_manifest
+# The provisional record: what pass 1 decided, before anyone waits. Not during a
+# dashboard Test, though -- there the arrays hold the one repository named by
+# GIT_ONLY_SLUG, so this write would put a one-entry manifest on disk for the
+# length of the Test. `git-repo-info` in the containers would then answer "not
+# declared in this stack" for every other repository, and the card would list
+# them as having no deploy key. The Test's own entry reaches the manifest through
+# the dashboard, which merges it into the one it read first. Finding 1 of the
+# 2026-09-18 follow-up, and a regression this write introduced the day before.
+[[ -n "$ONLY_SLUG" ]] || lu_write_manifest
 
 # --- Pass 2: ask for the keys that are missing, all of them known up front ---
 # The count guards below are not decoration: bash 3.2 (what macOS ships) treats
@@ -299,10 +306,19 @@ lu_write_manifest
 # occupied, a clone of another repository, a host whose keys are not trusted --
 # none of those is mended by registering a key, so none of them stops the start
 # to ask for one.
+#
+# And none at all during a dashboard Test. The Test *is* the retry: an operator
+# is in front of it, waiting for it to answer. Waiting for that operator to
+# register a key while they wait for the answer is a deadlock, and the dashboard
+# put a seven-minute timer on it -- so the answer was "did not finish within
+# seven minutes" for a repository whose key is simply not registered, which is
+# the one thing the Test exists to report. Finding 2 of the 2026-09-18 follow-up.
 PENDING=()
-for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
-  [[ "${R_ASKKEY[$i]}" == true ]] && PENDING+=("$i")
-done
+if [[ -z "$ONLY_SLUG" ]]; then
+  for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+    [[ "${R_ASKKEY[$i]}" == true ]] && PENDING+=("$i")
+  done
+fi
 
 if (( ${#PENDING[@]} > 0 )); then
   # The whole list up front, in one line the dashboard can read: the count and

@@ -3084,6 +3084,72 @@ capture taken after another file had written held the changed state as the thing
 
 ---
 
+### M-A13 — the follow-up review of 2026-09-18
+
+**What this milestone is for.** Five findings, three of them regressions introduced by the previous
+day's fixes. Every case here was run against the unfixed code first, and the controls are recorded
+with their numbers, because "it reproduced" is worth more than "it looked wrong".
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A13-1 | Integration **unhappy** | A Test leaves the manifest alone while it runs | Under `GIT_ONLY_SLUG` the provisional write put a one-entry manifest on disk for the length of a Test. Control: 337 readings of one entry |
+| A13-2 | Integration | And the tested repository is recorded when it is over | The Test's own product, for the dashboard to merge — the entry must reach the file at the end and not before |
+| A13-3 | Integration **unhappy** | A Test does not wait for a deploy key | It waited, and the dashboard killed it at 420s with a message about seven minutes for a repository whose key is missing |
+| A13-4 | Integration | A full start still waits | The counterpart: the difference between the two runs is one environment variable, not the removal of M-A9 |
+| A13-5 | Unit **unhappy** | Every step name the stack can produce is accepted | `git-key-github.com_NoCodeNation_agent-skills` was refused with 400 and the error swallowed, so the button did nothing |
+| A13-6 | Unit **unhappy** | And anything that is not one path element is still refused | Widening the character class must not widen what the rule is for |
+| A13-7 | Contract + integration **unhappy** | The Claude panel opens for Claude, not for any banner | A missing deploy key opened the Claude sign-in panel with `ENABLE_ANTHROPIC_CLAUDE_CODE=0` |
+| A13-8 | Contract | And the marker sits where a Claude sign-in is waited for | A marker printed nowhere would satisfy A13-7 and leave the panel unreachable |
+| A13-9 | Contract **unhappy** | The repository card is keyed by slug | Two declared repositories sharing a name shared their "Testing…", "Copied" and result line |
+
+#### Detail per case
+
+##### A13-1 to A13-4 — a Test is not a start
+
+| | |
+|---|---|
+| **Premise** | The dashboard's Test runs `git.sh` with `GIT_ONLY_SLUG`. Two things the script does for a start are wrong for a Test: writing the manifest before the waits (because the arrays hold one repository) and waiting at all (because the operator is in front of the button, waiting for the answer). |
+| **Component** | `config/scripts/start/git.sh`, spawned the way the dashboard spawns it. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected` and `git@github.com:nocodenation/flows.git\|write\|protected`, with a manifest recording both as cloned — the shape a full start leaves behind. The ssh stand-in **sleeps one second** before refusing, so "while the run is in progress" is a window the case can sample rather than a moment it might miss. `SYSTEM_SIGNIN_WAIT_SECONDS=3`. |
+| **Steps** | Spawn `git.sh` with `GIT_ONLY_SLUG`; read the manifest every 20 ms until the process exits; then read it once more. Repeat without `GIT_ONLY_SLUG` for A13-4. |
+| **Expected** | Every reading before the last twenty shows **both** repositories; the run exits 0; the manifest afterwards holds the tested entry alone, for the dashboard to merge; a Test returns in under 3.5s and prints neither `::aiw-git-key-required::` nor `ACTION REQUIRED`; a start prints both and waits at least its three seconds. |
+| **Why the last twenty samples are exempt** | The final write at the end of pass 3 does put one entry there, and on a loaded machine several samples land between that write and this process observing the exit. The window the case is about is everything before it, and it is over a second long. The first version exempted one sample and went red in a full run while passing alone. |
+| **What the control measured** | 337 readings of a one-entry manifest, and a Test that waited and asked for a deploy key. |
+| **Covers** | Findings 1 and 2 of the #9 follow-up, U2, U11. |
+
+##### A13-5, A13-6 — the skip route's guard is about paths, not spelling
+
+| | |
+|---|---|
+| **Premise** | `lu_git_slug` replaces only characters outside `[A-Za-z0-9._-]`, so it keeps case; the route accepted `[a-z0-9]` and 65 characters. The panel's own Skip button therefore failed for any repository under an owner with a capital letter, silently, because `skipStep` swallows the error — while "Skip all" worked, because `git-key-all` is lower case. |
+| **Component** | `dashboard/src/routes/start-skip/+server.ts`, imported through the harness's stand-in for `@sveltejs/kit`, which gained `json` and `error` for this case: routes that answer with data rather than a redirect could not be imported on the host at all before. |
+| **Test data** | Accepted: `git-key-github.com_NoCodeNation_agent-skills` (the review's own example), `git-key-all`, `claude`, and a 78-character `git-key-…` name. Refused: `../escape`, `git-key-a/b`, `/etc/passwd`, `.hidden`, the empty string, a name holding a null byte, and a non-string that stringifies to a valid name. |
+| **Expected** | Each accepted name answers 200 and writes its marker; each refused one answers 400 and leaves the skip directory byte-for-byte as it was. |
+| **What it found in its own fixture** | The first version set `process.env.ENV_DIR` to a scratch directory of its own. `$lib/server/project` captures that value when it is first loaded, bun keeps one module instance per process, and whoever loads first decides for every route in the suite — so eight M-A8 cases went red in the full run and green alone. The case now uses the shared fixture's project, which owns that setting. Third instance in two days of a test changing state other tests depend on; the other two are A10-23 and M-A11. |
+| **Covers** | Finding 3 of the #9 follow-up, FR20. |
+
+##### A13-7, A13-8 — a banner is not a marker
+
+| | |
+|---|---|
+| **Premise** | `TaskRunner.svelte` opened the Claude panel on `task.log.includes('ACTION REQUIRED')`, and `authProbe` stays `unknown` while the stack is down. M-A9 taught `git.sh` to print exactly that banner for a missing deploy key, so the two met for the first time and the panel opened for a provider switched off in `.env`. |
+| **Component** | `config/scripts/start/openclaw.sh` and `TaskRunner.svelte` as text, plus a real `git.sh` run. |
+| **Test data** | The marker `::aiw-claude-auth-required::`; the three markers the other providers already use; and a `git.sh` run declaring `git@github.com:nocodenation/agent-skills.git\|read\|protected` against a refusing ssh stand-in with `SYSTEM_SIGNIN_WAIT_SECONDS=0`. |
+| **Expected** | The panel's condition names the marker and not the banner; the marker appears exactly once in `openclaw.sh`, within a few lines of the Claude banner it belongs to; the other three providers are untouched; and a run that only wants a deploy key prints the banner and not the marker. |
+| **Covers** | Finding 4 of the #9 follow-up. |
+
+##### A13-9 — the card is keyed by slug
+
+| | |
+|---|---|
+| **Premise** | Half of an earlier fix. When `acme/skills` and `other/skills` are both declared, the server side resolves by slug and the component still held `repo.name` in `testing`, `copied`, `copyFailed` and `result` — so both cards said "Testing…" at once, and a result line could land on the wrong one. |
+| **Component** | `dashboard/src/lib/components/GitRepositories.svelte` as text. |
+| **Expected** | No line holds `repo.name` as state, and the slug is what is held instead — asserted in both directions, because a file that simply stopped naming repositories would pass the first half. |
+| **Why text rather than a rendered component** | The dashboard's suite does not mount components, and what is asserted is which field identifies a repository, which is visible in the source. |
+| **Covers** | Finding 5 of the #9 follow-up. |
+
+---
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -3097,6 +3163,7 @@ capture taken after another file had written held the changed state as the thing
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
+| M-A13 | Integration for the two script paths, unit for the route, contract for the two components | Three of the five findings were regressions, so each case drives the path that was missed rather than the one that was already covered |
 | M-A12 | Integration only | The subject is when a file is written relative to a wait, which no level below can see |
 | M-A11 | Unit for the restore, contract for the runner and for the convention in the cases | The restore is real decision logic and every branch is covered; the tier's own behaviour needs a live stack, so it is held by scans on every ordinary run and observed by a deliberate one |
 | M-A10 | Integration for the start script's decisions, component for the dashboard's two, unit for the scan and for the fixture guard | Every finding is a decision with a wrong answer and a right one, so each is covered on both sides; the levels follow where the decision lives rather than where the finding was reported |
