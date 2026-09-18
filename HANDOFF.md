@@ -1,4 +1,4 @@
-# Handover — maintained continuously, last touched 2026-09-17
+# Handover — maintained continuously, last touched 2026-09-18
 
 **What this file is.** The working handover between the operator and the agent, on **one machine**.
 It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
@@ -602,8 +602,34 @@ between them.
    Two of them destroyed work (`rm -rf` over a directory that was there before the start; a clone of
    another repository adopted with the declared key), one was a hole in the secret scan (a key file
    whose name holds a space was never read), and one broke `.env.example`'s promise that a fresh
-   installation needs nothing from the git section. Still owed: the reply on the pull request, which
-   covers both reviews together.
+   installation needs nothing from the git section.
+
+   **The follow-up review arrived 2026-09-18 at 06:47, at head `3aa7dfb`: five findings, three of
+   them regressions from the fixes of the day before.** That is the part worth carrying forward. Each
+   repaired one path through `git.sh` without thinking about the other path that runs through the
+   same lines: M-A12's early manifest write cut the manifest down to one entry during a dashboard
+   Test, M-A9's wait made a Test sit for seven minutes waiting for an operator who was watching the
+   Test, and M-A9's `ACTION REQUIRED` banner opened the Claude sign-in panel for a provider switched
+   off in `.env`. All five are M-A13, built in the reviewer's order, each case run against the
+   unfixed code first.
+
+   **What the suite did not have**, and now does: no case drove the Test button through the
+   three-pass script — which is where findings 1 and 2 lived; no fixture used a capital letter —
+   which is finding 3; no case had two banners in one log — which is finding 4.
+
+   **M-A14 is the reviewer's styling request plus four things the operator found looking at it**, and
+   **M-A15 is one thing they found using it.** In order: a transparent button is not recognisable as
+   a button until it is touched (it has an outline now); a confirmation that vanishes with its panel
+   was never read (the panel is held, counting down three seconds, showing the repository that was
+   skipped); testing one repository wiped the other's answer (results are per repository); the page
+   stayed stale after a run until reloaded by hand (`invalidateAll` after every run, not only after a
+   successful one). And the one that mattered most: pressing **Test** while a start was waiting made
+   the card report a repository that does not exist as **reachable** — `git clone` writes `.git` and
+   the remote within 20 ms, and the waiting start retried that clone every five seconds, so the Test
+   adopted a clone that was 20 ms old. M-A15 keeps two runs off one repository with a lock.
+
+   Still owed: the reply on the pull request, which covers both reviews, the styling and everything
+   the operator's runs turned up.
 2. **PR #1, `GIT Versioning`, is superseded and should be closed.** Opened by Timur on 2026-06-19 and
    untouched since 2026-06-22. It is not a second version of #9: it puts a **Gitea** server inside the
    stack — its own service, nginx route and start script — and gives agents a `publish-to-git` skill
@@ -627,6 +653,37 @@ between them.
    What matters for anyone else on this machine is *One working copy, one stack* above: starting that
    clone takes the stack over, and measurements taken here while it runs are measurements of it. The
    discriminator is the `privacy-proxy` container.
+
+### Where the work stands, 2026-09-18
+
+| Branch | Head | What is on it |
+|---|---|---|
+| `feature/git-integration` (#9) | `e33d1e6` | M-A9 to M-A15 |
+| `feature/liquid-java-extensions` (#10) | `284fec9` | all of it, merged forward |
+
+The suite is green: **519 cases** at the levels that need no stack, plus the 32 that run inside the
+dashboard image build, and the image compiles. The stack levels are opt-in since M-A11 — `--system`
+asks for them, and they write to this installation.
+
+**Three things are waiting on the operator**, and none of them is code:
+
+1. **The reply to Timur** on #9, drafted and not yet sent.
+2. **`docs/FEATURE-memory-midterm.md`**, written 2026-09-18 and untracked: a specification for the
+   missing middle memory — short term is the context, long term is the pgvector RAG store, and
+   nothing sits between them. OpenClaw already ships three memory plugins, two of them switched off,
+   which is the first milestone: switch them on and measure before building anything. Five questions
+   in §6 need answering before it can be signed off; the first and third decide between ReMe and
+   MemPalace.
+3. **Whether the suite should render components.** Three of the four findings from 2026-09-18 are
+   held by text assertions — they prove the source says what was decided, not that the browser does
+   it. Nothing in this repository has ever mounted a Svelte component. Closing that gap means a
+   testing library, a new tier and a dependency in the dashboard image; leaving it open means these
+   surfaces stay in the operator's eyes. Not decided.
+
+**And one thing waiting on the operator that has nothing to do with the code:** an OpenAI key was
+printed into a session transcript on 2026-09-18, while reading the OpenCode configuration. The
+project's own rule, from the pre-push hook, is that a key which reaches a place it should not is a
+key to replace. It has not been rotated yet.
 
 ### What the suite did to this machine on 2026-09-17
 
