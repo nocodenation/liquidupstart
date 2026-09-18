@@ -3,6 +3,7 @@
    * Build / Start / Stop controls with a live log pane and the Claude Code
    * sign-in panel. Used by the dashboard (/) and the post-save page (/done).
    */
+  import { invalidateAll } from '$app/navigation';
   import { task, runTask as runSharedTask } from '$lib/task-state.svelte.js';
 
   let {
@@ -142,6 +143,43 @@
   // Tells the start run in progress to stop waiting on one credential. The run
   // clears these at the beginning of every start, so this holds for this start
   // only -- an operator who has no phone at hand now is not opting out for good.
+  // The deploy-key panel closes the moment the wait ends, and a skip ends it at
+  // once -- so the line confirming the skip was on screen for milliseconds. The
+  // operator asked for five seconds: long enough to read, short enough not to
+  // sit in the way of a start that has moved on.
+  // Counted down rather than simply waited out: five silent seconds read as a
+  // panel that has frozen. With the seconds on screen the operator knows the
+  // next repository is coming, and three are then enough -- the operator's own
+  // suggestion, 2026-09-18, after watching the five.
+  let holdLeft = $state(0);
+  let holdingSkip = $derived(holdLeft > 0);
+  let holdTimer;
+  function holdSkipNote() {
+    holdLeft = 3;
+    clearInterval(holdTimer);
+    holdTimer = setInterval(() => {
+      holdLeft -= 1;
+      if (holdLeft <= 0) {
+        clearInterval(holdTimer);
+        // The next repository was waiting behind the hold; let it through now.
+        syncGitKeyPanel();
+      }
+    }, 1000);
+  }
+
+  // What the panel shows, which is not always what the log last asked for. A
+  // skip ends the wait at once, so the start prints the next repository's marker
+  // within milliseconds and the panel used to switch under the operator's hand
+  // -- the confirmation they had just produced was covered before it could be
+  // read. During the hold the panel stays on the repository that was skipped.
+  function syncGitKeyPanel() {
+    const gitKey = [...task.log.matchAll(/::aiw-git-key-required::(\S+)/g)].pop();
+    if (gitKey && needGitKey !== gitKey[1]) {
+      needGitKey = gitKey[1];
+      loadGitKeyRepo(gitKey[1]);
+    }
+  }
+
   async function skipStep(step) {
     try {
       const res = await fetch('/start-skip', {
@@ -149,7 +187,10 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ step })
       });
-      if (res.ok) skipped = { ...skipped, [step]: true };
+      if (res.ok) {
+        skipped = { ...skipped, [step]: true };
+        holdSkipNote();
+      }
     } catch {
       // The start times out on its own; a failed skip is not worth a dialog.
     }
@@ -225,12 +266,10 @@
     const slugs = pending ? pending[1].trim().split(/\s+/).filter(Boolean) : [];
     if (slugs.join(' ') !== gitKeysPending.join(' ')) gitKeysPending = slugs;
     // Last marker wins: a start that waits on two repositories shows the one it
-    // is waiting on now.
-    const gitKey = [...task.log.matchAll(/::aiw-git-key-required::(\S+)/g)].pop();
-    if (gitKey && needGitKey !== gitKey[1]) {
-      needGitKey = gitKey[1];
-      loadGitKeyRepo(gitKey[1]);
-    }
+    // is waiting on now -- unless a skip is being confirmed, in which case the
+    // next one waits until the confirmation has been on screen long enough to
+    // read.
+    if (!holdingSkip) syncGitKeyPanel();
   });
   $effect(() => {
     authLog;
@@ -383,6 +422,13 @@
     probeCopilotAuth();
     probeCodexAuth();
     probeGrokAuth();
+    // And re-read what the page renders from the server, whatever the outcome.
+    // `onchange` fires only when the log says the task succeeded, so a failed or
+    // half-finished start left the repositories card describing the start before
+    // it -- "declared but not yet prepared", with no key and no Test button, for
+    // repositories the run had just prepared. The operator saw that on
+    // 2026-09-18 and asked, rightly, why they had to reload the page themselves.
+    await invalidateAll();
   }
 
   async function startClaudeAuth() {
@@ -614,7 +660,7 @@
   </div>
 {/if}
 
-{#if needGitKey && !gitKeyDone}
+{#if needGitKey && (!gitKeyDone || holdingSkip)}
   <section class="authbox">
     <h2>
       Add a deploy key to continue
@@ -668,20 +714,28 @@
     {/if}
     <div class="runbar">
       <!-- Skip: an operator without access to the repository settings right now
-           must be able to let the rest of the stack start. -->
-      <button class="back" onclick={() => skipStep(`git-key-${needGitKey}`)} disabled={skipped[`git-key-${needGitKey}`]}>
-        {skipped[`git-key-${needGitKey}`]
-          ? 'Skipped — the start continues without this repository'
-          : 'Skip this repository for this start'}
-      </button>
+           must be able to let the rest of the stack start. The collective one
+           travels beside it, and both sit at the end of the bar. -->
       {#if gitKeysPending.length > 1}
-        <button class="back" onclick={skipAllGitKeys} disabled={skipped['git-key-all']}>
-          {skipped['git-key-all']
-            ? 'All skipped — the start continues'
-            : `Skip all ${gitKeysPending.length} repositories for this start`}
+        <button class="skip" onclick={skipAllGitKeys} disabled={skipped['git-key-all']}>
+          Skip all for this start
         </button>
       {/if}
+      <button class="skip" onclick={() => skipStep(`git-key-${needGitKey}`)} disabled={skipped[`git-key-${needGitKey}`]}>
+        Skip for this start
+      </button>
     </div>
+    {#if skipped['git-key-all']}
+      <p class="skip-note">
+        All skipped — the start continues without them.{#if holdingSkip}
+          Closing in {holdLeft}…{/if}
+      </p>
+    {:else if skipped[`git-key-${needGitKey}`]}
+      <p class="skip-note">
+        Skipped — the start continues without this repository.{#if holdingSkip}
+          {gitKeysPending.length > 1 ? 'Next repository' : 'Closing'} in {holdLeft}…{/if}
+      </p>
+    {/if}
   </section>
 {/if}
 
@@ -702,9 +756,12 @@
       <div class="runbar">
         <!-- Skip: an operator without their phone, or without access to the
              account right now, must be able to let the rest of the stack start. -->
-        <button class="back" onclick={() => skipStep('claude')} disabled={skipped['claude']}>
-          {skipped['claude'] ? 'Skipped — the start continues' : 'Skip Claude for this start'}
+        <button class="skip" onclick={() => skipStep('claude')} disabled={skipped['claude']}>
+          Skip for this start
         </button>
+        {#if skipped['claude']}
+          <p class="skip-note">Skipped — the start continues without Claude.</p>
+        {/if}
         <button type="button" class="save" disabled={authRunning} onclick={startClaudeAuth}>
           {authRunning ? 'Waiting for sign-in…' : 'Sign in to Claude'}
         </button>
@@ -756,9 +813,12 @@
       <div class="runbar">
         <!-- Skip: an operator without their phone, or without access to the
              account right now, must be able to let the rest of the stack start. -->
-        <button class="back" onclick={() => skipStep('copilot')} disabled={skipped['copilot']}>
-          {skipped['copilot'] ? 'Skipped — the start continues' : 'Skip GitHub Copilot for this start'}
+        <button class="skip" onclick={() => skipStep('copilot')} disabled={skipped['copilot']}>
+          Skip for this start
         </button>
+        {#if skipped['copilot']}
+          <p class="skip-note">Skipped — the start continues without GitHub Copilot.</p>
+        {/if}
         <button type="button" class="save" disabled={copilotRunning} onclick={startCopilotAuth}>
           {copilotRunning ? 'Waiting for authorization…' : 'Sign in to GitHub Copilot'}
         </button>
@@ -797,9 +857,12 @@
       <div class="runbar">
         <!-- Skip: an operator without their phone, or without access to the
              account right now, must be able to let the rest of the stack start. -->
-        <button class="back" onclick={() => skipStep('codex')} disabled={skipped['codex']}>
-          {skipped['codex'] ? 'Skipped — the start continues' : 'Skip ChatGPT/Codex for this start'}
+        <button class="skip" onclick={() => skipStep('codex')} disabled={skipped['codex']}>
+          Skip for this start
         </button>
+        {#if skipped['codex']}
+          <p class="skip-note">Skipped — the start continues without ChatGPT/Codex.</p>
+        {/if}
         <button type="button" class="save" disabled={codexRunning} onclick={startCodexAuth}>
           {codexRunning ? 'Waiting for sign-in…' : 'Sign in with ChatGPT'}
         </button>
@@ -859,9 +922,12 @@
       <div class="runbar">
         <!-- Skip: an operator without their phone, or without access to the
              account right now, must be able to let the rest of the stack start. -->
-        <button class="back" onclick={() => skipStep('grok')} disabled={skipped['grok']}>
-          {skipped['grok'] ? 'Skipped — the start continues' : 'Skip Grok for this start'}
+        <button class="skip" onclick={() => skipStep('grok')} disabled={skipped['grok']}>
+          Skip for this start
         </button>
+        {#if skipped['grok']}
+          <p class="skip-note">Skipped — the start continues without Grok.</p>
+        {/if}
         <button type="button" class="save" disabled={grokRunning} onclick={startGrokAuth}>
           {grokRunning ? 'Waiting for sign-in…' : 'Sign in with Grok'}
         </button>

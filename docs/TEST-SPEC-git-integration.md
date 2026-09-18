@@ -3150,6 +3150,69 @@ with their numbers, because "it reproduced" is worth more than "it looked wrong"
 
 ---
 
+### M-A14 — the five Skips become one control
+
+**What this milestone is for.** A styling request from the reviewer, and the first case set in this
+feature where most of the subject cannot be automated at all. What can be read out of the source is
+read out of the source; whether it looks right is a person's judgement, and A14-6 says so.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A14-1 | Contract **unhappy** | Every Skip is a `button.skip` | They wore `class="back"`, the link style, so five buttons rendered as links |
+| A14-2 | Contract | `.back` still means a link | Real links in the same panels wear it; restyling it would have changed them too |
+| A14-3 | Contract | The class is the primary button minus its fill | Same font, padding and radius as `button.save`; transparent until hover, keyboard focus or press, then the accent at a tenth |
+| A14-4 | Contract **unhappy** | Every Skip says the same thing | Uniform width is the point of the uniform label; the state used to be the label and defeated it |
+| A14-5 | Contract | The Skip sits at the end of its bar | Pushed with `margin-left: auto` rather than reordered, so the primary action stays first for a keyboard |
+| A14-6 | **Manual** | The operator looks at it | Whether five controls read as one row, and whether the wash is visible without being loud, is not a thing a case can answer |
+
+#### Detail per case
+
+##### A14-1 to A14-5 — what can be read out of the source
+
+| | |
+|---|---|
+| **Premise** | Five Skips built one at a time: five labels, five widths, the link style, and each to the left of the action it replaces. The request was to make them one control, shaped like "Sign in to Claude" but unfilled, always at the right. |
+| **Component** | `dashboard/src/lib/components/TaskRunner.svelte` and `dashboard/src/app.css`, as text. |
+| **Test data** | The class `button.skip`; the labels `Skip for this start` and `Skip all for this start`; the declarations `padding: 0.6rem 2rem`, `font-size: 1rem`, `font-weight: 600` shared with `button.save`; `background: transparent`; the states `:hover`, `:focus-visible`, `:active`; the variable `--accent-wash` defined as `rgba(31, 111, 235, 0.1)` — the accent `#1f6feb` at a tenth; `margin-left: auto`; and the rule `button.skip + button.skip`. |
+| **Expected** | No Skip carries `class="back"` and every one carries `class="skip"`; the sign-in links still carry `.back` and `.back` still has `text-decoration: none`; the three size declarations appear in both rules; the three states all wash; the labels reduce to exactly the two above; no Skipped text lives inside a button, and `.skip-note` exists; and only the outermost of two adjacent Skips is pushed. |
+| **Why `:focus-visible` is asserted beside `:hover`** | A control that reacts only to a mouse is a control a keyboard cannot see. It costs one selector and it is the kind of thing that is never added later. |
+| **What it found in its own writing** | The first version read the CSS rule as a 400-character slice, and the comment explaining the rule pushed `margin-left: auto` past the end — so the case reported a missing declaration that was there. It reads the rule's own block now. |
+| **Covers** | The reviewer's note of 2026-09-18. |
+
+##### A14-6 — the operator's procedure · **manual**
+
+| | |
+|---|---|
+| **Premise** | Five controls on four panels, a wash at a tenth of an accent, and a line of state under a button. Every one of those is a judgement about how it reads, and this project's rule is that such things are a documented manual check rather than an assertion nobody believes. |
+| **Steps** | Start the stack with a declared repository whose key is missing and at least one sign-in enabled. Look at the deploy-key panel and at a sign-in panel: the Skip should sit at the right edge, the same size as the button beside it, unfilled until the pointer or the keyboard reaches it. Press one and watch the line appear beneath it. Tab to it with the keyboard and confirm the focus is visible. |
+| **Expected** | The row reads as one row; the wash is visible without being loud; the button does not change width when it is pressed. |
+| **Covers** | The reviewer's note of 2026-09-18. |
+
+---
+
+### M-A15 — two runs never prepare the same repository at once
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A15-1 | Integration **unhappy** | The run that gets there first holds the repository | A second run read a clone that was 20 ms old and told the operator it was reachable |
+| A15-2 | Integration **unhappy** | And it never touches the directory it did not get | The `rm -rf` in the failure branch belongs to whoever created the directory |
+| A15-3 | Integration | The lock is released when the run ends, and a later run gets it | A lock nobody releases turns one killed start into a repository nothing can prepare again |
+| A15-4 | Integration **unhappy** | A lock left by a killed run does not seal the repository forever | The lock carries the pid that took it; a lock with no process behind it is not a lock |
+
+#### Detail per case
+
+| | |
+|---|---|
+| **Premise** | `git clone` creates `dest/.git` and writes the remote into it within 20 ms, and a start that waits retries that clone every five seconds. A dashboard Test that lands in one of those windows sees a `.git` whose origin matches and adopts it. Observed by the operator on 2026-09-18, and reproduced with a clone against a repository that cannot exist: `t=20ms: target/.git EXISTS  HEAD=fatal: ambiguous argument 'HEAD'`. |
+| **Why not inspect more carefully** | A clone in flight and a finished clone of an **empty** repository are the same thing on disk: a repository with a remote and no commits. There is no cheap discriminator, so the runs are kept apart instead of being judged after the fact. |
+| **Component** | `lu_take_lock` and the `trap` in `config/scripts/start/git.sh`, with two runs started against one project. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, the lock directory `volumes/_git-secrets/locks/github.com_nocodenation_agent-skills`, and an ssh stand-in that **sleeps two seconds** before refusing, so "while the first run is inside its clone" is a window rather than a coincidence. A15-4 writes the pid `999999` into a lock by hand — a process that does not exist. |
+| **Expected** | The lock exists while the first run works; the second run records *"another run is preparing volumes/repos/… right now"*, leaves the directory alone and asks for no deploy key; the lock is gone when the first run ends; a later run gets through to the clone; and a lock whose pid is dead is taken over rather than obeyed. |
+| **What it leaves uncovered** | A run killed **mid-clone** leaves a half-written `.git` whose origin already matches, and the next run adopts it. The lock prevents overlap, not corpses. Recorded in `BACKLOG.md` rather than papered over. |
+| **Covers** | The operator's observation of 2026-09-18, FR3, FR11. |
+
+---
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -3163,6 +3226,8 @@ with their numbers, because "it reproduced" is worth more than "it looked wrong"
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
+| M-A15 | Integration only | The subject is what two processes do to one directory at the same time, which no level below can see |
+| M-A14 | Contract for everything readable in the source, one manual observation for the rest | The subject is how a control looks, and most of it is a judgement; the parts that are decisions -- which class, which label, which position -- are decisions in a file and are asserted there |
 | M-A13 | Integration for the two script paths, unit for the route, contract for the two components | Three of the five findings were regressions, so each case drives the path that was missed rather than the one that was already covered |
 | M-A12 | Integration only | The subject is when a file is written relative to a wait, which no level below can see |
 | M-A11 | Unit for the restore, contract for the runner and for the convention in the cases | The restore is real decision logic and every branch is covered; the tier's own behaviour needs a live stack, so it is held by scans on every ordinary run and observed by a deliberate one |

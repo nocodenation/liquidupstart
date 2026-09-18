@@ -154,6 +154,56 @@ R_KEY=(); R_MOUNTKEY=(); R_DEST=(); R_CLONED=(); R_ERROR=(); R_SSH=(); R_ASKKEY=
 # full start sees, and names the one to act on here. Finding 1 of the #9 review.
 ONLY_SLUG="${GIT_ONLY_SLUG:-}"
 
+# One run prepares one repository at a time.
+#
+# `git clone` creates dest/.git and writes the remote into it within 20ms, long
+# before it knows whether the remote will answer. A start that is waiting for a
+# deploy key retries that clone every five seconds -- so a dashboard Test landing
+# inside one of those windows found a .git whose origin matched and adopted it.
+# On 2026-09-18 the card told the operator a repository that does not exist was
+# reachable. Nothing on disk, nothing in the manifest, and the message was wrong
+# in the one direction that matters.
+#
+# It cannot be settled by looking harder: a clone in flight and a finished clone
+# of an *empty* repository are the same thing on disk -- a repository with a
+# remote and no commits. So the two runs are kept apart instead.
+#
+# mkdir, because it is the atomic primitive every filesystem has. The pid goes
+# inside, so a lock whose process is gone can be told from one that is held: a
+# run killed between mkdir and its trap must not seal the repository forever.
+LOCKS_DIR="${SECRETS_DIR}/locks"
+mkdir -p "$LOCKS_DIR"
+HELD=()
+
+release_locks() {
+  local d
+  for d in ${HELD[@]+"${HELD[@]}"}; do
+    rm -rf "$d"
+  done
+}
+trap release_locks EXIT
+
+lu_take_lock() {  # lu_take_lock <slug>; 0 when this run may work on it
+  local dir="${LOCKS_DIR}/$1" holder
+  if mkdir "$dir" 2>/dev/null; then
+    printf '%s' "$$" > "${dir}/pid"
+    HELD+=("$dir")
+    return 0
+  fi
+  holder="$(cat "${dir}/pid" 2>/dev/null || true)"
+  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+    return 1
+  fi
+  # Nobody is behind it: take it over rather than leaving the repository sealed.
+  rm -rf "$dir"
+  if mkdir "$dir" 2>/dev/null; then
+    printf '%s' "$$" > "${dir}/pid"
+    HELD+=("$dir")
+    return 0
+  fi
+  return 1
+}
+
 # --- Pass 1: try every clone, and remember what failed ----------------------
 while IFS=$'\t' read -r name url host path access policy slug dir; do
   [[ -n "${slug:-}" ]] || continue
@@ -183,7 +233,12 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   #   Rename a repository in the declaration and the old clone is adopted: every
   #   fetch and publish goes to the old remote with a key nobody registered
   #   there, while the manifest and the dashboard both say "cloned".
-  if [[ -e "${dest}/.git" ]]; then
+  if ! lu_take_lock "$slug"; then
+    # Held by a start that is waiting, or by another Test. Saying so is the whole
+    # point: the alternative was reading a half-written clone and reporting it.
+    error="another run is preparing volumes/repos/${dir} right now; wait for it to finish, then try again"
+    echo "Warning: ${error}" >&2
+  elif [[ -e "${dest}/.git" ]]; then
     # --get, not `git remote get-url`: get-url applies insteadOf rewrites, and
     # this stack writes such a rewrite into every clone it adopts -- so get-url
     # would answer with the declared URL for a clone of something else, which is

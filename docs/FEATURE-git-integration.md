@@ -643,6 +643,55 @@ gaps are cases now, and two of them run `git.sh` the way the dashboard runs it.
 
 *Done when:* `./tests/run.sh m-a13` is green and the whole suite is.
 
+**M-A14 · The five Skips become one control** (2026-09-18)
+
+Asked for by the reviewer once the deploy-key work had put a fifth Skip on the screen. They had been
+built one at a time and looked it. Each wore `class="back"`, which is not a button style at all but
+the **link** style, so five Skips rendered as links of five different widths beside a solid
+"Sign in to Claude" button -- and each sat to the *left* of the action it is the alternative to.
+
+`button.skip` takes its font, padding and radius from `button.save`, so the pair reads as one row,
+and carries no fill: it is the alternative, not the action. Hover, keyboard focus and the press
+itself wash it with `--accent-wash`, the accent at a tenth -- named from the accent rather than typed
+again, so the two cannot drift apart. `.back` was left alone, because real links in the same panels
+wear it.
+
+Two things the request left open, decided with the operator. The label is uniform -- "Skip for this
+start", and "Skip all for this start" for the collective one -- which is what makes the buttons one
+width; so what was skipped is said in a line **beside** the button rather than inside it, where it
+used to be a different width every time. And the position is `margin-left: auto` rather than a
+reordering of the markup: the primary action stays first for a keyboard and a screen reader, and it
+keeps working when a bar holds three controls, as the deploy-key panel does.
+
+*Done when:* `./tests/run.sh m-a14` is green, the dashboard image builds, and the operator has looked
+at it -- because whether it looks right is not a thing a case can answer.
+
+**M-A15 · Two runs never prepare the same repository at once** (2026-09-18)
+
+Found by the operator, pressing **Test this repository** while a start was still waiting for that
+repository's deploy key. The card answered *"github.com/nocodenation/does-not-exist is reachable --
+its clone is in ./volumes/repos/does-not-exist"* -- for a repository that does not exist, whose clone
+was not on disk, and which the manifest recorded as unreachable before and after.
+
+Reproduced: `git clone` creates `dest/.git` and writes the remote into it **within 20 ms**, long
+before it learns whether the remote will answer, and a start that is waiting retries the same clone
+into the same directory every five seconds. The Test landed inside that window, found a `.git` whose
+origin matched, and adopted it -- M-A10's rule *"an existing clone is judged by its origin"* cannot
+tell a finished clone from one that is 20 ms old.
+
+Nor can anything else cheaply: a clone in flight and a finished clone of an **empty** repository are
+the same thing on disk, a repository with a remote and no commits. So the fix is not a better
+inspection. Each run takes a lock per repository -- `mkdir`, the atomic primitive every filesystem
+has -- and a run that does not get it touches nothing and says so: *"another run is preparing
+volumes/repos/... right now"*. The lock carries the pid that took it, so a run killed between the
+mkdir and its trap does not seal the repository forever.
+
+*What the lock does not cover*, recorded rather than hidden: a run killed **mid-clone** leaves a
+half-written `.git` whose origin already matches, and the next run adopts it. The lock prevents two
+runs from overlapping; it does not clean up after a corpse. In `BACKLOG.md`.
+
+*Done when:* `./tests/run.sh m-a15` is green.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

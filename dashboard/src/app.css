@@ -6,6 +6,9 @@
   --text: #1c2430;
   --dim: #5b6675;
   --accent: #1f6feb;
+  /* The accent at a tenth, for the Skip controls' hover, focus and press. Named
+     from the accent rather than typed again so the two cannot drift apart. */
+  --accent-wash: rgba(31, 111, 235, 0.1);
   --accent-dark: #1857bd;
   --warn-bg: #fff4e0;
   --warn-border: #e2b765;
@@ -336,7 +339,9 @@ button.aux:hover {
 button.save {
   background: var(--accent);
   color: #fff;
-  border: none;
+  /* Transparent rather than none: button.skip beside it carries a visible border,
+     and two buttons of the same size must have the same box. */
+  border: 1px solid transparent;
   border-radius: 8px;
   padding: 0.6rem 2rem;
   font-size: 1rem;
@@ -401,6 +406,60 @@ table.steps th {
   align-items: center;
   gap: 0.75rem;
   margin: 1.25rem 0;
+}
+
+/* The way out of a credential screen. Shaped like button.save -- same font, same
+   padding -- so the pair reads as one row of controls, but with no fill: it is
+   the alternative, not the action. It used to wear `.back`, which is the *link*
+   style, so five Skips rendered as links of five different widths beside a solid
+   button, and each sat to the left of the action it is an alternative to.
+   `.back` was left alone because real links in the same panels wear it. */
+button.skip {
+  padding: 0.6rem 2rem;
+  font-size: 1rem;
+  font-weight: 600;
+  background: transparent;
+  color: var(--accent);
+  /* The border is what makes it a button while it is at rest. Without it the
+     control was two blue words beside a link and was only recognisable on hover
+     or when tabbed to -- reported by the operator on 2026-09-18, looking at it.
+     The request was for a transparent *background*, and this keeps that: no
+     fill, an outline, which is what a secondary button next to a filled primary
+     one looks like. */
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  /* Pushed to the end of the bar rather than moved in the markup: the primary
+     action stays first for a keyboard and a screen reader, and this keeps
+     working when a bar holds three controls, as the deploy-key panel does. */
+  margin-left: auto;
+}
+
+/* Two Skips in one bar -- "Skip all" beside "Skip" -- travel together: only the
+   outermost is pushed, or the pair would be split across the whole width. */
+button.skip + button.skip {
+  margin-left: 0;
+}
+
+button.skip:hover,
+button.skip:focus-visible,
+button.skip:active {
+  background: var(--accent-wash);
+}
+
+button.skip:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: transparent;
+}
+
+/* What was skipped, said beside the button instead of inside it: the state used
+   to be the label, which is a different width every time and defeats the
+   uniformity it sits next to. */
+.skip-note {
+  margin: 0.35rem 0 0;
+  color: var(--dim);
+  font-size: 0.85rem;
+  text-align: right;
 }
 
 button.save:disabled {

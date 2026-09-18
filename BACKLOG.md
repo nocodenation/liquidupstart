@@ -425,7 +425,10 @@ review, and moving files under a reviewer mid-review is how a review gets read t
 was done instead — the file and `CLAUDE.md` now say what the handover is, what it is not, and which
 copy is current.
 
-**The repositories card contradicts the key panel while the start is waiting.**
+**~~The repositories card contradicts the key panel while the start is waiting.~~** *Done
+2026-09-17, as M-A12 -- the manifest is written after pass 1 as well, and again at the end.* Kept for
+what it records: the entry below was written as a deferral and built four hours later, which is the
+right order round. The original text:
 `git.sh` writes `volumes/_git-secrets/repositories.json` in its third pass, at the end. So while the
 start waits for a deploy key, the card above it still describes the **last completed** start.
 Observed by the operator on 2026-09-17: the panel said *"Add a deploy key to continue — 1 of 2"* and
@@ -460,3 +463,55 @@ A11-9 refuses a bespoke restore beside it. *And the tier was opt-out:* `./tests/
 `--no-system` turned it off. A default that is safe only when you remember a flag is not a default,
 so `--system` is now how you ask for it, `--no-system` describes the default, and every run says how
 many files it did not run and how to run them.
+
+
+**The start waits on one missing deploy key at a time, and the panel shows it that way.**
+Proposed by the operator on 2026-09-18, watching the queue: *"die 1. Karte wird zu schnell von der
+2. überdeckt ... vielleicht wäre eine Anordnung als Tabs sinnvoller"*. The immediate complaint is
+fixed -- the panel now stays on the repository that was skipped for five seconds, and the queue
+advances afterwards -- but the shape underneath is what produced it.
+
+`git.sh` waits **sequentially**: `lu_wait_for_operator` for repository 1, and only when that is
+settled does it look at repository 2. So an operator who registers the second key while the start is
+waiting on the first sees nothing happen until the first is skipped or registered. Tabs over a
+sequential wait would promise a freedom the process does not have, which is worse than a queue that
+shows its order honestly.
+
+The improvement is the other way round: **wait on every outstanding key at once**, cloning each the
+moment its own key appears, in whatever order the operator works. The panel then becomes a set of
+equals rather than a queue, and tabs are the honest presentation of that rather than decoration.
+
+Not built here because it changes M-A9's wait, which was signed off as a queue, and because four
+questions have to be answered first -- by the operator, before any case is written:
+
+1. **The budget.** It is one deadline for the whole start, refreshed whenever the operator acts. With
+   three keys outstanding at once, does one registration refresh it for all three? Probably yes, but
+   it is a decision.
+2. **The sign-ins.** Claude, Codex, Copilot and Grok wait the same way and are also sequential. Do
+   they join the same tabs -- one place for everything the start is waiting on -- or stay separate?
+   They differ in kind: a sign-in has a flow with a code to paste, a deploy key has a page to visit.
+3. **What "done" means.** With a queue, the panel closes when the last one is settled. With a set,
+   does the panel close as each is settled, or stay until all are, with settled ones marked?
+4. **The log.** The markers were designed for a queue (`::aiw-git-key-required::<slug>`, last one
+   wins). A set needs per-repository state in the log, or the panel and the log will disagree -- which
+   is the shape of half the findings this feature has already produced.
+
+Recorded 2026-09-18.
+
+**A run killed mid-clone leaves a clone that the next run adopts.**
+M-A15 stops two runs from preparing one repository at the same time, which is what produced a
+dashboard Test reporting a repository as reachable while a start was still trying to clone it. It
+does not cover the leftovers: `git clone` writes `dest/.git` and the remote within 20 ms, so a run
+killed in that window leaves a half-written clone whose `remote.origin.url` already matches the
+declaration. The next run sees a `.git` with the right origin and adopts it as a finished clone.
+
+There is no cheap inspection that settles it -- a clone in flight and a finished clone of an **empty**
+repository are the same thing on disk, a repository with a remote and no commits. What would settle
+it is a marker of the run's own: the lock directory could hold the destination it is cloning into,
+and a `.git` whose lock is gone but whose clone never completed could be recognised and removed. That
+is a design decision with an edge case of its own (an operator's half-done manual clone), so it is
+written down rather than guessed at.
+
+Recorded 2026-09-18, when the lock was built. The window is narrow and needs a run to die inside it;
+the reason it is here is that `docs/FEATURE-git-integration.md` and the test specification both say
+it is, and a document that claims a record must have one.
