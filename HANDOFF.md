@@ -659,24 +659,55 @@ between them.
 | Branch | Head | What is on it |
 |---|---|---|
 | `feature/git-integration` (#9) | `e33d1e6` | M-A9 to M-A15 |
-| `feature/liquid-java-extensions` (#10) | `284fec9` | all of it, merged forward |
+| `feature/liquid-java-extensions` (#10) | `5097ec1` | all of it, merged forward, plus this file |
 
-The suite is green: **519 cases** at the levels that need no stack, plus the 32 that run inside the
-dashboard image build, and the image compiles. The stack levels are opt-in since M-A11 — `--system`
-asks for them, and they write to this installation.
+**A head written into this file is stale the moment it is written** — the commit that records it
+cannot name itself, and the two documentation commits that closed 2026-09-18 are exactly what the
+first version of this table missed. Ask instead:
+
+```bash
+git rev-parse --short feature/git-integration feature/liquid-java-extensions
+```
+
+**The suite count depends on the branch, and the number this file carried did not.** It said *519
+cases at the levels that need no stack*, which is #9's number written into the copy that lives on
+#10: the thirty `m-b*` test files exist only on #10, so the default run here selects **132 files**
+and **663 cases**, not 519. Ask rather than read:
+
+```bash
+./tests/run.sh --list | wc -l          # files the default run selects, on whatever is checked out
+```
+
+**And *"levels that need no stack"* is not true on #10.** M-A11 made the stack levels opt-in for the
+M-A and M-OC sides; the M-B cases were written before it and were never reclassified. Twenty of the
+thirty reach into the running stack — `nar-build` inside the `opencode` container — and
+`tests/lib/narfixture.ts` writes into `volumes/nar_extensions` of this working copy. `--system`
+does not hold them back, because they are filed as unit and integration.
+
+**Measured 2026-09-18, 16:44:** `./tests/run.sh` on #10 against a stack started from #9 —
+**597 pass, 66 fail, 663 cases across 132 files**, and every one of the 66 in an `m-b*` file, every
+one of them `nar-build ... (exit 127)`. The stack was one branch behind the tests; nothing was
+broken. The paragraph below understated this as *four* M-B1 cases, which was the number that had
+been looked at rather than the number that fails.
 
 **The running stack belongs to whichever branch was checked out when it started.** `compose.yml`
 bind-mounts files into the containers -- `./config/agents/bin/nar-build.sh` into `opencode`, for one
 -- and a file that does not exist on the checked-out branch simply is not there in the container. On
-2026-09-18 the stack was started from #9, where the Java tooling does not exist, and the four M-B1
-cases that ask `opencode` for its target version then answered `127`: command not found. Nothing was
-broken; the stack was one branch behind the tests. The same suite was green on #10 that morning, with
-a stack started from it. **Before reading a red M-B result here, check which branch the running stack
-came from.**
+2026-09-18 the stack was started from #9, where the Java tooling does not exist, and **66 M-B cases**
+then answered `127`: command not found. Nothing was broken; the stack was one branch behind the
+tests. The discriminator answers in one line —
+`docker compose exec -T opencode sh -lc 'command -v nar-build'` returned `127` while
+`git-repo-info` in the gateway returned a path, which is a #9-shaped stack exactly. The same suite
+was green on #10 that morning, with a stack started from it. **Before reading a red M-B result here,
+check which branch the running stack came from.**
 
-**Three things are waiting on the operator**, and none of them is code:
+**Four things are waiting on the operator**, and none of them is code:
 
-1. **The reply to Timur** on #9, drafted and not yet sent.
+1. **The reply to Timur** on #9, drafted and not yet sent. It is
+   `.pr-drafts/pr9-reply-2026-09-18.md` — untracked and gitignored, so it exists on this machine
+   only, and its first line carries the command that posts it. It answers both reviews of 2026-09-16,
+   the follow-up of 2026-09-18, the styling request, and everything the operator's own runs turned
+   up.
 2. **`docs/FEATURE-memory-midterm.md`**, written 2026-09-18 and untracked: a specification for the
    missing middle memory — short term is the context, long term is the pgvector RAG store, and
    nothing sits between them. OpenClaw already ships three memory plugins, two of them switched off,
@@ -688,6 +719,10 @@ came from.**
    it. Nothing in this repository has ever mounted a Svelte component. Closing that gap means a
    testing library, a new tier and a dependency in the dashboard image; leaving it open means these
    surfaces stay in the operator's eyes. Not decided.
+
+4. **Closing PR #1**, which is a decision rather than an answer — with the reasoning in *Next* item
+   2 above: the intent survives as Forgejo, the implementation in #1 does not. Nobody but the
+   operator can close it, and the reasoning exists nowhere but here.
 
 **And one thing waiting on the operator that has nothing to do with the code:** an OpenAI key was
 printed into a session transcript on 2026-09-18, while reading the OpenCode configuration. The
