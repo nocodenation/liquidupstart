@@ -665,6 +665,15 @@ The suite is green: **519 cases** at the levels that need no stack, plus the 32 
 dashboard image build, and the image compiles. The stack levels are opt-in since M-A11 — `--system`
 asks for them, and they write to this installation.
 
+**The running stack belongs to whichever branch was checked out when it started.** `compose.yml`
+bind-mounts files into the containers -- `./config/agents/bin/nar-build.sh` into `opencode`, for one
+-- and a file that does not exist on the checked-out branch simply is not there in the container. On
+2026-09-18 the stack was started from #9, where the Java tooling does not exist, and the four M-B1
+cases that ask `opencode` for its target version then answered `127`: command not found. Nothing was
+broken; the stack was one branch behind the tests. The same suite was green on #10 that morning, with
+a stack started from it. **Before reading a red M-B result here, check which branch the running stack
+came from.**
+
 **Three things are waiting on the operator**, and none of them is code:
 
 1. **The reply to Timur** on #9, drafted and not yet sent.
