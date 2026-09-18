@@ -14,7 +14,17 @@ import type { RequestHandler } from './$types';
 const SKIP_DIR = join(ENV_DIR, 'volumes', '.start-skip');
 
 // A path element, not a description: anything else could escape the directory.
-const STEP = /^[a-z0-9][a-z0-9._-]{0,64}$/;
+//
+// Upper case, and 200 rather than 65 characters, since 2026-09-18. `lu_git_slug`
+// keeps the case of what was declared -- it only replaces characters outside
+// [A-Za-z0-9._-] -- so a repository under `NoCodeNation` produced the step
+// `git-key-github.com_NoCodeNation_agent-skills`, which this expression refused
+// with 400. `skipStep` swallows the error, so the Skip button stayed enabled and
+// did nothing while the start waited out its deadline, while "Skip all" worked
+// because `git-key-all` happens to be lower case. A long owner and repository
+// name hit the length limit the same way. Neither change widens what this rule
+// is for: no slash, no leading dot, so nothing can leave the skip directory.
+const STEP = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 
 export const POST: RequestHandler = async ({ request }) => {
   const body = await request.json().catch(() => null);

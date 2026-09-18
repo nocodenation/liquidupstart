@@ -605,6 +605,44 @@ provisional record from becoming the final answer.
 
 *Done when:* `./tests/run.sh m-a12` is green, and the whole suite is.
 
+**M-A13 · The follow-up review: three of five findings were regressions of the day before**
+(2026-09-18)
+
+The reviewer re-read the branch at `3aa7dfb` and found five things. Findings 1, 2 and 4 were
+**introduced by the fixes of 2026-09-17**, which is the part worth recording: each of them repaired
+one path through `git.sh` without thinking about the other path that runs through the same lines.
+
+*The Test button is not a start (findings 1 and 2).* M-A12 began writing the manifest after pass 1
+so the card would stop describing the previous start. Under `GIT_ONLY_SLUG` pass 1 holds **one**
+repository, so that write put a one-entry manifest on disk for the length of a Test -- up to seven
+minutes -- during which `git-repo-info` answered "not declared in this stack" for everything else.
+And M-A9's pass 2 waits for a deploy key, which a Test went through as well: the dashboard's own 420s
+timer then killed it, and the operator got *"did not finish within seven minutes"* for a repository
+whose key is simply not registered, which is the one thing a Test exists to report. A Test **is** the
+retry; there is an operator in front of it. Both passes are now skipped when `GIT_ONLY_SLUG` is set.
+
+*A banner is not a marker (finding 4).* The dashboard opened its Claude sign-in panel on the bare
+text `ACTION REQUIRED`, which M-A9 taught the git step to print. On an installation with
+`ENABLE_ANTHROPIC_CLAUDE_CODE=0`, a missing deploy key opened a sign-in panel for a provider that is
+switched off. Copilot, Codex and Grok each print a marker of their own; Claude now does too.
+
+*A guard that was really a spelling rule (finding 3).* The skip route accepted `[a-z0-9]` and 65
+characters, while `lu_git_slug` keeps the case of what was declared. A repository under
+`NoCodeNation` produced a step name the route refused with 400, `skipStep` swallowed the error, and
+the button sat there doing nothing while the start waited out its deadline -- with "Skip all"
+working, because `git-key-all` happens to be lower case. The rule means "one path element", and it
+now says that: upper case allowed, 200 characters, and every refusal that matters kept.
+
+*And half a fix (finding 5).* When two declared repositories share a name, the server side was moved
+to slugs and the card was not, so "Testing...", "Copied" and the result line still keyed on the name.
+
+**What the suite did not have.** Cases for the route, the manifest and the start -- and **none for
+the path the Test button actually takes**, which is where findings 1 and 2 lived. No fixture used a
+capital letter, which is finding 3. No case had two banners in one log, which is finding 4. All four
+gaps are cases now, and two of them run `git.sh` the way the dashboard runs it.
+
+*Done when:* `./tests/run.sh m-a13` is green and the whole suite is.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

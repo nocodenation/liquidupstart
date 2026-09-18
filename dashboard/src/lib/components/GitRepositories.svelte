@@ -3,6 +3,12 @@
 
   let { git } = $props();
 
+  // Keyed by slug throughout, not by name: two declared repositories can share a
+  // repository name -- acme/skills and other/skills are both "skills" -- and then
+  // "Testing…", "Copied" and the result line appear on both cards at once, or on
+  // the wrong one. The server side was moved to slugs when the collision was
+  // found; this is the half that was left behind. Finding 5 of the 2026-09-18
+  // follow-up.
   let testing = $state('');
   let result = $state(null);
   let copied = $state('');
@@ -27,17 +33,17 @@
         document.body.removeChild(ta);
         if (!ok) throw new Error('copy rejected');
       }
-      copied = repo.name;
+      copied = repo.slug;
       timer = setTimeout(() => (copied = ''), 1500);
     } catch {
-      copyFailed = repo.name;
+      copyFailed = repo.slug;
       timer = setTimeout(() => (copyFailed = ''), 2500);
     }
   }
 
   async function test(repo) {
     if (testing) return;
-    testing = repo.name;
+    testing = repo.slug;
     result = null;
     try {
       const res = await fetch('/git-auth', {
@@ -49,13 +55,13 @@
       });
       const body = await res.json().catch(() => ({}));
       result = {
-        name: repo.name,
+        slug: repo.slug,
         ok: body.ok === true,
         message: body.message ?? `The test could not be run (${res.status}).`
       };
       await invalidateAll();
     } catch (e) {
-      result = { name: repo.name, ok: false, message: `The test could not be run: ${e.message}` };
+      result = { slug: repo.slug, ok: false, message: `The test could not be run: ${e.message}` };
     } finally {
       testing = '';
     }
@@ -104,7 +110,7 @@
                 onclick={() => copy(repo)}
                 aria-label={`Copy the deploy key for ${repo.label}`}
               >
-                {copied === repo.name ? 'Copied' : copyFailed === repo.name ? 'Copy failed' : 'Copy'}
+                {copied === repo.slug ? 'Copied' : copyFailed === repo.slug ? 'Copy failed' : 'Copy'}
               </button>
             </div>
             {#if repo.fingerprint}
@@ -123,11 +129,11 @@
               disabled={testing !== ''}
               onclick={() => test(repo)}
             >
-              {testing === repo.name ? 'Testing…' : 'Test this repository'}
+              {testing === repo.slug ? 'Testing…' : 'Test this repository'}
             </button>
           {/if}
 
-          {#if result && result.name === repo.name}
+          {#if result && result.slug === repo.slug}
             <p class="gitresult" class:warn={!result.ok}>{result.message}</p>
           {/if}
         </li>

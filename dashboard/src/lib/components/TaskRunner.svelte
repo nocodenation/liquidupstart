@@ -210,7 +210,10 @@
   // probe could not answer for — otherwise a finished sign-in would show up as
   // "needed" again on every later visit.
   $effect(() => {
-    if (!authOk && authProbe === 'unknown' && task.log.includes('ACTION REQUIRED'))
+    // The marker, not the banner: "ACTION REQUIRED" is printed by any step that
+    // needs the operator, and since the deploy-key work the git step prints it
+    // too -- which opened this panel for a provider that was switched off.
+    if (!authOk && authProbe === 'unknown' && task.log.includes('::aiw-claude-auth-required::'))
       needClaudeAuth = true;
     if (!copilotOk && copilotProbe === 'unknown' && task.log.includes('::aiw-copilot-auth-required::'))
       needCopilotAuth = true;
