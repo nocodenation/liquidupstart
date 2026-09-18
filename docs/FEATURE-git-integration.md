@@ -643,6 +643,29 @@ gaps are cases now, and two of them run `git.sh` the way the dashboard runs it.
 
 *Done when:* `./tests/run.sh m-a13` is green and the whole suite is.
 
+**M-A14 · The five Skips become one control** (2026-09-18)
+
+Asked for by the reviewer once the deploy-key work had put a fifth Skip on the screen. They had been
+built one at a time and looked it. Each wore `class="back"`, which is not a button style at all but
+the **link** style, so five Skips rendered as links of five different widths beside a solid
+"Sign in to Claude" button -- and each sat to the *left* of the action it is the alternative to.
+
+`button.skip` takes its font, padding and radius from `button.save`, so the pair reads as one row,
+and carries no fill: it is the alternative, not the action. Hover, keyboard focus and the press
+itself wash it with `--accent-wash`, the accent at a tenth -- named from the accent rather than typed
+again, so the two cannot drift apart. `.back` was left alone, because real links in the same panels
+wear it.
+
+Two things the request left open, decided with the operator. The label is uniform -- "Skip for this
+start", and "Skip all for this start" for the collective one -- which is what makes the buttons one
+width; so what was skipped is said in a line **beside** the button rather than inside it, where it
+used to be a different width every time. And the position is `margin-left: auto` rather than a
+reordering of the markup: the primary action stays first for a keyboard and a screen reader, and it
+keeps working when a bar holds three controls, as the deploy-key panel does.
+
+*Done when:* `./tests/run.sh m-a14` is green, the dashboard image builds, and the operator has looked
+at it -- because whether it looks right is not a thing a case can answer.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

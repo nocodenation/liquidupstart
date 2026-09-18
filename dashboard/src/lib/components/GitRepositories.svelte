@@ -10,7 +10,11 @@
   // found; this is the half that was left behind. Finding 5 of the 2026-09-18
   // follow-up.
   let testing = $state('');
-  let result = $state(null);
+  // One result per repository, not one for the card. A single slot meant testing
+  // the second repository wiped the first one's answer off the screen -- reported
+  // by the operator on 2026-09-18, testing two in a row. Keyed by slug, like
+  // everything else here, because two declared repositories can share a name.
+  let results = $state({});
   let copied = $state('');
   let copyFailed = $state('');
   let timer;
@@ -44,7 +48,7 @@
   async function test(repo) {
     if (testing) return;
     testing = repo.slug;
-    result = null;
+    results = { ...results, [repo.slug]: null };
     try {
       const res = await fetch('/git-auth', {
         method: 'POST',
@@ -54,14 +58,19 @@
         body: JSON.stringify({ name: repo.slug })
       });
       const body = await res.json().catch(() => ({}));
-      result = {
-        slug: repo.slug,
-        ok: body.ok === true,
-        message: body.message ?? `The test could not be run (${res.status}).`
+      results = {
+        ...results,
+        [repo.slug]: {
+          ok: body.ok === true,
+          message: body.message ?? `The test could not be run (${res.status}).`
+        }
       };
       await invalidateAll();
     } catch (e) {
-      result = { slug: repo.slug, ok: false, message: `The test could not be run: ${e.message}` };
+      results = {
+        ...results,
+        [repo.slug]: { ok: false, message: `The test could not be run: ${e.message}` }
+      };
     } finally {
       testing = '';
     }
@@ -133,8 +142,8 @@
             </button>
           {/if}
 
-          {#if result && result.slug === repo.slug}
-            <p class="gitresult" class:warn={!result.ok}>{result.message}</p>
+          {#if results[repo.slug]}
+            <p class="gitresult" class:warn={!results[repo.slug].ok}>{results[repo.slug].message}</p>
           {/if}
         </li>
       {/each}

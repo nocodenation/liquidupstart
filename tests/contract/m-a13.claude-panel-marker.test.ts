@@ -161,7 +161,10 @@ describe('A13-9 the card is keyed by slug', () => {
   test('and the slug is what it uses instead', () => {
     // The counterpart: a file that simply stopped naming repositories would pass
     // the assertion above.
-    for (const use of ['testing = repo.slug', 'copied = repo.slug', 'slug: repo.slug']) {
+    // `[repo.slug]:` since A14-8 gave every repository its own result slot --
+    // the same rule one level further in, so the assertion follows it rather
+    // than pinning the spelling it had on the day it was written.
+    for (const use of ['testing = repo.slug', 'copied = repo.slug', '[repo.slug]']) {
       expect(CARD).toContain(use);
     }
   });
