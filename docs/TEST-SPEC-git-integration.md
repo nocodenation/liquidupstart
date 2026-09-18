@@ -3190,6 +3190,29 @@ read out of the source; whether it looks right is a person's judgement, and A14-
 
 ---
 
+### M-A15 — two runs never prepare the same repository at once
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A15-1 | Integration **unhappy** | The run that gets there first holds the repository | A second run read a clone that was 20 ms old and told the operator it was reachable |
+| A15-2 | Integration **unhappy** | And it never touches the directory it did not get | The `rm -rf` in the failure branch belongs to whoever created the directory |
+| A15-3 | Integration | The lock is released when the run ends, and a later run gets it | A lock nobody releases turns one killed start into a repository nothing can prepare again |
+| A15-4 | Integration **unhappy** | A lock left by a killed run does not seal the repository forever | The lock carries the pid that took it; a lock with no process behind it is not a lock |
+
+#### Detail per case
+
+| | |
+|---|---|
+| **Premise** | `git clone` creates `dest/.git` and writes the remote into it within 20 ms, and a start that waits retries that clone every five seconds. A dashboard Test that lands in one of those windows sees a `.git` whose origin matches and adopts it. Observed by the operator on 2026-09-18, and reproduced with a clone against a repository that cannot exist: `t=20ms: target/.git EXISTS  HEAD=fatal: ambiguous argument 'HEAD'`. |
+| **Why not inspect more carefully** | A clone in flight and a finished clone of an **empty** repository are the same thing on disk: a repository with a remote and no commits. There is no cheap discriminator, so the runs are kept apart instead of being judged after the fact. |
+| **Component** | `lu_take_lock` and the `trap` in `config/scripts/start/git.sh`, with two runs started against one project. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, the lock directory `volumes/_git-secrets/locks/github.com_nocodenation_agent-skills`, and an ssh stand-in that **sleeps two seconds** before refusing, so "while the first run is inside its clone" is a window rather than a coincidence. A15-4 writes the pid `999999` into a lock by hand — a process that does not exist. |
+| **Expected** | The lock exists while the first run works; the second run records *"another run is preparing volumes/repos/… right now"*, leaves the directory alone and asks for no deploy key; the lock is gone when the first run ends; a later run gets through to the clone; and a lock whose pid is dead is taken over rather than obeyed. |
+| **What it leaves uncovered** | A run killed **mid-clone** leaves a half-written `.git` whose origin already matches, and the next run adopts it. The lock prevents overlap, not corpses. Recorded in `BACKLOG.md` rather than papered over. |
+| **Covers** | The operator's observation of 2026-09-18, FR3, FR11. |
+
+---
+
 ## 6. Coverage policy per milestone
 
 | Milestone | Level of rigour | Rationale |
@@ -3203,6 +3226,7 @@ read out of the source; whether it looks right is a person's judgement, and A14-
 | M-A5 | System + contract | Configuration and rules |
 | M-A7 | End-to-end and integration; one manual case | The joins, which no level below sees. Full branch coverage is meaningless here — there is no branching logic, only handover |
 | **M-A6** | **100% branch coverage** of `git-publish` and of the hook's new rule | It is guardrail logic, and it decides what leaves the stack; the same standard M-A4 earned |
+| M-A15 | Integration only | The subject is what two processes do to one directory at the same time, which no level below can see |
 | M-A14 | Contract for everything readable in the source, one manual observation for the rest | The subject is how a control looks, and most of it is a judgement; the parts that are decisions -- which class, which label, which position -- are decisions in a file and are asserted there |
 | M-A13 | Integration for the two script paths, unit for the route, contract for the two components | Three of the five findings were regressions, so each case drives the path that was missed rather than the one that was already covered |
 | M-A12 | Integration only | The subject is when a file is written relative to a wait, which no level below can see |

@@ -666,6 +666,32 @@ keeps working when a bar holds three controls, as the deploy-key panel does.
 *Done when:* `./tests/run.sh m-a14` is green, the dashboard image builds, and the operator has looked
 at it -- because whether it looks right is not a thing a case can answer.
 
+**M-A15 · Two runs never prepare the same repository at once** (2026-09-18)
+
+Found by the operator, pressing **Test this repository** while a start was still waiting for that
+repository's deploy key. The card answered *"github.com/nocodenation/does-not-exist is reachable --
+its clone is in ./volumes/repos/does-not-exist"* -- for a repository that does not exist, whose clone
+was not on disk, and which the manifest recorded as unreachable before and after.
+
+Reproduced: `git clone` creates `dest/.git` and writes the remote into it **within 20 ms**, long
+before it learns whether the remote will answer, and a start that is waiting retries the same clone
+into the same directory every five seconds. The Test landed inside that window, found a `.git` whose
+origin matched, and adopted it -- M-A10's rule *"an existing clone is judged by its origin"* cannot
+tell a finished clone from one that is 20 ms old.
+
+Nor can anything else cheaply: a clone in flight and a finished clone of an **empty** repository are
+the same thing on disk, a repository with a remote and no commits. So the fix is not a better
+inspection. Each run takes a lock per repository -- `mkdir`, the atomic primitive every filesystem
+has -- and a run that does not get it touches nothing and says so: *"another run is preparing
+volumes/repos/... right now"*. The lock carries the pid that took it, so a run killed between the
+mkdir and its trap does not seal the repository forever.
+
+*What the lock does not cover*, recorded rather than hidden: a run killed **mid-clone** leaves a
+half-written `.git` whose origin already matches, and the next run adopts it. The lock prevents two
+runs from overlapping; it does not clean up after a corpse. In `BACKLOG.md`.
+
+*Done when:* `./tests/run.sh m-a15` is green.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

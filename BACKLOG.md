@@ -287,3 +287,37 @@ the system, and no cause was established. What is established is that the bound 
 at all, and that without `-k` the start then hangs forever. The lesson is not about `-k`:
 **"I cannot reproduce it" is a statement about the attempt, not about the system**, and it is a weak
 reason to defer something whose cost was one flag.
+
+
+**The start waits on one missing deploy key at a time, and the panel shows it that way.**
+Proposed by the operator on 2026-09-18, watching the queue: *"die 1. Karte wird zu schnell von der
+2. überdeckt ... vielleicht wäre eine Anordnung als Tabs sinnvoller"*. The immediate complaint is
+fixed -- the panel now stays on the repository that was skipped for five seconds, and the queue
+advances afterwards -- but the shape underneath is what produced it.
+
+`git.sh` waits **sequentially**: `lu_wait_for_operator` for repository 1, and only when that is
+settled does it look at repository 2. So an operator who registers the second key while the start is
+waiting on the first sees nothing happen until the first is skipped or registered. Tabs over a
+sequential wait would promise a freedom the process does not have, which is worse than a queue that
+shows its order honestly.
+
+The improvement is the other way round: **wait on every outstanding key at once**, cloning each the
+moment its own key appears, in whatever order the operator works. The panel then becomes a set of
+equals rather than a queue, and tabs are the honest presentation of that rather than decoration.
+
+Not built here because it changes M-A9's wait, which was signed off as a queue, and because four
+questions have to be answered first -- by the operator, before any case is written:
+
+1. **The budget.** It is one deadline for the whole start, refreshed whenever the operator acts. With
+   three keys outstanding at once, does one registration refresh it for all three? Probably yes, but
+   it is a decision.
+2. **The sign-ins.** Claude, Codex, Copilot and Grok wait the same way and are also sequential. Do
+   they join the same tabs -- one place for everything the start is waiting on -- or stay separate?
+   They differ in kind: a sign-in has a flow with a code to paste, a deploy key has a page to visit.
+3. **What "done" means.** With a queue, the panel closes when the last one is settled. With a set,
+   does the panel close as each is settled, or stay until all are, with settled ones marked?
+4. **The log.** The markers were designed for a queue (`::aiw-git-key-required::<slug>`, last one
+   wins). A set needs per-repository state in the log, or the panel and the log will disagree -- which
+   is the shape of half the findings this feature has already produced.
+
+Recorded 2026-09-18.
