@@ -1,0 +1,2298 @@
+
+=== Check 1 — the milestone suite (expect EXIT=0) ===
+bun test v1.3.13 (bf2e2cec)
+
+tests/unit/m-b1.target-version.test.ts:
+(pass) the stack is running [85.70ms]
+(pass) B1-3 the resolution answers at all [0.06ms]
+(pass) B1-3 the NiFi version has the shape of a NiFi 2 release [0.11ms]
+(pass) B1-3 the Java major is the one Liquid runs on [0.25ms]
+(pass) B1-3 it says where it read them [0.05ms]
+(pass) B1-3 nothing in the contract declares a NiFi or Java version [0.81ms]
+
+tests/unit/m-b1.version-unreadable.test.ts:
+(pass) the stack is running [85.43ms]
+(pass) B1-4 the build refuses [0.05ms]
+(pass) B1-4 it says the target version could not be read [0.11ms]
+(pass) B1-4 it names what to do next [0.02ms]
+(pass) B1-4 it never names a version it guessed [0.03ms]
+(pass) B1-4 the drop directory is unchanged [0.01ms]
+
+tests/contract/m-b1.command-mounted.test.ts:
+(pass) B1-2 the services that carry git-repo-info are the ones expected
+(pass) B1-2 every one of them mounts nar-build read-only at the same place on PATH [0.45ms]
+(pass) B1-2 the command on disk is an executable POSIX shell script [0.10ms]
+
+tests/contract/m-b1.no-credentials.test.ts:
+(pass) the stack is running [28.47ms]
+(pass) B1-12 the scan itself ran inside the container [0.10ms]
+(pass) B1-12 no /git-secrets and no key material inside the builder [0.07ms]
+(pass) B1-12 no environment key names a credential [0.04ms]
+(pass) B1-12 no credential value from .env is present in its environment [128.64ms]
+
+tests/contract/m-b1.refusal-next-step.test.ts:
+(pass) B1-11 both sources are read and each contributes refusals [0.13ms]
+(pass) B1-11 every refusal names a command, a file to fix or an action [0.13ms]
+(pass) B1-11 no refusal is a single line that ends at the refusal [0.05ms]
+
+tests/contract/m-b1.service-boundary.test.ts:
+(pass) B1-1 the working mounts are declared
+(pass) B1-1 the dependency cache lives under volumes/
+(pass) B1-1 the git secrets are not mounted [0.06ms]
+(pass) B1-1 no credential-bearing .env key is passed to the builder [0.03ms]
+
+tests/integration/m-b1.broken-source.test.ts:
+(pass) the stack is running [87.10ms]
+(pass) B1-7 the build fails [2497.75ms]
+(pass) B1-7 javac's own message reaches the caller [0.10ms]
+(pass) B1-7 the message names the file and the line [0.06ms]
+(pass) B1-7 it names what to do next [0.04ms]
+(pass) B1-7 the drop directory gained nothing
+
+tests/integration/m-b1.dependency-cache.test.ts:
+(pass) the stack is running [88.52ms]
+(pass) B1-9 the first build succeeds and fills the cache [4369.10ms]
+(pass) B1-9 the second build succeeds without downloading anything again [4351.13ms]
+(pass) B1-9 the cache the builds used is the one under volumes/ [0.30ms]
+
+tests/integration/m-b1.own-pom.test.ts:
+(pass) the stack is running [88.07ms]
+(pass) B1-6 the build succeeds [2855.75ms]
+(pass) B1-6 the artifact is named from the author pom, not from the directory [0.18ms]
+(pass) B1-6 the dependency the author declared is in the build [3.04ms]
+
+tests/integration/m-b1.plain-source.test.ts:
+(pass) the stack is running [86.18ms]
+(pass) B1-5 the build succeeds [4341.12ms]
+(pass) B1-5 exactly one NAR appeared in the drop directory [0.10ms]
+(pass) B1-5 the output names the file it wrote [0.05ms]
+(pass) B1-5 the NAR carries the SPI descriptor naming the processor [11.16ms]
+
+tests/integration/m-b1.stale-artifact.test.ts:
+(pass) the stack is running [83.25ms]
+(pass) B1-8 a known-good NAR is in place first [4351.76ms]
+(pass) B1-8 the second build, of a source that does not compile, fails [2484.03ms]
+(pass) B1-8 the earlier artifact is byte-identical [0.07ms]
+(pass) B1-8 no partial or temporary file was left beside it [0.01ms]
+
+tests/system/m-b1.build-in-container.test.ts:
+(pass) the stack is running [88.22ms]
+(pass) B1-10 the command is on the bare PATH in the container an agent works in [132.99ms]
+(pass) B1-10 a build run from inside that container lands the artifact [4349.31ms]
+(pass) B1-10 the answer named the artifact it wrote [0.02ms]
+
+ 55 pass
+ 0 fail
+ 77 expect() calls
+Ran 55 tests across 12 files. [31.33s]
+EXIT=0
+VERDICT yes — 1 milestone suite green — EXIT=0
+
+=== Check 2 — the whole suite (expect EXIT=0) ===
+bun test v1.3.13 (bf2e2cec)
+
+tests/unit/m-a0.runner-discovery.test.ts:
+(pass) A0-1 lists every discovered file and exits 0 [18.04ms]
+(pass) A0-1 restricts discovery to the milestone filter [17.01ms]
+
+tests/unit/m-a0.runner-failure.test.ts:
+(pass) A0-2 a failing test makes the runner exit non-zero [31.53ms]
+(pass) A0-2 a tree of only passing tests exits 0 [26.59ms]
+
+tests/unit/m-a0.runner-filter.test.ts:
+(pass) A0-3 an unmatched milestone filter exits non-zero [13.40ms]
+(pass) A0-3 the matching milestone filter still succeeds [13.83ms]
+(pass) A0-3 a missing test root exits non-zero [13.67ms]
+
+tests/unit/m-a0.runner-skip-system.test.ts:
+(pass) A0-4 system-only selection with --no-system reports SKIPPED [13.39ms]
+(pass) A0-4 --no-system drops only the system files from a mixed tree [16.72ms]
+(pass) A0-4 without the flag the system file is selected [12.35ms]
+
+tests/unit/m-a2.skill-frontmatter.test.ts:
+(pass) A2-1 the file opens with a frontmatter block [0.31ms]
+(pass) A2-1 name and description are declared, and name matches the directory [0.22ms]
+(pass) A2-1 the description says when to reach for the skill [0.04ms]
+
+tests/unit/m-a3.keygen.test.ts:
+(pass) A3-1 the first run creates an ed25519 keypair [4292.02ms]
+(pass) A3-1 the private key is not readable by anyone else [0.12ms]
+(pass) A3-2 a second run leaves the existing key untouched [2331.23ms]
+
+tests/unit/m-a3c.declaration-parse.test.ts:
+(pass) A3c-2 an empty declaration yields no repositories and is not an error [6.88ms]
+(pass) A3c-2 a single entry yields its URL, access and policy [11.54ms]
+(pass) A3c-2 several entries with stray whitespace are all understood [19.22ms]
+(pass) A3c-2 a nested GitLab-style path keeps every segment [11.40ms]
+(pass) A3c-2 a non-GitHub host is accepted, in both SSH URL forms [22.48ms]
+(pass) A3c-3 an entry with a missing field is refused and named [7.71ms]
+(pass) A3c-3 an unknown access word is refused and named [7.93ms]
+(pass) A3c-3 an unknown policy word is refused and named [8.80ms]
+(pass) A3c-3 an https URL is refused as SSH-only, not rewritten [7.98ms]
+(pass) A3c-3 a URL that is neither form is refused and named [7.93ms]
+
+tests/unit/m-a3c.repo-keys.test.ts:
+(pass) A3c-4 each declared repository gets its own key directory
+(pass) A3c-4 the two repositories have different keys [0.35ms]
+(pass) A3c-4 every private key is unreadable by anyone else [0.06ms]
+(pass) A3c-4 a second run leaves every existing key untouched [37.91ms]
+(pass) A3c-4 adding a repository generates only the new key [62.11ms]
+(pass) A3c-10 same repository name on two hosts gets distinct key and clone directories [72.48ms]
+
+tests/unit/m-a3e.clone-failed.test.ts:
+(pass) A3e-4 the repository is reported as declared, not as absent [0.03ms]
+(pass) A3e-4 the answer says the clone is not there [0.12ms]
+(pass) A3e-4 the answer carries the reason from the manifest [0.01ms]
+(pass) A3e-4 the answer names the deploy key to register, by path [0.03ms]
+(pass) A3e-4 it is distinguishable from the undeclared answer [0.06ms]
+(pass) A3e-4 the access and branch policy are still reported [0.02ms]
+
+tests/unit/m-a3e.declared-repository.test.ts:
+(pass) A3e-1 asking about a declared repository succeeds
+(pass) A3e-1 the answer says the repository is declared [0.09ms]
+(pass) A3e-1 the answer names the clone path inside the container [0.02ms]
+(pass) A3e-1 the answer names the access and the branch policy [0.01ms]
+(pass) A3e-1 the answer says the clone is there [0.04ms]
+(pass) A3e-1 the key is named as a path and no key material is printed [0.02ms]
+
+tests/unit/m-a3e.undeclared-repository.test.ts:
+(pass) A3e-2 an undeclared repository is reported as not declared [0.03ms]
+(pass) A3e-2 the answer says the stack holds no key for it [0.09ms]
+(pass) A3e-2 the answer names what the operator must do [0.03ms]
+(pass) A3e-2 the exit code is non-zero so a caller can branch on it [0.04ms]
+(pass) A3e-2 asking nothing is a usage error, not an answer [7.47ms]
+
+tests/unit/m-a3e.url-forms.test.ts:
+(pass) A3e-3 the bare name is recognised [0.06ms]
+(pass) A3e-3 the SSH URL is recognised [0.02ms]
+(pass) A3e-3 the HTTPS URL is recognised
+(pass) A3e-3 all three forms produce the same answer [0.05ms]
+(pass) A3e-3 a different repository on the same host is not matched [12.94ms]
+
+tests/unit/m-a4.access.test.ts:
+(pass) A4-10 access read refuses the push before any branch rule is consulted [77.73ms]
+
+tests/unit/m-a4.branch-policy.test.ts:
+(pass) A4-1 a feature branch under a protected policy is pushed without a word from the hook [407.53ms]
+(pass) A4-2 the default branch under a protected policy is refused, and says what to do instead [387.90ms]
+(pass) A4-3 the default branch under a direct policy is allowed, as content mode requires [466.83ms]
+
+tests/unit/m-a4.currency.test.ts:
+(pass) A4-11 a branch the remote has moved past is refused, and the operator is told how to integrate [656.32ms]
+(pass) A4-12 a branch the remote holds nothing extra on is pushed [596.15ms]
+
+tests/unit/m-a4.fast-forward.test.ts:
+(pass) A4-4 a push that is not a fast-forward is refused, force flag or not [555.13ms]
+(pass) A4-5 a fast-forward push is allowed even when it carries --force [441.45ms]
+
+tests/unit/m-a4.ref-deletion.test.ts:
+(pass) A4-6 deleting a remote branch is refused and the branch survives [191.08ms]
+
+tests/unit/m-a4.repo-default-branch.test.ts:
+(pass) A4-17 the default branch is reported alongside the access and the policy [20.96ms]
+(pass) A4-17 a repository whose default branch is not main is reported as it is [19.91ms]
+(pass) A4-17 a repository that is not cloned claims no default branch [11.07ms]
+
+tests/unit/m-a4.secret-scan.test.ts:
+(pass) A4-7 a commit adding a private key is refused, and the file is named [382.32ms]
+(pass) A4-8 a commit adding a .env file is refused, and the file is named [368.38ms]
+(pass) A4-9 ordinary source and prose pass the scan and reach the remote [494.32ms]
+
+tests/unit/m-a6.publish-guards.test.ts:
+(pass) git-publish --help explains itself and exits 0 [240.97ms]
+(pass) git-publish given more than a remote refuses and shows the usage [229.66ms]
+(pass) git-publish outside a repository says so and names where repositories live [12.78ms]
+(pass) git-publish on a detached HEAD refuses and names the branch to make [299.88ms]
+(pass) git-publish pointed at a remote that does not exist names the command that answers [298.42ms]
+(pass) git-publish in a clone declared read refuses before any branch rule [331.97ms]
+(pass) git-publish in a clone carrying no declaration refuses and names git-repo-info [333.36ms]
+(pass) git-publish with nothing new to send says so and exits 0 [582.79ms]
+(pass) git-publish refuses a commit adding .env, naming the file [358.00ms]
+(pass) a push the hook rejects is reported by git-publish, and spends no token [906.91ms]
+
+tests/unit/m-a6.publish.test.ts:
+(pass) A6-1 git-publish publishes a branch the declaration permits, and says what it published [554.72ms]
+(pass) A6-2 the protected default branch is refused, naming the branch, the policy and the way forward [325.19ms]
+(pass) A6-3 the default branch of a repository declared direct still publishes [531.59ms]
+(pass) A6-4 a branch outside the agent namespace is refused, naming the namespace and the branch [332.05ms]
+(pass) A6-5 a commit carrying a private key is refused before anything reaches the remote [372.18ms]
+
+tests/unit/m-b1.target-version.test.ts:
+(pass) the stack is running [86.97ms]
+(pass) B1-3 the resolution answers at all [0.07ms]
+(pass) B1-3 the NiFi version has the shape of a NiFi 2 release [0.12ms]
+(pass) B1-3 the Java major is the one Liquid runs on [0.05ms]
+(pass) B1-3 it says where it read them [0.02ms]
+(pass) B1-3 nothing in the contract declares a NiFi or Java version [0.72ms]
+
+tests/unit/m-b1.version-unreadable.test.ts:
+(pass) the stack is running [86.51ms]
+(pass) B1-4 the build refuses [0.04ms]
+(pass) B1-4 it says the target version could not be read [0.07ms]
+(pass) B1-4 it names what to do next [0.07ms]
+(pass) B1-4 it never names a version it guessed [0.03ms]
+(pass) B1-4 the drop directory is unchanged
+
+tests/component/m-a1.env-section.test.ts:
+(pass) A1-1 the git section is recognised by the parser [0.06ms]
+(pass) A1-1 both keys are listed as fields carrying help text [0.10ms]
+(pass) A1-2 the section is shown in the dashboard, not hidden or autogenerated [0.04ms]
+
+tests/component/m-a3.dashboard-key.test.ts:
+(pass) A3-6 the endpoint returns the public key [9.22ms]
+(pass) A3-6 the private key never appears in the response [6.51ms]
+(pass) A3-6 a missing key is reported rather than thrown [2.72ms]
+
+tests/component/m-a3c.dashboard-repositories.test.ts:
+(pass) A3c-12 every declared repository appears exactly once [19.63ms]
+(pass) A3c-12 each repository carries its own public key, labelled [18.03ms]
+(pass) A3c-12 the access and branch policy are carried through to the operator [18.02ms]
+(pass) A3c-12 a repository whose clone failed still shows its key and the reason [18.71ms]
+(pass) A3c-12 no private key material appears in the response [18.33ms]
+(pass) A3c-12 a project with no manifest reports no repositories rather than throwing [0.48ms]
+
+tests/component/m-a3c.env-section.test.ts:
+(pass) A3c-1 GIT_REPOSITORIES is a field of the git section
+(pass) A3c-1 the field carries help text explaining the entry format [0.07ms]
+(pass) A3c-1 the section stays visible in the dashboard [0.02ms]
+
+tests/component/m-a6.hook-token.test.ts:
+(pass) A6-6 a raw push with no token is refused, and told what to run instead [357.13ms]
+(pass) A6-7 a push carrying a valid token is permitted, and the token is spent [537.56ms]
+(pass) A6-8 a second push cannot ride on the token the first one consumed [689.58ms]
+(pass) A6-9 a push to the protected default branch is refused for being that, not for its path [356.98ms]
+
+tests/component/m-a6.operator-repository.test.ts:
+(pass) A6-10 the project root is a git repository [16.43ms]
+(pass) A6-10 the project root does not point at the stack's shared hook [8.64ms]
+(pass) A6-10 the project root carries no declaration, so no rule of this feature reads it [16.76ms]
+
+tests/contract/m-a1.env-contract.test.ts:
+(pass) A1-3 the keys are declared in .env.example [0.20ms]
+(pass) A1-3 every key reaches every agent service through compose [0.58ms]
+(pass) A1-3 the workspace is mounted into every agent service [0.09ms]
+(pass) A1-3 naming stays host-agnostic — no GITHUB_ prefixed configuration keys [0.22ms]
+
+tests/contract/m-a2.skill-content.test.ts:
+(pass) A2-2 every load-bearing term is still present in the skill [0.15ms]
+(pass) A2-2 the skill is substantial enough to carry those rules [0.07ms]
+
+tests/contract/m-a3.known-hosts.test.ts:
+(pass) A3-3 known_hosts is seeded with github.com entries [0.56ms]
+(pass) A3-3 every seeded github.com key is one GitHub publishes [361.03ms]
+(pass) A3-4 host key checking is never disabled anywhere in the repository [202.82ms]
+
+tests/contract/m-a3.wiring.test.ts:
+(pass) A3-5 the secrets directory is mounted into every agent service [0.32ms]
+(pass) A3-5 every agent service gets an ssh command naming known_hosts and a per-clone identity [0.33ms]
+
+tests/contract/m-a3b.skill-source-rule.test.ts:
+(pass) A3b-2 an unreachable repository must be reported as unreachable [0.07ms]
+(pass) A3b-2 describing a repository from another source is forbidden without saying so [0.05ms]
+(pass) A3b-2 the rule names the shapes the substitution actually took
+
+tests/contract/m-a3b.skill-url-form.test.ts:
+(pass) A3b-1 the skill names the URL form that works and the one that does not [0.12ms]
+(pass) A3b-1 the rules the skill already carried are still there [0.08ms]
+
+tests/contract/m-a3c.instead-of.test.ts:
+(pass) A3c-11 the start produced both clones [0.26ms]
+(pass) A3c-11 each clone carries exactly one rewrite, naming its own remote [0.22ms]
+(pass) A3c-11 the rewrite maps this repository https URL onto its SSH URL [0.10ms]
+(pass) A3c-11 no global rewrite of a whole host exists anywhere in the tree [171.53ms]
+
+tests/contract/m-a3c.ssh-command.test.ts:
+(pass) A3c-5 every agent service still declares a GIT_SSH_COMMAND [0.47ms]
+(pass) A3c-5 no GIT_SSH_COMMAND names one key for every remote [0.25ms]
+(pass) A3c-5 the identity is taken from the clone that is being worked on [0.25ms]
+(pass) A3c-5 the host-key policy and the timeouts survive the change [0.31ms]
+
+tests/contract/m-a3c.ssh-isolation.test.ts:
+(pass) A3c-8 both ssh invocations are present [0.04ms]
+(pass) A3c-8 neither can fall back to the operator ssh config or agent [0.05ms]
+(pass) A3c-8 host key checking survives the isolation
+
+tests/contract/m-a3d.body-unchanged.test.ts:
+(pass) A3d-3 every rule from M-A2 and M-A3b is still in the body [0.09ms]
+(pass) A3d-3 the body is still substantial [0.01ms]
+
+tests/contract/m-a3d.description-occasions.test.ts:
+(pass) A3d-1 the description names the read-side occasions [0.50ms]
+(pass) A3d-1 the versioning occasions it already carried are still there [0.06ms]
+(pass) A3d-1 the description still says when to reach for the skill
+(pass) A3d-2 the workspace path is in the description itself [0.01ms]
+(pass) A3d-2 the path is not only in the body [0.01ms]
+
+tests/contract/m-a3e.body-unchanged.test.ts:
+(pass) A3e-6 every rule from M-A2, M-A3b and M-A3d is still in the body [0.13ms]
+(pass) A3e-6 the body is still substantial [0.02ms]
+
+tests/contract/m-a3e.skill-points-at-command.test.ts:
+(pass) A3e-5 the skill names the command as the way to find out about a repository
+(pass) A3e-5 the command is named in the description, where it is read before the file is opened [0.17ms]
+(pass) A3e-5 the credential message is described as meaning the repository is undeclared [0.01ms]
+(pass) A3e-5 the message is no longer explained as the repository being private or missing [0.06ms]
+(pass) A3e-5 the skill does not teach a URL taxonomy for the agent to apply [0.13ms]
+
+tests/contract/m-a4.clones-governed.test.ts:
+(pass) A4-16 the shared hook is present and executable [0.02ms]
+(pass) A4-16 every clone in the workspace still points at it [25.76ms]
+
+tests/contract/m-a4.hooks-path.test.ts:
+(pass) A4-13 both declared clones point at the shared hook directory [17.57ms]
+(pass) A4-13 a clone made after the start script is governed without a further step [46.42ms]
+(pass) A4-13 the shared hook is one file, and it is executable [0.15ms]
+
+tests/contract/m-a5.nested-clone.test.ts:
+(pass) A5-8 volumes/repos is ignored, by the volumes/ rule in .gitignore [11.35ms]
+(pass) A5-8 nothing under volumes/ shows in the operator's status [10.90ms]
+(pass) A5-8 a dry-run clean skips every nested repository rather than offering to remove it [18.80ms]
+
+tests/contract/m-a5.skill-build-files.test.ts:
+(pass) A5-7 the body has a section about working on the stack's own repository [0.03ms]
+(pass) A5-7 that section names the build files and says what breaking them costs [0.10ms]
+
+tests/contract/m-a5.write-declaration.test.ts:
+(pass) A5-1 the start clones both repositories of the mixed declaration [0.11ms]
+(pass) A5-1 the write-capable clone carries access write where the hook reads it [17.11ms]
+(pass) A5-1 the read-only clone still carries access read, so the two are not written from one template [16.15ms]
+(pass) A5-1 the manifest reports the same access per repository as the clones carry [0.22ms]
+
+tests/contract/m-a6.command-mounted.test.ts:
+(pass) A6-12 the services that carry git-repo-info are the ones expected
+(pass) A6-12 every one of them mounts git-publish read-only at the same place on PATH [0.17ms]
+(pass) A6-12 the command on disk is an executable POSIX shell script [0.05ms]
+
+tests/contract/m-a6.refusal-next-step.test.ts:
+(pass) A6-11 both sources are read and each contributes refusals
+(pass) A6-11 every refusal names a command, a branch form or an action [0.15ms]
+(pass) A6-11 no refusal is a single line that ends at the refusal [0.05ms]
+
+tests/contract/m-b1.command-mounted.test.ts:
+(pass) B1-2 the services that carry git-repo-info are the ones expected
+(pass) B1-2 every one of them mounts nar-build read-only at the same place on PATH [0.09ms]
+(pass) B1-2 the command on disk is an executable POSIX shell script [0.13ms]
+
+tests/contract/m-b1.no-credentials.test.ts:
+(pass) the stack is running [29.40ms]
+(pass) B1-12 the scan itself ran inside the container [0.05ms]
+(pass) B1-12 no /git-secrets and no key material inside the builder [0.08ms]
+(pass) B1-12 no environment key names a credential [0.03ms]
+(pass) B1-12 no credential value from .env is present in its environment [127.08ms]
+
+tests/contract/m-b1.refusal-next-step.test.ts:
+(pass) B1-11 both sources are read and each contributes refusals [0.03ms]
+(pass) B1-11 every refusal names a command, a file to fix or an action [0.02ms]
+(pass) B1-11 no refusal is a single line that ends at the refusal [0.06ms]
+
+tests/contract/m-b1.service-boundary.test.ts:
+(pass) B1-1 the working mounts are declared
+(pass) B1-1 the dependency cache lives under volumes/ [0.13ms]
+(pass) B1-1 the git secrets are not mounted
+(pass) B1-1 no credential-bearing .env key is passed to the builder [0.02ms]
+
+tests/integration/m-a0.dashboard-suite.test.ts:
+(pass) A0-6 the dashboard suite runs through the harness [41.86ms]
+
+tests/integration/m-a0.stack-guard.test.ts:
+(pass) A0-5 an absent container makes the guard throw with a legible message [42.60ms]
+(pass) A0-5 the guard passes for the agent containers when the stack is up [117.93ms]
+
+tests/integration/m-a1.workspace-dir.test.ts:
+(pass) A1-4 the first run creates the workspace with mode 777 [3834.24ms]
+(pass) A1-4 a second run is a no-op and still exits 0 [2104.03ms]
+(pass) A1-5 a deleted workspace is recreated by the next run [2096.06ms]
+(pass) A1-4 the live workspace exists and matches the same mode [0.13ms]
+
+tests/integration/m-a2.skill-guard.test.ts:
+(pass) A2-4 a missing skill file throws rather than returning empty content [136.57ms]
+(pass) A2-4 the failure names the path and points at the mount [140.79ms]
+
+tests/integration/m-a3c.clone-on-start.test.ts:
+(pass) A3c-6 the declared repository is in the workspace after the start [0.23ms]
+(pass) A3c-6 a second start neither re-clones it nor disturbs the working tree [181.83ms]
+(pass) A3c-7 a repository whose key is not registered is reported, and the start still succeeds [308.44ms]
+(pass) A3c-7 the workspace simply does not contain the repository that failed [0.22ms]
+(pass) A3c-7 the repository that failed still has a key waiting to be registered [0.12ms]
+
+tests/integration/m-a5.mixed-keys.test.ts:
+(pass) A5-2 the start generated a key for each repository of the mixed declaration [0.50ms]
+(pass) A5-2 each key lives under its own slug directory, mode 600 [0.12ms]
+(pass) A5-2 the write-capable repository has a key distinct from the read-only one [0.11ms]
+(pass) A5-2 neither private key file is a copy of the other [0.10ms]
+
+tests/integration/m-b1.broken-source.test.ts:
+(pass) the stack is running [85.60ms]
+(pass) B1-7 the build fails [2416.53ms]
+(pass) B1-7 javac's own message reaches the caller [0.11ms]
+(pass) B1-7 the message names the file and the line [0.08ms]
+(pass) B1-7 it names what to do next [0.02ms]
+(pass) B1-7 the drop directory gained nothing [0.01ms]
+
+tests/integration/m-b1.dependency-cache.test.ts:
+(pass) the stack is running [85.83ms]
+(pass) B1-9 the first build succeeds and fills the cache [4380.29ms]
+(pass) B1-9 the second build succeeds without downloading anything again [4324.04ms]
+(pass) B1-9 the cache the builds used is the one under volumes/ [0.02ms]
+
+tests/integration/m-b1.own-pom.test.ts:
+(pass) the stack is running [84.85ms]
+(pass) B1-6 the build succeeds [2898.41ms]
+(pass) B1-6 the artifact is named from the author pom, not from the directory [0.03ms]
+(pass) B1-6 the dependency the author declared is in the build [2.77ms]
+
+tests/integration/m-b1.plain-source.test.ts:
+(pass) the stack is running [85.48ms]
+(pass) B1-5 the build succeeds [4401.62ms]
+(pass) B1-5 exactly one NAR appeared in the drop directory [0.15ms]
+(pass) B1-5 the output names the file it wrote [0.03ms]
+(pass) B1-5 the NAR carries the SPI descriptor naming the processor [10.23ms]
+
+tests/integration/m-b1.stale-artifact.test.ts:
+(pass) the stack is running [85.90ms]
+(pass) B1-8 a known-good NAR is in place first [4409.14ms]
+(pass) B1-8 the second build, of a source that does not compile, fails [2449.35ms]
+(pass) B1-8 the earlier artifact is byte-identical [0.08ms]
+(pass) B1-8 no partial or temporary file was left beside it [0.05ms]
+
+tests/system/m-a1.host-roundtrip.test.ts:
+(pass) A1-8 the host sees a repository the container created [266.96ms]
+
+tests/system/m-a1.identity.test.ts:
+(pass) A1-9 the feature needs no entry in the operator configuration [0.43ms]
+(pass) A1-6 openclaw-gateway commits into the workspace under the configured identity [327.60ms]
+(pass) A1-7 opencode commits under the same identity despite a different HOME [595.52ms]
+
+tests/system/m-a1.no-confinement.test.ts:
+(pass) A1-10 writing outside the workspace is not prevented by this milestone [136.41ms]
+(pass) A1-10 the workspace is not a mount the agent is locked into [134.79ms]
+
+tests/system/m-a2.skill-visible.test.ts:
+(pass) A2-3 openclaw-gateway can read the git skill [132.49ms]
+(pass) A2-3 opencode can read the same skill at its own path [137.00ms]
+(pass) A2-3 both harnesses see identical content [266.74ms]
+
+tests/system/m-a3.github-reach.test.ts:
+(pass) the stack is running [70.09ms]
+(pass) A3-7 openclaw-gateway gets a definite answer from GitHub inside the time bound [893.37ms]
+(pass) A3-7 openclaw-gateway is never asked to accept a host key [1036.69ms]
+(pass) A3-7 opencode gets a definite answer from GitHub inside the time bound [763.72ms]
+(pass) A3-7 opencode is never asked to accept a host key [926.26ms]
+(pass) A3-8 a key GitHub does not know is denied rather than hanging [1046.23ms]
+
+tests/system/m-a3.host-key.test.ts:
+(pass) the stack is running [64.43ms]
+(pass) A3-9 a host absent from known_hosts is rejected on host key grounds [534.03ms]
+(pass) A3-9 the refusal is not a prompt waiting for an answer [524.02ms]
+
+tests/system/m-a3.key-containment.test.ts:
+(pass) the stack is running [64.06ms]
+(pass) A3-10 the key is present where it belongs [135.34ms]
+(pass) A3-10 no copy exists in the workspace or the rendered configuration [320.14ms]
+(pass) A3-10 no copy has leaked outside the secrets mount inside the container [384.50ms]
+
+tests/system/m-a3b.skill-visible.test.ts:
+(pass) the stack is running [60.25ms]
+(pass) A3b-3 openclaw-gateway sees the URL rule and the source rule [134.77ms]
+(pass) A3b-3 opencode sees the URL rule and the source rule [130.30ms]
+(pass) A3b-3 both harnesses see identical content [260.79ms]
+
+tests/system/m-a3c.clone-identity.test.ts:
+(pass) the stack is running [58.88ms]
+(pass) A3c-8 the fixture clones were produced by the start script [0.11ms]
+(pass) A3c-8 agent-skills names its own key in its own configuration [143.22ms]
+(pass) A3c-8 agent-skills keeps the plain git@host:owner/repo.git remote URL [138.76ms]
+(pass) A3c-8 liquidupstart names its own key in its own configuration [139.06ms]
+(pass) A3c-8 liquidupstart keeps the plain git@host:owner/repo.git remote URL [138.69ms]
+(pass) A3c-9 agent-skills offers its own key to GitHub, inside the time bound [1160.96ms]
+(pass) A3c-9 the command compose ships picks up agent-skills's key, not a stack-wide one [1212.37ms]
+(pass) A3c-9 liquidupstart offers its own key to GitHub, inside the time bound [1172.61ms]
+(pass) A3c-9 the command compose ships picks up liquidupstart's key, not a stack-wide one [1085.34ms]
+
+tests/system/m-a3d.skill-visible.test.ts:
+(pass) the stack is running [67.92ms]
+(pass) A3d-4 openclaw-gateway sees the read-side occasions and the workspace path [138.25ms]
+(pass) A3d-4 opencode sees the read-side occasions and the workspace path [130.43ms]
+(pass) A3d-4 both harnesses see an identical description [260.36ms]
+
+tests/system/m-a3e.command-in-harnesses.test.ts:
+(pass) the stack is running [59.07ms]
+(pass) A3e-7 git-repo-info is on PATH in openclaw-gateway [130.01ms]
+(pass) A3e-7 openclaw-gateway gets the declared repository answered [149.19ms]
+(pass) A3e-7 openclaw-gateway reports an undeclared repository as undeclared [140.08ms]
+(pass) A3e-7 git-repo-info is on PATH in opencode [129.75ms]
+(pass) A3e-7 opencode gets the declared repository answered [144.81ms]
+(pass) A3e-7 opencode reports an undeclared repository as undeclared [131.82ms]
+(pass) A3e-7 both harnesses give the same answer for the same repository [290.34ms]
+(pass) A3e-7 the answer names no key material [317.85ms]
+
+tests/system/m-a4.hook-in-container.test.ts:
+(pass) the stack is running [32.28ms]
+(pass) A4-14 the shared hook is installed in the container and the real clone points at it [141.91ms]
+(pass) A4-14 an empty commit does not reach the default branch of the real repository [5426.67ms]
+(pass) A4-14 a clone made inside the container is governed, and its protected default branch is refused [1054.53ms]
+
+tests/system/m-a5.write-clone.test.ts:
+(pass) the stack is running [31.28ms]
+(pass) A5-3 the write-capable clone exists in the container and is governed by the hook [0.05ms]
+(pass) A5-3 an agent commits on a feature branch inside the clone, under the configured identity [548.31ms]
+(pass) A5-3 the operator's own working copy is where it was after the commit [21.55ms]
+(pass) A5-4 a push to the protected default branch is refused by the hook, not by a host [354.04ms]
+(pass) A5-5 a push whose commits add .env is refused by the secret scan, and nothing reaches the remote [374.18ms]
+(pass) A5-6 the operator's working copy is untouched after the system cases [22.30ms]
+
+tests/system/m-a6.publish-in-container.test.ts:
+(pass) the stack is running [32.03ms]
+(pass) A6-12 git-publish is on PATH in openclaw-gateway, under that name [136.51ms]
+(pass) A6-12 git-publish is on PATH in opencode, under that name [131.91ms]
+(pass) A6-12 the write-capable clone is in place and governed by the hook [0.04ms]
+(pass) A6-12 an agent publishes through the command, and the branch reaches the remote [508.40ms]
+(pass) A6-12 a raw push from the same clone is refused and told to use the command [369.15ms]
+
+tests/system/m-b1.build-in-container.test.ts:
+(pass) the stack is running [93.65ms]
+(pass) B1-10 the command is on the bare PATH in the container an agent works in [133.88ms]
+(pass) B1-10 a build run from inside that container lands the artifact [4481.04ms]
+(pass) B1-10 the answer named the artifact it wrote [0.04ms]
+
+ 306 pass
+ 0 fail
+ 732 expect() calls
+Ran 306 tests across 79 files. [97.29s]
+--- dashboard suite ---
+bun test v1.3.13 (bf2e2cec)
+
+src/lib/env-file.test.ts:
+(pass) parseExample > splits sections by banners and parses behavior markers [0.09ms]
+(pass) parseExample > attaches contiguous comments above a key as help [0.09ms]
+(pass) parseExample > recognizes both subheading styles [0.01ms]
+(pass) parseExample > remembers defaults and quoting [0.04ms]
+(pass) parseExample > parses a CRLF-terminated file identically to LF [0.14ms]
+(pass) parseEnvValues > parses quoted, unquoted and inline-commented values; last occurrence wins [0.06ms]
+(pass) renderEnv > round-trips the fixture unchanged when values equal the defaults [0.13ms]
+(pass) renderEnv > substitutes values and appends custom keys [0.09ms]
+(pass) renderEnv > keeps inline comments on substituted lines [0.07ms]
+(pass) renderEnv > substitutes values into a CRLF example and emits LF [0.04ms]
+(pass) formatValue > quotes when needed [0.06ms]
+(pass) env-meta > classifies build-affecting keys [0.04ms]
+(pass) env-meta > picks input widgets [0.07ms]
+(pass) env-meta > collapse defaults: no collapsed sections; PER-IMAGE OVERRIDES subheading collapses [0.02ms]
+(pass) env-meta > section descriptions: keyword match with first-sentence fallback [0.14ms]
+(pass) env-meta > strips marker suffixes from display titles [0.03ms]
+(pass) real .env.example > round-trips byte-identically [0.44ms]
+(pass) real .env.example > finds the marked sections with their fields [0.41ms]
+(pass) real .env.example > finds every KEY= line of the file as a field [0.41ms]
+
+src/lib/server/project.test.ts:
+(pass) app password > paths resolve under the project volumes dir [0.41ms]
+(pass) app password > reads null when the file does not exist [0.05ms]
+(pass) app password > writes the trimmed value with a trailing newline at mode 0600 [0.75ms]
+(pass) app password > creates the directory when it is missing [0.35ms]
+(pass) app password > reads back the trimmed value [0.10ms]
+(pass) app password > reads null when the file holds only whitespace [0.08ms]
+(pass) app password > reads null instead of throwing when the path is a directory [0.22ms]
+(pass) app password > an in-place rewrite replaces the previous value [0.19ms]
+
+ 27 pass
+ 0 fail
+ 71 expect() calls
+Ran 27 tests across 2 files. [23.00ms]
+EXIT=0
+VERDICT yes — 2 no regression across earlier milestones — EXIT=0
+
+=== Check 3 — a build by hand, from the container an agent works in ===
+BUILD EXIT=0
+wrote /nar_extensions/b1-hand-nar-1.0.0.nar
+source /repos/.b1-hand
+pom synthesised
+downloads 0
+cache /m2
+
+Liquid loads NARs from /nar_extensions at startup only. Ask the operator to restart it:
+docker compose restart liquid
+NAR: volumes/nar_extensions/b1-hand-nar-1.0.0.nar
+SPI DESCRIPTOR: org.nocodenation.probe.ProbeProcessor
+VERDICT yes — 3 a hand build from the agent's container produces a loadable NAR — exit 0, b1-hand-nar-1.0.0.nar, descriptor names ProbeProcessor
+
+=== Check 4 — the unhappy path by hand, and the artifact already there ===
+BUILD EXIT=1
+[ERROR] /tmp/tmp.Fy8lBJo7gQ/project/processors/src/main/java/org/nocodenation/probe/ProbeProcessor.java:[9,89] incompatible types: java.lang.String cannot be converted to int
+[ERROR] /tmp/tmp.Fy8lBJo7gQ/project/processors/src/main/java/org/nocodenation/probe/ProbeProcessor.java:[9,89] incompatible types: java.lang.String cannot be converted to int
+ARTIFACT SHA BEFORE: 4dbe001e628ab4fd62d4a84e25418db40f336191498e0bd091c18f3fc2b920d9 
+ARTIFACT SHA AFTER:  4dbe001e628ab4fd62d4a84e25418db40f336191498e0bd091c18f3fc2b920d9 
+DIRECTORY BEFORE: . .. b1-hand-nar-1.0.0.nar 
+DIRECTORY AFTER:  . .. b1-hand-nar-1.0.0.nar 
+VERDICT yes — 4 a failed build leaves the drop directory byte-for-byte as it was — non-zero exit, 'incompatible types' in the output, same SHA-256 and same listing
+
+=== Check 5 — negative control: does nar-build decide? ===
+bun test v1.3.13 (bf2e2cec)
+
+tests/unit/m-b1.target-version.test.ts:
+(pass) the stack is running [85.34ms]
+26 | stackGuard(['liquid', 'nar_builder', 'opencode']);
+27 | 
+28 | const resolved = target();
+29 | 
+30 | test('B1-3 the resolution answers at all', () => {
+31 |   expect(resolved.code).toBe(0);
+                             ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 90
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:31:25)
+(fail) B1-3 the resolution answers at all [0.28ms]
+30 | test('B1-3 the resolution answers at all', () => {
+31 |   expect(resolved.code).toBe(0);
+32 | });
+33 | 
+34 | test('B1-3 the NiFi version has the shape of a NiFi 2 release', () => {
+35 |   expect(targetField(resolved.stdout, 'nifi_version')).toMatch(/^2\.\d+\.\d+$/);
+                                                            ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^2\.\d+\.\d+$/
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:35:56)
+(fail) B1-3 the NiFi version has the shape of a NiFi 2 release [1.59ms]
+34 | test('B1-3 the NiFi version has the shape of a NiFi 2 release', () => {
+35 |   expect(targetField(resolved.stdout, 'nifi_version')).toMatch(/^2\.\d+\.\d+$/);
+36 | });
+37 | 
+38 | test('B1-3 the Java major is the one Liquid runs on', () => {
+39 |   expect(targetField(resolved.stdout, 'java_major')).toBe('21');
+                                                          ^
+error: expect(received).toBe(expected)
+
+Expected: "21"
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:39:54)
+(fail) B1-3 the Java major is the one Liquid runs on [1.20ms]
+39 |   expect(targetField(resolved.stdout, 'java_major')).toBe('21');
+40 |   expect(targetField(resolved.stdout, 'java_version')).toMatch(/^21\./);
+41 | });
+42 | 
+43 | test('B1-3 it says where it read them', () => {
+44 |   expect(targetField(resolved.stdout, 'read_from')).toContain('liquid');
+                                                         ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "liquid"
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:44:53)
+(fail) B1-3 it says where it read them [0.27ms]
+(pass) B1-3 nothing in the contract declares a NiFi or Java version [0.82ms]
+
+tests/unit/m-b1.version-unreadable.test.ts:
+(pass) the stack is running [91.48ms]
+(pass) B1-4 the build refuses [0.08ms]
+33 | test('B1-4 the build refuses', () => {
+34 |   expect(run.code).not.toBe(0);
+35 | });
+36 | 
+37 | test('B1-4 it says the target version could not be read', () => {
+38 |   expect(run.output.toLowerCase()).toContain('target version');
+                                        ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "target version"
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.version-unreadable.test.ts:38:36)
+(fail) B1-4 it says the target version could not be read [0.13ms]
+38 |   expect(run.output.toLowerCase()).toContain('target version');
+39 |   expect(run.output).toMatch(/could not be read|not be read/);
+40 | });
+41 | 
+42 | test('B1-4 it names what to do next', () => {
+43 |   expect(run.output).toMatch(/start\.sh|docker compose (start|restart|up)/);
+                          ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /start\.sh|docker compose (start|restart|up)/
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.version-unreadable.test.ts:43:22)
+(fail) B1-4 it names what to do next [0.04ms]
+(pass) B1-4 it never names a version it guessed [0.07ms]
+(pass) B1-4 the drop directory is unchanged [0.03ms]
+
+tests/contract/m-b1.command-mounted.test.ts:
+(pass) B1-2 the services that carry git-repo-info are the ones expected
+(pass) B1-2 every one of them mounts nar-build read-only at the same place on PATH [0.24ms]
+(pass) B1-2 the command on disk is an executable POSIX shell script [0.12ms]
+
+tests/contract/m-b1.no-credentials.test.ts:
+(pass) the stack is running [29.02ms]
+(pass) B1-12 the scan itself ran inside the container [0.09ms]
+(pass) B1-12 no /git-secrets and no key material inside the builder [0.05ms]
+(pass) B1-12 no environment key names a credential [0.05ms]
+(pass) B1-12 no credential value from .env is present in its environment [124.62ms]
+
+tests/contract/m-b1.refusal-next-step.test.ts:
+59 | const all = SOURCES.flatMap(refusals);
+60 | 
+61 | test('B1-11 both sources are read and each contributes refusals', () => {
+62 |   for (const file of SOURCES) {
+63 |     const short = file.split('/').slice(-2).join('/');
+64 |     expect(all.filter((r) => r.file === short).length).toBeGreaterThan(0);
+                                                            ^
+error: expect(received).toBeGreaterThan(expected)
+
+Expected: > 0
+Received: 0
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/contract/m-b1.refusal-next-step.test.ts:64:56)
+(fail) B1-11 both sources are read and each contributes refusals [0.07ms]
+(pass) B1-11 every refusal names a command, a file to fix or an action [0.14ms]
+(pass) B1-11 no refusal is a single line that ends at the refusal [0.04ms]
+
+tests/contract/m-b1.service-boundary.test.ts:
+(pass) B1-1 the working mounts are declared [0.03ms]
+(pass) B1-1 the dependency cache lives under volumes/ [0.02ms]
+(pass) B1-1 the git secrets are not mounted
+(pass) B1-1 no credential-bearing .env key is passed to the builder [0.04ms]
+
+tests/integration/m-b1.broken-source.test.ts:
+(pass) the stack is running [83.64ms]
+33 | afterAll(() => dropFixture(fx));
+34 | 
+35 | test('B1-7 the build fails', () => {
+36 |   run = narBuild('opencode', fx.container);
+37 |   after = dropContents();
+38 |   expect(run.output).toBeTruthy();
+                          ^
+error: expect(received).toBeTruthy()
+
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.broken-source.test.ts:38:22)
+(fail) B1-7 the build fails [126.39ms]
+38 |   expect(run.output).toBeTruthy();
+39 |   expect(run.code).not.toBe(0);
+40 | }, 1_200_000);
+41 | 
+42 | test("B1-7 javac's own message reaches the caller", () => {
+43 |   expect(run.output).toContain('incompatible types');
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "incompatible types"
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.broken-source.test.ts:43:22)
+(fail) B1-7 javac's own message reaches the caller [0.09ms]
+42 | test("B1-7 javac's own message reaches the caller", () => {
+43 |   expect(run.output).toContain('incompatible types');
+44 | });
+45 | 
+46 | test('B1-7 the message names the file and the line', () => {
+47 |   expect(run.output).toContain('ProbeProcessor.java');
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "ProbeProcessor.java"
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.broken-source.test.ts:47:22)
+(fail) B1-7 the message names the file and the line [0.12ms]
+47 |   expect(run.output).toContain('ProbeProcessor.java');
+48 |   expect(run.output).toMatch(/ProbeProcessor\.java:\[?\d+/);
+49 | });
+50 | 
+51 | test('B1-7 it names what to do next', () => {
+52 |   expect(run.output).toMatch(/nar-build|fix/i);
+                          ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /nar-build|fix/i
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.broken-source.test.ts:52:22)
+(fail) B1-7 it names what to do next [0.10ms]
+(pass) B1-7 the drop directory gained nothing
+
+tests/integration/m-b1.dependency-cache.test.ts:
+(pass) the stack is running [85.03ms]
+49 | });
+50 | 
+51 | test('B1-9 the first build succeeds and fills the cache', () => {
+52 |   first = narBuild('opencode', fx.container);
+53 |   produced = dropContents().filter((f) => !before.includes(f));
+54 |   expect(first.code).toBe(0);
+                          ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 90
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.dependency-cache.test.ts:54:22)
+(fail) B1-9 the first build succeeds and fills the cache [149.78ms]
+56 |   expect(cacheIsPopulated()).toBe(true);
+57 | }, 1_200_000);
+58 | 
+59 | test('B1-9 the second build succeeds without downloading anything again', () => {
+60 |   second = narBuild('opencode', fx.container);
+61 |   expect(second.code).toBe(0);
+                           ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 90
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.dependency-cache.test.ts:61:23)
+(fail) B1-9 the second build succeeds without downloading anything again [145.98ms]
+61 |   expect(second.code).toBe(0);
+62 |   expect(second.stdout).toMatch(/^downloads\s+0$/m);
+63 | }, 1_200_000);
+64 | 
+65 | test('B1-9 the cache the builds used is the one under volumes/', () => {
+66 |   expect(first.stdout).toMatch(/^cache\s+\/m2$/m);
+                            ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^cache\s+\/m2$/m
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.dependency-cache.test.ts:66:24)
+(fail) B1-9 the cache the builds used is the one under volumes/ [0.24ms]
+
+tests/integration/m-b1.own-pom.test.ts:
+(pass) the stack is running [88.19ms]
+59 | });
+60 | 
+61 | test('B1-6 the build succeeds', () => {
+62 |   run = narBuild('opencode', fx.container);
+63 |   produced = dropContents().filter((f) => !before.includes(f));
+64 |   expect(run.output).toBeTruthy();
+                          ^
+error: expect(received).toBeTruthy()
+
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.own-pom.test.ts:64:22)
+(fail) B1-6 the build succeeds [124.65ms]
+64 |   expect(run.output).toBeTruthy();
+65 |   expect(run.code).toBe(0);
+66 | }, 1_200_000);
+67 | 
+68 | test('B1-6 the artifact is named from the author pom, not from the directory', () => {
+69 |   expect(produced.length).toBe(1);
+                               ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.own-pom.test.ts:69:27)
+(fail) B1-6 the artifact is named from the author pom, not from the directory [0.03ms]
+70 |   expect(produced[0]).toContain(OWN_POM_ARTIFACT);
+71 |   expect(produced[0]).not.toContain('b1-ownpom');
+72 | });
+73 | 
+74 | test('B1-6 the dependency the author declared is in the build', () => {
+75 |   const entries = narEntries(join(DROP_HOST, produced[0]));
+                                  ^
+TypeError: The "paths[1]" property must be of type string, got undefined
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.own-pom.test.ts:75:30)
+(fail) B1-6 the dependency the author declared is in the build [0.73ms]
+
+tests/integration/m-b1.plain-source.test.ts:
+(pass) the stack is running [84.58ms]
+49 | });
+50 | 
+51 | test('B1-5 the build succeeds', () => {
+52 |   run = narBuild('opencode', fx.container);
+53 |   produced = dropContents().filter((f) => !before.includes(f));
+54 |   expect(run.output).toBeTruthy();
+                          ^
+error: expect(received).toBeTruthy()
+
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:54:22)
+(fail) B1-5 the build succeeds [121.26ms]
+55 |   expect(run.code).toBe(0);
+56 | }, 1_200_000);
+57 | 
+58 | test('B1-5 exactly one NAR appeared in the drop directory', () => {
+59 |   expect(produced.filter((f) => f.endsWith('.nar'))).toEqual(produced);
+60 |   expect(produced.length).toBe(1);
+                               ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:60:27)
+(fail) B1-5 exactly one NAR appeared in the drop directory [0.10ms]
+59 |   expect(produced.filter((f) => f.endsWith('.nar'))).toEqual(produced);
+60 |   expect(produced.length).toBe(1);
+61 | });
+62 | 
+63 | test('B1-5 the output names the file it wrote', () => {
+64 |   expect(run.stdout).toContain(produced[0]);
+                          ^
+error: Received value must be an array type, or both received and expected values must be strings.
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:64:22)
+(fail) B1-5 the output names the file it wrote [0.44ms]
+64 |   expect(run.stdout).toContain(produced[0]);
+65 |   expect(run.stdout).toContain('/nar_extensions/');
+66 | });
+67 | 
+68 | test('B1-5 the NAR carries the SPI descriptor naming the processor', () => {
+69 |   const descriptor = spiDescriptorInNar(join(DROP_HOST, produced[0]));
+                                             ^
+TypeError: The "paths[1]" property must be of type string, got undefined
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:69:41)
+(fail) B1-5 the NAR carries the SPI descriptor naming the processor [0.08ms]
+
+tests/integration/m-b1.stale-artifact.test.ts:
+(pass) the stack is running [84.82ms]
+55 |   if (artifact) rmSync(join(DROP_HOST, artifact), { force: true });
+56 | });
+57 | 
+58 | test('B1-8 a known-good NAR is in place first', () => {
+59 |   good = narBuild('opencode', fx.container);
+60 |   expect(good.code).toBe(0);
+                         ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 90
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.stale-artifact.test.ts:60:21)
+(fail) B1-8 a known-good NAR is in place first [124.83ms]
+142 |   if (!existsSync(DROP_HOST)) return [];
+143 |   return readdirSync(DROP_HOST).sort();
+144 | }
+145 | 
+146 | export function sha256(path: string): string {
+147 |   return createHash('sha256').update(readFileSync(path)).digest('hex');
+                                           ^
+error: EISDIR: illegal operation on a directory, read
+      at sha256 (/Users/christof/repos/liquidupstart/tests/lib/narfixture.ts:147:38)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.stale-artifact.test.ts:76:14)
+(fail) B1-8 the second build, of a source that does not compile, fails [124.09ms]
+(pass) B1-8 the earlier artifact is byte-identical [0.03ms]
+81 | test('B1-8 the earlier artifact is byte-identical', () => {
+82 |   expect(shaAfter).toBe(shaBefore);
+83 | });
+84 | 
+85 | test('B1-8 no partial or temporary file was left beside it', () => {
+86 |   expect(listingAfter).toEqual(listingBefore);
+                            ^
+error: expect(received).toEqual(expected)
+
+- []
++ [
++   "b1-hand-nar-1.0.0.nar",
++ ]
+
+- Expected  - 1
++ Received  + 3
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.stale-artifact.test.ts:86:24)
+(fail) B1-8 no partial or temporary file was left beside it [0.66ms]
+
+tests/system/m-b1.build-in-container.test.ts:
+(pass) the stack is running [89.16ms]
+(pass) B1-10 the command is on the bare PATH in the container an agent works in [132.94ms]
+56 |     fx.container,
+57 |     'openclaw-gateway',
+58 |     'nar-build'
+59 |   ]);
+60 |   produced = dropContents().filter((f) => !before.includes(f));
+61 |   expect(run.output).toBeTruthy();
+                          ^
+error: expect(received).toBeTruthy()
+
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/system/m-b1.build-in-container.test.ts:61:22)
+(fail) B1-10 a build run from inside that container lands the artifact [127.40ms]
+63 |   expect(produced.length).toBe(1);
+64 |   expect(produced[0]).toEndWith('.nar');
+65 | }, 1_200_000);
+66 | 
+67 | test('B1-10 the answer named the artifact it wrote', () => {
+68 |   expect(run.stdout).toContain(produced[0]);
+                          ^
+error: Received value must be an array type, or both received and expected values must be strings.
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/system/m-b1.build-in-container.test.ts:68:22)
+(fail) B1-10 the answer named the artifact it wrote [0.03ms]
+
+26 tests failed:
+(fail) B1-3 the resolution answers at all [0.28ms]
+(fail) B1-3 the NiFi version has the shape of a NiFi 2 release [1.59ms]
+(fail) B1-3 the Java major is the one Liquid runs on [1.20ms]
+(fail) B1-3 it says where it read them [0.27ms]
+(fail) B1-4 it says the target version could not be read [0.13ms]
+(fail) B1-4 it names what to do next [0.04ms]
+(fail) B1-11 both sources are read and each contributes refusals [0.07ms]
+(fail) B1-7 the build fails [126.39ms]
+(fail) B1-7 javac's own message reaches the caller [0.09ms]
+(fail) B1-7 the message names the file and the line [0.12ms]
+(fail) B1-7 it names what to do next [0.10ms]
+(fail) B1-9 the first build succeeds and fills the cache [149.78ms]
+(fail) B1-9 the second build succeeds without downloading anything again [145.98ms]
+(fail) B1-9 the cache the builds used is the one under volumes/ [0.24ms]
+(fail) B1-6 the build succeeds [124.65ms]
+(fail) B1-6 the artifact is named from the author pom, not from the directory [0.03ms]
+(fail) B1-6 the dependency the author declared is in the build [0.73ms]
+(fail) B1-5 the build succeeds [121.26ms]
+(fail) B1-5 exactly one NAR appeared in the drop directory [0.10ms]
+(fail) B1-5 the output names the file it wrote [0.44ms]
+(fail) B1-5 the NAR carries the SPI descriptor naming the processor [0.08ms]
+(fail) B1-8 a known-good NAR is in place first [124.83ms]
+(fail) B1-8 the second build, of a source that does not compile, fails [124.09ms]
+(fail) B1-8 no partial or temporary file was left beside it [0.66ms]
+(fail) B1-10 a build run from inside that container lands the artifact [127.40ms]
+(fail) B1-10 the answer named the artifact it wrote [0.03ms]
+
+ 29 pass
+ 26 fail
+ 51 expect() calls
+Ran 55 tests across 12 files. [2.60s]
+EXIT=1
+bun test v1.3.13 (bf2e2cec)
+
+tests/unit/m-b1.target-version.test.ts:
+(pass) the stack is running [85.20ms]
+(pass) B1-3 the resolution answers at all [0.10ms]
+(pass) B1-3 the NiFi version has the shape of a NiFi 2 release [0.26ms]
+(pass) B1-3 the Java major is the one Liquid runs on [0.07ms]
+(pass) B1-3 it says where it read them [0.03ms]
+(pass) B1-3 nothing in the contract declares a NiFi or Java version [0.93ms]
+
+tests/unit/m-b1.version-unreadable.test.ts:
+(pass) the stack is running [87.21ms]
+(pass) B1-4 the build refuses [0.13ms]
+(pass) B1-4 it says the target version could not be read [0.09ms]
+(pass) B1-4 it names what to do next [0.03ms]
+(pass) B1-4 it never names a version it guessed [0.03ms]
+(pass) B1-4 the drop directory is unchanged
+
+tests/contract/m-b1.command-mounted.test.ts:
+(pass) B1-2 the services that carry git-repo-info are the ones expected
+(pass) B1-2 every one of them mounts nar-build read-only at the same place on PATH [0.25ms]
+(pass) B1-2 the command on disk is an executable POSIX shell script [0.14ms]
+
+tests/contract/m-b1.no-credentials.test.ts:
+(pass) the stack is running [28.54ms]
+(pass) B1-12 the scan itself ran inside the container [0.03ms]
+(pass) B1-12 no /git-secrets and no key material inside the builder [0.10ms]
+(pass) B1-12 no environment key names a credential [0.08ms]
+(pass) B1-12 no credential value from .env is present in its environment [124.97ms]
+
+tests/contract/m-b1.refusal-next-step.test.ts:
+(pass) B1-11 both sources are read and each contributes refusals [0.11ms]
+(pass) B1-11 every refusal names a command, a file to fix or an action [0.09ms]
+(pass) B1-11 no refusal is a single line that ends at the refusal [0.04ms]
+
+tests/contract/m-b1.service-boundary.test.ts:
+(pass) B1-1 the working mounts are declared [0.02ms]
+(pass) B1-1 the dependency cache lives under volumes/
+(pass) B1-1 the git secrets are not mounted
+(pass) B1-1 no credential-bearing .env key is passed to the builder [0.05ms]
+
+tests/integration/m-b1.broken-source.test.ts:
+(pass) the stack is running [85.04ms]
+(pass) B1-7 the build fails [2398.48ms]
+(pass) B1-7 javac's own message reaches the caller [0.07ms]
+(pass) B1-7 the message names the file and the line [0.07ms]
+(pass) B1-7 it names what to do next [0.03ms]
+(pass) B1-7 the drop directory gained nothing [0.01ms]
+
+tests/integration/m-b1.dependency-cache.test.ts:
+(pass) the stack is running [89.57ms]
+(pass) B1-9 the first build succeeds and fills the cache [4447.78ms]
+(pass) B1-9 the second build succeeds without downloading anything again [4255.23ms]
+(pass) B1-9 the cache the builds used is the one under volumes/ [0.23ms]
+
+tests/integration/m-b1.own-pom.test.ts:
+(pass) the stack is running [84.53ms]
+(pass) B1-6 the build succeeds [2904.79ms]
+(pass) B1-6 the artifact is named from the author pom, not from the directory [0.04ms]
+(pass) B1-6 the dependency the author declared is in the build [2.82ms]
+
+tests/integration/m-b1.plain-source.test.ts:
+(pass) the stack is running [97.19ms]
+(pass) B1-5 the build succeeds [4443.19ms]
+(pass) B1-5 exactly one NAR appeared in the drop directory [0.06ms]
+(pass) B1-5 the output names the file it wrote [0.02ms]
+(pass) B1-5 the NAR carries the SPI descriptor naming the processor [11.14ms]
+
+tests/integration/m-b1.stale-artifact.test.ts:
+(pass) the stack is running [94.95ms]
+(pass) B1-8 a known-good NAR is in place first [4706.71ms]
+(pass) B1-8 the second build, of a source that does not compile, fails [2639.73ms]
+(pass) B1-8 the earlier artifact is byte-identical [0.01ms]
+(pass) B1-8 no partial or temporary file was left beside it [0.06ms]
+
+tests/system/m-b1.build-in-container.test.ts:
+(pass) the stack is running [103.82ms]
+(pass) B1-10 the command is on the bare PATH in the container an agent works in [130.00ms]
+(pass) B1-10 a build run from inside that container lands the artifact [4548.64ms]
+(pass) B1-10 the answer named the artifact it wrote [0.07ms]
+
+ 55 pass
+ 0 fail
+ 77 expect() calls
+Ran 55 tests across 12 files. [32.11s]
+EXIT=0
+with the command truncated in place: EXIT=1, cases red: B1-10 B1-11 B1-3 B1-4 B1-5 B1-6 B1-7 B1-8 B1-9 
+(fail) B1-3 the resolution answers at all [0.28ms]
+(fail) B1-3 the NiFi version has the shape of a NiFi 2 release [1.59ms]
+(fail) B1-3 the Java major is the one Liquid runs on [1.20ms]
+(fail) B1-3 it says where it read them [0.27ms]
+(fail) B1-4 it says the target version could not be read [0.13ms]
+(fail) B1-4 it names what to do next [0.04ms]
+(fail) B1-11 both sources are read and each contributes refusals [0.07ms]
+35 | test('B1-7 the build fails', () => {
+(fail) B1-7 the build fails [126.39ms]
+(fail) B1-7 javac's own message reaches the caller [0.09ms]
+
+with its content restored: EXIT=0
+VERDICT yes — 5 the build cases are decided by nar-build — stub in place: B1-10 B1-11 B1-3 B1-4 B1-5 B1-6 B1-7 B1-8 B1-9 red, EXIT=1; content restored: EXIT=0
+
+=== Check 6 — negative control: do the build cases need the builder? ===
+bun test v1.3.13 (bf2e2cec)
+
+tests/unit/m-b1.target-version.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [92.44ms]
+26 | stackGuard(['liquid', 'nar_builder', 'opencode']);
+27 | 
+28 | const resolved = target();
+29 | 
+30 | test('B1-3 the resolution answers at all', () => {
+31 |   expect(resolved.code).toBe(0);
+                             ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:31:25)
+(fail) B1-3 the resolution answers at all [0.08ms]
+30 | test('B1-3 the resolution answers at all', () => {
+31 |   expect(resolved.code).toBe(0);
+32 | });
+33 | 
+34 | test('B1-3 the NiFi version has the shape of a NiFi 2 release', () => {
+35 |   expect(targetField(resolved.stdout, 'nifi_version')).toMatch(/^2\.\d+\.\d+$/);
+                                                            ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^2\.\d+\.\d+$/
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:35:56)
+(fail) B1-3 the NiFi version has the shape of a NiFi 2 release [0.37ms]
+34 | test('B1-3 the NiFi version has the shape of a NiFi 2 release', () => {
+35 |   expect(targetField(resolved.stdout, 'nifi_version')).toMatch(/^2\.\d+\.\d+$/);
+36 | });
+37 | 
+38 | test('B1-3 the Java major is the one Liquid runs on', () => {
+39 |   expect(targetField(resolved.stdout, 'java_major')).toBe('21');
+                                                          ^
+error: expect(received).toBe(expected)
+
+Expected: "21"
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:39:54)
+(fail) B1-3 the Java major is the one Liquid runs on [0.12ms]
+39 |   expect(targetField(resolved.stdout, 'java_major')).toBe('21');
+40 |   expect(targetField(resolved.stdout, 'java_version')).toMatch(/^21\./);
+41 | });
+42 | 
+43 | test('B1-3 it says where it read them', () => {
+44 |   expect(targetField(resolved.stdout, 'read_from')).toContain('liquid');
+                                                         ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "liquid"
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.target-version.test.ts:44:53)
+(fail) B1-3 it says where it read them [0.06ms]
+(pass) B1-3 nothing in the contract declares a NiFi or Java version [0.86ms]
+
+tests/unit/m-b1.version-unreadable.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [103.08ms]
+(pass) B1-4 the build refuses [0.07ms]
+33 | test('B1-4 the build refuses', () => {
+34 |   expect(run.code).not.toBe(0);
+35 | });
+36 | 
+37 | test('B1-4 it says the target version could not be read', () => {
+38 |   expect(run.output.toLowerCase()).toContain('target version');
+                                        ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "target version"
+Received: "<html>\r\n<head><title>502 bad gateway</title></head>\r\n<body>\r\n<center><h1>502 bad gateway</h1></center>\r\n<hr><center>nginx/1.31.3</center>\r\n</body>\r\n</html>\r\n"
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.version-unreadable.test.ts:38:36)
+(fail) B1-4 it says the target version could not be read [0.11ms]
+38 |   expect(run.output.toLowerCase()).toContain('target version');
+39 |   expect(run.output).toMatch(/could not be read|not be read/);
+40 | });
+41 | 
+42 | test('B1-4 it names what to do next', () => {
+43 |   expect(run.output).toMatch(/start\.sh|docker compose (start|restart|up)/);
+                          ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /start\.sh|docker compose (start|restart|up)/
+Received: "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx/1.31.3</center>\r\n</body>\r\n</html>\r\n"
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/unit/m-b1.version-unreadable.test.ts:43:22)
+(fail) B1-4 it names what to do next [0.11ms]
+(pass) B1-4 it never names a version it guessed [0.04ms]
+(pass) B1-4 the drop directory is unchanged
+
+tests/contract/m-b1.command-mounted.test.ts:
+(pass) B1-2 the services that carry git-repo-info are the ones expected [0.02ms]
+(pass) B1-2 every one of them mounts nar-build read-only at the same place on PATH [0.32ms]
+(pass) B1-2 the command on disk is an executable POSIX shell script [0.05ms]
+
+tests/contract/m-b1.no-credentials.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [20.79ms]
+41 |     .map((m) => m[2].replace(/^"|"$/g, '').trim())
+42 |     .filter((v) => v.length >= 8);
+43 | }
+44 | 
+45 | test('B1-12 the scan itself ran inside the container', () => {
+46 |   expect(scan.code).toBe(0);
+                         ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/contract/m-b1.no-credentials.test.ts:46:21)
+(fail) B1-12 the scan itself ran inside the container [0.08ms]
+(pass) B1-12 no /git-secrets and no key material inside the builder [0.08ms]
+56 |   expect(paths).toEqual([]);
+57 | });
+58 | 
+59 | test('B1-12 no environment key names a credential', () => {
+60 |   const keys = scan.stdout
+61 |     .split('KEYNAMES:')[1]
+                             ^
+TypeError: undefined is not an object (evaluating 'scan.stdout.split("KEYNAMES:")[1].split')
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/contract/m-b1.no-credentials.test.ts:61:25)
+(fail) B1-12 no environment key names a credential [0.31ms]
+68 | 
+69 | test('B1-12 no credential value from .env is present in its environment', () => {
+70 |   const values = credentialValues();
+71 |   expect(values.length).toBeGreaterThan(2);
+72 |   const env = sh(['docker', 'compose', 'exec', '-T', BUILDER_SERVICE, 'env']);
+73 |   expect(env.code).toBe(0);
+                        ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/contract/m-b1.no-credentials.test.ts:73:20)
+(fail) B1-12 no credential value from .env is present in its environment [95.78ms]
+
+tests/contract/m-b1.refusal-next-step.test.ts:
+(pass) B1-11 both sources are read and each contributes refusals [0.10ms]
+(pass) B1-11 every refusal names a command, a file to fix or an action [0.05ms]
+(pass) B1-11 no refusal is a single line that ends at the refusal [0.06ms]
+
+tests/contract/m-b1.service-boundary.test.ts:
+(pass) B1-1 the working mounts are declared [0.06ms]
+(pass) B1-1 the dependency cache lives under volumes/ [0.01ms]
+(pass) B1-1 the git secrets are not mounted
+(pass) B1-1 no credential-bearing .env key is passed to the builder [0.06ms]
+
+tests/integration/m-b1.broken-source.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [79.10ms]
+(pass) B1-7 the build fails [3239.82ms]
+38 |   expect(run.output).toBeTruthy();
+39 |   expect(run.code).not.toBe(0);
+40 | }, 1_200_000);
+41 | 
+42 | test("B1-7 javac's own message reaches the caller", () => {
+43 |   expect(run.output).toContain('incompatible types');
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "incompatible types"
+Received: "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx/1.31.3</center>\r\n</body>\r\n</html>\r\n"
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.broken-source.test.ts:43:22)
+(fail) B1-7 javac's own message reaches the caller [0.09ms]
+42 | test("B1-7 javac's own message reaches the caller", () => {
+43 |   expect(run.output).toContain('incompatible types');
+44 | });
+45 | 
+46 | test('B1-7 the message names the file and the line', () => {
+47 |   expect(run.output).toContain('ProbeProcessor.java');
+                          ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "ProbeProcessor.java"
+Received: "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx/1.31.3</center>\r\n</body>\r\n</html>\r\n"
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.broken-source.test.ts:47:22)
+(fail) B1-7 the message names the file and the line [0.09ms]
+47 |   expect(run.output).toContain('ProbeProcessor.java');
+48 |   expect(run.output).toMatch(/ProbeProcessor\.java:\[?\d+/);
+49 | });
+50 | 
+51 | test('B1-7 it names what to do next', () => {
+52 |   expect(run.output).toMatch(/nar-build|fix/i);
+                          ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /nar-build|fix/i
+Received: "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx/1.31.3</center>\r\n</body>\r\n</html>\r\n"
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.broken-source.test.ts:52:22)
+(fail) B1-7 it names what to do next [0.10ms]
+(pass) B1-7 the drop directory gained nothing
+
+tests/integration/m-b1.dependency-cache.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [84.26ms]
+49 | });
+50 | 
+51 | test('B1-9 the first build succeeds and fills the cache', () => {
+52 |   first = narBuild('opencode', fx.container);
+53 |   produced = dropContents().filter((f) => !before.includes(f));
+54 |   expect(first.code).toBe(0);
+                          ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.dependency-cache.test.ts:54:22)
+(fail) B1-9 the first build succeeds and fills the cache [3240.49ms]
+56 |   expect(cacheIsPopulated()).toBe(true);
+57 | }, 1_200_000);
+58 | 
+59 | test('B1-9 the second build succeeds without downloading anything again', () => {
+60 |   second = narBuild('opencode', fx.container);
+61 |   expect(second.code).toBe(0);
+                           ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.dependency-cache.test.ts:61:23)
+(fail) B1-9 the second build succeeds without downloading anything again [3263.51ms]
+61 |   expect(second.code).toBe(0);
+62 |   expect(second.stdout).toMatch(/^downloads\s+0$/m);
+63 | }, 1_200_000);
+64 | 
+65 | test('B1-9 the cache the builds used is the one under volumes/', () => {
+66 |   expect(first.stdout).toMatch(/^cache\s+\/m2$/m);
+                            ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^cache\s+\/m2$/m
+Received: ""
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.dependency-cache.test.ts:66:24)
+(fail) B1-9 the cache the builds used is the one under volumes/ [0.15ms]
+
+tests/integration/m-b1.own-pom.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [119.98ms]
+60 | 
+61 | test('B1-6 the build succeeds', () => {
+62 |   run = narBuild('opencode', fx.container);
+63 |   produced = dropContents().filter((f) => !before.includes(f));
+64 |   expect(run.output).toBeTruthy();
+65 |   expect(run.code).toBe(0);
+                        ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.own-pom.test.ts:65:20)
+(fail) B1-6 the build succeeds [3204.95ms]
+64 |   expect(run.output).toBeTruthy();
+65 |   expect(run.code).toBe(0);
+66 | }, 1_200_000);
+67 | 
+68 | test('B1-6 the artifact is named from the author pom, not from the directory', () => {
+69 |   expect(produced.length).toBe(1);
+                               ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.own-pom.test.ts:69:27)
+(fail) B1-6 the artifact is named from the author pom, not from the directory [0.06ms]
+70 |   expect(produced[0]).toContain(OWN_POM_ARTIFACT);
+71 |   expect(produced[0]).not.toContain('b1-ownpom');
+72 | });
+73 | 
+74 | test('B1-6 the dependency the author declared is in the build', () => {
+75 |   const entries = narEntries(join(DROP_HOST, produced[0]));
+                                  ^
+TypeError: The "paths[1]" property must be of type string, got undefined
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.own-pom.test.ts:75:30)
+(fail) B1-6 the dependency the author declared is in the build [0.09ms]
+
+tests/integration/m-b1.plain-source.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [89.79ms]
+50 | 
+51 | test('B1-5 the build succeeds', () => {
+52 |   run = narBuild('opencode', fx.container);
+53 |   produced = dropContents().filter((f) => !before.includes(f));
+54 |   expect(run.output).toBeTruthy();
+55 |   expect(run.code).toBe(0);
+                        ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:55:20)
+(fail) B1-5 the build succeeds [3239.94ms]
+55 |   expect(run.code).toBe(0);
+56 | }, 1_200_000);
+57 | 
+58 | test('B1-5 exactly one NAR appeared in the drop directory', () => {
+59 |   expect(produced.filter((f) => f.endsWith('.nar'))).toEqual(produced);
+60 |   expect(produced.length).toBe(1);
+                               ^
+error: expect(received).toBe(expected)
+
+Expected: 1
+Received: 0
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:60:27)
+(fail) B1-5 exactly one NAR appeared in the drop directory [0.02ms]
+59 |   expect(produced.filter((f) => f.endsWith('.nar'))).toEqual(produced);
+60 |   expect(produced.length).toBe(1);
+61 | });
+62 | 
+63 | test('B1-5 the output names the file it wrote', () => {
+64 |   expect(run.stdout).toContain(produced[0]);
+                          ^
+error: Received value must be an array type, or both received and expected values must be strings.
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:64:22)
+(fail) B1-5 the output names the file it wrote [0.08ms]
+64 |   expect(run.stdout).toContain(produced[0]);
+65 |   expect(run.stdout).toContain('/nar_extensions/');
+66 | });
+67 | 
+68 | test('B1-5 the NAR carries the SPI descriptor naming the processor', () => {
+69 |   const descriptor = spiDescriptorInNar(join(DROP_HOST, produced[0]));
+                                             ^
+TypeError: The "paths[1]" property must be of type string, got undefined
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.plain-source.test.ts:69:41)
+(fail) B1-5 the NAR carries the SPI descriptor naming the processor [0.06ms]
+
+tests/integration/m-b1.stale-artifact.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [82.84ms]
+55 |   if (artifact) rmSync(join(DROP_HOST, artifact), { force: true });
+56 | });
+57 | 
+58 | test('B1-8 a known-good NAR is in place first', () => {
+59 |   good = narBuild('opencode', fx.container);
+60 |   expect(good.code).toBe(0);
+                         ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.stale-artifact.test.ts:60:21)
+(fail) B1-8 a known-good NAR is in place first [3242.64ms]
+142 |   if (!existsSync(DROP_HOST)) return [];
+143 |   return readdirSync(DROP_HOST).sort();
+144 | }
+145 | 
+146 | export function sha256(path: string): string {
+147 |   return createHash('sha256').update(readFileSync(path)).digest('hex');
+                                           ^
+error: EISDIR: illegal operation on a directory, read
+      at sha256 (/Users/christof/repos/liquidupstart/tests/lib/narfixture.ts:147:38)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.stale-artifact.test.ts:76:14)
+(fail) B1-8 the second build, of a source that does not compile, fails [3196.12ms]
+(pass) B1-8 the earlier artifact is byte-identical [0.01ms]
+81 | test('B1-8 the earlier artifact is byte-identical', () => {
+82 |   expect(shaAfter).toBe(shaBefore);
+83 | });
+84 | 
+85 | test('B1-8 no partial or temporary file was left beside it', () => {
+86 |   expect(listingAfter).toEqual(listingBefore);
+                            ^
+error: expect(received).toEqual(expected)
+
+- []
++ [
++   "b1-hand-nar-1.0.0.nar",
++ ]
+
+- Expected  - 1
++ Received  + 3
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/integration/m-b1.stale-artifact.test.ts:86:24)
+(fail) B1-8 no partial or temporary file was left beside it [0.08ms]
+
+tests/system/m-b1.build-in-container.test.ts:
+12 |   const missing = names.filter((n) => !containerRunning(n));
+13 |   if (missing.length > 0) {
+14 |     throw new Error(
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+16 |         `Start the stack with ./scripts/linux/start.sh before running system tests.`
+17 |     );
+         ^
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+      at requireStack (/Users/christof/repos/liquidupstart/tests/lib/stack.ts:17:5)
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/lib/guard.ts:6:5)
+(fail) the stack is running [84.74ms]
+(pass) B1-10 the command is on the bare PATH in the container an agent works in [135.42ms]
+57 |     'openclaw-gateway',
+58 |     'nar-build'
+59 |   ]);
+60 |   produced = dropContents().filter((f) => !before.includes(f));
+61 |   expect(run.output).toBeTruthy();
+62 |   expect(run.code).toBe(0);
+                        ^
+error: expect(received).toBe(expected)
+
+Expected: 0
+Received: 1
+
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/system/m-b1.build-in-container.test.ts:62:20)
+(fail) B1-10 a build run from inside that container lands the artifact [3235.88ms]
+63 |   expect(produced.length).toBe(1);
+64 |   expect(produced[0]).toEndWith('.nar');
+65 | }, 1_200_000);
+66 | 
+67 | test('B1-10 the answer named the artifact it wrote', () => {
+68 |   expect(run.stdout).toContain(produced[0]);
+                          ^
+error: Received value must be an array type, or both received and expected values must be strings.
+      at <anonymous> (/Users/christof/repos/liquidupstart/tests/system/m-b1.build-in-container.test.ts:68:22)
+(fail) B1-10 the answer named the artifact it wrote [0.05ms]
+
+ 19 pass
+ 36 fail
+ 55 expect() calls
+Ran 55 tests across 12 files. [104.81s]
+EXIT=1
+bun test v1.3.13 (bf2e2cec)
+
+tests/unit/m-b1.target-version.test.ts:
+(pass) the stack is running [91.11ms]
+(pass) B1-3 the resolution answers at all [0.09ms]
+(pass) B1-3 the NiFi version has the shape of a NiFi 2 release [0.20ms]
+(pass) B1-3 the Java major is the one Liquid runs on [0.05ms]
+(pass) B1-3 it says where it read them [0.06ms]
+(pass) B1-3 nothing in the contract declares a NiFi or Java version [0.75ms]
+
+tests/unit/m-b1.version-unreadable.test.ts:
+(pass) the stack is running [90.96ms]
+(pass) B1-4 the build refuses [0.09ms]
+(pass) B1-4 it says the target version could not be read [0.08ms]
+(pass) B1-4 it names what to do next [0.03ms]
+(pass) B1-4 it never names a version it guessed [0.03ms]
+(pass) B1-4 the drop directory is unchanged [0.02ms]
+
+tests/contract/m-b1.command-mounted.test.ts:
+(pass) B1-2 the services that carry git-repo-info are the ones expected
+(pass) B1-2 every one of them mounts nar-build read-only at the same place on PATH [0.28ms]
+(pass) B1-2 the command on disk is an executable POSIX shell script [0.10ms]
+
+tests/contract/m-b1.no-credentials.test.ts:
+(pass) the stack is running [29.49ms]
+(pass) B1-12 the scan itself ran inside the container [0.10ms]
+(pass) B1-12 no /git-secrets and no key material inside the builder [0.06ms]
+(pass) B1-12 no environment key names a credential [0.07ms]
+(pass) B1-12 no credential value from .env is present in its environment [124.75ms]
+
+tests/contract/m-b1.refusal-next-step.test.ts:
+(pass) B1-11 both sources are read and each contributes refusals [0.13ms]
+(pass) B1-11 every refusal names a command, a file to fix or an action [0.07ms]
+(pass) B1-11 no refusal is a single line that ends at the refusal [0.02ms]
+
+tests/contract/m-b1.service-boundary.test.ts:
+(pass) B1-1 the working mounts are declared [0.01ms]
+(pass) B1-1 the dependency cache lives under volumes/
+(pass) B1-1 the git secrets are not mounted [0.04ms]
+(pass) B1-1 no credential-bearing .env key is passed to the builder [0.03ms]
+
+tests/integration/m-b1.broken-source.test.ts:
+(pass) the stack is running [85.34ms]
+(pass) B1-7 the build fails [3206.25ms]
+(pass) B1-7 javac's own message reaches the caller [0.08ms]
+(pass) B1-7 the message names the file and the line [0.05ms]
+(pass) B1-7 it names what to do next [0.02ms]
+(pass) B1-7 the drop directory gained nothing [0.01ms]
+
+tests/integration/m-b1.dependency-cache.test.ts:
+(pass) the stack is running [98.34ms]
+(pass) B1-9 the first build succeeds and fills the cache [5613.84ms]
+(pass) B1-9 the second build succeeds without downloading anything again [4470.89ms]
+(pass) B1-9 the cache the builds used is the one under volumes/ [0.20ms]
+
+tests/integration/m-b1.own-pom.test.ts:
+(pass) the stack is running [89.05ms]
+(pass) B1-6 the build succeeds [3000.81ms]
+(pass) B1-6 the artifact is named from the author pom, not from the directory [0.10ms]
+(pass) B1-6 the dependency the author declared is in the build [3.39ms]
+
+tests/integration/m-b1.plain-source.test.ts:
+(pass) the stack is running [87.54ms]
+(pass) B1-5 the build succeeds [4720.52ms]
+(pass) B1-5 exactly one NAR appeared in the drop directory [0.08ms]
+(pass) B1-5 the output names the file it wrote [0.05ms]
+(pass) B1-5 the NAR carries the SPI descriptor naming the processor [10.77ms]
+
+tests/integration/m-b1.stale-artifact.test.ts:
+(pass) the stack is running [88.58ms]
+(pass) B1-8 a known-good NAR is in place first [4021.28ms]
+(pass) B1-8 the second build, of a source that does not compile, fails [2225.98ms]
+(pass) B1-8 the earlier artifact is byte-identical [0.07ms]
+(pass) B1-8 no partial or temporary file was left beside it [0.02ms]
+
+tests/system/m-b1.build-in-container.test.ts:
+(pass) the stack is running [84.45ms]
+(pass) B1-10 the command is on the bare PATH in the container an agent works in [140.51ms]
+(pass) B1-10 a build run from inside that container lands the artifact [3977.11ms]
+(pass) B1-10 the answer named the artifact it wrote [0.03ms]
+
+ 55 pass
+ 0 fail
+ 77 expect() calls
+Ran 55 tests across 12 files. [32.99s]
+EXIT=0
+with nar_builder stopped: EXIT=1, cases red: B1-10 B1-12 B1-3 B1-4 B1-5 B1-6 B1-7 B1-8 B1-9 
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+(fail) the stack is running [92.44ms]
+(fail) B1-3 the resolution answers at all [0.08ms]
+(fail) B1-3 the NiFi version has the shape of a NiFi 2 release [0.37ms]
+(fail) B1-3 the Java major is the one Liquid runs on [0.12ms]
+(fail) B1-3 it says where it read them [0.06ms]
+15 |       `stack not running: container(s) ${missing.join(', ')} are not up. ` +
+error: stack not running: container(s) nar_builder are not up. Start the stack with ./scripts/linux/start.sh before running system tests.
+(fail) the stack is running [103.08ms]
+
+with it running again: EXIT=0
+VERDICT yes — 6 the build cases genuinely need the builder — red at EXIT=1, green again at EXIT=0
+
+=== Check 7 — the credential boundary, from inside the builder ===
+PATHS:
+ENV KEYS:
+END
+VERDICT yes — 7 the builder holds no credentials — no /git-secrets, no key file, no credential in the environment
+
+=== Check 8 — clean up what this run created, and confirm ===
+bun test v1.3.13 (bf2e2cec)
+
+tests/unit/m-a0.runner-discovery.test.ts:
+(pass) A0-1 lists every discovered file and exits 0 [15.61ms]
+(pass) A0-1 restricts discovery to the milestone filter [14.02ms]
+
+tests/unit/m-a0.runner-failure.test.ts:
+(pass) A0-2 a failing test makes the runner exit non-zero [24.94ms]
+(pass) A0-2 a tree of only passing tests exits 0 [25.65ms]
+
+tests/unit/m-a0.runner-filter.test.ts:
+(pass) A0-3 an unmatched milestone filter exits non-zero [11.83ms]
+(pass) A0-3 the matching milestone filter still succeeds [10.77ms]
+(pass) A0-3 a missing test root exits non-zero [7.71ms]
+
+tests/unit/m-a0.runner-skip-system.test.ts:
+(pass) A0-4 system-only selection with --no-system reports SKIPPED [10.99ms]
+(pass) A0-4 --no-system drops only the system files from a mixed tree [14.00ms]
+(pass) A0-4 without the flag the system file is selected [10.87ms]
+
+tests/unit/m-a2.skill-frontmatter.test.ts:
+(pass) A2-1 the file opens with a frontmatter block
+(pass) A2-1 name and description are declared, and name matches the directory [0.11ms]
+(pass) A2-1 the description says when to reach for the skill [0.10ms]
+
+tests/unit/m-a3.keygen.test.ts:
+(pass) A3-1 the first run creates an ed25519 keypair [4199.37ms]
+(pass) A3-1 the private key is not readable by anyone else [0.10ms]
+(pass) A3-2 a second run leaves the existing key untouched [2073.09ms]
+
+tests/unit/m-a3c.declaration-parse.test.ts:
+(pass) A3c-2 an empty declaration yields no repositories and is not an error [7.00ms]
+(pass) A3c-2 a single entry yields its URL, access and policy [10.70ms]
+(pass) A3c-2 several entries with stray whitespace are all understood [17.01ms]
+(pass) A3c-2 a nested GitLab-style path keeps every segment [10.09ms]
+(pass) A3c-2 a non-GitHub host is accepted, in both SSH URL forms [21.07ms]
+(pass) A3c-3 an entry with a missing field is refused and named [6.89ms]
+(pass) A3c-3 an unknown access word is refused and named [6.70ms]
+(pass) A3c-3 an unknown policy word is refused and named [6.93ms]
+(pass) A3c-3 an https URL is refused as SSH-only, not rewritten [7.01ms]
+(pass) A3c-3 a URL that is neither form is refused and named [6.64ms]
+
+tests/unit/m-a3c.repo-keys.test.ts:
+(pass) A3c-4 each declared repository gets its own key directory [0.25ms]
+(pass) A3c-4 the two repositories have different keys [0.03ms]
+(pass) A3c-4 every private key is unreadable by anyone else [0.05ms]
+(pass) A3c-4 a second run leaves every existing key untouched [32.23ms]
+(pass) A3c-4 adding a repository generates only the new key [53.09ms]
+(pass) A3c-10 same repository name on two hosts gets distinct key and clone directories [64.10ms]
+
+tests/unit/m-a3e.clone-failed.test.ts:
+(pass) A3e-4 the repository is reported as declared, not as absent [0.07ms]
+(pass) A3e-4 the answer says the clone is not there [0.07ms]
+(pass) A3e-4 the answer carries the reason from the manifest [0.01ms]
+(pass) A3e-4 the answer names the deploy key to register, by path [0.06ms]
+(pass) A3e-4 it is distinguishable from the undeclared answer [0.02ms]
+(pass) A3e-4 the access and branch policy are still reported
+
+tests/unit/m-a3e.declared-repository.test.ts:
+(pass) A3e-1 asking about a declared repository succeeds [0.02ms]
+(pass) A3e-1 the answer says the repository is declared [0.05ms]
+(pass) A3e-1 the answer names the clone path inside the container [0.02ms]
+(pass) A3e-1 the answer names the access and the branch policy [0.03ms]
+(pass) A3e-1 the answer says the clone is there [0.02ms]
+(pass) A3e-1 the key is named as a path and no key material is printed [0.01ms]
+
+tests/unit/m-a3e.undeclared-repository.test.ts:
+(pass) A3e-2 an undeclared repository is reported as not declared [0.07ms]
+(pass) A3e-2 the answer says the stack holds no key for it [0.02ms]
+(pass) A3e-2 the answer names what the operator must do [0.03ms]
+(pass) A3e-2 the exit code is non-zero so a caller can branch on it [0.04ms]
+(pass) A3e-2 asking nothing is a usage error, not an answer [6.72ms]
+
+tests/unit/m-a3e.url-forms.test.ts:
+(pass) A3e-3 the bare name is recognised [0.05ms]
+(pass) A3e-3 the SSH URL is recognised [0.03ms]
+(pass) A3e-3 the HTTPS URL is recognised
+(pass) A3e-3 all three forms produce the same answer [0.05ms]
+(pass) A3e-3 a different repository on the same host is not matched [10.27ms]
+
+tests/unit/m-a4.access.test.ts:
+(pass) A4-10 access read refuses the push before any branch rule is consulted [65.93ms]
+
+tests/unit/m-a4.branch-policy.test.ts:
+(pass) A4-1 a feature branch under a protected policy is pushed without a word from the hook [393.50ms]
+(pass) A4-2 the default branch under a protected policy is refused, and says what to do instead [363.68ms]
+(pass) A4-3 the default branch under a direct policy is allowed, as content mode requires [423.32ms]
+
+tests/unit/m-a4.currency.test.ts:
+(pass) A4-11 a branch the remote has moved past is refused, and the operator is told how to integrate [659.20ms]
+(pass) A4-12 a branch the remote holds nothing extra on is pushed [559.96ms]
+
+tests/unit/m-a4.fast-forward.test.ts:
+(pass) A4-4 a push that is not a fast-forward is refused, force flag or not [538.32ms]
+(pass) A4-5 a fast-forward push is allowed even when it carries --force [382.32ms]
+
+tests/unit/m-a4.ref-deletion.test.ts:
+(pass) A4-6 deleting a remote branch is refused and the branch survives [182.66ms]
+
+tests/unit/m-a4.repo-default-branch.test.ts:
+(pass) A4-17 the default branch is reported alongside the access and the policy [20.24ms]
+(pass) A4-17 a repository whose default branch is not main is reported as it is [18.81ms]
+(pass) A4-17 a repository that is not cloned claims no default branch [9.31ms]
+
+tests/unit/m-a4.secret-scan.test.ts:
+(pass) A4-7 a commit adding a private key is refused, and the file is named [356.26ms]
+(pass) A4-8 a commit adding a .env file is refused, and the file is named [346.20ms]
+(pass) A4-9 ordinary source and prose pass the scan and reach the remote [430.71ms]
+
+tests/unit/m-a6.publish-guards.test.ts:
+(pass) git-publish --help explains itself and exits 0 [214.03ms]
+(pass) git-publish given more than a remote refuses and shows the usage [218.63ms]
+(pass) git-publish outside a repository says so and names where repositories live [11.37ms]
+(pass) git-publish on a detached HEAD refuses and names the branch to make [277.18ms]
+(pass) git-publish pointed at a remote that does not exist names the command that answers [274.74ms]
+(pass) git-publish in a clone declared read refuses before any branch rule [313.94ms]
+(pass) git-publish in a clone carrying no declaration refuses and names git-repo-info [320.12ms]
+(pass) git-publish with nothing new to send says so and exits 0 [543.47ms]
+(pass) git-publish refuses a commit adding .env, naming the file [337.56ms]
+(pass) a push the hook rejects is reported by git-publish, and spends no token [829.09ms]
+
+tests/unit/m-a6.publish.test.ts:
+(pass) A6-1 git-publish publishes a branch the declaration permits, and says what it published [499.58ms]
+(pass) A6-2 the protected default branch is refused, naming the branch, the policy and the way forward [295.34ms]
+(pass) A6-3 the default branch of a repository declared direct still publishes [476.09ms]
+(pass) A6-4 a branch outside the agent namespace is refused, naming the namespace and the branch [300.03ms]
+(pass) A6-5 a commit carrying a private key is refused before anything reaches the remote [353.32ms]
+
+tests/unit/m-b1.target-version.test.ts:
+(pass) the stack is running [85.13ms]
+(pass) B1-3 the resolution answers at all [0.06ms]
+(pass) B1-3 the NiFi version has the shape of a NiFi 2 release [0.13ms]
+(pass) B1-3 the Java major is the one Liquid runs on [0.04ms]
+(pass) B1-3 it says where it read them [0.03ms]
+(pass) B1-3 nothing in the contract declares a NiFi or Java version [0.72ms]
+
+tests/unit/m-b1.version-unreadable.test.ts:
+(pass) the stack is running [81.82ms]
+(pass) B1-4 the build refuses [0.04ms]
+(pass) B1-4 it says the target version could not be read [0.10ms]
+(pass) B1-4 it names what to do next [0.03ms]
+(pass) B1-4 it never names a version it guessed [0.02ms]
+(pass) B1-4 the drop directory is unchanged
+
+tests/component/m-a1.env-section.test.ts:
+(pass) A1-1 the git section is recognised by the parser [0.11ms]
+(pass) A1-1 both keys are listed as fields carrying help text [0.11ms]
+(pass) A1-2 the section is shown in the dashboard, not hidden or autogenerated [0.03ms]
+
+tests/component/m-a3.dashboard-key.test.ts:
+(pass) A3-6 the endpoint returns the public key [7.52ms]
+(pass) A3-6 the private key never appears in the response [5.15ms]
+(pass) A3-6 a missing key is reported rather than thrown [0.69ms]
+
+tests/component/m-a3c.dashboard-repositories.test.ts:
+(pass) A3c-12 every declared repository appears exactly once [17.21ms]
+(pass) A3c-12 each repository carries its own public key, labelled [16.65ms]
+(pass) A3c-12 the access and branch policy are carried through to the operator [20.14ms]
+(pass) A3c-12 a repository whose clone failed still shows its key and the reason [16.32ms]
+(pass) A3c-12 no private key material appears in the response [15.93ms]
+(pass) A3c-12 a project with no manifest reports no repositories rather than throwing [0.43ms]
+
+tests/component/m-a3c.env-section.test.ts:
+(pass) A3c-1 GIT_REPOSITORIES is a field of the git section
+(pass) A3c-1 the field carries help text explaining the entry format [0.15ms]
+(pass) A3c-1 the section stays visible in the dashboard [0.06ms]
+
+tests/component/m-a6.hook-token.test.ts:
+(pass) A6-6 a raw push with no token is refused, and told what to run instead [358.17ms]
+(pass) A6-7 a push carrying a valid token is permitted, and the token is spent [485.92ms]
+(pass) A6-8 a second push cannot ride on the token the first one consumed [601.15ms]
+(pass) A6-9 a push to the protected default branch is refused for being that, not for its path [323.22ms]
+
+tests/component/m-a6.operator-repository.test.ts:
+(pass) A6-10 the project root is a git repository [7.71ms]
+(pass) A6-10 the project root does not point at the stack's shared hook [6.89ms]
+(pass) A6-10 the project root carries no declaration, so no rule of this feature reads it [14.99ms]
+
+tests/contract/m-a1.env-contract.test.ts:
+(pass) A1-3 the keys are declared in .env.example
+(pass) A1-3 every key reaches every agent service through compose [0.74ms]
+(pass) A1-3 the workspace is mounted into every agent service [0.21ms]
+(pass) A1-3 naming stays host-agnostic — no GITHUB_ prefixed configuration keys [0.15ms]
+
+tests/contract/m-a2.skill-content.test.ts:
+(pass) A2-2 every load-bearing term is still present in the skill
+(pass) A2-2 the skill is substantial enough to carry those rules [0.26ms]
+
+tests/contract/m-a3.known-hosts.test.ts:
+(pass) A3-3 known_hosts is seeded with github.com entries
+(pass) A3-3 every seeded github.com key is one GitHub publishes [161.77ms]
+(pass) A3-4 host key checking is never disabled anywhere in the repository [174.15ms]
+
+tests/contract/m-a3.wiring.test.ts:
+(pass) A3-5 the secrets directory is mounted into every agent service [0.39ms]
+(pass) A3-5 every agent service gets an ssh command naming known_hosts and a per-clone identity [0.62ms]
+
+tests/contract/m-a3b.skill-source-rule.test.ts:
+(pass) A3b-2 an unreachable repository must be reported as unreachable [0.07ms]
+(pass) A3b-2 describing a repository from another source is forbidden without saying so [0.05ms]
+(pass) A3b-2 the rule names the shapes the substitution actually took [0.06ms]
+
+tests/contract/m-a3b.skill-url-form.test.ts:
+(pass) A3b-1 the skill names the URL form that works and the one that does not [0.07ms]
+(pass) A3b-1 the rules the skill already carried are still there [0.05ms]
+
+tests/contract/m-a3c.instead-of.test.ts:
+(pass) A3c-11 the start produced both clones [0.22ms]
+(pass) A3c-11 each clone carries exactly one rewrite, naming its own remote [0.19ms]
+(pass) A3c-11 the rewrite maps this repository https URL onto its SSH URL [0.08ms]
+(pass) A3c-11 no global rewrite of a whole host exists anywhere in the tree [169.60ms]
+
+tests/contract/m-a3c.ssh-command.test.ts:
+(pass) A3c-5 every agent service still declares a GIT_SSH_COMMAND [0.51ms]
+(pass) A3c-5 no GIT_SSH_COMMAND names one key for every remote [0.03ms]
+(pass) A3c-5 the identity is taken from the clone that is being worked on [0.39ms]
+(pass) A3c-5 the host-key policy and the timeouts survive the change [0.17ms]
+
+tests/contract/m-a3c.ssh-isolation.test.ts:
+(pass) A3c-8 both ssh invocations are present [0.01ms]
+(pass) A3c-8 neither can fall back to the operator ssh config or agent [0.04ms]
+(pass) A3c-8 host key checking survives the isolation [0.01ms]
+
+tests/contract/m-a3d.body-unchanged.test.ts:
+(pass) A3d-3 every rule from M-A2 and M-A3b is still in the body [0.08ms]
+(pass) A3d-3 the body is still substantial [0.04ms]
+
+tests/contract/m-a3d.description-occasions.test.ts:
+(pass) A3d-1 the description names the read-side occasions [0.26ms]
+(pass) A3d-1 the versioning occasions it already carried are still there [0.05ms]
+(pass) A3d-1 the description still says when to reach for the skill
+(pass) A3d-2 the workspace path is in the description itself
+(pass) A3d-2 the path is not only in the body
+
+tests/contract/m-a3e.body-unchanged.test.ts:
+(pass) A3e-6 every rule from M-A2, M-A3b and M-A3d is still in the body [0.23ms]
+(pass) A3e-6 the body is still substantial [0.06ms]
+
+tests/contract/m-a3e.skill-points-at-command.test.ts:
+(pass) A3e-5 the skill names the command as the way to find out about a repository [0.32ms]
+(pass) A3e-5 the command is named in the description, where it is read before the file is opened
+(pass) A3e-5 the credential message is described as meaning the repository is undeclared [0.04ms]
+(pass) A3e-5 the message is no longer explained as the repository being private or missing [0.03ms]
+(pass) A3e-5 the skill does not teach a URL taxonomy for the agent to apply [0.05ms]
+
+tests/contract/m-a4.clones-governed.test.ts:
+(pass) A4-16 the shared hook is present and executable [0.01ms]
+(pass) A4-16 every clone in the workspace still points at it [27.82ms]
+
+tests/contract/m-a4.hooks-path.test.ts:
+(pass) A4-13 both declared clones point at the shared hook directory [13.99ms]
+(pass) A4-13 a clone made after the start script is governed without a further step [38.42ms]
+(pass) A4-13 the shared hook is one file, and it is executable [0.13ms]
+
+tests/contract/m-a5.nested-clone.test.ts:
+(pass) A5-8 volumes/repos is ignored, by the volumes/ rule in .gitignore [9.55ms]
+(pass) A5-8 nothing under volumes/ shows in the operator's status [10.72ms]
+(pass) A5-8 a dry-run clean skips every nested repository rather than offering to remove it [16.70ms]
+
+tests/contract/m-a5.skill-build-files.test.ts:
+(pass) A5-7 the body has a section about working on the stack's own repository [0.02ms]
+(pass) A5-7 that section names the build files and says what breaking them costs [0.02ms]
+
+tests/contract/m-a5.write-declaration.test.ts:
+(pass) A5-1 the start clones both repositories of the mixed declaration [0.14ms]
+(pass) A5-1 the write-capable clone carries access write where the hook reads it [13.82ms]
+(pass) A5-1 the read-only clone still carries access read, so the two are not written from one template [14.12ms]
+(pass) A5-1 the manifest reports the same access per repository as the clones carry [0.22ms]
+
+tests/contract/m-a6.command-mounted.test.ts:
+(pass) A6-12 the services that carry git-repo-info are the ones expected [0.02ms]
+(pass) A6-12 every one of them mounts git-publish read-only at the same place on PATH [0.15ms]
+(pass) A6-12 the command on disk is an executable POSIX shell script [0.11ms]
+
+tests/contract/m-a6.refusal-next-step.test.ts:
+(pass) A6-11 both sources are read and each contributes refusals [0.08ms]
+(pass) A6-11 every refusal names a command, a branch form or an action [0.18ms]
+(pass) A6-11 no refusal is a single line that ends at the refusal [0.05ms]
+
+tests/contract/m-b1.command-mounted.test.ts:
+(pass) B1-2 the services that carry git-repo-info are the ones expected
+(pass) B1-2 every one of them mounts nar-build read-only at the same place on PATH [0.28ms]
+(pass) B1-2 the command on disk is an executable POSIX shell script [0.04ms]
+
+tests/contract/m-b1.no-credentials.test.ts:
+(pass) the stack is running [29.84ms]
+(pass) B1-12 the scan itself ran inside the container [0.05ms]
+(pass) B1-12 no /git-secrets and no key material inside the builder [0.11ms]
+(pass) B1-12 no environment key names a credential [0.03ms]
+(pass) B1-12 no credential value from .env is present in its environment [120.88ms]
+
+tests/contract/m-b1.refusal-next-step.test.ts:
+(pass) B1-11 both sources are read and each contributes refusals [0.06ms]
+(pass) B1-11 every refusal names a command, a file to fix or an action [0.06ms]
+(pass) B1-11 no refusal is a single line that ends at the refusal [0.03ms]
+
+tests/contract/m-b1.service-boundary.test.ts:
+(pass) B1-1 the working mounts are declared [0.02ms]
+(pass) B1-1 the dependency cache lives under volumes/ [0.02ms]
+(pass) B1-1 the git secrets are not mounted
+(pass) B1-1 no credential-bearing .env key is passed to the builder
+
+tests/integration/m-a0.dashboard-suite.test.ts:
+(pass) A0-6 the dashboard suite runs through the harness [40.76ms]
+
+tests/integration/m-a0.stack-guard.test.ts:
+(pass) A0-5 an absent container makes the guard throw with a legible message [42.74ms]
+(pass) A0-5 the guard passes for the agent containers when the stack is up [118.50ms]
+
+tests/integration/m-a1.workspace-dir.test.ts:
+(pass) A1-4 the first run creates the workspace with mode 777 [3780.65ms]
+(pass) A1-4 a second run is a no-op and still exits 0 [2286.25ms]
+(pass) A1-5 a deleted workspace is recreated by the next run [2082.58ms]
+(pass) A1-4 the live workspace exists and matches the same mode [0.09ms]
+
+tests/integration/m-a2.skill-guard.test.ts:
+(pass) A2-4 a missing skill file throws rather than returning empty content [131.21ms]
+(pass) A2-4 the failure names the path and points at the mount [126.58ms]
+
+tests/integration/m-a3c.clone-on-start.test.ts:
+(pass) A3c-6 the declared repository is in the workspace after the start [0.16ms]
+(pass) A3c-6 a second start neither re-clones it nor disturbs the working tree [159.16ms]
+(pass) A3c-7 a repository whose key is not registered is reported, and the start still succeeds [267.58ms]
+(pass) A3c-7 the workspace simply does not contain the repository that failed [0.18ms]
+(pass) A3c-7 the repository that failed still has a key waiting to be registered [0.07ms]
+
+tests/integration/m-a5.mixed-keys.test.ts:
+(pass) A5-2 the start generated a key for each repository of the mixed declaration [0.16ms]
+(pass) A5-2 each key lives under its own slug directory, mode 600 [0.17ms]
+(pass) A5-2 the write-capable repository has a key distinct from the read-only one [0.11ms]
+(pass) A5-2 neither private key file is a copy of the other [0.21ms]
+
+tests/integration/m-b1.broken-source.test.ts:
+(pass) the stack is running [87.80ms]
+(pass) B1-7 the build fails [2252.78ms]
+(pass) B1-7 javac's own message reaches the caller [0.06ms]
+(pass) B1-7 the message names the file and the line [0.04ms]
+(pass) B1-7 it names what to do next [0.05ms]
+(pass) B1-7 the drop directory gained nothing
+
+tests/integration/m-b1.dependency-cache.test.ts:
+(pass) the stack is running [82.04ms]
+(pass) B1-9 the first build succeeds and fills the cache [4072.18ms]
+(pass) B1-9 the second build succeeds without downloading anything again [4021.42ms]
+(pass) B1-9 the cache the builds used is the one under volumes/ [0.18ms]
+
+tests/integration/m-b1.own-pom.test.ts:
+(pass) the stack is running [80.66ms]
+(pass) B1-6 the build succeeds [2565.92ms]
+(pass) B1-6 the artifact is named from the author pom, not from the directory [0.04ms]
+(pass) B1-6 the dependency the author declared is in the build [2.74ms]
+
+tests/integration/m-b1.plain-source.test.ts:
+(pass) the stack is running [83.98ms]
+(pass) B1-5 the build succeeds [3897.81ms]
+(pass) B1-5 exactly one NAR appeared in the drop directory [0.17ms]
+(pass) B1-5 the output names the file it wrote [0.04ms]
+(pass) B1-5 the NAR carries the SPI descriptor naming the processor [9.38ms]
+
+tests/integration/m-b1.stale-artifact.test.ts:
+(pass) the stack is running [82.69ms]
+(pass) B1-8 a known-good NAR is in place first [3862.59ms]
+(pass) B1-8 the second build, of a source that does not compile, fails [2207.23ms]
+(pass) B1-8 the earlier artifact is byte-identical
+(pass) B1-8 no partial or temporary file was left beside it [0.05ms]
+
+tests/system/m-a1.host-roundtrip.test.ts:
+(pass) A1-8 the host sees a repository the container created [211.45ms]
+
+tests/system/m-a1.identity.test.ts:
+(pass) A1-9 the feature needs no entry in the operator configuration [0.41ms]
+(pass) A1-6 openclaw-gateway commits into the workspace under the configured identity [334.00ms]
+(pass) A1-7 opencode commits under the same identity despite a different HOME [537.19ms]
+
+tests/system/m-a1.no-confinement.test.ts:
+(pass) A1-10 writing outside the workspace is not prevented by this milestone [124.93ms]
+(pass) A1-10 the workspace is not a mount the agent is locked into [124.53ms]
+
+tests/system/m-a2.skill-visible.test.ts:
+(pass) A2-3 openclaw-gateway can read the git skill [125.54ms]
+(pass) A2-3 opencode can read the same skill at its own path [130.93ms]
+(pass) A2-3 both harnesses see identical content [247.49ms]
+
+tests/system/m-a3.github-reach.test.ts:
+(pass) the stack is running [62.78ms]
+(pass) A3-7 openclaw-gateway gets a definite answer from GitHub inside the time bound [898.07ms]
+(pass) A3-7 openclaw-gateway is never asked to accept a host key [1059.56ms]
+(pass) A3-7 opencode gets a definite answer from GitHub inside the time bound [1052.86ms]
+(pass) A3-7 opencode is never asked to accept a host key [1051.67ms]
+(pass) A3-8 a key GitHub does not know is denied rather than hanging [1234.20ms]
+
+tests/system/m-a3.host-key.test.ts:
+(pass) the stack is running [59.72ms]
+(pass) A3-9 a host absent from known_hosts is rejected on host key grounds [580.35ms]
+(pass) A3-9 the refusal is not a prompt waiting for an answer [1054.94ms]
+
+tests/system/m-a3.key-containment.test.ts:
+(pass) the stack is running [60.01ms]
+(pass) A3-10 the key is present where it belongs [133.94ms]
+(pass) A3-10 no copy exists in the workspace or the rendered configuration [312.43ms]
+(pass) A3-10 no copy has leaked outside the secrets mount inside the container [949.68ms]
+
+tests/system/m-a3b.skill-visible.test.ts:
+(pass) the stack is running [55.39ms]
+(pass) A3b-3 openclaw-gateway sees the URL rule and the source rule [127.76ms]
+(pass) A3b-3 opencode sees the URL rule and the source rule [117.92ms]
+(pass) A3b-3 both harnesses see identical content [242.06ms]
+
+tests/system/m-a3c.clone-identity.test.ts:
+(pass) the stack is running [62.61ms]
+(pass) A3c-8 the fixture clones were produced by the start script [0.20ms]
+(pass) A3c-8 agent-skills names its own key in its own configuration [131.04ms]
+(pass) A3c-8 agent-skills keeps the plain git@host:owner/repo.git remote URL [128.14ms]
+(pass) A3c-8 liquidupstart names its own key in its own configuration [130.16ms]
+(pass) A3c-8 liquidupstart keeps the plain git@host:owner/repo.git remote URL [125.37ms]
+(pass) A3c-9 agent-skills offers its own key to GitHub, inside the time bound [908.76ms]
+(pass) A3c-9 the command compose ships picks up agent-skills's key, not a stack-wide one [1232.28ms]
+(pass) A3c-9 liquidupstart offers its own key to GitHub, inside the time bound [1146.76ms]
+(pass) A3c-9 the command compose ships picks up liquidupstart's key, not a stack-wide one [1054.81ms]
+
+tests/system/m-a3d.skill-visible.test.ts:
+(pass) the stack is running [63.23ms]
+(pass) A3d-4 openclaw-gateway sees the read-side occasions and the workspace path [124.98ms]
+(pass) A3d-4 opencode sees the read-side occasions and the workspace path [124.33ms]
+(pass) A3d-4 both harnesses see an identical description [243.01ms]
+
+tests/system/m-a3e.command-in-harnesses.test.ts:
+(pass) the stack is running [56.42ms]
+(pass) A3e-7 git-repo-info is on PATH in openclaw-gateway [122.21ms]
+(pass) A3e-7 openclaw-gateway gets the declared repository answered [140.19ms]
+(pass) A3e-7 openclaw-gateway reports an undeclared repository as undeclared [137.17ms]
+(pass) A3e-7 git-repo-info is on PATH in opencode [126.14ms]
+(pass) A3e-7 opencode gets the declared repository answered [131.63ms]
+(pass) A3e-7 opencode reports an undeclared repository as undeclared [121.59ms]
+(pass) A3e-7 both harnesses give the same answer for the same repository [266.26ms]
+(pass) A3e-7 the answer names no key material [263.94ms]
+
+tests/system/m-a4.hook-in-container.test.ts:
+(pass) the stack is running [28.47ms]
+(pass) A4-14 the shared hook is installed in the container and the real clone points at it [128.24ms]
+(pass) A4-14 an empty commit does not reach the default branch of the real repository [5121.89ms]
+(pass) A4-14 a clone made inside the container is governed, and its protected default branch is refused [852.57ms]
+
+tests/system/m-a5.write-clone.test.ts:
+(pass) the stack is running [28.47ms]
+(pass) A5-3 the write-capable clone exists in the container and is governed by the hook [0.06ms]
+(pass) A5-3 an agent commits on a feature branch inside the clone, under the configured identity [539.82ms]
+(pass) A5-3 the operator's own working copy is where it was after the commit [23.56ms]
+(pass) A5-4 a push to the protected default branch is refused by the hook, not by a host [302.69ms]
+(pass) A5-5 a push whose commits add .env is refused by the secret scan, and nothing reaches the remote [328.32ms]
+(pass) A5-6 the operator's working copy is untouched after the system cases [21.10ms]
+
+tests/system/m-a6.publish-in-container.test.ts:
+(pass) the stack is running [29.63ms]
+(pass) A6-12 git-publish is on PATH in openclaw-gateway, under that name [145.19ms]
+(pass) A6-12 git-publish is on PATH in opencode, under that name [126.49ms]
+(pass) A6-12 the write-capable clone is in place and governed by the hook [0.07ms]
+(pass) A6-12 an agent publishes through the command, and the branch reaches the remote [468.68ms]
+(pass) A6-12 a raw push from the same clone is refused and told to use the command [322.26ms]
+
+tests/system/m-b1.build-in-container.test.ts:
+(pass) the stack is running [86.12ms]
+(pass) B1-10 the command is on the bare PATH in the container an agent works in [130.40ms]
+(pass) B1-10 a build run from inside that container lands the artifact [4116.01ms]
+(pass) B1-10 the answer named the artifact it wrote [0.02ms]
+
+ 306 pass
+ 0 fail
+ 732 expect() calls
+Ran 306 tests across 79 files. [92.33s]
+--- dashboard suite ---
+bun test v1.3.13 (bf2e2cec)
+
+src/lib/env-file.test.ts:
+(pass) parseExample > splits sections by banners and parses behavior markers [0.10ms]
+(pass) parseExample > attaches contiguous comments above a key as help [0.12ms]
+(pass) parseExample > recognizes both subheading styles [0.06ms]
+(pass) parseExample > remembers defaults and quoting [0.04ms]
+(pass) parseExample > parses a CRLF-terminated file identically to LF [0.15ms]
+(pass) parseEnvValues > parses quoted, unquoted and inline-commented values; last occurrence wins [0.09ms]
+(pass) renderEnv > round-trips the fixture unchanged when values equal the defaults [0.21ms]
+(pass) renderEnv > substitutes values and appends custom keys [0.04ms]
+(pass) renderEnv > keeps inline comments on substituted lines [0.04ms]
+(pass) renderEnv > substitutes values into a CRLF example and emits LF [0.06ms]
+(pass) formatValue > quotes when needed
+(pass) env-meta > classifies build-affecting keys [0.05ms]
+(pass) env-meta > picks input widgets [0.06ms]
+(pass) env-meta > collapse defaults: no collapsed sections; PER-IMAGE OVERRIDES subheading collapses [0.03ms]
+(pass) env-meta > section descriptions: keyword match with first-sentence fallback [0.14ms]
+(pass) env-meta > strips marker suffixes from display titles [0.01ms]
+(pass) real .env.example > round-trips byte-identically [0.40ms]
+(pass) real .env.example > finds the marked sections with their fields [0.35ms]
+(pass) real .env.example > finds every KEY= line of the file as a field [0.33ms]
+
+src/lib/server/project.test.ts:
+(pass) app password > paths resolve under the project volumes dir [0.03ms]
+(pass) app password > reads null when the file does not exist [0.12ms]
+(pass) app password > writes the trimmed value with a trailing newline at mode 0600 [0.44ms]
+(pass) app password > creates the directory when it is missing [0.32ms]
+(pass) app password > reads back the trimmed value [0.09ms]
+(pass) app password > reads null when the file holds only whitespace [0.14ms]
+(pass) app password > reads null instead of throwing when the path is a directory [0.20ms]
+(pass) app password > an in-place rewrite replaces the previous value [0.26ms]
+
+ 27 pass
+ 0 fail
+ 71 expect() calls
+Ran 27 tests across 2 files. [26.00ms]
+EXIT=0
+volumes/nar_extensions after cleanup: . .. 
+(pass) app password > an in-place rewrite replaces the previous value [0.26ms]
+
+ 27 pass
+ 0 fail
+ 71 expect() calls
+Ran 27 tests across 2 files. [26.00ms]
+EXIT=0
+VERDICT yes — 8 the suite is green again with the fixtures gone — EXIT=0

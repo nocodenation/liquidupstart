@@ -36,6 +36,13 @@ render_template() {
   printf '%s\n' "$content"
 }
 
+# Unconditionally, not inside the seeding branch below: that branch runs once, on
+# a first install, and every installation that predates this directory would
+# otherwise have docker create it as root on the first mount -- which the nifi
+# user in the container then cannot write.
+mkdir -p "${STATE_DIR}/api"
+chmod 777 "${STATE_DIR}/api"
+
 if [ -d "$STATE_DIR" ]; then
     echo ""
     echo "State folder already exists at $STATE_DIR"
