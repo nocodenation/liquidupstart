@@ -1,4 +1,4 @@
-# Handover — maintained continuously, last touched 2026-09-18
+# Handover — maintained continuously, last touched 2026-09-19
 
 **What this file is.** The working handover between the operator and the agent, on **one machine**.
 It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
@@ -11,14 +11,17 @@ installation will not match them.
 describe. **Reviewing a pull request does not require this file**, and nothing in it should be read
 as a promise the code has to keep.
 
-**Which copy is current.** The one on the topmost branch of the stack. Merges flow upward only
-(`main` → `#9` → `#10`), so a copy on a lower branch is a snapshot from the last forward merge and is
+**Which copy is current.** The one on the branch that last touched it -- for this file, #10. Merges
+flow upward only (`main` → `#9` → `#10`), and the three branches cut on 2026-09-19 sit beside that
+stack rather than in it, so a copy on a lower branch is a snapshot from the last forward merge and is
 expected to be behind. There is no rule that the copies match, and trying to make them match by
 editing downward is work that the merge direction undoes.
 
 ## What is being built
 
-**Three features and two repairs**, on five branches.
+**Three features, two repairs, and three more features specified on 2026-09-19** -- the pairing
+recovery (#15, built), the mid-term memory (#16, specified) and the mutation control for the suite
+(specified). The branch table below is the map; this section is why each exists.
 
 **The git integration** (#9) gives the agent harnesses OpenClaw and OpenCode version control:
 repositories declared in the configuration, cloned into a shared workspace, each with its own deploy
@@ -59,39 +62,52 @@ than tidied away.
 | `BACKLOG.md` | What was deliberately deferred, each with why. **Exists only on the feature branches** |
 | `.pr-drafts/` | Scratch. Untracked, and **not gitignored on the `main`-based branches** — stage by name, never `git add -A` |
 
-**Documents live on the branch they belong to.** `docs/` does not exist on `main` at all. The
-migration documents are on `feature/openclaw-2026-9-1`; the git and Java documents on their own
-branches.
+**Documents live on the branch they belong to**, and `docs/` now exists on `main` as well — it
+arrived with #11 on 2026-09-14, carrying the migration documents. The git, Java, memory and mutation
+documents are each on their own branch.
 
 ## The branches, and how they relate
 
-Current as of 2026-09-08 evening, after #12, #13 and #14 landed. **Nothing has reached `main` yet**:
-all three merged into `fix/openclaw-2026-9-1`, which is #11 — so #11 is now the only door to `main`,
-and it carries far more than the one-line pin its title suggests. Do not take a number from this
-document; it moves every time something lands. Ask:
+**Corrected 2026-09-19. Until then this section said *"nothing has reached `main` yet"*, and that had
+been false for five days.** #11 was merged on **2026-09-14**, and it carried the migration, #12, #13
+and #14 with it — so `main` now holds OpenClaw 2026.9.1, `docs/`, and 19 test files. Anyone who read
+the old sentence would have believed production still ran 2026.7.1.
+
+Do not take a number or a state from this document; both move every time something lands. Ask:
 
 ```bash
-git fetch -q origin && git rev-list --count origin/main..origin/fix/openclaw-2026-9-1
+git fetch -q origin && git log -1 --format='%h %ad %s' --date=short origin/main
+git rev-list --count origin/main..origin/feature/git-integration
 ```
 
-It answered **39** on the evening of 2026-09-08, having answered 36 two hours earlier.
+They answered `f855b11 2026-09-14 Merge pull request #11` and **164** on the evening of 2026-09-19.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
-| `feature/git-integration` | **#9**, open | `main` | M-A0 to M-A8 |
-| `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B3 |
-| `fix/openclaw-2026-9-1` | **#11**, open | `main` | The pin to 2026.7.1 — **and now the migration and #12 with it** |
-| ~~`fix/openclaw-start-stdin`~~ | ~~#14~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`. The `SIGTTIN` hang the migration's own verification found |
-| ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | **Merged** into #13. The branch exists only locally now; the remote one is gone |
-| ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`, remote branch deleted |
-| `integration/oc-2026-9-1` | — | — | **Not a merge candidate.** #13 + #9 + #10 in one place, so the compatibility cases can be *executed* rather than asserted |
+| `feature/git-integration` | **#9**, open | `main` | M-A0 to M-A15 |
+| `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B4, and this file |
+| `feature/openclaw-pairing-recovery` | **#15**, open | `feature/git-integration` | §9 of the migration document: the way back into the Control UI. R1, R2 and R3 built, OC-39 to OC-47 |
+| `feature/memory-midterm` | **#16**, open | `main` | The mid-term memory specification. Nothing built |
+| `feature/test-mutation-control` | open one | `feature/git-integration` | Proving a test can fail. Specification and a measured sample; nothing built |
+| ~~`fix/openclaw-2026-9-1`~~ | ~~#11~~ | — | **Merged into `main` 2026-09-14**, with #12, #13 and #14 inside it |
+| ~~`fix/openclaw-start-stdin`~~ | ~~#14~~ | — | Merged into #11 on 2026-09-08 |
+| ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | Merged into #13. The branch exists only locally now |
+| ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | Merged into #11 on 2026-09-08, remote branch deleted |
+| `integration/oc-2026-9-1` | — | — | **Not a merge candidate**, and now largely redundant: it existed so the compatibility cases could run against #11 + #9 + #10, and #11 is in `main` |
+
+**The three branches cut on 2026-09-19 all sit on #9 or `main`, never on #10.** Nothing they do
+needs the Java extensions, and everything they touch — both OpenClaw documents,
+`config/scripts/start/openclaw.sh`, the nginx identity blocks, the whole of `dashboard/` — was
+byte-identical on #9 and #10 when they were cut. That was measured, not assumed.
 
 Cutting a branch from another is how each PR shows only its own diff. GitHub retargets a stacked PR
 by itself once its base lands, so **the open ones can be reviewed in any order and nothing waits.**
 
-**A merged branch is not a landed change.** #12 and #13 are merged and neither is in `main`; they sit
-inside #11, and reading their PRs as "done" would misstate what production carries. The same will be
-true of #14 the moment it lands.
+**A merged branch was not a landed change — until #11 landed and made them all landed at once.**
+#12, #13 and #14 sat inside #11 for six days, and reading their PRs as "done" would have misstated
+what production carried. On 2026-09-14 #11 went into `main` and all four arrived together. The rule
+survives its example: **a merged PR says where a change went, not that it reached `main`**, and the
+one-line check above is what answers that.
 
 **#9 must be merged with a merge commit, not squashed.** GitHub retargets #10 by itself, but only
 cleanly if the commits it already carries survive — and the individual messages are part of what this
@@ -682,12 +698,35 @@ between them.
    clone takes the stack over, and measurements taken here while it runs are measurements of it. The
    discriminator is the `privacy-proxy` container.
 
-### Where the work stands, 2026-09-18
+### What 2026-09-19 added, and the one thing on it that expires
+
+**Three branches, all cut that day, none of them on #10.** See the branch table above. What matters
+here is the state they left on **this machine**:
+
+| | |
+|---|---|
+| **The gateway configuration was changed by hand, three times** | `gateway.auth.identityScopes` (now also written by the start script, R1), `operator.admin` removed from `deviceAutoApprove.scopes` (now also in the start script, R3), and — **still only by hand** — `plugins.entries["active-memory"].enabled` plus a `memory.search` block |
+| **The last of those expires on the next start** | `./scripts/linux/start.sh` rewrites `volumes/_openclaw/openclaw.json`, and the memory plugin goes off with it |
+
+**Why that matters before 05:00.** The stack runs a memory consolidation every day at 05:00 and has
+written *"Ranked 0 candidate(s)"* every day since 2026-09-11. `active-memory` — the plugin that
+produces the candidates — was switched on at 18:45 on 2026-09-19 to find out whether that is the
+reason. **A start before 05:00 turns it off again and voids the measurement**, and the next morning's
+file would read the same either way, which is precisely the shape the whole thing is about. The
+answer is in `volumes/_openclaw/workspace/memory/dreaming/deep/2026-09-20.md`.
+
+Rollback copies, if any of the three need undoing: `volumes/_openclaw/openclaw.json.before-identityscopes`
+and `.before-oc46`.
+
+### Where the work stands, 2026-09-19
 
 | Branch | Head | What is on it |
 |---|---|---|
 | `feature/git-integration` (#9) | `e33d1e6` | M-A9 to M-A15 |
-| `feature/liquid-java-extensions` (#10) | `5097ec1` | all of it, merged forward, plus this file |
+| `feature/liquid-java-extensions` (#10) | `3fc7c69` | all of it, merged forward, plus this file |
+| `feature/openclaw-pairing-recovery` (#15) | `6b1d7e9` | §9: R1, R2, R3, OC-39 to OC-47 |
+| `feature/memory-midterm` (#16) | `c47a624` | The memory specification and the nine-day finding |
+| `feature/test-mutation-control` | `f3a91db` | The mutation specification and its sample |
 
 **A head written into this file is stale the moment it is written** — the commit that records it
 cannot name itself, and the two documentation commits that closed 2026-09-18 are exactly what the
@@ -729,46 +768,17 @@ tests. The discriminator answers in one line —
 was green on #10 that morning, with a stack started from it. **Before reading a red M-B result here,
 check which branch the running stack came from.**
 
-**Five things are waiting on the operator**, and none of them is code:
+**What was waiting on the operator, and what became of it.** Five things stood here on the evening of 2026-09-18. By the evening of 2026-09-19 four were done: the reply to Timur is posted, PR #1 is closed with its reasoning, the memory questions are answered and the specification is on its own branch (#16), and the OpenAI key is replaced. **What is left is the third item, now the only one:**
 
-1. **The reply to Timur** on #9, drafted and not yet sent. It is
-   `.pr-drafts/pr9-reply-2026-09-18.md` — untracked and gitignored, so it exists on this machine
-   only, and its first line carries the command that posts it. It answers both reviews of 2026-09-16,
-   the follow-up of 2026-09-18, the styling request, and everything the operator's own runs turned
-   up.
-2. **`docs/FEATURE-memory-midterm.md`**, written 2026-09-18 and untracked: a specification for the
-   missing middle memory — short term is the context, long term is the pgvector RAG store, and
-   nothing sits between them. OpenClaw already ships three memory plugins, two of them switched off,
-   which is the first milestone: switch them on and measure before building anything. Five questions
-   in §6 need answering before it can be signed off; the first and third decide between ReMe and
-   MemPalace.
-3. **Whether the suite should render components.** Three of the four findings from 2026-09-18 are
+1. **Whether the suite should render components.** Three of the four findings from 2026-09-18 are
    held by text assertions — they prove the source says what was decided, not that the browser does
    it. Nothing in this repository has ever mounted a Svelte component. Closing that gap means a
    testing library, a new tier and a dependency in the dashboard image; leaving it open means these
    surfaces stay in the operator's eyes. Not decided.
 
-4. **Closing PR #1**, which is a decision rather than an answer — with the reasoning in *Next* item
-   2 above: the intent survives as Forgejo, the implementation in #1 does not. Nobody but the
-   operator can close it, and the reasoning exists nowhere but here.
-5. **The pairing recovery, §9 of `docs/FEATURE-openclaw-2026-9-1.md`** — specified 2026-09-19 after
-   the operator's own browser was locked out of the Control UI by a token this project revoked on
-   2026-09-10, while measuring OC-38. **Specified and signed off; nothing is built.** The operator
-   decided all three open questions the same day (§9.6): a brand-new browser must connect right
-   away, which makes R3 conditional on OC-46 rather than planned; the dashboard needs no
-   authentication of its own for the approve button; and the work gets **its own branch cut from
-   `feature/git-integration` (#9)**, because everything it touches is byte-identical on #9 and #10.
-
-   **One thing about this machine, and it expires:** the recovery currently rests on a hand edit of
-   `volumes/_openclaw/openclaw.json`. The next `./scripts/linux/start.sh` rewrites that file and
-   takes `gateway.auth.identityScopes` with it — and then a browser in the repair state is stuck
-   again. R1 is what makes it survive a start. Until R1 exists, the previous configuration is beside
-   it as `openclaw.json.before-identityscopes`.
-
-**And one thing waiting on the operator that has nothing to do with the code:** an OpenAI key was
-printed into a session transcript on 2026-09-18, while reading the OpenCode configuration. The
-project's own rule, from the pre-push hook, is that a key which reaches a place it should not is a
-key to replace. It has not been rotated yet.
+**The OpenAI key was replaced on 2026-09-19** after being printed into a session transcript the day
+before. The new key is in `.env`; the four backups in `../liquidupstart-backups/` still carry the old
+one, which is harmless only if it was revoked at OpenAI rather than merely superseded.
 
 ### What the suite did to this machine on 2026-09-17
 
