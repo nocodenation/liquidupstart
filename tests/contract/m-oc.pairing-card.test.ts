@@ -70,7 +70,21 @@ describe('OC-43 the operator has a control, and it is on the page', () => {
   test('and it is silent when nothing is waiting', () => {
     // A card that says "nothing pending" on every load is a card the operator
     // stops reading, and this one has to be noticed exactly once in a while.
-    expect(card).toMatch(/\{#if[^}]*pending\.length > 0/);
+    expect(card).toMatch(/\{#if loaded && \(pending\.length > 0 \|\| result\)\}/);
+  });
+
+  test('but it stays while it has something to confirm', () => {
+    // Found on 2026-09-19, the first time the card was used for real: approving
+    // empties the list, so a confirmation living inside the card left with the
+    // card and was never read. The operator had already taught this exact lesson
+    // on 2026-09-18 about the skip panel — "die message beim testen
+    // verschwindet" — and it was reintroduced one component later.
+    //
+    // The guard is the `|| result` above; this half asserts the list, the
+    // explanation and the button are what disappear, not the answer.
+    const gated = card.slice(card.indexOf('<section'));
+    expect(gated).toMatch(/\{#if pending\.length > 0\}[\s\S]*<ul class="gitlist">/);
+    expect(gated).toMatch(/\{#if pending\.length > 0\}[\s\S]*onclick=\{approve\}[\s\S]*\{\/if\}/);
   });
 
   test('a well-formed id reaches the command, so the guard is not refusing everything', () => {

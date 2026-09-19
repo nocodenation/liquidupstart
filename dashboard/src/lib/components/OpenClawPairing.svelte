@@ -58,38 +58,51 @@
   });
 </script>
 
-{#if loaded && pending.length > 0}
+<!-- Held open while a result is showing, even once nothing is pending any more.
+     Approving empties the list, so a confirmation living inside the card leaves
+     with the card and is never read. That is the operator's finding of
+     2026-09-18 about the skip panel, met again here the first time this card was
+     used for real, on 2026-09-19. -->
+{#if loaded && (pending.length > 0 || result)}
   <section class="card">
     <h2>A browser is waiting to be let in</h2>
-    <p class="gitmessage warn">
-      {pending.length === 1 ? 'One browser has' : `${pending.length} browsers have`} asked for access
-      to OpenClaw and {pending.length === 1 ? 'is' : 'are'} waiting for you. Until you approve,
-      {pending.length === 1 ? 'it shows' : 'they show'} “Role upgrade pending” and cannot connect.
-    </p>
+    {#if pending.length > 0}
+      <p class="gitmessage warn">
+        {pending.length === 1 ? 'One browser has' : `${pending.length} browsers have`} asked for
+        access to OpenClaw and {pending.length === 1 ? 'is' : 'are'} waiting for you. Until you
+        approve, {pending.length === 1 ? 'it shows' : 'they show'} “Role upgrade pending” and cannot
+        connect.
+      </p>
+    {/if}
 
-    <ul class="gitlist">
-      {#each pending as req}
-        <li class="gitrepo">
-          <div class="gitrepo-head">
-            <span class="gitrepo-label">{req.clientId}</span>
-            <span class="gitrepo-state">{req.isRepair ? 'returning' : 'new'}</span>
-            <span class="sectdesc">{req.deviceId.slice(0, 12)}</span>
-          </div>
-        </li>
-      {/each}
-    </ul>
+    {#if pending.length > 0}
+      <ul class="gitlist">
+        {#each pending as req}
+          <li class="gitrepo">
+            <div class="gitrepo-head">
+              <span class="gitrepo-label">{req.clientId}</span>
+              <span class="gitrepo-state">{req.isRepair ? 'returning' : 'new'}</span>
+              <span class="sectdesc">{req.deviceId.slice(0, 12)}</span>
+            </div>
+          </li>
+        {/each}
+      </ul>
 
-    <p class="gitrepo-instructions">
-      A returning browser is one this stack knew before and whose access was withdrawn. Approving
-      gives it back what it had; nothing else on the machine changes.
-    </p>
+      <p class="gitrepo-instructions">
+        A returning browser is one this stack knew before and whose access was withdrawn. Approving
+        gives it back what it had; nothing else on the machine changes.
+      </p>
 
-    <button type="button" class="save" disabled={working} onclick={approve}>
-      {working ? 'Approving…' : 'Approve'}
-    </button>
+      <button type="button" class="save" disabled={working} onclick={approve}>
+        {working ? 'Approving…' : 'Approve'}
+      </button>
+    {/if}
 
     {#if result}
       <p class="gitresult" class:warn={!result.ok}>{result.message}</p>
+      {#if result.ok && pending.length === 0}
+        <p class="gitrepo-instructions">Reload that browser and it is in.</p>
+      {/if}
     {/if}
   </section>
 {/if}

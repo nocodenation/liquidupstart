@@ -83,6 +83,7 @@ here; each is executed where its subject exists.
 | **OC-44** | contract | **negative** | The id is read when the button is pressed, never taken from what the page rendered — **built 2026-09-19** |
 | **OC-45** | contract | **negative** | A `requestId` that is not a uuid never reaches a shell — **built 2026-09-19** |
 | **OC-46** | system, **manual** | positive | With admin granted per identity instead of in the cap, a fresh browser still connects — **run and passed 2026-09-19** |
+| **OC-47** | system, **manual** | positive | The whole way back, walked: revoke → refused browser → card → Approve → connected. **Run 2026-09-19**, and it found a defect no automated case had |
 
 ### Suite 2 — compatibility
 
@@ -342,7 +343,7 @@ the released stack, belongs in a repair cut from `main`, and is recorded in
 | §5.3 device pairing | OC-8, OC-9, OC-10, OC-11, OC-12 |
 | §5.4 proxy attribution | OC-13, OC-14 |
 | §5.5 npm allowScripts | OC-15, OC-16 |
-| **OC-G5** a way back that needs no terminal | OC-39, OC-40, OC-41, OC-42, OC-43, OC-44, OC-45, OC-46 |
+| **OC-G5** a way back that needs no terminal | OC-39 to OC-47, and OC-47 is the one that walks it end to end |
 | §9 R1 the grant the recovery rests on | OC-39, OC-40, OC-41, OC-42 |
 | §9 R2 the card the operator uses | OC-43, OC-44, OC-45 |
 | §9 R3 where admin is granted | OC-46, with OC-38 as its control |
@@ -518,6 +519,8 @@ asserting the nginx template sets a single identity, which was already true.*
 | **Test data, both sides** | Must be accepted: `09cc464f-690a-4a51-9ac9-c97b7011eb34`, a real id from the measurement. Must be refused: `"; docker rm -f openclaw-gateway; #`, `09cc464f-690a-4a51-9ac9-c97b7011eb34 extra` — because a guard that only looks for a prefix is the usual way this kind of check is written wrong — `x09cc464f-…`, the empty string, `latest-ish`, and the same id in upper case. |
 | **How it was built** | `config/scripts/openclaw-pairing.sh` holds the docker invocation, the way `git.sh` holds the clone the retry reuses; `dashboard/src/lib/server/pairing.ts` spawns it and parses the CLI JSON, because the dashboard container has `docker` and `bash` but **no `jq`**, and a shell that reshapes JSON is a second place for the shape to be wrong. The card posts the literal `latest` and the route resolves it against what is pending at that moment. The card draws nothing at all while nothing is waiting. |
 | **The control that earns the green** | The churn rule was broken on purpose — the card changed to post `req.requestId`, the id it had rendered — and the case went **red**, naming that assertion. Restored afterwards. Without that, seventeen passing tests would only have shown that the file says what it says. |
+| **OC-47 · the whole mechanism, walked · manual** | Run 2026-09-19 on the operator machine, and the only run that exercises all of §9 at once. A device was **revoked on purpose** — the same act that caused the incident on 2026-09-10 — so a browser in the repair state existed to look at. Timeline: `devices revoke` at 16:03:10 through nginx; the private window reloaded and showed *"Role upgrade pending"*; the dashboard drew the card, naming `openclaw-control-ui`, **returning**, `8349140452f9`; **Approve** pressed; gateway logged `device pairing approved device=8349… role=operator` at 16:06:53; the private window reloaded and `webchat connected` at 16:07:27. No terminal, no request id carried by hand, no site data deleted. |
+| **And what walking it found** | **The confirmation disappeared with the card.** Approving empties the pending list, the card is drawn only while something is pending, and the result line lived inside it — so the operator pressed the button and the card simply vanished. That is the operator own finding of 2026-09-18 about the skip panel, reintroduced one component later by the person who had just fixed it. The card is now held open while it has an answer to show, and the list, the explanation and the button are what disappear. This is the case that would have caught it: `{#if loaded && (pending.length > 0 \|\| result)}`. |
 | **Covers** | OC-G5, §9 R2, §9.4. |
 
 ### OC-46 — whether admin still has to be in the cap
