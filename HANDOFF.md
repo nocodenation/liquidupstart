@@ -373,8 +373,9 @@ clone the feature did not create.
 
 ### The Claude login expires, and a long-lived token does not help
 
-Four interactive sign-ins in two days. The login lives only in `volumes/_openclaw-claude` and does
-not survive a reset.
+Five interactive sign-ins in two weeks, the last on 2026-09-19 after a login that had lasted about
+five hours. The login lives only in `volumes/_openclaw-claude` and does not survive a reset. **The
+reason it is so short-lived was measured on 2026-09-19 and is at the end of this section.**
 
 **A long-lived `CLAUDE_CODE_OAUTH_TOKEN` was measured and refused.** With the file login set aside and
 the token in the process environment a turn still fails `Not logged in`; the same token in the same
@@ -385,6 +386,33 @@ would fail silently. The full measurement is in `verification/RESULT-openclaw-20
 
 Still open, and now in `BACKLOG.md`: the CLI *does* accept the token, so a CLI call made with it
 might materialise a `.credentials.json` the SDK then reads. Nobody has measured that.
+
+**Why the session dies so fast, measured 2026-09-19: the refresh token does not refresh.** The login
+was alive at 11:39 — the start printed *"Claude CLI: already authenticated"* and `auth status` exited
+0 — and dead by 17:00 the same day, about five hours later. That is the fifth sign-in in two weeks.
+
+What the credentials file says, and what it is worth:
+
+| | |
+|---|---|
+| `claudeAiOauth.expiresAt` | **0** — the access token is gone |
+| `claudeAiOauth.refreshTokenExpiresAt` | `1792108293402`, which is **2026-10-16** — four weeks away |
+| A real turn | `Failed to authenticate: OAuth session expired and could not be refreshed`, exit 1 |
+
+**So `refreshTokenExpiresAt` is a date, not a promise.** The refresh token is inside its validity
+window and still cannot be exchanged, which is why the session ends in hours rather than weeks and
+why reading that field tells you nothing about how long the login will last. Anyone reasoning about
+the lifetime from the file will be wrong in the direction that costs a debugging session.
+
+The recovery is an interactive sign-in and nothing else: the dashboard's Claude panel, or
+`docker compose exec -it openclaw-gateway openclaw-claude auth login --claudeai`. After one, verified
+2026-09-19: `auth status` exits 0 and `openclaw-claude -p` answers.
+
+**And a warning about measuring this.** `openclaw-claude auth status | head` reports exit **0** even
+when nobody is logged in, because the status belongs to `head`. Run without a pipe it is **1**. That
+mistake nearly produced a finding — *"the start script's sign-in check is blind"* — against a check
+that is correct. It is the same shape as the `grep` and `if ! emit` entries below: **the exit status
+you read must be the one you meant.**
 
 ### Docker Hub's quota, because it is invisible until it bites
 
