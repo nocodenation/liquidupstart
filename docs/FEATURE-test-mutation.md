@@ -1,8 +1,9 @@
 # Proving a test can fail
 
-**Status: specification, nothing implemented.** Written 2026-09-19, before any code, as this project
-requires. The cases are in `TEST-SPEC-test-mutation.md` and are signed off before implementation
-begins.
+**Status: specified, signed off, and M-MU1 built the same day.** Written 2026-09-19 before any code,
+as this project requires; the cases are in `TEST-SPEC-test-mutation.md`. M-MU1 -- the registry, the
+runner and its own twelve cases -- is in. M-MU2, the backfill, runs per milestone and is by design
+never finished; §13 carries the first number.
 
 Branch `feature/test-mutation-control`, cut from `feature/git-integration` (#9), because that is
 where the suite it validates lives: 123 test files against 19 on `main`, and the testing skill this
@@ -93,7 +94,10 @@ things:
 | `mustFail` | The name of the test that must go red. Not "some test": a mutation that reddens ten cases proves nothing about the one |
 
 `from` must occur **exactly once** in the file. A mutation that could land in two places is not a
-controlled experiment.
+controlled experiment. It may span several lines: `from` and `to` travel base64-encoded, which the
+first implementation did not allow and MU-5 caught -- see §13. One field the sketch above omits and
+the implementation needs: **`spec`**, the test file that owns the case, since the runner runs that
+file and nothing else.
 
 ## 5. The runner, and the five rules that make it worth having
 
@@ -182,8 +186,10 @@ point at which a second person sees the experiment at all.
 
 ## 9. Milestones
 
-**M-MU1 · The registry, the runner, and its own cases.** Including the recursive ones: the runner
-must be shown to fail when it cannot run. *Done when* MU-1 to MU-7 pass and the report is readable.
+**M-MU1 · The registry, the runner, and its own cases — built 2026-09-19.** `tests/mutations.json`,
+`tests/mutate.sh`, and `tests/integration/m-mu.runner.test.ts` with sixteen tests covering MU-1 to
+MU-12. The registry opens with the ten entries the sample measured, so M-MU2 starts at ten rather
+than nought. What building it found is §13.
 
 **M-MU2 · Backfill, per milestone as each is next touched** (D3). Every case that carries a decision
 gets an entry when its milestone is worked on again, and the ones deliberately exempt are listed with
@@ -319,3 +325,40 @@ It is ten cases from the M-A milestones on one branch. It contains **no Java cas
 case, and nothing docker-backed** — and those are the tiers where a single test file runs in minutes
 rather than milliseconds. The two-to-three hour figure carries that assumption openly, and the first
 milestone that backfills a docker-backed tier will correct it.
+
+## 13. What building it found, 2026-09-19
+
+Three defects, all in the runner rather than in the suite, and each found by the thing meant to find
+it.
+
+**The first would have condemned every case in the repository.** bun names a test on its own line
+only when it **fails**; passing ones appear solely in the tally at the end. The first runner counted
+`(pass)` lines, found none, and classified the very first entry — A4-7, whose mutation had been
+measured by hand an hour earlier — as *"every test in the file failed; that is a broken file, not a
+control"*. Run over the whole registry it would have reported ten broken files and no validated
+cases, which reads as a catastrophe rather than as a parsing bug.
+
+**The second was a limit nobody had noticed deciding.** The registry travelled from JSON to bash as
+tab-separated fields, so a value carrying a newline was refused — and that quietly made **multi-line
+mutations impossible**. A rule spanning two lines is exactly the kind worth breaking. It was found by
+MU-5, whose fixture has to empty a whole file to redden every test, and it is now lifted: `from` and
+`to` travel base64-encoded.
+
+**The third was in the replacement itself.** The mutation was applied with `String.replace`, which
+interprets `$&`, `$1` and friends in the replacement — in a repository whose subjects are shell
+scripts full of `$` it would have corrupted the file it was restoring afterwards. It uses an index
+and two slices now.
+
+### And one finding that is not about the runner
+
+The first `--gaps` run answered:
+
+```
+specified=251 registered=10 missing=241 orphaned=0
+```
+
+**251 specified cases on this branch, ten of which have ever been shown to be capable of failing.**
+That is the number §2 said nobody knew, and it is now printed on demand. It is not a verdict on the
+suite — 10 of 10 sampled cases *could* be made to fail, so the missing 241 are unmeasured rather than
+suspect. The point is that the difference between *unmeasured* and *sound* is now visible instead of
+being a matter of confidence.
