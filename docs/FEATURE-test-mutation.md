@@ -95,7 +95,7 @@ things:
 `from` must occur **exactly once** in the file. A mutation that could land in two places is not a
 controlled experiment.
 
-## 5. The runner, and the four rules that make it worth having
+## 5. The runner, and the five rules that make it worth having
 
 `tests/mutate.sh` applies each entry, runs only the test file that owns the case, requires the named
 test to fail, and restores the subject.
@@ -104,8 +104,20 @@ test to fail, and restores the subject.
 validator itself: a registry that silently ignores stale entries is a check that cannot run,
 reporting as a check that ran. If the subject has moved, the run fails and names the entry.
 
-**The named test must fail, and the rest of that file must not.** Otherwise a mutation that breaks
-compilation would "pass" every entry in the registry at once.
+**The named test must fail, and at least one test in the file must still pass.** Otherwise a
+mutation that breaks compilation would "pass" every entry in the registry at once. The rule was
+*"and the rest must not fail"* until the sample of §12 measured it: **four of ten entries reddened
+more than one test**, every time a sibling asserting the same rule from the other side. Requiring
+the rest to stay green would refuse honest entries, so the guard keeps only what it was for —
+catching the mutation that reddens everything.
+
+**A green run is a question, not a finding.** This is the rule the sample forced, and it is the one
+that matters most. When a mutation is applied and no case goes red, that reads as *"no case protects
+this rule"* — the exact thing this milestone was built to discover. In the sample it was wrong four
+times out of thirteen, and it was wrong in a way nothing could see: the mutation was too narrow,
+landed at the wrong site, or replaced one of two occurrences. **A green mutation is therefore
+recorded as unresolved and never as a finding, until a second mutation of a different shape shows
+the same thing.** The runner marks it `unresolved` and the run does not count it either way.
 
 **The subject is restored however the run ends**, including `Ctrl-C`. `tests/verify/m-b2.sh` shipped
 a `trap … INT` that ran its handler and then resumed, so the goal that commissioned it — *"everything
@@ -225,11 +237,17 @@ thing it was built to prevent, and the report is where that will be visible.
 it removes the mitigation §11 originally hoped for: the author of a case is the person least likely
 to think of the mutation the case fails to catch.
 
-**What compensates is already in the design rather than added for it.** §7 puts the mutation in the
-detail block of the test specification, beside what makes the case green. So the second pair of eyes
-is the **reviewer at review time** — the mutation is a thing Timur can challenge on a pull request,
-which is exactly what he cannot do today. The blind spot is not removed; it is moved to where
-somebody else looks.
+**What compensates is partly in the design and partly a rule this decision makes mandatory.** §7 puts
+the mutation in the detail block of the test specification, beside what makes the case green, so the
+second pair of eyes is the **reviewer at review time** — a thing Timur can challenge on a pull
+request, which is exactly what he cannot do today.
+
+**But §12 showed that is not enough on its own.** A reviewer sees the mutation that was *registered*
+— the one that worked. They never see the four that came before it and produced false greens, and
+the author is the person least able to notice that their own mutation was the weak part rather than
+the case. With no second reader, the compensation has to be **mechanical**: that is why *a green run
+is a question, not a finding* (§5) is a rule rather than good practice here. D2 is what makes it
+load-bearing.
 
 ### D3 · Backfill per milestone, for speed
 
@@ -242,3 +260,62 @@ never walked. **MU-8 is what keeps the debt visible**, and D3 promotes it from a
 that makes this decision safe: the report prints the count of specified cases, the count with an
 entry, and the list without one, on every run. The unknown stays unknown, but it stops being
 invisible, and its size is readable on any day somebody wants to know.
+
+## 12. The sample, run 2026-09-19 before anything was built
+
+Ten cases, stratified over tier and milestone, mutated by hand between **20:10:19 and 20:13:45**.
+The interpretation was written down *before* the run, so that no number could be read favourably
+afterwards.
+
+| # | Case | Tier | What was mutated | Attempts | Result |
+|---|---|---|---|---|---|
+| 1 | A4-7 | unit | `pre-push`, the private-key pattern | 1 | named test red, 2 green |
+| 2 | A3c-3 | unit | `lib/git-repos.sh`, the policy rejection removed | **2** | named test red, 9 green |
+| 3 | A9-1 | contract | `git.sh`, the shared wait helper renamed | **2** | named test red, 11 green |
+| 4 | A4-13 | contract | `git.sh`, `core.hooksPath` at both sites | **2** | named test red, 2 green |
+| 5 | A6-11 | contract | `pre-push`, one next-step line removed | 1 | named test red, 2 green |
+| 6 | A8-4 | component | `server/git.ts`, fingerprint format | 1 | named test red, 6 green |
+| 7 | A10-16 | component | `server/git.ts`, the exit-status check disabled | 1 | **2 red**, 1 green |
+| 8 | A5-2 | integration | `lib/git-repos.sh`, per-repository key mode | **2** | named test red, 3 green |
+| 9 | A13-2/3 | integration | `git.sh`, `GIT_ONLY_SLUG` renamed | 1 | **3 red**, 4 green |
+| 10 | A10-18 | integration | `git.sh`, the untrusted-host guard disabled | 1 | **2 red**, 3 green |
+
+**Ten of ten could be made to fail.** Nothing in the sample asserts something no implementation could
+violate — which was the outcome that would have overturned D3, and did not.
+
+**Thirteen attempts for ten entries, and every bad attempt ran green.** That is the finding:
+
+| Bad attempt | What was wrong | What it looked like |
+|---|---|---|
+| 2 | Widened the rule with a word no case uses | *no case caught it* |
+| 3 | The `from` did not occur in the file at all | *no case caught it* |
+| 4 | One of two occurrences replaced; the other governed the fixture | *no case caught it* |
+| 8 | Hit the shared key's `chmod`, not the per-repository one | *no case caught it* |
+
+**So the most common failure of this method is not the case that proves nothing. It is the mutation
+that breaks nothing — and it is indistinguishable from a discovery.** MU-2 and MU-3 catch two of the
+four shapes; the fourth, *applied once and still ineffective*, cannot be caught mechanically at all.
+That is why §5 now says a green run is unresolved rather than a finding, and why §11 D2 leans on that
+rule rather than on a reviewer.
+
+### What it changed, and what it did not
+
+| | |
+|---|---|
+| **D1 · blocking** | **Unchanged, and better supported.** ~20 seconds per entry is far below the cost signal that would retire the rule |
+| **D2 · the author writes it** | **Unchanged as a decision, stronger as a risk.** Its compensation moved from social to mechanical — see §11 |
+| **D3 · per-milestone backfill** | **Unchanged.** Zero non-mutable cases means the debt is small in quality, so spreading it is safe |
+| **The runner's second rule** | **Changed**: "the rest must pass" became "at least one must pass" |
+| **The estimate** | **Changed by an order of magnitude.** Two to three hours for a full backfill, against the sixteen hours predicted an hour earlier |
+
+That last row is worth keeping as a caution rather than a triumph. The sixteen-hour figure was
+extrapolated from a single observation, in the same message that warned against extrapolating from a
+single observation — the same mistake the handover records about the bound that was called reliable
+after one lucky measurement. **Ten measurements cost three minutes and replaced it.**
+
+### What the sample does not cover
+
+It is ten cases from the M-A milestones on one branch. It contains **no Java case, no system-tier
+case, and nothing docker-backed** — and those are the tiers where a single test file runs in minutes
+rather than milliseconds. The two-to-three hour figure carries that assumption openly, and the first
+milestone that backfills a docker-backed tier will correct it.

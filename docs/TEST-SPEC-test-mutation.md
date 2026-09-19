@@ -35,21 +35,39 @@ wearing the uniform of the cure.
 | **MU-8** | contract | positive | The report lists every specified case **without** an entry, so the gap is a number rather than an impression |
 | **MU-9** | unit | **negative** | An entry whose `file` is a test file is refused: the registry mutates subjects, never assertions |
 | **MU-10** | integration | **negative** | An entry that hangs is bounded, fails, and the subject is still restored |
+| **MU-11** | integration | **negative** | A mutation that reddens nothing is reported **unresolved**, never as a finding — added 2026-09-19 after the sample |
+| **MU-12** | integration | positive | An entry whose mutation reddens its named test **and a sibling** is accepted — corrected 2026-09-19, same sample |
 
 ---
 
 ## 3. Detail blocks
 
-### MU-1 / MU-4 / MU-5 — the named test, and only the named test
+### MU-1 / MU-4 / MU-5 — the named test must fall, and not everything with it
 
 | | |
 |---|---|
 | **Premise** | The point of an entry is that *this* rule is what *this* case protects. A run that accepts "some test went red" proves nothing: a mutation that breaks the file's syntax reddens every test in it, and would validate every entry at once — the same shape as a broken query satisfying an assertion that something is absent (M-B3). |
 | **Component** | `tests/mutate.sh` and the registry, against a real case. |
 | **Test data** | The entry measured by hand on 2026-09-19, which is why it is the fixture: `case: OC-44`, `file: dashboard/src/lib/components/OpenClawPairing.svelte`, `from: "requestId: 'latest'"`, `to: "requestId: req.requestId"`, `mustFail: "the card posts \`latest\` rather than an id it rendered"`. Measured result: that test red, the other sixteen in the file green. MU-4's fixture is the same entry with `mustFail` pointing at a sibling test that the mutation does not affect — *"the guard accepts a real id"*. MU-5's fixture mutates `from: "let pending = $state([]);"` to `to: "let pending = $state([;"`, which is a syntax error. |
-| **Expected** | MU-1: the named test fails, the remaining tests in the file pass, the entry is reported **validated**. MU-4: the named test passes, so the entry is reported **not validated**, and the run fails. MU-5: more than the named test fails, so the entry is **refused** with the reason, rather than counted. |
+| **Expected** | MU-1: the named test fails, at least one test in the file still passes, the entry is reported **validated**. MU-4: the named test passes, so the entry is reported **not validated**, and the run fails. MU-5: **every** test in the file fails, so the entry is **refused** with the reason, rather than counted. |
 | **Unhappy** | MU-4 and MU-5 are the negatives and they carry the weight: MU-1 alone is satisfied by a runner that reports success whenever anything at all goes red. |
+| **Corrected 2026-09-19 by the sample** | The rule was *"the remaining tests must pass"*. Four of ten sampled entries reddened a sibling as well — a rule covered from both sides by two tests, which is the shape this project asks for everywhere else. Requiring the rest to stay green would have refused honest entries, so MU-5's bar moved from *more than one fails* to *all of them fail*, which is still exactly the syntax-error mutation it was written to catch. MU-12 is the positive counterpart. |
 | **Covers** | MU-FR1, MU-FR4. |
+
+### MU-11 / MU-12 — a green run is a question, and a reddened sibling is not a failure
+
+*Both added 2026-09-19, after the sample of §12 in the feature document. **MU-11 is the most
+important case in this specification.***
+
+| | |
+|---|---|
+| **Premise** | When a mutation is applied and nothing goes red, that reads as *"no case protects this rule"* — the discovery this whole milestone exists to make. **In the sample it was wrong four times out of thirteen.** The mutation was too narrow, or landed at the wrong site, or replaced one of two occurrences; each time the run was green and each time it looked exactly like a finding. MU-2 and MU-3 catch *not found* and *found twice*; the fourth shape — **found once, applied, and still ineffective** — cannot be caught mechanically at all. So the runner must refuse to conclude, rather than conclude wrongly. |
+| **Component** | The runner and its report. |
+| **Test data** | MU-11 uses the sample's own bad attempt, kept for the purpose: `file: config/scripts/start/lib/git-repos.sh`, `from: "      protected\|direct) ;;"`, `to: "      protected\|direct\|anything) ;;"` — applied cleanly, matching exactly once, and changing behaviour only for a word no case uses. The good entry beside it is the same file with the rejection line removed, which reddens A3c-3. MU-12 uses `file: config/scripts/start/git.sh`, `from: "GIT_ONLY_SLUG"`, which reddens A13-2 and two A13-3 tests together. |
+| **Expected** | MU-11: the entry is reported **unresolved**, counted as neither validated nor failed, and the report names it as needing a second mutation of a different shape. The run's exit status does not treat it as a discovery. MU-12: the entry is **validated**, because its named test failed and a passing test remains in the file. |
+| **Unhappy** | MU-11 is the negative and MU-12 the positive, and they must be read together: a runner that marks everything unresolved would satisfy MU-11 alone, and one that accepts any reddening would satisfy MU-12 alone. |
+| **What must not be trusted** | The word *unresolved* becoming a place things go to be forgotten. MU-8's report lists unresolved entries separately from missing ones, because they mean different work: a missing entry needs writing, an unresolved one needs a **better** mutation or is a real finding nobody has confirmed yet. |
+| **Covers** | MU-FR4, MU-FR7, and §11 D2 of the feature document — with no second reader, this is the mechanical compensation for the author marking their own homework. |
 
 ### MU-2 / MU-3 — a mutation that cannot be applied is a failure, not a silence
 
@@ -127,10 +145,10 @@ and a predicted number would be the kind of claim this project has stopped makin
 | MU-FR1 the entry format | MU-1, MU-9 |
 | MU-FR2 one entry, one file, restored | MU-1, MU-6 |
 | MU-FR3 an unapplicable mutation fails | MU-2, MU-3 |
-| MU-FR4 the named test, and only it | MU-1, MU-4, MU-5 |
+| MU-FR4 the named test, and one survivor | MU-1, MU-4, MU-5, MU-11, MU-12 |
 | MU-FR5 restored however it ends | MU-6, MU-10 |
 | MU-FR6 not over uncommitted work | MU-7 |
-| MU-FR7 the report names the gaps | MU-8 |
+| MU-FR7 the report names the gaps | MU-8, MU-11 |
 | MU-NFR1 it is a tool that is run | MU-2, MU-8 |
 | MU-NFR2 bounded | MU-10 |
 | MU-NFR3 never edits a test | MU-9 |
