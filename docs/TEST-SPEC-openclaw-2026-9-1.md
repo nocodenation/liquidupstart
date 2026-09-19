@@ -79,9 +79,9 @@ here; each is executed where its subject exists.
 | **OC-40** | contract | **negative** | The identity is never written twice, and a template with none or two stops the start — **built 2026-09-19** |
 | **OC-41** | system, **manual** | positive | The CLI sent **through** nginx is authenticated and can approve a pending request |
 | **OC-42** | system, **manual** | **negative** | Identity scopes do **not** release a repair: the browser is still refused, so nobody proposes this as the cure again |
-| **OC-43** | integration | positive | The dashboard lists a pending request and approving it gives the device a valid token |
-| **OC-44** | integration | **negative** | Approving an id that is no longer pending fails loudly, with the CLI's own words |
-| **OC-45** | contract | **negative** | A `requestId` that is not a uuid never reaches a shell |
+| **OC-43** | contract | positive | The dashboard draws a card only when something is pending, and it offers one control — **built 2026-09-19** |
+| **OC-44** | contract | **negative** | The id is read when the button is pressed, never taken from what the page rendered — **built 2026-09-19** |
+| **OC-45** | contract | **negative** | A `requestId` that is not a uuid never reaches a shell — **built 2026-09-19** |
 | **OC-46** | system, **manual** | positive | With admin granted per identity instead of in the cap, a fresh browser still connects — **run and passed 2026-09-19** |
 
 ### Suite 2 — compatibility
@@ -506,7 +506,7 @@ asserting the nginx template sets a single identity, which was already true.*
 
 ### OC-43 / OC-44 / OC-45 — the card an operator can actually use
 
-*Specified 2026-09-19 for §9 R2. Not yet built.*
+*Specified and **built** 2026-09-19. `tests/contract/m-oc.pairing-card.test.ts`, seventeen tests.*
 
 | | |
 |---|---|
@@ -515,7 +515,9 @@ asserting the nginx template sets a single identity, which was already true.*
 | **Test data** | Four request ids observed for one device within thirty minutes on 2026-09-19: `e626a793-ea03-4672-b21c-868a7fd5268c`, `0e4e2a95-2bac-480e-9500-1b50f1117bdd`, `53176b95-6c01-4e92-9d23-14d888066ab3`, `09cc464f-690a-4a51-9ac9-c97b7011eb34`. The last is the one that was approved; the first is the one the browser had printed for copying and is what a careful operator would have pasted. The listing shape the route must return: `{ "pending": [ { "requestId", "deviceId", "clientId", "isRepair", "requestedAt" } ] }`, read from the CLI's `--json` output at `.pending[0].requestId`. |
 | **Expected** | OC-43: with a pending request present, the route lists it; pressing approve re-reads the current id, approves it, and the device's stored token is valid afterwards rather than revoked. OC-44: approving an id that is no longer pending answers with the CLI's own refusal and a 502 — never a quiet success, and never a message this project invented. OC-45: a `requestId` failing `/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/` is rejected before any command is built, with the same shape as `start-skip`'s step guard. |
 | **Unhappy** | OC-44 and OC-45 are the negative halves; OC-43 is their counterpart and is what stops the guard from being satisfied by a route that refuses everything. OC-45 needs both signs in the same run — a well-formed id passes the guard and reaches the command, a malformed one does not. |
-| **Test data, both sides** | Must be accepted: `09cc464f-690a-4a51-9ac9-c97b7011eb34`, a real id from the measurement. Must be refused: `"; docker rm -f openclaw-gateway; #`, and `09cc464f-690a-4a51-9ac9-c97b7011eb34 extra` — the second because a guard that only looks for a prefix is the usual way this kind of check is written wrong. |
+| **Test data, both sides** | Must be accepted: `09cc464f-690a-4a51-9ac9-c97b7011eb34`, a real id from the measurement. Must be refused: `"; docker rm -f openclaw-gateway; #`, `09cc464f-690a-4a51-9ac9-c97b7011eb34 extra` — because a guard that only looks for a prefix is the usual way this kind of check is written wrong — `x09cc464f-…`, the empty string, `latest-ish`, and the same id in upper case. |
+| **How it was built** | `config/scripts/openclaw-pairing.sh` holds the docker invocation, the way `git.sh` holds the clone the retry reuses; `dashboard/src/lib/server/pairing.ts` spawns it and parses the CLI JSON, because the dashboard container has `docker` and `bash` but **no `jq`**, and a shell that reshapes JSON is a second place for the shape to be wrong. The card posts the literal `latest` and the route resolves it against what is pending at that moment. The card draws nothing at all while nothing is waiting. |
+| **The control that earns the green** | The churn rule was broken on purpose — the card changed to post `req.requestId`, the id it had rendered — and the case went **red**, naming that assertion. Restored afterwards. Without that, seventeen passing tests would only have shown that the file says what it says. |
 | **Covers** | OC-G5, §9 R2, §9.4. |
 
 ### OC-46 — whether admin still has to be in the cap
