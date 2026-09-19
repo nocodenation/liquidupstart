@@ -92,29 +92,35 @@ protect(CONFIG, () => {
 });
 
 describe('OC-11 the scopes we grant', () => {
-  test('auto-approval is on, and operator.admin is among the scopes', () => {
-    // Reversed on 2026-09-10 by OC-38, which measured what the old assertion
-    // protected: with admin left out, a freshly approved browser does not lose
-    // the admin-gated pages — it cannot connect at all, and no documented
-    // recovery works. The list is a cap on what an approval may grant, and the
-    // Control UI asks for admin.
-    const d = readConfig().gateway.auth.trustedProxy.deviceAutoApprove;
+  test('auto-approval is on, admin is not in the cap, and the identity carries it', () => {
+    // Reversed again on 2026-09-19, and this time with both halves measured.
+    // OC-38 put admin in the cap on the finding that a capped browser cannot
+    // connect AND that no recovery exists. The second half was wrong: the
+    // recovery works through nginx (R1), so the cap no longer has to carry
+    // admin. OC-46 measured the replacement in a private window — the device is
+    // approved with five scopes, the connection is elevated by the identity
+    // grant, and the admin-gated pages work.
+    const auth = readConfig().gateway.auth;
+    const d = auth.trustedProxy.deviceAutoApprove;
     expect(d.enabled).toBe(true);
-    expect(d.scopes).toContain('operator.admin');
+    expect(d.scopes).not.toContain('operator.admin');
     expect(d.scopes.length).toBeGreaterThan(0);
+    // Both halves, because a cap without the grant locks every browser out of
+    // the admin surfaces and would satisfy the assertion above on its own.
+    expect(Object.values(auth.identityScopes)[0]).toContain('operator.admin');
   });
 
-  test('OC-11 the gateway raises the admin warning, and it stays visible', () => {
-    // This is not the old assertion turned around. It used to require the
-    // warning's ABSENCE as the guard against granting admin by accident; that
-    // decision is reversed, so the guard has to be too. Requiring its PRESENCE
-    // is what notices the reversal being undone: if the line disappears,
-    // somebody has taken operator.admin back out of the cap, and the next
-    // browser without a stored device identity is locked out with no way back.
-    // The warning is the price of the decision, and a price nobody can see is
-    // one nobody weighs.
+  test('OC-11 the gateway raises no admin warning against what we write', () => {
+    // Turned around twice, and the history is the point rather than noise. It
+    // first required the warning's ABSENCE; on 2026-09-10 it required its
+    // PRESENCE, because admin had been put in the cap and a price nobody can see
+    // is one nobody weighs. R3 removes the price, so the assertion returns to
+    // absence — and it is now a real guard rather than a wish, because OC-46
+    // measured that a fresh browser still connects without the scope in the cap.
+    // If this line comes back, somebody has put admin back and the measurement
+    // that says they need not is in §9 of the feature document.
     const since = writeConfig(readConfig());
-    expect(gatewayLogSince(since)).toContain('deviceAutoApprove.scopes includes operator.admin');
+    expect(gatewayLogSince(since)).not.toContain('deviceAutoApprove.scopes includes operator.admin');
   });
 
   test('OC-11 doctor reports no critical finding against the live configuration', () => {

@@ -40,6 +40,7 @@ inference; it is now a comparison of two digests.
 | **OC-G2** | As much as possible stays backward-compatible, so few of our own mechanisms have to be raised to the new version's level. |
 | **OC-G3** | The footprint of the change is as small as full usability permits — and no smaller. |
 | **OC-G4** | The change does not break what works today (`main`), nor the two features in flight: **A** the git integration (#9) and **B** the Liquid Java extensions (#10). |
+| **OC-G5** | An operator who cannot reach the Control UI has a way back that does not require a terminal, a device id, or knowledge that device tokens exist — and that way is exercised rather than assumed. Added 2026-09-19; see §9. |
 
 OC-G4 is why there are **two** suites. See §7.
 
@@ -218,8 +219,14 @@ and nothing approves it.
 **And the documented way back does not work here.** The interface names
 `openclaw devices approve <id>`; it answers `unauthorized` from inside the gateway container **and**
 from `openclaw-cli`, which shares the gateway's network namespace, for the reason this section
-already gives above — `trusted-proxy` mode wants a header the CLI does not send. An operator who
-revokes their own device has no path back through any documented route.
+already gives above — `trusted-proxy` mode wants a header the CLI does not send.
+
+> **Corrected 2026-09-19.** This section used to end *"an operator who revokes their own device has
+> no path back through any documented route"*. That is false, and it was false when it was written.
+> The CLI is refused because it reaches the gateway **directly**, where no header is set. Sent
+> **through nginx** instead, the same CLI is authenticated — nginx sets `X-Forwarded-User` for
+> anything that arrives on that route, whoever sends it. What was missing was not a path but a
+> scope, and `gateway.auth.identityScopes` supplies it. Measured, and specified in §9.
 
 **Why the earlier measurement missed it.** The device in use had been granted `operator.admin` under
 2026.7.1's `dangerouslyDisableDeviceAuth` and kept it: `scopes: … operator.admin` on a configuration
@@ -229,8 +236,14 @@ sound. Only a **fresh** approval exercises the cap, and until 2026-09-10 nobody 
 
 **So `operator.admin` is in `deviceAutoApprove.scopes`**, written by
 `config/scripts/start/openclaw.sh`. `gateway.auth.identityScopes` was tried first, as this section
-suggested, and changes nothing: it grants scopes to an identity, while what blocks is the cap on the
-device approval.
+suggested, and changes nothing **for the browser**: it grants scopes to an identity, while what
+blocks is the cap on the device approval. Re-measured on 2026-09-19 with the same result, so this
+half stands.
+
+> **What that sentence got wrong, corrected 2026-09-19.** *Changes nothing* was read as a verdict on
+> the setting. It is a verdict on one of its two uses. The same grant makes the **CLI** usable
+> through the proxy, which is the whole recovery path — see §9. A measurement that answers one
+> question was filed as the answer to the other.
 
 The trade is stated rather than hidden. The gateway logs a SECURITY WARNING naming `operator.admin`
 whenever it is in this list, which is exactly what OC-10 asserts, and that warning is now expected
@@ -384,3 +397,159 @@ than the papercut warrants.
 
 **The 815 keys added in 2026.9.1** that this stack does not use. New channels, agent ownership,
 media models, browser SSRF policy. Adopting any of them is a feature decision, not a migration.
+
+## 9. The pairing dead end, and the way back · **specified 2026-09-19, not yet built**
+
+On the morning of 2026-09-19 the operator could not open OpenClaw. Their browser was shown *"Role
+upgrade pending — this browser is already known, but the requested access changed and needs a fresh
+approval"*, and the three commands the page offered could not be run in this stack. The remedy that
+worked was *delete the site data for `openclaw.localhost:8888` and reload*, at which point the
+operator said the sentence this section exists for:
+
+> **"das würde kein user von sich aus tun."**
+
+That is the requirement. A recovery which assumes the person knows that device tokens exist, that a
+browser stores one, and where a browser keeps them, is not a recovery. **OC-G5.**
+
+### 9.1 Why it happened, which is not what anyone guessed
+
+The device was paired, held role `operator` with every scope — and its token had been **revoked on
+2026-09-10 at 12:35:16**. A paired device without a valid token asks for a *repair*, and
+§5.3's auto-approval deliberately does not grant repairs: `pendingRecord.isRepair` is one of the two
+conditions under which the approval path returns `null`. That is correct behaviour. A revocation
+that any returning browser could undo by itself would not be a revocation.
+
+**The revocation was ours.** It is the measurement §5.3 records — *"the operator's device was revoked
+from the Devices page and the browser reconnected"* — and the browser profile that carried the
+revoked identity did not come back for nine days. Today's incident is that measurement's residue, not
+a new defect. Nothing in the stack revokes tokens on its own, and no case has ever asserted what
+happens to a device that returns *after* a revocation.
+
+### 9.2 What was measured on 2026-09-19
+
+Every row was run against the live stack before any of it was written down. Two of the four are
+negative results, and they are the reason this section is short on promises.
+
+| | Measured | Result |
+|---|---|---|
+| **M1** | `openclaw devices list` inside the gateway container | `unauthorized … reason=trusted_proxy_user_missing` — as §5.3 records |
+| **M2** | The same CLI sent **through nginx**: `--url ws://openclaw.localhost:8888`, with a deliberately wrong `--token unused` | `missing scope: operator.pairing` — **authentication succeeded**, only authorisation was absent. The token is never checked; `--url` merely refuses to run without one |
+| **M3** | `gateway.auth.identityScopes` granting that identity the seven operator scopes, then M2 again | The device table printed. Gateway logged `identity scope grant elevated connection identity=user@nocodenation.org addedScopes=operator.admin,…` |
+| **M4** | With M3 in place, the operator reloaded the Control UI | **Still refused.** `reason=role-upgrade roleFrom=<none> roleTo=operator`. The device gate is evaluated before identity scopes are applied, so this does **not** prevent the dead end |
+
+M2 is the finding. M4 is the one that had to be run to stop this section from claiming a cure, and it
+agrees with the 2026-09-10 attempt §5.3 already records — the same setting, measured twice, nine days
+apart, with the same answer for the browser and the opposite answer for the CLI.
+
+The repair itself then worked, and is the proof that the path is real:
+
+```
+approving 09cc464f-690a-4a51-9ac9-c97b7011eb34
+Approved a26aab16fdf39295924c5e2497dbc9c6b08920f5a2af8d4eef7e3fe744e5b435 (09cc464f-…)
+[ws] webchat connected client=openclaw-control-ui remote=10.99.0.2
+```
+
+**And a fifth thing was measured without being looked for.** The request id changes on **every**
+retry: `e626a793` → `0e4e2a95` → `53176b95` → `09cc464f` within thirty minutes, because the refused
+browser keeps knocking. The id the red box offers for copying is stale within seconds, so any remedy
+that has a human carry an id from one window to another is broken by construction.
+
+### 9.3 What will be built
+
+Three parts. The first is the enabler, the second is what the operator actually sees, and the third
+re-opens a decision whose justification has expired.
+
+| | | |
+|---|---|---|
+| **R1** · **built 2026-09-19** | `gateway.auth.identityScopes` is written by `config/scripts/start/openclaw.sh` | The recovery exists only while that key is in the configuration, and the start script rewrites `volumes/_openclaw/openclaw.json` on every run. The identity is **read out of the nginx template** rather than typed a second time, and a template carrying none or more than one stops the start. Cases OC-39 and OC-40 |
+| **R2** · **built 2026-09-19** | A card in the dashboard: pending pairing requests, with an approve button | This is the half that answers OC-G5. It reads the request id at the moment the button is pressed, never from what was rendered — see the id churn above. Same shape as the deploy-key queue of M-A9, for the same reason: the operator already looks there when something is wrong. It draws nothing while nothing is waiting. Cases OC-43 to OC-45 |
+| **R3** · **built 2026-09-19** | `operator.admin` moves out of `deviceAutoApprove.scopes` and is granted per identity | §5.3 put it in the cap because *"an operator who revokes their own device has no path back"*. With R1 that premise is gone, and what remains is the gateway standing advice, logged at every start since 2026-09-10 and read by nobody. **OC-46 passed**, so it is built rather than merely permitted |
+
+**R3 was a decision, not a consequence**, and the operator set the bar on 2026-09-19: *"a brand new
+browser should connect right away."* That made R3 conditional on OC-46 rather than planned — and
+**OC-46 was run the same day and passed**, so it is built.
+
+What was measured, in a private window, within twelve milliseconds:
+
+```
+security audit: trusted-proxy browser device auto-approved  scopes=approvals,pairing,questions,read,write
+security audit: identity scope grant elevated connection    addedScopes=operator.admin
+[ws] webchat connected  client=openclaw-control-ui  remote=10.99.0.2
+```
+
+The device is stored with five scopes and no admin; the **connection** is elevated by the identity
+grant. The admin-gated pages render, and the `SECURITY WARNING` naming `operator.admin` is gone from
+the startup log for the first time since 2026-09-10. Had it failed, `operator.admin` would have
+stayed in `deviceAutoApprove.scopes` with its justification rewritten, because the one it carried is
+false (§5.3, corrected) — a refusal would have been a result too.
+
+The requirement is now explicit and outranks the security warning: **a browser that has never been
+here connects on the first try, without meeting a card, without an operator approving anything.**
+R2's card exists for the browser that is *refused*, which is a different situation and the only one
+that was ever stuck.
+
+### 9.4 The interface R2 needs
+
+The dashboard cannot call the gateway CLI directly: it has no Docker socket, and the CLI must arrive
+through nginx to be authenticated at all. The call therefore takes the shape the git integration
+already uses — a server route that runs one command and hands the script's own words back.
+
+| | |
+|---|---|
+| **Route** | `POST /openclaw-pairing` with `{ "requestId": "<id>" }`; `GET` is the listing, shaped `{ "pending": [ { "requestId", "deviceId", "clientId", "isRepair", "requestedAt" } ] }` |
+| **Guard** | `requestId` is matched against `/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/` before it reaches a shell, exactly as `start-skip` guards a step name |
+| **Transport** | `ws://openclaw.localhost:8888` with `--token unused`, from inside the compose network, with `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1`. Each of those three is load-bearing and each is measured in §9.2 |
+| **Failure** | A non-zero exit becomes a 502 carrying the CLI's own message, never a message this project invented. An approval attempt against an id that is no longer pending must say so rather than succeeding quietly |
+
+### 9.5 Deliberately not in scope
+
+**Preventing the revocation.** Nothing in the stack revokes tokens by itself; the one revocation on
+record was a measurement. A guard against a thing that has happened once, on purpose, would be
+ceremony.
+
+**Removing device identity altogether.** `dangerouslyDisableDeviceAuth` is retired (§5.3) and asking
+2026.9.1 to behave like 2026.7.1 is how the migration got into this in the first place.
+
+**Making the gateway's own error text correct.** The red box names a command this stack cannot run
+and an id that is already stale. That is upstream's to fix; what we can do is make sure an operator
+never has to read it.
+
+### 9.6 What the operator decided, 2026-09-19
+
+**1. A brand-new browser connects right away.** This is a requirement now, not a preference, and it
+constrained R3 rather than deciding it: admin could leave the cap only if OC-46 showed a fresh
+browser still connecting immediately with the grant coming from the identity instead. **It did**, the
+same day, so the requirement and the gateway advice turned out not to conflict at all — the conflict
+everyone assumed was there rested on the false half of the 2026-09-10 finding.
+
+**2. The dashboard needs no authentication of its own for this.** Whoever reaches it can already
+start and stop the whole stack, so approving a pairing request adds no exposure that is not already
+there. Recorded rather than assumed, which is the point of asking.
+
+**3. The branch, and what it costs.** Everything this work touches was compared across the two
+candidates on 2026-09-19: both OpenClaw documents, `config/scripts/start/openclaw.sh`, the four
+`X-Forwarded-User` blocks in `config/nginx/templates/nginx.conf`, and the whole of `dashboard/` are
+**byte-identical on #9 and #10**. #10's 16,855 added lines are the Java extensions and their tests,
+none of which this work reads or changes.
+
+So it goes on its own branch, cut from **`feature/git-integration` (#9)**, with its pull request
+based on #9 — the same stacking #10 already uses, so its diff shows only its own work and GitHub
+retargets it when #9 lands. Gateway auth does not end up inside the Java feature's history, and the
+work does not inherit a 66-file diff it has nothing to do with.
+
+**The cost is named rather than hidden:** these two documents will then exist on three branches —
+the new one, #10, and the stale copy on #11. That is the shape this project has already been bitten
+by, when a promoted procedure left two copies and every repair went into the one nobody was reading.
+The rule that keeps it honest is the one the handover already states: **the current copy is the one
+on the branch that last touched it**, and after this branch lands it is merged forward into #10 like
+everything else.
+
+### 9.7 What this section is worth if nothing is built
+
+The correction in §5.3 stands on its own. *"No path back through any documented route"* was written
+with confidence, survived nine days, and was wrong — and it was wrong in the direction that cost the
+most, because it is the sentence that justified granting full admin to every browser automatically.
+It took one measurement to break: send the same command through the proxy instead of around it.
+
+**A conclusion that closes a door deserves the same scrutiny as one that opens it.** This one had
+less, because it agreed with what everyone already believed.

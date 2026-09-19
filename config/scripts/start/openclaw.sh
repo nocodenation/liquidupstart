@@ -393,6 +393,44 @@ else
     exit 1
   fi
 
+  # The identity nginx puts on every proxied request, read out of the template
+  # that sets it rather than written down a second time here. Two files that must
+  # agree on a string will disagree eventually, and the failure is silent: the
+  # grant below simply never matches, and the CLI is refused for what looks like a
+  # scope problem. So it is computed, and a template that carries more than one
+  # identity fails the start rather than picking one.
+  #
+  # What the grant is for: gateway.auth.mode is trusted-proxy, so a CLI that
+  # reaches the gateway directly sends no header and is refused. Sent THROUGH
+  # nginx it is authenticated, and then it needs a scope -- which comes from
+  # nowhere, because scopes live on the device record and a fresh CLI has none.
+  # Without this, `openclaw devices approve` cannot run in this stack at all, and
+  # a browser whose device token was revoked has no way back. Measured 2026-09-19;
+  # the case is OC-41, and OC-42 is the half that shows this does not by itself
+  # release such a browser. See §9 of docs/FEATURE-openclaw-2026-9-1.md.
+  NGINX_TEMPLATE="${PROJECT_DIR}/config/nginx/templates/nginx.conf"
+  LU_PROXY_IDENTITY=""
+  if [[ -f "$NGINX_TEMPLATE" ]]; then
+    LU_IDENTITIES="$(awk -F'"' '
+      /^[[:space:]]*proxy_set_header[[:space:]]+X-Forwarded-User[[:space:]]+"/ { print $2 }
+    ' "$NGINX_TEMPLATE" | sort -u)"
+    LU_PROXY_IDENTITY="$(printf '%s\n' "$LU_IDENTITIES" | head -n 1)"
+    if [[ "$(printf '%s\n' "$LU_IDENTITIES" | grep -c .)" -gt 1 ]]; then
+      echo "Error: ${NGINX_TEMPLATE} sets more than one X-Forwarded-User identity:" >&2
+      printf '  %s\n' $LU_IDENTITIES >&2
+      echo "  The gateway grants scopes to one identity. With two, whichever is" >&2
+      echo "  granted leaves the other unable to approve a device pairing, and the" >&2
+      echo "  refusal reads as a scope error rather than a mismatch." >&2
+      exit 1
+    fi
+  fi
+  if [[ -z "$LU_PROXY_IDENTITY" ]]; then
+    echo "Error: no X-Forwarded-User identity found in ${NGINX_TEMPLATE}." >&2
+    echo "  nginx is what authenticates here; without that header the gateway" >&2
+    echo "  attributes nothing and every proxied request is refused." >&2
+    exit 1
+  fi
+
   # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
   # relocated agents.defaults.memorySearch to memory.search, and retired
   # gateway.controlUi.dangerouslyDisableDeviceAuth in favour of
@@ -415,6 +453,7 @@ else
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
     -e LU_PROXY_IP="${LU_PROXY_IP}" \
+    -e LU_PROXY_IDENTITY="${LU_PROXY_IDENTITY}" \
     -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
     -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
@@ -472,28 +511,53 @@ else
       // includes operator.admin, is at the deviceAutoApprove block below.
       if (schemaNew) {
         delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
-        // The Control UI requests operator.admin among its default scopes, and
-        // this list is a CAP on what an auto-approval may grant -- not the set a
-        // device receives. Leave admin out and a fresh browser does not lose a
-        // few pages: it cannot connect at all. Measured 2026-09-10 by revoking
-        // the operator device and reconnecting -- "Role upgrade pending, this
-        // browser is already known, but the requested access changed" -- and the
-        // recovery the UI names, `openclaw devices approve`, answers
-        // `unauthorized` from the gateway container and from openclaw-cli alike,
-        // because trusted-proxy auth wants a header the CLI does not send. There
-        // was no documented way back in.
+        // The way back into the Control UI. Scopes otherwise come only from a
+        // device record, so a CLI arriving through nginx is authenticated and
+        // still cannot approve anything -- which is how a browser with a revoked
+        // device token became unrecoverable on 2026-09-19. Granting them to the
+        // identity is what the gateway security warning itself recommends, and it
+        // is connection-only: it does not approve a device, it lets a caller that
+        // nginx has already authenticated act. R1 of §9.
         //
-        // Granting it restores the posture 2026.7.1 had with
-        // dangerouslyDisableDeviceAuth, which the migration gave up by accident
-        // rather than by decision. It is not a new exposure: the nginx here
-        // authenticates nobody, it sets a constant X-Forwarded-User, so whoever
-        // reaches the proxy is already the operator. The gateway logs a SECURITY
-        // WARNING naming operator.admin when it is here, which is what OC-10
-        // asserts, and that warning is the honest record of the trade.
+        // No apostrophes in this block: the whole program is one single-quoted
+        // bash string, and one of them ends it.
+        c.gateway.auth.identityScopes = {
+          [process.env.LU_PROXY_IDENTITY]: [
+            "operator.admin",
+            "operator.read",
+            "operator.write",
+            "operator.talk",
+            "operator.pairing",
+            "operator.approvals",
+            "operator.questions",
+          ],
+        };
+        // This list is a CAP on what an auto-approval may grant, not the set a
+        // device receives. operator.admin is deliberately NOT in it -- and that
+        // is a reversal of the decision taken on 2026-09-10, made on a
+        // measurement rather than on preference.
+        //
+        // What 2026-09-10 measured: with admin left out, a fresh browser could
+        // not connect at all, and no documented recovery worked. The second half
+        // of that was false. The recovery does work, through nginx, which is R1
+        // above -- so the reason for putting admin in the cap was gone, and what
+        // remained was the gateway telling us at every start to grant admin per
+        // identity instead.
+        //
+        // What 2026-09-19 measured, in a private window, end to end:
+        //
+        //   device auto-approved  scopes=approvals,pairing,questions,read,write
+        //   identity scope grant elevated connection  addedScopes=operator.admin
+        //   webchat connected  client=openclaw-control-ui
+        //
+        // Twelve milliseconds, no approval, and the admin-gated pages worked.
+        // The device is capped below admin and the CONNECTION is elevated by the
+        // identity, which is exactly the shape the warning asks for -- and the
+        // warning is gone from the startup log, which is what OC-11 now asserts.
+        // OC-46 is the case; OC-38 is its control.
         c.gateway.auth.trustedProxy.deviceAutoApprove = {
           enabled: true,
           scopes: [
-            "operator.admin",
             "operator.read",
             "operator.write",
             "operator.talk",
@@ -504,6 +568,10 @@ else
         };
       } else {
         delete c.gateway.auth.trustedProxy.deviceAutoApprove;
+        // Neither key exists in the 2026.7.1 schema, and a key that version does
+        // not know is a validation failure at start rather than a warning, which
+        // is the lesson of §5.1.
+        delete c.gateway.auth.identityScopes;
         c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
       }
 
