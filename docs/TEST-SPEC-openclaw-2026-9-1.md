@@ -82,7 +82,7 @@ here; each is executed where its subject exists.
 | **OC-43** | integration | positive | The dashboard lists a pending request and approving it gives the device a valid token |
 | **OC-44** | integration | **negative** | Approving an id that is no longer pending fails loudly, with the CLI's own words |
 | **OC-45** | contract | **negative** | A `requestId` that is not a uuid never reaches a shell |
-| **OC-46** | system, **manual** | positive | With admin granted per identity instead of in the cap, a fresh browser still connects — the case that decides R3 |
+| **OC-46** | system, **manual** | positive | With admin granted per identity instead of in the cap, a fresh browser still connects — **run and passed 2026-09-19** |
 
 ### Suite 2 — compatibility
 
@@ -520,7 +520,8 @@ asserting the nginx template sets a single identity, which was already true.*
 
 ### OC-46 — whether admin still has to be in the cap
 
-*Specified 2026-09-19 for §9 R3. **This is the case that decides it**, and it has not been run.*
+*Specified and **run** 2026-09-19, in a private window on the operator's own machine. **It passes**,
+so R3 is built: `operator.admin` is out of the cap and granted per identity.*
 
 | | |
 |---|---|
@@ -531,5 +532,7 @@ asserting the nginx template sets a single identity, which was already true.*
 | **If it fails** | R3 is refused, `operator.admin` stays in `deviceAutoApprove.scopes`, and its justification is rewritten: not *"there is no way back"*, which is false, but *"the cap is the only place the Control UI's own request can be satisfied"* — which OC-38 and this case together would then have measured. A refusal here is a result, not a failure of the milestone. |
 | **Unhappy** | OC-38 is the counterpart and it already ran. This case is only meaningful beside it: one shows the six scopes failing without an identity grant, the other shows them passing with one — and if it does not, the pair still answers the question, which is why it is worth running either way. |
 | **Before running it** | Read §9.2. A device in the repair state cannot be released from the browser, and until R1 is written into the start script the recovery depends on a hand edit that `./scripts/linux/start.sh` will remove. |
-| **Covers** | OC-G5, §9 R3, and re-opens OC-10 / OC-11. |
+| **What it found** | **It passes, and it passes through the mechanism rather than past it.** Three audit lines within twelve milliseconds: `trusted-proxy browser device auto-approved … scopes=operator.approvals,operator.pairing,operator.questions,operator.read,operator.write` — five scopes, no admin — then `identity scope grant elevated connection identity=user@nocodenation.org addedScopes=operator.admin`, then `webchat connected client=openclaw-control-ui`. The device row in `device_pairing_paired` carries the five, not six. The operator confirmed the admin-gated surfaces render: *Gateway auth*, *Exec policy*, the tool profile switcher and *Pair device* on the Privacy & Security page. And the `SECURITY WARNING` naming `operator.admin` is gone from the startup log for the first time since 2026-09-10. |
+| **Why the device row matters more than the screenshot** | A browser that connects proves the cap admits it; only the stored scope set proves the cap is what admitted it. Without that row the same result would be explained equally well by the configuration change never having taken effect — which is the failure shape this project has met three times, where a check that could not run looked exactly like a check that ran. |
+| **Covers** | OC-G5, §9 R3, and reverses OC-10 / OC-11. |
 

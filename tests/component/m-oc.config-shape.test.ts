@@ -136,7 +136,6 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove).toEqual({
       enabled: true,
       scopes: [
-        'operator.admin',
         'operator.read',
         'operator.write',
         'operator.talk',
@@ -147,29 +146,44 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     });
   });
 
-  test('OC-12 the scope set contains operator.admin, and that is the decision', () => {
-    // Reversed on 2026-09-10, by measurement rather than by preference. This list
-    // is a CAP on what an auto-approval may grant, and the Control UI requests
-    // operator.admin: without it a freshly approved browser does not lose pages,
-    // it cannot connect at all — "Role upgrade pending" — and the recovery the
-    // interface names answers `unauthorized` from every container that could run
-    // it. OC-38 is that measurement; §5.3 of the feature document carries the
-    // reasoning it overturned. The price is a SECURITY WARNING from the gateway,
-    // which OC-11 now requires to be present rather than absent: if it ever
-    // disappears, somebody has taken the scope back out and the next fresh
-    // browser is locked out.
-    expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes).toContain('operator.admin');
+  test('OC-46 admin is not in the cap, and is granted per identity instead', () => {
+    // Reversed twice, and this is the reversal that has both halves measured.
+    //
+    // 2026-09-10 put operator.admin IN the cap, because without it a fresh
+    // browser could not connect and "no documented recovery worked". OC-38
+    // measured the first half correctly and the second half wrongly: the
+    // recovery does work, through nginx, which is R1. With that reason gone,
+    // what was left was the gateway telling us at every start to grant admin per
+    // identity instead — advice logged since 2026-09-10 and read by nobody.
+    //
+    // 2026-09-19 measured the replacement in a private window, end to end: the
+    // device was auto-approved with five scopes and no admin, the connection was
+    // elevated by the identity grant, and the Control UI connected on the first
+    // try with its admin-gated pages working. Twelve milliseconds, no approval.
+    //
+    // Both assertions together are the decision. The cap alone would be
+    // satisfied by granting nothing anywhere, which locks every browser out.
+    const d = cfg.gateway.auth.trustedProxy.deviceAutoApprove;
+    expect(d.scopes).not.toContain('operator.admin');
+    const identity = cfg.gateway.auth.identityScopes;
+    const granted = Object.values(identity)[0] as string[];
+    expect(granted).toContain('operator.admin');
+    // And the cap still admits a browser at all: the scopes it does carry are
+    // what the device receives, so an empty cap is not the same decision.
+    expect(d.enabled).toBe(true);
+    expect(d.scopes.length).toBeGreaterThan(0);
   });
 
-  test('N10 and no rationale in the writer still says the opposite', () => {
-    // The paragraph above the block kept the pre-measurement reasoning --
-    // operator.admin "is excluded" and admin goes to identityScopes -- while the
-    // code three lines down granted it. A reader or a security review takes the
-    // prose at face value; the code is what runs. Whichever one is wrong, they
-    // must not disagree.
+  test('N10 and the rationale in the writer does not contradict it', () => {
+    // The paragraph above the block once kept the pre-measurement reasoning --
+    // admin "is excluded" -- while the code three lines down granted it. A
+    // reader or a security review takes the prose at face value; the code is
+    // what runs. The direction has flipped since, so the assertion flips with
+    // it: the code now excludes admin from the cap, and the prose must not claim
+    // it is granted there.
     const script = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
-    const claimsExcluded = /operator\.admin[\s\S]{0,200}?(so it is excluded|is excluded)/.test(script);
-    expect({ granted: true, claimsExcluded }).toEqual({ granted: true, claimsExcluded: false });
+    const claimsGranted = /so operator\.admin is in|admin is in the cap|granting it restores/i.test(script);
+    expect({ excluded: true, claimsGranted }).toEqual({ excluded: true, claimsGranted: false });
   });
 });
 

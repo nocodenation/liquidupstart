@@ -463,14 +463,25 @@ re-opens a decision whose justification has expired.
 |---|---|---|
 | **R1** · **built 2026-09-19** | `gateway.auth.identityScopes` is written by `config/scripts/start/openclaw.sh` | The recovery exists only while that key is in the configuration, and the start script rewrites `volumes/_openclaw/openclaw.json` on every run. The identity is **read out of the nginx template** rather than typed a second time, and a template carrying none or more than one stops the start. Cases OC-39 and OC-40 |
 | **R2** | A card in the dashboard: pending pairing requests, with an approve button | This is the half that answers OC-G5. It reads the request id at the moment the button is pressed, never from what was rendered — see the id churn above. Same shape as the deploy-key queue of M-A9, for the same reason: the operator already looks there when something is wrong |
-| **R3** | `operator.admin` moves out of `deviceAutoApprove.scopes` and is granted per identity | §5.3 put it in the cap because *"an operator who revokes their own device has no path back"*. With R1 and R2 that premise is gone, and what remains is the gateway's own standing advice, logged at every start since 2026-09-10 and read by nobody |
+| **R3** · **built 2026-09-19** | `operator.admin` moves out of `deviceAutoApprove.scopes` and is granted per identity | §5.3 put it in the cap because *"an operator who revokes their own device has no path back"*. With R1 that premise is gone, and what remains is the gateway standing advice, logged at every start since 2026-09-10 and read by nobody. **OC-46 passed**, so it is built rather than merely permitted |
 
-**R3 is a decision, not a consequence**, and the operator took it on 2026-09-19: *"a brand new
-browser should connect right away."* That makes R3 **conditional rather than planned**. It is built
-only if OC-46 shows that a fresh browser still connects immediately once admin is granted per
-identity instead of through the cap. If it does not, `operator.admin` stays in
-`deviceAutoApprove.scopes` — with its justification rewritten, because the one it carries is false
-(§5.3, corrected).
+**R3 was a decision, not a consequence**, and the operator set the bar on 2026-09-19: *"a brand new
+browser should connect right away."* That made R3 conditional on OC-46 rather than planned — and
+**OC-46 was run the same day and passed**, so it is built.
+
+What was measured, in a private window, within twelve milliseconds:
+
+```
+security audit: trusted-proxy browser device auto-approved  scopes=approvals,pairing,questions,read,write
+security audit: identity scope grant elevated connection    addedScopes=operator.admin
+[ws] webchat connected  client=openclaw-control-ui  remote=10.99.0.2
+```
+
+The device is stored with five scopes and no admin; the **connection** is elevated by the identity
+grant. The admin-gated pages render, and the `SECURITY WARNING` naming `operator.admin` is gone from
+the startup log for the first time since 2026-09-10. Had it failed, `operator.admin` would have
+stayed in `deviceAutoApprove.scopes` with its justification rewritten, because the one it carried is
+false (§5.3, corrected) — a refusal would have been a result too.
 
 The requirement is now explicit and outranks the security warning: **a browser that has never been
 here connects on the first try, without meeting a card, without an operator approving anything.**
@@ -506,10 +517,10 @@ never has to read it.
 ### 9.6 What the operator decided, 2026-09-19
 
 **1. A brand-new browser connects right away.** This is a requirement now, not a preference, and it
-constrains R3 rather than deciding it: admin may leave the cap only if OC-46 shows a fresh browser
-still connecting immediately with the grant coming from the identity instead. The security warning
-loses to the requirement if the two conflict — stated here so that a later reader does not mistake
-the warning's survival for an oversight.
+constrained R3 rather than deciding it: admin could leave the cap only if OC-46 showed a fresh
+browser still connecting immediately with the grant coming from the identity instead. **It did**, the
+same day, so the requirement and the gateway advice turned out not to conflict at all — the conflict
+everyone assumed was there rested on the false half of the 2026-09-10 finding.
 
 **2. The dashboard needs no authentication of its own for this.** Whoever reaches it can already
 start and stop the whole stack, so approving a pairing request adds no exposure that is not already

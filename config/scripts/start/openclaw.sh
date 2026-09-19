@@ -532,28 +532,32 @@ else
             "operator.questions",
           ],
         };
-        // The Control UI requests operator.admin among its default scopes, and
-        // this list is a CAP on what an auto-approval may grant -- not the set a
-        // device receives. Leave admin out and a fresh browser does not lose a
-        // few pages: it cannot connect at all. Measured 2026-09-10 by revoking
-        // the operator device and reconnecting -- "Role upgrade pending, this
-        // browser is already known, but the requested access changed" -- and the
-        // recovery the UI names, `openclaw devices approve`, answers
-        // `unauthorized` from the gateway container and from openclaw-cli alike,
-        // because trusted-proxy auth wants a header the CLI does not send. There
-        // was no documented way back in.
+        // This list is a CAP on what an auto-approval may grant, not the set a
+        // device receives. operator.admin is deliberately NOT in it -- and that
+        // is a reversal of the decision taken on 2026-09-10, made on a
+        // measurement rather than on preference.
         //
-        // Granting it restores the posture 2026.7.1 had with
-        // dangerouslyDisableDeviceAuth, which the migration gave up by accident
-        // rather than by decision. It is not a new exposure: the nginx here
-        // authenticates nobody, it sets a constant X-Forwarded-User, so whoever
-        // reaches the proxy is already the operator. The gateway logs a SECURITY
-        // WARNING naming operator.admin when it is here, which is what OC-10
-        // asserts, and that warning is the honest record of the trade.
+        // What 2026-09-10 measured: with admin left out, a fresh browser could
+        // not connect at all, and no documented recovery worked. The second half
+        // of that was false. The recovery does work, through nginx, which is R1
+        // above -- so the reason for putting admin in the cap was gone, and what
+        // remained was the gateway telling us at every start to grant admin per
+        // identity instead.
+        //
+        // What 2026-09-19 measured, in a private window, end to end:
+        //
+        //   device auto-approved  scopes=approvals,pairing,questions,read,write
+        //   identity scope grant elevated connection  addedScopes=operator.admin
+        //   webchat connected  client=openclaw-control-ui
+        //
+        // Twelve milliseconds, no approval, and the admin-gated pages worked.
+        // The device is capped below admin and the CONNECTION is elevated by the
+        // identity, which is exactly the shape the warning asks for -- and the
+        // warning is gone from the startup log, which is what OC-11 now asserts.
+        // OC-46 is the case; OC-38 is its control.
         c.gateway.auth.trustedProxy.deviceAutoApprove = {
           enabled: true,
           scopes: [
-            "operator.admin",
             "operator.read",
             "operator.write",
             "operator.talk",
