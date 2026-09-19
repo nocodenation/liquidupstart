@@ -75,8 +75,8 @@ here; each is executed where its subject exists.
 | **N1b** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
-| **OC-39** | contract | positive | The start writes `gateway.auth.identityScopes` for the identity nginx actually sets |
-| **OC-40** | contract | **negative** | The identity is never written twice: a config whose key differs from nginx's header fails the case |
+| **OC-39** | contract | positive | The start writes `gateway.auth.identityScopes` for the identity nginx actually sets — **built 2026-09-19** |
+| **OC-40** | contract | **negative** | The identity is never written twice, and a template with none or two stops the start — **built 2026-09-19** |
 | **OC-41** | system, **manual** | positive | The CLI sent **through** nginx is authenticated and can approve a pending request |
 | **OC-42** | system, **manual** | **negative** | Identity scopes do **not** release a repair: the browser is still refused, so nobody proposes this as the cure again |
 | **OC-43** | integration | positive | The dashboard lists a pending request and approving it gives the device a valid token |
@@ -474,7 +474,9 @@ not have: "operator.admin is excluded unless a case proves the interface unusabl
 
 ### OC-39 / OC-40 — the identity is written once, or it is written wrong
 
-*Specified 2026-09-19 for §9 R1. Not yet built.*
+*Specified and **built** 2026-09-19. `tests/contract/m-oc.identity-scopes.test.ts`, six tests, run
+against the unfixed script first: **five of the six were red**, and the one that passed is the half
+asserting the nginx template sets a single identity, which was already true.*
 
 | | |
 |---|---|
@@ -484,6 +486,8 @@ not have: "operator.admin is excluded unless a case proves the interface unusabl
 | **Expected** | OC-39: after the start script has run, the written configuration contains `gateway.auth.identityScopes` with at least `operator.pairing` for the proxy's identity, and `openclaw config validate` accepts it. OC-40: the identity string appears in the repository in **one** place, and both the nginx template and the start script derive it from there. A change to one that is not reflected in the other fails the case and names both files. |
 | **Unhappy** | OC-40 is the negative half and it is the one that earns its place: OC-39 alone is satisfied by writing any identity at all, including one no request will ever carry. The counterpart the pair needs is that a **matching** identity passes — otherwise the rule could be met by refusing everything. |
 | **Why a case and not a comment** | The same shape has already cost this project twice: `trustedProxies` written from a lookup that was empty (OC-32), and a subnet pinned to the one range docker hands out first. A value that two files must agree on is a fact to compute, not a string to remember. |
+| **How it was built** | `config/scripts/start/openclaw.sh` reads the identity out of `config/nginx/templates/nginx.conf` with awk, refuses to start when the template holds none or more than one, and passes it to the config writer as `LU_PROXY_IDENTITY`. The grant is written inside the `schemaNew` branch and deleted in the other, because `identityScopes` is not a key 2026.7.1 knows. The case asserts the identity string appears in **no** literal form in the script, which is the assertion that would have caught a second copy. |
+| **What it found while being built** | A defect of its own, and one worth carrying: the whole config writer is a single-quoted bash string, so the apostrophe in a comment reading *"what OpenClaw's own warning recommends"* **ended the string** and the start script stopped parsing at `bash -n`. Two more apostrophes had been written into the same block. The rule is now in the block itself, and the check is one line: `bash -n config/scripts/start/openclaw.sh` before trusting any edit to that program. |
 | **Covers** | OC-G5, §9 R1. |
 
 ### OC-41 / OC-42 — the way back exists, and it is not the one that was tried

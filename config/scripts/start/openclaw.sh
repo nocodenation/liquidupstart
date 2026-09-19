@@ -393,6 +393,44 @@ else
     exit 1
   fi
 
+  # The identity nginx puts on every proxied request, read out of the template
+  # that sets it rather than written down a second time here. Two files that must
+  # agree on a string will disagree eventually, and the failure is silent: the
+  # grant below simply never matches, and the CLI is refused for what looks like a
+  # scope problem. So it is computed, and a template that carries more than one
+  # identity fails the start rather than picking one.
+  #
+  # What the grant is for: gateway.auth.mode is trusted-proxy, so a CLI that
+  # reaches the gateway directly sends no header and is refused. Sent THROUGH
+  # nginx it is authenticated, and then it needs a scope -- which comes from
+  # nowhere, because scopes live on the device record and a fresh CLI has none.
+  # Without this, `openclaw devices approve` cannot run in this stack at all, and
+  # a browser whose device token was revoked has no way back. Measured 2026-09-19;
+  # the case is OC-41, and OC-42 is the half that shows this does not by itself
+  # release such a browser. See §9 of docs/FEATURE-openclaw-2026-9-1.md.
+  NGINX_TEMPLATE="${PROJECT_DIR}/config/nginx/templates/nginx.conf"
+  LU_PROXY_IDENTITY=""
+  if [[ -f "$NGINX_TEMPLATE" ]]; then
+    LU_IDENTITIES="$(awk -F'"' '
+      /^[[:space:]]*proxy_set_header[[:space:]]+X-Forwarded-User[[:space:]]+"/ { print $2 }
+    ' "$NGINX_TEMPLATE" | sort -u)"
+    LU_PROXY_IDENTITY="$(printf '%s\n' "$LU_IDENTITIES" | head -n 1)"
+    if [[ "$(printf '%s\n' "$LU_IDENTITIES" | grep -c .)" -gt 1 ]]; then
+      echo "Error: ${NGINX_TEMPLATE} sets more than one X-Forwarded-User identity:" >&2
+      printf '  %s\n' $LU_IDENTITIES >&2
+      echo "  The gateway grants scopes to one identity. With two, whichever is" >&2
+      echo "  granted leaves the other unable to approve a device pairing, and the" >&2
+      echo "  refusal reads as a scope error rather than a mismatch." >&2
+      exit 1
+    fi
+  fi
+  if [[ -z "$LU_PROXY_IDENTITY" ]]; then
+    echo "Error: no X-Forwarded-User identity found in ${NGINX_TEMPLATE}." >&2
+    echo "  nginx is what authenticates here; without that header the gateway" >&2
+    echo "  attributes nothing and every proxied request is refused." >&2
+    exit 1
+  fi
+
   # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
   # relocated agents.defaults.memorySearch to memory.search, and retired
   # gateway.controlUi.dangerouslyDisableDeviceAuth in favour of
@@ -415,6 +453,7 @@ else
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
     -e LU_PROXY_IP="${LU_PROXY_IP}" \
+    -e LU_PROXY_IDENTITY="${LU_PROXY_IDENTITY}" \
     -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
     -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
@@ -472,6 +511,27 @@ else
       // includes operator.admin, is at the deviceAutoApprove block below.
       if (schemaNew) {
         delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
+        // The way back into the Control UI. Scopes otherwise come only from a
+        // device record, so a CLI arriving through nginx is authenticated and
+        // still cannot approve anything -- which is how a browser with a revoked
+        // device token became unrecoverable on 2026-09-19. Granting them to the
+        // identity is what the gateway security warning itself recommends, and it
+        // is connection-only: it does not approve a device, it lets a caller that
+        // nginx has already authenticated act. R1 of §9.
+        //
+        // No apostrophes in this block: the whole program is one single-quoted
+        // bash string, and one of them ends it.
+        c.gateway.auth.identityScopes = {
+          [process.env.LU_PROXY_IDENTITY]: [
+            "operator.admin",
+            "operator.read",
+            "operator.write",
+            "operator.talk",
+            "operator.pairing",
+            "operator.approvals",
+            "operator.questions",
+          ],
+        };
         // The Control UI requests operator.admin among its default scopes, and
         // this list is a CAP on what an auto-approval may grant -- not the set a
         // device receives. Leave admin out and a fresh browser does not lose a
@@ -504,6 +564,10 @@ else
         };
       } else {
         delete c.gateway.auth.trustedProxy.deviceAutoApprove;
+        // Neither key exists in the 2026.7.1 schema, and a key that version does
+        // not know is a validation failure at start rather than a warning, which
+        // is the lesson of §5.1.
+        delete c.gateway.auth.identityScopes;
         c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
       }
 
