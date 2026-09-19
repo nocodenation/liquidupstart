@@ -701,7 +701,7 @@ tests. The discriminator answers in one line —
 was green on #10 that morning, with a stack started from it. **Before reading a red M-B result here,
 check which branch the running stack came from.**
 
-**Four things are waiting on the operator**, and none of them is code:
+**Five things are waiting on the operator**, and none of them is code:
 
 1. **The reply to Timur** on #9, drafted and not yet sent. It is
    `.pr-drafts/pr9-reply-2026-09-18.md` — untracked and gitignored, so it exists on this machine
@@ -723,6 +723,19 @@ check which branch the running stack came from.**
 4. **Closing PR #1**, which is a decision rather than an answer — with the reasoning in *Next* item
    2 above: the intent survives as Forgejo, the implementation in #1 does not. Nobody but the
    operator can close it, and the reasoning exists nowhere but here.
+5. **The pairing recovery, §9 of `docs/FEATURE-openclaw-2026-9-1.md`** — specified 2026-09-19 after
+   the operator's own browser was locked out of the Control UI by a token this project revoked on
+   2026-09-10, while measuring OC-38. **Specified and signed off; nothing is built.** The operator
+   decided all three open questions the same day (§9.6): a brand-new browser must connect right
+   away, which makes R3 conditional on OC-46 rather than planned; the dashboard needs no
+   authentication of its own for the approve button; and the work gets **its own branch cut from
+   `feature/git-integration` (#9)**, because everything it touches is byte-identical on #9 and #10.
+
+   **One thing about this machine, and it expires:** the recovery currently rests on a hand edit of
+   `volumes/_openclaw/openclaw.json`. The next `./scripts/linux/start.sh` rewrites that file and
+   takes `gateway.auth.identityScopes` with it — and then a browser in the repair state is stuck
+   again. R1 is what makes it survive a start. Until R1 exists, the previous configuration is beside
+   it as `openclaw.json.before-identityscopes`.
 
 **And one thing waiting on the operator that has nothing to do with the code:** an OpenAI key was
 printed into a session transcript on 2026-09-18, while reading the OpenCode configuration. The
