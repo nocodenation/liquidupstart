@@ -1,0 +1,82 @@
+[
+  {
+    "case": "A4-7",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.secret-scan.test.ts",
+    "from": "-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----",
+    "to": "-----BEGIN NEVER MATCHES PRIVATE KEY-----",
+    "mustFail": "A4-7 a commit adding a private key is refused, and the file is named"
+  },
+  {
+    "case": "A3c-3",
+    "file": "config/scripts/start/lib/git-repos.sh",
+    "spec": "tests/unit/m-a3c.declaration-parse.test.ts",
+    "from": "*) lu_git_reject \"$entry\" \"policy must be protected or direct, not '${field_policy}'\" ;;",
+    "to": "*) ;;",
+    "mustFail": "A3c-3 an unknown policy word is refused and named"
+  },
+  {
+    "case": "A9-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/contract/m-a9.one-wait.test.ts",
+    "from": "lib/wait-for-operator.sh",
+    "to": "lib/wait-for-operator-copy.sh",
+    "mustFail": "and both waits read the same key, through the same helper"
+  },
+  {
+    "case": "A6-11",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/contract/m-a6.refusal-next-step.test.ts",
+    "from": "  say \"Report the refusal and ask the operator; do not look for a way around it.\"",
+    "to": "  :",
+    "mustFail": "A6-11 every refusal names a command, a branch form or an action"
+  },
+  {
+    "case": "A8-4",
+    "file": "dashboard/src/lib/server/git.ts",
+    "spec": "tests/component/m-a8.launchpad-card.test.ts",
+    "from": "'-l', '-f', path",
+    "to": "'-l', '-E', 'md5', '-f', path",
+    "mustFail": "A8-4 each carries its label, access, policy, public key and fingerprint"
+  },
+  {
+    "case": "A10-16",
+    "file": "dashboard/src/lib/server/git.ts",
+    "spec": "tests/component/m-a10.retry-exit-code.test.ts",
+    "from": "if (ran.code !== 0) {",
+    "to": "if (false) {",
+    "mustFail": "A10-16 a script that stopped early is reported, not the previous answer"
+  },
+  {
+    "case": "A5-2",
+    "file": "config/scripts/start/lib/git-repos.sh",
+    "spec": "tests/integration/m-a5.mixed-keys.test.ts",
+    "from": "    chmod 600 \"$key\"",
+    "to": "    chmod 644 \"$key\"",
+    "mustFail": "A5-2 each key lives under its own slug directory, mode 600"
+  },
+  {
+    "case": "A13-2",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a13.test-button-scope.test.ts",
+    "from": "ONLY_SLUG=\"${GIT_ONLY_SLUG:-}\"",
+    "to": "ONLY_SLUG=\"\"",
+    "mustFail": "the manifest git.sh leaves holds the tested entry, for the dashboard to merge"
+  },
+  {
+    "case": "A10-18",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a10.untrusted-host.test.ts",
+    "from": "elif ! ssh-keygen -F \"$host\" -f \"$KNOWN_HOSTS\" >/dev/null 2>&1; then",
+    "to": "elif false; then",
+    "mustFail": "nothing is cloned, and the reason is the host rather than the key"
+  },
+  {
+    "case": "A4-13",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/contract/m-a4.hooks-path.test.ts",
+    "from": "HOOKS_MOUNT=\"${SECRETS_MOUNT}/hooks\"",
+    "to": "HOOKS_MOUNT=\"${SECRETS_MOUNT}/hooks-elsewhere\"",
+    "mustFail": "A4-13 both declared clones point at the shared hook directory"
+  }
+]
