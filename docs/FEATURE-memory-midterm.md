@@ -80,6 +80,56 @@ after that is measured against it, and if it suffices we build nothing.
 Its known limit: these plugins live in OpenClaw. **OpenCode sees none of them**, so U2 cannot be met
 by the zeroth option alone.
 
+### 2.1 Measured 2026-09-19, and it corrects this section twice
+
+Before switching anything on, the installation was read rather than described. Two of the claims
+above are wrong, and the second finding is larger than the section it corrects.
+
+**Correction 1 — there is no missing embedding provider.** §2 said `memory-core` is *"enabled and
+idle, because `ENABLE_GITHUB_COPILOT=0`"*. The schema of the running version says otherwise:
+
+> `memory.search.provider` — *"Selects the embedding backend used to build/query memory vectors.
+> **Defaults to `openai`**"*
+
+and the gateway container has `OPENAI_API_KEY` set. What is absent is not a provider but the
+configuration: **`openclaw.json` has no `memory` key at all**, so everything runs on defaults.
+
+The same schema already draws the distinction D1 asks for, as two sources of one index:
+
+> `memory.search.sources` — *"`memory` reads MEMORY.md + memory files, and `sessions` includes
+> transcript history."*
+
+with `rememberAcrossConversations` for recall across private conversations, and `extraPaths` to index
+further Markdown directories — `docs/` among them, if we want it.
+
+**Correction 2 — the consolidation already runs, and it is empty.** `volumes/_openclaw/workspace/`
+holds a `memory/` directory with a `dreaming/` subtree in three phases, `light`, `rem` and `deep`,
+carrying one file per phase **for every day since 2026-09-11**, written at 05:00. Today's deep file,
+in full:
+
+```
+# Deep Sleep
+- Ranked 0 candidate(s) for durable promotion.
+- Promoted 0 candidate(s) into MEMORY.md.
+```
+
+That is the mechanism this document was written to design: gather candidates, rank them, promote the
+survivors into a durable store. It is installed, scheduled, has run for nine days — and has produced
+nothing. **`MEMORY.md` does not exist**, because nothing was ever promoted. Its input would be
+session summaries, and `memory/` holds exactly one, dated 2026-09-05.
+
+**So M-M1 is smaller and sharper than written.** The question is no longer *what can these plugins
+do* but *why does a running consolidation find zero candidates every day*. The likeliest answer is
+the one this section already names: `active-memory`, the plugin that implements **Remember across
+conversations**, is switched off, so nothing produces candidates for the ranking to rank.
+
+**And the shape of it is familiar.** A pipeline that cannot gather looks exactly like a pipeline that
+gathered and found nothing: both write *"0 candidates"* and both exit cleanly. This project has met
+that three times in its own scripts — `if ! emit`, the unrebuilt image, the negative control that
+silenced its own failure — and the lesson it drew there applies here unchanged: **ask what you would
+see if this never ran, and if the answer is "the same thing", the output is decoration.** A daily
+file saying *0 candidates* is the product's version of that, and nobody read it for nine days.
+
 ## 3. The candidates
 
 ### 3.1 ReMe — file-native memory, with a native OpenClaw plugin
