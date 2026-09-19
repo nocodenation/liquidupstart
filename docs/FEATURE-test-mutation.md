@@ -140,6 +140,11 @@ That is one line in `CLAUDE.md` § Development rules and one section in
 `config/agents/skills/testing/SKILL.md`, so the agents working inside the stack are held to the same
 standard as the agents building it.
 
+**Adopted as a block rather than a note** (D1), with the signal that would retire it written down in
+§11 — because a rule whose cost nobody can demonstrate is a rule nobody can ever take back out. And
+since the author writes their own mutation (D2), the detail block is not decoration: it is the only
+point at which a second person sees the experiment at all.
+
 ## 8. Requirements
 
 **Functional**
@@ -168,9 +173,12 @@ standard as the agents building it.
 **M-MU1 · The registry, the runner, and its own cases.** Including the recursive ones: the runner
 must be shown to fail when it cannot run. *Done when* MU-1 to MU-7 pass and the report is readable.
 
-**M-MU2 · Backfill.** Every case in the four test specifications that carries a decision gets an
-entry, and the ones that do not are listed with the reason. The number itself is a finding: this is
-the first time anyone will know how many of 543 cases can be shown to fail.
+**M-MU2 · Backfill, per milestone as each is next touched** (D3). Every case that carries a decision
+gets an entry when its milestone is worked on again, and the ones deliberately exempt are listed with
+the reason. **It is therefore never "done"**, which is the price of the speed, and MU-8's report is
+what stops that from becoming invisible: the gap is printed on every run rather than discovered
+later. The number, whenever it is first read, is a finding in its own right — it is the first time
+anyone will know how many of 543 cases can be shown to fail.
 
 **M-MU3 · The rule into the documents.** `CLAUDE.md` § Development rules and
 `config/agents/skills/testing/SKILL.md`, plus the detail-block format in the test specifications.
@@ -187,12 +195,50 @@ particular rule is what the case protects.**
 claim about routes rather than about correctness: 334 cases passed while the dashboard's Start button
 could not bring up a stack.
 
-## 11. Open questions for the operator
+## 11. What the operator decided, 2026-09-19
 
-1. **Does a missing mutation block a milestone, or only annotate it?** §7 proposes blocking. That is
-   strict, and the alternative — the report lists the gaps and the reviewer decides — costs less and
-   guarantees less.
-2. **Who writes the mutation, the author of the case or a second pair of eyes?** The author knows the
-   rule; a second reader is likelier to pick the mutation the author did not think of.
-3. **Does M-MU2 backfill everything at once, or per milestone as each is next touched?** The first
-   gives the number sooner; the second spreads the cost and leaves the number unknown for longer.
+All three were answered the day this was written.
+
+### D1 · Blocking, with a way back
+
+**A missing mutation blocks.** *"We try blocking first. If that hinders the workflow too much we will
+relax it to report."*
+
+So §7 stands as written. What that sentence needs, and gets here, is **a signal** — otherwise "too
+much" is a feeling, and a rule nobody can show to be costly is a rule nobody can retire. The relaxation
+is considered when either of these is observed, and both are cheap to read off the report M-MU1
+already produces:
+
+| | The signal |
+|---|---|
+| **Cost** | A milestone is held up by mutations for longer than it took to write the cases themselves |
+| **Quality** | Entries start appearing that exist to satisfy the rule — a mutation that reddens its case for a reason unrelated to what the case is about |
+
+The second is the dangerous one and it is the reason blocking is worth trying first rather than
+instead: a rule that must be satisfied produces satisfying behaviour. If the entries stay honest
+under blocking, the rule is earning its cost; if they turn into ceremony, the rule has become the
+thing it was built to prevent, and the report is where that will be visible.
+
+### D2 · The author writes it, because there is no second reader
+
+*"Author writes it as we do not have a second pair of eyes."* That is the real constraint here, and
+it removes the mitigation §11 originally hoped for: the author of a case is the person least likely
+to think of the mutation the case fails to catch.
+
+**What compensates is already in the design rather than added for it.** §7 puts the mutation in the
+detail block of the test specification, beside what makes the case green. So the second pair of eyes
+is the **reviewer at review time** — the mutation is a thing Timur can challenge on a pull request,
+which is exactly what he cannot do today. The blind spot is not removed; it is moved to where
+somebody else looks.
+
+### D3 · Backfill per milestone, for speed
+
+*"The second for speed."* M-MU2 becomes work each milestone carries as it is next touched, rather
+than one pass over 543 cases.
+
+**The cost of that choice is a number nobody knows**, for as long as the backfill runs — and this
+project has been bitten by exactly that: a suite whose green said nothing about the paths it had
+never walked. **MU-8 is what keeps the debt visible**, and D3 promotes it from a nicety to the thing
+that makes this decision safe: the report prints the count of specified cases, the count with an
+entry, and the list without one, on every run. The unknown stays unknown, but it stops being
+invisible, and its size is readable on any day somebody wants to know.
