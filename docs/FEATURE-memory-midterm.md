@@ -418,3 +418,34 @@ makes the difference legible instead of leaving it to whoever wrote it.
 [MemPalace](https://github.com/MemPalace/mempalace),
 [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/). Plugin states and the OpenCode
 configuration were read from the running stack, not from documentation.
+
+### 2.4 Built 2026-09-20, and one thing it owes
+
+The hand edit is now written by `config/scripts/start/openclaw.sh`: `active-memory` enabled and
+`memory.search` with `enabled`, `sources: ["memory"]` and `rememberAcrossConversations`, all inside
+the 2026.9 branch and deleted in the other, because 2026.7.1 knows neither key and an unknown key
+there is a failed start rather than a warning.
+
+Two things it deliberately does **not** write. No embedding provider — it defaults to `openai`, the
+gateway carries `OPENAI_API_KEY`, and the Copilot branch above owns the provider when that harness is
+on; writing one here would win or lose silently depending on the order of two blocks. And **not**
+`sources: ["sessions"]`, which would index transcript history — exactly what NFR-M1 forbids until the
+redaction of NFR-M4 exists.
+
+Cases M1-1 to M1-4 in `tests/component/m-m1.memory-config.test.ts`, run against the unchanged script
+first: **four of the five were red.**
+
+**What it owes: a mutation entry per case.** The rule adopted on 2026-09-19 is that a case may not be
+recorded as passing without a registered mutation, and M-MU2 backfills per milestone as each is
+touched — this is the first milestone touched since. It cannot be honoured yet, and the reason is
+structural rather than an oversight:
+
+> **`tests/mutations.json` lives on one branch.** It was created on
+> `feature/test-mutation-control`, cut from #9; this work sits on `feature/memory-midterm`, cut from
+> `main`. Neither branch can see the other's file. The registry is a single file that every branch
+> wants to append to, which makes it a merge point for work that is otherwise independent.
+
+So M1's entries are owed, and the decision that resolves it belongs to the mutation milestone rather
+than to this one: either the registry lands on `main` early and every branch appends, or it is split
+per milestone so that branches do not contend for one file. Recorded here so the debt is visible from
+the side that incurred it.

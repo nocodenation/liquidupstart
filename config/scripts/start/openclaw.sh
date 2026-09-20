@@ -608,6 +608,40 @@ else
         }
       }
 
+      // The mid-term memory this stack already ships, switched on rather than
+      // built. docs/FEATURE-memory-midterm.md.
+      //
+      // active-memory implements Remember across conversations; memory-core
+      // indexes and ranks. Promotion into MEMORY.md is earned by use -- three
+      // recalls across three distinct queries inside thirty days, thresholds read
+      // out of `openclaw memory promote-explain` on 2026-09-20 -- so switching
+      // this on changes nothing until somebody asks questions. That is the point:
+      // it is here so the first week of real use is measured rather than missed.
+      //
+      // sources stays at ["memory"] deliberately. Adding "sessions" would index
+      // transcript history, which is what NFR-M1 forbids until the redaction of
+      // NFR-M4 exists: a conversation in this stack carries .env lines and keys.
+      //
+      // No provider is set here. It defaults to openai, the gateway has
+      // OPENAI_API_KEY, and the Copilot branch above owns the provider when that
+      // harness is on -- writing one here would silently win or lose depending on
+      // block order.
+      //
+      // 2026.7.1 knows neither key, and an unknown key there is a failed start
+      // rather than a warning, which is the lesson of section 5.1.
+      if (schemaNew) {
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        c.plugins.entries["active-memory"] = { enabled: true };
+        c.memory = c.memory || {};
+        c.memory.search = c.memory.search || {};
+        c.memory.search.enabled = true;
+        if (!Array.isArray(c.memory.search.sources)) c.memory.search.sources = ["memory"];
+        c.memory.search.rememberAcrossConversations = true;
+      } else {
+        if (c.plugins && c.plugins.entries) delete c.plugins.entries["active-memory"];
+      }
+
       if (enableCodex) {
         c.plugins = c.plugins || {};
         c.plugins.entries = c.plugins.entries || {};
