@@ -175,6 +175,28 @@ describe('MU-4 / MU-5 the named test, and not everything with it', () => {
     expect(r.code).not.toBe(0);
   });
 
+  test('MU-14 but a file holding one test is validated when that test reddens', () => {
+    // The survivor rule has no survivor to ask for here, and refusing on that
+    // basis would reject every honest entry against a single-test spec. Found
+    // while backfilling A4-6, whose spec has exactly one test; before this the
+    // runner called it a broken file.
+    const solo = 'spec/solo.test.ts';
+    writeFileSync(
+      join(root, solo),
+      [
+        "import { test, expect } from 'bun:test';",
+        "import { readFileSync } from 'node:fs';",
+        "import { join } from 'node:path';",
+        "const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');",
+        "test('the only rule there is', () => { expect(s).toContain('POLICY=\"protected\"'); });",
+        ''
+      ].join('\n')
+    );
+    const r = run(registry([entry({ spec: solo, mustFail: 'the only rule there is' })]));
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(r.output).toMatch(/\(1 red, 0 green\)/);
+  });
+
   test('and a spec that does not exist is refused before anything is mutated', () => {
     const r = run(registry([entry({ spec: 'spec/missing.test.ts' })]));
     expect(r.output).toContain('no such test file');
@@ -220,6 +242,26 @@ describe('MU-6 the subject goes back, whatever the outcome', () => {
   });
 });
 
+describe('MU-13 a run that validated nothing says so', () => {
+  test('an empty registry is reported, not printed as four zeros', () => {
+    // The hazard MU-2 names, met in the tool itself: a quiet run and a healthy
+    // run produce the same four counters. A main-based branch starts with an
+    // empty registry legitimately, so this is a sentence rather than an error.
+    const r = run(registry([]));
+    expect(r.output).toContain('registry is empty');
+    expect(r.code).toBe(0);
+  });
+
+  test('and a --case that matches nothing is an error', () => {
+    // This one is not benign. Asking for one case and being told "0 failures"
+    // by a runner that never found it is the check-that-cannot-run, addressed
+    // to whoever was most confident it had run.
+    const r = run(registry([entry()]), ['--case', 'NOPE-1']);
+    expect(r.output).toContain('no entry for case NOPE-1');
+    expect(r.code).not.toBe(0);
+  });
+});
+
 describe('MU-9 the registry mutates subjects, never assertions', () => {
   test('an entry naming a test file is refused before anything runs', () => {
     // A tool that can rewrite the tests can make anything pass.
@@ -251,13 +293,38 @@ describe('MU-7 it does not run over uncommitted work', () => {
 
 describe('MU-8 the gap is a number, not an impression', () => {
   test('the report counts specified cases, registered ones and the difference', () => {
+    // Against a specification with known contents rather than against whatever
+    // this branch happens to carry: the first version asserted "more than a
+    // hundred cases", which is a property of #9 and fails on a branch cut from
+    // main with one specification on it. The rule is that the parser finds what
+    // is there, not that a particular branch is large.
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    writeFileSync(
+      join(root, 'docs/TEST-SPEC-fixture.md'),
+      [
+        '| ID | Level | Sign | Case |',
+        '|---|---|---|---|',
+        '| FX-1 | unit | positive | one |',
+        '| **FX-2** | contract | **negative** | two, bolded |',
+        '| FX-3 | integration | positive | three |',
+        '',
+        'Prose mentioning FX-9 must not count, because it is not a row.'
+      ].join('\n')
+    );
+    const reg = registry([entry()]); // FX-1 is registered; FX-2 and FX-3 are not
+    const r = sh(['bash', RUNNER, '--gaps', '--registry', reg, '--root', root]);
+    expect(r.code).toBe(0);
+    expect(r.output).toContain('specified=3 registered=1 missing=2 orphaned=0');
+    expect(r.output).toMatch(/missing:\s+FX-2 FX-3/);
+  });
+
+  test('and it reads the real specifications of whatever branch it runs on', () => {
+    // The counterpart to the fixture: a parser that works only on its own test
+    // data is a parser nobody can trust against the tree it ships with.
     const r = sh(['bash', RUNNER, '--gaps']);
     expect(r.code).toBe(0);
-    expect(r.output).toMatch(/specified=\d+ registered=\d+ missing=\d+ orphaned=\d+/);
     const specified = Number(r.output.match(/specified=(\d+)/)![1]);
-    // The four specifications on this branch carry hundreds of cases; a parser
-    // that found none would print a reassuring gap of zero.
-    expect(specified).toBeGreaterThan(100);
+    expect(specified).toBeGreaterThan(0);
   });
 
   test('and an entry no specification mentions is reported as orphaned', () => {

@@ -200,10 +200,18 @@ while IFS=$'\t' read -r id file spec from to must; do
   passes="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ pass$/ { n += $1 } END { print n+0 }')"
   fails="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ fail$/ { n += $1 } END { print n+0 }')"
 
+  # A survivor is required only where one can exist. A file holding a single test
+  # reddens entirely when that test reddens, and the "broken file" rule below
+  # would then refuse every honest entry against it -- found while backfilling
+  # A4-6, whose spec has exactly one test.
+  total=$((passes + fails))
+  survivor_needed=1
+  [[ "$total" -le 1 ]] && survivor_needed=0
+
   if [[ "$fails" == "0" ]]; then
     add "UNRESOLVED ${id}  nothing went red -- needs a second mutation of another shape before this counts as a finding"
     unresolved=$((unresolved+1))
-  elif [[ "$named_failed" == "1" && "$passes" -gt 0 ]]; then
+  elif [[ "$named_failed" == "1" && ( "$passes" -gt 0 || "$survivor_needed" == "0" ) ]]; then
     add "VALIDATED ${id}  ${must}  (${fails} red, ${passes} green)"
     validated=$((validated+1))
   elif [[ "$named_failed" == "1" ]]; then
@@ -216,6 +224,21 @@ while IFS=$'\t' read -r id file spec from to must; do
 done <<< "$rows"
 
 printf '%s' "$report"
+
+# A run over an empty registry, or a --case that matches nothing, prints four
+# zeros and exits 0 -- indistinguishable from a healthy run, which is the exact
+# shape this tool exists to remove. It was written into MU-2's block as a hazard
+# and then shipped anyway; found on the first run against a main-based branch
+# whose registry is legitimately empty.
+seen=$((validated + failed + refused + unresolved))
+if [[ -n "$ONLY" && "$seen" == "0" ]]; then
+  echo "mutate: no entry for case ${ONLY} in ${REGISTRY}" >&2
+  exit 2
+fi
+if [[ "$seen" == "0" ]]; then
+  echo "registry is empty: nothing was validated, and that is not the same as everything passing."
+fi
+
 echo "validated=${validated} failed=${failed} refused=${refused} unresolved=${unresolved}"
 
 # Unresolved is deliberately not an error: it is a question for the author, and

@@ -78,5 +78,45 @@
     "from": "HOOKS_MOUNT=\"${SECRETS_MOUNT}/hooks\"",
     "to": "HOOKS_MOUNT=\"${SECRETS_MOUNT}/hooks-elsewhere\"",
     "mustFail": "A4-13 both declared clones point at the shared hook directory"
+  },
+  {
+    "case": "A9-2",
+    "file": "config/scripts/start/lib/wait-for-operator.sh",
+    "spec": "tests/unit/m-a9.wait-for-operator.test.ts",
+    "from": "    (( now >= deadline )) && return 2",
+    "to": "    (( now >= deadline )) && return 0",
+    "mustFail": "it returns 2 at the deadline rather than blocking"
+  },
+  {
+    "case": "A13-4",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/contract/m-a13.claude-panel-marker.test.ts",
+    "from": "::aiw-claude-auth-required::",
+    "to": "::aiw-claude-needs-you::",
+    "mustFail": "it sits beside the banner, inside the branch ENABLE_CLAUDE_CLI guards"
+  },
+  {
+    "case": "A4-2",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.branch-policy.test.ts",
+    "from": "  if [ \"$policy\" = protected ] && [ -n \"$default_branch\" ] && [ \"$branch\" = \"$default_branch\" ]; then",
+    "to": "  if false; then",
+    "mustFail": "A4-2 the default branch under a protected policy is refused, and says what to do instead"
+  },
+  {
+    "case": "A4-4",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.fast-forward.test.ts",
+    "from": "    if ! git merge-base --is-ancestor \"$remote_sha\" \"$local_sha\" 2>/dev/null; then",
+    "to": "    if false; then",
+    "mustFail": "A4-4 a push that is not a fast-forward is refused, force flag or not"
+  },
+  {
+    "case": "A4-6",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.ref-deletion.test.ts",
+    "from": "    *[!0]*) return 1 ;;",
+    "to": "    *[!0]*) return 0 ;;",
+    "mustFail": "A4-6 deleting a remote branch is refused and the branch survives"
   }
 ]
