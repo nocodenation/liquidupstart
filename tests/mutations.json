@@ -167,5 +167,92 @@
     "from": "WITH_SYSTEM=0\n",
     "to": "WITH_SYSTEM=1\n",
     "mustFail": "A0-4 without the flag neither stack-level file is selected"
+  },
+  {
+    "case": "A4-10",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.access.test.ts",
+    "from": "access=\"$(git config --get liquidupstart.access 2>/dev/null || true)\"",
+    "to": "access=\"write\"",
+    "mustFail": "A4-10 access read refuses the push before any branch rule is consulted"
+  },
+  {
+    "case": "A4-11",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.currency.test.ts",
+    "from": "      say \"Integrate first: git fetch ${REMOTE}, then git rebase ${REMOTE}/${branch}, then push again.\"\n",
+    "to": "",
+    "mustFail": "A4-11 a branch the remote has moved past is refused, and the operator is told how to integrate"
+  },
+  {
+    "case": "A10-20",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a10.scan-paths.test.ts",
+    "from": "  IFS='\n'",
+    "to": "  IFS=' '",
+    "mustFail": "A10-20 a key file whose name carries a space is still seen"
+  },
+  {
+    "case": "A14-1",
+    "file": "dashboard/src/app.css",
+    "spec": "tests/contract/m-a14.skip-button-shape.test.ts",
+    "from": "\nbutton.skip {",
+    "to": "\nbutton.skipx {",
+    "mustFail": "it borrows the size of button.save"
+  },
+  {
+    "case": "A3c-5",
+    "file": "compose.yml",
+    "spec": "tests/contract/m-a3c.ssh-command.test.ts",
+    "from": "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |')",
+    "to": "ssh -i /git-secrets/id_ed25519",
+    "all": true,
+    "mustFail": "A3c-5 no GIT_SSH_COMMAND names one key for every remote"
+  },
+  {
+    "case": "A11-1",
+    "file": "tests/run.sh",
+    "spec": "tests/contract/m-a11.system-tier-optin.test.ts",
+    "from": "if [[ $WITH_SYSTEM -eq 0 && $system_count -gt 0 ]]; then",
+    "to": "if false; then",
+    "mustFail": "the count and the flag are printed, not merely implied"
+  },
+  {
+    "case": "A10-14",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a10.scan-paths.test.ts",
+    "from": "        .env.example|.env.sample|.env.template|.env.dist) ;;",
+    "to": "        .env.never-matches) ;;",
+    "mustFail": "A10-14 a checked-in template is not a credential"
+  },
+  {
+    "case": "A6-12",
+    "file": "compose.yml",
+    "spec": "tests/contract/m-a6.command-mounted.test.ts",
+    "from": "      - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro",
+    "to": "      - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish",
+    "all": true,
+    "mustFail": "A6-12 every one of them mounts git-publish read-only at the same place on PATH"
+  },
+  {
+    "case": "A3-3",
+    "exempt": "asserts the generated volumes/_git-secrets/known_hosts, not the code that writes it: the file was produced by a start days ago, so mutating the keyscan changes nothing about what the case reads. An artefact assertion under §6, not decision logic."
+  },
+  {
+    "case": "OC-3",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/contract/m-oc.bounded-runs.test.ts",
+    "from": "docker run --rm --init --entrypoint openclaw",
+    "to": "docker run --rm --entrypoint openclaw",
+    "mustFail": "each carries --init, without which timeout only frees the client"
+  },
+  {
+    "case": "A6-2",
+    "file": "config/agents/bin/git-publish.sh",
+    "spec": "tests/unit/m-a6.publish.test.ts",
+    "from": "protected",
+    "to": "protectedx",
+    "all": true,
+    "mustFail": "A6-2 the protected default branch is refused, naming the branch, the policy and the way forward"
   }
 ]

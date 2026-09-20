@@ -296,6 +296,30 @@ describe('MU-15 / MU-16 / MU-17 — three shapes backfilling turned up', () => {
   });
 });
 
+describe('MU-18 an exemption is a decision, not a missing entry', () => {
+  test('an exempt entry is reported as such and mutates nothing', () => {
+    // §6 draws the line: decision logic needs a mutation; an assertion about an
+    // artefact that already exists on disk cannot have one, because mutating the
+    // code that produced it changes nothing about the file the case reads. A3-3
+    // reads volumes/_git-secrets/known_hosts, written by a start days earlier.
+    // Without this form such a case is indistinguishable from one nobody got to.
+    const r = run(
+      registry([{ case: 'FX-9', exempt: 'reads a generated artefact, not the code that writes it' } as any])
+    );
+    expect(r.output).toContain('EXEMPT    FX-9');
+    expect(r.output).toContain('exempt=1');
+    expect(r.code).toBe(0);
+    expect(sha()).toBe(cleanSha);
+  });
+
+  test('and an exemption without a reason is refused', () => {
+    // "Exempt" with no reason is how a gap becomes invisible, which is the thing
+    // the whole report exists to prevent.
+    const r = run(registry([{ case: 'FX-9', exempt: '' } as any]));
+    expect(r.code).not.toBe(0);
+  });
+});
+
 describe('MU-13 a run that validated nothing says so', () => {
   test('an empty registry is reported, not printed as four zeros', () => {
     // The hazard MU-2 names, met in the tool itself: a quiet run and a healthy

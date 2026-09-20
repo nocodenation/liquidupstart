@@ -88,6 +88,16 @@ rows="$(bun -e '
   const rows = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
   if (!Array.isArray(rows)) { console.error("registry is not a list"); process.exit(2); }
   for (const r of rows) {
+    // An exemption is a registered decision, not a missing entry. §6 draws the
+    // line -- decision logic needs a mutation, an assertion about an artefact
+    // that already exists on disk cannot have one, because mutating the code
+    // that produced it changes nothing about the file. A3-3 reads
+    // volumes/_git-secrets/known_hosts; the keyscan that wrote it ran days ago.
+    if (typeof r.exempt === "string" && r.exempt.length > 0) {
+      if (typeof r.case !== "string") { console.error("an exempt entry has no case"); process.exit(2); }
+      console.log([r.case, "-", "-", ".", ".", "exempt", r.exempt].join("\t"));
+      continue;
+    }
     for (const k of ["case", "file", "spec", "from", "to", "mustFail"]) {
       if (typeof r[k] !== "string") {
         console.error(`entry ${r.case ?? "?"} has no ${k}`); process.exit(2);
@@ -127,7 +137,7 @@ trap 'restore' EXIT
 trap 'restore; exit 130' INT
 trap 'restore; exit 143' TERM
 
-validated=0; failed=0; unresolved=0; refused=0
+validated=0; failed=0; unresolved=0; refused=0; exempt=0
 report=""
 
 add() { report="${report}$1"$'\n'; }
@@ -135,6 +145,11 @@ add() { report="${report}$1"$'\n'; }
 while IFS=$'\t' read -r id file spec from to all must; do
   [[ -n "$id" ]] || continue
   [[ -z "$ONLY" || "$ONLY" == "$id" ]] || continue
+
+  if [[ "$all" == "exempt" ]]; then
+    add "EXEMPT    ${id}  ${must}"
+    exempt=$((exempt+1)); continue
+  fi
 
   abs="${ROOT}/${file}"
   absspec="${ROOT}/${spec}"
@@ -250,7 +265,7 @@ printf '%s' "$report"
 # shape this tool exists to remove. It was written into MU-2's block as a hazard
 # and then shipped anyway; found on the first run against a main-based branch
 # whose registry is legitimately empty.
-seen=$((validated + failed + refused + unresolved))
+seen=$(( validated + failed + refused + unresolved + exempt ))
 if [[ -n "$ONLY" && "$seen" == "0" ]]; then
   echo "mutate: no entry for case ${ONLY} in ${REGISTRY}" >&2
   exit 2
@@ -259,7 +274,7 @@ if [[ "$seen" == "0" ]]; then
   echo "registry is empty: nothing was validated, and that is not the same as everything passing."
 fi
 
-echo "validated=${validated} failed=${failed} refused=${refused} unresolved=${unresolved}"
+echo "validated=${validated} failed=${failed} refused=${refused} unresolved=${unresolved} exempt=${exempt}"
 
 # Unresolved is deliberately not an error: it is a question for the author, and
 # turning it into a failure would push people towards a mutation that reddens

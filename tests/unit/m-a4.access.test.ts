@@ -31,6 +31,13 @@ test('A4-10 access read refuses the push before any branch rule is consulted', (
   const r = git(fx.clone, ['push', 'origin', 'feature/probe']);
   expect(r.code).not.toBe(0);
   expect(remoteHas(fx, 'refs/heads/feature/probe')).toBe(false);
-  expect(r.output).toContain('read');
+  // The whole refusal sentence, not the word `read`. Found on 2026-09-20 by the
+  // mutation runner: with the access rule disabled the push is still refused --
+  // by the git-publish gate, whose message says "it reads the declaration" --
+  // and `toContain('read')` matched those four letters inside "reads". The case
+  // passed over a hook that had lost the rule it exists to protect.
+  expect(r.output).toContain('declared with access read');
   expect(r.output).not.toMatch(/feature branch|protected|default branch/i);
+  // And it must be this rule that refused, not another one that happened to.
+  expect(r.output).not.toContain('did not come through git-publish');
 });

@@ -396,3 +396,57 @@ A3-1 mutated the per-repository keygen while its case exercises the shared one; 
 the sample; A9-2 named a `return 2` that occurs three times. **The dominant error is still aiming at
 the wrong site, and every one of them presents as a green run.** That is what MU-11 is for, and it
 earned its place four more times today.
+
+## 15. The second backfill, and the first real finding
+
+Thirty-two entries: 31 validated, 1 exempt. `missing` from 230 to 219.
+
+### A4-10 could not be made to fail, and that was correct
+
+The case asserts that a repository declared `access read` refuses a push *before any branch rule is
+consulted*. Three mutations left it green — disabling the rule, forcing the value, and then a manual
+run to see what actually happened:
+
+```
+pre-push refused: this push did not come through git-publish.
+git-publish is the one way work leaves this stack: it reads the declaration, …
+```
+
+With the access rule gone the push is still refused — by a different rule — and the assertion was
+`expect(r.output).toContain('read')`. **The four letters matched "reads the declaration."** The case
+passed over a hook that had lost the rule it exists to protect, and would have kept passing.
+
+It asserts the whole sentence now, `declared with access read`, plus the counterpart that the
+git-publish gate is *not* what refused. The mutation then reddens it.
+
+**This is the first case in this repository shown to be unable to fail**, and it took three attempts
+and a manual probe to establish — which is exactly why *"a green run is a question"* is a rule and
+not a preference. Any of the first two attempts, reported as a finding, would have been wrong for a
+different reason each time.
+
+### A3-3 cannot have a mutation, and says so
+
+`A3-3 known_hosts is seeded with github.com entries` reads
+`volumes/_git-secrets/known_hosts` — a file a start wrote days ago. Mutating the `ssh-keyscan` that
+produced it changes nothing about what the case reads, so no mutation of the code can redden it.
+
+That is §6's line, met in practice for the first time: it is an assertion about an **artefact**, not
+about decision logic. The registry gained a form for it —
+
+```json
+{ "case": "A3-3", "exempt": "asserts the generated known_hosts, not the code that writes it" }
+```
+
+— reported as `EXEMPT` with its reason and counted separately. **An exemption without a reason is
+refused**, because "exempt" with nothing after it is how a gap becomes invisible, which is what the
+report exists to prevent. MU-18.
+
+### What still dominates
+
+Of eleven entries in this batch, **six needed a second attempt**, and five of those six aimed at the
+wrong site — a rule asserted in two places, a lookup rather than its use, a per-repository key rather
+than the shared one. Every one presented as a green run.
+
+The ratio has not improved with practice, and that is the finding worth carrying: **choosing the
+mutation is the skilled part, and the tool cannot do it.** What the tool does is refuse to let a bad
+choice masquerade as a discovery.
