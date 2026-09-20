@@ -102,3 +102,23 @@ ends; `-k 10` would add a SIGKILL after a grace period for a process that catche
 to stop. Real, but the case that would justify it — a bounded run whose process ignores SIGTERM
 *through* an init — is one this branch cannot currently produce, so it would be a change with no
 control. Take it up with a reproduction, or not at all.
+
+## Does the mid-term memory remember the right things? — deferred 2026-09-20, with a trigger
+
+**The mechanism is measured and works; the value is unmeasurable until the stack is used.**
+`docs/FEATURE-memory-midterm.md` §2.2 has the detail. In short: `memory-core` indexes, ranks, and
+explains its decisions, and promotion into `MEMORY.md` requires an entry to be recalled **three times
+across three distinct queries** within thirty days. This installation has produced one session
+summary ever and asked no questions, so nothing has been promoted, and nothing will be.
+
+**Do not wait for it.** Days accumulate and recalls do not, and `maxAgeDays=30` means the fifteen
+entries now in the store drop out on 2026-10-19 unpromoted. A daily look would show the same zero
+until then — the accumulating-nothing that looks like accumulating evidence.
+
+**The trigger:** once OpenClaw has been used in earnest for about a week, run
+`openclaw memory promote --json` and read `recalls`, `uniqueQueries` and `score`. Promotions happening
+would give M-M3 a baseline to beat and might remove the need for it; thresholds never being reached
+under real use makes the thresholds the thing to tune, and they are readable rather than guessed.
+
+**A synthetic conversation was considered and refused.** It would answer only what was put into it,
+and this project has enough of those.

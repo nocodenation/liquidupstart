@@ -130,6 +130,69 @@ silenced its own failure — and the lesson it drew there applies here unchanged
 see if this never ran, and if the answer is "the same thing", the output is decoration.** A daily
 file saying *0 candidates* is the product's version of that, and nobody read it for nine days.
 
+### 2.2 Measured 2026-09-20, and it answers M-M1 — the hypothesis in §2.1 was wrong
+
+`active-memory` was switched on at 18:45 on 2026-09-19 to find out whether it was the reason. The
+next morning's file read exactly as the nine before it:
+
+```
+# Deep Sleep
+- Ranked 0 candidate(s) for durable promotion.
+- Promoted 0 candidate(s) into MEMORY.md.
+```
+
+**That reads as "the plugin was not the reason", and taking it that way would have been a third
+mistake in as many days**, because nothing had been written into the store overnight either. The
+honest state at that point was *inconclusive*, not *negative*. What settled it was asking the tool
+instead of the file.
+
+**`openclaw memory promote --json` shows fifteen entries**, and `promote-explain` gives the reason for
+each in one line:
+
+```
+score=0.789  recalls=0  uniqueQueries=1  ageDays=9.2
+thresholds:  minScore=0.75  minRecallCount=3  minUniqueQueries=3  maxAgeDays=30
+```
+
+| | |
+|---|---|
+| **The score already clears its threshold** | 0.789 against 0.75 |
+| **What is missing is recall** | Three retrievals are required across three distinct queries; there have been **none**, and one query ever |
+| **Where the fifteen came from** | All from one file — `memory/2026-09-05-1630.md`, the single session summary this installation has ever produced — and all written at 05:00 on 2026-09-19, **before** `active-memory` was switched on. `memory-core` had been indexing the whole time |
+
+**So §2.1's hypothesis is refuted.** The consolidation was never blocked by a disabled plugin. It is
+blocked by the thing it is supposed to be blocked by: **promotion is earned by use, not by time.** An
+entry becomes durable after being recalled repeatedly across separate questions — spaced repetition —
+and this installation has asked no questions.
+
+**And it is not a defect.** The system is refusing to turn a single mention into durable knowledge,
+which is the same standard this project demands of its own tests. The only thing that was broken here
+was the reading of it.
+
+**What it costs to leave it running.** Nothing accumulates. `maxAgeDays=30` runs the other way: these
+fifteen entries drop out of the window on 2026-10-19 without ever having been promoted, and a daily
+look would show the same zero nineteen more times and then a quieter one. **Days accumulate; recalls
+do not.**
+
+### 2.3 What is deferred, and what triggers it
+
+The **mechanism** question is answered and M-M1 is closed on it. The **value** question — whether the
+right things survive and come back — cannot be answered without real use, and a synthetic
+conversation would measure only what was put into it.
+
+So it is deferred with a condition rather than left on a list:
+
+> **When OpenClaw has been used in earnest for about a week, run `openclaw memory promote --json` and
+> read `recalls`, `uniqueQueries` and `score` for the entries that appear.** If promotions happen,
+> M-M3 (the bake-off) has a baseline to beat and may not be needed at all. If the thresholds are
+> never reached under real use, they are the thing to tune, and they are readable rather than
+> guessed: `minRecallCount`, `minUniqueQueries`, `minScore`, `maxAgeDays`.
+
+The one change this installation carries in the meantime is a hand edit: `active-memory` enabled and
+a `memory.search` block, neither written by `config/scripts/start/openclaw.sh`. **The next start
+removes both**, and since §2.2 shows the plugin was not the blocker, that is a decision rather than a
+loss — either put it in the start script for when use begins, or let the start take it back.
+
 ## 3. The candidates
 
 ### 3.1 ReMe — file-native memory, with a native OpenClaw plugin
@@ -197,10 +260,11 @@ two hits.
 
 ## 4. Milestones
 
-**M-M1 · Switch on what is already here, and measure it.** Enable `active-memory` and `memory-wiki`;
-give `memory-core` an embedding provider. Establish what is recalled, from where, at what cost, and
-what the vault looks like on disk. *Done when* the cases in the test specification pass and the
-findings are written down — including "it is enough", if that is what they show.
+**M-M1 · Switch on what is already here, and measure it — answered 2026-09-20.** The answer is §2.2,
+and it is not the one this milestone was written expecting. The mechanism is alive, correctly
+configured and able to explain its own decisions; what it is missing is **use**, and use cannot be
+simulated without measuring what was put in. The value question is therefore deferred with a trigger
+rather than left open — §2.3.
 
 **M-M2 · Reach OpenCode.** Whatever M-M1 leaves standing, U2 needs the second harness. OpenCode
 takes MCP servers through `opencode.json` (`type: local` with a command, or `type: remote` with a
