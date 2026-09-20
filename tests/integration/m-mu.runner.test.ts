@@ -175,6 +175,28 @@ describe('MU-4 / MU-5 the named test, and not everything with it', () => {
     expect(r.code).not.toBe(0);
   });
 
+  test('MU-14 but a file holding one test is validated when that test reddens', () => {
+    // The survivor rule has no survivor to ask for here, and refusing on that
+    // basis would reject every honest entry against a single-test spec. Found
+    // while backfilling A4-6, whose spec has exactly one test; before this the
+    // runner called it a broken file.
+    const solo = 'spec/solo.test.ts';
+    writeFileSync(
+      join(root, solo),
+      [
+        "import { test, expect } from 'bun:test';",
+        "import { readFileSync } from 'node:fs';",
+        "import { join } from 'node:path';",
+        "const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');",
+        "test('the only rule there is', () => { expect(s).toContain('POLICY=\"protected\"'); });",
+        ''
+      ].join('\n')
+    );
+    const r = run(registry([entry({ spec: solo, mustFail: 'the only rule there is' })]));
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(r.output).toMatch(/\(1 red, 0 green\)/);
+  });
+
   test('and a spec that does not exist is refused before anything is mutated', () => {
     const r = run(registry([entry({ spec: 'spec/missing.test.ts' })]));
     expect(r.output).toContain('no such test file');

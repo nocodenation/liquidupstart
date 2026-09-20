@@ -200,10 +200,18 @@ while IFS=$'\t' read -r id file spec from to must; do
   passes="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ pass$/ { n += $1 } END { print n+0 }')"
   fails="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ fail$/ { n += $1 } END { print n+0 }')"
 
+  # A survivor is required only where one can exist. A file holding a single test
+  # reddens entirely when that test reddens, and the "broken file" rule below
+  # would then refuse every honest entry against it -- found while backfilling
+  # A4-6, whose spec has exactly one test.
+  total=$((passes + fails))
+  survivor_needed=1
+  [[ "$total" -le 1 ]] && survivor_needed=0
+
   if [[ "$fails" == "0" ]]; then
     add "UNRESOLVED ${id}  nothing went red -- needs a second mutation of another shape before this counts as a finding"
     unresolved=$((unresolved+1))
-  elif [[ "$named_failed" == "1" && "$passes" -gt 0 ]]; then
+  elif [[ "$named_failed" == "1" && ( "$passes" -gt 0 || "$survivor_needed" == "0" ) ]]; then
     add "VALIDATED ${id}  ${must}  (${fails} red, ${passes} green)"
     validated=$((validated+1))
   elif [[ "$named_failed" == "1" ]]; then
