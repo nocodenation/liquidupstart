@@ -1,4 +1,4 @@
-# Handover — maintained continuously, last touched 2026-09-19
+# Handover — maintained continuously, last touched 2026-09-20
 
 **What this file is.** The working handover between the operator and the agent, on **one machine**.
 It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
@@ -19,9 +19,11 @@ editing downward is work that the merge direction undoes.
 
 ## What is being built
 
-**Three features, two repairs, and three more features specified on 2026-09-19** -- the pairing
-recovery (#15, built), the mid-term memory (#16, specified) and the mutation control for the suite
-(specified). The branch table below is the map; this section is why each exists.
+**Three features, two repairs, and four more that arrived on 2026-09-19 and 2026-09-20** -- the
+pairing recovery (#15, built), the mid-term memory (#16, specified and switched on), and the
+mutation control for the suite, which is in two pieces: the tool on `main` (#18) and the
+specification with the registry on #17. The branch table below is the map; this section is why each
+exists.
 
 **The git integration** (#9) gives the agent harnesses OpenClaw and OpenCode version control:
 repositories declared in the configuration, cloned into a shared workspace, each with its own deploy
@@ -54,7 +56,8 @@ than tidied away.
 | `docs/FEATURE-liquid-java-extensions.md` | The same, for the Java extensions. Numbering continues from the git document — U9, FR21 upward |
 | `docs/TEST-SPEC-liquid-java-extensions.md` | The Java cases |
 | `docs/FEATURE-openclaw-2026-9-1.md` | The migration analysis, in the three-part view: how each part worked, what changed, what had to be adapted |
-| `docs/TEST-SPEC-openclaw-2026-9-1.md` | 31 migration cases, OC-1 to OC-31 |
+| `docs/TEST-SPEC-openclaw-2026-9-1.md` | The migration cases, OC-1 upward -- OC-39 to OC-47 were added by #15 |
+| `docs/FEATURE-memory-midterm.md` · `docs/PROCEDURE-mutation-control.md` | The mid-term memory (#16) and the mutation runner (#18). The mutation reasoning and its registry are on #17 |
 | `docs/PROCEDURE-cold-start.md` | The cold start, **version-neutral**: it reads the pin out of the Dockerfile rather than naming a version, so one document serves 2026.7.1, 2026.9.1 and whatever is pinned next |
 | `scripts/linux/image-digests.sh` | `before` / `after`: what every image tag resolves to, so a later difference can be told apart from an upstream move |
 | `docs/verification/` | The records, with the raw transcripts. Promoted from `.pr-drafts/` when finished |
@@ -88,14 +91,15 @@ They answered `f855b11 2026-09-14 Merge pull request #11` and **164** on the eve
 | `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B4, and this file |
 | `feature/openclaw-pairing-recovery` | **#15**, open | `feature/git-integration` | §9 of the migration document: the way back into the Control UI. R1, R2 and R3 built, OC-39 to OC-47 |
 | `feature/memory-midterm` | **#16**, open | `main` | The mid-term memory specification. Nothing built |
-| `feature/test-mutation-control` | open one | `feature/git-integration` | Proving a test can fail. Specification and a measured sample; nothing built |
+| `feature/test-mutation-control` | **#17**, open | `feature/git-integration` | Proving a test can fail: the specification, a measured sample, and the backfill of the registry |
+| `feature/mutation-registry` | **#18**, open | `main` | The mutation runner itself with an **empty** registry, so every branch can register its own cases. Cut 2026-09-20 |
 | ~~`fix/openclaw-2026-9-1`~~ | ~~#11~~ | — | **Merged into `main` 2026-09-14**, with #12, #13 and #14 inside it |
 | ~~`fix/openclaw-start-stdin`~~ | ~~#14~~ | — | Merged into #11 on 2026-09-08 |
 | ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | Merged into #13. The branch exists only locally now |
 | ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | Merged into #11 on 2026-09-08, remote branch deleted |
 | `integration/oc-2026-9-1` | — | — | **Not a merge candidate**, and now largely redundant: it existed so the compatibility cases could run against #11 + #9 + #10, and #11 is in `main` |
 
-**The three branches cut on 2026-09-19 all sit on #9 or `main`, never on #10.** Nothing they do
+**The four branches cut on 2026-09-19 and 2026-09-20 all sit on #9 or `main`, never on #10.** Nothing they do
 needs the Java extensions, and everything they touch — both OpenClaw documents,
 `config/scripts/start/openclaw.sh`, the nginx identity blocks, the whole of `dashboard/` — was
 byte-identical on #9 and #10 when they were cut. That was measured, not assumed.
@@ -708,25 +712,69 @@ here is the state they left on **this machine**:
 | **The gateway configuration was changed by hand, three times** | `gateway.auth.identityScopes` (now also written by the start script, R1), `operator.admin` removed from `deviceAutoApprove.scopes` (now also in the start script, R3), and — **still only by hand** — `plugins.entries["active-memory"].enabled` plus a `memory.search` block |
 | **The last of those expires on the next start** | `./scripts/linux/start.sh` rewrites `volumes/_openclaw/openclaw.json`, and the memory plugin goes off with it |
 
-**Why that matters before 05:00.** The stack runs a memory consolidation every day at 05:00 and has
-written *"Ranked 0 candidate(s)"* every day since 2026-09-11. `active-memory` — the plugin that
-produces the candidates — was switched on at 18:45 on 2026-09-19 to find out whether that is the
-reason. **A start before 05:00 turns it off again and voids the measurement**, and the next morning's
-file would read the same either way, which is precisely the shape the whole thing is about. The
-answer is in `volumes/_openclaw/workspace/memory/dreaming/deep/2026-09-20.md`.
+**The 05:00 question was answered on 2026-09-20, and the answer was not the plugin.** See below.
 
 Rollback copies, if any of the three need undoing: `volumes/_openclaw/openclaw.json.before-identityscopes`
 and `.before-oc46`.
 
-### Where the work stands, 2026-09-19
+### 2026-09-20: what the memory consolidation was actually waiting for
+
+The file read exactly like the nine before it — *"Ranked 0 candidate(s)"* — and **taking that as
+"the plugin was not the reason" would have been the third mistake in as many days**, because nothing
+had been written overnight either. The honest state was *inconclusive*.
+
+Asking the tool rather than reading the file settled it:
+
+```
+openclaw memory promote-explain "2026-09-05-1630"
+score=0.789  recalls=0  uniqueQueries=1  ageDays=9.2
+thresholds:  minScore=0.75  minRecallCount=3  minUniqueQueries=3  maxAgeDays=30
+```
+
+**The score already clears its threshold. What is missing is recall.** Promotion needs three
+retrievals across three distinct queries; this installation has asked no questions. All fifteen
+entries in the store come from the one session summary it has ever produced, and all were written
+**before** `active-memory` was switched on — `memory-core` had been indexing throughout.
+
+**So nothing was blocked by a disabled plugin. Promotion is earned by use, and waiting does not
+help**: days accumulate, recalls do not, and `maxAgeDays=30` drops those fifteen entries on
+2026-10-19 unpromoted. The value question is in `BACKLOG.md` with a trigger rather than on a list,
+and `config/scripts/start/openclaw.sh` now writes the memory configuration so the first week of real
+use is measured rather than missed. `docs/FEATURE-memory-midterm.md` §2.2.
+
+### 2026-09-20: the gateway went down, and the cause is not established
+
+**`openclaw-gateway` received SIGTERM at 09:45:37 and exited 127**, and stayed down for about half an
+hour before the suite's stack guard surfaced it. It was restarted by hand; the configuration was
+intact, all twenty services are up, and a turn answers.
+
+What is known: the time coincides with a mutation run that had `compose.yml` edited and restored.
+What is **not** known: any mechanism connecting the two. `compose.yml` is byte-identical, the case
+carrying that mutation only reads the file as text, and nothing in the run invoked `docker compose`.
+The same signature — exit 127 — is recorded for the system tier on 2026-09-17, but no system-tier
+case ran that morning.
+
+**It is written down unexplained on purpose.** An explanation that fits the evidence is not a cause,
+and this file has already carried one of those about `volumes/_openclaw` for a day. If it happens
+again, this paragraph is the second data point.
+
+**What deserves credit is the guard**: `stackGuard` is why anyone noticed. Without it the next
+system-tier run would simply have gone red and read as a defect in the code.
+
+### Where the work stands, 2026-09-20
 
 | Branch | Head | What is on it |
 |---|---|---|
 | `feature/git-integration` (#9) | `e33d1e6` | M-A9 to M-A15 |
-| `feature/liquid-java-extensions` (#10) | `3fc7c69` | all of it, merged forward, plus this file |
+| `feature/liquid-java-extensions` (#10) | `8a8fca9` | all of it, merged forward, plus this file |
 | `feature/openclaw-pairing-recovery` (#15) | `6b1d7e9` | §9: R1, R2, R3, OC-39 to OC-47 |
-| `feature/memory-midterm` (#16) | `c47a624` | The memory specification and the nine-day finding |
-| `feature/test-mutation-control` | `f3a91db` | The mutation specification and its sample |
+| `feature/memory-midterm` (#16) | `8bd6d22` | The memory specification, M-M1 answered, and the start script switching it on |
+| `feature/test-mutation-control` (#17) | `a4d677a` | The mutation specification, the sample, and 32 registry entries |
+| `feature/mutation-registry` (#18) | `f6f8ecb` | The runner and an empty registry, for `main` |
+
+**Five pull requests of ours are open and none is reviewed.** #9 has waited since 2026-09-15 and is
+the base of two others. That is the part of this trial most at risk: an unreviewed stack is where a
+method that depends on review stops being one. #18 is the smallest and the easiest to judge.
 
 **A head written into this file is stale the moment it is written** — the commit that records it
 cannot name itself, and the two documentation commits that closed 2026-09-18 are exactly what the
