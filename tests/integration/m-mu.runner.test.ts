@@ -242,6 +242,60 @@ describe('MU-6 the subject goes back, whatever the outcome', () => {
   });
 });
 
+describe('MU-15 / MU-16 / MU-17 — three shapes backfilling turned up', () => {
+  test('MU-15 "all" makes several occurrences a declaration rather than an ambiguity', () => {
+    // The reason a second occurrence is refused is that nobody can say which one
+    // carried the rule. An entry saying "every one of them" has answered that.
+    // Found registering A3c-8, where the rule is asserted across two identical
+    // ssh invocations in one script — and again at A0-4, where it is not, and
+    // the refusal was right.
+    const twice = run(registry([entry({ from: 'TWICE="here"', to: 'TWICE="gone"' })]));
+    expect(twice.output).toMatch(/occurs 2 times/);
+    expect(twice.output).toContain('"all": true');
+
+    const declared = run(
+      registry([
+        {
+          ...entry({ from: 'TWICE="here"', to: 'TWICE="gone"', mustFail: 'the policy is protected' }),
+          all: true
+        } as any
+      ])
+    );
+    // It applies now. The named test does not redden — nothing asserts TWICE —
+    // so the honest outcome is unresolved rather than validated, and that is
+    // what proves the flag changed the application rather than the verdict.
+    expect(declared.output).toContain('UNRESOLVED FX-1');
+  });
+
+  test('MU-16 an empty `to` is a deletion, not a shifted record', () => {
+    // Tab is IFS whitespace and bash collapses a run of it into one delimiter,
+    // so an empty `to` — which is what every deletion mutation looks like —
+    // moved the "all" flag into `to` and the test name into the flag. The entry
+    // still ran, against the wrong strings, and reported a clean result. Found
+    // registering A3c-8, whose mutation deletes an option.
+    const r = run(registry([entry({ from: 'POLICY="protected"', to: '' })]));
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(r.output).toContain('the policy is protected');
+  });
+
+  test('MU-17 a subject under tests/ that is not a test is allowed', () => {
+    // The rule is that the file is an ASSERTION, not that it lives under tests/.
+    // tests/run.sh and tests/mutate.sh are subjects in their own right, and A0-4
+    // — whose subject is the suite runner — was refused as though it were a
+    // test. The counterpart below keeps the real guard.
+    mkdirSync(join(root, 'tests'), { recursive: true });
+    writeFileSync(join(root, 'tests/tool.sh'), 'MODE=600\n');
+    const allowed = run(
+      registry([entry({ file: 'tests/tool.sh', from: 'MODE=600', to: 'MODE=644' })])
+    );
+    expect(allowed.output).not.toContain('names a test file as its subject');
+
+    const refused = run(registry([entry({ file: 'spec/fixture.test.ts' })]));
+    expect(refused.output).toContain('names a test file as its subject');
+    expect(refused.code).not.toBe(0);
+  });
+});
+
 describe('MU-13 a run that validated nothing says so', () => {
   test('an empty registry is reported, not printed as four zeros', () => {
     // The hazard MU-2 names, met in the tool itself: a quiet run and a healthy

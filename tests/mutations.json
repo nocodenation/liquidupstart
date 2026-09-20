@@ -118,5 +118,54 @@
     "from": "    *[!0]*) return 1 ;;",
     "to": "    *[!0]*) return 0 ;;",
     "mustFail": "A4-6 deleting a remote branch is refused and the branch survives"
+  },
+  {
+    "case": "A3-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/unit/m-a3.keygen.test.ts",
+    "from": "ssh-keygen -t ed25519 -N '' -C 'liquidupstart-agent' -f \"$KEY\"",
+    "to": "ssh-keygen -t rsa -b 2048 -N '' -C 'liquidupstart-agent' -f \"$KEY\"",
+    "mustFail": "A3-1 the first run creates an ed25519 keypair"
+  },
+  {
+    "case": "A15-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a15.clone-lock.test.ts",
+    "from": "  if ! lu_take_lock \"$slug\"; then",
+    "to": "  if false; then",
+    "mustFail": "and the second run says so instead of guessing"
+  },
+  {
+    "case": "A12-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a12.manifest-while-waiting.test.ts",
+    "from": "[[ -n \"$ONLY_SLUG\" ]] || lu_write_manifest",
+    "to": "[[ -n \"$ONLY_SLUG\" ]] || true",
+    "mustFail": "both repositories are already in it"
+  },
+  {
+    "case": "A8-26",
+    "file": "scripts/linux/start.sh",
+    "spec": "tests/unit/m-a8.start-attention.test.ts",
+    "from": "    /\"cloned\": *false/ { bad = 1 }",
+    "to": "    /\"cloned\": *false/ { bad = 0 }",
+    "mustFail": "A8-26 an unreachable repository is reported with its key and its error"
+  },
+  {
+    "case": "A3c-8",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/contract/m-a3c.ssh-isolation.test.ts",
+    "from": " -o IdentityAgent=none",
+    "to": "",
+    "all": true,
+    "mustFail": "A3c-8 neither can fall back to the operator ssh config or agent"
+  },
+  {
+    "case": "A0-4",
+    "file": "tests/run.sh",
+    "spec": "tests/unit/m-a0.runner-skip-system.test.ts",
+    "from": "WITH_SYSTEM=0\n",
+    "to": "WITH_SYSTEM=1\n",
+    "mustFail": "A0-4 without the flag neither stack-level file is selected"
   }
 ]

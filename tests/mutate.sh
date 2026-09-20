@@ -102,8 +102,12 @@ rows="$(bun -e '
     if (ids.some((v) => /[\t\n]/.test(v))) {
       console.error(`entry ${r.case} has a tab or newline in a name or a path`); process.exit(2);
     }
-    const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
-    console.log([r.case, r.file, r.spec, b64(r.from), b64(r.to), r.mustFail].join("\t"));
+    // A leading dot so no field is ever empty: tab is IFS whitespace, and bash
+    // collapses a run of it into one delimiter -- so an empty `to`, which is what
+    // a deletion mutation looks like, shifted every later field left by one and
+    // the "all" flag silently became the test name. Found registering A3c-8.
+    const b64 = (s) => "." + Buffer.from(s, "utf8").toString("base64");
+    console.log([r.case, r.file, r.spec, b64(r.from), b64(r.to), r.all === true ? "true" : "false", r.mustFail].join("\t"));
   }
 ' "$REGISTRY")" || exit 2
 
@@ -128,7 +132,7 @@ report=""
 
 add() { report="${report}$1"$'\n'; }
 
-while IFS=$'\t' read -r id file spec from to must; do
+while IFS=$'\t' read -r id file spec from to all must; do
   [[ -n "$id" ]] || continue
   [[ -z "$ONLY" || "$ONLY" == "$id" ]] || continue
 
@@ -137,8 +141,13 @@ while IFS=$'\t' read -r id file spec from to must; do
 
   # The registry mutates subjects, never assertions. A tool that can rewrite the
   # tests can make anything pass.
+  #
+  # The rule is the file being a TEST, not merely living under tests/: the suite
+  # runner and this script are both subjects in their own right, and the first
+  # version refused A0-4 -- whose subject is tests/run.sh -- as though it were an
+  # assertion.
   case "$file" in
-    tests/*) add "REFUSED   ${id}  names a test file as its subject"; refused=$((refused+1)); continue ;;
+    *.test.ts) add "REFUSED   ${id}  names a test file as its subject"; refused=$((refused+1)); continue ;;
   esac
 
   if [[ ! -f "$abs" ]]; then
@@ -162,7 +171,7 @@ while IFS=$'\t' read -r id file spec from to must; do
   hits="$(FROM="$from" bun -e '
     const fs = require("fs");
     const body = fs.readFileSync(process.argv[1], "utf8");
-    const needle = Buffer.from(process.env.FROM, "base64").toString("utf8");
+    const needle = Buffer.from(process.env.FROM.slice(1), "base64").toString("utf8");
     let n = 0, i = 0;
     while ((i = body.indexOf(needle, i)) !== -1) { n++; i += needle.length; }
     console.log(String(n));
@@ -170,22 +179,33 @@ while IFS=$'\t' read -r id file spec from to must; do
   if [[ "$hits" == "0" ]]; then
     add "REFUSED   ${id}  its 'from' is not in ${file} -- the subject moved"; refused=$((refused+1)); continue
   fi
-  if [[ "$hits" != "1" ]]; then
-    add "REFUSED   ${id}  its 'from' occurs ${hits} times in ${file}"; refused=$((refused+1)); continue
+  # "all" is a declaration, not a loosening. The reason a second occurrence is
+  # refused is that nobody can say which one carried the rule -- and an entry
+  # that says "every one of them" has answered that. Some rules are asserted
+  # across identical declarations: GIT_SSH_COMMAND is written three times in
+  # compose.yml, once per agent service, and the case requires all three.
+  if [[ "$hits" != "1" && "$all" != "true" ]]; then
+    add "REFUSED   ${id}  its 'from' occurs ${hits} times in ${file}; set \"all\": true if every one is meant"
+    refused=$((refused+1)); continue
   fi
 
   BACKUP="$(mktemp)"; cp "$abs" "$BACKUP"; SUBJECT="$abs"
-  FROM="$from" TO="$to" bun -e '
+  FROM="$from" TO="$to" ALL="$all" bun -e '
     const fs = require("fs");
     const p = process.argv[1];
-    const d = (s) => Buffer.from(s, "base64").toString("utf8");
+    const d = (s) => Buffer.from(s.slice(1), "base64").toString("utf8");
     const body = fs.readFileSync(p, "utf8");
     // Not a regular expression: `$&` and friends in a replacement string would
     // be interpreted, and a subject full of shell variables is exactly where
-    // that bites.
+    // that bites. split/join for the same reason.
     const needle = d(process.env.FROM);
-    const at = body.indexOf(needle);
-    fs.writeFileSync(p, body.slice(0, at) + d(process.env.TO) + body.slice(at + needle.length));
+    const to = d(process.env.TO);
+    if (process.env.ALL === "true") {
+      fs.writeFileSync(p, body.split(needle).join(to));
+    } else {
+      const at = body.indexOf(needle);
+      fs.writeFileSync(p, body.slice(0, at) + to + body.slice(at + needle.length));
+    }
   ' "$abs"
 
   out="$(cd "$ROOT" && bun test --timeout "$TIMEOUT_MS" "$spec" 2>&1)"

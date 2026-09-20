@@ -362,3 +362,37 @@ That is the number §2 said nobody knew, and it is now printed on demand. It is 
 suite — 10 of 10 sampled cases *could* be made to fail, so the missing 241 are unmeasured rather than
 suspect. The point is that the difference between *unmeasured* and *sound* is now visible instead of
 being a matter of confidence.
+
+## 14. What the first backfill found, 2026-09-20
+
+Twenty-one entries registered, `missing` from 241 to 230 — and **four defects in the runner**, none
+of which reading it would have shown. Each was found by pointing it at a real case.
+
+| | What it was | Found registering |
+|---|---|---|
+| **A spec with one test could never be validated** | The survivor rule — the named test fails and at least one still passes — has no survivor to ask for in a single-test file, so the runner called every honest entry against one a *broken file* | A4-6 |
+| **An empty `to` shifted every later field** | Tab is IFS whitespace and bash collapses a run of it into one delimiter. A deletion mutation — which is what an empty `to` is — moved the `all` flag into `to` and the test name into the flag. It still ran, against the wrong strings, and reported a clean result | A3c-8 |
+| **A rule asserted in several places could not be mutated at all** | "Exactly once" is there because nobody can say which occurrence carried the rule. Some rules are deliberately repeated — two ssh invocations in one script, three service declarations in `compose.yml` — and had no expressible mutation | A3c-8 |
+| **The suite runner counted as an assertion** | The guard refused any `file` under `tests/`. `tests/run.sh` and `tests/mutate.sh` are subjects in their own right; the rule is that the file is a **test**, not where it lives | A0-4 |
+
+The second is the one worth dwelling on: **it did not fail, it answered.** The entry ran, matched
+nothing meaningful, and produced a verdict — exactly the class of defect this milestone exists to
+remove, inside the tool built to remove it, three days after it was specified. MU-16 holds it now.
+
+The third became `"all": true`, which is a **declaration rather than a loosening**: the ambiguity the
+"exactly once" rule guards against is *which* occurrence mattered, and an entry saying "every one of
+them" has answered that question rather than dodged it. A0-4 is the counterpart — its `from` occurred
+twice, once as a default and once in a flag handler, and the refusal there was right.
+
+### What it cost, measured rather than predicted
+
+Eleven entries in roughly forty minutes, including four reworks and four tool repairs. The second
+data point after the sample of §12, and the shape holds: **the writing is minutes, the reworks are
+where the time goes, and the reworks are also where the findings are.**
+
+### And three entries needed a second attempt for the same reason
+
+A3-1 mutated the per-repository keygen while its case exercises the shared one; A5-2 did the same in
+the sample; A9-2 named a `return 2` that occurs three times. **The dominant error is still aiming at
+the wrong site, and every one of them presents as a green run.** That is what MU-11 is for, and it
+earned its place four more times today.
