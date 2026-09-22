@@ -3194,7 +3194,7 @@ read out of the source; whether it looks right is a person's judgement, and A14-
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
-| A15-1 | Integration **unhappy** | The run that gets there first holds the repository | A second run read a clone that was 20 ms old and told the operator it was reachable |
+| A15-1 | Integration **unhappy** | The run that gets there first holds the repository | A second run read a clone that was 20 ms old and told the operator it was reachable. **Amended by M-A16**: the second run now ends with status 4 and writes nothing, rather than recording the refusal as a clone result |
 | A15-2 | Integration **unhappy** | And it never touches the directory it did not get | The `rm -rf` in the failure branch belongs to whoever created the directory |
 | A15-3 | Integration | The lock is released when the run ends, and a later run gets it | A lock nobody releases turns one killed start into a repository nothing can prepare again |
 | A15-4 | Integration **unhappy** | A lock left by a killed run does not seal the repository forever | The lock carries the pid that took it; a lock with no process behind it is not a lock |
@@ -3206,10 +3206,103 @@ read out of the source; whether it looks right is a person's judgement, and A14-
 | **Premise** | `git clone` creates `dest/.git` and writes the remote into it within 20 ms, and a start that waits retries that clone every five seconds. A dashboard Test that lands in one of those windows sees a `.git` whose origin matches and adopts it. Observed by the operator on 2026-09-18, and reproduced with a clone against a repository that cannot exist: `t=20ms: target/.git EXISTS  HEAD=fatal: ambiguous argument 'HEAD'`. |
 | **Why not inspect more carefully** | A clone in flight and a finished clone of an **empty** repository are the same thing on disk: a repository with a remote and no commits. There is no cheap discriminator, so the runs are kept apart instead of being judged after the fact. |
 | **Component** | `lu_take_lock` and the `trap` in `config/scripts/start/git.sh`, with two runs started against one project. |
-| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, the lock directory `volumes/_git-secrets/locks/github.com_nocodenation_agent-skills`, and an ssh stand-in that **sleeps two seconds** before refusing, so "while the first run is inside its clone" is a window rather than a coincidence. A15-4 writes the pid `999999` into a lock by hand — a process that does not exist. |
-| **Expected** | The lock exists while the first run works; the second run records *"another run is preparing volumes/repos/… right now"*, leaves the directory alone and asks for no deploy key; the lock is gone when the first run ends; a later run gets through to the clone; and a lock whose pid is dead is taken over rather than obeyed. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, the lock directory `volumes/_git-secrets/locks/github.com_nocodenation_agent-skills`, and an ssh stand-in that **sleeps two seconds** before refusing, so "while the first run is inside its clone" is a window rather than a coincidence. A15-4 writes `<this host>:999999` into a lock by hand — a process that does not exist, on an identity that does. Until M-A16 it wrote the bare number `999999`. |
+| **Expected** | The lock exists while the first run works; the second run **says** *"another run is preparing volumes/repos/… right now"* and ends with status 4 without writing a record of it (amended by M-A16 — the original wording required that sentence to be written *into the manifest*, which is finding 1 of 2026-09-21), leaves the directory alone and asks for no deploy key; the lock is gone when the first run ends; a later run gets through to the clone; and a lock whose pid is dead is taken over rather than obeyed. |
 | **What it leaves uncovered** | A run killed **mid-clone** leaves a half-written `.git` whose origin already matches, and the next run adopts it. The lock prevents overlap, not corpses. Recorded in `BACKLOG.md` rather than papered over. |
 | **Covers** | The operator's observation of 2026-09-18, FR3, FR11. |
+
+---
+
+
+### M-A16 — the lock tells the truth about itself, and the panel about what follows
+
+Six findings from the review of 2026-09-21, in the reviewer's order. Findings 1 and 2 are
+regressions introduced by M-A15's lock; 3 to 5 are the dashboard; 6 is about the suite being
+reviewable at all. Every case here was run against the unfixed code first: **18 of them failed and
+9 passed**, and the 9 are the positive counterparts, which must hold before and after.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| A16-1 | Integration **unhappy** | A refused lock is never written as a clone result | Exit 4 and a byte-identical manifest. The refusal used to be recorded as `cloned: false` over a repository that was cloned and healthy |
+| A16-2 | Integration | A run that gets the lock still writes its result | Otherwise A16-1 passes because nothing is ever written |
+| A16-3 | Component **unhappy** | The operator is told the repository is busy, not unreachable | 409, and neither "still unreachable" nor "Register the deploy key below" |
+| A16-4 | Component **unhappy** | An agent is not sent after a deploy key either | `git-repo-info` still describes the clone it has, rather than `clone (missing)` |
+| A16-5 | Integration **unhappy** | A start waits for a lock rather than recording an error | Bounded, and the bound is settable. A Test does not wait — an operator is in front of it |
+| A16-6 | Integration | A start holds only what it is still waiting for | Locks of repositories settled in pass 1 are released before pass 2 waits |
+| A16-7 | Integration **unhappy** | A live process on this identity is honoured | The lock holds while its process lives |
+| A16-8 | Integration | A dead process on this identity still lets go | A15-4's promise, which the fix must not withdraw |
+| A16-9 | Integration **unhappy** | An empty pid file is somebody, not nobody | The instant between `mkdir` and the write is not an invitation |
+| A16-10 | Integration **unhappy** | A holder from another identity is honoured | Without asking `kill -0` at all — the answer would be about the wrong process table |
+| A16-11 | Integration | The lock names an identity, not a bare number | `<identity>:<pid>`, so there is something to compare |
+| A16-12 | Component **unhappy** | A provider skip does not reopen a finished deploy-key panel | The hold belongs to `git-key-` steps only |
+| A16-13 | Component | A git-key skip is still held long enough to read | M-A14's finding, which the fix must not undo |
+| A16-14 | Component **unhappy** | Skipping the last repository says "Closing" | Not "Next repository", after which the panel simply closes |
+| A16-15 | Component | Skipping the first of two says "Next repository" | The counterpart that stops A16-14 being met by never counting |
+| A16-16 | Component **unhappy** | A line the card contradicts is gone | A later start re-read the repository as cloned while "still unreachable" stood underneath |
+| A16-17 | Component | A line the card still agrees with stays | Clearing on any change is M-A14's defect again: a confirmation swept away before it is read |
+| A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
+| A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
+| A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
+| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22 from the dashboard, in two runs; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
+
+#### Detail per case
+
+| | |
+|---|---|
+| **Premise** | M-A15 kept two runs apart and introduced two defects doing it. A lock was released only when the run exited, so a start waiting for one deploy key held the locks of every repository it had already finished — and a refused lock was recorded the way a failed clone is. Separately, the lock's liveness test is `kill -0 <pid>`, which is meaningful only inside one process table, while the lock directory is shared across two: `run.sh` mounts the project into the dashboard container at the same path and passes no `--pid=host`. |
+| **Component** | `lu_take_lock`, `lu_take_lock_waiting` and `lu_release_lock` in `config/scripts/start/git.sh`; `retryRepository` in `dashboard/src/lib/server/git.ts`; `TaskRunner.svelte` and `GitRepositories.svelte`; and the suite's own files. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, clonable through the suite's `fakeSsh` from a local bare repository, and `git@github.com:nocodenation/liquid-flows.git\|write\|protected` with no route, so its clone fails and a deploy key is asked for. `SYSTEM_SIGNIN_WAIT_SECONDS=90`, so the start is measured inside its wait rather than past it. Lock holders written by hand: `some-other-container:7` (an identity this machine is not, naming a pid that is certainly alive here), `<this host>:999999` (dead), `<this host>:<a live sleep>` (alive and ours), and the empty string. The panel is driven by a task log carrying `::aiw-git-keys-pending::<a> <b>` and `::aiw-git-key-required::<b>`. |
+| **Expected** | As the rows above. |
+| **Measured against the unfixed code** | 18 fail, 9 pass. The 9 are A16-2's first half, A16-6's first two, A16-8, A16-13, A16-15, A16-17, A16-18 and A16-19's count guard — every one of them a counterpart or a control, which is what those are for. |
+| **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on the toolbox → dashboard path; the host → dashboard variant is still unwalked. |
+| **Covers** | Findings 1 to 6 of 2026-09-21, FR3, FR11, NFR1, U1, U2, U11. |
+
+#### A16-M1 — manual: the crossing between two process tables
+
+| | |
+|---|---|
+| **Why manual** | It needs a start waiting on a deploy key *and* a dashboard Test running at the same moment, in a different container, on the same bind-mounted project. A16-10 and A16-11 hold the mechanism; this walk holds that the mechanism is reached on the real path. |
+| **Premise** | `.env` declares a repository whose deploy key is not registered, `./run.sh` has the dashboard up, and the dashboard image carries the change under test. |
+| **Steps** | 1. Start the stack **from the dashboard**. Wait for the deploy-key panel. 2. `cat volumes/_git-secrets/locks/*/pid` — one lock only, carrying an identity and a pid. 3. On `/`, press **Test this repository** on the repository the start is waiting for. 4. Compare the manifest with the copy taken before. 5. Press **Skip for this start** and read the countdown. |
+| **Expected** | Only the waited-on repository is locked; the holder names an identity that is not the one doing the testing; the Test answers *being prepared by another run*; the manifest is byte-identical; the countdown says "Closing" for the last repository. |
+
+**Walked 2026-09-22, and the result is the milestone's, not a formality.**
+
+| | |
+|---|---|
+| Locks held while the start waited on `liquid-flows` | **one**: `github.com_nocodenation_liquid-flows`. The three cloned repositories held none — which is finding 1's second half, on the real path |
+| The holder | `2337dc9ef506:246` — the toolbox container's identity, not `dmbp-ham02-4345.local`, and not a bare number |
+| Does that pid exist where the Test runs | **No.** `docker exec liquidupstart-dashboard kill -0 246` answers `No such process`. The unfixed code would have read the lock as stale and taken it over, which is the whole of finding 2 |
+| The Test on the locked repository | *"github.com/nocodenation/liquid-flows is being prepared by another run right now — a start that is waiting, or another test. Nothing was changed. Wait for it to finish, then test it again."* |
+| The manifest afterwards | byte-identical to the copy taken before the Test |
+| `volumes/repos/liquid-flows` | absent, as it must be |
+| The countdown on skip | *"Closing in 1…"* — 1 of 1, where it used to promise a next repository and then close |
+| Afterwards | every lock released, the three healthy clones untouched, `[start succeeded]` |
+
+**Three corrections this walk forced, recorded because a case that cannot be walked as written is not a case.**
+
+*It was started from the dashboard, so the crossing walked is toolbox → dashboard, not host → dashboard.* Two container identities rather than a host and a container. That is the more representative path — the Start button is what an operator presses — and the mechanism is the same: two process tables, one lock directory. The host variant is still unwalked.
+
+*The step "Test the repository the start is **not** waiting for" was dropped, because the button does not exist there.* `canRetry` is `!cloned`, so a cloned repository offers no Test — correctly, since there is nothing to retry, and A8-22 already records that. Timur's scenario A describes pressing Test on a healthy repository; that is reachable only when **two** repositories are unreachable and the start waits on one of them. The case now tests the locked repository directly, and the released-lock half is read from the lock directory instead.
+
+*Finding 3 needed a second run, and it was worth it.* The first walk reached no sign-in panel, because every provider login was valid — so the condition was made rather than waited for: `ENABLE_GITHUB_COPILOT=1`, with `liquid-flows` still declared, which puts both waits in one start in the order the defect needs (the git step runs before the sign-ins). Walked 2026-09-22:
+
+| | |
+|---|---|
+| Deploy-key panel, **Skip for this start** | *"Skipped — the start continues without this repository.Closing in 1…"*, then the panel closed |
+| GitHub Copilot panel appeared | *"OpenClaw is set to use GitHub Copilot (ENABLE_GITHUB_COPILOT=1) … Waiting for sign-in (up to 15 minutes)"* |
+| Copilot panel, **Skip for this start** | *"Skipped — the start continues without GitHub Copilot."* |
+| **And the deploy-key panel** | **did not come back.** Before the fix it reappeared for three seconds, over a repository dealt with two panels earlier |
+
+The marker this rests on was verified in the script rather than assumed: `git.sh:565` prints
+`::aiw-git-key-done::<slug>` **unconditionally**, after all three outcomes — cloned, skipped, out of
+budget. Had it printed only on success, `gitKeyDone` would stay false after a skip and A16-12 would
+model a world that does not exist.
+
+**One defect found while walking, and it is not from this milestone.** The skip note reads
+`…without this repository.Closing in 1…` — no space. Svelte trims the whitespace at the start of the
+`{#if holdingSkip}` block, and the markup puts that block immediately after the full stop. Present
+before M-A16; visible now because the sentence it belongs to is the one finding 4 corrected.
 
 ---
 
