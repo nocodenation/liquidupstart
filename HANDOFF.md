@@ -1,4 +1,4 @@
-# Handover — maintained continuously, last touched 2026-09-20
+# Handover — maintained continuously, last touched 2026-09-22
 
 **What this file is.** The working handover between the operator and the agent, on **one machine**.
 It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
@@ -147,6 +147,18 @@ docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'
 Silence means the running stack predates the git integration, and the red tests describe the
 containers rather than the code.
 
+**A container from another branch's compose file survives every start.** `down.sh` runs
+`docker compose down` with no `--remove-orphans`, and `docker compose` only knows the services the
+*checked-out* compose file declares. So `nar_builder` — declared on #10, absent from #9 — has sat
+there since the stack was last started from #10: `Exited (127)`, finished 2026-09-20T17:56:59Z, and
+untouched by the four starts since. It is harmless, and it makes two things lie. A service count
+includes it. And `docker ps -a` shows a `nar_builder` on a machine whose `opencode` container has no
+`nar-build` in it, which is the discriminator below answering *absent* at the same moment.
+
+Its exit code is **127, the same signature as the unexplained gateway exit of 2026-09-20** — and the
+two are **eight hours apart**, 09:45:37 against 17:56:59, so this is not a second data point for that
+paragraph. Recorded here so nobody finds it later and reads it as one.
+
 **Each branch has its own discriminator, because each adds something to the stack.** Naming the
 branch a milestone lives on is not enough: the containers are the previous branch's until something
 rebuilds them, and a suite run against them measures the containers.
@@ -167,9 +179,10 @@ indistinguishable from a fix that works.
 
 ## State
 
-**The stack runs OpenClaw 2026.9.1 and is shaped by `feature/liquid-java-extensions`**, rebuilt and
-started there on 2026-09-14 after `main` was merged forward through the stack. Twenty services,
-including `nar_builder`. It was first migrated from a state 2026.7.1 had written — the path a real
+**The stack runs OpenClaw 2026.9.1 and is shaped by `feature/git-integration`**, started from the
+dashboard on 2026-09-22 while walking A16-M1. Nineteen services plus `liquidupstart-dashboard`, and
+**no `nar_builder`** — that service is declared on #10 only. It was `feature/liquid-java-extensions`-shaped
+from 2026-09-14 until then. It was first migrated from a state 2026.7.1 had written — the path a real
 installation takes, not a cold start — which is why the state in `volumes/_openclaw` is a migrated
 one rather than a fresh one.
 
@@ -456,6 +469,26 @@ accumulating conversation; executing them is better served by a clean context an
 that exists only in a transcript has to be carried by hand, and that is where it is lost.
 
 ## What the failures taught
+
+**One process, and the globals are shared.** `bun test` runs every file in one process, so anything
+a case installs globally outlives it. Registering a DOM for the component tier replaced `fetch`,
+`Request`, `FormData` and the rest, and thirteen cases in two files nobody had touched went red in
+the full suite while passing alone. Two explanations were offered and measured before the real one:
+a cold docker image build, and a shared fixture directory. Both were wrong. **A failure that appears
+only in the full run is a statement about the run, not about the file it lands in.**
+
+**A green case can be green over nothing.** The first component case passed while the props never
+reached the component: the card was stale in its entirety, so the "stale line" it asserted was simply
+the original line. It was caught by a control — change the page text, require the new text to appear
+— and nothing else would have caught it. Every tier needs one case whose only job is to prove the
+tier can see a change, and it belongs beside the cases that depend on it rather than in a helper
+nobody reads.
+
+**A case can encode the defect.** A15-1 required the behaviour that Timur's finding 1 names as the
+bug: exit 0, and a refused lock written into the manifest as a clone result. The case was correct
+about what the code did and wrong about what it should do, and it would have defended the defect
+against anyone who repaired it. When a review finds something a case asserts, the case is part of the
+finding.
 
 **Look in the log the failure belongs to, not the one you know.** For a day this project recorded
 that a mismatched NAR is reported nowhere. It is reported — in `nifi-user.log`, by the web layer that
@@ -761,20 +794,99 @@ again, this paragraph is the second data point.
 **What deserves credit is the guard**: `stackGuard` is why anyone noticed. Without it the next
 system-tier run would simply have gone red and read as a defect in the code.
 
-### Where the work stands, 2026-09-20
+### 2026-09-21/22: M-A16, and the suite learns to mount a component
 
-| Branch | Head | What is on it |
-|---|---|---|
-| `feature/git-integration` (#9) | `e33d1e6` | M-A9 to M-A15 |
-| `feature/liquid-java-extensions` (#10) | `8a8fca9` | all of it, merged forward, plus this file |
-| `feature/openclaw-pairing-recovery` (#15) | `6b1d7e9` | §9: R1, R2, R3, OC-39 to OC-47 |
-| `feature/memory-midterm` (#16) | `8bd6d22` | The memory specification, M-M1 answered, and the start script switching it on |
-| `feature/test-mutation-control` (#17) | `a4d677a` | The mutation specification, the sample, and 32 registry entries |
-| `feature/mutation-registry` (#18) | `f6f8ecb` | The runner and an empty registry, for `main` |
+**A second follow-up review of #9 arrived 2026-09-21 at head `e33d1e6`: six findings, two of them
+regressions from the clone lock built the day before.** That is the second review running whose
+findings are repairs of repairs — 2026-09-18 had three of five — and the shape is identical both
+times: a fix that gets one path through `git.sh` right without asking what else runs through those
+same lines. Worth carrying: **on this branch, the question to ask of any repair is which other caller
+walks it.**
 
-**Five pull requests of ours are open and none is reviewed.** #9 has waited since 2026-09-15 and is
-the base of two others. That is the part of this trial most at risk: an unreviewed stack is where a
-method that depends on review stops being one. #18 is the smallest and the easiest to judge.
+All six are built, each reproduced against the unfixed code before it was touched. The suite is
+**546 across 110 files**, and every case was run against the unfixed code: **18 fail there, 9 pass**,
+the 9 being positive counterparts and one control.
+
+**The lock held too much and said the wrong thing.** A start took a lock per declared repository and
+released them only on exit, so a start waiting for one deploy key held the locks of everything it had
+already finished. A dashboard Test on one of those healthy repositories was refused, and the refusal
+was written into the manifest the way a failed clone is — and `git-repo-info` then told every agent
+`clone (missing)` and instructed it to send the operator after a deploy key. Locks are released as
+each repository settles now; a start waits a bounded 300s; a Test that cannot have the lock exits 4
+and writes nothing, which the dashboard answers as 409.
+
+**And a pid is not an identity.** The liveness test was `kill -0 <pid>`, meaningful inside one
+process table, while `run.sh` mounts the project into the dashboard container at the same path with
+no `--pid=host`. The holder is `<identity>:<pid>` now. **A lock in the old format — a bare number —
+is judged the way the code that wrote it judged**, because treating it as foreign would seal that
+repository until someone deleted a directory by hand. Anyone touching this code should keep that
+branch: it exists for the upgrade, not for correctness.
+
+**The suite mounts Svelte components now, which is a change of kind.** `tests/component/` reached
+load functions and served page data; three of the six findings live in markup. The operator chose the
+tier over text assertions on 2026-09-21. It costs the suite's **first dependency ever**
+(`@happy-dom/global-registrator`, in the dashboard image's build stage only) and `tests/lib/mount.ts`.
+Two rules it cannot work without, both learned by breaking them:
+
+- **Every module in the reactive graph must resolve to one `svelte` install.** The spike was green
+  over a component that had never re-rendered — a second copy of svelte, a second signal registry,
+  updates written in one universe and read in the other. `mount.ts` pins every bare `svelte`
+  specifier to an absolute path. **A16-18 exists only to prove a prop change arrives**, and without
+  it nothing else in that file means anything.
+- **`bun test` runs every file in one process.** Registering a DOM replaces the network and body
+  globals, and a `FormData` from one implementation inside a `Request` from the other answers
+  `ERR_FORMDATA_PARSE_ERROR`. Thirteen cases in two untouched files went red in the full suite while
+  passing alone. Eleven globals are restored after registration.
+
+**A15-1 required the defect.** The case said the second run must exit 0 and write `cloned: false`
+with an error — which is precisely finding 1. It is amended rather than deleted, and both documents
+say so. **A case that fixes the wrong contract in place is worse than no case**, because it makes the
+defect a promise.
+
+**The mutation rule could not be obeyed, and the substitute is written down.** `tests/mutate.sh` lives
+on #17 and #18; M-A16 was built on #9, which carries neither, so the rule was unreachable rather than
+skipped. What stands in for it is the run against the unfixed code — stricter in the fault it uses,
+**and not repeatable once that code is committed**. That cost is the argument for finishing #18, and
+it is in `docs/PROCEDURE-mutation-control.md` on #17.
+
+**A16-M1 was walked on 2026-09-22 and corrected itself three times.** It was started from the
+dashboard, so the crossing walked is toolbox → dashboard rather than host → dashboard; **the host
+variant is still unwalked**. The step *"Test the repository the start is not waiting for"* was
+dropped, because a cloned repository draws no Test button — `canRetry` is `!cloned` — so the
+reviewer's scenario is reachable only when two repositories are unreachable at once. And finding 3
+needed a second run with `ENABLE_GITHUB_COPILOT=1`, because no sign-in panel appears on a machine
+whose credentials are in order.
+
+What it measured, on the real path: one lock held rather than four, `2337dc9ef506:246` as the holder,
+and `kill -0 246` answering *No such process* inside the container that was doing the testing.
+
+### Where the work stands, 2026-09-22
+
+| Branch | What is on it |
+|---|---|
+| `feature/git-integration` (#9) | M-A9 to **M-A16** |
+| `feature/liquid-java-extensions` (#10) | all of it, merged forward, plus this file |
+| `feature/openclaw-pairing-recovery` (#15) | §9: R1, R2, R3, OC-39 to OC-47 |
+| `feature/memory-midterm` (#16) | The memory specification, M-M1 answered, and the start script switching it on |
+| `feature/test-mutation-control` (#17) | The mutation specification, the sample, 32 registry entries, and the decision of 2026-09-22 |
+| `feature/mutation-registry` (#18) | The runner and an empty registry, for `main` |
+
+The heads are deliberately not in that table any more. Ask:
+
+```bash
+git fetch -q origin && git for-each-ref --format='%(refname:short) %(objectname:short)' \
+  refs/remotes/origin/feature refs/remotes/origin/fix
+```
+
+**Six pull requests of ours are open and five have never been read.** Only #9 has been reviewed —
+four times, most recently 2026-09-21 — and its findings are answered and built. #10 has waited since
+2026-09-15; #15, #16, #17 and #18 since the days they were cut. `iztiev` is the requested reviewer on
+all six.
+
+That is the part of this trial most at risk, and it is worse than it was: #10, #15 and #17 sit on #9,
+so every day adds work that one person will have to read in one sitting. **#18 is the smallest, sits
+on `main`, and unblocks a rule we are currently working around** — see the mutation decision below.
+#16 is the next smallest and equally independent.
 
 **A head written into this file is stale the moment it is written** — the commit that records it
 cannot name itself, and the two documentation commits that closed 2026-09-18 are exactly what the
@@ -786,8 +898,8 @@ git rev-parse --short feature/git-integration feature/liquid-java-extensions
 
 **The suite count depends on the branch, and the number this file carried did not.** It said *519
 cases at the levels that need no stack*, which is #9's number written into the copy that lives on
-#10: the thirty `m-b*` test files exist only on #10, so the default run here selects **132 files**
-and **663 cases**, not 519. Ask rather than read:
+#10: the thirty `m-b*` test files exist only on #10, so the default run here selects more than #9's
+does — **139 files on 2026-09-22**, against 132 before M-A16. Never read a count out of this file:
 
 ```bash
 ./tests/run.sh --list | wc -l          # files the default run selects, on whatever is checked out
@@ -798,6 +910,10 @@ M-A and M-OC sides; the M-B cases were written before it and were never reclassi
 thirty reach into the running stack — `nar-build` inside the `opencode` container — and
 `tests/lib/narfixture.ts` writes into `volumes/nar_extensions` of this working copy. `--system`
 does not hold them back, because they are filed as unit and integration.
+
+**And that situation is live again as of 2026-09-22**: the stack was started from #9 while walking
+A16-M1, so `opencode` has no `nar-build` and every M-B case on #10 will answer `127`. Start from #10
+before reading a red M-B result here.
 
 **Measured 2026-09-18, 16:44:** `./tests/run.sh` on #10 against a stack started from #9 —
 **597 pass, 66 fail, 663 cases across 132 files**, and every one of the 66 in an `m-b*` file, every
@@ -816,13 +932,15 @@ tests. The discriminator answers in one line —
 was green on #10 that morning, with a stack started from it. **Before reading a red M-B result here,
 check which branch the running stack came from.**
 
-**What was waiting on the operator, and what became of it.** Five things stood here on the evening of 2026-09-18. By the evening of 2026-09-19 four were done: the reply to Timur is posted, PR #1 is closed with its reasoning, the memory questions are answered and the specification is on its own branch (#16), and the OpenAI key is replaced. **What is left is the third item, now the only one:**
+**What was waiting on the operator, and what became of it.** Five things stood here on the evening of 2026-09-18. By the evening of 2026-09-19 four were done: the reply to Timur is posted, PR #1 is closed with its reasoning, the memory questions are answered and the specification is on its own branch (#16), and the OpenAI key is replaced. **The fifth was decided on 2026-09-21 and is now built:**
 
-1. **Whether the suite should render components.** Three of the four findings from 2026-09-18 are
-   held by text assertions — they prove the source says what was decided, not that the browser does
-   it. Nothing in this repository has ever mounted a Svelte component. Closing that gap means a
-   testing library, a new tier and a dependency in the dashboard image; leaving it open means these
-   surfaces stay in the operator's eyes. Not decided.
+1. ~~**Whether the suite should render components.**~~ **Decided 2026-09-21: it should, and it
+   does.** The question had stood since 2026-09-18, when three of four findings were held by text
+   assertions that prove the source says what was decided rather than that the browser does it. The
+   2026-09-21 review put three more findings in the same blind spot — the third review running — and
+   the operator chose the tier. It needs no testing library: `svelte` is already a dashboard
+   devDependency and `@happy-dom/global-registrator` is the only addition, in the build stage and not
+   in what the image ships. See *M-A16* above for the two rules it cannot work without.
 
 **The OpenAI key was replaced on 2026-09-19** after being printed into a session transcript the day
 before. The new key is in `.env`; the four backups in `../liquidupstart-backups/` still carry the old
