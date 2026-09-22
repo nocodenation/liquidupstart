@@ -58,22 +58,33 @@
         body: JSON.stringify({ name: repo.slug })
       });
       const body = await res.json().catch(() => ({}));
+      const message = body.message ?? `The test could not be run (${res.status}).`;
+      await invalidateAll();
+      // Stamped with the clone state the card carries *after* the reload, and
+      // shown only while the card still carries it. A result line outlived the
+      // card it described: `invalidateAll()` runs after every task since
+      // 01403f6, so a later start could re-read a repository as cloned while
+      // "still unreachable" stood underneath it. Clearing on any change would
+      // be the other defect -- a confirmation swept away before it is read,
+      // which M-A14 was built to stop -- so the line goes when it is
+      // contradicted, not when the data moves. Finding 5 of the 2026-09-21
+      // review.
       results = {
         ...results,
-        [repo.slug]: {
-          ok: body.ok === true,
-          message: body.message ?? `The test could not be run (${res.status}).`
-        }
+        [repo.slug]: { ok: body.ok === true, message, cloned: clonedNow(repo.slug) }
       };
-      await invalidateAll();
     } catch (e) {
       results = {
         ...results,
-        [repo.slug]: { ok: false, message: `The test could not be run: ${e.message}` }
+        [repo.slug]: { ok: false, message: `The test could not be run: ${e.message}`, cloned: clonedNow(repo.slug) }
       };
     } finally {
       testing = '';
     }
+  }
+
+  function clonedNow(slug) {
+    return git.repositories.find((r) => r.slug === slug)?.cloned;
   }
 
   function access(repo) {
@@ -142,7 +153,7 @@
             </button>
           {/if}
 
-          {#if results[repo.slug]}
+          {#if results[repo.slug] && results[repo.slug].cloned === repo.cloned}
             <p class="gitresult" class:warn={!results[repo.slug].ok}>{results[repo.slug].message}</p>
           {/if}
         </li>
