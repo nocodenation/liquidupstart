@@ -189,7 +189,13 @@
       });
       if (res.ok) {
         skipped = { ...skipped, [step]: true };
-        holdSkipNote();
+        // Only the deploy-key panel is held open. The hold exists so a
+        // confirmation is not swept away with the panel it belongs to, and the
+        // git step runs before the sign-ins -- so skipping a Claude or Codex
+        // panel used to bring the finished "Add a deploy key to continue" back
+        // for three seconds, over a repository that had been dealt with.
+        // Finding 3 of the 2026-09-21 review.
+        if (step.startsWith('git-key-')) holdSkipNote();
       }
     } catch {
       // The start times out on its own; a failed skip is not worth a dialog.
@@ -732,8 +738,15 @@
       </p>
     {:else if skipped[`git-key-${needGitKey}`]}
       <p class="skip-note">
-        Skipped — the start continues without this repository.{#if holdingSkip}
-          {gitKeysPending.length > 1 ? 'Next repository' : 'Closing'} in {holdLeft}…{/if}
+        <!-- The space is written out. Svelte trims the whitespace at the start of
+             a block, so `.{#if …}` renders as `repository.Closing in 1…` -- seen
+             on screen during A16-M1 on 2026-09-22, and older than M-A16. `{' '}`
+             rather than `&nbsp;`: a non-breaking space is a different character,
+             and the case that holds this reads the rendered text. -->
+        Skipped — the start continues without this repository.{#if holdingSkip}{' '}{gitKeyNumber <
+          gitKeysPending.length
+            ? 'Next repository'
+            : 'Closing'} in {holdLeft}…{/if}
       </p>
     {/if}
   </section>
