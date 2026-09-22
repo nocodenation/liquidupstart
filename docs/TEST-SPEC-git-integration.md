@@ -3243,7 +3243,7 @@ reviewable at all. Every case here was run against the unfixed code first: **18 
 | A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
 | A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
 | A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
-| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22 from the dashboard, in two runs; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
+| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Detail per case
 
@@ -3254,7 +3254,7 @@ reviewable at all. Every case here was run against the unfixed code first: **18 
 | **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, clonable through the suite's `fakeSsh` from a local bare repository, and `git@github.com:nocodenation/liquid-flows.git\|write\|protected` with no route, so its clone fails and a deploy key is asked for. `SYSTEM_SIGNIN_WAIT_SECONDS=90`, so the start is measured inside its wait rather than past it. Lock holders written by hand: `some-other-container:7` (an identity this machine is not, naming a pid that is certainly alive here), `<this host>:999999` (dead), `<this host>:<a live sleep>` (alive and ours), and the empty string. The panel is driven by a task log carrying `::aiw-git-keys-pending::<a> <b>` and `::aiw-git-key-required::<b>`. |
 | **Expected** | As the rows above. |
 | **Measured against the unfixed code** | 18 fail, 9 pass. The 9 are A16-2's first half, A16-6's first two, A16-8, A16-13, A16-15, A16-17, A16-18 and A16-19's count guard — every one of them a counterpart or a control, which is what those are for. |
-| **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on the toolbox → dashboard path; the host → dashboard variant is still unwalked. |
+| **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on both paths: toolbox → dashboard from the dashboard's Start button, and host → dashboard from a terminal. |
 | **Covers** | Findings 1 to 6 of 2026-09-21, FR3, FR11, NFR1, U1, U2, U11. |
 
 #### A16-M1 — manual: the crossing between two process tables
@@ -3281,7 +3281,31 @@ reviewable at all. Every case here was run against the unfixed code first: **18 
 
 **Three corrections this walk forced, recorded because a case that cannot be walked as written is not a case.**
 
-*It was started from the dashboard, so the crossing walked is toolbox → dashboard, not host → dashboard.* Two container identities rather than a host and a container. That is the more representative path — the Start button is what an operator presses — and the mechanism is the same: two process tables, one lock directory. The host variant is still unwalked.
+*The first run was started from the dashboard, so the crossing it walked is toolbox → dashboard, not host → dashboard.* Two container identities rather than a host and a container. That is the more representative path — the Start button is what an operator presses — and the mechanism is the same: two process tables, one lock directory.
+
+**The host variant was walked on 2026-09-22 as well, and it is the one the review describes.**
+`./scripts/linux/start.sh` in a terminal on the host, with the Test issued against `POST /git-auth`
+— the same endpoint the button posts to, served inside the dashboard container. A browser click was
+not used, because for this question the button is not the subject: the boundary is.
+
+| | |
+|---|---|
+| Locks held during the wait | **one**, `github.com_nocodenation_liquid-flows` |
+| The holder | `dmbp-ham02-4345.local:86969` — this host, and `ps` confirms 86969 is a live `bash` |
+| Does the dashboard container see that pid | **No.** `docker exec liquidupstart-dashboard kill -0 86969` fails |
+| The Test | **HTTP 409**, *"is being prepared by another run right now — a start that is waiting, or another test. Nothing was changed."* |
+| The manifest, snapshotted immediately before and after the Test | **byte-identical** |
+| `volumes/repos/liquid-flows` | never created |
+| Afterwards | every lock released, twenty services, the three healthy clones untouched |
+
+The manifest was snapshotted *around the Test* rather than around the whole start: the start's own
+pass 1 writes the failed clone, so a comparison spanning it would show a difference that belongs to
+the start and prove nothing about the Test.
+
+**One thing worth knowing for anyone repeating this.** A plain `curl -X POST` to `/git-auth` answers
+**403**: SvelteKit refuses a cross-origin post, and a request with no `Origin` counts as one. The
+header has to be sent — `-H 'Origin: http://localhost:7777'` — or the walk measures SvelteKit's CSRF
+guard instead of the lock.
 
 *The step "Test the repository the start is **not** waiting for" was dropped, because the button does not exist there.* `canRetry` is `!cloned`, so a cloned repository offers no Test — correctly, since there is nothing to retry, and A8-22 already records that. Timur's scenario A describes pressing Test on a healthy repository; that is reachable only when **two** repositories are unreachable and the start waits on one of them. The case now tests the locked repository directly, and the released-lock half is read from the lock directory instead.
 
