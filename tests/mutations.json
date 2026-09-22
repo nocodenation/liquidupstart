@@ -1,0 +1,258 @@
+[
+  {
+    "case": "A4-7",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.secret-scan.test.ts",
+    "from": "-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----",
+    "to": "-----BEGIN NEVER MATCHES PRIVATE KEY-----",
+    "mustFail": "A4-7 a commit adding a private key is refused, and the file is named"
+  },
+  {
+    "case": "A3c-3",
+    "file": "config/scripts/start/lib/git-repos.sh",
+    "spec": "tests/unit/m-a3c.declaration-parse.test.ts",
+    "from": "*) lu_git_reject \"$entry\" \"policy must be protected or direct, not '${field_policy}'\" ;;",
+    "to": "*) ;;",
+    "mustFail": "A3c-3 an unknown policy word is refused and named"
+  },
+  {
+    "case": "A9-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/contract/m-a9.one-wait.test.ts",
+    "from": "lib/wait-for-operator.sh",
+    "to": "lib/wait-for-operator-copy.sh",
+    "mustFail": "and both waits read the same key, through the same helper"
+  },
+  {
+    "case": "A6-11",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/contract/m-a6.refusal-next-step.test.ts",
+    "from": "  say \"Report the refusal and ask the operator; do not look for a way around it.\"",
+    "to": "  :",
+    "mustFail": "A6-11 every refusal names a command, a branch form or an action"
+  },
+  {
+    "case": "A8-4",
+    "file": "dashboard/src/lib/server/git.ts",
+    "spec": "tests/component/m-a8.launchpad-card.test.ts",
+    "from": "'-l', '-f', path",
+    "to": "'-l', '-E', 'md5', '-f', path",
+    "mustFail": "A8-4 each carries its label, access, policy, public key and fingerprint"
+  },
+  {
+    "case": "A10-16",
+    "file": "dashboard/src/lib/server/git.ts",
+    "spec": "tests/component/m-a10.retry-exit-code.test.ts",
+    "from": "if (ran.code !== 0) {",
+    "to": "if (false) {",
+    "mustFail": "A10-16 a script that stopped early is reported, not the previous answer"
+  },
+  {
+    "case": "A5-2",
+    "file": "config/scripts/start/lib/git-repos.sh",
+    "spec": "tests/integration/m-a5.mixed-keys.test.ts",
+    "from": "    chmod 600 \"$key\"",
+    "to": "    chmod 644 \"$key\"",
+    "mustFail": "A5-2 each key lives under its own slug directory, mode 600"
+  },
+  {
+    "case": "A13-2",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a13.test-button-scope.test.ts",
+    "from": "ONLY_SLUG=\"${GIT_ONLY_SLUG:-}\"",
+    "to": "ONLY_SLUG=\"\"",
+    "mustFail": "the manifest git.sh leaves holds the tested entry, for the dashboard to merge"
+  },
+  {
+    "case": "A10-18",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a10.untrusted-host.test.ts",
+    "from": "elif ! ssh-keygen -F \"$host\" -f \"$KNOWN_HOSTS\" >/dev/null 2>&1; then",
+    "to": "elif false; then",
+    "mustFail": "nothing is cloned, and the reason is the host rather than the key"
+  },
+  {
+    "case": "A4-13",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/contract/m-a4.hooks-path.test.ts",
+    "from": "HOOKS_MOUNT=\"${SECRETS_MOUNT}/hooks\"",
+    "to": "HOOKS_MOUNT=\"${SECRETS_MOUNT}/hooks-elsewhere\"",
+    "mustFail": "A4-13 both declared clones point at the shared hook directory"
+  },
+  {
+    "case": "A9-2",
+    "file": "config/scripts/start/lib/wait-for-operator.sh",
+    "spec": "tests/unit/m-a9.wait-for-operator.test.ts",
+    "from": "    (( now >= deadline )) && return 2",
+    "to": "    (( now >= deadline )) && return 0",
+    "mustFail": "it returns 2 at the deadline rather than blocking"
+  },
+  {
+    "case": "A13-4",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/contract/m-a13.claude-panel-marker.test.ts",
+    "from": "::aiw-claude-auth-required::",
+    "to": "::aiw-claude-needs-you::",
+    "mustFail": "it sits beside the banner, inside the branch ENABLE_CLAUDE_CLI guards"
+  },
+  {
+    "case": "A4-2",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.branch-policy.test.ts",
+    "from": "  if [ \"$policy\" = protected ] && [ -n \"$default_branch\" ] && [ \"$branch\" = \"$default_branch\" ]; then",
+    "to": "  if false; then",
+    "mustFail": "A4-2 the default branch under a protected policy is refused, and says what to do instead"
+  },
+  {
+    "case": "A4-4",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.fast-forward.test.ts",
+    "from": "    if ! git merge-base --is-ancestor \"$remote_sha\" \"$local_sha\" 2>/dev/null; then",
+    "to": "    if false; then",
+    "mustFail": "A4-4 a push that is not a fast-forward is refused, force flag or not"
+  },
+  {
+    "case": "A4-6",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.ref-deletion.test.ts",
+    "from": "    *[!0]*) return 1 ;;",
+    "to": "    *[!0]*) return 0 ;;",
+    "mustFail": "A4-6 deleting a remote branch is refused and the branch survives"
+  },
+  {
+    "case": "A3-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/unit/m-a3.keygen.test.ts",
+    "from": "ssh-keygen -t ed25519 -N '' -C 'liquidupstart-agent' -f \"$KEY\"",
+    "to": "ssh-keygen -t rsa -b 2048 -N '' -C 'liquidupstart-agent' -f \"$KEY\"",
+    "mustFail": "A3-1 the first run creates an ed25519 keypair"
+  },
+  {
+    "case": "A15-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a15.clone-lock.test.ts",
+    "from": "  if ! lu_take_lock \"$slug\"; then",
+    "to": "  if false; then",
+    "mustFail": "and the second run says so instead of guessing"
+  },
+  {
+    "case": "A12-1",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a12.manifest-while-waiting.test.ts",
+    "from": "[[ -n \"$ONLY_SLUG\" ]] || lu_write_manifest",
+    "to": "[[ -n \"$ONLY_SLUG\" ]] || true",
+    "mustFail": "both repositories are already in it"
+  },
+  {
+    "case": "A8-26",
+    "file": "scripts/linux/start.sh",
+    "spec": "tests/unit/m-a8.start-attention.test.ts",
+    "from": "    /\"cloned\": *false/ { bad = 1 }",
+    "to": "    /\"cloned\": *false/ { bad = 0 }",
+    "mustFail": "A8-26 an unreachable repository is reported with its key and its error"
+  },
+  {
+    "case": "A3c-8",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/contract/m-a3c.ssh-isolation.test.ts",
+    "from": " -o IdentityAgent=none",
+    "to": "",
+    "all": true,
+    "mustFail": "A3c-8 neither can fall back to the operator ssh config or agent"
+  },
+  {
+    "case": "A0-4",
+    "file": "tests/run.sh",
+    "spec": "tests/unit/m-a0.runner-skip-system.test.ts",
+    "from": "WITH_SYSTEM=0\n",
+    "to": "WITH_SYSTEM=1\n",
+    "mustFail": "A0-4 without the flag neither stack-level file is selected"
+  },
+  {
+    "case": "A4-10",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.access.test.ts",
+    "from": "access=\"$(git config --get liquidupstart.access 2>/dev/null || true)\"",
+    "to": "access=\"write\"",
+    "mustFail": "A4-10 access read refuses the push before any branch rule is consulted"
+  },
+  {
+    "case": "A4-11",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a4.currency.test.ts",
+    "from": "      say \"Integrate first: git fetch ${REMOTE}, then git rebase ${REMOTE}/${branch}, then push again.\"\n",
+    "to": "",
+    "mustFail": "A4-11 a branch the remote has moved past is refused, and the operator is told how to integrate"
+  },
+  {
+    "case": "A10-20",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a10.scan-paths.test.ts",
+    "from": "  IFS='\n'",
+    "to": "  IFS=' '",
+    "mustFail": "A10-20 a key file whose name carries a space is still seen"
+  },
+  {
+    "case": "A14-1",
+    "file": "dashboard/src/app.css",
+    "spec": "tests/contract/m-a14.skip-button-shape.test.ts",
+    "from": "\nbutton.skip {",
+    "to": "\nbutton.skipx {",
+    "mustFail": "it borrows the size of button.save"
+  },
+  {
+    "case": "A3c-5",
+    "file": "compose.yml",
+    "spec": "tests/contract/m-a3c.ssh-command.test.ts",
+    "from": "ssh $$(git config --get liquidupstart.identity 2>/dev/null | sed 's|^|-i |')",
+    "to": "ssh -i /git-secrets/id_ed25519",
+    "all": true,
+    "mustFail": "A3c-5 no GIT_SSH_COMMAND names one key for every remote"
+  },
+  {
+    "case": "A11-1",
+    "file": "tests/run.sh",
+    "spec": "tests/contract/m-a11.system-tier-optin.test.ts",
+    "from": "if [[ $WITH_SYSTEM -eq 0 && $system_count -gt 0 ]]; then",
+    "to": "if false; then",
+    "mustFail": "the count and the flag are printed, not merely implied"
+  },
+  {
+    "case": "A10-14",
+    "file": "config/agents/hooks/pre-push",
+    "spec": "tests/unit/m-a10.scan-paths.test.ts",
+    "from": "        .env.example|.env.sample|.env.template|.env.dist) ;;",
+    "to": "        .env.never-matches) ;;",
+    "mustFail": "A10-14 a checked-in template is not a credential"
+  },
+  {
+    "case": "A6-12",
+    "file": "compose.yml",
+    "spec": "tests/contract/m-a6.command-mounted.test.ts",
+    "from": "      - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish:ro",
+    "to": "      - ./config/agents/bin/git-publish.sh:/usr/local/bin/git-publish",
+    "all": true,
+    "mustFail": "A6-12 every one of them mounts git-publish read-only at the same place on PATH"
+  },
+  {
+    "case": "A3-3",
+    "exempt": "asserts the generated volumes/_git-secrets/known_hosts, not the code that writes it: the file was produced by a start days ago, so mutating the keyscan changes nothing about what the case reads. An artefact assertion under §6, not decision logic."
+  },
+  {
+    "case": "OC-3",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/contract/m-oc.bounded-runs.test.ts",
+    "from": "docker run --rm --init --entrypoint openclaw",
+    "to": "docker run --rm --entrypoint openclaw",
+    "mustFail": "each carries --init, without which timeout only frees the client"
+  },
+  {
+    "case": "A6-2",
+    "file": "config/agents/bin/git-publish.sh",
+    "spec": "tests/unit/m-a6.publish.test.ts",
+    "from": "protected",
+    "to": "protectedx",
+    "all": true,
+    "mustFail": "A6-2 the protected default branch is refused, naming the branch, the policy and the way forward"
+  }
+]
