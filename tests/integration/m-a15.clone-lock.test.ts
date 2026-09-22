@@ -92,7 +92,6 @@ const lockedWhileBusy = existsSync(lockDir);
 const second = spawnGit({ GIT_ONLY_SLUG: SLUG });
 const secondOut = `${await new Response(second.stdout).text()}${await new Response(second.stderr).text()}`;
 const secondCode = await second.exited;
-const secondManifest = manifest();
 const firstOut = `${await new Response(first.stdout).text()}${await new Response(first.stderr).text()}`;
 const firstCode = await first.exited;
 
@@ -104,10 +103,21 @@ describe('A15-1 the run that gets there first holds the repository', () => {
   test('and the second run says so instead of guessing', () => {
     // Before this, the second run read a clone that was 20 ms old and reported
     // the repository as reachable -- to an operator, about their own stack.
-    expect(secondCode).toBe(0);
-    const entry = secondManifest.find((e) => e.name === 'agent-skills')!;
-    expect(entry.cloned).toBe(false);
-    expect(entry.error).toContain('another run');
+    //
+    // **Changed 2026-09-21, and the change is the point.** This case used to
+    // require exit 0 and a manifest entry saying `cloned: false, error: another
+    // run is preparing it`. That is the defect Timur's finding 1 names: a
+    // refused lock recorded as a clone result, over a repository that may be
+    // cloned and healthy. The refusal is now an outcome of its own -- exit 4,
+    // nothing written -- and A16-1 holds what replaces it. The assertion that
+    // the second run does not guess survives; what it may say has changed.
+    expect(secondCode).toBe(4);
+    expect(secondOut).toContain('::aiw-git-busy::');
+    // And the refusal reached no record. The manifest that exists is the first
+    // run's -- it writes one at the end of pass 1 -- and it carries that run's
+    // own clone failure, never the other run's refusal.
+    const entry = manifest().find((e) => e.name === 'agent-skills')!;
+    expect(entry.error).not.toContain('another run');
   });
 
   test('and it asks for no deploy key, because no key mends this', () => {
@@ -155,7 +165,11 @@ describe('A15-4 a lock left by a killed run does not seal the repository forever
     // behind. The lock therefore carries the pid that took it, and a lock whose
     // process is gone is not a lock.
     mkdirSync(lockDir, { recursive: true });
-    writeFileSync(join(lockDir, 'pid'), '999999\n');
+    // The identity as well as the number, because a pid alone cannot say which
+    // process table it belongs to -- finding 2 of 2026-09-21. A15-4 is about a
+    // *dead* process on this machine, so it names this machine.
+    const thisHost = Bun.spawnSync(['hostname']).stdout.toString().trim();
+    writeFileSync(join(lockDir, 'pid'), `${thisHost}:999999\n`);
     const r = Bun.spawnSync(['bash', gitScript, project], {
       env: {
         ...(process.env as Record<string, string>),

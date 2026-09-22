@@ -148,6 +148,7 @@ fi
 ENTRIES=""
 R_NAME=(); R_URL=(); R_HOST=(); R_PATH=(); R_ACCESS=(); R_POLICY=(); R_SLUG=(); R_DIR=()
 R_KEY=(); R_MOUNTKEY=(); R_DEST=(); R_CLONED=(); R_ERROR=(); R_SSH=(); R_ASKKEY=()
+R_BUSY=()
 
 # One repository out of the whole declaration, for the dashboard's Test button.
 # It passes every declared entry so that the folder rule sees the same names a
@@ -173,7 +174,24 @@ ONLY_SLUG="${GIT_ONLY_SLUG:-}"
 # run killed between mkdir and its trap must not seal the repository forever.
 LOCKS_DIR="${SECRETS_DIR}/locks"
 mkdir -p "$LOCKS_DIR"
+# The other run's own bound: a dashboard Test bounds its clone at 300s, so a
+# start that waits that long has waited out the longest Test there can be.
+LOCK_WAIT_SECONDS="${GIT_LOCK_WAIT_SECONDS:-300}"
 HELD=()
+
+# A pid is a number in a process table, and which table it belongs to is not
+# written on it. This directory is shared across that boundary: `run.sh` mounts
+# the project into the dashboard container at the same path and does not pass
+# `--pid=host`, so the container and the host see one lock directory and two
+# process tables. Measured 2026-09-21: a live host pid is simply absent inside
+# the container, so `kill -0` said "nobody is behind it" and the Test took the
+# start's lock over -- the very concurrency the lock was added to prevent. In
+# the other direction the container's own pids are 1 and 7, numbers that are
+# certainly alive and unrelated on the host.
+#
+# So the holder is recorded as <identity>:<pid> and the number is only ever
+# asked about when the identity is ours. Finding 2 of the 2026-09-21 review.
+LU_LOCK_ID="$(hostname 2>/dev/null || echo unknown)"
 
 release_locks() {
   local d
@@ -183,25 +201,88 @@ release_locks() {
 }
 trap release_locks EXIT
 
+lu_lock_write() {  # lu_lock_write <dir>
+  printf '%s:%s' "$LU_LOCK_ID" "$$" > "${1}/pid"
+  HELD+=("$1")
+}
+
+# Released the moment a repository is settled, rather than at the end of the
+# run. A start holds a lock per repository and waits for one deploy key at a
+# time, so holding every lock for the length of the wait -- up to the whole
+# start budget -- blocked a dashboard Test on repositories that were finished
+# and healthy. Finding 1 of the 2026-09-21 review.
+lu_release_lock() {  # lu_release_lock <slug>
+  local dir="${LOCKS_DIR}/$1" i kept=()
+  for i in ${HELD[@]+"${HELD[@]}"}; do
+    if [[ "$i" == "$dir" ]]; then rm -rf "$i"; else kept+=("$i"); fi
+  done
+  HELD=(${kept[@]+"${kept[@]}"})
+}
+
 lu_take_lock() {  # lu_take_lock <slug>; 0 when this run may work on it
-  local dir="${LOCKS_DIR}/$1" holder
+  local dir="${LOCKS_DIR}/$1" holder who pid
   if mkdir "$dir" 2>/dev/null; then
-    printf '%s' "$$" > "${dir}/pid"
-    HELD+=("$dir")
+    lu_lock_write "$dir"
     return 0
   fi
   holder="$(cat "${dir}/pid" 2>/dev/null || true)"
-  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+  # The instant between that mkdir and the write inside it. Somebody is behind
+  # this directory and their pid has not landed yet; reading the emptiness as
+  # "nobody" is how two runs came to hold one lock.
+  [[ -n "$holder" ]] || return 1
+  # A lock written before 2026-09-21 holds a bare pid and no identity. Sealing
+  # the repository until someone deletes the directory by hand would be a worse
+  # answer than the one it replaces, so such a lock is judged the way the code
+  # that wrote it judged: this machine's process table. Locks live for the
+  # length of one run, so this only matters across the upgrade itself.
+  if [[ "$holder" != *:* ]]; then
+    who="$LU_LOCK_ID"
+    pid="$holder"
+  else
+    who="${holder%%:*}"
+    pid="${holder##*:}"
+  fi
+  # Another machine's or another container's process table. Nothing we can ask
+  # here answers a question about it, so the lock is held and that is the end
+  # of it.
+  [[ "$who" == "$LU_LOCK_ID" ]] || return 1
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
     return 1
   fi
   # Nobody is behind it: take it over rather than leaving the repository sealed.
+  # A15-4 is the case that holds this half -- one killed start must not seal a
+  # repository forever.
   rm -rf "$dir"
   if mkdir "$dir" 2>/dev/null; then
-    printf '%s' "$$" > "${dir}/pid"
-    HELD+=("$dir")
+    lu_lock_write "$dir"
     return 0
   fi
   return 1
+}
+
+lu_lock_for_this_run() {  # lu_lock_for_this_run <slug>
+  if [[ -n "$ONLY_SLUG" ]]; then
+    lu_take_lock "$1"
+  else
+    lu_take_lock_waiting "$1" "$LOCK_WAIT_SECONDS"
+  fi
+}
+
+# A start competing with a dashboard Test is a wait, not a failure: the Test
+# bounds its own clone at 300s, so the start that arrives mid-Test would record
+# "another run is preparing it" for a repository that is about to be fine. A
+# Test does not wait -- an operator is in front of it, and the deadlock this
+# avoids is the same one pass 2 avoids by not asking a Test for a deploy key.
+lu_take_lock_waiting() {  # lu_take_lock_waiting <slug> <seconds>
+  local slug="$1" budget="$2" waited=0
+  while ! lu_take_lock "$slug"; do
+    (( waited >= budget )) && return 1
+    sleep 5
+    waited=$(( waited + 5 ))
+    [[ $(( waited % 30 )) -eq 0 ]] &&
+      echo "Waiting for another run to finish preparing ${slug} (${waited}s)..." >&2
+  done
+  return 0
 }
 
 # --- Pass 1: try every clone, and remember what failed ----------------------
@@ -214,6 +295,7 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   cloned=false
   error=""
   askkey=false
+  busy=false
   # Decided once per repository and carried into the second pass: the retry after
   # a key is registered must use the same isolation as the first attempt, and a
   # second copy of these options is a second thing to keep in step. A3c-8 counts
@@ -233,10 +315,14 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   #   Rename a repository in the declaration and the old clone is adopted: every
   #   fetch and publish goes to the old remote with a key nobody registered
   #   there, while the manifest and the dashboard both say "cloned".
-  if ! lu_take_lock "$slug"; then
-    # Held by a start that is waiting, or by another Test. Saying so is the whole
-    # point: the alternative was reading a half-written clone and reporting it.
-    error="another run is preparing volumes/repos/${dir} right now; wait for it to finish, then try again"
+  if ! lu_lock_for_this_run "$slug"; then
+    # Held by a start that is waiting, or by another Test. This is not a clone
+    # result and must never be recorded as one: the repository may be cloned,
+    # healthy and untouched, and saying "not cloned" about it sends the operator
+    # after a deploy key and tells every agent the clone is missing. Finding 1
+    # of the 2026-09-21 review.
+    busy=true
+    error="another run is preparing volumes/repos/${dir} right now; wait for it to finish, then try again."
     echo "Warning: ${error}" >&2
   elif [[ -e "${dest}/.git" ]]; then
     # --get, not `git remote get-url`: get-url applies insteadOf rewrites, and
@@ -294,6 +380,7 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   R_ACCESS+=("$access"); R_POLICY+=("$policy"); R_SLUG+=("$slug"); R_DIR+=("$dir")
   R_KEY+=("$key"); R_MOUNTKEY+=("$mount_key"); R_DEST+=("$dest")
   R_CLONED+=("$cloned"); R_ERROR+=("$error"); R_SSH+=("$clone_ssh"); R_ASKKEY+=("$askkey")
+  R_BUSY+=("$busy")
 done <<< "$PARSED"
 
 # Written twice: once here, once when the waits are over. Everything the
@@ -342,6 +429,28 @@ JSON
   } > "$MANIFEST"
   chmod 644 "$MANIFEST"
 }
+
+# A refused lock is not a clone result, and a dashboard Test must not merge one
+# into the manifest. Exit 4 says "another run holds it" in a way the dashboard
+# can tell apart from a clone that failed: nothing is written, nothing is
+# merged, and the card says the repository is busy rather than unreachable.
+# Finding 1 of the 2026-09-21 review.
+if [[ -n "$ONLY_SLUG" ]]; then
+  for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+    if [[ "${R_BUSY[$i]}" == true ]]; then
+      echo "::aiw-git-busy::${R_SLUG[$i]}" >&2
+      exit 4
+    fi
+  done
+fi
+
+# Everything that is settled lets go now. Pass 2 waits on deploy keys one
+# repository at a time and can hold only what it is still waiting for -- holding
+# the rest for the length of that wait is what blocked a Test on a repository
+# that was finished and healthy.
+for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+  [[ "${R_ASKKEY[$i]}" == true ]] || lu_release_lock "${R_SLUG[$i]}"
+done
 
 # The provisional record: what pass 1 decided, before anyone waits. Not during a
 # dashboard Test, though -- there the arrays hold the one repository named by
