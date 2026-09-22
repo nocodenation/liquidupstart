@@ -72,6 +72,39 @@ depends on a model stays a documented manual check.
 Cost is the reason for the line: one entry costs one test-file run. Ten entries took three and a half
 minutes to write and validate by hand.
 
+## Where the tool is not, and what stands in for it
+
+**Decided 2026-09-22, on M-A16.** The rule is that a case without a registered mutation blocks its
+milestone. It was taken while the tool was needed nowhere yet, and the first milestone to meet it
+could not obey it: `tests/mutate.sh` and `tests/mutations.json` live on this branch and on
+`feature/mutation-registry`, and M-A16 was built on `feature/git-integration`, which carries
+neither. Branches do not see each other, so the rule was unreachable rather than skipped.
+
+**What stands in for it there: the same question, asked against the real defect.** A mutation
+invents a fault and requires the case to notice. M-A16's twenty cases were run against the code as
+it stood *before* each finding was repaired — the fault the reviewer actually found, not one made up
+to resemble it. **Eighteen failed and nine passed**, and the nine are the positive counterparts and
+the tier's own control, which have to hold on both sides or they are not counterparts.
+
+That is stricter than a mutation on the point that matters, and weaker on one that does not:
+
+| | A mutation | A run against the unfixed code |
+|---|---|---|
+| The fault | invented, and chosen to be noticeable | the one that shipped |
+| Repeatable later by anyone | yes — the registry re-runs it | no — the unfixed code is gone once it is committed |
+| Shows the case can fail | yes | yes |
+
+**So this is a substitute for one milestone, not a relaxation of the rule.** The moment
+`feature/mutation-registry` reaches `main`, every branch cut from it carries the runner and the
+reason M-A16 had gives out. Its cases are registered then, like any others. Until then the evidence
+sits in `docs/TEST-SPEC-git-integration.md` under M-A16, which records the eighteen and the nine and
+names which nine they were.
+
+**What this cost, written down because it is the argument for finishing the registry.** The evidence
+above cannot be re-run. Anyone reviewing M-A16 in a month has the number and this paragraph and no
+way to reproduce either — which is the difference between a claim and a case, and the difference
+this procedure exists to remove.
+
 ## Where the rest of it is written
 
 The reasoning, the measured sample and the decisions behind it: `docs/FEATURE-test-mutation.md` and
