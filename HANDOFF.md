@@ -1,4 +1,4 @@
-# Handover — maintained continuously, last touched 2026-09-22
+# Handover — maintained continuously, last touched 2026-09-23
 
 **What this file is.** The working handover between the operator and the agent, on **one machine**.
 It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
@@ -146,6 +146,13 @@ docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'
 
 Silence means the running stack predates the git integration, and the red tests describe the
 containers rather than the code.
+
+**And a branch switch can stop the stack coming back at all.** `compose.yml` on #9 and #10 mounts
+`config/agents/bin/git-publish.sh` and `git-repo-info.sh` into the gateway, and neither file exists
+on `main` or on the four branches cut from it. Checking one of those out while this stack runs means
+the next restart of the gateway fails and leaves it down — with an exit code, 127, that says nothing
+about why. The full mechanism and the two-step cleanup it needs are under *2026-09-23* below. Read
+that before concluding anything from a dead gateway.
 
 **A container from another branch's compose file survives every start.** `down.sh` runs
 `docker compose down` with no `--remove-orphans`, and `docker compose` only knows the services the
@@ -775,6 +782,42 @@ help**: days accumulate, recalls do not, and `maxAgeDays=30` drops those fifteen
 and `config/scripts/start/openclaw.sh` now writes the memory configuration so the first week of real
 use is measured rather than missed. `docs/FEATURE-memory-midterm.md` §2.2.
 
+### 2026-09-23: the gateway exits 127 because a branch switch took its mount away
+
+**This explains the 2026-09-20 entry below, and `nar_builder`, and it takes the mystery out of the
+exit code.** Measured on 2026-09-23 after the gateway went down at 03:15:33Z.
+
+`compose.yml` on #9 bind-mounts `config/agents/bin/git-publish.sh` and `git-repo-info.sh` into the
+gateway. Those files exist on #9 and #10 and **not** on `main` or anything cut from it — #15, #16,
+#17, #18. Check out one of those while a #9-shaped stack is running, and the next restart of that
+container finds no source for the mount. Docker then creates a **directory** at the source path, the
+mount fails with *"not a directory: Are you trying to mount a directory onto a file"*, and a
+container that cannot start exits **127**.
+
+So exit 127 is not a signature worth chasing. It is what docker reports for a bind mount pointing at
+nothing. `nar_builder` sitting at `Exited (127)` since 2026-09-20T17:56:59Z is the same thing, one
+service further along.
+
+**Three things follow, and the third is the expensive one.**
+
+- **Switching away from the branch that started the stack breaks the next restart**, not merely the
+  freshness of the containers. This is the sharper form of *One working copy, one stack* above.
+- **Docker leaves empty directories in the working tree** where those files belong. Git does not show
+  them, because git has no empty directories — so they are invisible until a later checkout of #9
+  trips over them.
+- **Removing them is not enough.** After `rmdir` and a checkout that restored both files,
+  `docker run -v $PWD/config/agents/bin:/x alpine ls /x/git-repo-info.sh` still answered *No such
+  file or directory*: the Docker Desktop file-sharing layer had cached the old shape, and the next
+  start failed with `mkdir ...: operation not permitted` — a second failure with a message that has
+  nothing to do with the cause. What cleared it was rewriting the files (`cp -p f f.tmp && mv -f
+  f.tmp f`), which produces the filesystem event docker had missed.
+
+**What is still not established: who sent the SIGTERM.** The gateway log shows the nightly memory
+consolidation finishing at 03:00:15, then fifteen minutes of silence, then
+`[admission] closed: restart drain` and `received SIGTERM` at 03:15:31. No host crontab touches this
+project, no restart is scheduled in `openclaw.json`, and no other container was stopped. Only the
+failure *after* the signal is explained.
+
 ### 2026-09-20: the gateway went down, and the cause is not established
 
 **`openclaw-gateway` received SIGTERM at 09:45:37 and exited 127**, and stayed down for about half an
@@ -790,6 +833,11 @@ case ran that morning.
 **It is written down unexplained on purpose.** An explanation that fits the evidence is not a cause,
 and this file has already carried one of those about `volumes/_openclaw` for a day. If it happens
 again, this paragraph is the second data point.
+
+**It happened again on 2026-09-23, and the second data point paid for itself** — see the section
+above. The 127 half is explained: on 2026-09-20 the work was on #17 and #18, both cut from `main`,
+both lacking the two files #9 mounts into the gateway. What sent the signal is still open, on both
+dates.
 
 **What deserves credit is the guard**: `stackGuard` is why anyone noticed. Without it the next
 system-tier run would simply have gone red and read as a defect in the code.
@@ -867,7 +915,7 @@ and `kill -0 246` answering *No such process* inside the container that was doin
 | `feature/git-integration` (#9) | M-A9 to **M-A16** |
 | `feature/liquid-java-extensions` (#10) | all of it, merged forward, plus this file |
 | `feature/openclaw-pairing-recovery` (#15) | §9: R1, R2, R3, OC-39 to OC-47 |
-| `feature/memory-midterm` (#16) | The memory specification, M-M1 answered, and the start script switching it on |
+| `feature/memory-midterm` (#16) | The memory specification, M-M1 answered, the start script switching it on, and the nine findings of the 2026-09-22 review — including one that had been switching transcript recall on since 2026-09-20 |
 | `feature/test-mutation-control` (#17) | The mutation specification, the sample, 32 registry entries, and the decision of 2026-09-22 |
 | `feature/mutation-registry` (#18) | The runner and an empty registry, for `main` |
 
@@ -878,7 +926,12 @@ git fetch -q origin && git for-each-ref --format='%(refname:short) %(objectname:
   refs/remotes/origin/feature refs/remotes/origin/fix
 ```
 
-**Six pull requests of ours are open and five have never been read.** Only #9 has been reviewed —
+**Reviewed 2026-09-22: #16 (nine findings, all built 2026-09-23) and #18 (five blocking, three
+cleanups, none built yet).** Two of #18's five are already fixed on #17 and were never carried
+across — the runner exists twice, on #17 and #18, and the copies have drifted. That is the same
+failure as *Do not let a document exist twice*, applied to code.
+
+**Six pull requests of ours are open and three have never been read.** Only #9 has been reviewed —
 four times, most recently 2026-09-21 — and its findings are answered and built. #10 has waited since
 2026-09-15; #15, #16, #17 and #18 since the days they were cut. `iztiev` is the requested reviewer on
 all six.
