@@ -43,10 +43,10 @@
  * Requirements covered: MU-FR1 to MU-FR7, MU-NFR2, MU-NFR3.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { makeTree, dropTree } from '../lib/fixtures';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 
@@ -105,15 +105,14 @@ function run(reg: string, extra: string[] = [], env: Record<string, string> = {}
 const sha = () => createHash('sha256').update(readFileSync(join(root, SUBJECT))).digest('hex');
 let cleanSha: string;
 
+// The shared harness, not a second copy of the same mkdtemp/rmSync lifecycle.
+// Point 7 of the 2026-09-22 review.
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), 'lu-mu-'));
-  mkdirSync(join(root, 'spec'), { recursive: true });
-  writeFileSync(join(root, SUBJECT), subjectBody);
-  writeFileSync(join(root, SPEC), specBody);
+  root = makeTree({ [SUBJECT]: subjectBody, [SPEC]: specBody });
   cleanSha = sha();
 });
 
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+afterAll(() => dropTree(root));
 
 describe('MU-1 / MU-12 a mutation that reddens its named test is validated', () => {
   test('MU-1 the named test goes red and a survivor remains', () => {
