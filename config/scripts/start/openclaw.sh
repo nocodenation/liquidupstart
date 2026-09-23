@@ -281,6 +281,16 @@ for _tp in \
   fi
 done
 
+# Does an embedding backend have a credential? memory.search defaults to the
+# openai provider, so without one every turn pays for a failed embedding call --
+# on an installation that .env.example:85 explicitly blesses: "Don't have any
+# keys? That's fine". Computed here, where the keys are read, rather than
+# inferred in the writer from MODEL_WILDCARDS, which also carries openai/* for
+# ENABLE_CODEX=1 and would answer yes without a key. F4 of the 2026-09-22 review.
+MEMORY_EMBEDDINGS=0
+[[ -n "$(get_env OPENAI_API_KEY)" ]] && MEMORY_EMBEDDINGS=1
+[[ "${ENABLE_COPILOT}" == "1" ]] && MEMORY_EMBEDDINGS=1
+
 # The Claude CLI serves models under two provider ids: anthropic/* for the API
 # route and claude-cli/* for the CLI itself. 2026.7.1 had no model policy, so
 # only the routing map mattered and anthropic/* was enough. 2026.9.1 introduced
@@ -414,6 +424,7 @@ else
     -e LOCAL_LLM_MODELS_JSON="${LOCAL_LLM_MODELS_JSON}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
+    -e MEMORY_EMBEDDINGS="${MEMORY_EMBEDDINGS}" \
     -e OPENROUTER_MODELS_JSON="${OPENROUTER_MODELS_JSON}" \
     --entrypoint node \
     "${OPENCLAW_IMAGE}" \
@@ -608,6 +619,77 @@ else
         }
       }
 
+      // The mid-term memory this stack already ships, switched on rather than
+      // built. docs/FEATURE-memory-midterm.md.
+      //
+      // active-memory implements Remember across conversations; memory-core
+      // indexes and ranks. Promotion into MEMORY.md is earned by use -- three
+      // recalls across three distinct queries inside thirty days, thresholds read
+      // out of `openclaw memory promote-explain` on 2026-09-20 -- so switching
+      // this on changes nothing until somebody asks questions. That is the point:
+      // it is here so the first week of real use is measured rather than missed.
+      //
+      // sources stays at ["memory"] deliberately. Adding "sessions" would index
+      // transcript history, which is what NFR-M1 forbids until the redaction of
+      // NFR-M4 exists: a conversation in this stack carries .env lines and keys.
+      //
+      // No provider is set here. It defaults to openai, the gateway has
+      // OPENAI_API_KEY, and the Copilot branch above owns the provider when that
+      // harness is on -- writing one here would silently win or lose depending on
+      // block order.
+      //
+      // 2026.7.1 knows neither key, and an unknown key there is a failed start
+      // rather than a warning, which is the lesson of section 5.1.
+      if (schemaNew) {
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        // Merged, not replaced. The plugin manifest declares 29 config keys with
+        // additionalProperties:false, so assigning a fresh object discards every
+        // one an operator has tuned -- silently, on the next start. The codex and
+        // grok blocks below already merge; this one did not. F2 of 2026-09-22.
+        // Switched on only where an embedding backend has a credential. The
+        // guards below are written either way: they are what keeps transcripts
+        // out, and they have to be in place for whenever it is switched on.
+        const embeddings = process.env.MEMORY_EMBEDDINGS === "1";
+        const am = c.plugins.entries["active-memory"] || {};
+        am.enabled = embeddings;
+        c.plugins.entries["active-memory"] = am;
+        c.memory = c.memory || {};
+        c.memory.search = c.memory.search || {};
+        c.memory.search.enabled = embeddings;
+        if (!embeddings) {
+          console.log("openclaw.json: mid-term memory stays off -- no embedding credential (OPENAI_API_KEY unset and Copilot off)");
+        }
+        // Written every start, not filled in when missing. The comment above
+        // states an invariant -- transcripts stay out until NFR-M4 redaction
+        // exists -- and a value that is only defaulted is not an invariant: a
+        // "sessions" that reached the file once, by hand or by an older version,
+        // survived every start after it. Measured on 2026-09-22 against a seeded
+        // ["memory","sessions"], which came back unchanged. F3.
+        const wanted = ["memory"];
+        const had = c.memory.search.sources;
+        if (!Array.isArray(had) || had.join(",") !== wanted.join(",")) {
+          if (Array.isArray(had) && had.length) {
+            console.log("openclaw.json: memory.search.sources was", JSON.stringify(had) + "; NFR-M1 allows only", JSON.stringify(wanted));
+          }
+          c.memory.search.sources = wanted;
+        }
+        // False, explicitly, rather than left out. This key is *transcript*
+        // recall across private conversations. The schema in the 2026.9.1 image
+        // describes it as relevant context from the other private conversations
+        // of this agent, through protected transcript recall -- and says that an
+        // explicit true or false always wins. (No apostrophes anywhere in this
+        // block: the whole writer is one single-quoted bash string, and a single
+        // apostrophe ends it. That cost a broken start once already.)
+        // It is the thing the sources line above exists to prevent, and NFR-M1
+        // forbids it until NFR-M4 redaction exists. Omitting it would not do:
+        // the schema default is on whenever session.dmScope is unset or "main",
+        // a setting this block does not own, so the guarantee would depend on a
+        // value somebody else can change. F1 of 2026-09-22, and it had been
+        // written `true` since 2026-09-20.
+        c.memory.search.rememberAcrossConversations = false;
+      }
+
       if (enableCodex) {
         c.plugins = c.plugins || {};
         c.plugins.entries = c.plugins.entries || {};
@@ -714,6 +796,11 @@ else
            ["agents", "defaults", "memorySearch"],
            ["gateway", "controlUi", "dangerouslyDisableDeviceAuth"]]
         : [["memory", "search"],
+           // 2026.7.1 knows no active-memory plugin. Swept here rather than
+           // deleted inline beside the block that writes it, so a downgrade
+           // says what it removed instead of doing it silently. F8 of
+           // 2026-09-22.
+           ["plugins", "entries", "active-memory"],
            ["gateway", "auth", "trustedProxy", "deviceAutoApprove"]];
 
       // 2026.9.1 enables the codex plugin in the config by itself during its
