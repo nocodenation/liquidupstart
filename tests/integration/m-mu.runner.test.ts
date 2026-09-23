@@ -43,7 +43,7 @@
  * Requirements covered: MU-FR1 to MU-FR7, MU-NFR2, MU-NFR3.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -97,8 +97,9 @@ const entry = (over: Record<string, string> = {}) => ({
   ...over
 });
 
-function run(reg: string, extra: string[] = []) {
-  return sh(['bash', RUNNER, '--registry', reg, '--root', root, '--timeout', '30000', ...extra]);
+function run(reg: string, extra: string[] = [], env: Record<string, string> = {}) {
+  return sh(['bash', RUNNER, '--registry', reg, '--root', root, '--timeout', '30000', ...extra],
+    undefined as unknown as string, env);
 }
 
 const sha = () => createHash('sha256').update(readFileSync(join(root, SUBJECT))).digest('hex');
@@ -236,6 +237,20 @@ describe('MU-6 the subject goes back, whatever the outcome', () => {
   });
 
   test('and the backup file is not left behind either', () => {
+    // TMPDIR under the fixture, because mktemp puts the backup where TMPDIR
+    // says -- never beside the subject. Looking for `subject.sh.*` next to the
+    // subject therefore answered zero whether or not `rm -f "$BACKUP"` ran:
+    // deleting that line left this case green and mktemp files accumulating in
+    // /tmp. A case that passes over any implementation is the defect this whole
+    // milestone is about. Item 6 of the 2026-09-22 review.
+    const tmp = join(root, 'tmp-backups');
+    mkdirSync(tmp, { recursive: true });
+    run(registry([entry()]), [], { TMPDIR: tmp });
+    const left = readdirSync(tmp);
+    expect(left).toEqual([]);
+  });
+
+  test('legacy: nothing beside the subject either', () => {
     run(registry([entry()]));
     const leftovers = sh(['bash', '-lc', `ls ${root} | grep -c 'subject.sh.' || true`]);
     expect(leftovers.output.trim()).toBe('0');
@@ -333,5 +348,127 @@ describe('MU-8 the gap is a number, not an impression', () => {
     const r = sh(['bash', RUNNER, '--gaps', '--registry', registry([entry({ case: 'ZZ-99' })])]);
     expect(r.output).toContain('orphaned=1');
     expect(r.output).toContain('ZZ-99');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MU-19 to MU-23 — the five blocking findings of the 2026-09-22 review. Each was
+// reproduced against the runner as it stood before it was touched.
+// ---------------------------------------------------------------------------
+
+describe('MU-19 a field that is empty stays its own field', () => {
+  test('MU-19 a deletion mutation validates, and for its own reason', () => {
+    // Finding 1. Tab is IFS whitespace, so an empty `to` -- what a deletion
+    // looks like, the most natural mutation there is -- collapsed the delimiter
+    // and shifted every later field left: `to` took the mustFail text and
+    // `must` became empty, and an empty needle matches any failing line. The
+    // entry read VALIDATED over a mutation that had tested nothing.
+    const r = run(registry([entry({ to: '' })]));
+    expect(r.output).toContain('VALIDATED FX-1');
+    // The point: the named test is what reddened, not merely something.
+    expect(r.output).toContain('the policy is protected');
+    expect(r.code).toBe(0);
+  });
+
+  test('MU-19 and an empty `from` is refused before anything is touched', () => {
+    // indexOf("") answers 0 forever, so there is nothing to locate and nothing
+    // to replace.
+    const r = run(registry([entry({ from: '' })]));
+    expect(r.code).toBe(2);
+    expect(r.output).toContain('empty from');
+    expect(sha()).toBe(cleanSha);
+  });
+});
+
+describe('MU-20 a run in which nothing executed is not a result', () => {
+  test('MU-20 a spec that matches no file is refused, not called quiet', () => {
+    // Finding 2. bun missing, bun crashing, a filter matching nothing, or a
+    // mutation that breaks the spec at load time all produce a tally of zero
+    // and zero -- which read as "nothing went red" and exited 0. A check that
+    // could not run is the one thing this tool must never report as an answer.
+    // A spec that exists and runs nothing -- which is what bun reports for a
+    // file whose tests fail to load, and the shape a mutation can itself
+    // produce by breaking the spec it is measured against. A missing file is
+    // already refused one guard earlier; this is the case that guard cannot
+    // reach.
+    const spec = 'spec/empty.test.ts';
+    writeFileSync(join(root, spec), 'export {};\n');
+    const r = run(registry([entry({ spec })]));
+    expect(r.output).toContain('REFUSED   FX-1');
+    expect(r.output).toContain('the run did not happen');
+    expect(r.code).not.toBe(0);
+    expect(sha()).toBe(cleanSha);
+  });
+});
+
+describe('MU-21 the guard is about being a test, not about living under tests/', () => {
+  test('MU-21 a test file reached by a roundabout path is still refused', () => {
+    // Finding 3. The guard matched the literal prefix `tests/`, so `./tests/…`
+    // and `tests/../tests/…` walked past it and the runner would have rewritten
+    // assertions -- which MU-9 claims is impossible.
+    for (const file of ['./spec/roundabout.test.ts', 'spec/../spec/roundabout.test.ts']) {
+      const r = run(registry([entry({ file })]));
+      expect(r.output).toContain('names a test file as its subject');
+    }
+  });
+
+  test('MU-21 and a test file outside tests/ is refused too', () => {
+    // `bun test src` runs the dashboard suite, so a .test.ts there is an
+    // assertion like any other and the prefix form never saw it.
+    writeFileSync(join(root, 'srcish.test.ts'), 'export {};\n');
+    const r = run(registry([entry({ file: 'srcish.test.ts' })]));
+    expect(r.output).toContain('names a test file as its subject');
+  });
+
+  test('MU-21 while a script that merely lives under tests/ is a subject', () => {
+    // The counterpart, and the reason the prefix was wrong in both directions:
+    // tests/run.sh is a subject in its own right, and the first version refused
+    // A0-4 as though it were an assertion.
+    mkdirSync(join(root, 'tests'), { recursive: true });
+    writeFileSync(join(root, 'tests/helper.sh'), '#!/bin/sh\nPOLICY="protected"\n');
+    const r = run(registry([entry({ file: 'tests/helper.sh', mustFail: 'the policy is protected' })]));
+    expect(r.output).not.toContain('names a test file as its subject');
+  });
+});
+
+describe('MU-22 the named test, matched as a whole', () => {
+  test('MU-22 a sibling whose name merely contains the needle does not stand in', () => {
+    // Finding 4. bun prints `(fail) describe > name`, and the needle was
+    // searched inside that line -- so `the policy is protected` was satisfied by
+    // `the policy is protected on restart` going red while the named test
+    // stayed green. The entry read VALIDATED while protecting nothing.
+    const spec = 'spec/sibling.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', () => { expect(s).toContain('POLICY='); });
+test('the policy is protected on restart', () => { expect(s).toContain('POLICY="protected"'); });
+test('an unrelated survivor', () => { expect(s).toContain('#!/bin/sh'); });
+`);
+    const r = run(registry([entry({ spec, mustFail: 'the policy is protected' })]));
+    expect(r.output).toContain('FAILED    FX-1');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  });
+
+  test('MU-22 and the named test itself still validates', () => {
+    // The counterpart: the anchoring must not make honest entries unmatchable.
+    const spec = 'spec/sibling.test.ts';
+    const r = run(registry([entry({ spec, mustFail: 'the policy is protected on restart' })]));
+    expect(r.output).toContain('VALIDATED FX-1');
+  });
+});
+
+describe('MU-23 a backup that was not taken stops the mutation', () => {
+  test('MU-23 an impossible backup refuses, and the subject is untouched', () => {
+    // Finding 5. There is no `set -e` here on purpose, so a failed mktemp left
+    // BACKUP empty, cp failed, SUBJECT was set anyway -- and restore() requires
+    // a BACKUP, so the tracked file stayed mutated with nothing to put back.
+    const r = run(registry([entry()]), [], { TMPDIR: join(root, 'no-such-dir') });
+    expect(r.output).toContain('could not back');
+    expect(r.code).not.toBe(0);
+    expect(sha()).toBe(cleanSha);
   });
 });

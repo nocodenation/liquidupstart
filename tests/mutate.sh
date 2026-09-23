@@ -102,7 +102,17 @@ rows="$(bun -e '
     if (ids.some((v) => /[\t\n]/.test(v))) {
       console.error(`entry ${r.case} has a tab or newline in a name or a path`); process.exit(2);
     }
-    const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
+    // An empty `from` has nothing to find, and indexOf("") answers 0 forever.
+    if (r.from === "") { console.error(`entry ${r.case} has an empty from`); process.exit(2); }
+    if (r.mustFail === "") { console.error(`entry ${r.case} has an empty mustFail`); process.exit(2); }
+    // A leading dot so no field is ever empty on the wire. Tab is IFS whitespace
+    // and bash collapses a run of it into one delimiter, so an empty `to` --
+    // which is what a deletion mutation looks like, the most natural shape there
+    // is -- shifted every later field left by one: `to` received the mustFail
+    // text and `must` became empty, and an empty needle matches any failing
+    // line. The entry then read VALIDATED over a mutation that had tested
+    // nothing. Finding 1 of the 2026-09-22 review.
+    const b64 = (s) => "." + Buffer.from(s, "utf8").toString("base64");
     console.log([r.case, r.file, r.spec, b64(r.from), b64(r.to), r.mustFail].join("\t"));
   }
 ' "$REGISTRY")" || exit 2
@@ -137,8 +147,22 @@ while IFS=$'\t' read -r id file spec from to must; do
 
   # The registry mutates subjects, never assertions. A tool that can rewrite the
   # tests can make anything pass.
-  case "$file" in
-    tests/*) add "REFUSED   ${id}  names a test file as its subject"; refused=$((refused+1)); continue ;;
+  #
+  # Matched on the file being a TEST, after normalising the path, rather than on
+  # the literal prefix `tests/`. `./tests/unit/x.test.ts`, `tests/../tests/...`
+  # and `dashboard/src/foo.test.ts` -- the suite CLAUDE.md runs with `bun test
+  # src` -- all walked straight past the prefix form. And the prefix was too wide
+  # as well as too narrow: `tests/run.sh` is a subject in its own right, and A0-4
+  # was refused as though it were an assertion. Finding 3 of 2026-09-22.
+  norm="$file"
+  if command -v realpath >/dev/null 2>&1 && [[ -e "$abs" ]]; then
+    norm="$(realpath --relative-to="$ROOT" "$abs" 2>/dev/null || echo "$file")"
+  fi
+  case "$norm" in
+    *.test.ts|*.test.tsx|*.test.js|*.spec.ts)
+      add "REFUSED   ${id}  names a test file as its subject"; refused=$((refused+1)); continue ;;
+    ../*|/*)
+      add "REFUSED   ${id}  its subject is outside the repository"; refused=$((refused+1)); continue ;;
   esac
 
   if [[ ! -f "$abs" ]]; then
@@ -162,7 +186,7 @@ while IFS=$'\t' read -r id file spec from to must; do
   hits="$(FROM="$from" bun -e '
     const fs = require("fs");
     const body = fs.readFileSync(process.argv[1], "utf8");
-    const needle = Buffer.from(process.env.FROM, "base64").toString("utf8");
+    const needle = Buffer.from(process.env.FROM.slice(1), "base64").toString("utf8");
     let n = 0, i = 0;
     while ((i = body.indexOf(needle, i)) !== -1) { n++; i += needle.length; }
     console.log(String(n));
@@ -174,11 +198,25 @@ while IFS=$'\t' read -r id file spec from to must; do
     add "REFUSED   ${id}  its 'from' occurs ${hits} times in ${file}"; refused=$((refused+1)); continue
   fi
 
-  BACKUP="$(mktemp)"; cp "$abs" "$BACKUP"; SUBJECT="$abs"
+  # Without a backup the mutation must not happen at all. There is no `set -e`
+  # here on purpose, so a failed mktemp left BACKUP empty, cp failed, SUBJECT was
+  # set anyway -- and restore() requires a BACKUP, so the operator's tracked file
+  # stayed mutated with nothing to put back. Finding 5 of 2026-09-22.
+  # An explicit template, for two reasons. A bare `mktemp` on macOS ignores
+  # TMPDIR, so the backup went somewhere no case could look -- which is why the
+  # cleanup assertion could not fail, whatever the code did (item 6). And a named
+  # file says who left it behind when one is found.
+  if ! BACKUP="$(mktemp "${TMPDIR:-/tmp}/lu-mutate.XXXXXX" 2>/dev/null)" || [[ -z "$BACKUP" ]] || ! cp "$abs" "$BACKUP"; then
+    [[ -n "$BACKUP" ]] && rm -f "$BACKUP"
+    BACKUP=""
+    add "REFUSED   ${id}  could not back ${file} up, so it was not touched"
+    refused=$((refused+1)); continue
+  fi
+  SUBJECT="$abs"
   FROM="$from" TO="$to" bun -e '
     const fs = require("fs");
     const p = process.argv[1];
-    const d = (s) => Buffer.from(s, "base64").toString("utf8");
+    const d = (s) => Buffer.from(s.slice(1), "base64").toString("utf8");
     const body = fs.readFileSync(p, "utf8");
     // Not a regular expression: `$&` and friends in a replacement string would
     // be interpreted, and a subject full of shell variables is exactly where
@@ -195,8 +233,22 @@ while IFS=$'\t' read -r id file spec from to must; do
   # in the tally at the end. Counting "(pass)" lines therefore reported zero
   # survivors for every entry and classified each one as a broken file -- found
   # on the first real run of this script, which is the reason it exists.
-  named_failed=0
-  printf '%s\n' "$out" | grep -F "(fail)" | grep -qF -- "$must" && named_failed=1
+  # Anchored at the end of the line, not searched inside it. bun prints
+  # `(fail) describe > name [12.34ms]`, so a substring match let a *different*
+  # failing test stand in for the named one whenever its name merely contained
+  # it -- `field A is carried` matched by `field A is carried on restart`, with
+  # the named test still green. The entry then read VALIDATED while protecting
+  # nothing. The timing suffix is stripped first, and the comparison is a plain
+  # string one so a name carrying regex characters cannot change its meaning.
+  # Finding 4 of 2026-09-22.
+  named_failed="$(printf '%s\n' "$out" | MUST="$must" awk '
+    BEGIN { m = ENVIRON["MUST"]; hit = 0 }
+    index($0, "(fail)") > 0 {
+      line = $0
+      sub(/ \[[0-9.]+ *m?s\]$/, "", line)
+      if (length(line) >= length(m) && substr(line, length(line) - length(m) + 1) == m) hit = 1
+    }
+    END { print hit }')"
   passes="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ pass$/ { n += $1 } END { print n+0 }')"
   fails="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ fail$/ { n += $1 } END { print n+0 }')"
 
@@ -207,6 +259,17 @@ while IFS=$'\t' read -r id file spec from to must; do
   total=$((passes + fails))
   survivor_needed=1
   [[ "$total" -le 1 ]] && survivor_needed=0
+
+  # No test ran at all. bun missing, bun crashing, a spec filter matching no
+  # file, or a mutation that breaks the spec at load time -- bun reports that as
+  # a file-level error, not as an `N fail` line -- all produced a tally of zero
+  # and zero, which the branch below read as "nothing went red" and exited 0.
+  # A run that could not run is the one thing this tool must never call a
+  # result. Finding 2 of 2026-09-22.
+  if [[ "$total" == "0" ]]; then
+    add "REFUSED   ${id}  no test executed in ${spec} -- the run did not happen, so it answered nothing"
+    refused=$((refused+1)); continue
+  fi
 
   if [[ "$fails" == "0" ]]; then
     add "UNRESOLVED ${id}  nothing went red -- needs a second mutation of another shape before this counts as a finding"
