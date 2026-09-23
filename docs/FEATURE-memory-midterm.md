@@ -421,19 +421,42 @@ configuration were read from the running stack, not from documentation.
 
 ### 2.4 Built 2026-09-20, and one thing it owes
 
-The hand edit is now written by `config/scripts/start/openclaw.sh`: `active-memory` enabled and
-`memory.search` with `enabled`, `sources: ["memory"]` and `rememberAcrossConversations`, all inside
-the 2026.9 branch and deleted in the other, because 2026.7.1 knows neither key and an unknown key
-there is a failed start rather than a warning.
+The hand edit is now written by `config/scripts/start/openclaw.sh`: `active-memory` and
+`memory.search` inside the 2026.9 branch, with the entry **merged** rather than replaced — the plugin
+manifest declares 29 keys with `additionalProperties: false`, and assigning a fresh object discarded
+every one an operator had tuned. On the 2026.7 shape both are removed by the retired-key sweep, which
+says what it removed, because that version knows neither key and an unknown key there is a failed
+start rather than a warning.
 
-Two things it deliberately does **not** write. No embedding provider — it defaults to `openai`, the
-gateway carries `OPENAI_API_KEY`, and the Copilot branch above owns the provider when that harness is
-on; writing one here would win or lose silently depending on the order of two blocks. And **not**
-`sources: ["sessions"]`, which would index transcript history — exactly what NFR-M1 forbids until the
-redaction of NFR-M4 exists.
+**It switches the memory on only where an embedding backend has a credential** — `OPENAI_API_KEY`
+set, or Copilot on, which writes its own provider. `.env.example:85` promises that an installation
+with no keys at all is fine, and `memory.search` defaults to the `openai` provider, so switching it
+on regardless buys a failed embedding call per turn for a feature the operator never asked for. The
+answer is computed in the shell, where the keys are read, and handed to the writer as
+`MEMORY_EMBEDDINGS`; it is deliberately not inferred from `MODEL_WILDCARDS`, which also carries
+`openai/*` for `ENABLE_OPENAI_CODEX=1` and would answer yes without a key. Where there is no
+credential the start says so and the guards below are still written.
 
-Cases M1-1 to M1-4 in `tests/component/m-m1.memory-config.test.ts`, run against the unchanged script
-first: **four of the five were red.**
+Two guards, written on every start rather than filled in when missing — a value that is only
+defaulted is not an invariant, and a `"sessions"` that reached the file once survived every start
+after it:
+
+- **`sources: ["memory"]`**, enforced, and the previous value logged when it differed. `"sessions"`
+  would index transcript history, which NFR-M1 forbids until the redaction of NFR-M4 exists.
+- **`rememberAcrossConversations: false`**, explicitly. The key is transcript recall across private
+  conversations — the 2026.9.1 schema calls it *protected transcript recall* and says an explicit
+  true or false always wins. It was written `true` from 2026-09-20 until 2026-09-23, which switched
+  on the very thing the line above exists to prevent. Explicit rather than omitted, because the
+  schema default is on whenever `session.dmScope` is unset or `"main"` — a setting this block does
+  not own, so an omission would make the guarantee depend on a value somebody else can change.
+
+And no embedding provider is written: it defaults to `openai`, and the Copilot branch above owns the
+provider when that harness is on; writing one here would win or lose silently depending on the order
+of two blocks.
+
+Cases M1-1 to M1-6 in `tests/component/m-m1.memory-config.test.ts`, run against the unchanged script
+first: **four of the five original cases were red**, and the three added for the 2026-09-22 review
+are red against the writer as it stood before it.
 
 **What it owes: a mutation entry per case.** The rule adopted on 2026-09-19 is that a case may not be
 recorded as passing without a registered mutation, and M-MU2 backfills per milestone as each is

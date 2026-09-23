@@ -38,76 +38,33 @@
  * Requirements covered: FR-M4, FR-M5, NFR-M1, and §2.3 of the feature document.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { sh } from '../lib/shell';
-import { repoRoot } from '../lib/paths';
-
-const IMAGE_NEW = 'ghcr.io/openclaw/openclaw:2026.9.1';
-
-/**
- * The config writer as the start script actually holds it — extracted by
- * content, never copied here. A test carrying its own copy of the thing under
- * test stops testing it the moment the two drift.
- */
-function configWriter(): string {
-  const script = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
-  const lines = script.split('\n');
-  const isOpen = (l: string) => /^\s*-e '\s*$/.test(l);
-  const isClose = (l: string) => /^\s*'/.test(l);
-  for (let start = 0; start < lines.length; start++) {
-    if (!isOpen(lines[start])) continue;
-    for (let i = start + 1; i < lines.length; i++) {
-      if (!isClose(lines[i])) continue;
-      const body = lines.slice(start + 1, i).join('\n');
-      if (body.includes('/state/openclaw.json')) return body;
-      break;
-    }
-  }
-  throw new Error('config writer not found in config/scripts/start/openclaw.sh');
-}
+import {
+  IMAGE_NEW,
+  IMAGE_OLD,
+  configWriter,
+  dropWorkRoot,
+  newWorkRoot,
+  validate,
+  writeConfig as runWriter,
+  type Env
+} from '../lib/openclaw-writer';
 
 let program: string;
 let workRoot: string;
 
 beforeAll(() => {
   program = configWriter();
-  workRoot = mkdtempSync(join(tmpdir(), 'lu-m1-'));
+  workRoot = newWorkRoot('lu-m1-');
 });
 
-afterAll(() => rmSync(workRoot, { recursive: true, force: true }));
+afterAll(() => dropWorkRoot(workRoot));
 
-function writeConfig(env: Record<string, string>): any {
-  const dir = mkdtempSync(join(workRoot, 'state-'));
-  writeFileSync(join(dir, 'openclaw.json'), '{}\n');
-  writeFileSync(join(dir, 'writer.js'), program);
-  const full: Record<string, string> = {
-    OC_SCHEMA_NEW: '0',
-    OPENCLAW_VERSION: 'test',
-    ENABLE_CLAUDE_CLI: '0',
-    ENABLE_COPILOT: '0',
-    ENABLE_CODEX: '0',
-    ENABLE_GROK: '0',
-    ENABLE_LOCAL: '0',
-    LU_PROXY_IP: '10.99.0.2',
-    LU_PROXY_IDENTITY: 'user@example.invalid',
-    LU_NETWORK_SUBNET: '10.99.0.0/24',
-    PLUGIN_PATHS: '',
-    MODEL_WILDCARDS: '',
-    OPENROUTER_MODELS_JSON: '[]',
-    LOCAL_LLM_MODELS_JSON: '[]',
-    ...env
-  };
-  const envArgs: string[] = [];
-  for (const [k, v] of Object.entries(full)) envArgs.push('-e', `${k}=${v}`);
-  const r = sh([
-    'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${dir}:/state`, ...envArgs,
-    '--entrypoint', 'node', IMAGE_NEW, '/state/writer.js'
-  ]);
-  if (r.code !== 0) throw new Error(`config writer failed: ${r.output}`);
-  return JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
+// This installation has an embedding credential; M1-6 covers the one that does
+// not, which .env.example:85 explicitly allows.
+const M1_ENV: Env = { MEMORY_EMBEDDINGS: '1' };
+
+function writeConfig(env: Env, seed: unknown = {}): any {
+  return runWriter({ workRoot, program, env: { ...M1_ENV, ...env }, seed });
 }
 
 describe('M1-1 the 2026.9 shape switches the memory on', () => {
@@ -117,17 +74,37 @@ describe('M1-1 the 2026.9 shape switches the memory on', () => {
   test('M1-1 active-memory is enabled', () => {
     // Enabled is not loaded — OC-31's lesson — but a plugin that is not enabled
     // cannot load either, and this is the half the start owns.
-    expect(cfg.plugins.entries['active-memory']).toEqual({ enabled: true });
+    //
+    // `.enabled` rather than `toEqual({enabled: true})`: the exact-object form
+    // codified the overwrite F2 reports, so the case would have gone red for a
+    // writer that correctly preserved an operator setting.
+    expect(cfg.plugins.entries['active-memory'].enabled).toBe(true);
   });
 
   test('M1-1 memory.search is on, and reads memory files rather than transcripts', () => {
     expect(cfg.memory.search.enabled).toBe(true);
-    expect(cfg.memory.search.rememberAcrossConversations).toBe(true);
+    // **False, and this case used to require true.** The key is transcript
+    // recall across private conversations, which is exactly what the `sources`
+    // assertion below exists to prevent and what NFR-M1 forbids until the
+    // redaction of NFR-M4 exists. F1 of 2026-09-22, and the case had been
+    // asserting the defect since 2026-09-20.
+    //
+    // Explicitly false rather than absent: the schema default is on whenever
+    // session.dmScope is unset or "main", a setting this block does not own.
+    expect(cfg.memory.search.rememberAcrossConversations).toBe(false);
     // The negative that carries NFR-M1: "sessions" would index transcript
     // history, and a conversation in this stack carries .env lines and keys. It
     // may be added when the redaction of NFR-M4 exists, and not before.
     expect(cfg.memory.search.sources).toEqual(['memory']);
     expect(cfg.memory.search.sources).not.toContain('sessions');
+  });
+
+  test('M1-1 and the result is a config 2026.9.1 accepts', () => {
+    // The half that says whether the stack would boot. The active-memory
+    // manifest sets additionalProperties:false, so a typo in the plugin entry,
+    // or a future image renaming a key, is a failed start -- and a suite that
+    // only reads the JSON back passes green over it. F5 of 2026-09-22.
+    expect(validate({ workRoot, config: cfg, image: IMAGE_NEW }).code).toBe(0);
   });
 
   test('M1-3 and no embedding provider is written here', () => {
@@ -138,14 +115,52 @@ describe('M1-1 the 2026.9 shape switches the memory on', () => {
   });
 });
 
+describe('M1-6 an installation with no embedding credential', () => {
+  let cfg: any;
+  beforeAll(() => { cfg = writeConfig({ OC_SCHEMA_NEW: '1', MEMORY_EMBEDDINGS: '0' }); });
+
+  test('M1-6 the memory is not switched on', () => {
+    // memory.search defaults to the openai provider, so switching it on without
+    // a key buys a failed embedding call per turn -- for a feature the operator
+    // did not ask for, on an installation .env.example:85 blesses: "Don't have
+    // any keys? That's fine". F4 of 2026-09-22.
+    expect(cfg.memory.search.enabled).toBe(false);
+    expect(cfg.plugins.entries['active-memory'].enabled).toBe(false);
+  });
+
+  test('M1-6 but the guards are written anyway', () => {
+    // The counterpart, and the reason the block still runs: sources and the
+    // transcript-recall switch are what keep NFR-M1, and they have to be in
+    // place for whenever somebody adds a key and switches it on.
+    expect(cfg.memory.search.sources).toEqual(['memory']);
+    expect(cfg.memory.search.rememberAcrossConversations).toBe(false);
+  });
+
+  test('M1-6 and it is still a config 2026.9.1 accepts', () => {
+    expect(validate({ workRoot, config: cfg, image: IMAGE_NEW }).code).toBe(0);
+  });
+});
+
 describe('M1-2 the 2026.7 shape carries neither key', () => {
   test('M1-2 because that version knows neither, and rejects what it does not know', () => {
     // The negative half. 2026.9.1 relocated this subtree and removed the old
     // path; neither validates on both versions, and an unknown key on 2026.7.1
     // is a failed start rather than a warning — §5.1 of the migration document.
-    const cfg = writeConfig({ OC_SCHEMA_NEW: '0' });
+    // Seeded with both keys present, not with `{}`. Against an empty config
+    // "it is absent" holds whether or not anything removes it, which is a
+    // check that cannot fail -- and F8 moved the removal from an inline delete
+    // to the retired sweep, so this is the case that says the sweep works.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '0' }, {
+      memory: { search: { enabled: true, sources: ['memory'] } },
+      plugins: { entries: { 'active-memory': { enabled: true } } }
+    });
     expect(cfg.memory?.search).toBeUndefined();
     expect(cfg.plugins?.entries?.['active-memory']).toBeUndefined();
+    // And the control that gives the line above its meaning: the 2026.9 shape
+    // really is refused by 2026.7.1, so "it validates" is a statement about the
+    // version and not about a validator that accepts anything.
+    const newShape = writeConfig({ OC_SCHEMA_NEW: '1' });
+    expect(validate({ workRoot, config: newShape, image: IMAGE_OLD }).code).not.toBe(0);
   });
 });
 
@@ -156,6 +171,43 @@ describe('M1-4 the Copilot path keeps owning the provider', () => {
     const cfg = writeConfig({ OC_SCHEMA_NEW: '1', ENABLE_COPILOT: '1' });
     expect(cfg.memory.search.provider).toBe('github-copilot');
     expect(cfg.memory.search.enabled).toBe(true);
-    expect(cfg.plugins.entries['active-memory']).toEqual({ enabled: true });
+    expect(cfg.plugins.entries['active-memory'].enabled).toBe(true);
+    expect(validate({ workRoot, config: cfg, image: IMAGE_NEW }).code).toBe(0);
+  });
+});
+
+describe('M1-5 the writer inherits an installation rather than a blank file', () => {
+  test('M1-5 an operator setting on the plugin entry survives the start', () => {
+    // F2. The manifest declares 29 keys with additionalProperties:false, and
+    // assigning a fresh object discarded every one of them, silently, on the
+    // next start. Measured against the unfixed writer: {enabled, mode,
+    // timeoutMs} came back as {enabled} alone.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      plugins: { entries: { 'active-memory': { enabled: true, mode: 'always', timeoutMs: 9000 } } }
+    });
+    expect(cfg.plugins.entries['active-memory'].enabled).toBe(true);
+    expect(cfg.plugins.entries['active-memory'].mode).toBe('always');
+    expect(cfg.plugins.entries['active-memory'].timeoutMs).toBe(9000);
+  });
+
+  test('M1-5 and a persisted "sessions" is taken back out', () => {
+    // F3, and the negative that matters most here. The comment in the writer
+    // claims sources stays at ["memory"] deliberately; before this it only
+    // filled the value in when absent, so a "sessions" that reached the file
+    // once -- by hand, as it did on this installation on 2026-09-19, or from an
+    // older version -- survived every start afterwards.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      memory: { search: { sources: ['memory', 'sessions'] } }
+    });
+    expect(cfg.memory.search.sources).toEqual(['memory']);
+  });
+
+  test('M1-5 and an unrelated memory setting is not disturbed', () => {
+    // The counterpart: enforcing one key must not mean rewriting the subtree.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      memory: { search: { sources: ['memory'], maxResults: 7 } }
+    });
+    expect(cfg.memory.search.maxResults).toBe(7);
+    expect(cfg.memory.search.sources).toEqual(['memory']);
   });
 });
