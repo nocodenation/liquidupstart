@@ -27,97 +27,41 @@
  * Requirements covered: OC-G1, OC-G2, §5.1, §5.2, §5.3.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { readFileSync as read } from 'node:fs';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-
-const IMAGE_NEW = 'ghcr.io/openclaw/openclaw:2026.9.1';
-const IMAGE_OLD = 'ghcr.io/openclaw/openclaw:2026.7.1';
-
-/**
- * The config writer as the start script actually holds it. Extracted by content
- * rather than by line number, and never copied into this file: a test carrying
- * its own copy of the thing under test stops testing it the moment the two drift.
- */
-function configWriter(): string {
-  const script = read(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
-  const lines = script.split('\n');
-  // A block opens on a line that is only `-e '` and closes on the next line
-  // whose first non-space character is the closing quote. The two sibling
-  // blocks close with `' || true)"`, so the terminator cannot be matched as a
-  // bare quote — doing that swallowed both of them and produced a program that
-  // was half shell.
-  const isOpen = (l: string) => /^\s*-e '\s*$/.test(l);
-  const isClose = (l: string) => /^\s*'/.test(l);
-  for (let start = 0; start < lines.length; start++) {
-    if (!isOpen(lines[start])) continue;
-    let end = -1;
-    for (let i = start + 1; i < lines.length; i++) {
-      if (isClose(lines[i])) { end = i; break; }
-    }
-    if (end === -1) continue;
-    const body = lines.slice(start + 1, end).join('\n');
-    if (body.includes('/state/openclaw.json')) return body;
-  }
-  throw new Error('config writer not found in config/scripts/start/openclaw.sh');
-}
+import {
+  IMAGE_NEW,
+  IMAGE_OLD,
+  configWriter,
+  dropWorkRoot,
+  newWorkRoot,
+  validate as validateWith,
+  writeConfig as runWriter,
+  type Env
+} from '../lib/openclaw-writer';
 
 let program: string;
 let workRoot: string;
 
 beforeAll(() => {
   program = configWriter();
-  workRoot = mkdtempSync(join(tmpdir(), 'lu-oc-'));
+  workRoot = newWorkRoot('lu-oc-');
 });
 
-afterAll(() => rmSync(workRoot, { recursive: true, force: true }));
+afterAll(() => dropWorkRoot(workRoot));
 
-type Env = Record<string, string>;
+// The subnet this suite was written against, before the default moved to
+// 10.99.0.0/24 -- its cases are about the shape, not the range.
+const OC_ENV: Env = { LU_NETWORK_SUBNET: '172.18.0.0/16' };
 
 function writeConfig(env: Env): any {
-  const dir = mkdtempSync(join(workRoot, 'state-'));
-  writeFileSync(join(dir, 'openclaw.json'), '{}\n');
-  const progFile = join(dir, 'writer.js');
-  writeFileSync(progFile, program);
-  const envArgs: string[] = [];
-  const full: Env = {
-    OC_SCHEMA_NEW: '0',
-    OPENCLAW_VERSION: 'test',
-    ENABLE_CLAUDE_CLI: '0',
-    ENABLE_COPILOT: '0',
-    ENABLE_CODEX: '0',
-    ENABLE_GROK: '0',
-    ENABLE_LOCAL: '0',
-    LU_NETWORK_SUBNET: '172.18.0.0/16',
-    PLUGIN_PATHS: '',
-    MODEL_WILDCARDS: '',
-    OPENROUTER_MODELS_JSON: '[]',
-    LOCAL_LLM_MODELS_JSON: '[]',
-    ...env,
-  };
-  for (const [k, v] of Object.entries(full)) envArgs.push('-e', `${k}=${v}`);
-  const r = sh([
-    'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${dir}:/state`, ...envArgs,
-    '--entrypoint', 'node', IMAGE_NEW, `/state/writer.js`,
-  ]);
-  if (r.code !== 0) throw new Error(`config writer failed: ${r.output}`);
-  return JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
+  return runWriter({ workRoot, program, env: { ...OC_ENV, ...env } });
 }
 
-/** Validate a config document with a given version's own validator. */
 function validate(config: any, image: string): { code: number; output: string } {
-  const home = mkdtempSync(join(workRoot, 'home-'));
-  mkdirSync(join(home, '.openclaw'), { recursive: true });
-  writeFileSync(join(home, '.openclaw/openclaw.json'), JSON.stringify(config, null, 2));
-  return sh([
-    'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${home}:/home/node`, '-e', 'HOME=/home/node', '-e', 'OPENCLAW_HOME=/home/node',
-    '--entrypoint', 'openclaw', image, 'config', 'validate',
-  ]);
+  return validateWith({ workRoot, config, image });
 }
 
 describe('OC-1/OC-12 the 2026.9 shape', () => {
