@@ -53,8 +53,8 @@ here; each is executed where its subject exists.
 | OC-10 | system | **negative** | `deviceAutoApprove.scopes` including `operator.admin` makes the **gateway** log its security warning |
 | OC-11 | system | positive | With the chosen scopes, it does not, and `doctor` raises no critical finding |
 | OC-12 | component | positive | `gateway.controlUi.dangerouslyDisableDeviceAuth` is not written on 2026.9.1; `doctor` reports no legacy key |
-| OC-13 | system | positive | `gateway.trustedProxies` naming the docker network: Control UI answers 200 |
-| OC-14 | system | **negative** | The wide RFC1918 list on 2026.9.1: Control UI answers 403 `proxy_attribution_required` |
+| OC-13 | system | positive | `gateway.trustedProxies` naming the proxy address: a client inside the stack network **and** one on the host both answer 200 |
+| OC-14 | system | **negative** | The client's own range in the list: 403 `proxy_attribution_required`, which is what makes the single address a decision |
 | OC-15 | component | positive | The image built on 2026.9.1 runs `claude --version` |
 | OC-16 | component | **negative** | The same build **without** `--allow-scripts` on npm 12 fails at the version check instead of shipping |
 | OC-17 | unit | positive | The version probe reports `2026.9.1` for the 2026.9.1 image |
@@ -72,6 +72,7 @@ here; each is executed where its subject exists.
 | **OC-34** | contract | **negative** | No `docker compose restart` in the start scripts drags its dependants along |
 | **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
 | **OC-36** | contract + unit | **negative** | `with_timeout` is never handed a shell function, because `timeout` cannot see one |
+| **N1b** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
 
@@ -111,6 +112,9 @@ here; each is executed where its subject exists.
 | **The hazard stays documented** | The hang was observed for real on 2026-09-05 and is recorded verbatim in #11's commit message. It moves from an automated case to a deliberate omission with a reason, which §5 of this document provides for. |
 | **What it found on 2026-09-08: bounded was not enough** | The state migration hung on a start of this branch — five minutes of a silent terminal, no output, no error, until it was resumed by hand with `SIGCONT`. The call *was* bounded. GNU `timeout` runs its command in **its own process group**, so it leaves the terminal's foreground group; `docker compose run` attaches stdin; and a background process reading the terminal is stopped by `SIGTTIN`. Line 178 redirected stdout and stderr to `/dev/null` and left stdin attached. It bites only where GNU coreutils is on `PATH` — without `timeout`, `with_timeout` runs the command in the foreground group and nothing stops it — which is why no earlier start met it, and why it is the same shape as A8-13 on #9: green everywhere except on the operator's `PATH`. Whether the 600s bound would have fired against a **stopped** child was not measured, because the process was resumed after about five minutes; the honest statement is that the bound was never seen to save it. |
 | **The fix, and where it belongs** | In `with_timeout`, not at the call site: every caller of it is by construction an unattended step — the script says so itself, *"no unattended step may wait forever on input that cannot arrive"* — and the interactive siblings `claude_cli`, `copilot_cli`, `codex_cli` and `grok_cli` deliberately do not go through it. Each of its three invocations now reads from `/dev/null`, which is also better than the bound it complements: the read returns EOF at once rather than stalling until a timer kills it. The case gained an assertion over the body of `with_timeout`, and the control was run — with the redirect removed it goes red. |
+| **What it found on 2026-09-17: on this host there was no bound at all** | `with_timeout` ended in `else "$@"`. On a machine with neither `timeout` nor `gtimeout` — which is every macOS host, both being GNU coreutils — that branch ran the command **unbounded**, and nothing said so: the call site reads `with_timeout 60 docker run …`, what ran was `docker run …`. So on the operator's own machine, the one the stack is started from, none of the eleven bounded calls was bounded. Measured three times in one afternoon while running the suite: the probe container of this very case — bounded at 8s with a 10s grace — stood for **13 minutes**, then for over a minute, then for over a minute again, each time until something else removed it. Its control is in the same session: the old shape given a 3-second bound on a 6-second command returned after **6.01s with rc 0**; the replacement returns after **3.04s with rc 124**. |
+| **Why the case could not report it** | It hung rather than going red. `sh()` spawns synchronously and bun cannot interrupt a synchronous spawn, so the `}, 90_000)` on the behaviour half never fired and the whole suite stopped there. It had also been silently skipping: the case returns early when `liquidupstart/openclaw:latest` is absent, and the image had only just been built on this machine. A case that can hang the suite is worse than one that fails, and this is why the replacement is asserted at the unit tier, against a command of the case's own, where nothing can hang for minutes. |
+| **The second fix** | `config/scripts/start/lib/with-timeout.sh`, one implementation for both start scripts — `openclaw.sh` and `git.sh` each carried their own copy, so the unbounded fallback existed twice. Where coreutils is present it is still used, because it is the better instrument and every container here has it. Where it is not, the command runs in the background under a watchdog that sends SIGTERM at the limit and SIGKILL after the grace, and the helper answers **124**, the number coreutils uses, so a caller cannot tell the two hosts apart. N1b covers it: the expiry, the counterpart of a command that finishes, output captured through `$( )`, the command's own stderr kept while the shell's job bookkeeping is not, `0` still meaning unbounded, and a stub named `timeout` on `PATH` proving coreutils is still preferred. |
 | **Covers** | OC-G4, §5.1 |
 | **Covers** | OC-G1, §5.1 |
 
@@ -173,14 +177,17 @@ here; each is executed where its subject exists.
 | **Failure** | The key is present — the configuration would then carry a claim about device auth that the running version ignores. |
 | **Covers** | §5.3 |
 
-### OC-13 / OC-14 — proxy attribution, kept rather than changed
+### OC-13 / OC-14 — proxy attribution: membership, not width
 
 | | |
 |---|---|
-| **Premise** | #11 already narrowed `gateway.trustedProxies` and kept it through the downgrade. Nothing changes here, so what is needed is a **regression** case — and its negative counterpart, because "we narrowed it" is only interesting if the wide list actually still fails on 2026.9.1. |
-| **Test data** | OC-13: `["127.0.0.1/32", "<this stack's docker network>/16"]`, resolved from the network. OC-14: `["127.0.0.1/32","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]` — the list this repository carried from 2026-06-06 until #11, stated as a literal because after the change it is not read from anywhere. |
-| **Expected** | OC-13: `HTTP 200`. OC-14: `HTTP 403` with `"type":"proxy_attribution_required"`, and the gateway log line `observed unattributable proxy-shaped traffic from <proxy ip>`. |
-| **Failure** | OC-14 answering 200 would mean 2026.9.1 no longer enforces this and the narrowing is no longer load-bearing — worth knowing, and it would relax `start.sh`'s post-`up` correction. |
+| **Premise** | Re-founded 2026-09-16. These cases asserted that a *wide* `trustedProxies` is refused and a *narrow* one accepted, and both observations were real. The rule behind them is not width: `resolveForwardedClientIp` walks `X-Forwarded-For` right to left, discards every hop that is loopback or trusted, and refuses the request when nothing is left. What decides is whether the **client** is in the list. |
+| **Component** | The running stack: nginx, the gateway, and its live `trustedProxies`. |
+| **Test data** | OC-13: what the start script wrote, read from the live config — `["127.0.0.1/32", "<SYSTEM_PROXY_IP>/32"]`. Two clients: a container on the stack network, and the host. OC-14: `["127.0.0.1/32", "<SYSTEM_NETWORK_SUBNET>"]`, which is exactly what this repository wrote until 2026-09-16. |
+| **Expected** | OC-13: both clients `HTTP 200`. OC-14: the client inside the subnet `HTTP 403` with `"type":"proxy_attribution_required"`, and the gateway log line `observed unattributable proxy-shaped traffic from <proxy ip>`. |
+| **Failure** | OC-14 answering 200 would mean the single address is no longer load-bearing. OC-13's in-network half answering 403 is the defect itself: every agent in this stack reaches the gateway that way. |
+| **Why the host alone was not enough** | The old OC-13 asked only the host. On Docker Desktop that client is `192.168.65.1`, outside the stack subnet, so it answered 200 while every container got 403 — and on rootless docker with the `builtin` port driver the host arrives as `10.99.0.1`, inside it, and even a browser gets 403. A case that asks one kind of client cannot see the rule. |
+| **What it found** | **Run 2026-09-16.** Before the fix, with the subnet trusted: host `192.168.65.1` → 200, container `10.99.0.11` → **403**. After it, with `10.99.0.2/32` trusted: container `10.99.0.136` → **200**, host → 200, and no further `unattributable` line in the gateway log. The negative half reproduces the 403 on demand by putting the subnet back. |
 | **Covers** | §5.4 |
 
 ### OC-15 / OC-16 — the npm major version

@@ -1,0 +1,106 @@
+/**
+ * A13-5, A13-6 — the skip route accepts every step name the stack can produce, and nothing else.
+ *
+ * Purpose: finding 3 of Timur's follow-up review of #9 (2026-09-18).
+ * `dashboard/src/routes/start-skip/+server.ts` guards its step name with
+ *
+ *   const STEP = /^[a-z0-9][a-z0-9._-]{0,64}$/;
+ *
+ * and the panel sends `git-key-<slug>`. `lu_git_slug` keeps the case of what was
+ * declared — it only replaces characters outside `[A-Za-z0-9._-]` — so a
+ * repository under `NoCodeNation` produces
+ * `git-key-github.com_NoCodeNation_agent-skills`, which this expression refuses
+ * with 400. `skipStep` in `TaskRunner.svelte` swallows the error, so the button
+ * stays enabled and does nothing while the start waits out its deadline. A long
+ * owner and repository name fails the same way against the 65-character limit.
+ *
+ * "Skip all" keeps working, because `git-key-all` happens to be lower case — so
+ * the operator has one button that works and one that silently does not.
+ *
+ * Given  the route, and step names the stack actually produces
+ * When   a step is posted
+ * Then   every name `lu_git_slug` can make is accepted, and anything that is not
+ *        a single path element is still refused
+ *
+ * A13-6 is the half that matters for the guard: the rule exists so the value
+ * cannot escape the skip directory, and widening the character class must not
+ * widen that. The refusals are asserted against the shapes an attacker would
+ * actually try — a slash, `..`, a leading dot, an absolute path, a null byte —
+ * rather than against one invented string.
+ *
+ * Test data: the accepted names are `git-key-github.com_NoCodeNation_agent-skills`
+ * (the review's own example), `git-key-all`, `claude`, and
+ * `git-key-github.com_NoCodeNation_a-repository-name-that-is-quite-long-indeed-and-then-some`
+ * (78 characters, past the old limit). The refused ones are `../escape`,
+ * `git-key-a/b`, `/etc/passwd`, `.hidden`, `` (empty) and `a\0b`.
+ *
+ * Requirements covered: A13-5, A13-6, finding 3 of the #9 follow-up.
+ */
+import { test, expect, describe, afterAll } from 'bun:test';
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+// The shared dashboard fixture, not a scratch directory of this file's own:
+// `$lib/server/project` captures ENV_DIR when it is first loaded, bun keeps one
+// module instance per process, and whoever loads it first decides where every
+// route in the suite looks. A file that pointed it at its own directory sent
+// eight M-A8 cases red in the full run while passing alone -- the shape of a test
+// that changes shared state, not of a defect. The fixture owns that setting.
+import { projectDir } from '../lib/dashboardfixture';
+import { ROUTES } from '../lib/svelte';
+
+const project = projectDir;
+const route = await import(join(ROUTES, 'start-skip', '+server.ts'));
+
+afterAll(() => rmSync(join(project, 'volumes', '.start-skip'), { recursive: true, force: true }));
+
+const skipDir = join(project, 'volumes', '.start-skip');
+mkdirSync(skipDir, { recursive: true });
+
+async function post(step: unknown): Promise<number> {
+  try {
+    const res = await route.POST({
+      request: new Request('http://localhost/start-skip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ step })
+      })
+    } as never);
+    return res.status;
+  } catch (e) {
+    // SvelteKit's `error()` throws an object carrying the status.
+    return (e as { status?: number }).status ?? 500;
+  }
+}
+
+const LONG = 'git-key-github.com_NoCodeNation_a-repository-name-that-is-quite-long-indeed-and-then-some';
+
+describe('A13-5 every step the stack can produce is accepted', () => {
+  for (const step of [
+    'git-key-github.com_NoCodeNation_agent-skills',
+    'git-key-all',
+    'claude',
+    LONG
+  ]) {
+    test(`"${step.slice(0, 40)}" is accepted and writes its marker`, async () => {
+      expect(await post(step)).toBe(200);
+      expect(existsSync(join(skipDir, step))).toBe(true);
+    });
+  }
+});
+
+describe('A13-6 and anything that is not one path element is still refused', () => {
+  for (const step of ['../escape', 'git-key-a/b', '/etc/passwd', '.hidden', '', 'a\0b']) {
+    test(`${JSON.stringify(step)} is refused`, async () => {
+      // The rule is "a single path element", and widening the character class
+      // for capitals must not widen that. Nothing may be written outside the
+      // skip directory, and nothing at all for a refused name.
+      const before = readdirSync(skipDir).sort();
+      expect(await post(step)).toBe(400);
+      expect(readdirSync(skipDir).sort()).toEqual(before);
+    });
+  }
+
+  test('and a step that is not a string at all is refused', async () => {
+    expect(await post({ toString: () => 'claude' })).toBe(400);
+  });
+});

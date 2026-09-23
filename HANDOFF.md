@@ -513,6 +513,18 @@ poisoning the temporary file had been added to prevent, one layer up. A stage wh
 count has to be read into a variable and checked, or the guard is decoration. Sibling of *a bound
 that cannot bind*: both looked right in the diff and did nothing when run.
 
+**"I cannot reproduce it" is a statement about the attempt, not about the system.** Timur suggested
+`timeout -k` on the bounded docker runs; it went into the backlog because the situation justifying it
+could not be produced on demand. Two days later a suite run hung fifteen minutes on the very case
+that asserts the bound works, and in that window three of four attempts needed a SIGKILL rather than
+the signal. An hour later it was gone — four of four ended at SIGTERM, same host, same stack — so the
+rate belongs to the window and not to the system, and the cause was never established. The deferral
+had been reasoned from one lucky measurement on 2026-09-11, rc 124 after 16s, written into the case
+header as a property. **One observation of an intermittent mechanism is not a property**, in either
+direction: it was wrong to call the bound reliable then, and it would be wrong to call it broken now.
+What is measurable is that it can fail to return, and that the flag which makes that impossible cost
+one line.
+
 **A pin is only as good as the range it pins to.** Pinning the subnet fixed a real defect — a gateway
 trusting a range no container was in — and chose the one value guaranteed to collide: 172.18.0.0/16
 is what docker hands out first, so it is what every leftover network on the host already holds. The

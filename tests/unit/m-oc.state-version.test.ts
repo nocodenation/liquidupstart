@@ -35,6 +35,9 @@ import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 
 const SCRIPT = 'config/scripts/start/openclaw.sh';
+// with_timeout moved into a library on 2026-09-17: openclaw.sh and git.sh each
+// carried a copy, and both ended in a branch that ran the command unbounded.
+const LIB = JSON.stringify(join(repoRoot, 'config/scripts/start/lib/with-timeout.sh'));
 
 /** Run `openclaw_state_version` from the start script against a state dir. */
 function stateVersion(config: unknown | null): string {
@@ -43,7 +46,8 @@ function stateVersion(config: unknown | null): string {
     if (config !== null) writeFileSync(join(dir, 'openclaw.json'), JSON.stringify(config));
     const snippet = `
       set -uo pipefail
-      eval "$(sed -n '/^with_timeout() {/,/^}/p;/^openclaw_state_version() {/,/^}/p' ${SCRIPT})"
+      . ${LIB}
+      eval "$(sed -n '/^openclaw_state_version() {/,/^}/p' ${SCRIPT})"
       OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
       CONFIG_JSON=${JSON.stringify(join(dir, 'openclaw.json'))}
       STATE_DIR=${JSON.stringify(dir)}
@@ -90,7 +94,8 @@ describe('OC-28 reading which version wrote the state', () => {
     writeFileSync(join(dir, 'openclaw.json'), '{ this is not json');
     const snippet = `
       set -uo pipefail
-      eval "$(sed -n '/^with_timeout() {/,/^}/p;/^openclaw_state_version() {/,/^}/p' ${SCRIPT})"
+      . ${LIB}
+      eval "$(sed -n '/^openclaw_state_version() {/,/^}/p' ${SCRIPT})"
       OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
       CONFIG_JSON=${JSON.stringify(join(dir, 'openclaw.json'))}
       STATE_DIR=${JSON.stringify(dir)}

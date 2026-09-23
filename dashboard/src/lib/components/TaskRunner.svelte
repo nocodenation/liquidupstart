@@ -3,6 +3,7 @@
    * Build / Start / Stop controls with a live log pane and the Claude Code
    * sign-in panel. Used by the dashboard (/) and the post-save page (/done).
    */
+  import { invalidateAll } from '$app/navigation';
   import { task, runTask as runSharedTask } from '$lib/task-state.svelte.js';
 
   let {
@@ -77,6 +78,138 @@
   let copilotCode = $derived(copilotLog.match(/Code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/)?.[1] ?? '');
 
   let needCodexAuth = $state(false);
+  let skipped = $state({});
+  // The deploy key, shown while the start waits for it. git.sh prints the key and
+  // the link into the log; the slug comes from the marker and the rest is read
+  // from /git-auth, so this panel cannot drift from what the card shows.
+  let needGitKey = $state(null);
+  let gitKeyRepo = $state(null);
+  // Every repository this start is waiting on, known before the first wait
+  // begins: git.sh tries all the clones first and then names the whole set. The
+  // panel can therefore say "1 of 3" and list the other two, instead of
+  // presenting each one as a surprise once the previous is dealt with.
+  let gitKeysPending = $state([]);
+  let gitKeyNumber = $derived(needGitKey ? gitKeysPending.indexOf(needGitKey) + 1 : 0);
+  // The wait for this repository is over -- cloned, skipped, or out of budget.
+  // Derived rather than stored so the panel closes on the last one without
+  // anything having to remember which have been handled.
+  let gitKeyDone = $derived(
+    needGitKey ? task.log.includes(`::aiw-git-key-done::${needGitKey}`) : false
+  );
+
+  let gitKeyCopied = $state(false);
+  let gitKeyCopyTimer;
+
+  // The same shape as the repositories card: the clipboard API where it is
+  // available, a hidden textarea where it is not -- an operator on the way to
+  // GitHub should not have to select a wrapped key by hand.
+  async function copyGitKey() {
+    const key = gitKeyRepo?.publicKey;
+    if (!key) return;
+    clearTimeout(gitKeyCopyTimer);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(key);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = key;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (!ok) throw new Error('copy rejected');
+      }
+      gitKeyCopied = true;
+      gitKeyCopyTimer = setTimeout(() => (gitKeyCopied = false), 1500);
+    } catch {
+      gitKeyCopied = false;
+    }
+  }
+
+  async function loadGitKeyRepo(slug) {
+    try {
+      const res = await fetch('/git-auth');
+      if (!res.ok) return;
+      const { repositories } = await res.json();
+      gitKeyRepo = (repositories ?? []).find((r) => r.slug === slug) ?? null;
+    } catch {
+      // The log still carries the key; the panel is the convenience.
+    }
+  }
+
+  // Tells the start run in progress to stop waiting on one credential. The run
+  // clears these at the beginning of every start, so this holds for this start
+  // only -- an operator who has no phone at hand now is not opting out for good.
+  // The deploy-key panel closes the moment the wait ends, and a skip ends it at
+  // once -- so the line confirming the skip was on screen for milliseconds. The
+  // operator asked for five seconds: long enough to read, short enough not to
+  // sit in the way of a start that has moved on.
+  // Counted down rather than simply waited out: five silent seconds read as a
+  // panel that has frozen. With the seconds on screen the operator knows the
+  // next repository is coming, and three are then enough -- the operator's own
+  // suggestion, 2026-09-18, after watching the five.
+  let holdLeft = $state(0);
+  let holdingSkip = $derived(holdLeft > 0);
+  let holdTimer;
+  function holdSkipNote() {
+    holdLeft = 3;
+    clearInterval(holdTimer);
+    holdTimer = setInterval(() => {
+      holdLeft -= 1;
+      if (holdLeft <= 0) {
+        clearInterval(holdTimer);
+        // The next repository was waiting behind the hold; let it through now.
+        syncGitKeyPanel();
+      }
+    }, 1000);
+  }
+
+  // What the panel shows, which is not always what the log last asked for. A
+  // skip ends the wait at once, so the start prints the next repository's marker
+  // within milliseconds and the panel used to switch under the operator's hand
+  // -- the confirmation they had just produced was covered before it could be
+  // read. During the hold the panel stays on the repository that was skipped.
+  function syncGitKeyPanel() {
+    const gitKey = [...task.log.matchAll(/::aiw-git-key-required::(\S+)/g)].pop();
+    if (gitKey && needGitKey !== gitKey[1]) {
+      needGitKey = gitKey[1];
+      loadGitKeyRepo(gitKey[1]);
+    }
+  }
+
+  async function skipStep(step) {
+    try {
+      const res = await fetch('/start-skip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ step })
+      });
+      if (res.ok) {
+        skipped = { ...skipped, [step]: true };
+        // Only the deploy-key panel is held open. The hold exists so a
+        // confirmation is not swept away with the panel it belongs to, and the
+        // git step runs before the sign-ins -- so skipping a Claude or Codex
+        // panel used to bring the finished "Add a deploy key to continue" back
+        // for three seconds, over a repository that had been dealt with.
+        // Finding 3 of the 2026-09-21 review.
+        if (step.startsWith('git-key-')) holdSkipNote();
+      }
+    } catch {
+      // The start times out on its own; a failed skip is not worth a dialog.
+    }
+  }
+  // One click for the whole set. Each repository gets its own skip file, so the
+  // wait in progress ends on its own file like any other skip, and git-key-all
+  // covers the ones not reached yet -- including any the log has not named,
+  // since the shell checks the group file too.
+  async function skipAllGitKeys() {
+    await skipStep('git-key-all');
+    for (const slug of gitKeysPending) await skipStep(`git-key-${slug}`);
+  }
+
   let codexLog = $state('');
   let codexRunning = $state(false);
   let codexOk = $state(false);
@@ -124,7 +257,10 @@
   // probe could not answer for — otherwise a finished sign-in would show up as
   // "needed" again on every later visit.
   $effect(() => {
-    if (!authOk && authProbe === 'unknown' && task.log.includes('ACTION REQUIRED'))
+    // The marker, not the banner: "ACTION REQUIRED" is printed by any step that
+    // needs the operator, and since the deploy-key work the git step prints it
+    // too -- which opened this panel for a provider that was switched off.
+    if (!authOk && authProbe === 'unknown' && task.log.includes('::aiw-claude-auth-required::'))
       needClaudeAuth = true;
     if (!copilotOk && copilotProbe === 'unknown' && task.log.includes('::aiw-copilot-auth-required::'))
       needCopilotAuth = true;
@@ -132,6 +268,14 @@
       needCodexAuth = true;
     if (!grokOk && grokProbe === 'unknown' && task.log.includes('::aiw-grok-auth-required::'))
       needGrokAuth = true;
+    const pending = [...task.log.matchAll(/::aiw-git-keys-pending::([^\n]*)/g)].pop();
+    const slugs = pending ? pending[1].trim().split(/\s+/).filter(Boolean) : [];
+    if (slugs.join(' ') !== gitKeysPending.join(' ')) gitKeysPending = slugs;
+    // Last marker wins: a start that waits on two repositories shows the one it
+    // is waiting on now -- unless a skip is being confirmed, in which case the
+    // next one waits until the confirmation has been on screen long enough to
+    // read.
+    if (!holdingSkip) syncGitKeyPanel();
   });
   $effect(() => {
     authLog;
@@ -284,6 +428,13 @@
     probeCopilotAuth();
     probeCodexAuth();
     probeGrokAuth();
+    // And re-read what the page renders from the server, whatever the outcome.
+    // `onchange` fires only when the log says the task succeeded, so a failed or
+    // half-finished start left the repositories card describing the start before
+    // it -- "declared but not yet prepared", with no key and no Test button, for
+    // repositories the run had just prepared. The operator saw that on
+    // 2026-09-18 and asked, rightly, why they had to reload the page themselves.
+    await invalidateAll();
   }
 
   async function startClaudeAuth() {
@@ -515,6 +666,92 @@
   </div>
 {/if}
 
+{#if needGitKey && (!gitKeyDone || holdingSkip)}
+  <section class="authbox">
+    <h2>
+      Add a deploy key to continue
+      {#if gitKeysPending.length > 1}
+        <span class="dim">— {gitKeyNumber} of {gitKeysPending.length}</span>
+      {/if}
+    </h2>
+    <p>
+      The start cannot clone
+      <code>{gitKeyRepo?.name ?? needGitKey}</code>
+      with the key it holds, and is waiting for you to register it. Registering it ends the wait by
+      itself — nothing needs restarting.
+    </p>
+    {#if gitKeysPending.length > 1}
+      <!-- The whole queue, so an operator can decide once whether it is worth
+           fetching the other repositories' settings pages too. -->
+      <p>
+        This start is waiting on {gitKeysPending.length} repositories:
+        {#each gitKeysPending as slug, n}<!--
+       --><code class:current={slug === needGitKey}>{slug}</code>{n < gitKeysPending.length - 1
+            ? ', '
+            : ''}{/each}
+      </p>
+    {/if}
+    {#if gitKeyRepo?.instructions}
+      <p>{gitKeyRepo.instructions}</p>
+    {/if}
+    {#if gitKeyRepo?.deployKeyUrl}
+      <p>
+        <a href={gitKeyRepo.deployKeyUrl} target="_blank" rel="noopener noreferrer">
+          {gitKeyRepo.deployKeyUrl} ↗
+        </a>
+      </p>
+    {/if}
+    {#if gitKeyRepo?.publicKey}
+      <!-- The classes the repositories card uses: .gitkey-value wraps a key that
+           is wider than the panel, which a <pre> did not. -->
+      <div class="gitkey">
+        <code class="gitkey-value">{gitKeyRepo.publicKey}</code>
+        <button
+          type="button"
+          class="aux gitkey-copy"
+          onclick={copyGitKey}
+          aria-label="Copy the deploy key"
+        >
+          {gitKeyCopied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    {:else}
+      <p class="dim">The key is in the log above; this panel could not read it from /git-auth.</p>
+    {/if}
+    <div class="runbar">
+      <!-- Skip: an operator without access to the repository settings right now
+           must be able to let the rest of the stack start. The collective one
+           travels beside it, and both sit at the end of the bar. -->
+      {#if gitKeysPending.length > 1}
+        <button class="skip" onclick={skipAllGitKeys} disabled={skipped['git-key-all']}>
+          Skip all for this start
+        </button>
+      {/if}
+      <button class="skip" onclick={() => skipStep(`git-key-${needGitKey}`)} disabled={skipped[`git-key-${needGitKey}`]}>
+        Skip for this start
+      </button>
+    </div>
+    {#if skipped['git-key-all']}
+      <p class="skip-note">
+        All skipped — the start continues without them.{#if holdingSkip}
+          Closing in {holdLeft}…{/if}
+      </p>
+    {:else if skipped[`git-key-${needGitKey}`]}
+      <p class="skip-note">
+        <!-- The space is written out. Svelte trims the whitespace at the start of
+             a block, so `.{#if …}` renders as `repository.Closing in 1…` -- seen
+             on screen during A16-M1 on 2026-09-22, and older than M-A16. `{' '}`
+             rather than `&nbsp;`: a non-breaking space is a different character,
+             and the case that holds this reads the rendered text. -->
+        Skipped — the start continues without this repository.{#if holdingSkip}{' '}{gitKeyNumber <
+          gitKeysPending.length
+            ? 'Next repository'
+            : 'Closing'} in {holdLeft}…{/if}
+      </p>
+    {/if}
+  </section>
+{/if}
+
 {#if needClaudeAuth || authRunning || authOk}
   <section class="authbox">
     <h2>Claude Code sign-in</h2>
@@ -530,6 +767,14 @@
         the code back here.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="skip" onclick={() => skipStep('claude')} disabled={skipped['claude']}>
+          Skip for this start
+        </button>
+        {#if skipped['claude']}
+          <p class="skip-note">Skipped — the start continues without Claude.</p>
+        {/if}
         <button type="button" class="save" disabled={authRunning} onclick={startClaudeAuth}>
           {authRunning ? 'Waiting for sign-in…' : 'Sign in to Claude'}
         </button>
@@ -579,6 +824,14 @@
         finishes on its own once you authorize. Requires an active GitHub Copilot plan.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="skip" onclick={() => skipStep('copilot')} disabled={skipped['copilot']}>
+          Skip for this start
+        </button>
+        {#if skipped['copilot']}
+          <p class="skip-note">Skipped — the start continues without GitHub Copilot.</p>
+        {/if}
         <button type="button" class="save" disabled={copilotRunning} onclick={startCopilotAuth}>
           {copilotRunning ? 'Waiting for authorization…' : 'Sign in to GitHub Copilot'}
         </button>
@@ -615,6 +868,14 @@
         link and authorize. Sign-in completes here automatically once you approve.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="skip" onclick={() => skipStep('codex')} disabled={skipped['codex']}>
+          Skip for this start
+        </button>
+        {#if skipped['codex']}
+          <p class="skip-note">Skipped — the start continues without ChatGPT/Codex.</p>
+        {/if}
         <button type="button" class="save" disabled={codexRunning} onclick={startCodexAuth}>
           {codexRunning ? 'Waiting for sign-in…' : 'Sign in with ChatGPT'}
         </button>
@@ -672,6 +933,14 @@
         authorize. Sign-in completes here automatically once you approve.
       </p>
       <div class="runbar">
+        <!-- Skip: an operator without their phone, or without access to the
+             account right now, must be able to let the rest of the stack start. -->
+        <button class="skip" onclick={() => skipStep('grok')} disabled={skipped['grok']}>
+          Skip for this start
+        </button>
+        {#if skipped['grok']}
+          <p class="skip-note">Skipped — the start continues without Grok.</p>
+        {/if}
         <button type="button" class="save" disabled={grokRunning} onclick={startGrokAuth}>
           {grokRunning ? 'Waiting for sign-in…' : 'Sign in with Grok'}
         </button>

@@ -13,6 +13,13 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+# A skip is a decision about this run. Clearing the directory here is what keeps
+# it from becoming a permanent setting nobody remembers making.
+. "${PROJECT_DIR}/config/scripts/start/lib/wait-for-operator.sh"
+lu_clear_skips
+
+"${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
+
 # One reader for .env, tolerant and quote-agnostic. Two failures it removes:
 # a key that is absent makes grep exit 1, pipefail passes it through and set -e
 # ends the start without a word, after down.sh has already emptied the stack; and
@@ -74,6 +81,55 @@ lu_require_free_subnet() {  # lu_require_free_subnet <own-network> <cidr>
 LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
 LU_SUBNET_CIDR="$(get_env SYSTEM_NETWORK_SUBNET)"
 LU_SUBNET_CIDR="${LU_SUBNET_CIDR:-10.99.0.0/24}"
+LU_PROXY_IP="$(get_env SYSTEM_PROXY_IP)"
+LU_PROXY_IP="${LU_PROXY_IP:-10.99.0.2}"
+
+# The proxy takes a fixed address so the gateway can name it in trustedProxies.
+# Two keys that have to agree: compose refuses an ipv4_address outside the
+# network's subnet, and it refuses it at `up`, long after down.sh has emptied the
+# stack -- with a message that names neither key. Checked here instead, before
+# anything is stopped.
+#
+# Arithmetic rather than bit operations: macOS awk has no and()/compl().
+lu_ip_in_cidr() {  # lu_ip_in_cidr <ip> <cidr>
+  awk -v ip="$1" -v cidr="$2" '
+    function toint(a,  p) { split(a, p, "."); return p[1]*16777216 + p[2]*65536 + p[3]*256 + p[4] }
+    BEGIN {
+      split(cidr, c, "/")
+      bits = c[2] + 0
+      if (bits < 0 || bits > 32) exit 1
+      size = 2 ^ (32 - bits)
+      base = int(toint(c[1]) / size) * size
+      v = toint(ip)
+      exit (v >= base && v < base + size) ? 0 : 1
+    }'
+}
+
+LU_NETWORK_POOL="$(get_env SYSTEM_NETWORK_POOL)"
+LU_NETWORK_POOL="${LU_NETWORK_POOL:-10.99.0.128/25}"
+
+# Inside the pool docker allocates by itself, so a pinned address there is a
+# collision waiting for the right start order -- and the proxy starts last,
+# because everything else is its dependency.
+if lu_ip_in_cidr "$LU_PROXY_IP" "$LU_NETWORK_POOL"; then
+  echo "Error: SYSTEM_PROXY_IP ${LU_PROXY_IP} is inside SYSTEM_NETWORK_POOL ${LU_NETWORK_POOL}." >&2
+  echo "  That range is what docker hands out on its own; an address pinned there" >&2
+  echo "  is taken by whichever container starts first, and the proxy starts last." >&2
+  echo "  Measured 2026-09-16: 'Address already in use', with eurooffice holding it." >&2
+  echo "  Pick an address outside the pool -- for ${LU_SUBNET_CIDR} with the default" >&2
+  echo "  pool, anything from .2 to .127. Nothing has been stopped." >&2
+  exit 1
+fi
+
+if ! lu_ip_in_cidr "$LU_PROXY_IP" "$LU_SUBNET_CIDR"; then
+  echo "Error: SYSTEM_PROXY_IP ${LU_PROXY_IP} is not inside SYSTEM_NETWORK_SUBNET ${LU_SUBNET_CIDR}." >&2
+  echo "  The proxy takes that address on the stack network, and the OpenClaw gateway" >&2
+  echo "  trusts exactly it; the two keys have to agree or nothing starts." >&2
+  echo "  Change one of them in .env so the address falls inside the range -- for" >&2
+  echo "  ${LU_SUBNET_CIDR}, the first address docker leaves free is the .2." >&2
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
 
 lu_drop_legacy_network "nocodenation_playground_network_${HTTP_PORT}"
 lu_require_free_subnet "$LU_NETWORK" "$LU_SUBNET_CIDR" || exit 1
@@ -196,6 +252,7 @@ fi
 "${PROJECT_DIR}/config/scripts/start/generate_api_key.sh"
 "${PROJECT_DIR}/config/scripts/start/pgadmin.sh"
 "${PROJECT_DIR}/config/scripts/start/opencode.sh"
+"${PROJECT_DIR}/config/scripts/start/git.sh"
 "${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
 "${PROJECT_DIR}/config/scripts/start/nginx.sh"
 "${PROJECT_DIR}/config/scripts/start/liquid.sh"
@@ -241,12 +298,26 @@ if [[ -t 1 ]]; then
   URL=$'\033[36m'     # cyan        - URLs
   CRED=$'\033[1;33m'  # bold yellow - passwords/tokens
   DIM=$'\033[2m'      # dim         - secondary info
+  WARN=$'\033[1;31m'  # bold red    - what did not come up
   RST=$'\033[0m'
 else
-  HDR='' SVC='' URL='' CRED='' DIM='' RST=''
+  HDR='' SVC='' URL='' CRED='' DIM='' WARN='' RST=''
 fi
 
 url_line() { printf "  ${SVC}%-13s${RST} ${URL}%s${RST}\n" "$1" "$2"; }
+
+unreachable_repositories() {
+  local manifest="${PROJECT_DIR}/volumes/_git-secrets/repositories.json"
+  [[ -f "$manifest" ]] || return 0
+  awk -F'"' '
+    /"host":/          { host = $4 }
+    /"path":/          { path = $4 }
+    /"publicKeyFile":/ { key  = $4 }
+    /"error":/         { err = $4 }
+    /"cloned": *false/ { bad = 1 }
+    /^    \}/          { if (bad) printf "%s/%s\t%s\t%s\n", host, path, key, err; bad = 0; err = "" }
+  ' "$manifest"
+}
 
 echo ""
 echo "${HDR}=== Web interfaces = Storage =====================================${RST}"
@@ -278,3 +349,15 @@ echo "  ${DIM}Liquid ingresses: ports 8900-8999, served on https://PORT.liquid.l
 echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost:${HTTP_PORT}${RST}"
 echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
 echo ""
+
+ATTENTION="$(unreachable_repositories)"
+if [[ -n "$ATTENTION" ]]; then
+  echo "${WARN}=== Needs your attention =========================================${RST}"
+  while IFS=$'\t' read -r label key err; do
+    [[ -n "$label" ]] || continue
+    echo "  ${WARN}${label} is not reachable${RST}"
+    [[ -n "$err" ]] && echo "    ${DIM}${err}${RST}"
+    echo "    Register ${URL}${key}${RST} as a deploy key, then test it on the dashboard."
+  done <<< "$ATTENTION"
+  echo ""
+fi
