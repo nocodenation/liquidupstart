@@ -62,7 +62,7 @@ redistribution grant — so it is installed here, on the operator's own machine)
   state browsable and a reset is just deleting `volumes/nextcloud/`.
 - **Rootless Docker** — the host user maps to container root, so containers run as root;
   don't add `--user $(id -u)` (it breaks bind mounts).
-- **Minimal code comments** — match the surrounding density; don't over-explain.
+- **Comment code properly** — see "Writing into files" below.
 
 ## Running
 
@@ -75,15 +75,18 @@ redistribution grant — so it is installed here, on the operator's own machine)
 
 ## Writing into files
 
-**Write code with ZERO comments by default.** This applies everywhere — new files, edits,
-config (compose.yml, .env, YAML), shell scripts, and subtle one-off workarounds. Do NOT add:
-- explanatory or "why" comments, even a single line;
-- multi-line rationale blocks above tricky code;
-- section headers, banners, or "what this does" notes.
+Comment code at two levels:
+- **Header comment** on every module, class, function and method, in the language's native
+  form (docstring, TSDoc, header block in shell): what it does, what it is for and where it
+  fits, every parameter, the return value, errors or exit codes, side effects.
+- **Algorithm comments** inside any non-trivial body: the steps in order, each with its
+  reason, so the flow can be followed from the comments alone. Explain intent; never
+  restate syntax.
 
-Assume a senior developer reads the code and understands it without hand-holding. If
-something is genuinely non-obvious, explain it in the chat reply — never in the file. Add a
-comment ONLY when the user explicitly asks for one. When in doubt, no comment.
+Config files (compose.yml, .env.example, YAML) comment every setting whose meaning, unit or
+valid values are not obvious; scripts get a header block. Comments never cite plans,
+milestones or tickets. A comment that no longer matches the code is a defect. Code you touch
+gets its comments brought up to this rule.
 
 ## GIT
 
