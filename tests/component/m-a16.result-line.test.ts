@@ -132,3 +132,29 @@ describe('A16-17 and a line the card still agrees with stays', () => {
     m.unmount();
   });
 });
+
+describe('A16-24 a contradicted line is dropped, not hidden', () => {
+  test('A16-24 it does not come back when the clone state flips back', async () => {
+    // Finding 4 of the 2026-09-28 review. Hiding kept the entry: a Test says
+    // "Permission denied", a start clones the repository (line hidden), a
+    // later start loses it again -- and the old answer reappeared under the
+    // new error, describing a failure that is no longer the one in front of
+    // the operator.
+    answering(UNREACHABLE);
+    const props: any = await reactiveProps({ git: view(repo()) });
+    const m = await mountComponent(CARD, props);
+    m.click('Test this repository');
+    await m.settle();
+    expect(m.text()).toContain('is still unreachable');
+
+    props.git = view(repo({ cloned: true, error: null, canRetry: false }));
+    await m.settle();
+    expect(m.text()).not.toContain('is still unreachable');
+
+    // Lost again, for a different reason.
+    props.git = view(repo({ cloned: false, error: 'repository not found', canRetry: true }));
+    await m.settle();
+    expect(m.text()).not.toContain('is still unreachable');
+    m.unmount();
+  });
+});
