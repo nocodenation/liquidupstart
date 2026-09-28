@@ -43,7 +43,12 @@ done
 # id in the registry that no specification mentions is reported too -- it means a
 # case was renamed or deleted and its entry outlived it.
 if [[ "${GAPS:-0}" == "1" ]]; then
+  # try/catch and an explicit exit, not an uncaught throw. In bun 1.3.13 a
+  # program that calls require() runs as CJS, and an uncaught error there exits
+  # **0 with no message** -- measured 2026-09-28. Every `|| exit` around a
+  # `bun -e` in this file was therefore decorative.
   bun -e '
+   try {
     const fs = require("fs"), path = require("path");
     const [registry, root] = process.argv.slice(1);
     const entries = JSON.parse(fs.readFileSync(registry, "utf8")).map((e) => e.case);
@@ -63,7 +68,9 @@ if [[ "${GAPS:-0}" == "1" ]]; then
     console.log(`specified=${ids.size} registered=${entries.length} missing=${missing.length} orphaned=${orphan.length}`);
     if (missing.length) console.log("missing:  " + missing.join(" "));
     if (orphan.length) console.log("orphaned: " + orphan.join(" "));
-  ' "$REGISTRY" "$ROOT"
+    if (!specs.length) { console.error("no TEST-SPEC-*.md under " + dir + ": nothing to compare against"); process.exit(2); }
+   } catch (e) { console.error("mutate --gaps: " + (e && e.message ? e.message : e)); process.exit(2); }
+  ' "$REGISTRY" "$ROOT" || exit $?
   exit 0
 fi
 
@@ -71,6 +78,7 @@ fi
 # because that is where the restore trap lives. bun does the parsing -- the suite
 # already requires it, so this adds no dependency.
 rows="$(bun -e '
+ try {
   const fs = require("fs");
   const rows = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
   if (!Array.isArray(rows)) { console.error("registry is not a list"); process.exit(2); }
@@ -82,6 +90,9 @@ rows="$(bun -e '
     }
     // from/to travel base64-encoded: tab and newline are the record separators
     // here, and a mutation may legitimately span lines.
+    for (const k of ["case", "file", "spec"]) {
+      if (r[k] === "") { console.error(`entry ${r.case || "?"} has an empty ${k}`); process.exit(2); }
+    }
     const ids = [r.case, r.file, r.spec, r.mustFail];
     if (ids.some((v) => /[\t\n]/.test(v))) {
       console.error(`entry ${r.case} has a tab or newline in a name or a path`); process.exit(2);
@@ -95,22 +106,50 @@ rows="$(bun -e '
     const b64 = (s) => "." + Buffer.from(s, "utf8").toString("base64");
     console.log([r.case, r.file, r.spec, b64(r.from), b64(r.to), r.mustFail].join("\t"));
   }
+  } catch (e) { console.error("registry: " + (e && e.message ? e.message : e)); process.exit(2); }
 ' "$REGISTRY")" || exit 2
 
 SUBJECT=""      # the file currently mutated, for the trap
 BACKUP=""
+# The backup goes only after the copy back has succeeded. cp can fail with the
+# subject already truncated -- a full disk, a read-only mount, a parent replaced
+# mid-run -- and deleting it anyway leaves the tracked file broken with nothing
+# to put back.
 restore() {
   if [[ -n "$SUBJECT" && -n "$BACKUP" && -f "$BACKUP" ]]; then
-    cp "$BACKUP" "$SUBJECT"
-    rm -f "$BACKUP"
+    if cp "$BACKUP" "$SUBJECT"; then
+      rm -f "$BACKUP"
+    else
+      echo "mutate: could not restore ${SUBJECT}; the backup is kept at ${BACKUP}" >&2
+      RESTORE_FAILED=1
+    fi
     SUBJECT=""; BACKUP=""
   fi
 }
+RESTORE_FAILED=0
 # Each signal restores and then exits: bash resumes past an INT handler, so a
 # trap that only restores does not hold on Ctrl-C.
 trap 'restore' EXIT
 trap 'restore; exit 130' INT
 trap 'restore; exit 143' TERM
+
+# `./` matters: a bare path is a substring filter over every test file under
+# ROOT, so a sibling `x.test.tsx` was counted into the tally of `x.test.ts` and
+# each run scanned the whole repository including volumes/. And colour off,
+# because ANSI codes break both the `(fail)` scan and the tally regexes -- with
+# FORCE_COLOR in the environment every entry came back REFUSED 0/0.
+run_spec() {  # run_spec <spec> [name-filter]
+  local spec="$1" filter="${2:-}"
+  if [[ -n "$filter" ]]; then
+    (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" -t "$filter" "./$spec" 2>&1)
+  else
+    (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" "./$spec" 2>&1)
+  fi
+}
+
+tally() {  # tally <output> <word>
+  printf '%s\n' "$1" | awk -v w="$2" '$0 ~ ("^ *[0-9]+ " w "$") { n += $1 } END { print n+0 }'
+}
 
 validated=0; failed=0; unresolved=0; refused=0
 report=""
@@ -129,15 +168,28 @@ while IFS=$'\t' read -r id file spec from to must; do
   #
   # The rule is the file being a TEST, not living under tests/: a path may reach
   # one from anywhere, and tests/run.sh is a subject in its own right.
-  norm="$file"
-  if command -v realpath >/dev/null 2>&1 && [[ -e "$abs" ]]; then
-    norm="$(realpath --relative-to="$ROOT" "$abs" 2>/dev/null || echo "$file")"
+  # Normalised with the shell rather than realpath: BSD realpath has no
+  # --relative-to, so the macOS fallback kept the raw path and a/../../x passed
+  # the outside-the-repository check.
+  norm="$(printf '%s' "$file" | awk -F/ '
+    { n = 0
+      for (i = 1; i <= NF; i++) {
+        if ($i == "" || $i == ".") continue
+        if ($i == "..") { if (n > 0) n--; else { print "OUTSIDE"; exit } ; continue }
+        seg[++n] = $i
+      }
+      out = ""
+      for (i = 1; i <= n; i++) out = out (i > 1 ? "/" : "") seg[i]
+      print out }')"
+  if [[ "$norm" == "OUTSIDE" || "$file" == /* ]]; then
+    add "REFUSED   ${id}  its subject is outside the repository"; refused=$((refused+1)); continue
   fi
   case "$norm" in
-    *.test.ts|*.test.tsx|*.test.js|*.spec.ts)
+    *.test.*|*.spec.*|*_test.*|*_spec.*|*.snap)
       add "REFUSED   ${id}  names a test file as its subject"; refused=$((refused+1)); continue ;;
-    ../*|/*)
-      add "REFUSED   ${id}  its subject is outside the repository"; refused=$((refused+1)); continue ;;
+    tests/lib/*|*/__snapshots__/*|tests/mutations.json|tests/mutate.sh)
+      add "REFUSED   ${id}  names test infrastructure as its subject: assertions read it"
+      refused=$((refused+1)); continue ;;
   esac
 
   if [[ ! -f "$abs" ]]; then
@@ -162,10 +214,15 @@ while IFS=$'\t' read -r id file spec from to must; do
     const fs = require("fs");
     const body = fs.readFileSync(process.argv[1], "utf8");
     const needle = Buffer.from(process.env.FROM.slice(1), "base64").toString("utf8");
+    // Advanced by one, not by the needle: `aa` occurs twice in `aaa`, and
+    // "exactly one site" has to mean exactly one.
     let n = 0, i = 0;
-    while ((i = body.indexOf(needle, i)) !== -1) { n++; i += needle.length; }
+    while ((i = body.indexOf(needle, i)) !== -1) { n++; i += 1; }
     console.log(String(n));
   ' "$abs")"
+  if [[ ! "$hits" =~ ^[0-9]+$ ]]; then
+    add "REFUSED   ${id}  could not count occurrences in ${file}"; refused=$((refused+1)); continue
+  fi
   if [[ "$hits" == "0" ]]; then
     add "REFUSED   ${id}  its 'from' is not in ${file} -- the subject moved"; refused=$((refused+1)); continue
   fi
@@ -183,6 +240,21 @@ while IFS=$'\t' read -r id file spec from to must; do
     add "REFUSED   ${id}  could not back ${file} up, so it was not touched"
     refused=$((refused+1)); continue
   fi
+  # The baseline. Without it a test that is already red -- a stack that is down,
+  # a timeout, a flake -- is attributed to the mutation, and any edit at all
+  # reads as VALIDATED. `-t` runs the named test alone, so the tally answers
+  # three questions at once: does it exist, did it run, was it green.
+  base="$(run_spec "$spec" "$must")"
+  base_pass="$(tally "$base" pass)"
+  base_fail="$(tally "$base" fail)"
+  if [[ "$base_fail" != "0" ]]; then
+    add "REFUSED   ${id}  '${must}' is already red before the mutation"; refused=$((refused+1)); continue
+  fi
+  if [[ "$base_pass" == "0" ]]; then
+    add "REFUSED   ${id}  '${must}' did not run in ${spec} -- renamed, skipped, or misspelt"
+    refused=$((refused+1)); continue
+  fi
+
   SUBJECT="$abs"
   FROM="$from" TO="$to" bun -e '
     const fs = require("fs");
@@ -195,9 +267,16 @@ while IFS=$'\t' read -r id file spec from to must; do
     const needle = d(process.env.FROM);
     const at = body.indexOf(needle);
     fs.writeFileSync(p, body.slice(0, at) + d(process.env.TO) + body.slice(at + needle.length));
-  ' "$abs"
+  ' "$abs" || true
 
-  out="$(cd "$ROOT" && bun test --timeout "$TIMEOUT_MS" "$spec" 2>&1)"
+  # The write is verified, not assumed. A read-only subject or a bun that dies
+  # mid-write left the file untouched, the spec ran against the original, and
+  # the result was UNRESOLVED -- or VALIDATED, once the baseline was missing too.
+  if cmp -s "$abs" "$BACKUP"; then
+    add "REFUSED   ${id}  the mutation did not reach ${file}"; refused=$((refused+1)); restore; continue
+  fi
+
+  out="$(run_spec "$spec")"
   restore
 
   # bun names a test on the line only when it FAILS; passing ones appear solely
@@ -206,16 +285,32 @@ while IFS=$'\t' read -r id file spec from to must; do
   # `(fail) describe > name [12.34ms]`, and a substring match lets a sibling with
   # a longer name stand in for the named test. Plain string comparison, so a name
   # carrying regex characters cannot change its meaning.
+  # The whole name, not a suffix of the line. An end-anchored match still let
+  # `not field A is carried` stand in for `field A is carried`, so the line has
+  # to be exactly `(fail) <name>` or end with ` > <name>`.
   named_failed="$(printf '%s\n' "$out" | MUST="$must" awk '
     BEGIN { m = ENVIRON["MUST"]; hit = 0 }
     index($0, "(fail)") > 0 {
       line = $0
       sub(/ \[[0-9.]+ *m?s\]$/, "", line)
-      if (length(line) >= length(m) && substr(line, length(line) - length(m) + 1) == m) hit = 1
+      sub(/^.*\(fail\) /, "", line)
+      if (line == m) hit = 1
+      else if (length(line) > length(m) + 3 &&
+               substr(line, length(line) - length(m) - 2) == " > " m) hit = 1
     }
     END { print hit }')"
-  passes="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ pass$/ { n += $1 } END { print n+0 }')"
-  fails="$(printf '%s\n' "$out" | awk '/^ *[0-9]+ fail$/ { n += $1 } END { print n+0 }')"
+  passes="$(tally "$out" pass)"
+  fails="$(tally "$out" fail)"
+  errors="$(tally "$out" error)"
+
+  # bun 1.4.2 reports an import-time throw as `0 pass / 1 fail / 1 error`, not
+  # as an empty tally. The earlier comment claimed otherwise and MU-20 only
+  # covered a file with no tests, so a spec the mutation broke at load time was
+  # read as "the entry protects nothing". It did not run at all.
+  if [[ "$errors" != "0" ]]; then
+    add "REFUSED   ${id}  ${spec} did not load -- ${errors} error(s), so nothing was measured"
+    refused=$((refused+1)); continue
+  fi
 
   # A survivor is required only where one can exist: a file holding a single test
   # reddens entirely when that test reddens.
@@ -263,5 +358,9 @@ echo "validated=${validated} failed=${failed} refused=${refused} unresolved=${un
 
 # Unresolved is deliberately not an error: making it one pushes authors towards
 # a mutation that reddens something rather than the one that tests the rule.
+if (( RESTORE_FAILED > 0 )); then
+  echo "mutate: at least one subject could not be restored; see the message above." >&2
+  exit 1
+fi
 if (( failed > 0 || refused > 0 )); then exit 1; fi
 exit 0

@@ -43,7 +43,7 @@
  * Requirements covered: MU-FR1 to MU-FR7, MU-NFR2, MU-NFR3.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { makeTree, dropTree } from '../lib/fixtures';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -112,7 +112,14 @@ beforeAll(() => {
   cleanSha = sha();
 });
 
-afterAll(() => dropTree(root));
+afterAll(() => {
+  // MU-26 makes a directory unwritable on purpose; if it throws before its own
+  // finally, dropTree cannot remove the tree. Put the modes back first.
+  for (const f of ['fragile/subject.sh', 'readonly.sh']) {
+    try { chmodSync(join(root, f), 0o644); } catch {}
+  }
+  dropTree(root);
+});
 
 describe('MU-1 / MU-12 a mutation that reddens its named test is validated', () => {
   test('MU-1 the named test goes red and a survivor remains', () => {
@@ -249,11 +256,6 @@ describe('MU-6 the subject goes back, whatever the outcome', () => {
     expect(left).toEqual([]);
   });
 
-  test('legacy: nothing beside the subject either', () => {
-    run(registry([entry()]));
-    const leftovers = sh(['bash', '-lc', `ls ${root} | grep -c 'subject.sh.' || true`]);
-    expect(leftovers.output.trim()).toBe('0');
-  });
 });
 
 describe('MU-13 a run that validated nothing says so', () => {
@@ -394,7 +396,9 @@ describe('MU-20 a run in which nothing executed is not a result', () => {
     writeFileSync(join(root, spec), 'export {};\n');
     const r = run(registry([entry({ spec })]));
     expect(r.output).toContain('REFUSED   FX-1');
-    expect(r.output).toContain('the run did not happen');
+    // The baseline now refuses this one step earlier and says more: the named
+    // test never ran. The zero-tally guard stays behind it as a backstop.
+    expect(r.output).toContain('did not run in');
     expect(r.code).not.toBe(0);
     expect(sha()).toBe(cleanSha);
   });
@@ -469,5 +473,238 @@ describe('MU-23 a backup that was not taken stops the mutation', () => {
     expect(r.output).toContain('could not back');
     expect(r.code).not.toBe(0);
     expect(sha()).toBe(cleanSha);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MU-24 to MU-31 — the second review of 2026-09-28. Items 1 to 5 are blocking,
+// 6, 7 and 9 are its "should fix". Each was reproduced against the runner as it
+// stood at 375b557, and the reviewer's own live-run table is the source of the
+// scenarios.
+// ---------------------------------------------------------------------------
+
+describe('MU-24 a test that is already red validates nothing', () => {
+  test('MU-24 a named test failing for its own reasons is refused', () => {
+    // Finding 1, and the deepest one: the spec was never run unmutated, so a
+    // failure that has nothing to do with the mutation was credited to it. A
+    // stack that is down, a timeout, a flake -- any of them turned every
+    // mutation, including one that edits an unused line, into VALIDATED.
+    const spec = 'spec/already-red.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+test('the policy is protected', () => { expect('broken env').toBe('ok'); });
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec, from: 'UNUSED="spare"', to: 'UNUSED="other"' })]));
+    expect(r.output).toContain('REFUSED   FX-1');
+    expect(r.output).toContain('already red before the mutation');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  });
+
+  test('MU-24 and a mustFail nobody answers to is refused as well', () => {
+    // Finding 8: a typo, a rename or a test.skip left the run UNRESOLVED and
+    // exit 0. The baseline asks whether the named test ran at all.
+    const r = run(registry([entry({ mustFail: 'the polcy is protected' })]));
+    expect(r.output).toContain('did not run in');
+    expect(r.code).not.toBe(0);
+  });
+});
+
+describe('MU-25 a mutation that never reached the file is not a measurement', () => {
+  test('MU-25 an unwritable subject is refused, not reported quiet', () => {
+    // Finding 2. The writer's exit status was ignored, so a read-only subject
+    // meant the spec ran against the original file and the run came back
+    // UNRESOLVED, exit 0 -- or VALIDATED once the baseline was missing too.
+    const ro = 'readonly.sh';
+    writeFileSync(join(root, ro), subjectBody);
+    chmodSync(join(root, ro), 0o444);
+    try {
+      const r = run(registry([entry({ file: ro })]));
+      expect(r.output).toContain('REFUSED   FX-1');
+      expect(r.output).toContain('did not reach');
+      expect(r.code).not.toBe(0);
+    } finally {
+      chmodSync(join(root, ro), 0o644);
+    }
+  });
+});
+
+describe('MU-26 a restore that failed keeps its backup', () => {
+  test('MU-26 the backup survives and the run says where it is', () => {
+    // Finding 3. `cp` then `rm -f` unconditionally: when the copy back failed
+    // -- a full disk, a read-only mount, a parent directory replaced while the
+    // spec ran -- the backup went anyway and the tracked file stayed mutated
+    // with nothing left to restore it from.
+    //
+    // Staged the way the reviewer staged it: the spec itself makes the
+    // subject's directory unwritable while it runs, which is the window
+    // between the mutation and the restore.
+    const dir = join(root, 'fragile');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'subject.sh'), subjectBody);
+    const spec = 'spec/fragile.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { chmodSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const file = join(import.meta.dir, '..', 'fragile', 'subject.sh');
+test('the policy is protected', () => {
+  const s = readFileSync(file, 'utf8');
+  // Between the mutation and the restore, which is the only window there is.
+  // The file, not its directory: a directory without write permission still
+  // allows an existing file to be overwritten.
+  chmodSync(file, 0o444);
+  expect(s).toContain('POLICY="protected"');
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const tmp = join(root, 'tmp-restore');
+    mkdirSync(tmp, { recursive: true });
+    try {
+      const r = run(registry([entry({ file: 'fragile/subject.sh', spec })]), [], { TMPDIR: tmp });
+      expect(r.code).not.toBe(0);
+      expect(r.output).toContain('the backup is kept at');
+      expect(readdirSync(tmp).length).toBeGreaterThan(0);
+    } finally {
+      chmodSync(join(dir, 'subject.sh'), 0o644);
+    }
+  });
+});
+
+describe('MU-27 the named test is matched as a whole name', () => {
+  test('MU-27 a sibling whose name ends with it does not stand in', () => {
+    // Finding 4. The previous repair anchored at the end of the LINE, which
+    // fixed the longer-sibling direction and left this one: `not field A is
+    // carried` ends with `field A is carried`.
+    const spec = 'spec/negated.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('field A is carried', () => { expect(s).toContain('FIELDS='); });
+test('not field A is carried', () => { expect(s).toContain('FIELDS="A B C"'); });
+test('an unrelated survivor', () => { expect(s).toContain('#!/bin/sh'); });
+`);
+    const r = run(registry([entry({
+      spec, from: 'FIELDS="A B C"', to: 'FIELDS="X"', mustFail: 'field A is carried'
+    })]));
+    expect(r.output).toContain('FAILED    FX-1');
+    expect(r.output).not.toContain('VALIDATED');
+  });
+});
+
+describe('MU-28 the guard covers assertions and what they read', () => {
+  test('MU-28 test infrastructure is refused whatever it is called', () => {
+    // Finding 5. The previous repair swapped the `tests/` prefix for
+    // `*.test.ts`, which let helpers, snapshots and other bun test-file shapes
+    // through -- and mutating a helper rewrites the expected values, which is
+    // the thing the guard exists to prevent.
+    mkdirSync(join(root, 'tests/lib'), { recursive: true });
+    mkdirSync(join(root, 'spec/__snapshots__'), { recursive: true });
+    const refused: Record<string, string> = {
+      'tests/lib/helper.ts': 'export const EXPECTED = "protected";\n',
+      'spec/__snapshots__/x.snap': 'exports[`a 1`] = `protected`;\n',
+      'spec/x.test.tsx': 'export {};\n',
+      'spec/y_test.ts': 'export {};\n',
+      'spec/z.spec.js': 'export {};\n',
+      'tests/mutations.json': '[]\n'
+    };
+    for (const [file, body] of Object.entries(refused)) {
+      writeFileSync(join(root, file), body);
+      const r = run(registry([entry({ file })]));
+      expect(r.output).toMatch(/names (a test file|test infrastructure)/);
+    }
+  });
+
+  test('MU-28 while a runner script under tests/ is still a subject', () => {
+    // The counterpart. Restoring a blanket `tests/` refusal would take A0-4
+    // with it: tests/run.sh is a subject in its own right, and nothing asserts
+    // against its contents.
+    writeFileSync(join(root, 'tests/run.sh'), '#!/bin/sh\nPOLICY="protected"\n');
+    const r = run(registry([entry({ file: 'tests/run.sh' })]));
+    expect(r.output).not.toMatch(/names (a test file|test infrastructure)/);
+  });
+
+  test('MU-28 and a path that climbs out of the tree is refused', () => {
+    const r = run(registry([entry({ file: 'spec/../../outside.sh' })]));
+    expect(r.output).toContain('outside the repository');
+  });
+});
+
+describe('MU-29 --gaps cannot answer quietly either', () => {
+  test('MU-29 a registry it cannot parse is an error, not a silence', () => {
+    // Finding 6. `exit 0` ran unconditionally after the bun program, so a
+    // malformed registry printed a JSON error to stderr and still reported
+    // success -- the reassuring silence this tool is against.
+    const bad = join(root, 'broken.json');
+    writeFileSync(bad, '[{"case": "A-1",\n');
+    const r = run(bad, ['--gaps']);
+    expect(r.code).not.toBe(0);
+  });
+});
+
+describe('MU-30 a spec that did not load measured nothing', () => {
+  test('MU-30 an import-time throw is refused, not called a failure', () => {
+    // Finding 7. bun 1.4.2 reports it as `0 pass / 1 fail / 1 error`, so the
+    // tally is not empty and the run came back FAILED -- saying the entry does
+    // not protect what it claims, when in truth nothing ran.
+    const spec = 'spec/throws.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+if (!s.includes('POLICY="protected"')) throw new Error('subject is not usable');
+test('the policy is protected', () => { expect(s).toContain('POLICY="protected"'); });
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec })]));
+    expect(r.output).toContain('REFUSED   FX-1');
+    expect(r.output).toContain('did not load');
+    expect(r.output).not.toContain('FAILED');
+  });
+});
+
+describe('MU-31 the spec is a path, not a filter', () => {
+  test('MU-31 a sibling file is not counted into the tally', () => {
+    // Finding 9. `bun test x.test.ts` is a substring filter over every test
+    // file under ROOT, so `x.test.tsx` was run too and its results landed in
+    // the survivor count -- and every run scanned the whole repository.
+    const body = `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', () => { expect(s).toContain('POLICY="protected"'); });
+test('an unrelated survivor', () => { expect(s).toContain('#!/bin/sh'); });
+`;
+    writeFileSync(join(root, 'spec/filter.test.ts'), body);
+    writeFileSync(join(root, 'spec/filter.test.tsx'), `
+import { test, expect } from 'bun:test';
+test('sibling one', () => { expect(1).toBe(1); });
+test('sibling two', () => { expect(1).toBe(1); });
+test('sibling three', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec: 'spec/filter.test.ts' })]));
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(r.output).toMatch(/\(1 red, 1 green\)/);
+  });
+});
+
+describe('MU-32 a registry the runner cannot read stops it', () => {
+  test('MU-32 a normal run says so and exits 2', () => {
+    // Not in the review, found while building its item 6. In bun 1.3.13 a
+    // program that calls require() runs as CJS, and an uncaught error there
+    // exits **0 with no message** -- so `bun -e ... || exit 2` never fired and
+    // a malformed registry produced an empty row set. The run then announced
+    // "registry is empty", which is a different and reassuring untruth.
+    const bad = join(root, 'broken-run.json');
+    writeFileSync(bad, '[{"case": "A-1",\n');
+    const r = run(bad);
+    expect(r.code).toBe(2);
+    expect(r.output).toContain('registry:');
+    expect(r.output).not.toContain('registry is empty');
   });
 });
