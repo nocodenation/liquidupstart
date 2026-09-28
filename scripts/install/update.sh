@@ -22,7 +22,8 @@ REPO="nocodenation/liquidupstart"
 DEST="${HOME}/.liquidupstart"
 VERSION_FILE="${DEST}/.liquidupstart-version"
 REBUILD_MARKER="${DEST}/.needs-rebuild"
-BUILT_IMAGES="opencode bun-runner liquid openclaw"
+# nar-builder belongs here too, or an upgrade leaves the stale one behind.
+BUILT_IMAGES="opencode bun-runner liquid openclaw nar-builder"
 LAUNCHER_DIR="/usr/local/bin"
 LAUNCHER="${LAUNCHER_DIR}/liquidupstart"
 

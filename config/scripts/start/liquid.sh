@@ -36,13 +36,6 @@ render_template() {
   printf '%s\n' "$content"
 }
 
-# Unconditionally, not inside the seeding branch below: that branch runs once, on
-# a first install, and every installation that predates this directory would
-# otherwise have docker create it as root on the first mount -- which the nifi
-# user in the container then cannot write.
-mkdir -p "${STATE_DIR}/api"
-chmod 777 "${STATE_DIR}/api"
-
 if [ -d "$STATE_DIR" ]; then
     echo ""
     echo "State folder already exists at $STATE_DIR"
@@ -67,4 +60,16 @@ else
 
     echo "State folder created successfully."
 fi
+
+# After the branch above, never before it. Creating this directory also creates
+# STATE_DIR, so `[ -d "$STATE_DIR" ]` was always true and a fresh install never
+# seeded anything: volumes/liquid held `api/` alone, the empty conf/ was mounted
+# over the image's, and NiFi exited 2 with `sed: can't read .../nifi.properties`
+# on a loop under `restart: unless-stopped`. Blocker 1 of the 2026-09-28 review.
+#
+# It stays unconditional otherwise: an installation that predates this directory
+# would have docker create it as root on the first mount, which the nifi user in
+# the container cannot write.
+mkdir -p "${STATE_DIR}/api"
+chmod 777 "${STATE_DIR}/api"
 
