@@ -38,8 +38,13 @@
  * Requirements covered: FR-M4, FR-M5, NFR-M1, and §2.3 of the feature document.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { sh } from '../lib/shell';
+import { repoRoot } from '../lib/paths';
 import {
   IMAGE_NEW,
+  activeMemoryGates,
   IMAGE_OLD,
   configWriter,
   dropWorkRoot,
@@ -61,7 +66,7 @@ afterAll(() => dropWorkRoot(workRoot));
 
 // This installation has an embedding credential; M1-6 covers the one that does
 // not, which .env.example:85 explicitly allows.
-const M1_ENV: Env = { MEMORY_EMBEDDINGS: '1' };
+const M1_ENV: Env = { MEMORY_OPENAI_KEY: '1' };
 
 function writeConfig(env: Env, seed: unknown = {}): any {
   return runWriter({ workRoot, program, env: { ...M1_ENV, ...env }, seed });
@@ -117,7 +122,7 @@ describe('M1-1 the 2026.9 shape switches the memory on', () => {
 
 describe('M1-6 an installation with no embedding credential', () => {
   let cfg: any;
-  beforeAll(() => { cfg = writeConfig({ OC_SCHEMA_NEW: '1', MEMORY_EMBEDDINGS: '0' }); });
+  beforeAll(() => { cfg = writeConfig({ OC_SCHEMA_NEW: '1', MEMORY_OPENAI_KEY: '0' }); });
 
   test('M1-6 the memory is not switched on', () => {
     // memory.search defaults to the openai provider, so switching it on without
@@ -156,11 +161,21 @@ describe('M1-2 the 2026.7 shape carries neither key', () => {
     });
     expect(cfg.memory?.search).toBeUndefined();
     expect(cfg.plugins?.entries?.['active-memory']).toBeUndefined();
-    // And the control that gives the line above its meaning: the 2026.9 shape
-    // really is refused by 2026.7.1, so "it validates" is a statement about the
-    // version and not about a validator that accepts anything.
-    const newShape = writeConfig({ OC_SCHEMA_NEW: '1' });
-    expect(validate({ workRoot, config: newShape, image: IMAGE_OLD }).code).not.toBe(0);
+
+    // The control, and it has to be specific. Validating the whole 2026.9
+    // shape on 2026.7.1 fails over `deviceAutoApprove` alone, so it said
+    // nothing about the memory keys at all -- point 5 of the 2026-09-28
+    // review. This takes the 2026.7 output, which that version accepts, and
+    // adds only the two keys.
+    expect(validate({ workRoot, config: cfg, image: IMAGE_OLD }).code).toBe(0);
+    const withMemory = JSON.parse(JSON.stringify(cfg));
+    withMemory.memory = { search: { enabled: true, sources: ['memory'] } };
+    withMemory.plugins = withMemory.plugins || {};
+    withMemory.plugins.entries = withMemory.plugins.entries || {};
+    withMemory.plugins.entries['active-memory'] = { enabled: true };
+    const refused = validate({ workRoot, config: withMemory, image: IMAGE_OLD });
+    expect(refused.code).not.toBe(0);
+    expect(refused.output).toMatch(/memory|active-memory/i);
   });
 });
 
@@ -182,12 +197,18 @@ describe('M1-5 the writer inherits an installation rather than a blank file', ()
     // assigning a fresh object discarded every one of them, silently, on the
     // next start. Measured against the unfixed writer: {enabled, mode,
     // timeoutMs} came back as {enabled} alone.
+    // Under `config`, which is where the manifest puts plugin settings. The
+    // first version of this case seeded them on the entry itself, a shape
+    // 2026.9.1 rejects with `Unrecognized keys: "mode", "timeoutMs"` -- so it
+    // proved the merge on a config that cannot exist, and never validated.
+    // Point 5 of the 2026-09-28 review.
     const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
-      plugins: { entries: { 'active-memory': { enabled: true, mode: 'always', timeoutMs: 9000 } } }
+      plugins: { entries: { 'active-memory': { enabled: true, config: { mode: 'always', timeoutMs: 9000 } } } }
     });
     expect(cfg.plugins.entries['active-memory'].enabled).toBe(true);
-    expect(cfg.plugins.entries['active-memory'].mode).toBe('always');
-    expect(cfg.plugins.entries['active-memory'].timeoutMs).toBe(9000);
+    expect(cfg.plugins.entries['active-memory'].config.mode).toBe('always');
+    expect(cfg.plugins.entries['active-memory'].config.timeoutMs).toBe(9000);
+    expect(validate({ workRoot, config: cfg, image: IMAGE_NEW }).code).toBe(0);
   });
 
   test('M1-5 and a persisted "sessions" is taken back out', () => {
@@ -209,5 +230,141 @@ describe('M1-5 the writer inherits an installation rather than a blank file', ()
     });
     expect(cfg.memory.search.maxResults).toBe(7);
     expect(cfg.memory.search.sources).toEqual(['memory']);
+  });
+});
+
+describe('M1-7 enabled is not the same as acting', () => {
+  test('M1-7 the plugin is active for the default agent', () => {
+    // The plugin opens on `isEnabledForAgent(config, agentId) ||
+    // (config.enabled && shouldRememberAcrossConversations(...))`. NFR-M1 keeps
+    // the second shut, and config.agents defaults to an empty list -- which
+    // names nobody. So `enabled: true` was written and nothing was ever
+    // gathered: the shape §2.1 calls "it looks the same whether it ran or not".
+    // Measured with the image's own functions, not by reading ours.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' });
+    const gates = activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW });
+    expect(gates.pluginEnabled).toBe(true);
+    expect(gates.namesAgent).toBe(true);
+    expect(gates.active).toBe(true);
+  });
+
+  test('M1-7 and it still does not recall transcripts to get there', () => {
+    // The counterpart. Opening the first gate must not be done by opening the
+    // second, which is what NFR-M1 forbids.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' });
+    expect(activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW }).remembers).toBe(false);
+  });
+
+  test('M1-7 and an agent list the operator set is left alone', () => {
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      plugins: { entries: { 'active-memory': { enabled: true, config: { agents: ['main', 'second'] } } } }
+    });
+    expect(cfg.plugins.entries['active-memory'].config.agents).toEqual(['main', 'second']);
+  });
+});
+
+describe('M1-8 a per-agent override does not bring transcripts back', () => {
+  test('M1-8 the guard reaches agents.list too', () => {
+    // OpenClaw resolves these as agents.list[i].memory.search.X ?? memory.search.X,
+    // so a per-agent block walked straight past a guard that only wrote the
+    // defaults level. Blocker 2 of 2026-09-28.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      agents: { list: [{ id: 'main', memory: { search: {
+        rememberAcrossConversations: true, sources: ['memory', 'sessions']
+      } } }] }
+    });
+    const a = cfg.agents.list[0].memory.search;
+    expect(a.rememberAcrossConversations).toBe(false);
+    expect(a.sources).toEqual(['memory']);
+    expect(activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW }).remembers).toBe(false);
+  });
+
+  test('M1-8 and an unrelated per-agent setting survives', () => {
+    // The counterpart: forcing two keys must not mean rewriting the subtree.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      agents: { list: [{ id: 'main', memory: { search: { sources: ['memory'], maxResults: 9 } } }] }
+    });
+    expect(cfg.agents.list[0].memory.search.maxResults).toBe(9);
+  });
+});
+
+describe('M1-9 a provider this stack does not hold credentials for is not ours to switch', () => {
+  test('M1-9 ollama on a key-less install keeps memory search as it was', () => {
+    // The gate knew only OPENAI_API_KEY and Copilot, and wrote `enabled` on
+    // every start -- so an operator using ollama had their memory switched off
+    // each time, with a log line claiming there was no credential. Before this
+    // PR the script never touched the key at all. Blocker 3 of 2026-09-28.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', MEMORY_OPENAI_KEY: '0' }, {
+      memory: { search: { provider: 'ollama', enabled: true } }
+    });
+    expect(cfg.memory.search.provider).toBe('ollama');
+    expect(cfg.memory.search.enabled).toBe(true);
+  });
+
+  test('M1-9 while openai with no key is still switched off', () => {
+    // The counterpart: the gate still does its job where it knows the answer.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', MEMORY_OPENAI_KEY: '0' });
+    expect(cfg.memory.search.enabled).toBe(false);
+  });
+});
+
+describe('M1-10 a provider left by a harness that is off does not count as a credential', () => {
+  test('M1-10 a leftover github-copilot is removed and the gate falls back', () => {
+    // The Copilot branch writes the provider and nothing removed it when
+    // Copilot was switched off, so the gate enabled memory on a provider with
+    // no auth. Should-fix 4 of 2026-09-28.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', ENABLE_COPILOT: '0', MEMORY_OPENAI_KEY: '0' }, {
+      memory: { search: { provider: 'github-copilot', enabled: true } }
+    });
+    expect(cfg.memory.search.provider).toBeUndefined();
+    expect(cfg.memory.search.enabled).toBe(false);
+  });
+
+  test('M1-10 and with Copilot on it is kept and used', () => {
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', ENABLE_COPILOT: '1', MEMORY_OPENAI_KEY: '0' });
+    expect(cfg.memory.search.provider).toBe('github-copilot');
+    expect(cfg.memory.search.enabled).toBe(true);
+  });
+});
+
+describe('M1-11 the shell half of the gate is executed, not read', () => {
+  test('M1-11 the key in .env becomes the flag, and its absence does not', () => {
+    // Injecting MEMORY_OPENAI_KEY into the writer leaves the computation that
+    // produces it untested: deleting it, or the `-e` line that hands it over,
+    // left every case green. Point 5 of the 2026-09-28 review. The lines are
+    // lifted out of the script and run, so this fails if they go.
+    const script = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
+    const compute = script
+      .split('\n')
+      .filter((l) => /^MEMORY_OPENAI_KEY=|^\[\[ -n "\$\(get_env OPENAI_API_KEY\)" \]\]/.test(l.trim()))
+      .join('\n');
+    expect(compute).toContain('MEMORY_OPENAI_KEY=0');
+    expect(compute).toContain('get_env OPENAI_API_KEY');
+
+    const run = (envBody: string) => {
+      const dir = mkdtempSync(join(workRoot, 'shell-'));
+      writeFileSync(join(dir, '.env'), envBody);
+      const harness = [
+        'set -uo pipefail',
+        // No quote-stripping in the stub: what is under test is the
+        // computation, and the fixture writes bare values.
+        `get_env() { grep -E "^$1=" ${JSON.stringify(join(dir, '.env'))} 2>/dev/null | head -n1 | cut -d= -f2- || true; }`,
+        compute,
+        'printf %s "$MEMORY_OPENAI_KEY"'
+      ].join('\n');
+      return sh(['bash', '-c', harness]).stdout.trim();
+    };
+
+    expect(run('OPENAI_API_KEY=sk-test-value\n')).toBe('1');
+    expect(run('OPENAI_API_KEY=\n')).toBe('0');
+    expect(run('SOMETHING_ELSE=1\n')).toBe('0');
+  });
+
+  test('M1-11 and the writer is actually handed it', () => {
+    // A contract check, deliberately: the alternative is running the whole
+    // start. It fails if the `-e` line is removed, which is the case point 5
+    // names.
+    const script = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
+    expect(script).toMatch(/-e MEMORY_OPENAI_KEY="\$\{MEMORY_OPENAI_KEY\}"/);
   });
 });

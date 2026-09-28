@@ -188,10 +188,64 @@ So it is deferred with a condition rather than left on a list:
 > never reached under real use, they are the thing to tune, and they are readable rather than
 > guessed: `minRecallCount`, `minUniqueQueries`, `minScore`, `maxAgeDays`.
 
-The one change this installation carries in the meantime is a hand edit: `active-memory` enabled and
-a `memory.search` block, neither written by `config/scripts/start/openclaw.sh`. **The next start
-removes both**, and since §2.2 shows the plugin was not the blocker, that is a decision rather than a
-loss — either put it in the start script for when use begins, or let the start take it back.
+**Superseded on 2026-09-20; kept because it was quoted elsewhere.** This paragraph said the hand
+edit — `active-memory` enabled and a `memory.search` block — was written by nobody, and that the
+next start would remove both. The start script owns them now, and §2.4 below says what it writes and
+why. Anyone meeting the old sentence should read §2.4 instead.
+
+### 2.4 Built 2026-09-20, and one thing it owes
+
+The hand edit is now written by `config/scripts/start/openclaw.sh`: `active-memory` and
+`memory.search` inside the 2026.9 branch, with the entry **merged** rather than replaced — the plugin
+manifest declares 29 keys with `additionalProperties: false`, and assigning a fresh object discarded
+every one an operator had tuned. On the 2026.7 shape both are removed by the retired-key sweep, which
+says what it removed, because that version knows neither key and an unknown key there is a failed
+start rather than a warning.
+
+**It switches the memory on only where an embedding backend has a credential** — `OPENAI_API_KEY`
+set, or Copilot on, which writes its own provider. `.env.example:85` promises that an installation
+with no keys at all is fine, and `memory.search` defaults to the `openai` provider, so switching it
+on regardless buys a failed embedding call per turn for a feature the operator never asked for. The
+answer is computed in the shell, where the keys are read, and handed to the writer as
+`MEMORY_EMBEDDINGS`; it is deliberately not inferred from `MODEL_WILDCARDS`, which also carries
+`openai/*` for `ENABLE_OPENAI_CODEX=1` and would answer yes without a key. Where there is no
+credential the start says so and the guards below are still written.
+
+Two guards, written on every start rather than filled in when missing — a value that is only
+defaulted is not an invariant, and a `"sessions"` that reached the file once survived every start
+after it:
+
+- **`sources: ["memory"]`**, enforced, and the previous value logged when it differed. `"sessions"`
+  would index transcript history, which NFR-M1 forbids until the redaction of NFR-M4 exists.
+- **`rememberAcrossConversations: false`**, explicitly. The key is transcript recall across private
+  conversations — the 2026.9.1 schema calls it *protected transcript recall* and says an explicit
+  true or false always wins. It was written `true` from 2026-09-20 until 2026-09-23, which switched
+  on the very thing the line above exists to prevent. Explicit rather than omitted, because the
+  schema default is on whenever `session.dmScope` is unset or `"main"` — a setting this block does
+  not own, so an omission would make the guarantee depend on a value somebody else can change.
+
+And no embedding provider is written: it defaults to `openai`, and the Copilot branch above owns the
+provider when that harness is on; writing one here would win or lose silently depending on the order
+of two blocks.
+
+Cases M1-1 to M1-6 in `tests/component/m-m1.memory-config.test.ts`, run against the unchanged script
+first: **four of the five original cases were red**, and the three added for the 2026-09-22 review
+are red against the writer as it stood before it.
+
+**What it owes: a mutation entry per case.** The rule adopted on 2026-09-19 is that a case may not be
+recorded as passing without a registered mutation, and M-MU2 backfills per milestone as each is
+touched — this is the first milestone touched since. It cannot be honoured yet, and the reason is
+structural rather than an oversight:
+
+> **`tests/mutations.json` lives on one branch.** It was created on
+> `feature/test-mutation-control`, cut from #9; this work sits on `feature/memory-midterm`, cut from
+> `main`. Neither branch can see the other's file. The registry is a single file that every branch
+> wants to append to, which makes it a merge point for work that is otherwise independent.
+
+So M1's entries are owed, and the decision that resolves it belongs to the mutation milestone rather
+than to this one: either the registry lands on `main` early and every branch appends, or it is split
+per milestone so that branches do not contend for one file. Recorded here so the debt is visible from
+the side that incurred it.
 
 ## 3. The candidates
 
@@ -418,57 +472,3 @@ makes the difference legible instead of leaving it to whoever wrote it.
 [MemPalace](https://github.com/MemPalace/mempalace),
 [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/). Plugin states and the OpenCode
 configuration were read from the running stack, not from documentation.
-
-### 2.4 Built 2026-09-20, and one thing it owes
-
-The hand edit is now written by `config/scripts/start/openclaw.sh`: `active-memory` and
-`memory.search` inside the 2026.9 branch, with the entry **merged** rather than replaced — the plugin
-manifest declares 29 keys with `additionalProperties: false`, and assigning a fresh object discarded
-every one an operator had tuned. On the 2026.7 shape both are removed by the retired-key sweep, which
-says what it removed, because that version knows neither key and an unknown key there is a failed
-start rather than a warning.
-
-**It switches the memory on only where an embedding backend has a credential** — `OPENAI_API_KEY`
-set, or Copilot on, which writes its own provider. `.env.example:85` promises that an installation
-with no keys at all is fine, and `memory.search` defaults to the `openai` provider, so switching it
-on regardless buys a failed embedding call per turn for a feature the operator never asked for. The
-answer is computed in the shell, where the keys are read, and handed to the writer as
-`MEMORY_EMBEDDINGS`; it is deliberately not inferred from `MODEL_WILDCARDS`, which also carries
-`openai/*` for `ENABLE_OPENAI_CODEX=1` and would answer yes without a key. Where there is no
-credential the start says so and the guards below are still written.
-
-Two guards, written on every start rather than filled in when missing — a value that is only
-defaulted is not an invariant, and a `"sessions"` that reached the file once survived every start
-after it:
-
-- **`sources: ["memory"]`**, enforced, and the previous value logged when it differed. `"sessions"`
-  would index transcript history, which NFR-M1 forbids until the redaction of NFR-M4 exists.
-- **`rememberAcrossConversations: false`**, explicitly. The key is transcript recall across private
-  conversations — the 2026.9.1 schema calls it *protected transcript recall* and says an explicit
-  true or false always wins. It was written `true` from 2026-09-20 until 2026-09-23, which switched
-  on the very thing the line above exists to prevent. Explicit rather than omitted, because the
-  schema default is on whenever `session.dmScope` is unset or `"main"` — a setting this block does
-  not own, so an omission would make the guarantee depend on a value somebody else can change.
-
-And no embedding provider is written: it defaults to `openai`, and the Copilot branch above owns the
-provider when that harness is on; writing one here would win or lose silently depending on the order
-of two blocks.
-
-Cases M1-1 to M1-6 in `tests/component/m-m1.memory-config.test.ts`, run against the unchanged script
-first: **four of the five original cases were red**, and the three added for the 2026-09-22 review
-are red against the writer as it stood before it.
-
-**What it owes: a mutation entry per case.** The rule adopted on 2026-09-19 is that a case may not be
-recorded as passing without a registered mutation, and M-MU2 backfills per milestone as each is
-touched — this is the first milestone touched since. It cannot be honoured yet, and the reason is
-structural rather than an oversight:
-
-> **`tests/mutations.json` lives on one branch.** It was created on
-> `feature/test-mutation-control`, cut from #9; this work sits on `feature/memory-midterm`, cut from
-> `main`. Neither branch can see the other's file. The registry is a single file that every branch
-> wants to append to, which makes it a merge point for work that is otherwise independent.
-
-So M1's entries are owed, and the decision that resolves it belongs to the mutation milestone rather
-than to this one: either the registry lands on `main` early and every branch appends, or it is split
-per milestone so that branches do not contend for one file. Recorded here so the debt is visible from
-the side that incurred it.

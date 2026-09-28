@@ -281,15 +281,14 @@ for _tp in \
   fi
 done
 
-# Does an embedding backend have a credential? memory.search defaults to the
-# openai provider, so without one every turn pays for a failed embedding call --
+# Is there an OpenAI key? memory.search defaults to the openai provider, so
+# without one every turn pays for a failed embedding call --
 # on an installation that .env.example:85 explicitly blesses: "Don't have any
 # keys? That's fine". Computed here, where the keys are read, rather than
 # inferred in the writer from MODEL_WILDCARDS, which also carries openai/* for
 # ENABLE_CODEX=1 and would answer yes without a key. F4 of the 2026-09-22 review.
-MEMORY_EMBEDDINGS=0
-[[ -n "$(get_env OPENAI_API_KEY)" ]] && MEMORY_EMBEDDINGS=1
-[[ "${ENABLE_COPILOT}" == "1" ]] && MEMORY_EMBEDDINGS=1
+MEMORY_OPENAI_KEY=0
+[[ -n "$(get_env OPENAI_API_KEY)" ]] && MEMORY_OPENAI_KEY=1
 
 # The Claude CLI serves models under two provider ids: anthropic/* for the API
 # route and claude-cli/* for the CLI itself. 2026.7.1 had no model policy, so
@@ -424,7 +423,7 @@ else
     -e LOCAL_LLM_MODELS_JSON="${LOCAL_LLM_MODELS_JSON}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
-    -e MEMORY_EMBEDDINGS="${MEMORY_EMBEDDINGS}" \
+    -e MEMORY_OPENAI_KEY="${MEMORY_OPENAI_KEY}" \
     -e OPENROUTER_MODELS_JSON="${OPENROUTER_MODELS_JSON}" \
     --entrypoint node \
     "${OPENCLAW_IMAGE}" \
@@ -650,15 +649,59 @@ else
         // Switched on only where an embedding backend has a credential. The
         // guards below are written either way: they are what keeps transcripts
         // out, and they have to be in place for whenever it is switched on.
-        const embeddings = process.env.MEMORY_EMBEDDINGS === "1";
+        // Which backend will do the embedding decides whether this gate has
+        // anything to say. It knows about openai and github-copilot; anything
+        // else -- ollama, local, gemini, lmstudio, all in the schema -- is the
+        // operator choice, and writing `enabled` over it switched their memory
+        // off on every start while claiming there was no credential. Blocker 3
+        // of 2026-09-28. And a github-copilot left behind by a harness that is
+        // now off has no auth either, which is blocker 4.
+        const searchNow = (c.memory && c.memory.search) || {};
+        const provider = typeof searchNow.provider === "string" ? searchNow.provider : "";
+        let embeddings = null;
+        if (provider === "" || provider === "openai") {
+          embeddings = process.env.MEMORY_OPENAI_KEY === "1";
+        } else if (provider === "github-copilot") {
+          embeddings = enableCopilot;
+          if (!enableCopilot) {
+            delete searchNow.provider;
+            console.log("openclaw.json: removed a github-copilot embedding provider left by a harness that is now off");
+            embeddings = process.env.MEMORY_OPENAI_KEY === "1";
+          }
+        }
+        // The id the harness uses when nothing names one; the plugin calls it
+        // DEFAULT_AGENT_ID in its own types.
+        const DEFAULT_AGENT = "main";
         const am = c.plugins.entries["active-memory"] || {};
-        am.enabled = embeddings;
+        if (embeddings !== null) am.enabled = embeddings;
+        else if (typeof am.enabled !== "boolean") am.enabled = true;
+        // The plugin acts before a reply only when one of two gates is open:
+        // its config.agents names the agent, or rememberAcrossConversations is
+        // on for it. NFR-M1 keeps the second shut until the redaction of NFR-M4
+        // exists -- so without this the entry said enabled:true and the plugin
+        // did nothing at all, which is the shape section 2.1 warns about: it
+        // looks the same whether it ran or not. config.agents defaults to an
+        // empty list, and an empty list names nobody. Blocker 1 of 2026-09-28.
+        am.config = am.config || {};
+        if (!Array.isArray(am.config.agents) || am.config.agents.length === 0) {
+          am.config.agents = [DEFAULT_AGENT];
+        }
         c.plugins.entries["active-memory"] = am;
+        // Like the codex and xai blocks: with an operator allowlist in place,
+        // a plugin that is not on it is not loaded however enabled it says it
+        // is. Onboarding writes no allowlist, so most installs never see this.
+        if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("active-memory")) {
+          c.plugins.allow.push("active-memory");
+        }
         c.memory = c.memory || {};
         c.memory.search = c.memory.search || {};
-        c.memory.search.enabled = embeddings;
-        if (!embeddings) {
-          console.log("openclaw.json: mid-term memory stays off -- no embedding credential (OPENAI_API_KEY unset and Copilot off)");
+        if (embeddings !== null) {
+          c.memory.search.enabled = embeddings;
+          if (!embeddings) {
+            console.log("openclaw.json: mid-term memory stays off -- no embedding credential (OPENAI_API_KEY unset and Copilot off)");
+          }
+        } else {
+          console.log("openclaw.json: memory.search.enabled left as it is -- the embedding provider is " + provider + ", which this stack does not hold credentials for");
         }
         // Written every start, not filled in when missing. The comment above
         // states an invariant -- transcripts stay out until NFR-M4 redaction
@@ -688,6 +731,24 @@ else
         // value somebody else can change. F1 of 2026-09-22, and it had been
         // written `true` since 2026-09-20.
         c.memory.search.rememberAcrossConversations = false;
+
+        // And the same two keys wherever an agent can override them. OpenClaw
+        // resolves them as agents.list[i].memory.search.X ?? memory.search.X,
+        // so a per-agent block brought transcripts straight back past a guard
+        // that only ever wrote the defaults level. Blocker 2 of 2026-09-28.
+        const agentList = (c.agents && Array.isArray(c.agents.list)) ? c.agents.list : [];
+        for (const a of agentList) {
+          const as = a && a.memory && a.memory.search;
+          if (!as) continue;
+          if (as.rememberAcrossConversations === true) {
+            console.log("openclaw.json: agent " + (a.id || "?") + " asked for transcript recall; NFR-M1 forbids it until redaction exists");
+          }
+          as.rememberAcrossConversations = false;
+          if (Array.isArray(as.sources) && as.sources.join(",") !== wanted.join(",")) {
+            console.log("openclaw.json: agent " + (a.id || "?") + " memory.search.sources was " + JSON.stringify(as.sources) + "; NFR-M1 allows only " + JSON.stringify(wanted));
+            as.sources = wanted.slice();
+          }
+        }
       }
 
       if (enableCodex) {

@@ -123,3 +123,47 @@ export function validate(o: { workRoot: string; config: unknown; image: string }
     '--entrypoint', 'openclaw', o.image, 'config', 'validate'
   ]);
 }
+
+/**
+ * The two gates the active-memory plugin actually consults before a reply,
+ * evaluated by the image's own code rather than by reading ours.
+ *
+ * `index.ts` opens on `isEnabledForAgent(config, agentId) || (config.enabled &&
+ * shouldRememberAcrossConversations(liveConfig, agentId))`. Asserting
+ * `entries["active-memory"].enabled === true` says nothing about either: on
+ * 2026-09-28 that assertion was green while both gates were shut and the plugin
+ * did nothing at all.
+ */
+export function activeMemoryGates(o: {
+  workRoot: string;
+  config: unknown;
+  agentId?: string;
+  image?: string;
+}): { pluginEnabled: boolean; namesAgent: boolean; remembers: boolean; active: boolean } {
+  const dir = mkdtempSync(join(o.workRoot, 'gates-'));
+  writeFileSync(join(dir, 'config.json'), JSON.stringify(o.config));
+  const agent = o.agentId ?? 'main';
+  writeFileSync(
+    join(dir, 'gates.mjs'),
+    `import { readFileSync } from "node:fs";
+const cfg = JSON.parse(readFileSync("/probe/config.json", "utf8"));
+const m = await import("/app/dist/extensions/active-memory/session-policy.js");
+const entry = cfg?.plugins?.entries?.["active-memory"] ?? {};
+const agents = Array.isArray(entry?.config?.agents) ? entry.config.agents : [];
+const pluginEnabled = m.isActiveMemoryPluginEnabled(cfg);
+const namesAgent = Boolean(entry.enabled) && agents.includes(${JSON.stringify(agent)});
+const remembers = m.shouldRememberAcrossConversations(cfg, ${JSON.stringify(agent)});
+console.log(JSON.stringify({
+  pluginEnabled, namesAgent, remembers,
+  active: namesAgent || (Boolean(entry.enabled) && remembers)
+}));
+`
+  );
+  const r = sh([
+    'docker', 'run', '--rm', '--user', '0:0',
+    '-v', `${dir}:/probe`,
+    '--entrypoint', 'node', o.image ?? IMAGE_NEW, '/probe/gates.mjs'
+  ]);
+  if (r.code !== 0) throw new Error(`gate probe failed: ${r.output}`);
+  return JSON.parse(r.stdout.trim().split('\n').pop()!);
+}
