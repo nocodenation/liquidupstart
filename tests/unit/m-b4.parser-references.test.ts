@@ -55,13 +55,21 @@ test('B4-1 nar-build produced the bundle the case reads', () => {
 });
 
 test('B4-1 the parser reports exactly the org/apache/nifi classes the source uses', () => {
-  expect(referenceSet(classFile)).toEqual(EXPECTED);
+  // Descriptor-only types are part of that set since 2026-09-28; see below.
+  expect(referenceSet(classFile)).toEqual(new Set([...EXPECTED, ...DESCRIPTOR_ONLY]));
 });
 
-test('B4-1 a parameter type is in the file but is not a class reference', () => {
+test('B4-1 a type named only in a signature is reported too', () => {
+  // **Inverted on 2026-09-28, and the inversion is the finding.** This asserted
+  // that a parameter type reachable only through a descriptor is *not*
+  // reported -- which made the parser blind to exactly the failure FR23 and
+  // FR36 measured: `NoClassDefFoundError ... at Class.getDeclaredMethods0`,
+  // which is descriptor resolution when NiFi reflects over the processor. A
+  // processor whose only mention of a missing class is a method signature
+  // passed the check and then broke on the canvas.
   const bytes = readFileSync(classFile).toString('latin1');
   for (const name of DESCRIPTOR_ONLY) {
     expect(bytes).toContain(name);
-    expect(referenceSet(classFile)).not.toContain(name);
+    expect(referenceSet(classFile)).toContain(name);
   }
 });

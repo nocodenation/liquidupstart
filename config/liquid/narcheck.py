@@ -29,6 +29,74 @@ def _descriptor_to_name(raw):
     return name
 
 
+def _types_in_descriptor(raw):
+    """Every object type named in a descriptor or a generic signature."""
+    found = set()
+    i = 0
+    while True:
+        j = raw.find("L", i)
+        if j == -1:
+            break
+        k = raw.find(";", j)
+        if k == -1:
+            break
+        name = raw[j + 1:k]
+        # A generic signature carries type arguments inside <>; the outer name
+        # ends at the first < if there is one before the ;.
+        lt = name.find("<")
+        if lt != -1:
+            name = name[:lt]
+        if name and "/" in name:
+            found.add(name)
+        i = j + 1
+    return found
+
+
+def _descriptor_indices(data, pos, utf8, where):
+    """Walk past the constant pool and collect every descriptor and Signature.
+
+    Only CONSTANT_Class entries were read before, so a type that appears solely
+    in a method or field signature was invisible -- and that is exactly the
+    failure FR23 and FR36 measured: NoClassDefFoundError at
+    Class.getDeclaredMethods0, which is descriptor resolution when NiFi reflects
+    over the processor. Blocker 5 of the 2026-09-28 review. String literals stay
+    out, which is why this walks the structure rather than scanning every UTF-8
+    constant."""
+    out = set()
+    try:
+        pos += 6                                   # access_flags, this_class, super_class
+        ifaces = struct.unpack_from(">H", data, pos)[0]
+        pos += 2 + 2 * ifaces
+
+        def attributes(pos):
+            n = struct.unpack_from(">H", data, pos)[0]
+            pos += 2
+            for _ in range(n):
+                name_i = struct.unpack_from(">H", data, pos)[0]
+                length = struct.unpack_from(">I", data, pos + 2)[0]
+                pos += 6
+                if utf8.get(name_i) == "Signature" and length == 2:
+                    sig_i = struct.unpack_from(">H", data, pos)[0]
+                    if sig_i in utf8:
+                        out.update(_types_in_descriptor(utf8[sig_i]))
+                pos += length
+            return pos
+
+        for _ in range(2):                         # fields, then methods
+            n = struct.unpack_from(">H", data, pos)[0]
+            pos += 2
+            for _ in range(n):
+                desc_i = struct.unpack_from(">H", data, pos + 4)[0]
+                pos += 6
+                if desc_i in utf8:
+                    out.update(_types_in_descriptor(utf8[desc_i]))
+                pos = attributes(pos)
+        attributes(pos)                            # class-level attributes
+    except (struct.error, IndexError) as exc:
+        raise Unreadable("%s: the class body could not be parsed (%s)" % (where, exc))
+    return out
+
+
 def class_references(data, where):
     if len(data) < 10:
         raise Unreadable("%s: %d bytes is too short to be a class file" % (where, len(data)))
@@ -75,6 +143,9 @@ def class_references(data, where):
         name = _descriptor_to_name(utf8[i])
         if name.startswith(NIFI_PREFIX):
             found.add(name)
+    for name in _descriptor_indices(data, pos, utf8, where):
+        if name.startswith(NIFI_PREFIX):
+            found.add(name)
     return found
 
 
@@ -116,6 +187,67 @@ def bundle_classes(path):
             carried[name[:-6]] = (_read(inner, name, "%s!%s" % (where, name)),
                                   "%s!%s" % (where, name))
     return carried
+
+
+def nar_parent(path):
+    """The NAR this one declares as its parent, as (group, id, version) or None.
+
+    A NAR inherits its parent's classes at runtime -- that is what the chain is
+    for -- so a reference the parent provides resolves in Liquid and must
+    resolve here. Without this, narcheck refused 11 of the 118 NARs the stock
+    image ships, including nifi-standard-nar. A false refusal is what the docs
+    themselves call worse than no check. Blocker 3 of the 2026-09-28 review."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+        zf = _open_zip(data, os.path.basename(path))
+        raw = zf.read("META-INF/MANIFEST.MF").decode("utf-8", "replace")
+    except (KeyError, zipfile.BadZipFile, OSError, Unreadable):
+        return None
+    # Manifest continuation lines begin with a single space.
+    unfolded = raw.replace("\r\n", "\n").replace("\n ", "")
+    fields = {}
+    for line in unfolded.split("\n"):
+        if ":" in line:
+            k, v = line.split(":", 1)
+            fields[k.strip().lower()] = v.strip()
+    gid = fields.get("nar-dependency-group")
+    aid = fields.get("nar-dependency-id")
+    ver = fields.get("nar-dependency-version")
+    if not aid:
+        return None
+    return (gid or "", aid, ver or "")
+
+
+def parent_chain_classes(path, lib_dir, seen=None):
+    """Every class the declared parent chain carries, by name."""
+    if seen is None:
+        seen = set()
+    names = set()
+    parent = nar_parent(path)
+    if not parent:
+        return names
+    _, aid, ver = parent
+    candidates = []
+    if ver:
+        candidates.append(os.path.join(lib_dir, "%s-%s.nar" % (aid, ver)))
+    if os.path.isdir(lib_dir):
+        candidates.extend(
+            os.path.join(lib_dir, n) for n in sorted(os.listdir(lib_dir))
+            if n.startswith(aid + "-") and n.endswith(".nar")
+        )
+    for cand in candidates:
+        real = os.path.realpath(cand)
+        if real in seen or not os.path.isfile(real):
+            continue
+        seen.add(real)
+        try:
+            names |= set(bundle_classes(real))
+        except (Unreadable, OSError):
+            continue
+        names |= parent_chain_classes(real, lib_dir, seen)
+        break
+    return names
 
 
 def zf_names(zf):
@@ -163,15 +295,15 @@ def lib_index(lib_dir):
 def check(nar, lib_dir):
     """Returns a list of refusal lines. Empty means the bundle may be copied."""
     resolvable, judged = lib_index(lib_dir)
-    return check_against(nar, resolvable, judged, lib_dir)
+    return check_against(nar, resolvable, judged, lib_dir, parent_chain_classes(nar, lib_dir))
 
 
-def check_against(nar, lib_resolvable, judged, provider):
+def check_against(nar, lib_resolvable, judged, provider, parent_classes=frozenset()):
     # `provider` and not `where`: the loop below unpacks a `where` of its own out
     # of carried[owner], and a parameter by that name is silently overwritten --
     # which put the class file's path into the refusal where the library belongs.
     carried = bundle_classes(nar)
-    resolvable = set(carried) | lib_resolvable
+    resolvable = set(carried) | lib_resolvable | parent_classes
     unresolved = []
     for owner in sorted(carried):
         data, where = carried[owner]
