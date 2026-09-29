@@ -73,3 +73,14 @@ fi
 mkdir -p "${STATE_DIR}/api"
 chmod 777 "${STATE_DIR}/api"
 
+# The drop directory and the quarantine beside it, made here for the same
+# reason. On Linux rootless Docker the bind mount is owned by container root
+# while Liquid runs as nifi (uid 1000), so the entrypoint could not create
+# `refused/` itself: `mkdir: cannot create directory ... Permission denied`.
+# A refused bundle then stayed in the drop directory, where the auto-loader
+# picks it up within seconds -- while the summary said it had been moved out.
+# Blocker 4 of the 2026-09-28 review.
+DROP_DIR="${PROJECT_DIR}/volumes/nar_extensions"
+mkdir -p "${DROP_DIR}/refused"
+chmod 777 "$DROP_DIR" "${DROP_DIR}/refused"
+

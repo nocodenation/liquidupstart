@@ -21,6 +21,7 @@ if [ -d "$DROP_DIR" ]; then
         echo "Copying NARs to lib directory..."
 
         FAILED=0
+        STUCK=0
         for NAR in "$DROP_DIR"/*.nar; do
             if ! REFUSAL="$(python3 "$NAR_CHECK" check "$NAR" "$LIB_DIR" 2>&1)"; then
                 FAILED=$((FAILED + 1))
@@ -37,6 +38,7 @@ if [ -d "$DROP_DIR" ]; then
                     echo "  Moved to ${REFUSED_DIR}/: nothing here deletes it, and while it" >&2
                     echo "  sat in ${DROP_DIR} the auto-loader would have loaded it anyway." >&2
                 else
+                    STUCK=$((STUCK + 1))
                     echo "  WARNING: it could not be moved out of ${DROP_DIR}, where the" >&2
                     echo "  auto-loader will pick it up within seconds. Remove it by hand." >&2
                 fi
@@ -52,6 +54,14 @@ if [ -d "$DROP_DIR" ]; then
         if [ "$FAILED" -gt 0 ]; then
             echo "NAR DEPLOYMENT FAILED: ${FAILED} of ${NAR_COUNT} NAR file(s) did not reach ${LIB_DIR}/." >&2
             echo "This message is the only record of why, and the next step depends on which it was:" >&2
+            if [ "${STUCK:-0}" -gt 0 ]; then
+                # Said separately, because it is the opposite of the line below:
+                # the bundle is still in the load path and will be loaded.
+                echo "  Refused AND STILL IN PLACE: ${STUCK} bundle(s) could not be moved to" >&2
+                echo "    ${REFUSED_DIR}. They are in ${DROP_DIR} and the auto-loader will load" >&2
+                echo "    them within seconds. Remove them by hand. On Linux this is usually the" >&2
+                echo "    drop directory being owned by root while Liquid runs as nifi." >&2
+            fi
             echo "  Refused: the bundle is in ${REFUSED_DIR}, out of the load path. Correct it and" >&2
             echo "    drop it in again -- Liquid auto-loads from ${DROP_DIR} within seconds." >&2
             echo "  Copy failed: the bundle is still in ${DROP_DIR}, so the auto-loader will load it" >&2
