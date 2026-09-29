@@ -43,7 +43,7 @@
  * Requirements covered: MU-FR1 to MU-FR7, MU-NFR2, MU-NFR3.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { chmodSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { makeTree, dropTree } from '../lib/fixtures';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -113,11 +113,6 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  // MU-26 makes a directory unwritable on purpose; if it throws before its own
-  // finally, dropTree cannot remove the tree. Put the modes back first.
-  for (const f of ['fragile/subject.sh', 'readonly.sh']) {
-    try { chmodSync(join(root, f), 0o644); } catch {}
-  }
   dropTree(root);
 });
 
@@ -512,21 +507,31 @@ test('an unrelated survivor', () => { expect(1).toBe(1); });
 });
 
 describe('MU-25 a mutation that never reached the file is not a measurement', () => {
-  test('MU-25 an unwritable subject is refused, not reported quiet', () => {
-    // Finding 2. The writer's exit status was ignored, so a read-only subject
-    // meant the spec ran against the original file and the run came back
-    // UNRESOLVED, exit 0 -- or VALIDATED once the baseline was missing too.
-    const ro = 'readonly.sh';
-    writeFileSync(join(root, ro), subjectBody);
-    chmodSync(join(root, ro), 0o444);
-    try {
-      const r = run(registry([entry({ file: ro })]));
-      expect(r.output).toContain('REFUSED   FX-1');
-      expect(r.output).toContain('did not reach');
-      expect(r.code).not.toBe(0);
-    } finally {
-      chmodSync(join(root, ro), 0o644);
-    }
+  test('MU-25 an edit that leaves the subject unchanged is refused', () => {
+    // Finding 2. The writer's exit status was ignored, so a subject the write
+    // never landed on meant the spec ran against the original file and the run
+    // came back UNRESOLVED, exit 0 -- or VALIDATED once the baseline was
+    // missing too. The runner answers it by comparing the subject with its
+    // backup after the write.
+    //
+    // Staged with an entry whose `to` is its `from`, which is also a registry
+    // mistake worth refusing on its own. The first staging made the subject
+    // read-only, and chmod is ignored for root: the container and CI run as
+    // root, where the write landed, the spec went red and the case failed for
+    // a reason that had nothing to do with the rule. Item 1 of the 2026-09-29
+    // re-review.
+    const r = run(registry([entry({ to: 'POLICY="protected"' })]));
+    expect(r.output).toContain('REFUSED   FX-1');
+    expect(r.output).toContain('did not reach');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  });
+
+  test('MU-25 the counterpart: an edit that does land is measured', () => {
+    // Otherwise the guard could be met by refusing every entry.
+    const r = run(registry([entry()]));
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(r.output).not.toContain('did not reach');
   });
 });
 
@@ -537,38 +542,36 @@ describe('MU-26 a restore that failed keeps its backup', () => {
     // spec ran -- the backup went anyway and the tracked file stayed mutated
     // with nothing left to restore it from.
     //
-    // Staged the way the reviewer staged it: the spec itself makes the
-    // subject's directory unwritable while it runs, which is the window
-    // between the mutation and the restore.
+    // The parent directory is removed by the spec itself, in the window
+    // between the mutation and the restore, so `cp` has nowhere to copy back
+    // to. That is one of the causes the finding names, and unlike the
+    // permission staging it holds for root as well -- root may remove a
+    // directory, and no uid can write into one that is gone. Item 1 of the
+    // 2026-09-29 re-review.
     const dir = join(root, 'fragile');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'subject.sh'), subjectBody);
     const spec = 'spec/fragile.test.ts';
     writeFileSync(join(root, spec), `
 import { test, expect } from 'bun:test';
-import { chmodSync, readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-const file = join(import.meta.dir, '..', 'fragile', 'subject.sh');
+const dir = join(import.meta.dir, '..', 'fragile');
+const s = readFileSync(join(dir, 'subject.sh'), 'utf8');
 test('the policy is protected', () => {
-  const s = readFileSync(file, 'utf8');
-  // Between the mutation and the restore, which is the only window there is.
-  // The file, not its directory: a directory without write permission still
-  // allows an existing file to be overwritten.
-  chmodSync(file, 0o444);
+  rmSync(dir, { recursive: true, force: true });
   expect(s).toContain('POLICY="protected"');
 });
 test('an unrelated survivor', () => { expect(1).toBe(1); });
 `);
     const tmp = join(root, 'tmp-restore');
     mkdirSync(tmp, { recursive: true });
-    try {
-      const r = run(registry([entry({ file: 'fragile/subject.sh', spec })]), [], { TMPDIR: tmp });
-      expect(r.code).not.toBe(0);
-      expect(r.output).toContain('the backup is kept at');
-      expect(readdirSync(tmp).length).toBeGreaterThan(0);
-    } finally {
-      chmodSync(join(dir, 'subject.sh'), 0o644);
-    }
+    const r = run(registry([entry({ file: 'fragile/subject.sh', spec })]), [], { TMPDIR: tmp });
+    expect(r.code).not.toBe(0);
+    expect(r.output).toContain('the backup is kept at');
+    // The backup is still on disk, so the mutated file can be put back by hand.
+    expect(readdirSync(tmp).length).toBeGreaterThan(0);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
@@ -706,5 +709,34 @@ describe('MU-32 a registry the runner cannot read stops it', () => {
     expect(r.code).toBe(2);
     expect(r.output).toContain('registry:');
     expect(r.output).not.toContain('registry is empty');
+  });
+});
+
+describe('MU-33 a baseline refusal takes its backup with it', () => {
+  test('MU-33 neither refusal path leaves a copy behind', () => {
+    // Item 2 of the 2026-09-29 re-review. The backup is taken before the
+    // baseline runs, and both baseline refusals -- already red, and never ran
+    // -- left the file in TMPDIR: nothing had been mutated, so `restore` had
+    // nothing to put back and never cleared it. A registry of any size dropped
+    // one copy of the subject per refused entry.
+    //
+    // MU-26 is the counterpart: when the restore itself fails the backup has to
+    // stay, so this cannot be met by deleting it unconditionally.
+    const spec = 'spec/leak-red.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+test('the policy is protected', () => { expect('broken env').toBe('ok'); });
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    for (const [why, reg] of [
+      ['already red', registry([entry({ spec, from: 'UNUSED="spare"', to: 'UNUSED="other"' })])],
+      ['did not run', registry([entry({ mustFail: 'the polcy is protected' })])]
+    ] as [string, string][]) {
+      const tmp = join(root, `leak-${why.replace(/\s/g, '-')}`);
+      mkdirSync(tmp, { recursive: true });
+      const r = run(reg, [], { TMPDIR: tmp });
+      expect(r.output).toContain('REFUSED   FX-1');
+      expect(readdirSync(tmp)).toEqual([]);
+    }
   });
 });

@@ -111,6 +111,11 @@ rows="$(bun -e '
 
 SUBJECT=""      # the file currently mutated, for the trap
 BACKUP=""
+# The run's machine-readable record. One path for the whole run, made here
+# rather than inside run_spec: run_spec is called in a command substitution, so
+# an assignment there happens in a subshell and never reaches the caller -- the
+# reader then found no file and refused every entry as "did not run".
+JUNIT="$(mktemp "${TMPDIR:-/tmp}/lu-mutate-junit.XXXXXX")"
 # The backup goes only after the copy back has succeeded. cp can fail with the
 # subject already truncated -- a full disk, a read-only mount, a parent replaced
 # mid-run -- and deleting it anyway leaves the tracked file broken with nothing
@@ -129,22 +134,71 @@ restore() {
 RESTORE_FAILED=0
 # Each signal restores and then exits: bash resumes past an INT handler, so a
 # trap that only restores does not hold on Ctrl-C.
-trap 'restore' EXIT
-trap 'restore; exit 130' INT
-trap 'restore; exit 143' TERM
+trap 'restore; rm -f "$JUNIT"' EXIT
+trap 'restore; rm -f "$JUNIT"; exit 130' INT
+trap 'restore; rm -f "$JUNIT"; exit 143' TERM
 
 # `./` matters: a bare path is a substring filter over every test file under
 # ROOT, so a sibling `x.test.tsx` was counted into the tally of `x.test.ts` and
 # each run scanned the whole repository including volumes/. And colour off,
 # because ANSI codes break both the `(fail)` scan and the tally regexes -- with
 # FORCE_COLOR in the environment every entry came back REFUSED 0/0.
-run_spec() {  # run_spec <spec> [name-filter]
-  local spec="$1" filter="${2:-}"
-  if [[ -n "$filter" ]]; then
-    (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" -t "$filter" "./$spec" 2>&1)
-  else
-    (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" "./$spec" 2>&1)
-  fi
+# The run, and a machine-readable record of it beside the human one.
+#
+# JUNIT is where the per-test result comes from. Reading it off the console
+# output cannot work on both bun versions: 1.3.13 names a test on its own line
+# only when it FAILS, while 1.4.2 also prints `(pass) <name>`. A runner whose
+# verdict depends on which bun is installed is the thing this tool exists
+# against. `--reporter=junit` is in both and names every case exactly, with a
+# <failure> child for the red ones. Item 3 of the 2026-09-29 re-review.
+
+run_spec() {  # run_spec <spec>
+  # Removed first, so a run that writes nothing cannot be read as the previous
+  # run's result.
+  rm -f "$JUNIT"
+  (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" \
+      --reporter=junit --reporter-outfile="$JUNIT" "./$1" 2>&1)
+}
+
+# `pass`, `fail` or `none` for the named test.
+#
+# The baseline used `bun test -t "$must"`, and -t is a regular expression
+# matched anywhere in the full name -- so a name carrying `(`, `[`, `+` or `*`
+# was refused as "did not run", and a sibling whose name merely contained the
+# named one was run too, so a red sibling refused the entry. Escaping and
+# anchoring does not settle it: -t matches the describe and test names joined by
+# a space, so an anchored `field A is carried$` still admits `not field A is
+# carried`. The record names them separately.
+named_state() {  # named_state <name>
+  [[ -f "$JUNIT" ]] || { printf none; return; }
+  MUST="$1" bun -e '
+   try {
+    const fs = require("fs");
+    const xml = fs.readFileSync(process.argv[1], "utf8");
+    const want = process.env.MUST;
+    const un = (s) => s.replace(/&quot;/g, "\"").replace(/&apos;/g, "\u0027")
+                       .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    let state = "none";
+    const re = /<testcase\b[^>]*>/g;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+      const tag = m[0];
+      const name = un((tag.match(/\bname="([^"]*)"/) || [])[1] ?? "");
+      const cls = un((tag.match(/\bclassname="([^"]*)"/) || [])[1] ?? "");
+      if (name !== want && cls + " > " + name !== want) continue;
+      // A self-closing element passed; otherwise its body carries the verdict.
+      let failed = false;
+      if (!tag.endsWith("/>")) {
+        const end = xml.indexOf("</testcase>", re.lastIndex);
+        const body = end === -1 ? xml.slice(re.lastIndex) : xml.slice(re.lastIndex, end);
+        failed = /<(failure|error)\b/.test(body);
+      }
+      if (failed) { state = "fail"; break; }
+      state = "pass";
+    }
+    console.log(state);
+   } catch (e) { console.error("junit: " + (e && e.message ? e.message : e)); process.exit(2); }
+  ' "$JUNIT" 2>/dev/null || printf none
 }
 
 tally() {  # tally <output> <word>
@@ -242,18 +296,20 @@ while IFS=$'\t' read -r id file spec from to must; do
   fi
   # The baseline. Without it a test that is already red -- a stack that is down,
   # a timeout, a flake -- is attributed to the mutation, and any edit at all
-  # reads as VALIDATED. `-t` runs the named test alone, so the tally answers
-  # three questions at once: does it exist, did it run, was it green.
-  base="$(run_spec "$spec" "$must")"
-  base_pass="$(tally "$base" pass)"
-  base_fail="$(tally "$base" fail)"
-  if [[ "$base_fail" != "0" ]]; then
-    add "REFUSED   ${id}  '${must}' is already red before the mutation"; refused=$((refused+1)); continue
-  fi
-  if [[ "$base_pass" == "0" ]]; then
-    add "REFUSED   ${id}  '${must}' did not run in ${spec} -- renamed, skipped, or misspelt"
-    refused=$((refused+1)); continue
-  fi
+  # reads as VALIDATED. The whole spec runs and the record is read per test, so
+  # the baseline answers three questions at once: does the named test exist, did
+  # it run, was it green.
+  base="$(run_spec "$spec")"
+  case "$(named_state "$must")" in
+    fail)
+      rm -f "$BACKUP"; BACKUP=""
+      add "REFUSED   ${id}  '${must}' is already red before the mutation"
+      refused=$((refused+1)); continue ;;
+    none)
+      rm -f "$BACKUP"; BACKUP=""
+      add "REFUSED   ${id}  '${must}' did not run in ${spec} -- renamed, skipped, or misspelt"
+      refused=$((refused+1)); continue ;;
+  esac
 
   SUBJECT="$abs"
   FROM="$from" TO="$to" bun -e '
@@ -279,26 +335,11 @@ while IFS=$'\t' read -r id file spec from to must; do
   out="$(run_spec "$spec")"
   restore
 
-  # bun names a test on the line only when it FAILS; passing ones appear solely
-  # in the tally at the end, so survivors are counted there and never by line.
-  # Anchored at the end of the line, not searched inside it: bun prints
-  # `(fail) describe > name [12.34ms]`, and a substring match lets a sibling with
-  # a longer name stand in for the named test. Plain string comparison, so a name
-  # carrying regex characters cannot change its meaning.
-  # The whole name, not a suffix of the line. An end-anchored match still let
-  # `not field A is carried` stand in for `field A is carried`, so the line has
-  # to be exactly `(fail) <name>` or end with ` > <name>`.
-  named_failed="$(printf '%s\n' "$out" | MUST="$must" awk '
-    BEGIN { m = ENVIRON["MUST"]; hit = 0 }
-    index($0, "(fail)") > 0 {
-      line = $0
-      sub(/ \[[0-9.]+ *m?s\]$/, "", line)
-      sub(/^.*\(fail\) /, "", line)
-      if (line == m) hit = 1
-      else if (length(line) > length(m) + 3 &&
-               substr(line, length(line) - length(m) - 2) == " > " m) hit = 1
-    }
-    END { print hit }')"
+  # The named test's own verdict, by exact name. Survivors are counted from the
+  # tally below, which is a summary line both bun versions print.
+  named_failed=0
+  [[ "$(named_state "$must")" == "fail" ]] && named_failed=1
+
   passes="$(tally "$out" pass)"
   fails="$(tally "$out" fail)"
   errors="$(tally "$out" error)"
