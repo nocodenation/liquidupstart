@@ -273,7 +273,15 @@ LIB_TOUCHED=1
 # before the rename and keeps it in refused/. Put it back by hand, because that
 # is the one path the entrypoint still guards -- an operator copying a bundle in
 # themselves -- and it is what this check is here to exercise.
-cp "${DROP}/refused/${BAD_NAR}" "${DROP}/" 2>/dev/null || true
+# Not silenced: when the copy fails there is no bundle to refuse, and check 3
+# went on to blame the refusal for a file that was never put back. The M-B4
+# document criticises exactly this pattern elsewhere. Minor of the 2026-09-28
+# review.
+if ! cp "${DROP}/refused/${BAD_NAR}" "${DROP}/"; then
+  echo "could not put ${BAD_NAR} back into ${DROP}; check 3 has nothing to exercise" >&2
+  verdict "3 the refused bundle was restored for the check" no \
+    "cp ${DROP}/refused/${BAD_NAR} -> ${DROP}/ failed"
+fi
 restart_liquid || { echo "liquid did not restart" >&2; }
 await_liquid || verdict "3 Liquid came back" no "liquid did not answer on its HTTPS API within 300s"
 C3_TYPES="$(processor_types)"

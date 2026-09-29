@@ -146,7 +146,12 @@ nar-build > /tmp/build.out 2>&1; echo "BUILD EXIT=$?"; tail -8 /tmp/build.out' 2
 echo "$C3_OUT"
 log "$C3_OUT"
 
-HAND_NAR="$(ls -1 "${DROP}"/*.nar 2>/dev/null | head -1)"
+# The bundle this build wrote, named by the build itself. Taking the first
+# *.nar in the drop directory read whatever else the operator had deployed --
+# the check then reported another bundle's descriptor as this one's. Minor of
+# the 2026-09-28 review.
+HAND_NAR="$(sed -n 's#^wrote \(/nar_extensions/.*\.nar\)$#\1#p' <<< "$C3_OUT" | tail -1)"
+[[ -n "$HAND_NAR" ]] && HAND_NAR="${DROP}/$(basename "$HAND_NAR")"
 SPI=""
 if [[ -n "$HAND_NAR" ]]; then
   rm -rf "${WORK}/nar"; mkdir -p "${WORK}/nar"
