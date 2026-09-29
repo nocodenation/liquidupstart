@@ -410,6 +410,24 @@ is what keeps this from becoming the text scan the paragraph above rejects.
 hand-dropped mismatched NAR refused and named, a good one still deployed, and the catalogue
 unchanged by the refused one.
 
+**M-B5 · the second review of this branch, answered**
+Not a milestone that was posed: it is the 2026-09-28 review of #10 at `81dbe5a` — six blocking
+findings, seven "should fix", six minors and a list of places the documents described a system that
+had changed. It is written up as a milestone because that is what it turned into, and because three
+of the findings were defects **in the checks themselves**, which no case in this suite could have
+found: B4-1 asserted the blindness it was written to prevent, the suite's default run drove the
+operator's own installation, and a case can never fail when it agrees with the defect.
+
+Two of the findings changed the shape of the product rather than repairing it. Finding 6 narrowed who
+may ask the build server for a build: it checked neither method nor origin, and a `text/plain` POST
+needs no CORS preflight, so any page the operator had open could deploy code into Liquid. And finding
+11 split the drop directory in two — see FR30, rewritten for the second time. The rest are repairs,
+each with its case and each reproduced against the code as reviewed before it was touched.
+
+*Done when:* every finding has a case that fails against `81dbe5a` and passes now, each case has been
+reverted to the code it guards to show it can go red, and the documents say what the system does. 32
+cases, B5-1 to B5-32, in `TEST-SPEC-liquid-java-extensions.md` §3.
+
 ---
 
 ## 5. Process log

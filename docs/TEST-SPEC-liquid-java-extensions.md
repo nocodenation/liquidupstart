@@ -34,20 +34,22 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 
 | Requirement | Covered by |
 |---|---|
-| FR21 Building is one command | B1-2, B1-5, B1-10 |
+| FR21 Building is one command | B1-2, B1-5, B1-10, B5-1, B5-2, B5-15, B5-16, B5-17, B5-18 |
 | FR22 The answer is synchronous and determinate | B1-5, B1-7, B1-11 |
-| FR23 The target version is computed | B1-3, B1-4 |
+| FR23 The target version is computed | B1-3, B1-4, B5-6, B5-7, B5-15, B5-16, B5-17, B5-18 |
 | FR24 A failed build leaves no artifact | B1-4, B1-7, B1-8, B3-4 |
 | FR25 The builder holds no credentials | B1-1, B1-12 |
 | FR26 The dependency cache lives under `volumes/` | B1-9, B3-3 |
 | FR27 The API compiled against is resolved and stated | B2-1, B2-2, B2-3, B2-4 |
 | FR28 The deployment cycle is one documented path | B2-7 |
 | FR29 The restart is the operator's, and the agent asks | B2-8, B2-9, B2-10 |
-| FR30 The drop directory reaches Liquid's load path | B2-5 |
+| FR30 The drop directory reaches Liquid's load path | B2-5, B5-8, B5-9, B5-22, B5-23, B5-24, B5-28, B5-29, B5-30, B5-31, B5-32 |
 | FR31 A deployment step that fails says so | B2-6 |
 | FR34 What is built is proven loadable | B3-1, B3-2 — both §4 checks, written out in full and not yet run |
-| FR35 Concurrent builds do not corrupt each other | B3-3, B3-4 |
-| FR36 A bundle that cannot link is refused at deployment | B4-1, B4-2, B4-3, B4-4, B4-5, B4-6, B4-7 in the suite; B4-8 in §4, run by the operator because it restarts Liquid |
+| FR35 Concurrent builds do not corrupt each other | B3-3, B3-4, B5-14 |
+| FR36 A bundle that cannot link is refused at deployment | B4-1, B4-2, B4-3, B4-4, B4-5, B4-6, B4-7 in the suite; B4-8 in §4, run by the operator because it restarts Liquid; B5-4 to B5-9, B5-25 to B5-32 |
+| NFR1 The stack is reachable only where it should be | B5-10, B5-11, B5-12, B5-13, B5-14 |
+| U9 A checkout that has never run the stack can start it | B5-1, B5-2, B5-3, B5-19, B5-20, B5-21 |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
 
 ---
@@ -675,6 +677,235 @@ and easy to pass wrongly — a guard that refuses every bundle satisfies it. Wha
 is that it lets through a correct NAR whose source merely mentions a class name, and a correct NAR
 whose references it cannot resolve. Both were written before the code, and both are expected to be the
 ones that fail first.
+
+### M-B5 — the second review of this branch, answered
+
+The 2026-09-28 review of #10 at `81dbe5a`: six blocking findings, seven "should fix", six minors and a
+"Docs vs code" list. Every one was reproduced against the code as reviewed before anything was
+touched, and the reviewer's own measurements are quoted in the blocks below with the values they
+carried, so a reader can tell a finding that was confirmed from one that was accepted on description.
+
+Three of them were defects **in the checks themselves**, which is why they had to come from outside:
+B4-1 asserted the blindness it was written to prevent (finding 5), the suite's default run drove the
+operator's own stack (finding 12), and the mutation registry's own runner is a separate branch. A
+suite cannot find a case that agrees with the defect.
+
+**What this milestone does not claim.** The builder still reaches Maven Central during a build, and a
+`pom.xml` the author wrote still runs with read-write `/repos` and `/m2`; finding 6 narrowed **who may
+ask for a build**, not what a build may do once asked for. The open question in FEATURE §3 stands.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| B5-1 | Unit | A fresh install runs `start/liquid.sh` | The seeding `docker run` happens and `volumes/liquid/api` exists. Finding 1: `mkdir -p "${STATE_DIR}/api"` ran before `if [ -d "$STATE_DIR" ]`, so the directory always existed by then |
+| B5-2 | Unit | An installation that already has a state folder | **Not** re-seeded, and `conf/nifi.properties` is untouched. The counterpart: without it, seeding on every start would pass B5-1 |
+| B5-3 | Unit | The two lists of locally built images | Both name `nar-builder`. Finding 2: `stackState()` answered `needBuild: false` and compose tried to *pull* a local-only image |
+| B5-4 | Integration | `narcheck check` over all 118 NARs the stock image ships | Every one accepted, and the total is asserted so a count of zero cannot pass. Finding 3: **11 were refused**, `nifi-standard-nar` among them |
+| B5-5 | Integration **negative** | The same bundle with its `Nar-Dependency-*` manifest lines stripped | Refused. The counterpart: resolving against the parent chain must not become resolving against everything |
+| B5-6 | Integration | A class naming `org.apache.nifi.flowfile.FlowFile` only in a method signature | Reported, as `javap` reports it. Finding 5: it was invisible, which is exactly `NoClassDefFoundError … at Class.getDeclaredMethods0` |
+| B5-7 | Integration **negative** | A class returning the string `"org/apache/nifi/processor/Invented"` | **Not** reported. The counterpart that keeps the descriptor walk from becoming a text scan |
+| B5-8 | Integration **unhappy** | A refused bundle whose quarantine cannot be created | The summary says `STILL IN THE INBOX` and does not claim a move that did not happen. Finding 4 |
+| B5-9 | Integration | The same run with a writable quarantine | The ordinary refusal message and no warning. The counterpart: the fix must not warn every time |
+| B5-10 | Integration **negative** | `POST /build` and `GET /target` with no `X-Liquid-Agent` | 403. Finding 6: any page the operator had open could start a build |
+| B5-11 | Integration **negative** | The same with `Origin: http://evil.example`, and `GET /build` | 403 and 405 |
+| B5-12 | Integration | The stack's own client, and the healthcheck | 200 each. The counterpart: the guard cannot be met by refusing everything |
+| B5-13 | Contract | The `nar-builder` vhost in the nginx template | `allow SYSTEM_NETWORK_SUBNET; deny all;`, and the placeholder is actually substituted by `start/nginx.sh` |
+| B5-14 | Integration **unhappy** | Two builds that never end, a third request, and a 20 KB body | `/health` 200 while both slots are busy, third build 503, both stuck builds 504, oversize body 400. Findings 8, 9, 13 |
+| B5-15 | Integration | `build.sh target` with `api/runtime` present and every `nifi-app*.log` deleted | The versions are read and `read_from …(runtime)` names the source. Finding 7: 409, "ask the operator to restart Liquid" |
+| B5-16 | Integration | The same with the record absent and the startup line present | Still read, from the log. The counterpart: an installation whose Liquid started before the record existed must keep building |
+| B5-17 | Integration **negative** | Neither source present | Refused, naming both. Nothing is guessed |
+| B5-18 | Integration | Liquid's entrypoint in the real image | Writes `nifi_version=2.11.0`, `java_version=21.0.12+10-LTS` — the pair the startup line of 2026-09-28 08:24:12 carried |
+| B5-19 | Unit | A unit-level file calling `stackGuard()` | Held back by default, reachable with `--system`. Finding 12: 16 such files ran against the operator's stack |
+| B5-20 | Unit **negative** | A unit-level file naming `nar-build` in its header only | Still in the default run. The counterpart: matching mentions would empty the default tier silently |
+| B5-21 | Unit | This checkout's own `tests/run.sh --list`, both ways | No file the default run lists calls into the stack, and the files that do are reachable with `--system` |
+| B5-22 | Integration **negative** | An author pom with a leftover `nar/target/old-stale-0.9.nar` and a build that produces nothing | "produced no .nar", and nothing written to the drop directory. Finding 10: `built old-stale-0.9.nar`, HTTP 200, deployed |
+| B5-23 | Integration **negative** | A build producing `a-1.0.0.nar` and `b-1.0.0.nar` | Refused, naming both. Deploying the first in directory order is a coin toss the author never sees |
+| B5-24 | Integration | A build producing exactly `fresh-1.0.0.nar` | Deployed. The counterpart for both guards above |
+| B5-25 | Integration **unhappy** | A NAR whose bundled jar is stored while both headers claim deflate | `REFUSED` and a sentence, no traceback, exit 1 — and the intact bundle still accepted. Minor: `zlib.error` traceback |
+| B5-26 | Integration | An inbox holding `good.nar`, `.x.nar` and a refused `bad.nar` | "Found 2", "1 of 2". Minor: `find -name "*.nar"` counted the dot-file the glob skips, giving "1 of 3" |
+| B5-27 | Integration **unhappy** | A build whose drop directory is a regular file, so it leaves under `set -e` | The build fails **and** nothing is left in `/tmp`. Minor: `/tmp/tmp.P164iqUm8o` |
+| B5-28 | **System** **negative** | A bundle `narcheck` refuses, dropped by hand into a running Liquid, and present at start | Quarantined, not in the load directory, and never in a `Loaded extensions` line. Finding 11: loaded ~5 s after the drop |
+| B5-29 | **System** | A sound bundle dropped by hand | Loaded within seconds, and the auto-loader reports skipping the `.part` file. The counterpart: a split that loaded nothing would pass B5-28 |
+| B5-30 | **System** | The same bundle present in the inbox before the container starts | Loaded at boot. The counterpart for the other route |
+| B5-31 | Unit **negative** | `compose.yml`, every service | Nothing is mounted onto `/opt/nifi/nifi-current/nar_extensions`. B5-28 mounts the inbox itself, so it cannot hold this |
+| B5-32 | Unit | The same file and the image recipe | `./volumes/nar_extensions` arrives as `nar_inbox`, the image carries `nar-watch.sh`, and the entrypoint starts it. The counterpart: without it the drop directory would not reach Liquid at all |
+
+#### Detail per case
+
+##### B5-1 / B5-2 — a fresh install seeds Liquid, an existing one is left alone
+
+| | |
+|---|---|
+| **Premise** | The stack did not come up at all on a checkout that had never run it. Nothing in the suite ran `liquid.sh` against an empty tree, so the ordering defect was invisible to every case that existed. |
+| **Component** | `config/scripts/start/liquid.sh`, executed. |
+| **Test data** | A temporary tree carrying a copy of the script at its real relative path — it derives `PROJECT_DIR` from its own location, so it cannot be pointed at a fixture — a copy of `config/liquid`, an `.env` holding `LIQUID_USERNAME=liquid`, `LIQUID_PASSWORD=liquidpassword`, `SYSTEM_HTTPS_PORT=8833`, and a stub `docker` on PATH appending its arguments to `docker.log`. For B5-2 the same tree with `volumes/liquid/conf/nifi.properties` already holding `mine=1`. |
+| **Expected** | B5-1: the log holds a `nifi-current/conf` line and `volumes/liquid/api` exists; the output does **not** say "Skipping state folder extraction". B5-2: it does say so, and `nifi.properties` still reads `mine=1`. |
+| **Failure** | Seeding on every start, which would overwrite the operator's configuration — which is why B5-2 exists. |
+| **Covers** | B5-1, B5-2, FR21, U9. |
+| **Implemented by** | `tests/unit/m-b5.fresh-install.test.ts`. |
+| **What it found** | Red against `81dbe5a`, matching the reviewer's `{seeded: 0, skipped: true}`. `volumes/liquid` held `api/` alone, the empty `conf/` was mounted over the image's, and NiFi exited 2 with `sed: can't read …/nifi.properties` on a loop under `restart: unless-stopped`. |
+
+##### B5-3 — `nar-builder` counts as a locally built image
+
+| | |
+|---|---|
+| **Premise** | A pull of this branch could not start the stack, and the message blamed a missing image rather than a missing build. |
+| **Component** | `dashboard/src/lib/server/project.ts` and `scripts/install/update.sh`, read as text — both are lists, and a list is what was wrong. |
+| **Test data** | The two files from this checkout. The assertion names all five images (`opencode`, `bun-runner`, `liquid`, `openclaw`, `nar-builder`), so removing any of them fails. |
+| **Expected** | Both lists contain `nar-builder`. |
+| **Covers** | B5-3, U9. |
+| **Implemented by** | `tests/unit/m-b5.fresh-install.test.ts`. |
+| **What it found** | Red: `nar-builder` was in neither. `stackState()` returned `{running: false, needBuild: false}`, `docker compose up -d` tried to pull a local-only image, and `proxy` depends on `nar_builder`, so the whole stack failed to start. |
+
+##### B5-4 / B5-5 — the check accepts what Liquid already loads, and only because the parent is declared
+
+| | |
+|---|---|
+| **Premise** | The documents call a false refusal worse than no check. This is the case that decides whether that holds. |
+| **Component** | `narcheck.py check`, run inside `ghcr.io/nocodenation/liquid-nifi:latest` against its own `/opt/nifi/nifi-current/lib` — 118 NARs and `nifi-api-2.10.0.jar`. |
+| **Test data** | Every `*.nar` in that directory, for B5-4. For B5-5, `nifi-kafka-nar-2.11.0.nar` unchanged and a copy of it with every `Nar-Dependency*` manifest line removed, written into `/tmp/orphan.nar`. |
+| **Expected** | B5-4: `refused=0`, and `total>100` so a loop that ran over nothing cannot pass. B5-5: `withParent=accepted`, `orphan=refused`. |
+| **Failure** | Resolving against the parent chain turning into resolving against everything, which B5-5 is there to catch. |
+| **Covers** | B5-4, B5-5, FR23, FR36. |
+| **Implemented by** | `tests/integration/m-b5.narcheck-resolution.test.ts`. |
+| **What it found** | Red: 11 of 118 refused — standard, kafka, dbcp, avro, poi, airtable, network-processors, kerberos-user-service, kafka-3-service, kafka-service-aws, server. Through the entrypoint a copy of `nifi-kafka-nar` was reported `NAR DEPLOYMENT FAILED … references org.apache.nifi.kerberos.KerberosUserService`. Any custom NAR following SKILL §6.5 would have met the same refusal on its first restart after this branch merged. |
+
+##### B5-6 / B5-7 — a type in a signature is seen, a name in a string is not
+
+| | |
+|---|---|
+| **Premise** | The failure this whole check was built from is `NoClassDefFoundError … at Class.getDeclaredMethods0`, which is descriptor resolution. The check could not see descriptors. |
+| **Component** | `narcheck.py refs`, against classes compiled in the image by its own `javac`. |
+| **Test data** | `org.nocodenation.Sig`, whose only mention of `org.apache.nifi.flowfile.FlowFile` is the signature `public FlowFile only(FlowFile f)`; and `org.nocodenation.Lit`, whose only mention of `org/apache/nifi/processor/Invented` is a returned string literal. Both compiled against `nifi-api-2.10.0.jar`. |
+| **Expected** | `javapSees=1`, `refsSees=1`, `literal=0`. `javap` is asked the same question, so the expectation is not this suite's opinion of what a reference is. |
+| **Covers** | B5-6, B5-7, FR23, FR36. |
+| **Implemented by** | `tests/integration/m-b5.narcheck-resolution.test.ts`. |
+| **What it found** | Red: `refsSees=0`. The reviewer's own probe, a processor with `public NodeConnectionState state()`, passed `check` with exit 0 while `getDeclaredMethods()` against the same jar threw `NoClassDefFoundError`. The B4-4 fixture was refused only because it also does a `getstatic` on `NodeConnectionState.CONNECTED`. |
+
+##### B5-8 / B5-9 — a bundle that could not be quarantined is reported as still in the inbox
+
+| | |
+|---|---|
+| **Premise** | The summary told the operator the opposite of what had happened, and on Linux it happened every time. |
+| **Component** | `config/liquid/entrypoint.sh`, run in the real base image. |
+| **Test data** | A temporary NiFi home whose `lib` is the image's own, an inbox holding a bundle `narcheck` refuses — `nifi-kafka-nar-2.11.0.nar` with its `Nar-Dependency-*` lines stripped, which B5-5 establishes is refused — and `refused` created as a **file**, so `mkdir -p` cannot succeed. The permission failure itself cannot be produced on macOS, where Docker Desktop ignores bind-mount ownership; that is why the original verification missed it, and a `refused` that is a file reaches the same branch by the same route. |
+| **Expected** | `STILL IN THE INBOX`, `not the load path`, `they are not loaded`, and the cause named across the line break the message wraps at. B5-9: `Moved to …refused` and no such warning. |
+| **Covers** | B5-8, B5-9, FR30, FR36. |
+| **Implemented by** | `tests/integration/m-b5.refused-quarantine.test.ts`. |
+| **What it found** | Red against `81dbe5a`: the reviewer measured `mkdir: cannot create directory '…/nar_extensions/refused': Permission denied`, the NAR left in the drop directory where the auto-loader took it, and the summary still reading "Refused: the bundle is in …/refused". **Corrected again 2026-09-29**: since the inbox stopped being the load path (B5-28), a bundle that cannot be quarantined is no longer loaded. It is still stuck, so the summary still has to distinguish the two. |
+
+##### B5-10 / B5-11 / B5-12 — who the build server takes orders from
+
+| | |
+|---|---|
+| **Premise** | The builder listens on `0.0.0.0:8770` and, through nginx, on the proxy port, which is published on every host interface. A `text/plain` POST is a CORS simple request — no preflight — so any page the operator had open could start a build for any path under `/repos`, and a build runs the author's own pom with read-write `/repos`, `/m2` and the live drop directory. Deploying code into Liquid from any request is the part that is new; `opencode.localhost` being unauthenticated is not. |
+| **Component** | `BuildServer.java` from this checkout, compiled and run inside `liquidupstart/nar-builder:latest` with a stub `/opt/builder/build.sh` that prints and exits 0, so the calls under test reach the server and nothing else. |
+| **Test data** | Seven calls on port 8771: `/health`; `POST /build` with no header; `POST /build` with `X-Liquid-Agent: 1` **and** `Origin: http://evil.example`; `GET /build` with the header; `POST /build` with the header alone; `/target` without and with it. |
+| **Expected** | `noHeader=403`, `targetNone=403`, `withOrigin=403`, `getBuild=405`, `agentBuild=200`, `targetAgent=200`, `health=200`. |
+| **Failure** | A guard met by refusing everything, which `agentBuild` and `targetAgent` prevent, and a healthcheck that needs a header, which would make compose report the container unhealthy. |
+| **Covers** | B5-10, B5-11, B5-12, NFR1. |
+| **Implemented by** | `tests/integration/m-b5.builder-callers.test.ts`. |
+| **What it found** | Red: the reviewer's `Origin: http://evil.example` `text/plain` POST returned 200 and deployed a NAR, and an antrun `<echo file="/nar_extensions/injected-unchecked.nar">` landed in the drop directory past `narcheck` even though the build reported "produced no .nar". The test hooks `X-Liquid-Host` and `X-Nifi-Api-Probe-Version` were honoured from any caller; they are now behind `NAR_BUILDER_TEST_HOOKS`, off in `compose.yml`. |
+
+##### B5-13 — and the vhost is for the stack network
+
+| | |
+|---|---|
+| **Premise** | A guard in the server that the proxy hands the whole LAN is half a guard. |
+| **Component** | `config/nginx/templates/nginx.conf` and `config/scripts/start/nginx.sh`, read as text — nginx is autogenerated, so the template is the subject. |
+| **Test data** | The `server` block containing `nar-builder.localhost`, and the render step. |
+| **Expected** | The block holds `allow SYSTEM_NETWORK_SUBNET;` and `deny all;`, and `nginx.sh` substitutes that placeholder with `${NETWORK_SUBNET}`, defaulting to `10.99.0.0/24`. |
+| **Failure** | A placeholder nobody substitutes, which is an nginx config that will not load — which is why the second assertion exists. |
+| **Covers** | B5-13, NFR1. |
+| **Implemented by** | `tests/integration/m-b5.builder-callers.test.ts`. |
+| **What it found** | Red: no `allow`/`deny` in the block. |
+
+##### B5-14 — the server answers when it cannot work
+
+| | |
+|---|---|
+| **Premise** | Three findings with one shape: the server had one answer for every situation it had not thought about, and that answer was silence. The client then said "the builder did not answer — ask the operator to start it", which sends the operator to restart a healthy container. |
+| **Component** | `BuildServer.java` compiled and run in the builder image with `NAR_BUILDER_BUILD_TIMEOUT=3` and a stub `build.sh` that runs `sleep 120`. |
+| **Test data** | Two builds started together so both semaphore permits are held; then `/health` with `--max-time 5`, a third `POST /build`, and after the budget passes the two stuck clients' codes; then a 20 000-byte body. |
+| **Expected** | `health=200`, `third=503`, `stuckA=504`, `stuckB=504`, `oversize=400`. |
+| **Covers** | B5-14, FR35, NFR1. |
+| **Implemented by** | `tests/integration/m-b5.builder-callers.test.ts`. |
+| **What it found** | Red on all four. The reviewer measured `/health` answering after 8.79 s during two `/target` requests — past the 5 s healthcheck timeout, so the container went unhealthy while working as intended — a client giving up at 25 s with `build.sh` and its `mvn` still running 27 s later, and `curl: (52) Empty reply from server` for both a 200 KB body and a body containing NUL. Building it also found a defect the finding did not name: the timeout could never fire, because the output was read with `readAllBytes()` before `waitFor`. |
+
+##### B5-15 / B5-16 / B5-17 / B5-18 — where the target versions come from
+
+| | |
+|---|---|
+| **Premise** | "No restart is needed" was the promise; about thirty hours after a start, every build asked for one. |
+| **Component** | `config/nar_builder/build.sh target` in `liquidupstart/nar-builder:latest`, and `config/liquid/entrypoint.sh` in the real base image. |
+| **Test data** | A TLS stand-in on 127.0.0.1:9443 so the reachability gate passes without the stack. The record holds `nifi_version=2.11.0` and `java_version=21.0.12+10-LTS`; the log fixture is the line logback wrote on 2026-09-28: `2026-09-28 08:24:12,141 INFO [main] org.apache.nifi.runtime.Application Starting NiFi 2.11.0 using Java 21.0.12+10-LTS with PID 80`, in `nifi-app_2026-09-28_08.0.log`. B5-18 asserts against that line's own captures rather than against constants, so an image upgrade moves both together. |
+| **Expected** | B5-15: the versions, and `read_from liquid at 127.0.0.1:9443 (runtime)`. B5-16: the same versions and `(nifi-app_2026-09-28_08.0.log)`. B5-17: `nar-build refused`, naming `/liquid/api/runtime` **and** `/liquid/logs`, with no version line. B5-18: the entrypoint writes the pair and says so. |
+| **Failure** | Reading the record but not the log, which would make every installation restart Liquid once before it could build again — the exact demand finding 7 is about. |
+| **Covers** | B5-15, B5-16, B5-17, B5-18, FR21, FR23. |
+| **Implemented by** | `tests/integration/m-b5.target-versions.test.ts`. |
+| **What it found** | Red: with the rotated file present the target resolved; with it deleted, `no startup record of the running instance was found`. NiFi's stock logback rotates hourly with `maxHistory 30`. |
+
+##### B5-19 / B5-20 / B5-21 — what a test needs decides its tier
+
+| | |
+|---|---|
+| **Premise** | The opt-in of 2026-09-17 exists because a forgotten flag left the operator's gateway exited 127. Sixteen files walked straight past it. |
+| **Component** | `tests/run.sh --list`, executed against a fixture tree and against this checkout. |
+| **Test data** | Three unit-level files: `caller` whose body calls `stackGuard()`; `mentioner` whose header names `docker compose exec opencode nar-build` and `observeBuilds` and whose body calls neither; `plain`, which does neither. For B5-21, this checkout's own `tests/`, with the markers `stackGuard`, `requireStack`, `narBuild(`, `narBuildAsync(`, `observeBuilds(`, `buildNar(`, `composeExec(`, `restartAndWait(` and `'docker', 'compose'`. |
+| **Expected** | `caller` absent by default and present with `--system`; `mentioner` and `plain` present by default; no file the default run lists matches the markers, and at least one that does is reachable with `--system` from outside `system/` and `e2e/`. |
+| **Failure** | Matching mentions rather than calls, which would pull twenty-two files out of the default run — a silent check that never runs, which fails in the direction nobody notices. B5-20 is what stops it. |
+| **Covers** | B5-19, B5-20, B5-21, U9. |
+| **Implemented by** | `tests/unit/m-b5.stack-routing.test.ts`. |
+| **What it found** | Red: the default `--list` held 16 M-B files that drive the stack. Building the fix found more than the finding named: the first marker set missed four `m-b4` files reaching the stack through `buildNar()` and one contract file with its own `docker compose exec`, which were still red in the default run — which is how they were found. The default run lists 123 files now and 44 are held back. |
+
+##### B5-22 / B5-23 / B5-24 — what the build deploys is what the build produced
+
+| | |
+|---|---|
+| **Premise** | An artefact nobody built in this run was reported as built and written into the live drop directory. |
+| **Component** | `config/nar_builder/build.sh build`, in the builder image, with a stand-in `mvn` on PATH. |
+| **Test data** | Three source directories, each an author pom with `<packaging>pom</packaging>` and a stale `nar/target/old-stale-0.9.nar` holding the line `stale bundle from the source tree`. The stand-in maven compiles nothing and creates exactly the files `MVN_MAKES` names: nothing for `stale-proj`, `a-1.0.0.nar` and `b-1.0.0.nar` for `two-proj`, `fresh-1.0.0.nar` for `one-proj`. What reaches the deploy step is decided by the fixture rather than by a real build, which is the only way to state it. |
+| **Expected** | `produced no .nar` and an empty drop directory; `produced 2 NAR files` naming both, and an empty drop directory; `built fresh-1.0.0.nar` / `wrote /nar_extensions/fresh-1.0.0.nar`. |
+| **Covers** | B5-22, B5-23, B5-24, FR30. |
+| **Implemented by** | `tests/integration/m-b5.stale-artifact.test.ts`. |
+| **What it found** | Red: the reviewer's fixture returned `built old-stale-0.9.nar` / `wrote /nar_extensions/old-stale-0.9.nar` / HTTP 200, and a two-NAR project deployed only `review-alpha-1.0.0.nar`. Under the control that puts the defect back, B5-24 reddens too — the stale artefact sorts ahead of the fresh one and is deployed in its place. |
+
+##### B5-25 / B5-26 / B5-27 — three minors that are decision logic
+
+| | |
+|---|---|
+| **Premise** | Each fails closed and each answers badly, which is the category that teaches an operator to stop reading the output. |
+| **Component** | `narcheck.py` and `entrypoint.sh` in the real base image; `build.sh` in the builder image. |
+| **Test data** | For B5-25, a copy of the image's own `nifi-kafka-nar-2.11.0.nar` whose first bundled jar is stored uncompressed while both its local and central headers claim deflate — the directory still parses and the entry cannot inflate; and the same bundle intact, as the counterpart. For B5-26, an inbox holding `good.nar` (that bundle), `.x.nar` (the same bytes under a dot-name) and `bad.nar` (its `Nar-Dependency-*` lines stripped). For B5-27, an author pom whose drop directory is a regular file, so the deploy step fails and the script leaves under `set -e` — a route no cleanup was written for, and one that does not depend on permissions, which root ignores. |
+| **Expected** | `REFUSED`, `could not be read out of the archive`, no `Traceback`, exit 1, and the intact bundle still `soundExit=0`; `Found 2 NAR file(s)` and `1 of 2` with no `of 3`; `buildExit=1` **and** `leaked=0`. |
+| **Covers** | B5-25, B5-26, B5-27, FR36. |
+| **Implemented by** | `tests/integration/m-b5.minors.test.ts`. |
+| **What it found** | Red on all three, measured both ways: with `zlib.error` and `NotImplementedError` uncaught the same bundle produced `zlib.error: Error -3 while decompressing data: invalid stored block lengths` as a traceback; the count read `1 of 3`; and the aborted build left one `/tmp/tmp.*` directory behind where the fixed one leaves none. |
+
+##### B5-28 / B5-29 / B5-30 — a bundle dropped by hand is judged before it loads
+
+| | |
+|---|---|
+| **Premise** | FR30 says a bundle is judged before it lands and FR36 says a refused one never enters the catalogue. Both held for `nar-build` and for nothing else, because the image's own `start.sh` points `nifi.nar.library.autoload.directory` at `${NIFI_HOME}/nar_extensions` on every start and the operator's drop directory was mounted exactly there. The hand drop is not an edge case: it is what M-B4 exists for and what SKILL.md step 2 tells agents to do. |
+| **Component** | `ghcr.io/nocodenation/liquid-nifi:latest` booted for real, with `entrypoint.sh`, `narcheck.py` and `nar-watch.sh` from this checkout and a host directory mounted at `nar_inbox`. |
+| **Test data** | Two bundles built in the image from its own `nifi-kafka-nar-2.11.0.nar` with the coordinates rewritten to `org.nocodenation.review`, so each is a bundle NiFi has not already loaded. `probe-sound-1.0.0.nar` keeps its `Nar-Dependency-*` lines and `narcheck` accepts it; `probe-refused-1.0.0.nar` has them stripped and `narcheck` refuses it, naming `org.apache.nifi.processor.util.FlowFileFilters` among four others. Both are driven twice: copied in after `Starting NAR Auto-Loader Thread` appears, and present in the inbox before a second container starts. |
+| **Expected** | The refused bundle in `nar_inbox/refused/`, absent from the load directory, and `Loaded extensions for org.nocodenation.review:probe-refused-nar` never in the log, by either route. The sound one loaded by both, and `Skipping non-nar file .probe-sound-1.0.0.nar.part` in the log, which is how a partial copy is kept from the auto-loader. |
+| **Failure** | A split that loads nothing, which would satisfy B5-28 perfectly — B5-29 and B5-30 are what stop it. |
+| **Covers** | B5-28, B5-29, B5-30, FR30, FR36. |
+| **Implemented by** | `tests/system/m-b5.hand-drop.test.ts`. System tier because it boots NiFi for real; the level is what it needs, which is the rule B5-19 establishes. |
+| **What it found** | Red, and reproduced exactly: with one directory for both purposes, `Found /opt/nifi/nifi-current/nar_extensions/probe-refused-1.0.0.nar in auto-load directory` at 11:01:15 and `Loaded extensions for org.nocodenation.review:probe-refused-nar:1.0.0` at 11:01:20 — five seconds, unjudged. Measured again after the split: the auto-loader reports `Found 0 initial NARs` at boot and `Found 1 initial NARs` when the entrypoint promoted one, so the load directory is read at startup as well as while running. |
+
+##### B5-31 / B5-32 — the load directory is reachable from inside the container only
+
+| | |
+|---|---|
+| **Premise** | B5-28 mounts the inbox itself, so it would keep passing if `compose.yml` went back to mounting the operator's drop directory onto the auto-load directory. That mount **is** the defect, so it is held where it is written down. |
+| **Component** | `compose.yml` and `config/liquid/templates/Dockerfile`, read as text. |
+| **Test data** | The `liquid` service block, the whole compose file, and the image recipe from this checkout. |
+| **Expected** | No mount anywhere ends in `:/opt/nifi/nifi-current/nar_extensions`; the `liquid` block holds `./volumes/nar_extensions:/opt/nifi/nifi-current/nar_inbox`; the Dockerfile copies `nar-watch.sh` and the entrypoint starts it in the background. |
+| **Failure** | Removing the inbox mount altogether, which passes B5-31 and deploys nothing — B5-32 is the counterpart. |
+| **Covers** | B5-31, B5-32, FR30, FR36. |
+| **Implemented by** | `tests/unit/m-b5.load-path-unreachable.test.ts`. |
+| **What it found** | Green on the first run, which is what a case written after its fix looks like. It is worth having for the control: putting the mount back reddens B5-31 twice and B5-32 once, while the booted B5-28 stays green — which is precisely the gap it was written to close. |
 
 ## 4. Independent verification
 
