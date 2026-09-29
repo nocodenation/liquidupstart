@@ -47,8 +47,12 @@ mistake is available here and is cheaper to avoid than to repeat.
   documents how to *deploy* a NAR and step 1, "build the NAR", has nowhere to happen. Python
   processors already work end to end (`volumes/python_extensions`), which is why the gap is Java's
   alone.
-- **U10 · Get it running.** The built artifact reaches Liquid and the processor appears. The restart
-  is the operator's, deliberately — it interrupts every running flow, which is not an agent's call.
+- **U10 · Get it running.** The built artifact reaches Liquid and the processor appears, within
+  seconds and with no restart. **Corrected 2026-09-15**, when the drop directory turned out to be
+  NiFi's auto-load directory: this read "the restart is the operator's, deliberately — it interrupts
+  every running flow, which is not an agent's call." A restart is needed only to replace a version
+  already loaded, because the entrypoint's copy into `lib/` wins over the auto-load directory; that
+  one is the operator's, for the reason given. See FR29.
 
 ---
 
@@ -256,8 +260,12 @@ What remains: a compromised or malicious dependency can read the source being co
 anything into the drop directory, and reach the network. The third of those is inherent to Maven and
 would only be removed by pre-seeding the dependency cache and building offline, which is the upgrade
 path if the assessment changes. It is not taken now because the stack runs locally under one
-operator, the builds are of the operator's own processors, and the artifact is loaded only after a
-restart the operator performs deliberately (U10).
+operator and the builds are of the operator's own processors. **This sentence continued "and the
+artifact is loaded only after a restart the operator performs deliberately (U10)" — corrected
+2026-09-15**: the artifact is auto-loaded within seconds, so the deliberate restart is not part of
+the assessment. What replaces it is the placement check — `nar-build` judges the bundle while it is
+still a dot-file the auto-loader skips, and a bundle that fails goes to `refused/` rather than into
+the load path (FR30, FR36).
 
 **Reviewers should treat this as its own open question,** separate from §3.1. It is not the same
 risk: §3.1 is about what an agent may do with a credential, and this is about what a build may do
@@ -366,8 +374,25 @@ case, and it is the reason the decision is not free.
 
 **It starts at `nifi-api`.** A reference is judged only when its package is one the loaded
 `nifi-api-*.jar` provides. That catches the measured case — `org.apache.nifi.controller` exists in
-2.10.0, `NodeConnectionState` does not — without pronouncing on classes that reach a NAR through a
-parent bundle, which this check cannot see. B4-6 holds that line.
+2.10.0, `NodeConnectionState` does not. B4-6 holds that line.
+
+**And it resolves against the declared parent chain.** *Corrected 2026-09-28.* This section said the
+check did not pronounce on classes reaching a NAR through a parent bundle, and that it could not see
+them. Both were wrong, and the consequence was measured: a NAR inherits its declared parent's classes
+at runtime, several `nifi-api` packages hold classes that ship in parent NARs, and resolving only
+against the bundle and `lib/*.jar` refused **11 of the 118** NARs the stock image ships —
+`nifi-standard-nar` among them. A false refusal is what this document calls worse than no check. The
+parent is named in the NAR manifest, so the chain is walked and its classes count as provided. B5-4
+requires every shipped NAR to pass; B5-5 is its counterpart, stripping the declaration so the same
+bundle is refused again.
+
+**And it reads descriptors, not only the constant pool.** *Corrected 2026-09-28.* Collecting
+`CONSTANT_Class` entries alone made the check blind to the very failure it was built for: a type named
+only in a field or method signature is invisible there, and
+`NoClassDefFoundError … at Class.getDeclaredMethods0` is descriptor resolution when NiFi reflects over
+the processor. Field and method descriptors and `Signature` attributes are walked as well. B5-6 holds
+it; B5-7 is the counterpart, requiring a class name inside a string literal to stay unreported, which
+is what keeps this from becoming the text scan the paragraph above rejects.
 
 *Done when:* `./tests/run.sh m-b4` is green, and §4's deployment checks have been run — a
 hand-dropped mismatched NAR refused and named, a good one still deployed, and the catalogue

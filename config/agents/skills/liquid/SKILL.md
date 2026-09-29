@@ -374,9 +374,15 @@ or which file failed to arrive. So the deploy procedure is:
    `nar-build` compiles the source against the NiFi and Java versions the running Liquid
    reports and the `nifi-api` version resolved from that distribution — nothing is declared
    — and it writes the finished `.nar` straight into the drop directory. It prints the file
-   it wrote. If it refuses, the message names the next step; a failed build writes nothing,
-   so whatever was in the drop directory before is still what Liquid would load.
-   `nar-build --help` for the whole surface, `nar-build --target` for the versions alone.
+   it wrote. `nar-build --help` for the whole surface, `nar-build --target` for the versions
+   alone.
+
+   **It is judged before it lands.** `nar-build` writes the bundle as a dot-file, which the
+   auto-loader skips, checks that every `org.apache.nifi` class it references is one this
+   Liquid can load, and only then renames it into place. A bundle that fails the check is
+   moved to `nar_extensions/refused/`, out of the auto-loader's path, and the message names
+   the class and the next step. The rest of the drop directory is untouched either way, so
+   what Liquid would load is unchanged by a refusal.
 
 2. The artifact is now in `./volumes/nar_extensions/` (`/opt/nifi/nifi-current/nar_extensions`
    inside the container). Place NARs you did not build with `nar-build` there yourself, and
@@ -413,13 +419,15 @@ or which file failed to arrive. So the deploy procedure is:
    when you looked and it had not loaded; it is a false report when you did not look. Never
    describe the restart as something you have done or are about to do.
 
-5. After the operator's restart, confirm the component appears (list controller-service /
-   processor types via the API, or check the canvas), and check the entrypoint's own lines in
-   `docker compose logs liquid` — a NAR that failed to reach `lib/` is named there.
+5. After the operator's restart, confirm the component appears — list controller-service or
+   processor types via the API, or check the canvas. The entrypoint's own refusal lines go to
+   the container's stdout, which is `docker compose logs liquid`: you cannot read it, because
+   no Docker socket is mounted in your container and it is not in `nifi-app.log` either. Ask
+   the operator to paste it when a bundle is missing and the API does not say why.
 
-NARs in `lib/` are loaded once at boot — adding a NAR always requires a **restart**, not
-just a schema reload. (Liquid also supports hot-loading from an autoload directory, but in
-this environment the `nar_extensions` + restart path is the supported mechanism.)
+A bundle in the drop directory is loaded within seconds, with no restart, and asking for one
+is a defect (FR29). A restart is needed only to **replace** a version already loaded, as step
+3 says, because the entrypoint's copy into `lib/` wins over the auto-load directory.
 
 ### 6.5 NAR Dependencies & ClassLoading (CRITICAL)
 When a NAR requires parent dependencies (e.g., SSL Context Service API), ALL NARs in the dependency chain must be dropped into `nar_extensions/` together.

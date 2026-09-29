@@ -375,10 +375,15 @@ services:
       - ./volumes/nar_extensions:/nar_extensions
       - ./volumes/nar_builder/m2:/m2
       - ./volumes/liquid/logs:/liquid/logs:ro
-      # The deployment check, and the one thing it needs to judge against: the
-      # nifi-api jar of the Liquid that is actually running, which its entrypoint
-      # copies out on every start. Reading the API from the running distribution
-      # rather than from the author's pom.xml is the whole point -- a bundle that
+      # The deployment check, and what it judges against: the index of everything
+      # the running Liquid can load -- 1512 class names and 49 API packages as
+      # text, written by narcheck.py itself on every start, plus the NiFi and
+      # Java versions in `runtime`. Not the nifi-api jar, which this comment used
+      # to say: `check` resolves against every jar in lib/ while judging only the
+      # API's packages, and 85 classes live in an API package without being in
+      # the API jar, so a builder holding that jar alone would refuse bundles
+      # this Liquid loads. Reading all of it from the running distribution rather
+      # than from the author's pom.xml is the whole point -- a bundle that
       # compiles against one version and is loaded by another is the M-B2 defect.
       - ./config/liquid/narcheck.py:/opt/builder/narcheck.py:ro
       - ./volumes/liquid/api:/liquid/api:ro
