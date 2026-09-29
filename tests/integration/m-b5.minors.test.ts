@@ -24,7 +24,7 @@
  *           `nifi-kafka-nar-2.11.0.nar` whose first bundled jar is stored
  *           uncompressed while both headers claim deflate -- the directory
  *           still parses and the entry cannot inflate.
- *           The drop directory holds `good.nar` (a copy of that same kafka
+ *           The inbox holds `good.nar` (a copy of that same kafka
  *           bundle), `.x.nar` (the same bytes under a dot-name) and `bad.nar`
  *           (the kafka bundle with its `Nar-Dependency-*` manifest lines
  *           stripped, which B5-5 establishes is refused).
@@ -130,14 +130,14 @@ describe('B5-26 the count and the loop see the same files', () => {
       `
       set -e
       export NIFI_HOME=/tmp/home
-      mkdir -p "$NIFI_HOME/nar_extensions" "$NIFI_HOME/api"
+      mkdir -p "$NIFI_HOME/nar_inbox" "$NIFI_HOME/nar_extensions" "$NIFI_HOME/api"
       ln -s ${LIB} "$NIFI_HOME/lib"
-      cp ${KAFKA} "$NIFI_HOME/nar_extensions/good.nar"
-      cp ${KAFKA} "$NIFI_HOME/nar_extensions/.x.nar"
+      cp ${KAFKA} "$NIFI_HOME/nar_inbox/good.nar"
+      cp ${KAFKA} "$NIFI_HOME/nar_inbox/.x.nar"
       python3 - <<'PY'
 import zipfile
 src = "${KAFKA}"
-with zipfile.ZipFile(src) as zin, zipfile.ZipFile("/tmp/home/nar_extensions/bad.nar", "w", zipfile.ZIP_DEFLATED) as zout:
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile("/tmp/home/nar_inbox/bad.nar", "w", zipfile.ZIP_DEFLATED) as zout:
     for item in zin.infolist():
         data = zin.read(item.filename)
         if item.filename == "META-INF/MANIFEST.MF":

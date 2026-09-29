@@ -4,12 +4,24 @@ set -e
 
 NIFI_BASE_DIR="${NIFI_BASE_DIR:-/opt/nifi}"
 NIFI_HOME="${NIFI_HOME:-${NIFI_BASE_DIR}/nifi-current}"
-DROP_DIR="${NIFI_HOME}/nar_extensions"
-# Where a bundle goes when it is refused: a subdirectory, because the auto-loader
-# skips those, and out of the operator's way without being deleted.
+# Two directories, and the split is the point. The inbox is the bind mount --
+# ./volumes/nar_extensions -- that the operator, the agents and nar-build all
+# write to. The load directory is inside the container, it is what
+# nifi.nar.library.autoload.directory names, and nothing outside writes to it.
+#
+# They were the same directory until 2026-09-29, so a bundle copied in by hand
+# was loaded by the auto-loader within seconds without being judged: measured
+# refused by narcheck, dropped ~35s after start, loaded ~5s later. Item 11 of the
+# 2026-09-28 review. A bundle reaches the catalogue by passing the check now, on
+# both routes.
+DROP_DIR="${NIFI_HOME}/nar_inbox"
+LOAD_DIR="${NIFI_HOME}/nar_extensions"
+# Where a bundle goes when it is refused: a subdirectory of the inbox, so the
+# operator can see it on the host, and out of their way without being deleted.
 REFUSED_DIR="${DROP_DIR}/refused"
 LIB_DIR="${NIFI_HOME}/lib"
 NAR_CHECK="$(cd "$(dirname "$0")" && pwd)/narcheck.py"
+NAR_WATCH="$(cd "$(dirname "$0")" && pwd)/nar-watch.sh"
 
 echo "Liquid Playground - Starting..."
 
@@ -24,15 +36,15 @@ if [ -d "$DROP_DIR" ]; then
     done
 
     if [ "$NAR_COUNT" -gt 0 ]; then
-        echo "Found $NAR_COUNT NAR file(s) in nar_extensions directory"
-        echo "Copying NARs to lib directory..."
+        echo "Found $NAR_COUNT NAR file(s) in the inbox"
+        echo "Judging them, and copying what passes into the load directory..."
 
         FAILED=0
         STUCK=0
         for NAR in "$DROP_DIR"/*.nar; do
             if ! REFUSAL="$(python3 "$NAR_CHECK" check "$NAR" "$LIB_DIR" 2>&1)"; then
                 FAILED=$((FAILED + 1))
-                echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LIB_DIR}/" >&2
+                echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LOAD_DIR}/" >&2
                 echo "$REFUSAL" >&2
                 # Out of the drop directory, not merely out of lib/. Refusing to
                 # copy was never a refusal: nifi.nar.library.autoload.directory
@@ -42,47 +54,49 @@ if [ -d "$DROP_DIR" ]; then
                 # auto-loader skips a subdirectory: "Skipping non-nar file
                 # refused", measured 2026-09-14.
                 if mkdir -p "$REFUSED_DIR" && mv "$NAR" "${REFUSED_DIR}/"; then
-                    echo "  Moved to ${REFUSED_DIR}/: nothing here deletes it, and while it" >&2
-                    echo "  sat in ${DROP_DIR} the auto-loader would have loaded it anyway." >&2
+                    echo "  Moved to ${REFUSED_DIR}/: nothing here deletes it." >&2
                 else
                     STUCK=$((STUCK + 1))
-                    echo "  WARNING: it could not be moved out of ${DROP_DIR}, where the" >&2
-                    echo "  auto-loader will pick it up within seconds. Remove it by hand." >&2
+                    echo "  WARNING: it could not be moved out of ${DROP_DIR}. It is not loaded --" >&2
+                    echo "  the inbox is not the load path -- but it will be judged again on every" >&2
+                    echo "  pass. Remove it by hand." >&2
                 fi
                 continue
             fi
-            if cp -v "$NAR" "${LIB_DIR}/"; then
+            if cp -v "$NAR" "${LOAD_DIR}/"; then
                 continue
             fi
             FAILED=$((FAILED + 1))
-            echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LIB_DIR}/" >&2
+            echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LOAD_DIR}/" >&2
         done
 
         if [ "$FAILED" -gt 0 ]; then
-            echo "NAR DEPLOYMENT FAILED: ${FAILED} of ${NAR_COUNT} NAR file(s) did not reach ${LIB_DIR}/." >&2
+            echo "NAR DEPLOYMENT FAILED: ${FAILED} of ${NAR_COUNT} NAR file(s) did not reach ${LOAD_DIR}/." >&2
             echo "This message is the only record of why, and the next step depends on which it was:" >&2
             if [ "${STUCK:-0}" -gt 0 ]; then
-                # Said separately, because it is the opposite of the line below:
-                # the bundle is still in the load path and will be loaded.
-                echo "  Refused AND STILL IN PLACE: ${STUCK} bundle(s) could not be moved to" >&2
-                echo "    ${REFUSED_DIR}. They are in ${DROP_DIR} and the auto-loader will load" >&2
-                echo "    them within seconds. Remove them by hand. On Linux this is usually the" >&2
-                echo "    drop directory being owned by root while Liquid runs as nifi." >&2
+                # Said separately, because the operator has to clear these by
+                # hand; they are not loaded either way.
+                echo "  Refused AND STILL IN THE INBOX: ${STUCK} bundle(s) could not be moved to" >&2
+                echo "    ${REFUSED_DIR}. They are in ${DROP_DIR}, which is not the load path, so" >&2
+                echo "    they are not loaded -- but they will be judged again on every pass." >&2
+                echo "    Remove them by hand. On Linux this is usually the inbox being owned by" >&2
+                echo "    root while Liquid runs as nifi." >&2
             fi
-            echo "  Refused: the bundle is in ${REFUSED_DIR}, out of the load path. Correct it and" >&2
-            echo "    drop it in again -- Liquid auto-loads from ${DROP_DIR} within seconds." >&2
-            echo "  Copy failed: the bundle is still in ${DROP_DIR}, so the auto-loader will load it" >&2
-            echo "    anyway; the copy into ${LIB_DIR}/ is the older, redundant path. If you want it" >&2
-            echo "    there too, fix the cause above, then: docker compose restart liquid" >&2
+            echo "  Refused: the bundle is in ${REFUSED_DIR} and was not loaded. Correct it and drop" >&2
+            echo "    it in again -- ${DROP_DIR} is watched, and a bundle that passes is loaded" >&2
+            echo "    within seconds." >&2
+            echo "  Copy failed: the bundle passed the check and could not be copied into" >&2
+            echo "    ${LOAD_DIR}/, so it is not loaded. That directory is inside the container and" >&2
+            echo "    is written by Liquid alone, so this means its filesystem is full or read-only." >&2
             echo "Liquid is starting anyway, because every other flow it hosts depends on it." >&2
         else
-            echo "NAR deployment complete: ${NAR_COUNT} file(s) copied to ${LIB_DIR}/"
+            echo "NAR deployment complete: ${NAR_COUNT} file(s) copied to ${LOAD_DIR}/"
         fi
     else
-        echo "No NAR files found in nar_extensions directory"
+        echo "No NAR files found in the inbox"
     fi
 else
-    echo "nar_extensions directory not mounted"
+    echo "the NAR inbox is not mounted at ${DROP_DIR}"
 fi
 
 # Publish what the nar_builder needs to make the same decision this entrypoint
@@ -142,6 +156,20 @@ if [ -d "$API_DIR" ]; then
         echo "Warning: could not read the runtime versions from ${LIB_DIR}" >&2
         echo "  The NAR builder falls back to the startup line in the log." >&2
     fi
+fi
+
+# The same judgement, for everything that arrives after this point. Without it
+# the split would only move the hole: the inbox is watched by nobody and a
+# hand-dropped bundle would sit there unloaded and unexplained.
+#
+# Started before NiFi so nothing can be dropped into a gap, and in the
+# background so it outlives this shell's exec. If it dies, nothing is promoted
+# and nothing loads -- the failure is closed, and visible in the log.
+if [ -x "$NAR_WATCH" ] && [ -d "$DROP_DIR" ]; then
+    "$NAR_WATCH" &
+else
+    echo "Warning: ${NAR_WATCH} is not there; bundles dropped in while Liquid runs" >&2
+    echo "  will not be judged and will not be loaded. Restart Liquid to deploy them." >&2
 fi
 
 echo "Starting Liquid..."

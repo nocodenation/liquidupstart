@@ -513,9 +513,10 @@ REFUSED
   out "downloads ${downloads}"
   out "cache ${CACHE}"
   out ""
-  out "Liquid autoloads from ${DROP}; the processor is in the catalogue within"
-  out "seconds. No restart, and none should be asked for: a restart interrupts"
-  out "every flow the instance is running."
+  out "Liquid watches ${DROP}, judges what arrives there, and loads what passes:"
+  out "the processor is in the catalogue within seconds. No restart, and none"
+  out "should be asked for -- a restart interrupts every flow the instance is"
+  out "running."
   rm -rf "$work"
 }
 

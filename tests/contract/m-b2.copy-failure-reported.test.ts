@@ -42,7 +42,7 @@ import {
 } from '../lib/entrypointfixture';
 import type { Result } from '../lib/shell';
 
-const sb = sandbox({ nars: NAR_NAMES, libIsFile: true });
+const sb = sandbox({ nars: NAR_NAMES, loadIsFile: true });
 const text = entrypointText();
 let run: Result;
 
@@ -59,18 +59,26 @@ test('B2-6 the failure is named, with the file it concerns', () => {
 });
 
 test('B2-6 it names the destination the NAR did not reach', () => {
-  expect(run.output).toContain(`${sb.home}/lib`);
+  // The load directory since 2026-09-29; it was lib/ while approved bundles
+  // went there. Item 11 of the 2026-09-28 review.
+  expect(run.output).toContain(`${sb.home}/nar_extensions`);
 });
 
 test('B2-6 it names a next step, and the one that fits this failure', () => {
-  // A copy into lib/ that failed is not the same situation as a refusal, and
-  // since 2026-09-14 the message says so. The bundle this case dropped is still
-  // in the drop directory, where NiFi auto-loads it regardless -- so the restart
-  // is offered for getting it into lib/ as well, not as the way to make the
-  // processor appear. Naming a restart for a *refused* bundle would be the false
-  // advice FR29 was corrected for.
+  // A copy that failed is not the same situation as a refusal, and since
+  // 2026-09-14 the message says so separately.
+  //
+  // **Corrected 2026-09-29.** This asked for `docker compose restart liquid`.
+  // That advice made sense while the bundle stayed in the drop directory and
+  // NiFi auto-loaded it regardless: the restart was for getting it into lib/ as
+  // well. The inbox is not the load path any more, so a bundle that passed the
+  // check and could not be copied is simply not loaded, and a restart would
+  // only repeat the same copy against the same full or read-only filesystem.
+  // The message names the cause instead. Item 11 of the 2026-09-28 review.
   expect(run.output).toMatch(/Copy failed:/);
-  expect(run.output).toMatch(/docker compose restart liquid/);
+  expect(run.output).toMatch(/so it is not loaded/);
+  expect(run.output).toMatch(/full or read-only/);
+  expect(run.output).not.toMatch(/docker compose restart liquid/);
 });
 
 test('B2-6 nothing in the entrypoint discards a failure with || true', () => {

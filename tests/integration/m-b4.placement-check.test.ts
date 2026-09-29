@@ -147,7 +147,7 @@ describe('B4-11 the builder and Liquid reach the same verdict', () => {
     requireBuilt(bad);
     mkdirSync(join(DROP, 'refused'), { recursive: true });
     copyFileSync(bad.nar, join(DROP, 'refused', BAD));
-    const r = inLiquid(`/opt/nifi/nifi-current/nar_extensions/refused/${BAD}`);
+    const r = inLiquid(`/opt/nifi/nifi-current/nar_inbox/refused/${BAD}`);
     expect({ refused: r.output.includes('REFUSED'), names: r.output.includes(DOTTED) }).toEqual({
       refused: true,
       names: true

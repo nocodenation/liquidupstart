@@ -10,7 +10,7 @@ export const CONTAINER_ENTRYPOINT = '/opt/nifi/scripts/entrypoint.sh';
 export const NAR_NAMES = ['b2-probe.nar', 'b2-second.nar'];
 export const NAR_ENTRY = 'probe.txt';
 export const NAR_CONTENT = 'probe\n';
-export const LIB_AS_FILE_CONTENT = 'not a directory\n';
+export const LOAD_AS_FILE_CONTENT = 'not a directory\n';
 
 export function entrypointText(): string {
   return readFileSync(entrypointPath, 'utf8');
@@ -32,35 +32,60 @@ z.close()`;
   if (r.code !== 0) throw new Error(`could not write the sandbox NAR ${path}: ${r.output}`);
 }
 
-export type Sandbox = { base: string; home: string; drop: string; lib: string; launched: string };
+// `drop` is the inbox everyone writes to and `load` is what NiFi auto-loads
+// from. They were one directory until 2026-09-29, which is why a bundle copied
+// in by hand was loaded unjudged -- item 11 of the 2026-09-28 review. The
+// sandbox mirrors the split, so what these cases assert is what the container
+// does.
+export type Sandbox = {
+  base: string;
+  home: string;
+  drop: string;
+  load: string;
+  lib: string;
+  launched: string;
+};
 
-export function sandbox(opts: { nars?: string[]; libIsFile?: boolean } = {}): Sandbox {
+export function sandbox(opts: { nars?: string[]; loadIsFile?: boolean } = {}): Sandbox {
   const base = mkdtempSync(join(tmpdir(), 'm-b2-entrypoint-'));
   const home = join(base, 'nifi-current');
-  const drop = join(home, 'nar_extensions');
+  const drop = join(home, 'nar_inbox');
+  const load = join(home, 'nar_extensions');
   const lib = join(home, 'lib');
   const launched = join(base, 'launched.txt');
   mkdirSync(drop, { recursive: true });
   mkdirSync(join(base, 'scripts'), { recursive: true });
-  if (opts.libIsFile) writeFileSync(lib, LIB_AS_FILE_CONTENT);
-  else mkdirSync(lib, { recursive: true });
+  // The destination that can fail. It used to be lib/, which is where approved
+  // bundles went before the split.
+  if (opts.loadIsFile) writeFileSync(load, LOAD_AS_FILE_CONTENT);
+  else mkdirSync(load, { recursive: true });
+  mkdirSync(lib, { recursive: true });
   for (const nar of opts.nars ?? []) writeNar(join(drop, nar));
   writeFileSync(
     join(base, 'scripts/start.sh'),
-    `#!/bin/sh\nls -1 ${lib} > ${launched} 2>&1 || echo "(lib is not a directory)" > ${launched}\nexit 0\n`,
+    `#!/bin/sh\nls -1 ${load} > ${launched} 2>&1 || echo "(the load directory is not a directory)" > ${launched}\nexit 0\n`,
     { mode: 0o755 }
   );
-  return { base, home, drop, lib, launched };
+  return { base, home, drop, load, lib, launched };
 }
 
 export function runEntrypoint(sb: Sandbox): Result {
-  return sh([entrypointPath], repoRoot, { NIFI_BASE_DIR: sb.base, NIFI_HOME: sb.home });
+  // NAR_WATCH resolves beside the entrypoint, so in this sandbox it is the real
+  // nar-watch.sh -- a loop that never returns. These cases are about the pass
+  // the entrypoint makes before the launch; the watcher is held by B5-28 to
+  // B5-30, which boot NiFi. `sh` starts it in the background either way, so
+  // this only keeps a stray process out of the run.
+  return sh([entrypointPath], repoRoot, {
+    NIFI_BASE_DIR: sb.base,
+    NIFI_HOME: sb.home,
+    NAR_WATCH_INTERVAL_SECONDS: '3600'
+  });
 }
 
-export function libContents(sb: Sandbox): string[] {
-  if (!existsSync(sb.lib)) return [];
+export function loadContents(sb: Sandbox): string[] {
+  if (!existsSync(sb.load)) return [];
   try {
-    return readdirSync(sb.lib).sort();
+    return readdirSync(sb.load).sort();
   } catch {
     return [];
   }

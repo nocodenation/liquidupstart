@@ -675,7 +675,13 @@ services:
     volumes:
       - ./volumes/data:/data
       - ./volumes/python_extensions:/opt/nifi/nifi-current/python_extensions
-      - ./volumes/nar_extensions:/opt/nifi/nifi-current/nar_extensions
+      # The inbox, not the load path. nifi.nar.library.autoload.directory is set
+      # to ${NIFI_HOME}/nar_extensions by the image's own start.sh on every
+      # start, so while this mount landed there a bundle copied in by hand was
+      # loaded unchecked within seconds. nar-watch.sh judges what arrives here
+      # and copies only what passes into the load directory, which stays inside
+      # the container. Item 11 of the 2026-09-28 review.
+      - ./volumes/nar_extensions:/opt/nifi/nifi-current/nar_inbox
       # Written here on every start, read by nar_builder. See entrypoint.sh.
       - ./volumes/liquid/api:/opt/nifi/nifi-current/api
       - ./volumes/liquid/conf:/opt/nifi/nifi-current/conf

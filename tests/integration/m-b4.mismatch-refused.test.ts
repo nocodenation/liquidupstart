@@ -39,7 +39,7 @@
 import { test, expect, afterAll } from 'bun:test';
 import { copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { sandbox, runEntrypoint, libContents, launchSaw, discard } from '../lib/entrypointfixture';
+import { sandbox, runEntrypoint, loadContents, launchSaw, discard } from '../lib/entrypointfixture';
 import {
   buildNar,
   stageLib,
@@ -82,11 +82,11 @@ test('B4-4 both NARs were built, and dropped by hand into one directory', () => 
 });
 
 test('B4-4 the mismatched NAR is not in lib/', () => {
-  expect(libContents(sb)).not.toContain(BAD_NAR);
+  expect(loadContents(sb)).not.toContain(BAD_NAR);
 });
 
 test('B4-5 the good NAR is', () => {
-  expect(libContents(sb)).toContain(GOOD_NAR);
+  expect(loadContents(sb)).toContain(GOOD_NAR);
 });
 
 test('B4-4 the message names the file, the class and the directory', () => {
@@ -98,7 +98,7 @@ test('B4-4 the message names the file, the class and the directory', () => {
   // about the line it names.
   const refusal = run.output.split('\n').find((l) => l.includes(DOTTED));
   expect(refusal).toBeTruthy();
-  expect(refusal).toContain(sb.lib);
+  expect(refusal).toContain(sb.load);
   expect(run.output).toContain(BAD_NAR);
 });
 

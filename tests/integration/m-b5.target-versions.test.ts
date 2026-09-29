@@ -144,7 +144,7 @@ describe('B5-18 the record is written from the distribution itself', () => {
       `
       set -e
       export NIFI_HOME=/tmp/home
-      mkdir -p "$NIFI_HOME/api" "$NIFI_HOME/nar_extensions"
+      mkdir -p "$NIFI_HOME/api" "$NIFI_HOME/nar_inbox" "$NIFI_HOME/nar_extensions"
       ln -s /opt/nifi/nifi-current/lib "$NIFI_HOME/lib"
       cp /probe/narcheck.py /probe/entrypoint.sh /tmp/
       bash /tmp/entrypoint.sh >/tmp/boot.log 2>&1 || true

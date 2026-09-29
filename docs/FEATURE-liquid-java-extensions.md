@@ -107,6 +107,18 @@ mistake is available here and is cheaper to avoid than to repeat.
   not at the next container start. `nar-build` now judges a bundle between writing it as a dot-file —
   which the auto-loader skips, measured: *"Skipping non-nar file .probe-good-...nar.39.part"* — and
   renaming it into place.
+
+  **Rewritten again 2026-09-29.** "The drop directory *is* the load path" was the defect, not the
+  design: `nar-build`'s check covered `nar-build`'s route and nothing else, so a bundle copied in by
+  hand — the path M-B4 exists for, and what SKILL.md step 2 tells agents to do — was auto-loaded
+  unjudged. Measured by the reviewer and reproduced: a bundle `narcheck` refuses, dropped ~35s after
+  start, *"Loaded extensions for org.nocodenation.review:probe-refused-nar:1.0.0"* about five seconds
+  later. The two directories are separate now. `./volumes/nar_extensions` is an **inbox**, mounted at
+  `nar_inbox`; the load path is `nar_extensions` inside the container, which nothing outside writes
+  to. `nar-watch.sh` runs beside NiFi, judges everything that appears in the inbox and copies only
+  what passes into the load path — as a dot-file renamed into place, so a partial copy is never
+  offered. It fails closed: if the watcher dies, nothing is promoted and nothing loads. FR30 holds
+  for every route now, not for one of them. B5-28 to B5-32.
 - **FR31 — A deployment step that fails says so.** The copy in the entrypoint currently ends in
   `|| true`, so a failure is swallowed and Liquid starts without the processor with nothing to read.
   A step whose failure is invisible is worse than one that has none.
