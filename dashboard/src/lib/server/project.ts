@@ -15,6 +15,7 @@ export const RESULT_FILE = join(ENV_DIR, '.install-result');
 export const VERSION_FILE = join(ENV_DIR, '.liquidupstart-version');
 // Dropped by update.sh after pulling a new release to force a rebuild.
 export const REBUILD_MARKER = join(ENV_DIR, '.needs-rebuild');
+const DEV_SRC_KEYS = ['PRIVACY_PROXY_DEV_SRC'];
 export const APP_PASSWORD_DIR = join(ENV_DIR, 'volumes', 'dashboard');
 export const APP_PASSWORD_FILE = join(APP_PASSWORD_DIR, '.app_password');
 
@@ -41,6 +42,20 @@ export function readEnvFile() {
 
 export function envValues(): Map<string, { value: string }> {
   return existsSync(ENV_FILE) ? parseEnvValues(readFileSync(ENV_FILE, 'utf8')) : new Map();
+}
+
+export function devSourceMounts(
+  values: Map<string, { value: string }> = envValues(),
+  envDir: string = ENV_DIR
+): string[] {
+  return DEV_SRC_KEYS.flatMap((key) => {
+    const value = values.get(key)?.value.trim() ?? '';
+    if (value === '') return [];
+    const root = resolve(envDir);
+    const path = resolve(root, value);
+    const inside = path === root || path.startsWith(`${root}/`);
+    return inside ? [] : ['-v', `${path}:${path}:ro`];
+  });
 }
 
 export function readAppPassword(): string | null {
