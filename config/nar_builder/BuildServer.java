@@ -17,6 +17,8 @@ public class BuildServer {
     private static final Pattern HOSTNAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,62}");
     private static final Pattern VERSION = Pattern.compile("[0-9A-Za-z][0-9A-Za-z._-]{0,31}");
     private static final String AGENT_HEADER = "X-Liquid-Agent";
+    private static final long BUILD_TIMEOUT_SECONDS =
+            Long.parseLong(System.getenv().getOrDefault("NAR_BUILDER_BUILD_TIMEOUT", "1500"));
     /** The two headers below reach into the build, so they are for tests only. */
     private static final boolean TEST_HOOKS = "1".equals(System.getenv("NAR_BUILDER_TEST_HOOKS"));
 
@@ -38,10 +40,20 @@ public class BuildServer {
                 respond(exchange, 405, "nar-build refused: /build takes a POST.\n");
                 return;
             }
-            String source = body(exchange).trim();
-            invoke(exchange, List.of(SCRIPT, "build", source));
+            String source = body(exchange);
+            if (source == null) {
+                respond(exchange, 400, "nar-build refused: the path in the request body is longer than "
+                        + MAX_BODY + " bytes or carries a NUL, so it cannot name a directory.\n");
+                return;
+            }
+            invoke(exchange, List.of(SCRIPT, "build", source.trim()));
         });
-        server.setExecutor(Executors.newFixedThreadPool(2));
+        // A thread is always free, and the *builds* are what is capped. On a
+        // fixed pool of two, two builds in flight blocked the healthcheck --
+        // and a cold first build takes minutes, past its 5s timeout, so the
+        // container went unhealthy while working exactly as intended. A third
+        // request queued with nothing said. Item 9 of the 2026-09-28 review.
+        server.setExecutor(Executors.newCachedThreadPool());
         server.start();
         System.out.println("nar-builder listening on " + port);
     }
@@ -70,7 +82,24 @@ public class BuildServer {
         return true;
     }
 
+    /** Two at a time, as before -- but a third is told so rather than waiting. */
+    private static final java.util.concurrent.Semaphore SLOTS =
+            new java.util.concurrent.Semaphore(2);
+
     private static void invoke(HttpExchange exchange, List<String> command) throws IOException {
+        if (!SLOTS.tryAcquire()) {
+            respond(exchange, 503, "nar-build refused: two builds are already running.\n"
+                    + "Wait for one to finish and run it again.\n");
+            return;
+        }
+        try {
+            invokeHeld(exchange, command);
+        } finally {
+            SLOTS.release();
+        }
+    }
+
+    private static void invokeHeld(HttpExchange exchange, List<String> command) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(new ArrayList<>(command));
         pb.redirectErrorStream(true);
         String liquid = TEST_HOOKS ? exchange.getRequestHeaders().getFirst("X-Liquid-Host") : null;
@@ -82,19 +111,48 @@ public class BuildServer {
             pb.environment().put("NAR_BUILD_API_PROBE_VERSION", probe);
         }
         Process process = pb.start();
-        byte[] output;
-        try (InputStream in = process.getInputStream()) {
-            output = in.readAllBytes();
-        }
+        // Read on another thread. Reading here first was the reason the bound
+        // below could never fire: readAllBytes returns only when every writer
+        // has closed the pipe, and a killed build can leave a grandchild
+        // holding it -- so the request blocked for good with a timeout sitting
+        // uselessly underneath it. Found by the case for item 8 on its first
+        // run, which hung.
+        java.util.concurrent.CompletableFuture<byte[]> reader =
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try (InputStream in = process.getInputStream()) {
+                        return in.readAllBytes();
+                    } catch (IOException e) {
+                        return new byte[0];
+                    }
+                });
         int code;
         try {
-            code = process.waitFor();
+            // Bounded. Nothing killed a build, so when the client and nginx gave
+            // up together at 1800s the build carried on and could still place a
+            // NAR in the live drop directory, while the operator had been told
+            // the builder was not answering. A hung test held one of two worker
+            // threads for good. Item 8 of the 2026-09-28 review.
+            if (!process.waitFor(BUILD_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                respond(exchange, 504, "nar-build refused: the build passed "
+                        + BUILD_TIMEOUT_SECONDS + "s and was stopped, so nothing was deployed.\n"
+                        + "Run it again, or ask the operator to look at what it is waiting for.\n");
+                return;
+            }
+            code = process.exitValue();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            process.destroyForcibly();
             respond(exchange, 500, "nar-build refused: the build was interrupted before it finished.\n"
                     + "Run nar-build again; if it keeps happening ask the operator to restart the builder:\n"
                     + "docker compose restart nar_builder\n");
             return;
+        }
+        byte[] output;
+        try {
+            output = reader.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            output = new byte[0];
         }
         respond(exchange, status(code), new String(output, StandardCharsets.UTF_8));
     }
@@ -109,9 +167,20 @@ public class BuildServer {
         };
     }
 
+    /** The argv limit is about 128KB and a NUL cannot cross it at all, so a body
+     *  that breaks either makes ProcessBuilder.start() throw -- and nothing was
+     *  logged, the connection simply closed, and the client reported that the
+     *  builder was not running. Item 13 of the 2026-09-28 review. */
+    private static final int MAX_BODY = 8192;
+
     private static String body(HttpExchange exchange) throws IOException {
         try (InputStream in = exchange.getRequestBody()) {
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            byte[] raw = in.readNBytes(MAX_BODY + 1);
+            if (raw.length > MAX_BODY) {
+                return null;
+            }
+            String text = new String(raw, StandardCharsets.UTF_8);
+            return text.indexOf('\0') >= 0 ? null : text;
         }
     }
 

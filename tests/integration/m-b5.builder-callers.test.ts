@@ -106,3 +106,62 @@ describe('B5-13 and the vhost is for the stack network', () => {
     expect(render).toMatch(/NETWORK_SUBNET="\$\{NETWORK_SUBNET:-10\.99\.0\.0\/24\}"/);
   });
 });
+
+describe('B5-14 the server answers when it cannot work', () => {
+  let out2 = '';
+  beforeAll(() => {
+    out2 = sh([
+      'docker', 'run', '--rm',
+      '-v', `${SERVER}:/probe/BuildServer.java:ro`,
+      '--entrypoint', 'sh', IMAGE, '-c',
+      `
+      set -e
+      mkdir -p /opt/builder
+      # A build that never ends, so the slots stay taken and the timeout bites.
+      printf '#!/bin/sh\\nsleep 120\\n' > /opt/builder/build.sh
+      chmod +x /opt/builder/build.sh
+      javac -d /tmp/cls /probe/BuildServer.java
+      NAR_BUILDER_PORT=8772 NAR_BUILDER_BUILD_TIMEOUT=3 java -cp /tmp/cls BuildServer >/tmp/s.log 2>&1 &
+      for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8772/health >/dev/null 2>&1 && break; sleep 0.25; done
+      curl -s -o /dev/null -w '%{http_code}' -H 'X-Liquid-Agent: 1' -X POST --data-binary a http://127.0.0.1:8772/build > /tmp/a.code &
+      curl -s -o /dev/null -w '%{http_code}' -H 'X-Liquid-Agent: 1' -X POST --data-binary b http://127.0.0.1:8772/build > /tmp/b.code &
+      sleep 1
+      # Both slots are taken by builds that will not end.
+      printf 'health=%s\\n' "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8772/health)"
+      printf 'third=%s\\n' "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Liquid-Agent: 1' -X POST --data-binary c http://127.0.0.1:8772/build)"
+      # And the ones that are stuck end at the timeout rather than running on.
+      sleep 6
+      printf 'stuckA=%s\\n' "$(cat /tmp/a.code 2>/dev/null)"
+      printf 'stuckB=%s\\n' "$(cat /tmp/b.code 2>/dev/null)"
+      big=$(head -c 20000 /dev/zero | tr '\\0' 'a')
+      printf 'oversize=%s\\n' "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Liquid-Agent: 1' -X POST --data-binary "$big" http://127.0.0.1:8772/build)"
+      `
+    ]).output;
+  }, 900_000);
+
+  test('B5-14 the healthcheck answers while both slots are busy', () => {
+    // Item 9. On a fixed pool of two it waited behind the builds and the
+    // container went unhealthy while working as intended.
+    expect(out2).toContain('health=200');
+  });
+
+  test('B5-14 a third build is told so rather than queued in silence', () => {
+    expect(out2).toContain('third=503');
+  });
+
+  test('B5-14 a build that passes its budget is stopped, not left running', () => {
+    // Item 8. Nothing killed a build, so when the client gave up the build
+    // carried on and could still deploy.
+    // 504 is the answer the client gets instead of waiting out the full 1800s
+    // while the build runs on and may still deploy.
+    expect(out2).toContain('stuckA=504');
+    expect(out2).toContain('stuckB=504');
+  });
+
+  test('B5-14 and a body too big to be an argument is answered', () => {
+    // Item 13. Over the argv limit ProcessBuilder.start() threw, nothing was
+    // logged, and the connection simply closed -- which the client reported as
+    // the builder not running.
+    expect(out2).toContain('oversize=400');
+  });
+});
