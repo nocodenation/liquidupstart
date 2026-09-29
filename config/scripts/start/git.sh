@@ -210,7 +210,15 @@ LOCK_MAX_AGE_SECONDS="${GIT_LOCK_MAX_AGE_SECONDS:-$(( $(lu_wait_seconds) + 360 )
 lu_lock_age() {  # lu_lock_age <dir>; seconds since it was last written
   local f="$1/pid" t now
   [[ -f "$f" ]] || f="$1"
-  t="$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)"
+  # GNU first. On BSD `stat -f %m` is the mtime; on GNU coreutils, BusyBox and
+  # uutils `-f` means *file-system status* and takes no format, so `%m` is read
+  # as a second file name -- stat prints the file system block, exits 1, and the
+  # `||` appends the real timestamp to it. The numeric check then rejects the
+  # lot and the age becomes `now`, about 56 years, so every lock on Linux was
+  # taken over at once: a fresh foreign one, and the mkdir-to-write instant.
+  # BSD rejects `-c` with nothing on stdout, so this order works on both. The
+  # toolbox the start runs in is debian:bookworm-slim.
+  t="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)"
   [[ "$t" =~ ^[0-9]+$ ]] || t=0
   now="$(date +%s)"
   printf '%s' "$(( now - t ))"
@@ -412,7 +420,12 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
       if [[ -z "$_prev_error" || "$_prev_error" == "null" ]]; then
         error=""
       else
+        # Unescaped as well as unquoted: lu_write_manifest escapes again, so a
+        # message carrying a quote or a backslash doubled its escapes on every
+        # busy start. Rare -- most git errors quote with an apostrophe -- and
+        # exactly the kind of quiet drift a line scanner over JSON invites.
         error="${_prev_error%\"}"; error="${error#\"}"
+        error="$(printf '%s' "$error" | sed -e 's/\\"/"/g' -e 's/\\\\/\\/g')"
       fi
       echo "Warning: leaving the manifest entry for ${dir} as the last start left it." >&2
     fi
