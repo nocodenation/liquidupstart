@@ -4,6 +4,7 @@ import os
 import struct
 import sys
 import zipfile
+import zlib
 
 NIFI_PREFIX = "org/apache/nifi/"
 BUNDLED_DIRS = ("NAR-INF/bundled-dependencies/", "META-INF/bundled-dependencies/")
@@ -149,17 +150,25 @@ def class_references(data, where):
     return found
 
 
+# What a broken archive throws. zlib.error comes out of a corrupt deflate stream
+# and NotImplementedError out of a compression method this Python cannot read;
+# neither was caught, so a damaged bundle printed a traceback where every other
+# refusal prints a sentence. It still failed closed -- the check exited non-zero
+# -- but the operator was handed a stack trace instead of a reason. Minor of the
+# 2026-09-28 review.
+ZIP_ERRORS = (zipfile.BadZipFile, OSError, RuntimeError, zlib.error, NotImplementedError)
+
 def _open_zip(data, where):
     try:
         return zipfile.ZipFile(io.BytesIO(data))
-    except (zipfile.BadZipFile, OSError) as exc:
+    except ZIP_ERRORS as exc:
         raise Unreadable("%s: could not be opened as an archive (%s)" % (where, exc))
 
 
 def _read(zf, name, where):
     try:
         return zf.read(name)
-    except (zipfile.BadZipFile, OSError, RuntimeError) as exc:
+    except ZIP_ERRORS as exc:
         raise Unreadable("%s: could not be read out of the archive (%s)" % (where, exc))
 
 
@@ -202,7 +211,7 @@ def nar_parent(path):
             data = fh.read()
         zf = _open_zip(data, os.path.basename(path))
         raw = zf.read("META-INF/MANIFEST.MF").decode("utf-8", "replace")
-    except (KeyError, zipfile.BadZipFile, OSError, Unreadable):
+    except (KeyError, Unreadable) + ZIP_ERRORS:
         return None
     # Manifest continuation lines begin with a single space.
     unfolded = raw.replace("\r\n", "\n").replace("\n ", "")
@@ -264,7 +273,7 @@ def jar_class_names(path):
     try:
         with zipfile.ZipFile(path) as zf:
             return _class_names(zf)
-    except (zipfile.BadZipFile, OSError):
+    except ZIP_ERRORS:
         return set()
 
 

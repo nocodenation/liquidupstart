@@ -86,27 +86,46 @@ UNREACHABLE
     return 3
   fi
 
-  line=""
-  source_log=""
-  for f in $(ls -t "${LIQUID_LOGS}"/nifi-app*.log 2>/dev/null || true); do
-    line="$(grep 'Starting NiFi ' "$f" 2>/dev/null | tail -1 || true)"
-    if [ -n "$line" ]; then
-      source_log="$f"
-      break
-    fi
-  done
+  # The record Liquid's entrypoint writes on every start, which is where these
+  # come from now. They were read from the `Starting NiFi` line in
+  # nifi-app.log, and logback rotates that file hourly keeping 30, so about
+  # thirty hours after a start every build refused and asked for a restart --
+  # against the promise that deploying a bundle needs none. Item 7 of the
+  # 2026-09-28 review.
+  nifi=""
+  java=""
+  version_source=""
+  if [ -f "${LIQUID_INDEX}/runtime" ]; then
+    nifi="$(sed -n 's/^nifi_version=//p' "${LIQUID_INDEX}/runtime" | head -1)"
+    java="$(sed -n 's/^java_version=//p' "${LIQUID_INDEX}/runtime" | head -1)"
+    [ -n "$nifi" ] && [ -n "$java" ] && version_source="${LIQUID_INDEX}/runtime"
+  fi
 
-  nifi="$(printf '%s' "$line" | sed -n 's/.*Starting NiFi \([0-9][^ ]*\) using Java \([^ ]*\).*/\1/p')"
-  java="$(printf '%s' "$line" | sed -n 's/.*Starting NiFi \([0-9][^ ]*\) using Java \([^ ]*\).*/\2/p')"
+  # The log stays as the fallback, for a Liquid that started before this record
+  # existed and has not been restarted since. It is the path that expires.
+  if [ -z "$version_source" ]; then
+    line=""
+    for f in $(ls -t "${LIQUID_LOGS}"/nifi-app*.log 2>/dev/null || true); do
+      line="$(grep 'Starting NiFi ' "$f" 2>/dev/null | tail -1 || true)"
+      if [ -n "$line" ]; then
+        version_source="$f"
+        break
+      fi
+    done
+    nifi="$(printf '%s' "$line" | sed -n 's/.*Starting NiFi \([0-9][^ ]*\) using Java \([^ ]*\).*/\1/p')"
+    java="$(printf '%s' "$line" | sed -n 's/.*Starting NiFi \([0-9][^ ]*\) using Java \([^ ]*\).*/\2/p')"
+  fi
+
   major="$(printf '%s' "$java" | sed -n 's/^\([0-9][0-9]*\).*/\1/p')"
 
   if [ -z "$nifi" ] || [ -z "$major" ]; then
     cat <<UNREADABLE
 nar-build refused: the target version could not be read. Liquid answers at
-${LIQUID_HOST}:${LIQUID_PORT}, but no startup record of the running instance was
-found in ${LIQUID_LOGS} — that record is where the NiFi and Java versions are read
-from, and this build will not guess them.
-Ask the operator to restart Liquid so it writes one: docker compose restart liquid.
+${LIQUID_HOST}:${LIQUID_PORT}, but neither ${LIQUID_INDEX}/runtime nor a startup
+line in ${LIQUID_LOGS} names the NiFi and Java versions of the running instance,
+and this build will not guess them.
+The record is written by Liquid's entrypoint on every start, so a restart
+produces one: docker compose restart liquid.
 Nothing was built and nothing was written to ${DROP}.
 UNREADABLE
     return 3
@@ -134,7 +153,7 @@ UNRESOLVED
   out "nifi_api_source ${API_SOURCE}"
   out "java_version ${java}"
   out "java_major ${major}"
-  out "read_from liquid at ${LIQUID_HOST}:${LIQUID_PORT} ($(basename "${source_log}"))"
+  out "read_from liquid at ${LIQUID_HOST}:${LIQUID_PORT} ($(basename "${version_source}"))"
 }
 
 synthesise() {
@@ -312,14 +331,26 @@ NOSPI
 
   work="$(mktemp -d)"
   part=""
-  trap 'rm -rf "$work"; [ -n "$part" ] && rm -f "$part"; exit' INT TERM
+  # EXIT as well as the signals. `set -e` is on, so any command that fails
+  # between here and the end left $work in /tmp -- a cp -a onto a full /tmp left
+  # /tmp/tmp.P164iqUm8o behind -- and a kill during the copy left a .part
+  # dot-file in the drop directory. Minor of the 2026-09-28 review.
+  trap 'rm -rf "$work"; [ -n "$part" ] && rm -f "$part"' EXIT
+  trap 'rm -rf "$work"; [ -n "$part" ] && rm -f "$part"; exit 130' INT
+  trap 'rm -rf "$work"; [ -n "$part" ] && rm -f "$part"; exit 143' TERM
   proj="${work}/project"
   mkdir -p "$proj"
 
   if [ -f "${src}/pom.xml" ]; then
     pom_mode=author
     cp -a "${src}/." "${proj}/"
-    rm -rf "${proj}/target" "${proj}/.git"
+    # Every target/, not only the top one. A multi-module author pom keeps its
+    # artefacts in nar/target and the like, and the deploy step takes the first
+    # */target/*.nar it finds -- so a leftover old-stale-0.9.nar from the source
+    # tree was reported as freshly built and written into the drop directory.
+    # Item 10 of the 2026-09-28 review.
+    rm -rf "${proj}/.git"
+    find "$proj" -type d -name target -prune -exec rm -rf {} + 2>/dev/null || true
   else
     pom_mode=synthesised
     art="$(basename "$rel" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-' \
@@ -372,7 +403,24 @@ INTRUDER
     return 2
   fi
 
-  nar="$(find "$proj" -type f -name '*.nar' -path '*/target/*' | head -1)"
+  nars="$(find "$proj" -type f -name '*.nar' -path '*/target/*' | sort)"
+  nar_count="$(printf '%s\n' "$nars" | grep -c . || true)"
+  if [ "$nar_count" -gt 1 ]; then
+    # Deploying the first of several in directory order is a coin toss the
+    # author never sees. Item 10 of the 2026-09-28 review.
+    cat >&2 <<MANY
+
+nar-build refused: the build of /repos/${rel} produced ${nar_count} NAR files:
+
+$(printf '  %s\n' $nars)
+
+Only one bundle can be deployed, and nothing here can tell which you meant.
+Build the module you want on its own, or point nar-build at its directory.
+MANY
+    rm -rf "$work"
+    return 2
+  fi
+  nar="$(printf '%s\n' "$nars" | head -1)"
   if [ -z "$nar" ]; then
     cat "$log" >&2
     cat >&2 <<NONAR

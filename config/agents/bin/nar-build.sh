@@ -29,7 +29,9 @@ NiFi versions nifi-api on its own line, so the two differ: the resolved one is
 what Liquid loads and what the project is written against. Nothing is declared: a
 build that cannot read or resolve them stops.
 
-The artifact is not live until Liquid restarts, which is the operator's call.
+Liquid autoloads the artifact from its drop directory: the processor is in the
+catalogue within seconds, with no restart. Do not ask for one -- a restart
+interrupts every flow the instance is running.
 
 Exit codes:
   0  built, and the answer names the file it wrote

@@ -14,7 +14,14 @@ NAR_CHECK="$(cd "$(dirname "$0")" && pwd)/narcheck.py"
 echo "Liquid Playground - Starting..."
 
 if [ -d "$DROP_DIR" ]; then
-    NAR_COUNT=$(find "$DROP_DIR" -maxdepth 1 -name "*.nar" 2>/dev/null | wc -l | tr -d "[:space:]")
+    # Counted the way the loop below iterates. `find -name "*.nar"` matches
+    # dot-files that the `"$DROP_DIR"/*.nar` glob skips, so a directory holding
+    # good.nar, .x.nar and a refused bad.nar reported "1 of 3" for two bundles.
+    # Minor of the 2026-09-28 review.
+    NAR_COUNT=0
+    for NAR in "$DROP_DIR"/*.nar; do
+        [ -f "$NAR" ] && NAR_COUNT=$((NAR_COUNT + 1))
+    done
 
     if [ "$NAR_COUNT" -gt 0 ]; then
         echo "Found $NAR_COUNT NAR file(s) in nar_extensions directory"
@@ -103,6 +110,38 @@ if [ -d "$API_DIR" ]; then
     fi
 else
     echo "api directory not mounted; the NAR builder has nothing to judge bundles against" >&2
+fi
+
+# And the two versions a bundle is compiled against, recorded beside the index.
+#
+# The builder read them from the `Starting NiFi ... using Java ...` line in
+# nifi-app.log. NiFi's stock logback rotates that file hourly and keeps 30, so
+# about thirty hours after a start the line is gone and every nar-build and
+# --target answered "ask the operator to restart Liquid" -- against the promise
+# that deploying a bundle needs no restart. Item 7 of the 2026-09-28 review.
+#
+# The distribution carries both facts without the log: lib/ names the NiFi
+# version in its own jars, and the JVM reports its build. Written on every
+# start, like the index, so the record belongs to the instance that is running.
+if [ -d "$API_DIR" ]; then
+    NIFI_VERSION=""
+    for JAR in "${LIB_DIR}"/nifi-runtime-*.jar "${LIB_DIR}"/nifi-framework-api-*.jar; do
+        [ -f "$JAR" ] || continue
+        NIFI_VERSION="$(basename "$JAR" .jar | sed -n 's/^nifi-\(runtime\|framework-api\)-//p')"
+        [ -n "$NIFI_VERSION" ] && break
+    done
+    # The build string, which is what java.version reports and therefore what
+    # the log line carried: 21.0.12+10-LTS, not 21.0.12.
+    JAVA_VERSION="$(java -version 2>&1 | sed -n 's/.*(build \([^)]*\)).*/\1/p' | head -1)"
+    if [ -n "$NIFI_VERSION" ] && [ -n "$JAVA_VERSION" ]; then
+        printf 'nifi_version=%s\njava_version=%s\n' "$NIFI_VERSION" "$JAVA_VERSION" \
+            > "${API_DIR}/runtime"
+        echo "Published the runtime versions for the NAR builder: NiFi ${NIFI_VERSION}, Java ${JAVA_VERSION}"
+    else
+        # The builder falls back to the log, which works until the file rotates.
+        echo "Warning: could not read the runtime versions from ${LIB_DIR}" >&2
+        echo "  The NAR builder falls back to the startup line in the log." >&2
+    fi
 fi
 
 echo "Starting Liquid..."
