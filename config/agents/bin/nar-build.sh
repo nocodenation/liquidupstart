@@ -52,7 +52,11 @@ ask() {
   payload="$3"
   body="$(mktemp)"
   errors="$(mktemp)"
-  set -- -sS -o "$body" -w '%{http_code}' --max-time "$TIMEOUT" -H "Host: ${VHOST}:${PORT}"
+  # A header a browser cannot add cross-origin without a preflight the builder
+  # never answers. The endpoint deploys code into Liquid, so it takes requests
+  # from this stack's agents and not from a page the operator had open.
+  set -- -sS -o "$body" -w '%{http_code}' --max-time "$TIMEOUT" -H "Host: ${VHOST}:${PORT}" \
+      -H "X-Liquid-Agent: 1"
   if [ -n "${NAR_BUILD_LIQUID_HOST:-}" ]; then
     set -- "$@" -H "X-Liquid-Host: ${NAR_BUILD_LIQUID_HOST}"
   fi

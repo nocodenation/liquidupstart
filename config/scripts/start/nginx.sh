@@ -92,6 +92,8 @@ echo "Keystore/truststore generated. Password: ${STORE_PASSWORD}"
 API_KEY="$(grep -E '^API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+NETWORK_SUBNET="$(grep -E '^SYSTEM_NETWORK_SUBNET=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+NETWORK_SUBNET="${NETWORK_SUBNET:-10.99.0.0/24}"
 HTTP_PORT="${HTTP_PORT:-8888}"
 HTTPS_PORT="${HTTPS_PORT:-8833}"
 
@@ -106,6 +108,7 @@ for template in "${TEMPLATES_DIR}"/*; do
   sed_inplace "s|API_KEY_PLACEHOLDER|${API_KEY}|g" "${CONFIG_DIR}/${filename}"
   sed_inplace "s|SYSTEM_HTTP_PORT|${HTTP_PORT}|g" "${CONFIG_DIR}/${filename}"
   sed_inplace "s|SYSTEM_HTTPS_PORT|${HTTPS_PORT}|g" "${CONFIG_DIR}/${filename}"
+  sed_inplace "s|SYSTEM_NETWORK_SUBNET|${NETWORK_SUBNET}|g" "${CONFIG_DIR}/${filename}"
 done
 
 

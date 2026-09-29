@@ -366,6 +366,10 @@ services:
     restart: unless-stopped
     environment:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
+      # X-Liquid-Host and X-Nifi-Api-Probe-Version reach into the build, so the
+      # server honours them only when this is 1. Off here, on for a stack a
+      # test run brings up. Blocker 6 of the 2026-09-28 review.
+      NAR_BUILDER_TEST_HOOKS: ${NAR_BUILDER_TEST_HOOKS:-0}
     volumes:
       - ./volumes/repos:/repos
       - ./volumes/nar_extensions:/nar_extensions

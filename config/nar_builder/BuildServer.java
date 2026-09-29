@@ -16,13 +16,28 @@ public class BuildServer {
     private static final String SCRIPT = "/opt/builder/build.sh";
     private static final Pattern HOSTNAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,62}");
     private static final Pattern VERSION = Pattern.compile("[0-9A-Za-z][0-9A-Za-z._-]{0,31}");
+    private static final String AGENT_HEADER = "X-Liquid-Agent";
+    /** The two headers below reach into the build, so they are for tests only. */
+    private static final boolean TEST_HOOKS = "1".equals(System.getenv("NAR_BUILDER_TEST_HOOKS"));
 
     public static void main(String[] args) throws IOException {
         int port = Integer.parseInt(System.getenv().getOrDefault("NAR_BUILDER_PORT", "8770"));
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/health", exchange -> respond(exchange, 200, "ok\n"));
-        server.createContext("/target", exchange -> invoke(exchange, List.of(SCRIPT, "target")));
+        server.createContext("/target", exchange -> {
+            if (!fromAnAgent(exchange)) {
+                return;
+            }
+            invoke(exchange, List.of(SCRIPT, "target"));
+        });
         server.createContext("/build", exchange -> {
+            if (!fromAnAgent(exchange)) {
+                return;
+            }
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                respond(exchange, 405, "nar-build refused: /build takes a POST.\n");
+                return;
+            }
             String source = body(exchange).trim();
             invoke(exchange, List.of(SCRIPT, "build", source));
         });
@@ -31,14 +46,38 @@ public class BuildServer {
         System.out.println("nar-builder listening on " + port);
     }
 
+    /**
+     * A build deploys code into Liquid, so the caller has to be one of this
+     * stack's agents rather than any page the operator happens to have open.
+     *
+     * A text/plain POST is a "simple request": no CORS preflight, so a browser
+     * sends it cross-origin without asking. Requiring a header a browser cannot
+     * add without a preflight the server never answers is what shuts that door,
+     * and a request carrying Origin is a browser request by definition.
+     * Blocker 6 of the 2026-09-28 review.
+     */
+    private static boolean fromAnAgent(HttpExchange exchange) throws IOException {
+        if (exchange.getRequestHeaders().getFirst("Origin") != null) {
+            respond(exchange, 403, "nar-build refused: this endpoint is for the stack's agents,"
+                    + " not for a browser.\n");
+            return false;
+        }
+        if (exchange.getRequestHeaders().getFirst(AGENT_HEADER) == null) {
+            respond(exchange, 403, "nar-build refused: the request did not come from nar-build.\n"
+                    + "If you are calling it by hand, send " + AGENT_HEADER + ": 1.\n");
+            return false;
+        }
+        return true;
+    }
+
     private static void invoke(HttpExchange exchange, List<String> command) throws IOException {
         ProcessBuilder pb = new ProcessBuilder(new ArrayList<>(command));
         pb.redirectErrorStream(true);
-        String liquid = exchange.getRequestHeaders().getFirst("X-Liquid-Host");
+        String liquid = TEST_HOOKS ? exchange.getRequestHeaders().getFirst("X-Liquid-Host") : null;
         if (liquid != null && HOSTNAME.matcher(liquid).matches()) {
             pb.environment().put("NAR_BUILD_LIQUID_HOST", liquid);
         }
-        String probe = exchange.getRequestHeaders().getFirst("X-Nifi-Api-Probe-Version");
+        String probe = TEST_HOOKS ? exchange.getRequestHeaders().getFirst("X-Nifi-Api-Probe-Version") : null;
         if (probe != null && VERSION.matcher(probe).matches()) {
             pb.environment().put("NAR_BUILD_API_PROBE_VERSION", probe);
         }

@@ -328,6 +328,17 @@ NOSPI
     synthesise "$proj" "$art" "$nifi" "$api" "$major" "$src"
   fi
 
+  # What the drop directory held before Maven ran. The build runs the author's
+  # own pom, so it can write into ${DROP} itself -- an antrun `echo file=` puts a
+  # bundle straight into the load path, past narcheck, and the build then
+  # reports "produced no .nar". Blocker 6 of the 2026-09-28 review. The mount is
+  # shared with the deployment step, so this catches it rather than preventing
+  # it; preventing it means the build and the deployment not sharing a view of
+  # that directory, which is a change of shape rather than a repair.
+  before="${work}/drop-before.txt"
+  after="${work}/drop-after.txt"
+  ls -A "$DROP" 2>/dev/null | sort > "$before" || : > "$before"
+
   log="${work}/maven.log"
   if ! mvn -B -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" package > "$log" 2>&1; then
     cat "$log" >&2
@@ -337,6 +348,26 @@ nar-build refused: the build of /repos/${rel} failed, so nothing was written to
 ${DROP} — the artifact that was there before, if any, is untouched.
 Fix the errors Maven reported above in /repos/${rel} and run nar-build again.
 BUILDFAILED
+    rm -rf "$work"
+    return 2
+  fi
+
+  ls -A "$DROP" 2>/dev/null | sort > "$after" || : > "$after"
+  intruders="$(comm -13 "$before" "$after" || true)"
+  if [ -n "$intruders" ]; then
+    for name in $intruders; do
+      rm -rf "${DROP:?}/${name}"
+    done
+    cat >&2 <<INTRUDER
+
+nar-build refused: the build of /repos/${rel} wrote into ${DROP} by itself:
+
+$(printf '  %s\n' $intruders)
+
+Those entries have been removed. A bundle reaches ${DROP} only after narcheck
+has judged it; a build that puts one there directly is bypassing the one check
+that stands between it and the running Liquid.
+INTRUDER
     rm -rf "$work"
     return 2
   fi
