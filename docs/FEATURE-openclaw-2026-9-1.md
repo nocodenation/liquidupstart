@@ -234,21 +234,38 @@ that never granted it, while `operator.talk` — which *was* configured — is a
 device. Every page worked, a `config.patch` write from the UI succeeded, and the interface looked
 sound. Only a **fresh** approval exercises the cap, and until 2026-09-10 nobody had asked for one.
 
-**So `operator.admin` is in `deviceAutoApprove.scopes`**, written by
-`config/scripts/start/openclaw.sh`. `gateway.auth.identityScopes` was tried first, as this section
-suggested, and changes nothing **for the browser**: it grants scopes to an identity, while what
-blocks is the cap on the device approval. Re-measured on 2026-09-19 with the same result, so this
-half stands.
+**So `operator.admin` is in `gateway.auth.identityScopes`, not in `deviceAutoApprove.scopes`.**
+*Corrected 2026-09-29.* This section read "**So `operator.admin` is in `deviceAutoApprove.scopes`**",
+and §9 moved it out without this paragraph being updated. `identityScopes` was tried first, as this
+section originally suggested, and changes nothing **for the browser**: it grants scopes to an
+identity, while what blocks a browser is the cap on the device approval. That measurement stands and
+is about one of the setting's two uses; the other is the recovery path, and it is why the grant lives
+there now.
+
+**What that move does, said plainly.** Admin no longer reaches a browser through an auto-approved
+device; it reaches every operator connection nginx authenticates, including one with no device at
+all. nginx attaches one constant identity to every request it forwards, so nothing downstream can
+tell the operator's browser from a container on the stack network. That was already true of the
+device path before this change — a container presenting itself as the Control UI was auto-approved
+with `operator.admin` and could call `exec.approvals.get`, measured on 2026-09-19 — so the move
+removes a pairing step a container could script, and opens no door that was shut. It does not create
+the separation between the agents and the gateway that supervises them; that separation does not
+exist on this branch or its base, and making it real would mean nginx asserting the identity for
+requests from the host and not from the stack network. Finding 1 of the 2026-09-29 review, which
+raised it as a measurement rather than a defect of this work; it is a design question for #9 or a
+follow-up, and it is recorded here rather than treated as resolved.
 
 > **What that sentence got wrong, corrected 2026-09-19.** *Changes nothing* was read as a verdict on
 > the setting. It is a verdict on one of its two uses. The same grant makes the **CLI** usable
 > through the proxy, which is the whole recovery path — see §9. A measurement that answers one
 > question was filed as the answer to the other.
 
-The trade is stated rather than hidden. The gateway logs a SECURITY WARNING naming `operator.admin`
-whenever it is in this list, which is exactly what OC-10 asserts, and that warning is now expected
-output rather than a finding. It restores the posture 2026.7.1 had; the migration gave that up by
-accident, not by decision, and this is where the accident was found.
+The trade is stated rather than hidden. The gateway logged a SECURITY WARNING naming
+`operator.admin` whenever it was in `deviceAutoApprove.scopes`, which is what OC-10 asserted, and
+with the grant moved to the identity that warning stops being logged. **Corrected 2026-09-29:** it is
+not the finding that was resolved, only the line that reported it. What the warning was about — a
+browser reaching admin without a human deciding — is still true through nginx, as the paragraph above
+says.
 
 This is the one place where the migration adds a security decision rather than a translation, and it
 is flagged here so it is reviewed as one — now with the measurement that decided it.
@@ -398,7 +415,7 @@ than the papercut warrants.
 **The 815 keys added in 2026.9.1** that this stack does not use. New channels, agent ownership,
 media models, browser SSRF policy. Adopting any of them is a feature decision, not a migration.
 
-## 9. The pairing dead end, and the way back · **specified 2026-09-19, not yet built**
+## 9. The pairing dead end, and the way back · **specified 2026-09-19, built 2026-09-19, repaired 2026-09-29**
 
 On the morning of 2026-09-19 the operator could not open OpenClaw. Their browser was shown *"Role
 upgrade pending — this browser is already known, but the requested access changed and needs a fresh
