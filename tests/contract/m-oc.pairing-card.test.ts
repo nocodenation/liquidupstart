@@ -67,24 +67,21 @@ describe('OC-43 the operator has a control, and it is on the page', () => {
     expect(card.toLowerCase()).toContain('approv');
   });
 
-  test('and it is silent when nothing is waiting', () => {
-    // A card that says "nothing pending" on every load is a card the operator
-    // stops reading, and this one has to be noticed exactly once in a while.
-    expect(card).toMatch(/\{#if loaded && \(pending\.length > 0 \|\| result\)\}/);
-  });
-
-  test('but it stays while it has something to confirm', () => {
-    // Found on 2026-09-19, the first time the card was used for real: approving
-    // empties the list, so a confirmation living inside the card left with the
-    // card and was never read. The operator had already taught this exact lesson
-    // on 2026-09-18 about the skip panel — "die message beim testen
-    // verschwindet" — and it was reintroduced one component later.
-    //
-    // The guard is the `|| result` above; this half asserts the list, the
-    // explanation and the button are what disappear, not the answer.
-    const gated = card.slice(card.indexOf('<section'));
-    expect(gated).toMatch(/\{#if pending\.length > 0\}[\s\S]*<ul class="gitlist">/);
-    expect(gated).toMatch(/\{#if pending\.length > 0\}[\s\S]*onclick=\{approve\}[\s\S]*\{\/if\}/);
+  // **What used to be here, and why it is gone.** Two cases read the card's
+  // markup for its `{#if}` conditions. The reviewer showed what that was worth:
+  // this file stayed 18/18 with the id guard removed, with `latest` picking the
+  // oldest request, with the result line deleted, and with the Origin check
+  // replaced by `if (false)`. A case that cannot fail is not a case.
+  //
+  // Both claims are now held by mounting the card and driving it, in
+  // tests/component/m-oc.pairing-card.test.ts: OC-53 requires an empty queue to
+  // draw nothing, OC-52 requires a failed listing to be said out loud, and
+  // OC-54 counts the buttons. Finding 6 of the 2026-09-29 review.
+  test('the card has a condition on it at all, and a result that outlives the list', () => {
+    // What text can still say: the two states exist in the file. What they do is
+    // OC-52 to OC-55.
+    expect(card).toContain('{#if loaded &&');
+    expect(card).toContain('|| result)}');
   });
 
   test('a well-formed id reaches the command, so the guard is not refusing everything', () => {
@@ -93,24 +90,46 @@ describe('OC-43 the operator has a control, and it is on the page', () => {
 });
 
 describe('OC-44 the id is read when the button is pressed, not when the page was drawn', () => {
-  test('the card posts `latest` rather than an id it rendered', () => {
-    expect(card).toContain("requestId: 'latest'");
+  test('the card posts a device, never an id it rendered', () => {
+    // **Changed 2026-09-29.** It posted `latest`, and the route resolved that to
+    // the newest request of ANY device -- so a request that arrived 55ms after
+    // the card was drawn took the operator's click. The card names the device and
+    // the server resolves that device's current request, which keeps the answer
+    // to the id churn and removes the guess. Finding 2 of the review.
+    expect(card).toContain('JSON.stringify({ deviceId })');
     // The negative half of the same rule: nothing in the card may send a
     // req.requestId it has in hand.
     expect(card).not.toMatch(/requestId:\s*req\./);
   });
 
-  test('the route resolves `latest` against what is pending now', () => {
-    expect(route).toContain("asked === 'latest'");
+  test('the route resolves it against what is pending now', () => {
+    expect(route).toContain('chooseRequest(pending,');
     expect(route).toContain('pendingRequests()');
+  });
+
+  test('OC-59 a GET from another origin is refused as well as a POST', () => {
+    // A GET spawns one `docker run` of the OpenClaw image, so any page the
+    // operator had open could make the dashboard do that once per request --
+    // through an <img> tag, whose response it cannot read but whose work it costs.
+    // Minor of the 2026-09-29 review.
+    //
+    // Text, because the alternative is a route harness for one branch: what is
+    // read is that the GET handler consults the check and that an absent Origin
+    // is not what it refuses -- a same-origin GET from the address bar sends none,
+    // and refusing that would make the card unreachable.
+    expect(route).toMatch(/export const GET[\s\S]{0,200}wrongOrigin\(request\)/);
+    expect(route).toContain('!!origin && origin !== process.env.ORIGIN');
   });
 
   test('an id that is no longer pending fails loudly, in the CLI words', () => {
     // 502 with the message, never a quiet success. "No longer pending" is an
     // ordinary answer here, because the browser keeps replacing its id.
     expect(server).toContain('status: 502');
-    expect(server).toContain('firstLine(output)');
-    expect(route).toContain('Nothing is waiting for approval.');
+    // cliMessage, not firstLine: firstLine returned the LAST line, so the CLI's
+    // usage footer replaced `Reason: missing scope: operator.pairing` on its way
+    // to the operator. Finding 3. OC-51 holds the behaviour.
+    expect(server).toContain('cliMessage(output)');
+    expect(server).toContain('Nothing is waiting for approval.');
   });
 });
 
