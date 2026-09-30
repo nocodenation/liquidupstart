@@ -3218,8 +3218,14 @@ read out of the source; whether it looks right is a person's judgement, and A14-
 
 Six findings from the review of 2026-09-21, in the reviewer's order. Findings 1 and 2 are
 regressions introduced by M-A15's lock; 3 to 5 are the dashboard; 6 is about the suite being
-reviewable at all. Every case here was run against the unfixed code first: **18 of them failed and
-9 passed**, and the 9 are the positive counterparts, which must hold before and after.
+reviewable at all. Every case here was run against the unfixed code first: of the **27 tests** these
+cases carried on 2026-09-22, **18 failed and 9 passed**, and the 9 are the positive counterparts,
+which must hold before and after.
+
+*Counted in tests, said so 2026-09-30.* This read "18 of them failed and 9 passed" directly after
+"every case", which reads as a count of cases -- and there are 20 of those, so the numbers did not
+add up. A reviewer noticed. The files carry 40 tests now; the 13 added since came from the two
+reviews that followed, and each has its evidence in its own block.
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
