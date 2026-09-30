@@ -32,14 +32,44 @@ owns the case, and requires the named test to go red. The subject is restored ho
 `from` must occur **exactly once** in `file`. It may span several lines. `file` may never be a test:
 a tool that can rewrite the assertions can make anything pass.
 
+**`"all": true`** says every occurrence of `from` is meant, and only then is a second one allowed. It
+is a declaration rather than a loosening: the reason a second occurrence is usually a mistake is that
+the author had one site in mind, and this is where they say otherwise. A3c-8 needs it — the same mount
+line appears in `compose.yml` once per agent service, and the case requires all three. Without it, a
+`from` occurring twice is refused and the message names the flag.
+
+**`"exempt": "<reason>"`** registers a decision instead of a mutation: this case cannot have one, and
+here is why.
+
+```json
+{ "case": "A3-3", "exempt": "it reads volumes/_git-secrets/known_hosts, written days ago by a keyscan" }
+```
+
+The line §6 draws is what the assertion is about. Decision logic needs a mutation. An assertion about
+an artefact that already exists on disk cannot have one, because changing the code that produced the
+file does not change the file. An exempt entry carries nothing else — an entry holding both is an
+error, not an exemption, because silently honouring one of them is how a mutation stops running with
+nobody deciding that. `--gaps` counts exemptions separately and prints each with its reason, since the
+reason is the only thing a reader can disagree with.
+
+**The run is bounded.** `--timeout` is bun's per-test limit; `MUTATE_RUN_BUDGET_MS` (five minutes by
+default) bounds the whole spec run. A mutation that turns a loop condition into `while (true) {}` never
+yields, so no per-test timeout can end it, and an async hang came back **validated** because bun
+reddened the test and the run carried on. A run the budget had to stop is **refused**: it did not
+finish, so it measured nothing. The subject is restored either way.
+
 ## The four outcomes, and why there are four
 
 | | |
 |---|---|
 | **validated** | the named test failed and at least one test still passed |
 | **failed** | the named test passed — the entry does not protect what it claims |
-| **refused** | the mutation could not be applied, or **every** test failed, which is a broken file rather than a control |
+| **refused** | the mutation could not be applied, **every** test failed — a broken file rather than a control — or the run did not finish inside its budget |
 | **unresolved** | nothing went red at all |
+
+There is a fifth line in the tally, **exempt**, and it is not an outcome: nothing was run. It is
+counted and printed so a reader can tell "no mutation was possible here, for this stated reason" from
+"no entry exists".
 
 **`unresolved` is the one that matters.** A green run reads as *"no case protects this rule"*, which
 is exactly the discovery this tool exists to make — and when ten cases were mutated by hand on

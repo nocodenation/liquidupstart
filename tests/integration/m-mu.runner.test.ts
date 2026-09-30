@@ -740,3 +740,190 @@ test('an unrelated survivor', () => { expect(1).toBe(1); });
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// MU-34 to MU-38 — `all`, `exempt` and the bounded run, moved here from #17.
+//
+// #17 carried its own earlier copy of this runner, 170 lines different, and both
+// branches add the same four files: `git merge-tree` gives add/add conflicts on
+// all of them, and resolving toward #17 would bring back everything #18 fixed.
+// Its registry needs two features only its runner had, so they come here first
+// and #17 keeps the registry alone. Findings 1, 4, 5 and 6 of the 2026-09-29
+// review of #17.
+// ---------------------------------------------------------------------------
+
+describe('MU-34 an exemption is a registered decision, not a missing entry', () => {
+  test('MU-34 it is reported with its reason and counted apart', () => {
+    // §6 draws the line: decision logic needs a mutation, an assertion about an
+    // artefact already on disk cannot have one, because mutating the code that
+    // produced it changes nothing about the file. A3-3 reads
+    // volumes/_git-secrets/known_hosts, and the keyscan that wrote it ran days
+    // ago.
+    const reason = 'the file it asserts about was written days ago by a keyscan';
+    const r = run(registry([{ case: 'FX-1', exempt: reason }]));
+    expect(r.output).toContain(`EXEMPT    FX-1  ${reason}`);
+    expect(r.output).toContain('exempt=1');
+    expect(r.output).not.toContain('REFUSED');
+    expect(r.code).toBe(0);
+  });
+
+  test('MU-34 and the same checks apply to it as to everything else', () => {
+    // Item 4. The exempt path returned before the loader's checks, so a newline
+    // in the reason produced a phantom entry -- `REFUSED   written days ago  no
+    // such subject:` -- and an empty case gave `REFUSED   -  no such subject: -`.
+    for (const bad of [
+      { case: 'FX-1', exempt: 'written\ndays ago' },
+      { case: '', exempt: 'a reason' },
+      { case: 'FX-1', exempt: '' }
+    ]) {
+      const r = run(registry([bad as Record<string, string>]));
+      expect(r.code).toBe(2);
+      expect(r.output).not.toContain('REFUSED');
+    }
+  });
+
+  test('MU-34 and an entry that is both is a contradiction, not an exemption', () => {
+    // It was silently exempted and its mutation never ran: a case that stopped
+    // being proven, with nobody deciding that.
+    const r = run(registry([{ ...entry(), exempt: 'a reason' }]));
+    expect(r.code).toBe(2);
+    expect(r.output).toContain('is exempt and also carries a mutation');
+  });
+});
+
+describe('MU-35 `all` is a declaration, not a loosening', () => {
+  test('MU-35 without it, a `from` that occurs twice is still refused', () => {
+    // The reason a second occurrence is usually a mistake: the author had one in
+    // mind. The subject carries TWICE="here" twice on purpose.
+    const r = run(registry([entry({ from: 'TWICE="here"', to: 'TWICE="gone"' })]));
+    expect(r.output).toContain('occurs 2 times');
+    expect(r.output).toContain('"all": true');
+    expect(r.code).not.toBe(0);
+  });
+
+  test('MU-35 with it, every occurrence is replaced and the subject goes back', () => {
+    // A3c-8 needs it: the same mount line appears in compose.yml once per agent
+    // service, and the case requires all three.
+    const spec = 'spec/twice.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('both occurrences are there', () => {
+  expect(s.split('TWICE="here"').length - 1).toBe(2);
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(
+      registry([
+        entry({
+          spec,
+          from: 'TWICE="here"',
+          to: 'TWICE="gone"',
+          all: true as unknown as string,
+          mustFail: 'both occurrences are there'
+        })
+      ])
+    );
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(sha()).toBe(cleanSha);
+  });
+
+  test('MU-35 and a non-boolean `all` is an error rather than a guess', () => {
+    const r = run(registry([entry({ all: 'yes' })]));
+    expect(r.code).toBe(2);
+    expect(r.output).toContain('non-boolean all');
+  });
+});
+
+describe('MU-36 --gaps says what an exemption decided, and fails on an orphan', () => {
+  const spec = () => {
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    writeFileSync(
+      join(root, 'docs/TEST-SPEC-gaps.md'),
+      ['| ID | Level | Sign | Case |', '|---|---|---|---|', '| FX-1 | unit | positive | one |'].join('\n')
+    );
+  };
+
+  test('MU-36 an exemption is listed with its reason', () => {
+    // Item 5. It was counted as covered and the reason never shown, so the one
+    // thing a reader needs in order to disagree with it was the one thing hidden.
+    spec();
+    const reason = 'the artefact predates the run';
+    const reg = registry([{ case: 'FX-1', exempt: reason }]);
+    const r = sh(['bash', RUNNER, '--gaps', '--registry', reg, '--root', root]);
+    expect(r.code).toBe(0);
+    expect(r.output).toContain('exempt=1');
+    expect(r.output).toContain(`exempt:   FX-1  ${reason}`);
+  });
+
+  test('MU-36 and a registered case no specification mentions is an error', () => {
+    // A registry claiming to cover something that is not there. Missing entries
+    // are not an error -- a gap is the ordinary state of a registry being filled
+    // in -- but an orphan means a case was renamed or deleted and the entry
+    // outlived it.
+    spec();
+    const reg = registry([entry({ case: 'ZZ-99' })]);
+    const r = sh(['bash', RUNNER, '--gaps', '--registry', reg, '--root', root]);
+    expect(r.code).not.toBe(0);
+    expect(r.output).toContain('orphaned: ZZ-99');
+    expect(r.output).toContain('in no TEST-SPEC');
+  });
+});
+
+describe('MU-37 the whole run is bounded, not only each test in it', () => {
+  test('MU-37 a mutation that makes the spec hang is refused, and the subject goes back', () => {
+    // Item 6, specified as MU-10 and never built. bun --timeout ends a test that
+    // awaits too long; it cannot end one that never yields, so `while (true) {}`
+    // hung the runner for ever. An async hang was worse: bun reddened the test
+    // and the run came back VALIDATED, so the budget was a promise the tool did
+    // not keep either way.
+    const spec = 'spec/hang.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', () => {
+  if (s.includes('POLICY="public"')) { while (true) {} }
+  expect(s).toContain('POLICY="protected"');
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec })]), [], { MUTATE_RUN_BUDGET_MS: '8000' });
+    expect(r.output).toContain('did not finish within 8000ms under the mutation');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+    // The other half of MU-10: however the run ends, the subject is what it was.
+    expect(sha()).toBe(cleanSha);
+  }, 300_000);
+
+  test('MU-37 and a spec that is already too slow unmutated is refused before anything is touched', () => {
+    // Otherwise the budget would blame the mutation for a spec that never fits
+    // in it -- the same misattribution the baseline run exists to prevent.
+    const spec = 'spec/slow.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+test('the policy is protected', async () => {
+  await new Promise((r) => setTimeout(r, 60000));
+  expect(1).toBe(1);
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec })]), [], { MUTATE_RUN_BUDGET_MS: '6000' });
+    expect(r.output).toContain('unmutated');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(sha()).toBe(cleanSha);
+  }, 300_000);
+});
+
+describe('MU-38 while an ordinary run is not slowed by the bound', () => {
+  test('MU-38 the counterpart: a normal entry still validates', () => {
+    // A budget that ended a healthy run would make every entry REFUSED, which is
+    // the direction this tool must never fail in.
+    const r = run(registry([entry()]), [], { MUTATE_RUN_BUDGET_MS: '300000' });
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(r.code).toBe(0);
+  });
+});

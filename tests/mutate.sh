@@ -51,7 +51,15 @@ if [[ "${GAPS:-0}" == "1" ]]; then
    try {
     const fs = require("fs"), path = require("path");
     const [registry, root] = process.argv.slice(1);
-    const entries = JSON.parse(fs.readFileSync(registry, "utf8")).map((e) => e.case);
+    const raw = JSON.parse(fs.readFileSync(registry, "utf8"));
+    const entries = raw.map((e) => e.case);
+    // An exemption is a registered decision, and the decision is the reason. It
+    // was counted as covered and the reason never shown, so the one thing a
+    // reader needs in order to disagree with it was the one thing --gaps hid.
+    // Item 5 of the 2026-09-29 review of #17.
+    const exempt = raw
+      .filter((e) => typeof e.exempt === "string" && e.exempt !== "")
+      .map((e) => [e.case, e.exempt]);
     const dir = path.join(root, "docs");
     const specs = fs.existsSync(dir)
       ? fs.readdirSync(dir).filter((f) => /^TEST-SPEC-.*\.md$/.test(f)) : [];
@@ -65,10 +73,20 @@ if [[ "${GAPS:-0}" == "1" ]]; then
     }
     const missing = [...ids].filter((i) => !entries.includes(i)).sort();
     const orphan = entries.filter((e) => !ids.has(e)).sort();
-    console.log(`specified=${ids.size} registered=${entries.length} missing=${missing.length} orphaned=${orphan.length}`);
+    console.log(`specified=${ids.size} registered=${entries.length} missing=${missing.length} orphaned=${orphan.length} exempt=${exempt.length}`);
     if (missing.length) console.log("missing:  " + missing.join(" "));
     if (orphan.length) console.log("orphaned: " + orphan.join(" "));
+    for (const [id, reason] of exempt) console.log(`exempt:   ${id}  ${reason}`);
     if (!specs.length) { console.error("no TEST-SPEC-*.md under " + dir + ": nothing to compare against"); process.exit(2); }
+    // An orphan is an entry whose case no specification mentions any more: it was
+    // renamed or deleted and the entry outlived it. That is a registry saying it
+    // covers something that is not there, so it is an error rather than a line in
+    // a report nobody reads. Missing entries are not -- a gap is the ordinary
+    // state of a registry being filled in.
+    if (orphan.length) {
+      console.error(`${orphan.length} registered case(s) are in no TEST-SPEC: renamed, deleted, or misspelt`);
+      process.exit(1);
+    }
    } catch (e) { console.error("mutate --gaps: " + (e && e.message ? e.message : e)); process.exit(2); }
   ' "$REGISTRY" "$ROOT" || exit $?
   exit 0
@@ -82,7 +100,43 @@ rows="$(bun -e '
   const fs = require("fs");
   const rows = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
   if (!Array.isArray(rows)) { console.error("registry is not a list"); process.exit(2); }
+  const clean = (v) => typeof v === "string" && v !== "" && !/[\t\n]/.test(v);
   for (const r of rows) {
+    // An exemption is a registered decision, not a missing entry: an assertion
+    // about an artefact already on disk cannot have a mutation, because changing
+    // the code that produced it changes nothing about the file. A3-3 reads
+    // volumes/_git-secrets/known_hosts, and the keyscan that wrote it ran days
+    // ago.
+    //
+    // It goes through the same checks as everything else. The first version
+    // returned before them, so a newline in the reason produced a phantom entry
+    // ("REFUSED written days ago no such subject:"), an empty case gave
+    // "REFUSED - no such subject: -", and an entry carrying both an exemption and
+    // a mutation was silently exempted with its mutation never run. Item 4 of the
+    // 2026-09-29 review of #17.
+    const exempt = typeof r.exempt === "string" && r.exempt !== "";
+    if (exempt) {
+      if (!clean(r.case)) {
+        console.error(`an exempt entry has no usable case id`); process.exit(2);
+      }
+      if (/[\t\n]/.test(r.exempt)) {
+        console.error(`entry ${r.case} has a tab or newline in its exempt reason`); process.exit(2);
+      }
+      // Both is a contradiction, and silently honouring one of them is how a
+      // mutation stops running without anyone deciding that.
+      const alsoMutates = ["file", "spec", "from", "to", "mustFail"].some(
+        (k) => typeof r[k] === "string" && r[k] !== ""
+      );
+      if (alsoMutates) {
+        console.error(`entry ${r.case} is exempt and also carries a mutation: pick one`); process.exit(2);
+      }
+      console.log(["exempt", r.case, "-", "-", ".", ".", "false", r.exempt].join("\t"));
+      continue;
+    }
+    if (r.exempt !== undefined && !exempt) {
+      console.error(`entry ${r.case ?? "?"} has an empty exempt: give the reason, or remove the field`);
+      process.exit(2);
+    }
     for (const k of ["case", "file", "spec", "from", "to", "mustFail"]) {
       if (typeof r[k] !== "string") {
         console.error(`entry ${r.case ?? "?"} has no ${k}`); process.exit(2);
@@ -103,8 +157,18 @@ rows="$(bun -e '
     // A leading dot so no field is ever empty on the wire: tab is IFS
     // whitespace, and bash collapses a run of it into one delimiter, which
     // shifts every later field. PROCEDURE-mutation-control.md, "the wire format".
+    if (r.all !== undefined && typeof r.all !== "boolean") {
+      console.error(`entry ${r.case} has a non-boolean all`); process.exit(2);
+    }
     const b64 = (s) => "." + Buffer.from(s, "utf8").toString("base64");
-    console.log([r.case, r.file, r.spec, b64(r.from), b64(r.to), r.mustFail].join("\t"));
+    // The first column says which shape the row is. The runner on #17 overloaded
+    // the `all` column to carry "exempt" as well, which is the same conflation
+    // that produced the shifted-field defect the leading dot exists for.
+    //
+    // No apostrophes anywhere in this program: it is one single-quoted bash
+    // string, and one of them ends it.
+    console.log(["mutate", r.case, r.file, r.spec, b64(r.from), b64(r.to),
+                 r.all === true ? "true" : "false", r.mustFail].join("\t"));
   }
   } catch (e) { console.error("registry: " + (e && e.message ? e.message : e)); process.exit(2); }
 ' "$REGISTRY")" || exit 2
@@ -116,6 +180,10 @@ BACKUP=""
 # an assignment there happens in a subshell and never reaches the caller -- the
 # reader then found no file and refused every entry as "did not run".
 JUNIT="$(mktemp "${TMPDIR:-/tmp}/lu-mutate-junit.XXXXXX")"
+# Written by run_spec when it had to stop the run. A file rather than a variable,
+# for the same reason JUNIT is a fixed path: run_spec is called in a command
+# substitution, so an assignment there never reaches the caller.
+TIMED_OUT="${JUNIT}.timedout"
 # The backup goes only after the copy back has succeeded. cp can fail with the
 # subject already truncated -- a full disk, a read-only mount, a parent replaced
 # mid-run -- and deleting it anyway leaves the tracked file broken with nothing
@@ -134,9 +202,9 @@ restore() {
 RESTORE_FAILED=0
 # Each signal restores and then exits: bash resumes past an INT handler, so a
 # trap that only restores does not hold on Ctrl-C.
-trap 'restore; rm -f "$JUNIT"' EXIT
-trap 'restore; rm -f "$JUNIT"; exit 130' INT
-trap 'restore; rm -f "$JUNIT"; exit 143' TERM
+trap 'restore; rm -f "$JUNIT" "$TIMED_OUT"' EXIT
+trap 'restore; rm -f "$JUNIT" "$TIMED_OUT"; exit 130' INT
+trap 'restore; rm -f "$JUNIT" "$TIMED_OUT"; exit 143' TERM
 
 # `./` matters: a bare path is a substring filter over every test file under
 # ROOT, so a sibling `x.test.tsx` was counted into the tally of `x.test.ts` and
@@ -152,12 +220,48 @@ trap 'restore; rm -f "$JUNIT"; exit 143' TERM
 # against. `--reporter=junit` is in both and names every case exactly, with a
 # <failure> child for the red ones. Item 3 of the 2026-09-29 re-review.
 
+# The whole run is bounded, not only each test in it.
+#
+# bun --timeout ends a test that awaits too long; it cannot end one that never
+# yields. A mutation that turns a fetch into `while (true) {}` hung the runner for
+# ever -- and an async hang came back VALIDATED, because bun reddened the test and
+# the run carried on. Either way the budget was a promise the tool did not keep.
+# Item 6 of the 2026-09-29 review of #17, specified as MU-10 and never built.
+#
+# Not `timeout(1)`: macOS ships none, and this runs on the operator machine as
+# well as in the image. A background child plus a polled deadline needs nothing
+# but bash.
+#
+# The verdict is REFUSED. A run that did not finish measured nothing, which is
+# what refused means here -- and `failed` means something else: the named test
+# passed and the entry protects something other than it.
+RUN_BUDGET_MS="${MUTATE_RUN_BUDGET_MS:-300000}"
+
 run_spec() {  # run_spec <spec>
   # Removed first, so a run that writes nothing cannot be read as the previous
   # run's result.
-  rm -f "$JUNIT"
+  rm -f "$JUNIT" "$TIMED_OUT"
+  local out="${JUNIT}.out"
   (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" \
-      --reporter=junit --reporter-outfile="$JUNIT" "./$1" 2>&1)
+      --reporter=junit --reporter-outfile="$JUNIT" "./$1" >"$out" 2>&1) &
+  local pid=$!
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= RUN_BUDGET_MS )); then
+      # TERM first, then KILL: bun writes the report on the way out when it can,
+      # and a killed run with no report is harder to explain than a stopped one.
+      kill -TERM "$pid" 2>/dev/null
+      sleep 1
+      kill -KILL "$pid" 2>/dev/null
+      : > "$TIMED_OUT"
+      break
+    fi
+    sleep 0.1
+    waited=$((waited + 100))
+  done
+  wait "$pid" 2>/dev/null
+  cat "$out" 2>/dev/null
+  rm -f "$out"
 }
 
 # `pass`, `fail` or `none` for the named test.
@@ -205,14 +309,21 @@ tally() {  # tally <output> <word>
   printf '%s\n' "$1" | awk -v w="$2" '$0 ~ ("^ *[0-9]+ " w "$") { n += $1 } END { print n+0 }'
 }
 
-validated=0; failed=0; unresolved=0; refused=0
+validated=0; failed=0; unresolved=0; refused=0; exempt=0
 report=""
 
 add() { report="${report}$1"$'\n'; }
 
-while IFS=$'\t' read -r id file spec from to must; do
+while IFS=$'\t' read -r kind id file spec from to all must; do
   [[ -n "$id" ]] || continue
   [[ -z "$ONLY" || "$ONLY" == "$id" ]] || continue
+
+  # A registered decision, not a missing entry, and it is reported as its own
+  # outcome so a reader can tell the two apart in the tally.
+  if [[ "$kind" == "exempt" ]]; then
+    add "EXEMPT    ${id}  ${must}"
+    exempt=$((exempt+1)); continue
+  fi
 
   abs="${ROOT}/${file}"
   absspec="${ROOT}/${spec}"
@@ -280,8 +391,15 @@ while IFS=$'\t' read -r id file spec from to must; do
   if [[ "$hits" == "0" ]]; then
     add "REFUSED   ${id}  its 'from' is not in ${file} -- the subject moved"; refused=$((refused+1)); continue
   fi
-  if [[ "$hits" != "1" ]]; then
-    add "REFUSED   ${id}  its 'from' occurs ${hits} times in ${file}"; refused=$((refused+1)); continue
+  # A `from` that occurs more than once is refused unless the entry says every
+  # occurrence is meant. It is a declaration rather than a loosening: the reason a
+  # second occurrence is usually a mistake is that the author had one in mind, and
+  # `"all": true` is where they say otherwise. A3c-8 needs it -- the same mount
+  # line appears in compose.yml once per agent service, and the case requires all
+  # three.
+  if [[ "$hits" != "1" && "$all" != "true" ]]; then
+    add "REFUSED   ${id}  its 'from' occurs ${hits} times in ${file}; set \"all\": true if every one is meant"
+    refused=$((refused+1)); continue
   fi
 
   # No backup, no mutation. There is no `set -e` here on purpose, so every step
@@ -300,6 +418,11 @@ while IFS=$'\t' read -r id file spec from to must; do
   # the baseline answers three questions at once: does the named test exist, did
   # it run, was it green.
   base="$(run_spec "$spec")"
+  if [[ -f "$TIMED_OUT" ]]; then
+    rm -f "$BACKUP"; BACKUP=""
+    add "REFUSED   ${id}  ${spec} did not finish within ${RUN_BUDGET_MS}ms unmutated -- nothing was measured"
+    refused=$((refused+1)); continue
+  fi
   case "$(named_state "$must")" in
     fail)
       rm -f "$BACKUP"; BACKUP=""
@@ -312,17 +435,25 @@ while IFS=$'\t' read -r id file spec from to must; do
   esac
 
   SUBJECT="$abs"
-  FROM="$from" TO="$to" bun -e '
+  FROM="$from" TO="$to" ALL="$all" bun -e '
+   try {
     const fs = require("fs");
     const p = process.argv[1];
     const d = (s) => Buffer.from(s.slice(1), "base64").toString("utf8");
     const body = fs.readFileSync(p, "utf8");
     // Not a regular expression: `$&` and friends in a replacement string would
     // be interpreted, and a subject full of shell variables is exactly where
-    // that bites.
+    // that bites. split/join for the same reason -- replaceAll with a string
+    // needle is literal, but the replacement still honours those escapes.
     const needle = d(process.env.FROM);
-    const at = body.indexOf(needle);
-    fs.writeFileSync(p, body.slice(0, at) + d(process.env.TO) + body.slice(at + needle.length));
+    const to = d(process.env.TO);
+    if (process.env.ALL === "true") {
+      fs.writeFileSync(p, body.split(needle).join(to));
+    } else {
+      const at = body.indexOf(needle);
+      fs.writeFileSync(p, body.slice(0, at) + to + body.slice(at + needle.length));
+    }
+   } catch (e) { console.error("write: " + (e && e.message ? e.message : e)); process.exit(2); }
   ' "$abs" || true
 
   # The write is verified, not assumed. A read-only subject or a bun that dies
@@ -333,7 +464,17 @@ while IFS=$'\t' read -r id file spec from to must; do
   fi
 
   out="$(run_spec "$spec")"
+  timed_out=""
+  [[ -f "$TIMED_OUT" ]] && timed_out=1
   restore
+
+  # A run the budget had to stop answered nothing, whatever bun managed to write
+  # before it went. The subject is already back -- `restore` above, and the traps
+  # if this is interrupted -- which is MU-10s other half.
+  if [[ -n "$timed_out" ]]; then
+    add "REFUSED   ${id}  ${spec} did not finish within ${RUN_BUDGET_MS}ms under the mutation -- the mutation may have made it hang, and a run that did not finish is not a result"
+    refused=$((refused+1)); continue
+  fi
 
   # The named test's own verdict, by exact name. Survivors are counted from the
   # tally below, which is a summary line both bun versions print.
@@ -386,7 +527,7 @@ printf '%s' "$report"
 
 # Four zeros and exit 0 is indistinguishable from a healthy run, so an empty
 # registry says so and a --case matching nothing is an error.
-seen=$((validated + failed + refused + unresolved))
+seen=$((validated + failed + refused + unresolved + exempt))
 if [[ -n "$ONLY" && "$seen" == "0" ]]; then
   echo "mutate: no entry for case ${ONLY} in ${REGISTRY}" >&2
   exit 2
@@ -395,7 +536,7 @@ if [[ "$seen" == "0" ]]; then
   echo "registry is empty: nothing was validated, and that is not the same as everything passing."
 fi
 
-echo "validated=${validated} failed=${failed} refused=${refused} unresolved=${unresolved}"
+echo "validated=${validated} failed=${failed} refused=${refused} unresolved=${unresolved} exempt=${exempt}"
 
 # Unresolved is deliberately not an error: making it one pushes authors towards
 # a mutation that reddens something rather than the one that tests the rule.
