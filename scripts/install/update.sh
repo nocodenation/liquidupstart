@@ -22,12 +22,16 @@ REPO="nocodenation/liquidupstart"
 DEST="${HOME}/.liquidupstart"
 VERSION_FILE="${DEST}/.liquidupstart-version"
 REBUILD_MARKER="${DEST}/.needs-rebuild"
-# toolbox too: the dashboard builds it only when it is absent, so an image kept
-# across an update never picks up a changed config/toolbox/Dockerfile. It is the
-# only locally built image with no other path to a rebuild -- the Rebuild button
-# runs build.sh *inside* it and rebuilds the other four. Blocking finding of the
-# 2026-09-30 review.
-BUILT_IMAGES="opencode bun-runner liquid openclaw toolbox"
+# Every locally built image, or an upgrade leaves a stale one behind.
+#
+# nar-builder came with the Java extensions. toolbox came with the git
+# integration and is the one with no other path to a rebuild: the dashboard
+# builds it only when it is absent, and the Rebuild button runs build.sh *inside*
+# it and rebuilds the others. A8-27 holds this list, and holds that
+# builtImages() in the dashboard does NOT name the toolbox -- that list is "all
+# must exist for a start to succeed", and requiring an image the dashboard builds
+# itself would report a build on a machine that needs none.
+BUILT_IMAGES="opencode bun-runner liquid openclaw nar-builder toolbox"
 LAUNCHER_DIR="/usr/local/bin"
 LAUNCHER="${LAUNCHER_DIR}/liquidupstart"
 

@@ -61,3 +61,26 @@ else
     echo "State folder created successfully."
 fi
 
+# After the branch above, never before it. Creating this directory also creates
+# STATE_DIR, so `[ -d "$STATE_DIR" ]` was always true and a fresh install never
+# seeded anything: volumes/liquid held `api/` alone, the empty conf/ was mounted
+# over the image's, and NiFi exited 2 with `sed: can't read .../nifi.properties`
+# on a loop under `restart: unless-stopped`. Blocker 1 of the 2026-09-28 review.
+#
+# It stays unconditional otherwise: an installation that predates this directory
+# would have docker create it as root on the first mount, which the nifi user in
+# the container cannot write.
+mkdir -p "${STATE_DIR}/api"
+chmod 777 "${STATE_DIR}/api"
+
+# The drop directory and the quarantine beside it, made here for the same
+# reason. On Linux rootless Docker the bind mount is owned by container root
+# while Liquid runs as nifi (uid 1000), so the entrypoint could not create
+# `refused/` itself: `mkdir: cannot create directory ... Permission denied`.
+# A refused bundle then stayed in the drop directory, where the auto-loader
+# picks it up within seconds -- while the summary said it had been moved out.
+# Blocker 4 of the 2026-09-28 review.
+DROP_DIR="${PROJECT_DIR}/volumes/nar_extensions"
+mkdir -p "${DROP_DIR}/refused"
+chmod 777 "$DROP_DIR" "${DROP_DIR}/refused"
+
