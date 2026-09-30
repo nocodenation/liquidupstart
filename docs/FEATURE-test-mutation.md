@@ -191,6 +191,13 @@ point at which a second person sees the experiment at all.
 - **MU-NFR3 · It never edits a test.** The registry mutates the subject under test and nothing else.
   A tool that can rewrite the assertions can make anything pass.
 
+**A note on the MU numbers, 2026-09-30.** This branch and `feature/mutation-registry` each carried a
+copy of the runner and its cases, and the numbering diverged: what was MU-16, MU-17 and MU-18 here is
+MU-19, MU-21 and MU-34 on the copy that survives. The references above are to the surviving numbers.
+Every case from MU-13 upward is specified in `docs/TEST-SPEC-mutation-runner.md` on that branch --
+written because a reviewer found the runner had cases in no specification at all, which made them
+invisible to `--gaps`, the very report that counts coverage.
+
 ## 9. Milestones
 
 **M-MU1 · The registry, the runner, and its own cases — built 2026-09-19.** `tests/mutations.json`,
@@ -391,7 +398,7 @@ of which reading it would have shown. Each was found by pointing it at a real ca
 
 The second is the one worth dwelling on: **it did not fail, it answered.** The entry ran, matched
 nothing meaningful, and produced a verdict — exactly the class of defect this milestone exists to
-remove, inside the tool built to remove it, three days after it was specified. MU-16 holds it now.
+remove, inside the tool built to remove it, three days after it was specified. MU-19 holds it now.
 
 The third became `"all": true`, which is a **declaration rather than a loosening**: the ambiguity the
 "exactly once" rule guards against is *which* occurrence mattered, and an entry saying "every one of
@@ -457,7 +464,7 @@ about decision logic. The registry gained a form for it —
 
 — reported as `EXEMPT` with its reason and counted separately. **An exemption without a reason is
 refused**, because "exempt" with nothing after it is how a gap becomes invisible, which is what the
-report exists to prevent. MU-18.
+report exists to prevent. MU-34.
 
 ### What still dominates
 

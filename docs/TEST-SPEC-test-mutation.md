@@ -123,7 +123,7 @@ important case in this specification.***
 | **Premise** | A tool that can rewrite tests can make anything pass. The registry mutates the **subject**; an entry pointing at a test file is either a mistake or the beginning of a very bad habit, and the check is one line. |
 | **Component** | The registry loader. |
 | **Test data** | Refused: an entry with `file: tests/contract/m-oc.pairing-card.test.ts`. Accepted: the same entry pointing at the component the case is about. |
-| **Expected** | The loader refuses any `file` that is a **test** -- `*.test.*`, `*.spec.*`, `*_test.*`, `*_spec.*`, `*.snap`, anything under `tests/lib/` or `__snapshots__/`, and the runner's own registry and script -- names the entry, and exits non-zero before running anything. **Corrected 2026-09-30.** This said "any `file` under `tests/`", which the runner's own MU-17 contradicts: `tests/run.sh` is a subject in its own right and nothing asserts against its contents, so a blanket prefix would have taken A0-4 with it. The rule is what the file *is*, not where it sits. |
+| **Expected** | The loader refuses any `file` that is a **test** -- `*.test.*`, `*.spec.*`, `*_test.*`, `*_spec.*`, `*.snap`, anything under `tests/lib/` or `__snapshots__/`, and the runner's own registry and script -- names the entry, and exits non-zero before running anything. **Corrected 2026-09-30.** This said "any `file` under `tests/`", which the runner's own MU-21 contradicts: `tests/run.sh` is a subject in its own right and nothing asserts against its contents, so a blanket prefix would have taken A0-4 with it. The rule is what the file *is*, not where it sits. |
 | **Unhappy** | Both sides in one run, as above: the refusal is only meaningful beside the acceptance. |
 | **Covers** | MU-NFR3. |
 
