@@ -507,8 +507,10 @@ else
       // `openclaw devices approve` needs a gateway token this stack does not set.
       //
       // The 2026.9.1 replacement auto-approves a browser once the proxy has
-      // authenticated the user. Which scopes that may grant, and why the list
-      // includes operator.admin, is at the deviceAutoApprove block below.
+      // authenticated the user. Which scopes that may grant is the
+      // deviceAutoApprove block below; operator.admin is NOT among them since
+      // 2026-09-19 -- it is granted to the proxy identity instead, a few lines
+      // down. Corrected 2026-09-29: this said the list "includes operator.admin".
       if (schemaNew) {
         delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
         // The way back into the Control UI. Scopes otherwise come only from a
@@ -521,8 +523,17 @@ else
         //
         // No apostrophes in this block: the whole program is one single-quoted
         // bash string, and one of them ends it.
-        c.gateway.auth.identityScopes = {
-          [process.env.LU_PROXY_IDENTITY]: [
+        //
+        // Merged, not replaced. The rest of this writer preserves what the
+        // operator edited by hand and this line did not, so an identity they had
+        // granted anything to lost it on the next start. And nothing is written
+        // at all without a name for the proxy identity: assigning under
+        // [undefined] produced the literal key "undefined", a grant to nobody
+        // that read as a grant. Both minors of the 2026-09-29 review.
+        var proxyIdentity = process.env.LU_PROXY_IDENTITY;
+        if (proxyIdentity) {
+          c.gateway.auth.identityScopes = c.gateway.auth.identityScopes || {};
+          c.gateway.auth.identityScopes[proxyIdentity] = [
             "operator.admin",
             "operator.read",
             "operator.write",
@@ -530,8 +541,8 @@ else
             "operator.pairing",
             "operator.approvals",
             "operator.questions",
-          ],
-        };
+          ];
+        }
         // This list is a CAP on what an auto-approval may grant, not the set a
         // device receives. operator.admin is deliberately NOT in it -- and that
         // is a reversal of the decision taken on 2026-09-10, made on a

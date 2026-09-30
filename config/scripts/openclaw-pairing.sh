@@ -39,11 +39,16 @@ ENV_FILE="${PROJECT_DIR}/.env"
 
 # Read a key out of .env without sourcing it: a value with a space or a quote
 # would otherwise become several words, and one with a backtick would run.
+#
+# Single quotes are stripped as well as double, the way compose and
+# start/openclaw.sh read the same file: SYSTEM_HTTP_PORT=\x279999\x27 otherwise gave
+# the network name ..._\x279999\x27 and a Host nothing answers on. Minor of the
+# 2026-09-29 review.
 get_env() {
   [[ -f "$ENV_FILE" ]] || return 0
   awk -F= -v k="$1" '
     $0 ~ "^[[:space:]]*#" { next }
-    $1 == k { sub(/^[^=]*=/, ""); gsub(/^"|"$/, ""); print; exit }
+    $1 == k { sub(/^[^=]*=/, ""); gsub(/^"|"$|^\x27|\x27$/, ""); print; exit }
   ' "$ENV_FILE"
 }
 

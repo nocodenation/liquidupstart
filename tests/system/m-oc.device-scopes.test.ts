@@ -107,7 +107,11 @@ describe('OC-11 the scopes we grant', () => {
     expect(d.scopes.length).toBeGreaterThan(0);
     // Both halves, because a cap without the grant locks every browser out of
     // the admin surfaces and would satisfy the assertion above on its own.
-    expect(Object.values(auth.identityScopes)[0]).toContain('operator.admin');
+    // By key. Reading position 0 passed over a grant written under the key
+    // "undefined" when LU_PROXY_IDENTITY was absent. Minor of the 2026-09-29
+    // review.
+    expect(Object.keys(auth.identityScopes)).not.toContain('undefined');
+    expect(auth.identityScopes['user@nocodenation.org']).toContain('operator.admin');
   });
 
   test('OC-11 the gateway raises no admin warning against what we write', () => {

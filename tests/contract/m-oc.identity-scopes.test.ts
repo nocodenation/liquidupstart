@@ -89,7 +89,10 @@ describe('OC-40 and a template it cannot read stops the start', () => {
     // 2026.7.1's schema has no identityScopes, and a key it does not know is a
     // validation failure at start rather than a warning.
     const newShape = script.indexOf('delete c.gateway.controlUi.dangerouslyDisableDeviceAuth');
-    const grant = script.indexOf('c.gateway.auth.identityScopes = {');
+    // The grant is merged into the map rather than replacing it since 2026-09-29,
+    // so it is an assignment into a key. Looking for `identityScopes = {` read
+    // the shape of the statement rather than where it sits.
+    const grant = script.indexOf('c.gateway.auth.identityScopes[proxyIdentity]');
     const oldShape = script.indexOf('c.gateway.controlUi.dangerouslyDisableDeviceAuth = true');
     expect(newShape).toBeGreaterThan(-1);
     expect(grant).toBeGreaterThan(newShape);

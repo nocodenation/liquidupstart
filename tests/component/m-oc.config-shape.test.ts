@@ -80,6 +80,12 @@ type Env = Record<string, string>;
 function writeConfig(env: Env): any {
   const dir = mkdtempSync(join(workRoot, 'state-'));
   writeFileSync(join(dir, 'openclaw.json'), '{}\n');
+  return writeConfigIn(dir, env);
+}
+
+// The same run over a state directory the caller has already seeded, so a case
+// can start from a configuration the operator edited.
+function writeConfigIn(dir: string, env: Env): any {
   const progFile = join(dir, 'writer.js');
   writeFileSync(progFile, program);
   const envArgs: string[] = [];
@@ -92,6 +98,11 @@ function writeConfig(env: Env): any {
     ENABLE_GROK: '0',
     ENABLE_LOCAL: '0',
     LU_NETWORK_SUBNET: '172.18.0.0/16',
+    // The identity nginx asserts. It was never passed, so the grant landed under
+    // the literal key "undefined" and the assertion below -- which read
+    // Object.values(...)[0] -- found it anyway. A grant to nobody read as a grant.
+    // Minor of the 2026-09-29 review.
+    LU_PROXY_IDENTITY: 'user@nocodenation.org',
     PLUGIN_PATHS: '',
     MODEL_WILDCARDS: '',
     OPENROUTER_MODELS_JSON: '[]',
@@ -165,13 +176,43 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     // satisfied by granting nothing anywhere, which locks every browser out.
     const d = cfg.gateway.auth.trustedProxy.deviceAutoApprove;
     expect(d.scopes).not.toContain('operator.admin');
+    // By key, not by position: Object.values(...)[0] passed over a grant written
+    // under the key "undefined".
     const identity = cfg.gateway.auth.identityScopes;
-    const granted = Object.values(identity)[0] as string[];
-    expect(granted).toContain('operator.admin');
+    expect(Object.keys(identity)).toEqual(['user@nocodenation.org']);
+    expect(identity['user@nocodenation.org']).toContain('operator.admin');
     // And the cap still admits a browser at all: the scopes it does carry are
     // what the device receives, so an empty cap is not the same decision.
     expect(d.enabled).toBe(true);
     expect(d.scopes.length).toBeGreaterThan(0);
+  });
+
+  test('OC-56 nothing is granted when no identity is named', () => {
+    // The grant used to be written unconditionally, so without LU_PROXY_IDENTITY
+    // it landed under the literal key "undefined" -- a grant to nobody that reads
+    // as a grant, and one no reader of the file would question. Minor of the
+    // 2026-09-29 review.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', LU_PROXY_IDENTITY: '' });
+    const identity = cfg.gateway.auth.identityScopes ?? {};
+    expect(Object.keys(identity)).not.toContain('undefined');
+    expect(Object.keys(identity)).toEqual([]);
+  });
+
+  test('OC-57 and an identity the operator granted by hand survives a start', () => {
+    // The rest of this writer preserves what the operator edited; this line
+    // replaced the whole map, so a grant they had added was lost on the next
+    // start with nothing said. Minor of the 2026-09-29 review.
+    const dir = mkdtempSync(join(workRoot, 'kept-'));
+    writeFileSync(
+      join(dir, 'openclaw.json'),
+      JSON.stringify({
+        gateway: { auth: { identityScopes: { 'ops@example.invalid': ['operator.read'] } } }
+      }) + '\n'
+    );
+    const cfg = writeConfigIn(dir, { OC_SCHEMA_NEW: '1' });
+    const identity = cfg.gateway.auth.identityScopes;
+    expect(identity['ops@example.invalid']).toEqual(['operator.read']);
+    expect(identity['user@nocodenation.org']).toContain('operator.admin');
   });
 
   test('N10 and the rationale in the writer does not contradict it', () => {
