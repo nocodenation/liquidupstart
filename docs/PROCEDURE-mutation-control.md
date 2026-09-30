@@ -180,6 +180,46 @@ Four zeros and exit 0 is indistinguishable from a healthy run — the exact shap
 remove. It was written into MU-2's block as a hazard and then shipped anyway, and found on the first
 run against a main-based branch whose registry is legitimately empty.
 
+## Where the tool is not, and what stands in for it
+
+**Decided 2026-09-22, on M-A16.** The rule is that a case without a registered mutation blocks its
+milestone. It was taken while the tool was needed nowhere yet, and the first milestone to meet it could
+not obey it: the runner lived on two feature branches, and M-A16 was built on a third that carried
+neither. Branches do not see each other, so the rule was unreachable rather than skipped. Putting the
+runner on `main` -- which is what this branch is for -- is what ends that.
+
+**What stood in for it there: the same question, asked against the real defect.** A mutation invents a
+fault and requires the case to notice. M-A16's cases were run against the code as it stood *before*
+each finding was repaired -- the fault the reviewer actually found, not one made up to resemble it. Of
+the **27 tests** those cases carried on 2026-09-22, **18 failed and 9 passed**, and the 9 are the
+positive counterparts and the tier's own control, which have to hold on both sides or they are not
+counterparts.
+
+*Corrected 2026-09-30.* This said "M-A16's twenty cases ... eighteen failed and nine passed", which
+adds up to 27 and therefore counted tests while naming cases. A reviewer noticed. There are 20 cases
+and they carried 27 tests then; the files carry 40 now, the later ones from the two reviews that
+followed.
+
+That is stricter than a mutation on the point that matters, and weaker on one that does not:
+
+| | A mutation | A run against the unfixed code |
+|---|---|---|
+| The fault | invented, and chosen to be noticeable | the one that shipped |
+| Repeatable later by anyone | yes -- the registry re-runs it | no -- the unfixed code is gone once it is committed |
+| Shows the case can fail | yes | yes |
+
+**So it was a substitute for one milestone, not a relaxation of the rule.** Once this branch reaches
+`main`, every branch cut from it carries the runner and the reason M-A16 had gives out; its cases are
+registered then, like any others. The evidence for the walk sits under M-A16 in
+`docs/TEST-SPEC-git-integration.md`, which records the 18 and the 9 and names which 9 they were -- that
+file arrives on `main` with the git integration, so until both are merged it is reachable only on that
+branch. Said here because a pointer to a file the reader cannot open is worse than no pointer.
+
+**What it cost, written down because it is the argument for finishing the registry.** That evidence
+cannot be re-run. Anyone reviewing M-A16 in a month has the number and this paragraph and no way to
+reproduce either -- which is the difference between a claim and a case, and the difference this
+procedure exists to remove.
+
 ## Where the rest of it is written
 
 The reasoning, the measured sample and the decisions behind it: `docs/FEATURE-test-mutation.md` and
