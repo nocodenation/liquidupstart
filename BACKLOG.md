@@ -359,22 +359,49 @@ other services on that port are already unauthenticated, so that part is not new
 gateway logging its SECURITY WARNING; it leaves the exposure exactly as it is, because the identity is
 what nginx asserts for everything.
 
-**Two directions, neither built:**
+**The direction, decided by the operator on 2026-09-30:** assert the identity only for callers that
+are entitled to it, and name them by address.
 
-1. **Assert the identity only for the operator.** Set `X-Forwarded-User` in nginx only for requests
-   arriving from the host rather than from the stack's network, or do not route the agents to the
-   `openclaw.localhost` vhost at all. Then the identity means "the operator's browser", and the
-   separation between the agents and the gateway that supervises them becomes real. This is the one
-   that answers the finding.
-2. **Bind the proxy port to `127.0.0.1` by default.** Smaller, and it only addresses the local network.
+nginx sets `X-Forwarded-User` unconditionally in three vhosts today — `openclaw.localhost`,
+`bridge.openclaw.localhost` and `msteams.openclaw.localhost`. It will set it only for the host and for
+one named address on the stack network, and for nothing else.
+
+**The catch that shaped the decision, and it is the whole reason this is not a one-line change.** The
+obvious form — *"only for requests from the host"* — breaks the recovery path #15 exists to provide.
+`config/scripts/openclaw-pairing.sh` runs a throwaway OpenClaw CLI **inside the stack network**
+(`--network "$NETWORK"`, with `--add-host openclaw.localhost:${PROXY_IP}`), because a CLI reaching the
+gateway directly sends no identity header and is refused — which is the dead end of 2026-09-19. So a
+stack-network client has to keep the identity. The question is not whether the agents lose the vhost;
+it is **what nginx can tell the dashboard's pairing container apart by.**
+
+*Two answers were weighed:*
+
+1. **A fixed address.** The pairing container gets one, as the proxy already does
+   (`SYSTEM_PROXY_IP=10.99.0.2` in `.env.example`, `ipv4_address` in `compose.yml`), and nginx sets
+   the identity for the host and that address alone. **Chosen.** It introduces nothing new to keep:
+   the stack already hands out fixed addresses and already has the `.env.example` key shape for them,
+   and an address is visible in a configuration a reviewer reads rather than in a store.
+2. **A shared secret in a header.** nginx requires a header only the dashboard knows. More flexible,
+   and it adds a secret that has to be generated, mounted, rotated and kept out of logs. Rejected for
+   that: this stack's whole argument is that a fact you can read beats one you have to remember.
+
+**Bind the proxy port to `127.0.0.1`** stays worth doing on its own. It is smaller, it only addresses
+the local network rather than the agents, and it does not answer this finding.
 
 Narrowing `allowedOrigins` does not help: a non-browser client sends whatever `Origin` it likes.
 
-Not built in #9 or #15 because it is a change to the stack's trust boundary rather than to either
-feature, it needs the operator's decision on whether the agents lose the OpenClaw vhost entirely, and
-every case for it has to be written against a live gateway.
+**What has to be measured before any of it is written.** Whether nginx can distinguish host traffic at
+all, and by what. A request published to the host port arrives inside the container from the docker
+gateway address rather than from a stack-network container's, so `$remote_addr` should separate them —
+but Docker Desktop routes host traffic through a userland proxy, and what `$remote_addr` actually holds
+there is exactly the kind of thing this project has been wrong about before (A8-13, N1b, the
+`stat -f` ordering). It is measured first, on both a Linux host and macOS, and the rule is written
+against what the measurement says.
 
-Recorded 2026-09-30.
+**Not built in #9 or #15** because it changes the stack's trust boundary rather than either feature,
+and every case for it has to be written against a live gateway.
+
+Recorded 2026-09-30, direction decided the same day.
 
 ---
 
