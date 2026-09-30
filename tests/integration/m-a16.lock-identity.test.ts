@@ -31,7 +31,7 @@
  *           start sealing a repository forever.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { tempProject, seedKnownHosts, seedRepo, fakeSsh, gitScript } from '../lib/gitfixture';
 
@@ -56,12 +56,14 @@ const env = {
   PATH: `${bin}:${process.env.PATH}`
 };
 
-function runAgainst(holder: string | null) {
-  rmSync(clone, { recursive: true, force: true });
-  rmSync(lockDir, { recursive: true, force: true });
-  if (holder !== null) {
-    mkdirSync(lockDir, { recursive: true });
-    writeFileSync(join(lockDir, 'pid'), holder);
+function runAgainst(holder: string | null, seeded = false) {
+  if (!seeded) {
+    rmSync(clone, { recursive: true, force: true });
+    rmSync(lockDir, { recursive: true, force: true });
+    if (holder !== null) {
+      mkdirSync(lockDir, { recursive: true });
+      writeFileSync(join(lockDir, 'pid'), holder);
+    }
   }
   const p = Bun.spawnSync(['bash', gitScript, project], {
     env: { ...env, GIT_ONLY_SLUG: SLUG },
@@ -146,4 +148,77 @@ describe('A16-11 the lock names an identity, not a bare number', () => {
     expect(holder).toMatch(/^.+:[0-9]+$/);
     expect(holder.split(':')[0]).toBe(thisHost);
   }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// A16-20 to A16-22 — the blocker of the 2026-09-28 review, and a regression of
+// A15-4 introduced by A16-10. A foreign holder was honoured with no liveness
+// check and no age limit. The identity is the hostname, and every run gets a
+// fresh container: a dashboard start runs in a new `aiw-toolbox-start`, a Test
+// in the dashboard container, whose hostname changes whenever run.sh recreates
+// it. So a holder killed without its EXIT trap could never be matched again --
+// and `docker rm -f` on the toolbox runs before every task, which is what
+// closing a tab and pressing Start again does.
+// ---------------------------------------------------------------------------
+
+const OLD = new Date(Date.now() - 36 * 3600 * 1000);
+
+function seedLock(holder: string | null, when?: Date) {
+  rmSync(clone, { recursive: true, force: true });
+  rmSync(lockDir, { recursive: true, force: true });
+  mkdirSync(lockDir, { recursive: true });
+  if (holder !== null) writeFileSync(join(lockDir, 'pid'), holder);
+  if (when) {
+    if (holder !== null) utimesSync(join(lockDir, 'pid'), when, when);
+    utimesSync(lockDir, when, when);
+  }
+}
+
+describe('A16-20 a foreign lock nobody can ask about is not forever', () => {
+  test('A16-20 one older than any legitimate hold is taken over', () => {
+    // The longest a lock may honestly be held is the deploy-key wait plus the
+    // clone timeout. Past that, the holder is gone and nothing in the stack
+    // clears the directory -- so every later start waited 300s and recorded
+    // "another run is preparing", and every Test answered 409, until somebody
+    // deleted volumes/_git-secrets/locks/<slug> by hand.
+    seedLock('some-other-container:7', OLD);
+    const r = runAgainst(null, true);
+    expect(r.code).toBe(0);
+    expect(r.cloned).toBe(true);
+  });
+
+  test('A16-20 and the run says it did so', () => {
+    seedLock('some-other-container:7', OLD);
+    const r = runAgainst(null, true);
+    expect(r.output).toMatch(/stale|took over|abandoned/i);
+  });
+});
+
+describe('A16-21 but a fresh foreign lock is still honoured', () => {
+  test('A16-21 the counterpart: a lock being held right now is left alone', () => {
+    // Without this, A16-20 could be met by ignoring foreign locks entirely,
+    // which is the concurrency A15 exists to prevent.
+    seedLock('some-other-container:7');
+    const r = runAgainst(null, true);
+    expect(r.code).toBe(4);
+    expect(r.cloned).toBe(false);
+  });
+});
+
+describe('A16-22 an abandoned mkdir is not forever either', () => {
+  test('A16-22 an empty pid file older than any hold is taken over', () => {
+    // A16-9 made an empty pid file count as held, which is right for the
+    // instant between mkdir and the write. A run killed in that instant left
+    // it empty for good.
+    seedLock('', OLD);
+    const r = runAgainst(null, true);
+    expect(r.code).toBe(0);
+    expect(r.cloned).toBe(true);
+  });
+
+  test('A16-22 and a fresh one is still held', () => {
+    seedLock('');
+    const r = runAgainst(null, true);
+    expect(r.code).toBe(4);
+  });
 });

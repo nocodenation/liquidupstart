@@ -111,6 +111,17 @@ describe('A16-13 a git-key skip is still held long enough to read', () => {
   });
 });
 
+describe('A16-19 skip-all says it too, with the space', () => {
+  test('A16-19 "All skipped" renders a space before the countdown', async () => {
+    // The same whitespace trim as the single skip, one block up, missed when
+    // that one was fixed on 2026-09-22. Finding 3 of the 2026-09-28 review.
+    const m = await panel(waitingOn(A, [A, B]));
+    m.click('Skip all for this start');
+    await m.settle();
+    expect(m.text()).toContain('without them. Closing in');
+  });
+});
+
 describe('A16-12 a provider skip does not reopen a finished deploy-key panel', () => {
   test('skipping Claude leaves the git panel closed', async () => {
     const m = await panel(waitingOn(B, [B]));

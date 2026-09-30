@@ -87,6 +87,21 @@
     return git.repositories.find((r) => r.slug === slug)?.cloned;
   }
 
+  // Dropped once contradicted, not merely hidden. Hiding kept the entry, so a
+  // repository that was cloned and later lost again -- "Permission denied",
+  // then cloned, then "repository not found" -- brought the first answer back
+  // underneath the new error. Finding 4 of the 2026-09-28 review.
+  $effect(() => {
+    const stale = Object.keys(results).filter((slug) => {
+      const now = git.repositories.find((r) => r.slug === slug);
+      return now && results[slug].cloned !== now.cloned;
+    });
+    if (!stale.length) return;
+    const next = { ...results };
+    for (const slug of stale) delete next[slug];
+    results = next;
+  });
+
   function access(repo) {
     return repo.access === 'write' ? 'write' : 'read-only';
   }
@@ -153,7 +168,7 @@
             </button>
           {/if}
 
-          {#if results[repo.slug] && results[repo.slug].cloned === repo.cloned}
+          {#if results[repo.slug]}
             <p class="gitresult" class:warn={!results[repo.slug].ok}>{results[repo.slug].message}</p>
           {/if}
         </li>

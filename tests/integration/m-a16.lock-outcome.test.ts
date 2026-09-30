@@ -150,17 +150,17 @@ describe('A16-1 a refused lock is never written as a clone result', () => {
 });
 
 describe('A16-5 a start waits for a lock rather than recording an error', () => {
-  test('the wait is bounded and the bound is configurable', () => {
-    // A bound that cannot be set is a bound no case can reach. The default is
-    // the other run's own ceiling: a Test bounds its clone at 300s.
-    const script = readFileSync(gitScript, 'utf8');
-    expect(script).toContain('GIT_LOCK_WAIT_SECONDS:-300');
-    expect(script).toContain('lu_take_lock_waiting');
-  });
-
-  test('and a Test does not wait, because an operator is in front of it', () => {
-    // The deadlock pass 2 already avoids for deploy keys, one layer down.
+  test('A16-5 a Test does not wait, because an operator is in front of it', () => {
+    // The deadlock pass 2 already avoids for deploy keys, one layer down. This
+    // one stays a contract check because the alternative is a case that holds
+    // a lock for the length of a Test to prove it did not wait.
     const script = readFileSync(gitScript, 'utf8');
     expect(script).toMatch(/ONLY_SLUG.*\n\s*lu_take_lock "\$1"/);
   });
+
+  // The wait itself was a text match for `GIT_LOCK_WAIT_SECONDS:-300`, which
+  // reverting the wait entirely would not have failed. It is held
+  // behaviourally now, in m-a16.lock-wait.test.ts: A16-27 releases a lock
+  // mid-wait and requires the clone, A16-28 lets the budget run out and
+  // requires the manifest to be left alone. Finding 2 of the 2026-09-28 review.
 });

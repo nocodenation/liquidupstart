@@ -733,8 +733,8 @@
     </div>
     {#if skipped['git-key-all']}
       <p class="skip-note">
-        All skipped — the start continues without them.{#if holdingSkip}
-          Closing in {holdLeft}…{/if}
+        <!-- Same trim as the sibling below, missed when that one was fixed. -->
+        All skipped — the start continues without them.{#if holdingSkip}{' '}Closing in {holdLeft}…{/if}
       </p>
     {:else if skipped[`git-key-${needGitKey}`]}
       <p class="skip-note">
