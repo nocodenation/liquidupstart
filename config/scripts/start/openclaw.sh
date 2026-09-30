@@ -27,25 +27,26 @@ sed_inplace() {
 
 # Bound a command (mirrors config/scripts/start/git.sh). Exit 124 means it hit
 # the limit. Without coreutils' timeout the command runs unbounded, as there.
-with_timeout() {
-  local secs="$1"; shift
-  # 0 means no bound, and no stdin redirect either: this is the branch the
-  # interactive sign-ins take, and they must be able to read the terminal.
-  if [[ "$secs" == "0" ]]; then "$@"; return $?; fi
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$secs" "$@" </dev/null
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$secs" "$@" </dev/null
-  else
-    "$@" </dev/null
-  fi
-}
+# The bound every `docker run` here is wrapped in. One implementation, in
+# lib/with-timeout.sh: this file carried its own, git.sh carried a second, and
+# both ended in a branch that ran the command unbounded when GNU coreutils was
+# absent -- which is every macOS host, the operator's included.
+#
+# Every caller treats any non-zero status as "the bound expired", not the literal
+# 124, and force-removes the container it named: a client killed with SIGKILL
+# cleans nothing up, so --rm never fires.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/with-timeout.sh"
 
 # Read a KEY=value from the project-root .env (empty if unset).
 # `|| true`: a missing key makes grep exit 1, aborting under set -e/pipefail.
 get_env() {
   grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
+
+# One implementation of waiting on the operator: announce, poll, allow a skip,
+# stop at a deadline. Before it, each wait below carried its own copy of the
+# deadline and none of them could be skipped.
+. "${SCRIPT_DIR}/lib/wait-for-operator.sh"
 
 OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 
@@ -201,7 +202,8 @@ openclaw_migrate_state() {
         chmod -R go-w /home/node/openclaw-plugins 2>/dev/null || true
         openclaw doctor --fix
       ' >/dev/null 2>&1 || _mrc=$?
-  if (( _mrc == 124 )); then docker rm -f "$_mig" >/dev/null 2>&1 || true; fi
+  # Any non-zero status, not 124: with -k an expired bound reports 137.
+  if (( _mrc != 0 )); then docker rm -f "$_mig" >/dev/null 2>&1 || true; fi
   if (( _mrc == 0 )); then
     echo "OpenClaw: state migrated."
   else
@@ -361,22 +363,33 @@ else
 
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
-  # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute, and
-  # demands a narrow gateway.trustedProxies. This stack's own docker network is
-  # narrow enough; the three RFC1918 ranges written until 2026-09-05 are not.
+  # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute. What it
+  # needs is not a *narrow* trustedProxies -- it is a list that does not contain
+  # the client. resolveForwardedClientIp walks X-Forwarded-For right to left and
+  # discards every hop that is loopback or trusted; whatever is left is the
+  # client, and if nothing is left the request is 403.
   #
-  # Read from .env, not off the live network. The lookup needed the network to
-  # exist before this script ran, which is why start.sh created it early -- and
-  # a lookup that came back empty wrote the wide list instead, silently. .env is
-  # the same value compose declares as ipam, so it is known before anything runs.
-  # The default has to match compose.yml's and start.sh's; OC-41 holds them
-  # together.
-  LU_NETWORK_SUBNET="$(get_env SYSTEM_NETWORK_SUBNET)"
-  LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET:-10.99.0.0/24}"
-  if [[ ! "$LU_NETWORK_SUBNET" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]]; then
-    echo "Error: SYSTEM_NETWORK_SUBNET in ${ENV_FILE} is not a CIDR: ${LU_NETWORK_SUBNET}" >&2
-    echo "  The gateway trusts this range by name; a malformed one makes every" >&2
-    echo "  proxied request answer 403. Expected something like 10.99.0.0/24." >&2
+  # So trust the proxy, not the network it sits in. Until 2026-09-16 this wrote
+  # the whole subnet, which works only while the client happens to be outside it:
+  #
+  #   from the host on Docker Desktop   192.168.65.1  outside 10.99.0.0/24  -> 200
+  #   from any container in the stack   10.99.0.11    inside               -> 403
+  #
+  # Both measured here on 2026-09-16, and the second is every agent in this stack
+  # that talks to the gateway through the proxy. On rootless docker with the
+  # builtin port driver the host arrives as 10.99.0.1 and even a browser gets the
+  # 403 -- which is how Timur found it, and why #11's §5.4 read the rule as being
+  # about width. It is not; it is about membership.
+  #
+  # Read from .env rather than off the live container: the address has to be known
+  # before anything is started, and compose gives the proxy the same fixed value.
+  LU_PROXY_IP="$(get_env SYSTEM_PROXY_IP)"
+  LU_PROXY_IP="${LU_PROXY_IP:-10.99.0.2}"
+  if [[ ! "$LU_PROXY_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: SYSTEM_PROXY_IP in ${ENV_FILE} is not an address: ${LU_PROXY_IP}" >&2
+    echo "  The gateway trusts this one address and treats every other hop as the" >&2
+    echo "  client; a malformed value makes every proxied request answer 403." >&2
+    echo "  Expected something like 10.99.0.2, inside SYSTEM_NETWORK_SUBNET." >&2
     exit 1
   fi
 
@@ -401,7 +414,7 @@ else
 
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
-    -e LU_NETWORK_SUBNET="${LU_NETWORK_SUBNET}" \
+    -e LU_PROXY_IP="${LU_PROXY_IP}" \
     -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
     -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
@@ -436,7 +449,9 @@ else
       // No wide fallback: the range is read from .env and validated before we get
       // here, so an empty value is a bug to fail on rather than to paper over
       // with three RFC1918 ranges nobody chose.
-      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_NETWORK_SUBNET];
+      // The proxy as a single address, not the range it lives in: a trusted hop
+      // is discarded, so anything the gateway trusts can never be the client.
+      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_PROXY_IP + "/32"];
 
       // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};
@@ -981,6 +996,12 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     # completes, so the auth-profile registration below runs against a live login
     # (mirrors the Copilot/Codex/Grok branches).
     echo "" >&2
+    # A marker of its own, like Copilot, Codex and Grok have. The dashboard used
+    # to open the Claude panel on the bare "ACTION REQUIRED" text, which any step
+    # may print -- and since M-A9 the git step prints it for a missing deploy key,
+    # so a missing key opened the Claude sign-in panel on an installation with
+    # ENABLE_ANTHROPIC_CLAUDE_CODE=0. Finding 4 of the 2026-09-18 follow-up.
+    echo "::aiw-claude-auth-required::"
     echo "=============================== ACTION REQUIRED ===============================" >&2
     echo "OpenClaw is set to use the Claude Code CLI, but it is not authenticated yet" >&2
     echo "and this start run has no terminal attached for interactive sign-in." >&2
@@ -996,16 +1017,16 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "===============================================================================" >&2
     echo "" >&2
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until claude_cli_bounded 60 "" auth status >/dev/null 2>&1; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
-        echo "  Anthropic models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    claude_cli_bounded 60 "" auth status >/dev/null 2>&1 && echo "Claude CLI: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint claude)"
+    _wait_rc=0
+    lu_wait_for_operator claude 8 claude_cli_bounded 60 "" auth status || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "Claude CLI: sign-in detected — continuing startup." ;;
+      1) echo "Warning: Claude Code sign-in skipped; starting without it." >&2
+         echo "  Anthropic models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
+         echo "  Anthropic models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 
   # `models auth login` refuses to run without a TTY, so it gets a pty from
@@ -1037,7 +1058,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     if (( _reg_rc == 0 )); then
       echo "Claude CLI: registered Anthropic auth profile in OpenClaw (anthropic/* models now appear in the picker)."
     else
-      if (( _reg_rc == 124 )); then
+      if (( _reg_rc == 124 || _reg_rc == 137 )); then
         echo "Warning: registering the Anthropic auth profile timed out after 240s and was aborted." >&2
         echo "  It most likely stopped on an interactive prompt; check 'openclaw config validate'." >&2
       else
@@ -1059,7 +1080,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   claude_cli_bounded 120 "" mcp add-json -s user ingest-pdf "$CLAUDE_MCP_JSON" >/dev/null 2>&1 || _mcp_rc=$?
   if (( _mcp_rc == 0 )); then
     echo "Claude CLI: registered ingest_pdf MCP tool (user scope)."
-  elif (( _mcp_rc == 124 )); then
+  elif (( _mcp_rc == 124 || _mcp_rc == 137 )); then
     echo "Warning: registering the ingest_pdf MCP tool timed out after 120s; it will be unavailable to claude." >&2
   else
     echo "Warning: failed to register the ingest_pdf MCP tool; it will be unavailable to claude." >&2
@@ -1128,16 +1149,16 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until copilot_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: GitHub Copilot sign-in not completed in time; starting without it." >&2
-        echo "  Copilot models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    copilot_authed && echo "GitHub Copilot: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint copilot)"
+    _wait_rc=0
+    lu_wait_for_operator copilot 8 copilot_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "GitHub Copilot: sign-in detected — continuing startup." ;;
+      1) echo "Warning: GitHub Copilot sign-in skipped; starting without it." >&2
+         echo "  Copilot models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: GitHub Copilot sign-in not completed in time; starting without it." >&2
+         echo "  Copilot models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi
 
@@ -1177,16 +1198,16 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until codex_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: ChatGPT/Codex sign-in not completed in time; starting without it." >&2
-        echo "  OpenAI models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    codex_authed && echo "OpenAI Codex: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint codex)"
+    _wait_rc=0
+    lu_wait_for_operator codex 8 codex_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "OpenAI Codex: sign-in detected — continuing startup." ;;
+      1) echo "Warning: ChatGPT/Codex sign-in skipped; starting without it." >&2
+         echo "  OpenAI models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: ChatGPT/Codex sign-in not completed in time; starting without it." >&2
+         echo "  OpenAI models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi
 
@@ -1226,15 +1247,15 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until grok_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: Grok sign-in not completed in time; starting without it." >&2
-        echo "  Grok models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    grok_authed && echo "xAI Grok: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint grok)"
+    _wait_rc=0
+    lu_wait_for_operator grok 8 grok_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "xAI Grok: sign-in detected — continuing startup." ;;
+      1) echo "Warning: Grok sign-in skipped; starting without it." >&2
+         echo "  Grok models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: Grok sign-in not completed in time; starting without it." >&2
+         echo "  Grok models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi

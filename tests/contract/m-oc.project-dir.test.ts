@@ -36,7 +36,8 @@ import {
   chmodSync,
   readFileSync,
   existsSync,
-  realpathSync
+  realpathSync,
+  readdirSync
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -62,6 +63,17 @@ describe('N6 the start script sets its own working directory', () => {
     const copy = join(proj, 'config', 'scripts', 'start', 'openclaw.sh');
     writeFileSync(copy, BODY);
     chmodSync(copy, 0o755);
+    // The script sources its own libs, so a tree holding only the script is not a
+    // tree the script can run in -- found on 2026-09-17, when the wait helper was
+    // added and this case failed at the source line. It happened a second time
+    // the same day, when the bound moved into a library of its own, so the whole
+    // directory is copied rather than the files this case happens to know about.
+    const libSrc = join(repoRoot, 'config/scripts/start/lib');
+    const libDst = join(proj, 'config', 'scripts', 'start', 'lib');
+    mkdirSync(libDst, { recursive: true });
+    for (const f of readdirSync(libSrc)) {
+      writeFileSync(join(libDst, f), readFileSync(join(libSrc, f), 'utf8'));
+    }
 
     const caller = mkdtempSync(join(tmpdir(), 'lu-cwd-'));
     const bin = join(caller, 'bin');

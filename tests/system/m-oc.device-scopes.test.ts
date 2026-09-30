@@ -36,12 +36,13 @@
  *
  * Requirements covered: OC-G1, OC-G3, FEATURE-openclaw-2026-9-1.md §5.3.
  */
-import { test, expect, describe, afterAll } from 'bun:test';
+import { test, expect, describe } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { protect } from '../lib/installation';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-import { compose } from '../lib/stack';
+import { compose, restartAndWait } from '../lib/stack';
 import { stackGuard } from '../lib/guard';
 
 stackGuard(['openclaw-gateway']);
@@ -66,8 +67,7 @@ function writeConfig(cfg: any): string {
   // Synchronous: Bun.write returns a promise, and the restart below blocks the
   // JS thread without draining it, so the gateway could boot on the old config.
   writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
-  compose(['restart', 'openclaw-gateway']);
-  sh(['sh', '-c', 'for i in $(seq 1 60); do docker inspect openclaw-gateway --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done']);
+  restartAndWait('openclaw-gateway');
   return since;
 }
 
@@ -79,13 +79,16 @@ function gatewayLogSince(since: string): string {
   return compose(['logs', '--since', since, 'openclaw-gateway']).output;
 }
 
-const originalScopes: string[] =
-  readConfig().gateway.auth.trustedProxy.deviceAutoApprove.scopes;
 
-afterAll(() => {
-  const cfg = readConfig();
-  cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes = originalScopes;
-  writeConfig(cfg);
+// The whole file, not the one field this case changed: putting `scopes` back
+// into a document read at restore time let everything else that had changed in
+// between survive, which is how the operator's configuration lost
+// "claude-cli/*" on 2026-09-17.
+protect(CONFIG, () => {
+  // Waited out, not merely asked for: a restore that returns while the gateway
+  // is still starting hands the next file a 502, which is how OC-13 failed on
+  // 2026-09-17 against a stack that was fine.
+  restartAndWait('openclaw-gateway');
 });
 
 describe('OC-11 the scopes we grant', () => {

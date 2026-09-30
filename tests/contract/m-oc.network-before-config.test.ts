@@ -42,18 +42,20 @@ const lineOf = (body: string, needle: string) =>
   body.split('\n').findIndex((l) => l.includes(needle)) + 1;
 
 describe('OC-32 the configuration is written without consulting a network', () => {
-  test('openclaw.sh inspects no network, and reads the range from .env', () => {
+  test('openclaw.sh inspects no network, and reads what it needs from .env', () => {
     // The lookup is what forced the ordering: it needed the network to exist
     // before this script ran, and answered "" when it did not — silently, which
-    // is how the wide list got written.
+    // is how the wide list got written. The value it reads changed on 2026-09-16
+    // from the subnet to the proxy's own address, and the property did not: it is
+    // known before anything starts, and no container is asked for it.
     expect(openclaw).not.toContain('docker network inspect');
-    expect(openclaw).toMatch(/LU_NETWORK_SUBNET="\$\(get_env SYSTEM_NETWORK_SUBNET\)"/);
+    expect(openclaw).toMatch(/LU_PROXY_IP="\$\(get_env SYSTEM_PROXY_IP\)"/);
   });
 
-  test('and refuses a value that is not a CIDR rather than writing it', () => {
+  test('and refuses a malformed value rather than writing it', () => {
     // trustedProxies is matched by the gateway, not parsed by us: a malformed
-    // range is a 403 on every proxied request with nothing to read.
-    expect(openclaw).toMatch(/SYSTEM_NETWORK_SUBNET in .* is not a CIDR/);
+    // entry is a 403 on every proxied request with nothing to read.
+    expect(openclaw).toMatch(/SYSTEM_PROXY_IP in .* is not an address/);
   });
 
   test('start.sh leaves the compose network to compose', () => {

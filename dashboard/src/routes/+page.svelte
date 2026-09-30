@@ -2,6 +2,7 @@
   import { invalidateAll } from '$app/navigation';
   import TaskRunner from '$lib/components/TaskRunner.svelte';
   import NextcloudAppPassword from '$lib/components/NextcloudAppPassword.svelte';
+  import GitRepositories from '$lib/components/GitRepositories.svelte';
   import SecretValue from '$lib/components/SecretValue.svelte';
 
   const SECRET_LABEL = /password|token|key|secret/i;
@@ -104,6 +105,8 @@
       />
     </section>
   {/if}
+
+  <GitRepositories git={data.git} />
 
   <footer class="dashfoot">
     <form method="POST" action="/shutdown">

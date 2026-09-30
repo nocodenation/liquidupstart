@@ -27,9 +27,13 @@
  */
 import { test, expect, describe } from 'bun:test';
 import { sh } from '../lib/shell';
+import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
 
 const SCRIPT = 'config/scripts/start/openclaw.sh';
+// with_timeout moved into a library on 2026-09-17: openclaw.sh and git.sh each
+// carried a copy, and both ended in a branch that ran the command unbounded.
+const LIB = JSON.stringify(join(repoRoot, 'config/scripts/start/lib/with-timeout.sh'));
 const NEW_IMAGE = 'ghcr.io/openclaw/openclaw:2026.9.1';
 const OLD_IMAGE = 'ghcr.io/openclaw/openclaw:2026.7.1';
 
@@ -40,7 +44,8 @@ function cached(image: string): boolean {
 function probe(image: string): string {
   const snippet = `
     set -uo pipefail
-    eval "$(sed -n '/^with_timeout() {/,/^}/p;/^openclaw_version() {/,/^}/p' ${SCRIPT})"
+    . ${LIB}
+    eval "$(sed -n '/^openclaw_version() {/,/^}/p' ${SCRIPT})"
     OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
     openclaw_version ${JSON.stringify(image)}
   `;
