@@ -22,7 +22,12 @@ REPO="nocodenation/liquidupstart"
 DEST="${HOME}/.liquidupstart"
 VERSION_FILE="${DEST}/.liquidupstart-version"
 REBUILD_MARKER="${DEST}/.needs-rebuild"
-BUILT_IMAGES="opencode bun-runner liquid openclaw"
+# toolbox too: the dashboard builds it only when it is absent, so an image kept
+# across an update never picks up a changed config/toolbox/Dockerfile. It is the
+# only locally built image with no other path to a rebuild -- the Rebuild button
+# runs build.sh *inside* it and rebuilds the other four. Blocking finding of the
+# 2026-09-30 review.
+BUILT_IMAGES="opencode bun-runner liquid openclaw toolbox"
 LAUNCHER_DIR="/usr/local/bin"
 LAUNCHER="${LAUNCHER_DIR}/liquidupstart"
 

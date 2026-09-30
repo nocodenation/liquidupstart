@@ -12,6 +12,34 @@ MODE="${2:-}"
 # calls this first, with nothing torn down yet, and the refusal is the parser's
 # own -- one reader, one message, whichever way it is reached.
 if [[ "$MODE" == "--check-declaration" ]]; then
+  # The tools this step needs, judged here for the same reason the declaration is:
+  # nothing has been torn down yet.
+  #
+  # A toolbox image built before the git integration carries neither git nor
+  # OpenSSH, and the dashboard builds that image only when it is absent -- so on
+  # every installation that already had one, Start ran down.sh and then died at
+  # `ssh-keygen: command not found`, exit 127, with the stack gone and only a
+  # missing binary to read. It repeated on every attempt. The key is generated
+  # before the declaration is read, so declaring nothing did not avoid it.
+  # Blocking finding of the 2026-09-30 review, and the 2026-09-07 defect one step
+  # later: that fix made a *fresh* toolbox correct, and A8-19 runs against
+  # whatever image the host's tag points at.
+  missing=""
+  for tool in git ssh ssh-keygen ssh-keyscan; do
+    command -v "$tool" >/dev/null 2>&1 || missing="${missing:+${missing}, }${tool}"
+  done
+  if [[ -n "$missing" ]]; then
+    echo "Error: the git step cannot run here: ${missing} not found. Nothing was stopped." >&2
+    # Which remedy applies depends on where this is running, and the operator
+    # cannot be expected to know which that was.
+    if [[ -x /usr/local/bin/toolbox-entry ]]; then
+      echo "The dashboard's helper image is older than this version. Remove it and press Start again -- it is rebuilt automatically:" >&2
+      echo "  docker image rm -f liquidupstart/toolbox:latest" >&2
+    else
+      echo "Install git and the OpenSSH client, then start again." >&2
+    fi
+    exit 1
+  fi
   # shellcheck source=lib/git-repos.sh
   source "${SCRIPT_DIR}/lib/git-repos.sh"
   declaration="${GIT_REPOSITORIES:-}"
