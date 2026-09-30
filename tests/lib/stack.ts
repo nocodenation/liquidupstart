@@ -22,6 +22,28 @@ export function compose(args: string[]) {
   return sh(['docker', 'compose', ...args], repoRoot);
 }
 
+/**
+ * Restart a container and come back only when it is healthy again.
+ *
+ * Three copies of the wait loop lived in the system cases, and the restores that
+ * M-A11 added had none -- so a file's restore left the gateway starting, and the
+ * first cases of the next file met it with `502 Bad Gateway`. Measured
+ * 2026-09-17: OC-13 failed twice that way, against a stack that was fine.
+ *
+ * Sixty seconds, a second apart. It does not assert health: a container that
+ * never becomes healthy is the subject of the case that notices, not of this
+ * helper, and failing here would hide that case's own message.
+ */
+export function restartAndWait(service: string, seconds = 60) {
+  const r = compose(['restart', service]);
+  sh([
+    'sh',
+    '-c',
+    `for i in $(seq 1 ${seconds}); do docker inspect ${service} --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done`
+  ]);
+  return r;
+}
+
 export function inContainer(service: string, script: string) {
   return compose(['exec', '-T', service, 'sh', '-lc', script]);
 }
