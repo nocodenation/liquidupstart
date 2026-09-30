@@ -152,6 +152,26 @@ every honest entry against it — found while backfilling A4-6, whose spec has e
 
 ### Restoring, and what a trap does not do by itself
 
+**Amended 2026-09-30, and it took a manual check to find.** The specification asks for the subject to
+come back on interrupt, and it always did -- the exit code was 143 and the file was byte-identical. What
+did not happen was the run **stopping**: the signal was acted on only after the current spec run had
+finished by itself, measured at 40 seconds against a spec that sleeps 40. On a registry of thirty
+entries that is indistinguishable from the signal being ignored, and the entry then printed a verdict
+the run had not earned.
+
+The cause was the shape, not the handler. `out="$(run_spec ...)"` put the whole run inside a command
+substitution, and bash defers a trap until the current foreground command completes -- so no handler
+could fire while the run was in progress. `run_spec` leaves its output in a file now and the polling
+loop runs in the parent shell, where a handler fires within one poll and takes bun with it. An
+interrupted run reports nothing: *"no entry was judged past this point, and the subject is back."*
+
+**SIGTERM is what the case sends, and the reason is worth knowing.** A background command started by a
+non-interactive shell inherits SIGINT ignored, and a signal ignored on entry cannot be trapped -- so an
+INT-based case measures bash rather than this runner. Ctrl-C in a terminal signals the whole foreground
+process group, so bun dies and the substitution ends; that path was never affected. A supervisor or a
+task runner sending TERM to the script was. MU-39.
+
+
 `EXIT` alone is not enough: bash runs an `INT` handler and then carries on. That is how
 `tests/verify/m-b2.sh` promised restoration on Ctrl-C and never delivered it. Each signal restores
 and then exits.

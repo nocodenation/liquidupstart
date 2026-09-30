@@ -927,3 +927,77 @@ describe('MU-38 while an ordinary run is not slowed by the bound', () => {
     expect(r.code).toBe(0);
   });
 });
+
+describe('MU-39 a signal stops the run rather than being noted and ignored', () => {
+  test('MU-39 SIGTERM ends it mid-run, the subject goes back, and no verdict is printed', async () => {
+    // Found on 2026-09-30 by carrying out MU-6s interrupt half as the manual
+    // check the specification calls for. The subject always came back and the
+    // exit code was always 143 -- but the signal was acted on only after the spec
+    // run had finished by itself: 40 seconds against a spec that sleeps 40, which
+    // on a registry of thirty entries is indistinguishable from the signal being
+    // ignored.
+    //
+    // The cause was the shape rather than the handler: `out="$(run_spec ...)"`
+    // put the run inside a command substitution, and bash defers a trap until the
+    // current foreground command completes. run_spec leaves its output in a file
+    // now and the polling loop runs in the parent shell, so a handler fires within
+    // one poll and takes bun with it.
+    //
+    // SIGTERM, not SIGINT: a background command started by a non-interactive shell
+    // inherits SIGINT ignored, and a signal ignored on entry cannot be trapped --
+    // so an INT-based case would measure bash rather than this runner. Ctrl-C in a
+    // terminal signals the whole foreground process group and was never the
+    // affected path; a supervisor sending TERM to the script was.
+    const spec = 'spec/slow-under-mutation.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', async () => {
+  // Slow only once the mutation has landed, so the baseline is quick and the
+  // signal arrives while the mutated subject is on disk.
+  if (s.includes('POLICY="public"')) await new Promise((r) => setTimeout(r, 40000));
+  expect(s).toContain('POLICY="protected"');
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const child = Bun.spawn(
+      ['bash', RUNNER, '--registry', registry([entry({ spec })]), '--root', root, '--timeout', '90000'],
+      { stdout: 'pipe', stderr: 'pipe' }
+    );
+
+    // Wait for the mutation to be on disk, so the signal lands mid-run rather
+    // than before anything has happened.
+    const subject = join(root, SUBJECT);
+    const deadline = Date.now() + 30_000;
+    let landed = false;
+    while (Date.now() < deadline) {
+      if (readFileSync(subject, 'utf8').includes('POLICY="public"')) {
+        landed = true;
+        break;
+      }
+      await Bun.sleep(100);
+    }
+    expect(landed).toBe(true);
+
+    const sent = Date.now();
+    child.kill('SIGTERM');
+    const status = await child.exited;
+    const stopped = Date.now() - sent;
+    const output = (await new Response(child.stdout).text()) + (await new Response(child.stderr).text());
+
+    // The number is the finding: the spec sleeps 40s, and the runner used to wait
+    // it out. Fifteen seconds is far above the ~2s it takes now and far below the
+    // 40 it took then, so the case says which behaviour is there.
+    expect(stopped).toBeLessThan(15_000);
+    expect(status).not.toBe(0);
+    // An interrupted run that printed VALIDATED would be the worst outcome of
+    // all: a verdict the run had not earned, from the tool whose whole purpose is
+    // to refuse those.
+    expect(output).not.toContain('VALIDATED');
+    expect(output).toContain('no entry was judged past this point');
+    // And MU-6s two promises, which held before and must still hold.
+    expect(sha()).toBe(cleanSha);
+  }, 300_000);
+});

@@ -184,6 +184,7 @@ JUNIT="$(mktemp "${TMPDIR:-/tmp}/lu-mutate-junit.XXXXXX")"
 # for the same reason JUNIT is a fixed path: run_spec is called in a command
 # substitution, so an assignment there never reaches the caller.
 TIMED_OUT="${JUNIT}.timedout"
+RUN_OUT="${JUNIT}.out"
 # The backup goes only after the copy back has succeeded. cp can fail with the
 # subject already truncated -- a full disk, a read-only mount, a parent replaced
 # mid-run -- and deleting it anyway leaves the tracked file broken with nothing
@@ -202,9 +203,19 @@ restore() {
 RESTORE_FAILED=0
 # Each signal restores and then exits: bash resumes past an INT handler, so a
 # trap that only restores does not hold on Ctrl-C.
-trap 'restore; rm -f "$JUNIT" "$TIMED_OUT"' EXIT
-trap 'restore; rm -f "$JUNIT" "$TIMED_OUT"; exit 130' INT
-trap 'restore; rm -f "$JUNIT" "$TIMED_OUT"; exit 143' TERM
+# A signal stops the run rather than being noted and ignored. The child goes
+# first, or bash waits for it before running the handler; then the subject goes
+# back and nothing is reported, because an interrupted run reached no verdict.
+interrupted() {  # interrupted <status> <name>
+  [[ -n "$CHILD_PID" ]] && kill -TERM "$CHILD_PID" 2>/dev/null
+  restore
+  rm -f "$JUNIT" "$TIMED_OUT" "$RUN_OUT"
+  echo "mutate: stopped by ${2}; no entry was judged past this point, and the subject is back." >&2
+  exit "$1"
+}
+trap 'restore; rm -f "$JUNIT" "$TIMED_OUT" "$RUN_OUT"' EXIT
+trap 'interrupted 130 SIGINT' INT
+trap 'interrupted 143 SIGTERM' TERM
 
 # `./` matters: a bare path is a substring filter over every test file under
 # ROOT, so a sibling `x.test.tsx` was counted into the tally of `x.test.ts` and
@@ -237,31 +248,48 @@ trap 'restore; rm -f "$JUNIT" "$TIMED_OUT"; exit 143' TERM
 # passed and the entry protects something other than it.
 RUN_BUDGET_MS="${MUTATE_RUN_BUDGET_MS:-300000}"
 
-run_spec() {  # run_spec <spec>
+# It leaves its output in RUN_OUT rather than printing it, and the caller reads
+# that file.
+#
+# The reason is the trap. `out="$(run_spec ...)"` put the whole run inside a
+# command substitution, and bash defers a trap until the current foreground
+# command completes -- so a SIGINT sent to the runner was acted on only after the
+# run had finished by itself. Measured 2026-09-30 by carrying out MU-6s interrupt
+# half as the manual check it is: `kill -INT` while the mutated subject was on
+# disk, and the run carried on for its full 41 seconds and then reported
+# VALIDATED. The subject came back, because the ordinary path restored it -- and
+# the verdict was one the run had not earned. Ctrl-C in a terminal was never
+# affected: that signals the whole foreground process group, so bun dies and the
+# substitution ends. A signal sent to the script alone -- which is what a
+# supervisor or a task runner does -- was.
+#
+# With the loop in the parent shell a trap fires within one poll, and CHILD_PID
+# lets the handler take bun with it.
+CHILD_PID=""
+
+run_spec() {  # run_spec <spec>; output lands in RUN_OUT
   # Removed first, so a run that writes nothing cannot be read as the previous
   # run's result.
-  rm -f "$JUNIT" "$TIMED_OUT"
-  local out="${JUNIT}.out"
+  rm -f "$JUNIT" "$TIMED_OUT" "$RUN_OUT"
   (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" \
-      --reporter=junit --reporter-outfile="$JUNIT" "./$1" >"$out" 2>&1) &
-  local pid=$!
+      --reporter=junit --reporter-outfile="$JUNIT" "./$1" >"$RUN_OUT" 2>&1) &
+  CHILD_PID=$!
   local waited=0
-  while kill -0 "$pid" 2>/dev/null; do
+  while kill -0 "$CHILD_PID" 2>/dev/null; do
     if (( waited >= RUN_BUDGET_MS )); then
       # TERM first, then KILL: bun writes the report on the way out when it can,
       # and a killed run with no report is harder to explain than a stopped one.
-      kill -TERM "$pid" 2>/dev/null
+      kill -TERM "$CHILD_PID" 2>/dev/null
       sleep 1
-      kill -KILL "$pid" 2>/dev/null
+      kill -KILL "$CHILD_PID" 2>/dev/null
       : > "$TIMED_OUT"
       break
     fi
     sleep 0.1
     waited=$((waited + 100))
   done
-  wait "$pid" 2>/dev/null
-  cat "$out" 2>/dev/null
-  rm -f "$out"
+  wait "$CHILD_PID" 2>/dev/null
+  CHILD_PID=""
 }
 
 # `pass`, `fail` or `none` for the named test.
@@ -417,7 +445,8 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
   # reads as VALIDATED. The whole spec runs and the record is read per test, so
   # the baseline answers three questions at once: does the named test exist, did
   # it run, was it green.
-  base="$(run_spec "$spec")"
+  run_spec "$spec"
+  base="$(cat "$RUN_OUT" 2>/dev/null)"
   if [[ -f "$TIMED_OUT" ]]; then
     rm -f "$BACKUP"; BACKUP=""
     add "REFUSED   ${id}  ${spec} did not finish within ${RUN_BUDGET_MS}ms unmutated -- nothing was measured"
@@ -463,7 +492,8 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
     add "REFUSED   ${id}  the mutation did not reach ${file}"; refused=$((refused+1)); restore; continue
   fi
 
-  out="$(run_spec "$spec")"
+  run_spec "$spec"
+  out="$(cat "$RUN_OUT" 2>/dev/null)"
   timed_out=""
   [[ -f "$TIMED_OUT" ]] && timed_out=1
   restore
