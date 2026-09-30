@@ -397,6 +397,21 @@ export async function retryRepository(name: string): Promise<RetryResult> {
   const output = ran.output;
 
   const where0 = `${entry.host}/${entry.path}`;
+  // Exit 4 is "another run holds this repository", which is not a clone result:
+  // the repository may be cloned, healthy and untouched. Merging the script's
+  // manifest here would flip `cloned` to false for it, and the message below
+  // would send the operator to register a deploy key that is already registered
+  // -- and `git-repo-info` would tell every agent the clone is missing. So
+  // nothing is merged and the answer says what is actually happening.
+  // Finding 1 of the 2026-09-21 review.
+  if (ran.code === 4) {
+    return {
+      status: 409,
+      ok: false,
+      message: `${where0} is being prepared by another run right now — a start that is waiting, or another test. Nothing was changed. Wait for it to finish, then test it again.`,
+      repository: describeRepository(entry)
+    };
+  }
   if (ran.code !== 0) {
     // Nothing was written, so there is nothing to merge and nothing fresh to
     // report. The script's own words are the answer -- they name what stopped it.

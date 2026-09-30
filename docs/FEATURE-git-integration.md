@@ -692,6 +692,58 @@ runs from overlapping; it does not clean up after a corpse. In `BACKLOG.md`.
 
 *Done when:* `./tests/run.sh m-a15` is green.
 
+**M-A16 · The lock tells the truth about itself, and the panel about what follows** (2026-09-21)
+
+Six findings from Timur's second follow-up, at head `e33d1e6`. **Two of them are regressions M-A15
+introduced the day before**, which is the second review running whose findings are repairs of
+repairs -- the first was 2026-09-18, where three of five were. The shape is the same both times: a
+fix that gets one path through `git.sh` right without asking what else runs through those lines.
+
+*The lock was held too long, and the refusal was recorded as a result.* A start takes a lock per
+declared repository and released them only when it exited, so a start waiting for one deploy key
+held the locks of every repository it had already finished -- up to the whole start budget. A
+dashboard Test on one of those healthy repositories was then refused, and the refusal was written
+into the manifest the way a failed clone is: `cloned: false`, with an error. Measured before it was
+touched: a repository cloned and on disk, reported to the operator as *"still unreachable ...
+Register the deploy key below"*, and -- the half the review does not name -- `git-repo-info` telling
+every agent `clone (missing)` and instructing it to ask the operator for a key. Now locks are
+released as each repository settles, a start waits a bounded 300s for one instead of giving up, and
+a Test that cannot have the lock ends with **status 4** and writes nothing, which the dashboard
+answers as 409.
+
+*A pid is a number, and which process table it belongs to is not written on it.* The lock's liveness
+test was `kill -0 <pid>`. `run.sh` mounts the project into the dashboard container at the same path
+and passes no `--pid=host`, so the lock directory is shared across two process tables and the number
+is not. Measured: a live host pid is simply absent inside a container, so the Test judged the start's
+lock stale and took it over -- the very concurrency M-A15 exists to prevent. The holder is now
+`<identity>:<pid>`, and the number is consulted only when the identity is this machine's. An empty
+`pid` file -- the instant between `mkdir` and the write -- counts as held rather than as nobody's.
+A lock in the **old** format, a bare number, is judged the way the code that wrote it judged, because
+sealing a repository until someone deletes a directory by hand would be worse than what it replaces.
+
+*And three in the dashboard.* The three-second hold that keeps a skip confirmation readable was
+applied to every skip, so skipping a Claude or Codex panel brought the finished deploy-key panel back
+for three seconds; it belongs to `git-key-` steps only. The countdown said "Next repository" whenever
+more than one was pending, including for the last of them. And a result line outlived the card it
+described, because `invalidateAll()` now runs after every task -- so it is stamped with the clone
+state it was about and shown only while the card still carries it, rather than cleared on any change,
+which would be M-A14's defect again.
+
+*The sixth is about this repository being reviewable.* One literal NUL byte in
+`tests/unit/m-a13.skip-step-names.test.ts` made git classify the file as binary, so the pull request
+showed `Bin 0 -> 4817 bytes` and the mandatory header block could not be read on GitHub. Held over
+the whole tree rather than the one file.
+
+*What this milestone also brought in.* The suite mounts Svelte components for the first time --
+findings 3, 4 and 5 are conditions in markup, and `tests/component/` reached only load functions and
+page data. The operator chose the tier over text assertions on 2026-09-21. It costs the suite's first
+dependency (`@happy-dom/global-registrator`, in the dashboard's build stage only) and one rule it
+cannot work without: **every module in the reactive graph must resolve to one `svelte` install**. A
+spike that got that wrong was green over a component that had never re-rendered.
+
+*Done when:* `./tests/run.sh m-a16` is green, `./tests/run.sh` is green, and the operator has walked
+A16-M1.
+
 ### Known gaps, decided rather than overlooked (2026-09-04)
 
 Counting the suite by level produced M-A7. It also produced two things M-A7 deliberately does not

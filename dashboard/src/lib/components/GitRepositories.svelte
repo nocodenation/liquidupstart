@@ -58,23 +58,49 @@
         body: JSON.stringify({ name: repo.slug })
       });
       const body = await res.json().catch(() => ({}));
+      const message = body.message ?? `The test could not be run (${res.status}).`;
+      await invalidateAll();
+      // Stamped with the clone state the card carries *after* the reload, and
+      // shown only while the card still carries it. A result line outlived the
+      // card it described: `invalidateAll()` runs after every task since
+      // 01403f6, so a later start could re-read a repository as cloned while
+      // "still unreachable" stood underneath it. Clearing on any change would
+      // be the other defect -- a confirmation swept away before it is read,
+      // which M-A14 was built to stop -- so the line goes when it is
+      // contradicted, not when the data moves. Finding 5 of the 2026-09-21
+      // review.
       results = {
         ...results,
-        [repo.slug]: {
-          ok: body.ok === true,
-          message: body.message ?? `The test could not be run (${res.status}).`
-        }
+        [repo.slug]: { ok: body.ok === true, message, cloned: clonedNow(repo.slug) }
       };
-      await invalidateAll();
     } catch (e) {
       results = {
         ...results,
-        [repo.slug]: { ok: false, message: `The test could not be run: ${e.message}` }
+        [repo.slug]: { ok: false, message: `The test could not be run: ${e.message}`, cloned: clonedNow(repo.slug) }
       };
     } finally {
       testing = '';
     }
   }
+
+  function clonedNow(slug) {
+    return git.repositories.find((r) => r.slug === slug)?.cloned;
+  }
+
+  // Dropped once contradicted, not merely hidden. Hiding kept the entry, so a
+  // repository that was cloned and later lost again -- "Permission denied",
+  // then cloned, then "repository not found" -- brought the first answer back
+  // underneath the new error. Finding 4 of the 2026-09-28 review.
+  $effect(() => {
+    const stale = Object.keys(results).filter((slug) => {
+      const now = git.repositories.find((r) => r.slug === slug);
+      return now && results[slug].cloned !== now.cloned;
+    });
+    if (!stale.length) return;
+    const next = { ...results };
+    for (const slug of stale) delete next[slug];
+    results = next;
+  });
 
   function access(repo) {
     return repo.access === 'write' ? 'write' : 'read-only';
