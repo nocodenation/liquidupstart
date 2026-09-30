@@ -22,6 +22,7 @@
  *
  * Requirements covered: OC-G2, N8 of the #11 second review.
  */
+import { throwawayTag } from '../lib/dashboardserver';
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -50,7 +51,7 @@ function probe(image: string): number {
 // An image derived from the real one with the shadow taken out, standing in for
 // one built before the step that writes it.
 function withoutShadow(): string {
-  const tag = 'liquidupstart/openclaw:n8-no-shadow';
+  const tag = throwawayTag('liquidupstart/openclaw:n8-no-shadow');
   const df = `FROM ${IMAGE}\nUSER root\nRUN rm -rf /home/node/.local/bin\n`;
   const r = sh(['bash', '-c', `printf '%b' ${JSON.stringify(df)} | docker build -q -t ${tag} -`], repoRoot);
   if (r.code !== 0) throw new Error(`could not derive the image: ${r.output}`);

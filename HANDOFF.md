@@ -1,7 +1,39 @@
-# Handover — 2026-09-09 (evening)
+# Handover — 2026-09-30
 
 Read this first. It is the map and the current state; the specifications are the documents in
-`docs/`. Everything here was true at the end of 2026-09-08.
+`docs/`.
+
+**The state below is dated per section.** The map — what is being built, where things live, how work
+proceeds, what the failures taught — is still current. The branch table and *Next* were rewritten on
+2026-09-30; everything else was written on 2026-09-09 and describes the end of 2026-09-08. Where an
+older section makes a claim about the present, believe the dated one.
+
+## Where it stands, 2026-09-30
+
+**The git integration is merged.** #9 was approved and merged on 2026-09-30 and released as
+**0.7.0**. `main` carries it, and the four remaining branches are rebased onto `main` and conflict
+free.
+
+| PR | Branch | State |
+|---|---|---|
+| ~~#9~~ | `feature/git-integration` | **merged, 0.7.0** |
+| #10 | `feature/liquid-java-extensions` | answered, awaiting re-review |
+| #15 | `feature/openclaw-pairing-recovery` | answered, awaiting re-review |
+| #17 | `feature/test-mutation-control` | answered, awaiting re-review |
+| #18 | `feature/mutation-registry` | answered, awaiting re-review |
+
+**#17 must not merge before #18.** #17 carried its own older copy of the mutation runner; both
+branches add the same four files, so `git merge-tree` gives add/add conflicts on all of them, and a
+resolution toward #17 would silently restore every defect #18 fixed. #17 now holds the registry alone
+and the runner arrives from `main` with #18.
+
+**What a review round costs, and what it returns.** Five reviews in ten days produced 13 findings on
+#10, 9 on #15, 6 on #17, 3 on #18 and a blocking one on #9 that no suite could have seen -- it came
+from pressing Start on an installation that already existed. Three of the findings were defects **in
+the checks themselves**: a case that asserted the blindness it was written to prevent, a default test
+run that drove the operator's own stack, and a case whose registry entry pointed at a case that no
+longer existed. A suite cannot find a case that agrees with the defect. That is the argument for the
+review round and for the mutation registry, in one sentence each.
 
 ## What is being built
 
@@ -52,16 +84,20 @@ branches.
 
 ## The branches, and how they relate
 
-Current as of 2026-09-08 evening, after #12, #13 and #14 landed. **Nothing has reached `main` yet**:
-all three merged into `fix/openclaw-2026-9-1`, which is #11 — so #11 is now the only door to `main`,
-and it carries far more than the one-line pin its title suggests. Do not take a number from this
-document; it moves every time something lands. Ask:
+*Rewritten 2026-09-30.* The paragraph here described 2026-09-08, when nothing had reached `main` and
+#11 was the only door to it. Both are now false: #11 merged, and #9 merged on 2026-09-30 as 0.7.0.
+The four open branches are based on `main`.
+
+Do not take a number from this document; it moves every time something lands. Ask:
 
 ```bash
-git fetch -q origin && git rev-list --count origin/main..origin/fix/openclaw-2026-9-1
+git fetch -q origin && for b in liquid-java-extensions openclaw-pairing-recovery \
+  test-mutation-control mutation-registry; do
+  printf '%-28s %s ahead\n' "$b" "$(git rev-list --count origin/main..origin/feature/$b)"
+done
 ```
 
-It answered **39** on the evening of 2026-09-08, having answered 36 two hours earlier.
+The table below is the shape of the tree, not its state; the dated table at the top is the state.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
@@ -548,6 +584,35 @@ not to be automatable at all: with and without the setting the stack answers ide
 route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
+
+*Rewritten 2026-09-30. The struck-through entries below are kept because they record what was walked
+and what it found; the live list is here.*
+
+1. **Wait on Timur.** All four open PRs are answered and back with him. Nothing in them is waiting on
+   this side.
+2. **Two deviations are his to settle**, both stated in the replies rather than taken silently: the
+   mutation runner's wire format gained a `kind` column instead of overloading the `all` column to
+   carry `"exempt"`, and a run stopped by its budget is **refused** rather than failed-by-timeout,
+   because `failed` in that vocabulary means the named test passed.
+3. **The `operator.admin` exposure** is in `BACKLOG.md` with the measurement and two directions. It
+   needs the operator's decision on whether the agents lose the `openclaw.localhost` vhost, so it is
+   not a thing to start without asking.
+4. **The toolbox image still only changes when something removes it.** `update.sh` removes it and the
+   start refuses before the teardown when its tools are missing, but the durable form is a label
+   carrying a hash of its Dockerfile. `BACKLOG.md`.
+
+### If a test fails on your machine and passed on the one it was written on
+
+Three shapes have cost real time, and all three are in the suite now with the measurement:
+
+- **A contract check against an installed stack.** A3-3, A4-16 and A1-4 read `volumes/`. In a git
+  worktree there is none, so they fail there and pass in the main checkout. Not a regression.
+- **Docker objects shared between checkouts.** Container names and image tags are per-run since
+  2026-09-30 (`RUN_ID` in `tests/lib/dashboardserver.ts`). Before that, two runs on one host removed
+  each other's containers.
+- **A host write the container has not seen yet.** The project is a bind mount and Docker Desktop
+  propagates with a delay. Fetching a page straight after writing a fixture file failed **2 of 3 runs
+  on an idle machine**. Wait on the condition with `getWhen`, never on the clock.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.

@@ -26,9 +26,9 @@
  *           non-zero exit fails this one, with docker's output as the evidence.
  */
 import { test, expect, afterAll } from 'bun:test';
-import { buildDashboardImage, imageExists, removeImage } from '../lib/dashboardserver';
+import { buildDashboardImage, imageExists, removeImage, throwawayTag } from '../lib/dashboardserver';
 
-const TAG = 'liquidupstart/dashboard:m-a8-compiles';
+const TAG = throwawayTag('liquidupstart/dashboard:m-a8-compiles');
 
 afterAll(() => removeImage(TAG));
 
