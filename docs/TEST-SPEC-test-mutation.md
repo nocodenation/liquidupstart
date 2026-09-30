@@ -5,8 +5,9 @@ every rule there has at least one positive case and one negative counterpart, be
 only refuses is as useless as one that only permits.
 
 The subject here is a validator, so the cases are recursive by necessity: **the runner must be shown
-to fail when it cannot run.** A mutation runner that silently skips is the fourth instance of the
-defect this milestone was commissioned to remove, and it would be the worst one, because it would be
+to fail when it cannot run.** A mutation runner that silently skips is the **fifth** instance of the
+defect this milestone was commissioned to remove -- *corrected 2026-09-30, it read "fourth" here and
+"fifth" further down*, and it would be the worst one, because it would be
 wearing the uniform of the cure.
 
 ---
@@ -30,11 +31,11 @@ wearing the uniform of the cure.
 | **MU-3** | integration | **negative** | A `from` that occurs twice fails the run, because a mutation that could land in two places is not a controlled experiment |
 | **MU-4** | integration | **negative** | A mutation whose named test still passes fails the run, even when other tests in the file went red |
 | **MU-5** | integration | **negative** | A mutation that reddens the whole file — a syntax error — is refused rather than counted as a pass |
-| **MU-6** | integration | positive | The subject is byte-identical after the run: on success, on failure, and after an interrupt |
+| **MU-6** | integration | positive | The subject is byte-identical after the run: on success, on failure, and after an interrupt. **The interrupt half is a documented manual check** -- see the detail block |
 | **MU-7** | contract | **negative** | The runner refuses to start when a subject has uncommitted changes |
 | **MU-8** | contract | positive | The report lists every specified case **without** an entry, so the gap is a number rather than an impression |
-| **MU-9** | unit | **negative** | An entry whose `file` is a test file is refused: the registry mutates subjects, never assertions |
-| **MU-10** | integration | **negative** | An entry that hangs is bounded, fails, and the subject is still restored |
+| **MU-9** | unit | **negative** | An entry whose `file` is a **test** is refused: the registry mutates subjects, never assertions. **Corrected 2026-09-30** -- it is the file being a test that decides, not its living under `tests/`; see the detail block |
+| **MU-10** | integration | **negative** | An entry that hangs is bounded, **refused**, and the subject is still restored. **Built 2026-09-30 on `feature/mutation-registry`** as MU-37, and the outcome corrected there -- see the detail block |
 | **MU-11** | integration | **negative** | A mutation that reddens nothing is reported **unresolved**, never as a finding — added 2026-09-19 after the sample |
 | **MU-12** | integration | positive | An entry whose mutation reddens its named test **and a sibling** is accepted — corrected 2026-09-19, same sample |
 
@@ -87,8 +88,9 @@ important case in this specification.***
 |---|---|
 | **Premise** | The runner deliberately writes a broken line into a file that is under version control and mounted into running containers. An interrupted run that leaves it there is worse than no runner: the next suite run measures the mutant, and the dashboard image would be built from it. `tests/verify/m-b2.sh` shipped a `trap … INT` that ran its handler and then *resumed*, so the promise of restoration on `Ctrl-C` had never once been exercised — that is the precedent, and it is why this is a case rather than a comment. |
 | **Component** | The runner, the real file, and `git diff` as the judge. |
-| **Test data** | `dashboard/src/lib/components/OpenClawPairing.svelte`, with its SHA-256 taken before the run and compared after. Three runs: one where the entry validates, one where it fails (MU-4's fixture), and one interrupted with `SIGINT` while the test file is executing. MU-10 uses an entry whose mutation makes the test loop — `to` replaces the fetch with `while (true) {}` — against a two-second bound. |
-| **Expected** | The file's SHA-256 is unchanged after all four runs, `git status --porcelain` is empty for it, and MU-10 additionally reports the entry as failed-by-timeout rather than hanging the run. |
+| **Test data** | `dashboard/src/lib/components/OpenClawPairing.svelte`, with its SHA-256 taken before the run and compared after. Two automated runs: one where the entry validates, one where it fails (MU-4's fixture). MU-10 uses an entry whose mutation makes the test loop -- `to` replaces the fetch with `while (true) {}` -- against a two-second bound; built as MU-37 on `feature/mutation-registry`. |
+| **The interrupt, as a manual check** | **Stated 2026-09-30, because it was specified and never built.** Sending `SIGINT` to the runner from inside a case means signalling a process the test framework owns, and a case that kills its own runner is the kind that goes flaky and teaches everyone to ignore red. It is a documented manual check instead: start a run over an entry whose spec sleeps, press Ctrl-C while the spec is executing, then read `git status --porcelain` for the subject. Carried out 2026-09-19 and again 2026-09-30 against the runner on `feature/mutation-registry`: the subject came back and the run exited 130 both times. The behaviour holds; what did not exist was the evidence that anyone had looked. |
+| **Expected** | The file's SHA-256 is unchanged after all four runs, `git status --porcelain` is empty for it, and MU-10 additionally reports the entry as **refused** rather than hanging the run. **Corrected 2026-09-30.** This said "failed-by-timeout". In the runner's four outcomes `failed` means the named test *passed*, so the entry protects something other than what it claims -- a run that did not finish measured neither that nor anything else, which is what refused means. The message names the budget and says the mutation may have made the spec hang, which is what the author needs. Built as MU-37 and MU-38 on `feature/mutation-registry`, together with the bound itself: `bun --timeout` ends a test that awaits too long and cannot end one that never yields. |
 | **Unhappy** | This case is itself a negative: it asserts the absence of damage. Its positive counterpart is MU-1, which requires the mutation to have been genuinely applied — otherwise "the file is unchanged" is satisfied by a runner that does nothing at all. **The two must be run together or neither means anything.** |
 | **Covers** | MU-FR5, MU-NFR2. |
 
@@ -121,7 +123,7 @@ important case in this specification.***
 | **Premise** | A tool that can rewrite tests can make anything pass. The registry mutates the **subject**; an entry pointing at a test file is either a mistake or the beginning of a very bad habit, and the check is one line. |
 | **Component** | The registry loader. |
 | **Test data** | Refused: an entry with `file: tests/contract/m-oc.pairing-card.test.ts`. Accepted: the same entry pointing at the component the case is about. |
-| **Expected** | The loader refuses any `file` under `tests/`, names the entry, and exits non-zero before running anything. |
+| **Expected** | The loader refuses any `file` that is a **test** -- `*.test.*`, `*.spec.*`, `*_test.*`, `*_spec.*`, `*.snap`, anything under `tests/lib/` or `__snapshots__/`, and the runner's own registry and script -- names the entry, and exits non-zero before running anything. **Corrected 2026-09-30.** This said "any `file` under `tests/`", which the runner's own MU-17 contradicts: `tests/run.sh` is a subject in its own right and nothing asserts against its contents, so a blanket prefix would have taken A0-4 with it. The rule is what the file *is*, not where it sits. |
 | **Unhappy** | Both sides in one run, as above: the refusal is only meaningful beside the acceptance. |
 | **Covers** | MU-NFR3. |
 

@@ -43,7 +43,7 @@ here; each is executed where its subject exists.
 |---|---|---|---|
 | OC-1 | component | positive | On 2026.9.1 the written config contains **no** `agents.defaults.cliBackends`, and `config validate` passes |
 | OC-2 | component | **negative** | On 2026.9.1 a config that **does** contain it is rejected by `config validate` |
-| OC-3 | contract | **negative** | Every unattended `docker run` in the start script is bounded, or is a named exception with a reason — **replaced 2026-09-07**, see below |
+| OC-3 | contract | **negative** | Every unattended `docker run` in the start script is bounded, or is a named exception with a reason — **replaced 2026-09-07 by OC-60 and OC-61**, see below |
 | OC-4 | system | positive | On **2026.7.1**, with `cliBackends` absent, Claude requests still run through the wrapper |
 | OC-5 | component | positive | With Copilot enabled on 2026.9.1, the config carries `memory.search.*` and validates |
 | OC-6 | component | **negative** | `agents.defaults.memorySearch` on 2026.9.1 is rejected |
@@ -72,7 +72,9 @@ here; each is executed where its subject exists.
 | **OC-34** | contract | **negative** | No `docker compose restart` in the start scripts drags its dependants along |
 | **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
 | **OC-36** | contract + unit | **negative** | `with_timeout` is never handed a shell function, because `timeout` cannot see one |
-| **N1b** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
+| **OC-60** | contract | **negative** | Every unattended `docker run` in the start script is bounded by `with_timeout`, or is a named exception carrying its reason, and each bounded helper names its container and force-removes it. **The case that replaced OC-3** -- given a row of its own 2026-09-30, because the registry named OC-3 while the test carries OC-60 and the link between them existed only in a header comment |
+| **OC-61** | contract | **negative** | A named container is removed when its run does not end by itself: `timeout` kills the docker client, not the container |
+| **OC-62** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
 
@@ -100,6 +102,14 @@ here; each is executed where its subject exists.
 | **Expected** | OC-1: `jq -e '.agents.defaults.cliBackends'` finds nothing, and `openclaw config validate` exits 0. OC-2: validate exits non-zero naming `agents.defaults: Unrecognized key: "cliBackends"`. OC-3: see the replacement below. |
 | **Failure** | OC-1: the key is present, or validation fails for another reason. OC-2: validation passes — the key would then be harmless and §5.1 would be wrong. |
 
+**OC-60, OC-61 and OC-62 were N1, N4 and N1b until 2026-09-30.** They were labelled with the
+finding ids from the review that produced them, and every other case in this repository is
+`PREFIX-number`. That is not cosmetic: `mutate.sh --gaps` reads case ids out of these tables and its
+pattern requires the hyphen, so three cases were invisible to the coverage report -- neither counted as
+specified nor reported as missing -- and the registry entry for OC-60 had to name `OC-3`, whose row says
+it was replaced. A reviewer found the entry pointing at a case that no longer existed; the link from the
+id to the test lived only in a header comment.
+
 ##### OC-3, replaced 2026-09-07: assert the guard, not the hazard
 
 | | |
@@ -114,7 +124,7 @@ here; each is executed where its subject exists.
 | **The fix, and where it belongs** | In `with_timeout`, not at the call site: every caller of it is by construction an unattended step — the script says so itself, *"no unattended step may wait forever on input that cannot arrive"* — and the interactive siblings `claude_cli`, `copilot_cli`, `codex_cli` and `grok_cli` deliberately do not go through it. Each of its three invocations now reads from `/dev/null`, which is also better than the bound it complements: the read returns EOF at once rather than stalling until a timer kills it. The case gained an assertion over the body of `with_timeout`, and the control was run — with the redirect removed it goes red. |
 | **What it found on 2026-09-17: on this host there was no bound at all** | `with_timeout` ended in `else "$@"`. On a machine with neither `timeout` nor `gtimeout` — which is every macOS host, both being GNU coreutils — that branch ran the command **unbounded**, and nothing said so: the call site reads `with_timeout 60 docker run …`, what ran was `docker run …`. So on the operator's own machine, the one the stack is started from, none of the eleven bounded calls was bounded. Measured three times in one afternoon while running the suite: the probe container of this very case — bounded at 8s with a 10s grace — stood for **13 minutes**, then for over a minute, then for over a minute again, each time until something else removed it. Its control is in the same session: the old shape given a 3-second bound on a 6-second command returned after **6.01s with rc 0**; the replacement returns after **3.04s with rc 124**. |
 | **Why the case could not report it** | It hung rather than going red. `sh()` spawns synchronously and bun cannot interrupt a synchronous spawn, so the `}, 90_000)` on the behaviour half never fired and the whole suite stopped there. It had also been silently skipping: the case returns early when `liquidupstart/openclaw:latest` is absent, and the image had only just been built on this machine. A case that can hang the suite is worse than one that fails, and this is why the replacement is asserted at the unit tier, against a command of the case's own, where nothing can hang for minutes. |
-| **The second fix** | `config/scripts/start/lib/with-timeout.sh`, one implementation for both start scripts — `openclaw.sh` and `git.sh` each carried their own copy, so the unbounded fallback existed twice. Where coreutils is present it is still used, because it is the better instrument and every container here has it. Where it is not, the command runs in the background under a watchdog that sends SIGTERM at the limit and SIGKILL after the grace, and the helper answers **124**, the number coreutils uses, so a caller cannot tell the two hosts apart. N1b covers it: the expiry, the counterpart of a command that finishes, output captured through `$( )`, the command's own stderr kept while the shell's job bookkeeping is not, `0` still meaning unbounded, and a stub named `timeout` on `PATH` proving coreutils is still preferred. |
+| **The second fix** | `config/scripts/start/lib/with-timeout.sh`, one implementation for both start scripts — `openclaw.sh` and `git.sh` each carried their own copy, so the unbounded fallback existed twice. Where coreutils is present it is still used, because it is the better instrument and every container here has it. Where it is not, the command runs in the background under a watchdog that sends SIGTERM at the limit and SIGKILL after the grace, and the helper answers **124**, the number coreutils uses, so a caller cannot tell the two hosts apart. OC-62 covers it: the expiry, the counterpart of a command that finishes, output captured through `$( )`, the command's own stderr kept while the shell's job bookkeeping is not, `0` still meaning unbounded, and a stub named `timeout` on `PATH` proving coreutils is still preferred. |
 | **Covers** | OC-G4, §5.1 |
 | **Covers** | OC-G1, §5.1 |
 

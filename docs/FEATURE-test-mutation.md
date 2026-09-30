@@ -128,8 +128,11 @@ a `trap … INT` that ran its handler and then resumed, so the goal that commiss
 restored including on Ctrl-C"* — had never been tried. Here the failure is worse: an interrupted run
 leaves a deliberately broken line in the working tree.
 
-**The run refuses to start on a dirty working tree**, for the same reason: it cannot distinguish its
-own edit from the operator's, and "restore" would then mean "discard their work".
+**The run refuses to work on a subject that has uncommitted changes**, for the same reason: it cannot
+distinguish its own edit from the operator's, and "restore" would then mean "discard their work".
+*Corrected 2026-09-30 -- this said the run refuses to start on a dirty working tree.* It is judged per
+subject, not per tree: a checkout with unrelated work in progress still runs every entry whose own
+subject is clean, and only those entries are refused.
 
 ## 6. Where this applies, and where it would be ceremony
 
@@ -168,7 +171,11 @@ point at which a second person sees the experiment at all.
 - **MU-FR1** A registry entry names case, file, `from`, `to` and the test that must fail.
 - **MU-FR2** The runner applies one entry at a time, runs only the owning test file, and restores.
 - **MU-FR3** A `from` that does not occur exactly once fails the run and names the entry.
-- **MU-FR4** The run fails unless **the named test** fails; other tests in the file must still pass.
+- **MU-FR4** The run fails unless **the named test** fails, and **at least one** other test in the file
+  must still pass. *Corrected 2026-09-30 -- this said "other tests in the file must still pass".* All of
+  them passing is not the rule and never was buildable: a mutation often reddens a sibling that reads the
+  same line, which is a fact about the file rather than a defect in the entry. A file holding a single
+  test waives the rule entirely, because it reddens whole when that test reddens.
 - **MU-FR5** The subject is restored on success, on failure, and on interrupt.
 - **MU-FR6** The runner refuses to start when the working tree has uncommitted changes to a subject.
 - **MU-FR7** The report lists, per entry, the case, the mutation and the outcome — and separately the
@@ -187,9 +194,16 @@ point at which a second person sees the experiment at all.
 ## 9. Milestones
 
 **M-MU1 · The registry, the runner, and its own cases — built 2026-09-19.** `tests/mutations.json`,
-`tests/mutate.sh`, and `tests/integration/m-mu.runner.test.ts` with sixteen tests covering MU-1 to
-MU-12. The registry opens with the ten entries the sample measured, so M-MU2 starts at ten rather
-than nought. What building it found is §13.
+`tests/mutate.sh`, and `tests/integration/m-mu.runner.test.ts`. The registry opens with the ten entries
+the sample measured, so M-MU2 starts at ten rather than nought. What building it found is §13.
+
+*Corrected 2026-09-30.* This said "sixteen tests covering MU-1 to MU-12", and neither number held: the
+file carried 25 tests by the time it was reviewed, and MU-10 was specified and never built. **The runner
+now lives on `feature/mutation-registry`, on its way to `main`, with 54 tests as MU-1 to MU-38** -- this
+branch keeps the registry, the specification and this document, and drops its own copy of the runner.
+The reason is structural: both branches added the same four files, so `git merge-tree` gives add/add
+conflicts on all of them, and resolving them toward this branch would silently restore every defect the
+other one fixed. #17 does not merge before #18.
 
 **M-MU2 · Backfill, per milestone as each is next touched** (D3). Every case that carries a decision
 gets an entry when its milestone is worked on again, and the ones deliberately exempt are listed with
@@ -419,8 +433,12 @@ passed over a hook that had lost the rule it exists to protect, and would have k
 It asserts the whole sentence now, `declared with access read`, plus the counterpart that the
 git-publish gate is *not* what refused. The mutation then reddens it.
 
-**This is the first case in this repository shown to be unable to fail**, and it took three attempts
-and a manual probe to establish — which is exactly why *"a green run is a question"* is a rule and
+**This is the first case shown to be unable to fail *by this tool***, and it took three attempts and a
+manual probe to establish. *Corrected 2026-09-30 -- it read "the first case in this repository shown to
+be unable to fail", and that is false.* `22d23d5`, in this branch's own history and eleven days earlier,
+records OC-12's case as vacuous; and when the sentence was written, this branch's own MU-6 backup case
+could not fail either. The claim was about the tool and was written as a claim about the repository,
+which is the kind of sentence a reviewer is right to check — which is exactly why *"a green run is a question"* is a rule and
 not a preference. Any of the first two attempts, reported as a finding, would have been wrong for a
 different reason each time.
 

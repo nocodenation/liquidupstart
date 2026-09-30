@@ -1,17 +1,17 @@
 /**
- * N1b — the bound exists on a host without GNU coreutils, and says so when it expires.
+ * OC-62 — the bound exists on a host without GNU coreutils, and says so when it expires.
  *
  * Purpose: `with_timeout` ended in `else "$@"`. On a host with neither `timeout`
  * nor `gtimeout` — which is every macOS host, since both are GNU coreutils and
  * macOS ships neither — the command ran with no bound at all, and nothing said
  * so. The call sites read `with_timeout 60 docker run …`; what ran was
- * `docker run …`. So the property N1 exists to guarantee was absent on exactly
+ * `docker run …`. So the property OC-60 exists to guarantee was absent on exactly
  * the machine the operator starts the stack from.
  *
- * Measured on this machine 2026-09-17, three times in one afternoon: the N1
+ * Measured on this machine 2026-09-17, three times in one afternoon: the OC-60
  * probe container — bounded at 8s with a 10s grace — stood for 13 minutes, then
  * for over a minute, then for over a minute again, each time until something
- * else removed it. N1 could not report it: `sh()` spawns synchronously and bun
+ * else removed it. OC-60 could not report it: `sh()` spawns synchronously and bun
  * cannot interrupt that, so the suite hung instead of going red, and a hang is
  * not a test result.
  *
@@ -31,7 +31,7 @@
  * from a scratch directory plus `/usr/bin:/bin`, which on this host holds no
  * coreutils `timeout` — verified by the first case rather than assumed.
  *
- * Requirements covered: OC-G4, N1 of the #11 second review, and the 2026-09-17
+ * Requirements covered: OC-G4, OC-60 of the #11 second review, and the 2026-09-17
  * finding that its fallback removed the bound.
  */
 import { test, expect, describe } from 'bun:test';
@@ -70,7 +70,7 @@ function run(command: string, opts: { withTimeoutStub?: boolean } = {}): {
   return { code: Number(r.output.match(/rc=(\d+)/)?.[1] ?? -1), out: r.output, elapsedMs: Date.now() - started };
 }
 
-describe('N1b a host without coreutils still has a bound', () => {
+describe('OC-62 a host without coreutils still has a bound', () => {
   test('the case really is running without timeout and gtimeout', () => {
     // Otherwise every assertion below would be about coreutils, and the branch
     // under test would never run. Asserted rather than assumed: the whole defect
@@ -123,7 +123,7 @@ describe('N1b a host without coreutils still has a bound', () => {
   });
 });
 
-describe('N1b coreutils is still preferred where it exists', () => {
+describe('OC-62 coreutils is still preferred where it exists', () => {
   test('the timeout on PATH is the one that runs', () => {
     // The fallback is the last resort, not the implementation. With a stub named
     // `timeout` on PATH, the helper must use it — otherwise a host with

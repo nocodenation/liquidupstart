@@ -80,7 +80,7 @@
     "mustFail": "A4-13 both declared clones point at the shared hook directory"
   },
   {
-    "case": "A9-2",
+    "case": "A9-3",
     "file": "config/scripts/start/lib/wait-for-operator.sh",
     "spec": "tests/unit/m-a9.wait-for-operator.test.ts",
     "from": "    (( now >= deadline )) && return 2",
@@ -88,7 +88,7 @@
     "mustFail": "it returns 2 at the deadline rather than blocking"
   },
   {
-    "case": "A13-4",
+    "case": "A13-8",
     "file": "config/scripts/start/openclaw.sh",
     "spec": "tests/contract/m-a13.claude-panel-marker.test.ts",
     "from": "::aiw-claude-auth-required::",
@@ -115,8 +115,8 @@
     "case": "A4-6",
     "file": "config/agents/hooks/pre-push",
     "spec": "tests/unit/m-a4.ref-deletion.test.ts",
-    "from": "    *[!0]*) return 1 ;;",
-    "to": "    *[!0]*) return 0 ;;",
+    "from": "    say \"If it really should go, that is the operator's call, not yours.\"\n    exit 1",
+    "to": "    say \"If it really should go, that is the operator's call, not yours.\"\n    exit 0",
     "mustFail": "A4-6 deleting a remote branch is refused and the branch survives"
   },
   {
@@ -131,7 +131,7 @@
     "case": "A15-1",
     "file": "config/scripts/start/git.sh",
     "spec": "tests/integration/m-a15.clone-lock.test.ts",
-    "from": "  if ! lu_take_lock \"$slug\"; then",
+    "from": "  if ! lu_lock_for_this_run \"$slug\"; then",
     "to": "  if false; then",
     "mustFail": "and the second run says so instead of guessing"
   },
@@ -190,10 +190,10 @@
     "spec": "tests/unit/m-a10.scan-paths.test.ts",
     "from": "  IFS='\n'",
     "to": "  IFS=' '",
-    "mustFail": "A10-20 a key file whose name carries a space is still seen"
+    "mustFail": "A10-20 a key file whose name carries a space is still seen > the push is refused and the file is named"
   },
   {
-    "case": "A14-1",
+    "case": "A14-3",
     "file": "dashboard/src/app.css",
     "spec": "tests/contract/m-a14.skip-button-shape.test.ts",
     "from": "\nbutton.skip {",
@@ -210,7 +210,7 @@
     "mustFail": "A3c-5 no GIT_SSH_COMMAND names one key for every remote"
   },
   {
-    "case": "A11-1",
+    "case": "A11-7",
     "file": "tests/run.sh",
     "spec": "tests/contract/m-a11.system-tier-optin.test.ts",
     "from": "if [[ $WITH_SYSTEM -eq 0 && $system_count -gt 0 ]]; then",
@@ -223,7 +223,7 @@
     "spec": "tests/unit/m-a10.scan-paths.test.ts",
     "from": "        .env.example|.env.sample|.env.template|.env.dist) ;;",
     "to": "        .env.never-matches) ;;",
-    "mustFail": "A10-14 a checked-in template is not a credential"
+    "mustFail": "A10-14 a checked-in template is not a credential > .env.example reaches the remote"
   },
   {
     "case": "A6-12",
@@ -239,7 +239,7 @@
     "exempt": "asserts the generated volumes/_git-secrets/known_hosts, not the code that writes it: the file was produced by a start days ago, so mutating the keyscan changes nothing about what the case reads. An artefact assertion under §6, not decision logic."
   },
   {
-    "case": "OC-3",
+    "case": "OC-60",
     "file": "config/scripts/start/openclaw.sh",
     "spec": "tests/contract/m-oc.bounded-runs.test.ts",
     "from": "docker run --rm --init --entrypoint openclaw",
