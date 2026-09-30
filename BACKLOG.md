@@ -321,3 +321,77 @@ questions have to be answered first -- by the operator, before any case is writt
    is the shape of half the findings this feature has already produced.
 
 Recorded 2026-09-18.
+
+---
+
+## `operator.admin` is reachable from any container on the stack network
+
+**Not a defect of the git integration, and not of the pairing recovery either — it predates both.**
+Raised by the reviewer on 2026-09-28 against #9's base `e33d1e6`, measured live, and recorded here at
+their request. It is a design question, and the answer changes nginx.
+
+nginx attaches one constant identity to every request it forwards —
+`X-Forwarded-User "user@nocodenation.org"`, `nginx.conf:92` — and the proxy's address is in OpenClaw's
+`trustedProxies`. So a container on the stack network that connects to OpenClaw through nginx with a
+fresh device key, presenting itself as the Control UI, is auto-approved with `operator.admin` and no
+human involved:
+
+```
+security audit: trusted-proxy browser device auto-approved user=user@nocodenation.org device=…
+  scopes=operator.admin,operator.approvals,operator.pairing,operator.questions,operator.read,operator.talk,operator.write
+```
+
+`exec.approvals.get` then succeeds. Every condition of the auto-approval is either under the client's
+control or true for every request: `clientId: openclaw-control-ui` is a connect parameter with no
+provenance check, `allowedOrigins` is `["*"]`, and `clientBuildId: "dev"` is accepted because it is a
+cache-bust guard rather than a boundary.
+
+**Why it matters on a local single-user stack.** Admin in the Control UI is expected — it is the
+operator's own machine. The concern is the agents, which run on the same network. `operator.admin`
+covers `exec.approvals.set` — whether an agent's shell commands need the operator's approval — as well
+as `config.apply`, `terminal.open` and `plugins.install`. An agent that has been steered by a prompt
+injection in a page or a repository it read can switch off the step that is meant to supervise it.
+Secondarily, the proxy port is published on every host interface, so the local network can do the same;
+other services on that port are already unauthenticated, so that part is not new.
+
+**What #15 changed, and did not.** It moved admin out of the device auto-approval cap into
+`gateway.auth.identityScopes`. That removes a pairing step a container could script and stops the
+gateway logging its SECURITY WARNING; it leaves the exposure exactly as it is, because the identity is
+what nginx asserts for everything.
+
+**Two directions, neither built:**
+
+1. **Assert the identity only for the operator.** Set `X-Forwarded-User` in nginx only for requests
+   arriving from the host rather than from the stack's network, or do not route the agents to the
+   `openclaw.localhost` vhost at all. Then the identity means "the operator's browser", and the
+   separation between the agents and the gateway that supervises them becomes real. This is the one
+   that answers the finding.
+2. **Bind the proxy port to `127.0.0.1` by default.** Smaller, and it only addresses the local network.
+
+Narrowing `allowedOrigins` does not help: a non-browser client sends whatever `Origin` it likes.
+
+Not built in #9 or #15 because it is a change to the stack's trust boundary rather than to either
+feature, it needs the operator's decision on whether the agents lose the OpenClaw vhost entirely, and
+every case for it has to be written against a live gateway.
+
+Recorded 2026-09-30.
+
+---
+
+## The toolbox image does not follow its own Dockerfile
+
+Raised by the reviewer on 2026-09-30 as "not asked for", alongside the blocking finding it belongs to.
+`update.sh` now removes the toolbox so an update replaces it (A8-27), and the git step refuses before the
+teardown when the tools are missing (A8-24) — but the image still only changes when something removes
+it.
+
+The durable form is a label carrying a hash of `config/toolbox/Dockerfile` and `toolbox-entry.sh`. The
+dashboard compares it to the image it finds and rebuilds when it differs, so the image follows its
+recipe on every path — a checkout updated with `git pull`, an installer update, or a hand-built image.
+That is the computed answer rather than the remembered rule: nothing has to know that this particular
+update needs a rebuild.
+
+Not built with the blocking fix because the two changes there are enough to merge, and this one touches
+the dashboard's build path, which no case currently drives.
+
+Recorded 2026-09-30.

@@ -12,6 +12,34 @@ MODE="${2:-}"
 # calls this first, with nothing torn down yet, and the refusal is the parser's
 # own -- one reader, one message, whichever way it is reached.
 if [[ "$MODE" == "--check-declaration" ]]; then
+  # The tools this step needs, judged here for the same reason the declaration is:
+  # nothing has been torn down yet.
+  #
+  # A toolbox image built before the git integration carries neither git nor
+  # OpenSSH, and the dashboard builds that image only when it is absent -- so on
+  # every installation that already had one, Start ran down.sh and then died at
+  # `ssh-keygen: command not found`, exit 127, with the stack gone and only a
+  # missing binary to read. It repeated on every attempt. The key is generated
+  # before the declaration is read, so declaring nothing did not avoid it.
+  # Blocking finding of the 2026-09-30 review, and the 2026-09-07 defect one step
+  # later: that fix made a *fresh* toolbox correct, and A8-19 runs against
+  # whatever image the host's tag points at.
+  missing=""
+  for tool in git ssh ssh-keygen ssh-keyscan; do
+    command -v "$tool" >/dev/null 2>&1 || missing="${missing:+${missing}, }${tool}"
+  done
+  if [[ -n "$missing" ]]; then
+    echo "Error: the git step cannot run here: ${missing} not found. Nothing was stopped." >&2
+    # Which remedy applies depends on where this is running, and the operator
+    # cannot be expected to know which that was.
+    if [[ -x /usr/local/bin/toolbox-entry ]]; then
+      echo "The dashboard's helper image is older than this version. Remove it and press Start again -- it is rebuilt automatically:" >&2
+      echo "  docker image rm -f liquidupstart/toolbox:latest" >&2
+    else
+      echo "Install git and the OpenSSH client, then start again." >&2
+    fi
+    exit 1
+  fi
   # shellcheck source=lib/git-repos.sh
   source "${SCRIPT_DIR}/lib/git-repos.sh"
   declaration="${GIT_REPOSITORIES:-}"
@@ -148,6 +176,7 @@ fi
 ENTRIES=""
 R_NAME=(); R_URL=(); R_HOST=(); R_PATH=(); R_ACCESS=(); R_POLICY=(); R_SLUG=(); R_DIR=()
 R_KEY=(); R_MOUNTKEY=(); R_DEST=(); R_CLONED=(); R_ERROR=(); R_SSH=(); R_ASKKEY=()
+R_BUSY=()
 
 # One repository out of the whole declaration, for the dashboard's Test button.
 # It passes every declared entry so that the folder rule sees the same names a
@@ -173,7 +202,55 @@ ONLY_SLUG="${GIT_ONLY_SLUG:-}"
 # run killed between mkdir and its trap must not seal the repository forever.
 LOCKS_DIR="${SECRETS_DIR}/locks"
 mkdir -p "$LOCKS_DIR"
+# The other run's own bound: a dashboard Test bounds its clone at 300s, so a
+# start that waits that long has waited out the longest Test there can be.
+LOCK_WAIT_SECONDS="${GIT_LOCK_WAIT_SECONDS:-300}"
 HELD=()
+
+# A pid is a number in a process table, and which table it belongs to is not
+# written on it. This directory is shared across that boundary: `run.sh` mounts
+# the project into the dashboard container at the same path and does not pass
+# `--pid=host`, so the container and the host see one lock directory and two
+# process tables. Measured 2026-09-21: a live host pid is simply absent inside
+# the container, so `kill -0` said "nobody is behind it" and the Test took the
+# start's lock over -- the very concurrency the lock was added to prevent. In
+# the other direction the container's own pids are 1 and 7, numbers that are
+# certainly alive and unrelated on the host.
+#
+# So the holder is recorded as <identity>:<pid> and the number is only ever
+# asked about when the identity is ours. Finding 2 of the 2026-09-21 review.
+LU_LOCK_ID="$(hostname 2>/dev/null || echo unknown)"
+
+# The longest a lock may honestly be held: a start keeps one while it waits for
+# a deploy key, and the clone inside it is bounded at 300s. Past that its holder
+# is gone, and nothing in the stack clears the directory.
+#
+# Without this, a foreign lock was honoured for good. The identity is the
+# hostname and every run gets a fresh container -- each dashboard start a new
+# aiw-toolbox-start, each Test the dashboard container -- so a holder killed
+# without its EXIT trap could never be matched again. `docker rm -f` on the
+# toolbox runs before every task, which is what reloading the tab and pressing
+# Start again does. One of those sealed the repository until somebody deleted
+# volumes/_git-secrets/locks/<slug> by hand. Blocker of the 2026-09-28 review,
+# and a regression of A15-4 that the identity check introduced.
+LOCK_MAX_AGE_SECONDS="${GIT_LOCK_MAX_AGE_SECONDS:-$(( $(lu_wait_seconds) + 360 ))}"
+
+lu_lock_age() {  # lu_lock_age <dir>; seconds since it was last written
+  local f="$1/pid" t now
+  [[ -f "$f" ]] || f="$1"
+  # GNU first. On BSD `stat -f %m` is the mtime; on GNU coreutils, BusyBox and
+  # uutils `-f` means *file-system status* and takes no format, so `%m` is read
+  # as a second file name -- stat prints the file system block, exits 1, and the
+  # `||` appends the real timestamp to it. The numeric check then rejects the
+  # lot and the age becomes `now`, about 56 years, so every lock on Linux was
+  # taken over at once: a fresh foreign one, and the mkdir-to-write instant.
+  # BSD rejects `-c` with nothing on stdout, so this order works on both. The
+  # toolbox the start runs in is debian:bookworm-slim.
+  t="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo 0)"
+  [[ "$t" =~ ^[0-9]+$ ]] || t=0
+  now="$(date +%s)"
+  printf '%s' "$(( now - t ))"
+}
 
 release_locks() {
   local d
@@ -183,24 +260,141 @@ release_locks() {
 }
 trap release_locks EXIT
 
-lu_take_lock() {  # lu_take_lock <slug>; 0 when this run may work on it
-  local dir="${LOCKS_DIR}/$1" holder
-  if mkdir "$dir" 2>/dev/null; then
-    printf '%s' "$$" > "${dir}/pid"
-    HELD+=("$dir")
+lu_lock_write() {  # lu_lock_write <dir>
+  printf '%s:%s' "$LU_LOCK_ID" "$$" > "${1}/pid"
+  HELD+=("$1")
+}
+
+# Released the moment a repository is settled, rather than at the end of the
+# run. A start holds a lock per repository and waits for one deploy key at a
+# time, so holding every lock for the length of the wait -- up to the whole
+# start budget -- blocked a dashboard Test on repositories that were finished
+# and healthy. Finding 1 of the 2026-09-21 review.
+lu_release_lock() {  # lu_release_lock <slug>
+  local dir="${LOCKS_DIR}/$1" i kept=()
+  for i in ${HELD[@]+"${HELD[@]}"}; do
+    if [[ "$i" == "$dir" ]]; then rm -rf "$i"; else kept+=("$i"); fi
+  done
+  HELD=(${kept[@]+"${kept[@]}"})
+}
+
+lu_lock_take_over() {  # lu_lock_take_over <dir>
+  rm -rf "$1"
+  if mkdir "$1" 2>/dev/null; then
+    lu_lock_write "$1"
     return 0
   fi
+  return 1
+}
+
+lu_take_lock() {  # lu_take_lock <slug>; 0 when this run may work on it
+  local dir="${LOCKS_DIR}/$1" holder who pid
+  if mkdir "$dir" 2>/dev/null; then
+    lu_lock_write "$dir"
+    return 0
+  fi
+  local age; age="$(lu_lock_age "$dir")"
   holder="$(cat "${dir}/pid" 2>/dev/null || true)"
-  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+  # The instant between that mkdir and the write inside it. Somebody is behind
+  # this directory and their pid has not landed yet; reading the emptiness as
+  # "nobody" is how two runs came to hold one lock. An instant does not last
+  # longer than a legitimate hold, though -- past that the run was killed in it.
+  if [[ -z "$holder" ]]; then
+    if (( age > LOCK_MAX_AGE_SECONDS )); then
+      echo "Taking over an abandoned lock on $1: no holder was ever recorded and it is ${age}s old." >&2
+      lu_lock_take_over "$dir"; return $?
+    fi
+    return 1
+  fi
+  # A lock written before 2026-09-21 holds a bare pid and no identity. Sealing
+  # the repository until someone deletes the directory by hand would be a worse
+  # answer than the one it replaces, so such a lock is judged the way the code
+  # that wrote it judged: this machine's process table. Locks live for the
+  # length of one run, so this only matters across the upgrade itself.
+  if [[ "$holder" != *:* ]]; then
+    who="$LU_LOCK_ID"
+    pid="$holder"
+  else
+    who="${holder%%:*}"
+    pid="${holder##*:}"
+  fi
+  # Another machine's or another container's process table. Nothing we can ask
+  # here answers a question about it, so while it could still be held it is --
+  # and once it is older than any honest hold, it is not.
+  if [[ "$who" != "$LU_LOCK_ID" ]]; then
+    if (( age > LOCK_MAX_AGE_SECONDS )); then
+      echo "Taking over a stale lock on $1: held by ${who}, ${age}s old, longer than any run can hold one." >&2
+      lu_lock_take_over "$dir"; return $?
+    fi
+    return 1
+  fi
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
     return 1
   fi
   # Nobody is behind it: take it over rather than leaving the repository sealed.
-  rm -rf "$dir"
-  if mkdir "$dir" 2>/dev/null; then
-    printf '%s' "$$" > "${dir}/pid"
-    HELD+=("$dir")
-    return 0
+  # A15-4 is the case that holds this half -- one killed start must not seal a
+  # repository forever.
+  lu_lock_take_over "$dir"
+}
+
+lu_lock_for_this_run() {  # lu_lock_for_this_run <slug>
+  if [[ -n "$ONLY_SLUG" ]]; then
+    lu_take_lock "$1"
+  else
+    lu_take_lock_waiting "$1" "$LOCK_WAIT_SECONDS"
   fi
+}
+
+# A start competing with a dashboard Test is a wait, not a failure: the Test
+# bounds its own clone at 300s, so the start that arrives mid-Test would record
+# "another run is preparing it" for a repository that is about to be fine. A
+# Test does not wait -- an operator is in front of it, and the deadlock this
+# avoids is the same one pass 2 avoids by not asking a Test for a deploy key.
+lu_take_lock_waiting() {  # lu_take_lock_waiting <slug> <seconds>
+  local slug="$1" budget="$2" waited=0
+  while ! lu_take_lock "$slug"; do
+    (( waited >= budget )) && return 1
+    sleep 5
+    waited=$(( waited + 5 ))
+    [[ $(( waited % 30 )) -eq 0 ]] &&
+      echo "Waiting for another run to finish preparing ${slug} (${waited}s)..." >&2
+  done
+  return 0
+}
+
+# What the manifest said before this run, per slug, as `cloned<TAB>error`.
+#
+# A start that times out on a lock used to overwrite a good entry with
+# `cloned: false` and "another run is preparing it" -- a repository that is
+# cloned and healthy, described as broken, because a different run happened to
+# hold its lock. Finding 2 of the 2026-09-28 review.
+#
+# Read with awk rather than a JSON parser because the toolbox image has neither
+# bun nor jq. Both writers -- this script and the dashboard's merge -- emit one
+# field per line inside a per-entry block, which is what this reads. If it finds
+# nothing for a slug, the run is no worse off than before.
+declare -a PREV_SLUG=() PREV_CLONED=() PREV_ERROR=()
+if [[ -f "$MANIFEST" ]]; then
+  while IFS=$'\t' read -r _s _c _e; do
+    [[ -n "$_s" ]] || continue
+    PREV_SLUG+=("$_s"); PREV_CLONED+=("$_c"); PREV_ERROR+=("$_e")
+  done < <(awk '
+    /^[[:space:]]*\{/ { slug=""; cloned=""; err=""; inblock=1 }
+    inblock && /"slug"[[:space:]]*:/ { slug=$0; sub(/.*"slug"[[:space:]]*:[[:space:]]*"/,"",slug); sub(/".*/,"",slug) }
+    inblock && /"cloned"[[:space:]]*:/ { cloned=$0; sub(/.*"cloned"[[:space:]]*:[[:space:]]*/,"",cloned); sub(/[^a-z].*/,"",cloned) }
+    inblock && /"error"[[:space:]]*:/ { err=$0; sub(/.*"error"[[:space:]]*:[[:space:]]*/,"",err); sub(/[,[:space:]]*$/,"",err) }
+    /^[[:space:]]*\}/ { if (inblock && slug != "" && cloned != "") printf "%s\t%s\t%s\n", slug, cloned, err; inblock=0 }
+  ' "$MANIFEST" 2>/dev/null || true)
+fi
+
+lu_prev_field() {  # lu_prev_field <slug> <cloned|error>
+  local i
+  for (( i = 0; i < ${#PREV_SLUG[@]}; i++ )); do
+    if [[ "${PREV_SLUG[$i]}" == "$1" ]]; then
+      [[ "$2" == "cloned" ]] && { printf '%s' "${PREV_CLONED[$i]}"; return 0; }
+      printf '%s' "${PREV_ERROR[$i]}"; return 0
+    fi
+  done
   return 1
 }
 
@@ -214,6 +408,7 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   cloned=false
   error=""
   askkey=false
+  busy=false
   # Decided once per repository and carried into the second pass: the retry after
   # a key is registered must use the same isolation as the first attempt, and a
   # second copy of these options is a second thing to keep in step. A3c-8 counts
@@ -233,11 +428,35 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   #   Rename a repository in the declaration and the old clone is adopted: every
   #   fetch and publish goes to the old remote with a key nobody registered
   #   there, while the manifest and the dashboard both say "cloned".
-  if ! lu_take_lock "$slug"; then
-    # Held by a start that is waiting, or by another Test. Saying so is the whole
-    # point: the alternative was reading a half-written clone and reporting it.
-    error="another run is preparing volumes/repos/${dir} right now; wait for it to finish, then try again"
+  if ! lu_lock_for_this_run "$slug"; then
+    # Held by a start that is waiting, or by another Test. This is not a clone
+    # result and must never be recorded as one: the repository may be cloned,
+    # healthy and untouched, and saying "not cloned" about it sends the operator
+    # after a deploy key and tells every agent the clone is missing. Finding 1
+    # of the 2026-09-21 review.
+    busy=true
+    error="another run is preparing volumes/repos/${dir} right now; wait for it to finish, then try again."
     echo "Warning: ${error}" >&2
+    # A full start keeps what the manifest already said. Replacing a healthy
+    # entry with this one describes a repository that is cloned and working as
+    # broken, because a different run happened to hold its lock when this one
+    # gave up waiting. The Test path never gets here: it exits 4 and writes
+    # nothing at all.
+    if [[ -z "$ONLY_SLUG" ]] && _prev_cloned="$(lu_prev_field "$slug" cloned)"; then
+      cloned="$_prev_cloned"
+      _prev_error="$(lu_prev_field "$slug" error || true)"
+      if [[ -z "$_prev_error" || "$_prev_error" == "null" ]]; then
+        error=""
+      else
+        # Unescaped as well as unquoted: lu_write_manifest escapes again, so a
+        # message carrying a quote or a backslash doubled its escapes on every
+        # busy start. Rare -- most git errors quote with an apostrophe -- and
+        # exactly the kind of quiet drift a line scanner over JSON invites.
+        error="${_prev_error%\"}"; error="${error#\"}"
+        error="$(printf '%s' "$error" | sed -e 's/\\"/"/g' -e 's/\\\\/\\/g')"
+      fi
+      echo "Warning: leaving the manifest entry for ${dir} as the last start left it." >&2
+    fi
   elif [[ -e "${dest}/.git" ]]; then
     # --get, not `git remote get-url`: get-url applies insteadOf rewrites, and
     # this stack writes such a rewrite into every clone it adopts -- so get-url
@@ -294,6 +513,7 @@ while IFS=$'\t' read -r name url host path access policy slug dir; do
   R_ACCESS+=("$access"); R_POLICY+=("$policy"); R_SLUG+=("$slug"); R_DIR+=("$dir")
   R_KEY+=("$key"); R_MOUNTKEY+=("$mount_key"); R_DEST+=("$dest")
   R_CLONED+=("$cloned"); R_ERROR+=("$error"); R_SSH+=("$clone_ssh"); R_ASKKEY+=("$askkey")
+  R_BUSY+=("$busy")
 done <<< "$PARSED"
 
 # Written twice: once here, once when the waits are over. Everything the
@@ -343,6 +563,28 @@ JSON
   chmod 644 "$MANIFEST"
 }
 
+# A refused lock is not a clone result, and a dashboard Test must not merge one
+# into the manifest. Exit 4 says "another run holds it" in a way the dashboard
+# can tell apart from a clone that failed: nothing is written, nothing is
+# merged, and the card says the repository is busy rather than unreachable.
+# Finding 1 of the 2026-09-21 review.
+if [[ -n "$ONLY_SLUG" ]]; then
+  for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+    if [[ "${R_BUSY[$i]}" == true ]]; then
+      echo "::aiw-git-busy::${R_SLUG[$i]}" >&2
+      exit 4
+    fi
+  done
+fi
+
+# Everything that is settled lets go now. Pass 2 waits on deploy keys one
+# repository at a time and can hold only what it is still waiting for -- holding
+# the rest for the length of that wait is what blocked a Test on a repository
+# that was finished and healthy.
+for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
+  [[ "${R_ASKKEY[$i]}" == true ]] || lu_release_lock "${R_SLUG[$i]}"
+done
+
 # The provisional record: what pass 1 decided, before anyone waits. Not during a
 # dashboard Test, though -- there the arrays hold the one repository named by
 # GIT_ONLY_SLUG, so this write would put a one-entry manifest on disk for the
@@ -352,6 +594,21 @@ JSON
 # the dashboard, which merges it into the one it read first. Finding 1 of the
 # 2026-09-18 follow-up, and a regression this write introduced the day before.
 [[ -n "$ONLY_SLUG" ]] || lu_write_manifest
+
+# Only what this run put there. The wait retries the clone every five seconds
+# and a failed attempt leaves a partial .git behind, which is what these
+# branches clean up -- but a bare `rm -rf "$dest"` took anything else with it,
+# including a folder an operator created during the wait. The same class as R2-2
+# of the 2026-09-16 review, on a narrower path. Finding 5 of 2026-09-28.
+lu_drop_partial_clone() {  # lu_drop_partial_clone <dest>
+  local dest="$1"
+  [[ -e "$dest" ]] || return 0
+  if [[ -e "${dest}/.git" ]] || [[ -z "$(ls -A "$dest" 2>/dev/null)" ]]; then
+    rm -rf "$dest"
+    return 0
+  fi
+  echo "Warning: ${dest} holds something this start did not create; leaving it alone." >&2
+}
 
 # --- Pass 2: ask for the keys that are missing, all of them known up front ---
 # The count guards below are not decoration: bash 3.2 (what macOS ships) treats
@@ -447,9 +704,9 @@ for (( n = 0; n < ${#PENDING[@]}; n++ )); do
     0) R_CLONED[$i]=true
        R_ERROR[$i]=""
        echo "Cloned ${url} into ${dest}" ;;
-    1) rm -rf "$dest"
+    1) lu_drop_partial_clone "$dest"
        echo "Warning: ${url} was skipped; it is not cloned." >&2 ;;
-    *) rm -rf "$dest"
+    *) lu_drop_partial_clone "$dest"
        echo "Warning: ${url} was not cloned: the deploy key is still not registered." >&2
        echo "  The start continues; register it and start again." >&2 ;;
   esac
@@ -463,7 +720,13 @@ for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do
   mount_key="${R_MOUNTKEY[$i]}"; dest="${R_DEST[$i]}"
   cloned="${R_CLONED[$i]}"; error="${R_ERROR[$i]}"
 
-  if [[ "$cloned" == true ]]; then
+  # A repository this run never got the lock for was not prepared by it, and
+  # its `cloned` is what the previous manifest said rather than what this run
+  # found. Configuring it would run `git -C` against a clone that may not be
+  # on disk -- which ends the whole start with 128 under `set -e`, and did.
+  if [[ "${R_BUSY[$i]}" == true ]]; then
+    cloned="${R_CLONED[$i]}"
+  elif [[ "$cloned" == true ]]; then
     git -C "$dest" config core.sshCommand "ssh -F /dev/null -i ${mount_key} -o IdentitiesOnly=yes -o IdentityAgent=none -o UserKnownHostsFile=${SECRETS_MOUNT}/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o BatchMode=yes"
     git -C "$dest" config core.hooksPath "$HOOKS_MOUNT"
     git -C "$dest" config liquidupstart.identity "$mount_key"
