@@ -190,7 +190,7 @@
     "spec": "tests/unit/m-a10.scan-paths.test.ts",
     "from": "  IFS='\n'",
     "to": "  IFS=' '",
-    "mustFail": "A10-20 a key file whose name carries a space is still seen > the push is refused and the file is named"
+    "mustFail": "A10-20 a key file whose name carries a space is still seen"
   },
   {
     "case": "A14-3",
@@ -223,7 +223,7 @@
     "spec": "tests/unit/m-a10.scan-paths.test.ts",
     "from": "        .env.example|.env.sample|.env.template|.env.dist) ;;",
     "to": "        .env.never-matches) ;;",
-    "mustFail": "A10-14 a checked-in template is not a credential > .env.example reaches the remote"
+    "mustFail": "A10-14 a checked-in template is not a credential"
   },
   {
     "case": "A6-12",
