@@ -19,7 +19,8 @@ the shape of a row, which is not what goes wrong; what goes wrong is what the wh
 
 **Runner and hosts.** `bun test tests/integration/m-mu.runner.test.ts`. Run on bun 1.3.13 as uid 501 on
 macOS and on bun 1.4.2 as uid 0 on Linux, because two of these cases were green on one of those and red
-on the other — see MU-25, MU-26 and MU-27.
+on the other — see MU-25 and MU-26, where the cause was the uid. MU-41 is the one place a *version*
+difference ever reached a verdict, and it is gone.
 
 ## Overview
 
@@ -59,6 +60,12 @@ on the other — see MU-25, MU-26 and MU-27.
 | **MU-37** | **negative** | The whole run is bounded, not only each test in it; a spec made to hang is refused and the subject goes back |
 | **MU-38** | positive | While an ordinary run is not slowed or refused by the bound |
 | **MU-39** | **negative** | A signal stops the run rather than being acted on once the run is over |
+| **MU-40** | **negative** | A test that was skipped, todo or inside a skipped block is refused, never read as green |
+| **MU-41** | positive | The describe path is the one bun prints, on either version; the reversed `classname` order is refused |
+| **MU-42** | positive | A case that is a describe block stands for the tests under it, and a name is still never matched by part of another |
+| **MU-43** | **negative** | A subject `cmp` cannot open is not a mutation that landed |
+| **MU-44** | **negative** | A baseline that did not load says so, rather than reporting the name as misspelt |
+| **MU-45** | positive | The console differs between a person and an agent on one machine, which is why the record is read |
 
 ## Detail per group
 
@@ -138,7 +145,19 @@ in order to sign a case off or challenge it without opening the implementation.
 | **Test data** | A spec holding `field A is carried` **and** `not field A is carried`, so a suffix match admits the wrong one. For MU-26, a spec that removes the subject's parent directory while it runs, so `cp` has nowhere to copy back to. |
 | **Expected** | The named test's own verdict, by exact name; and a restore that failed keeping its backup and saying where it is. |
 | **Covers** | MU-FR4, MU-FR5. |
-| **What they found, and why the hosts are named** | `bun test -t` is a regular expression matched anywhere in the full name, so a name carrying `(`, `[`, `+` or `*` was refused as "did not run" and a sibling containing the named test dragged its own verdict in; anchoring does not settle it, because `-t` matches the describe and test names joined by a space. Reading the named test's line off the console does not settle it either: **bun 1.3.13 prints a test's own line only when it FAILS**, while 1.4.2 also prints `(pass) <name>` — measured on a two-test file — so the reviewer's suggested repair worked on their version and refused 18 of 41 entries on the other. The verdict comes from `--reporter=junit`, which both versions write and which names every case exactly, with a `<failure>` child for the red ones. MU-25 and MU-26 staged their failures with `chmod`, which **root ignores**, so both were red in the container and on CI while the runner was working as intended; they stage without permissions now. |
+| **What they found, and why the hosts are named** | `bun test -t` is a regular expression matched anywhere in the full name, so a name carrying `(`, `[`, `+` or `*` was refused as "did not run" and a sibling containing the named test dragged its own verdict in; anchoring does not settle it, because `-t` matches the describe and test names joined by a space. Reading the named test's line off the console does not settle it either: **with `CLAUDECODE` set, bun names only the failing tests; without it, passing ones get a line too** — measured on a two-test file, both ways, on 1.3.13 and 1.4.2 — so the reviewer's suggested repair worked in a plain shell and refused 18 of 41 entries in an agent's. *Corrected 2026-10-01: this said the difference was between the two bun versions. The measurement behind that ran 1.3.13 in an agent shell and 1.4.2 in a container without one, so it compared two things and named the wrong one. The corrected reason is the stronger one — a person and an agent get different consoles on the same machine, which does not expire with the next release. MU-45 measures it in place.* The verdict comes from `--reporter=junit`, which both versions write and which names every case exactly, with a `<failure>` child for the red ones. MU-25 and MU-26 staged their failures with `chmod`, which **root ignores**, so both were red in the container and on CI while the runner was working as intended; they stage without permissions now. |
+
+### MU-40 to MU-45 — what the JUnit record means
+
+| | |
+|---|---|
+| **Premise** | Reading the record instead of the console removed a dependence on which shell the run happened in, and introduced a smaller family of its own: four things in that record mean something other than what the first reader took them for. One of the four is older than the reader, and one is about a tally nobody read. |
+| **Test data** | A spec whose named test is `test.skip`, one where it is `test.todo`, one where it sits under `describe.skip`. A spec with `describe('outer', …)` holding `describe('inner', …)`, and a second parent literally named `a & b > "c"` holding `deep` — the separator, an ampersand and quotes inside one segment. A block named `A10-14 a checked-in template is not a credential` whose tests are generated from `['.env.example', '.env.sample']`, which is the shape of the two entries on #17 that could not be registered. A spec that reads its subject and then removes it, so the baseline is green and `cmp` has nothing to open. A spec that throws at import. And one two-test file run twice, with `CLAUDECODE` set and unset. |
+| **Expected** | Each skipped form refused as "did not run"; the printed path validating and the reversed one refused; the block name standing for its loop-generated tests while `reaches the remote` matches nothing; `the mutation did not reach sub/subject.sh`; `did not load before the mutation`; and the green test named for a person and not for an agent. |
+| **Unhappy** | MU-42's second half is what keeps the block rule from undoing MU-27: a block name stands for the tests under it, and segments are still compared whole. MU-45 is a measurement rather than a guard — it is in the suite so the claim in the procedure cannot go stale unnoticed, which is exactly how the version claim it replaces survived for two days. |
+| **Covers** | MU-FR4, MU-FR7, MU-NFR3. |
+| **Implemented by** | `tests/integration/m-mu.runner.test.ts`. |
+| **What they found** | All six reproduced against `dab826e` first. The skipped forms came back `UNRESOLVED`, **exit 0** — finding 8 of the first review again, for the variant the refusal message itself names. `classname` is innermost-first and bun 1.3.13 escapes it twice (`inner &amp;gt; outer` for `outer > inner`), which was the last place a verdict depended on the version. `cmp` answers 2 for a file it cannot open and only 0 refused. And the baseline reported a spec that threw at import as a misspelt name, which sends the author to the name instead of the error. |
 
 ### MU-34, MU-35, MU-37, MU-38 — what came from #17
 
@@ -158,8 +177,8 @@ in order to sign a case off or challenge it without opening the implementation.
 | MU-FR1 an entry names case, file, from, to and the test that must fail | MU-1, MU-19, MU-32 |
 | MU-FR2 one entry at a time, only the owning test file, restored | MU-1, MU-6, MU-31 |
 | MU-FR3 a `from` that does not occur exactly once fails and names the entry | MU-2, MU-3, MU-35 |
-| MU-FR4 the named test must fail, and at least one other must pass | MU-4, MU-12, MU-22, MU-24, MU-27, MU-30 |
-| MU-FR5 restored on success, on failure and on interrupt | MU-6, MU-23, MU-25, MU-26, MU-33, MU-37, MU-39 |
+| MU-FR4 the named test must fail, and at least one other must pass | MU-4, MU-12, MU-22, MU-24, MU-27, MU-30, MU-40, MU-41, MU-42, MU-44, MU-45 |
+| MU-FR5 restored on success, on failure and on interrupt | MU-6, MU-23, MU-25, MU-26, MU-33, MU-37, MU-39, MU-43 |
 | MU-FR6 it refuses a subject with uncommitted changes | MU-7 |
 | MU-FR7 the report lists each entry, its mutation and its outcome, and the gap separately | MU-8, MU-13, MU-20, MU-29, MU-34, MU-36 |
 | MU-NFR1 the gap is computed, not counted | MU-8, MU-36 |

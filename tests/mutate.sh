@@ -224,12 +224,24 @@ trap 'interrupted 143 SIGTERM' TERM
 # FORCE_COLOR in the environment every entry came back REFUSED 0/0.
 # The run, and a machine-readable record of it beside the human one.
 #
-# JUNIT is where the per-test result comes from. Reading it off the console
-# output cannot work on both bun versions: 1.3.13 names a test on its own line
-# only when it FAILS, while 1.4.2 also prints `(pass) <name>`. A runner whose
-# verdict depends on which bun is installed is the thing this tool exists
-# against. `--reporter=junit` is in both and names every case exactly, with a
-# <failure> child for the red ones. Item 3 of the 2026-09-29 re-review.
+# JUNIT is where the per-test result comes from, because the console is not the
+# same for everybody.
+#
+# **Corrected 2026-10-01.** This said bun 1.3.13 names a test on its own line only
+# when it FAILS while 1.4.2 also prints `(pass)`. Both versions do both. What
+# differs is whether the shell looks like an agent: with CLAUDECODE set, either
+# version prints the failing line alone. The original measurement ran 1.3.13 in an
+# agent shell and 1.4.2 in a container without it, so the cause was confounded and
+# the conclusion attributed to the version. Finding 4 of the 2026-09-30 review.
+#
+# The real reason is the better one: the same machine gives a person and an agent
+# different consoles, and that does not expire with the next release. The record is
+# written identically for both. `--reporter=junit` names every case exactly, with a
+# <failure> child for the red ones and a <skipped> child for the ones that did not
+# run. Item 3 of the 2026-09-29 re-review; MU-45 holds the measurement.
+#
+# What `mustFail` may name: a test, a describe path joined by " > ", or a describe
+# whose tests it stands for. See named_state.
 
 # The whole run is bounded, not only each test in it.
 #
@@ -308,27 +320,75 @@ named_state() {  # named_state <name>
     const fs = require("fs");
     const xml = fs.readFileSync(process.argv[1], "utf8");
     const want = process.env.MUST;
-    const un = (s) => s.replace(/&quot;/g, "\"").replace(/&apos;/g, "\u0027")
+    const un = (s) => s.replace(/&quot;/g, String.fromCharCode(34)).replace(/&apos;/g, String.fromCharCode(39))
                        .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-    let state = "none";
-    const re = /<testcase\b[^>]*>/g;
+    const attr = (tag, k) => {
+      const m = tag.match(new RegExp("\\b" + k + "=\"([^\"]*)\""));
+      return m ? un(m[1]) : "";
+    };
+
+    // The describe path comes from the nesting of <testsuite> elements, not from
+    // classname. classname is innermost-first, and bun 1.3.13 escapes it twice --
+    // `inner &amp;gt; outer` for what the console prints as `outer > inner` -- so
+    // reading it made the verdict depend on which bun was installed, which is the
+    // one thing this reader exists to avoid. The nesting is written the same way
+    // by both and escaped once. Finding 2 of the 2026-09-30 review.
+    //
+    // The first <testsuite> is the file; its name is a path, not a describe.
+    const stack = [];
+    let depth = 0;
+    let ran = 0, red = 0;
+
+    const re = /<\/?(testsuite|testcase)\b([^>]*?)(\/?)>/g;
     let m;
     while ((m = re.exec(xml)) !== null) {
+      const closing = m[0].startsWith("</");
+      const kind = m[1];
       const tag = m[0];
-      const name = un((tag.match(/\bname="([^"]*)"/) || [])[1] ?? "");
-      const cls = un((tag.match(/\bclassname="([^"]*)"/) || [])[1] ?? "");
-      if (name !== want && cls + " > " + name !== want) continue;
-      // A self-closing element passed; otherwise its body carries the verdict.
-      let failed = false;
-      if (!tag.endsWith("/>")) {
-        const end = xml.indexOf("</testcase>", re.lastIndex);
-        const body = end === -1 ? xml.slice(re.lastIndex) : xml.slice(re.lastIndex, end);
-        failed = /<(failure|error)\b/.test(body);
+
+      if (kind === "testsuite") {
+        if (closing) { depth -= 1; if (depth >= 1) stack.pop(); }
+        else { depth += 1; if (depth >= 2) stack.push(attr(tag, "name")); }
+        continue;
       }
-      if (failed) { state = "fail"; break; }
-      state = "pass";
+      if (closing) continue;
+
+      const name = attr(tag, "name");
+      const segs = stack.slice();
+      const path = segs.join(" > ");
+      const full = path ? path + " > " + name : name;
+
+      // A case in this project is often a describe block whose tests are
+      // generated in a loop, so a block name stands for every test under it:
+      // red if any is red, not run if none ran. Segments are compared whole, so
+      // MU-27 still holds -- a name is never matched by part of another.
+      // Finding 5.
+      const mine =
+        name === want ||
+        full === want ||
+        path === want ||
+        segs.includes(want) ||
+        (path !== "" && path.startsWith(want + " > "));
+      if (!mine) continue;
+
+      const body = m[3] === "/"
+        ? ""
+        : (() => {
+            const at = xml.indexOf("</testcase>", re.lastIndex);
+            return at === -1 ? xml.slice(re.lastIndex) : xml.slice(re.lastIndex, at);
+          })();
+
+      // A skipped test did not run, and reading it as green let test.skip,
+      // test.todo, test.if(false) and everything under describe.skip pass the
+      // baseline -- finding 8 of the first review again, for the variant the
+      // refusal message itself names. Finding 1.
+      if (/<skipped\b/.test(body)) continue;
+
+      ran += 1;
+      if (/<(failure|error)\b/.test(body)) red += 1;
     }
-    console.log(state);
+
+    console.log(red > 0 ? "fail" : ran > 0 ? "pass" : "none");
    } catch (e) { console.error("junit: " + (e && e.message ? e.message : e)); process.exit(2); }
   ' "$JUNIT" 2>/dev/null || printf none
 }
@@ -452,6 +512,19 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
     add "REFUSED   ${id}  ${spec} did not finish within ${RUN_BUDGET_MS}ms unmutated -- nothing was measured"
     refused=$((refused+1)); continue
   fi
+  # A spec that threw at import has the same tally to read before the mutation as
+  # after it, and without reading it the baseline reported the named test as
+  # renamed or misspelt -- which sends the author looking at the name instead of
+  # at the error. Seen once in roughly twenty runs of A12-1, whose spec does its
+  # work at load time; staged deterministically with a spec that throws at import.
+  # Finding 6 of the 2026-09-30 review.
+  base_errors="$(tally "$base" error)"
+  if [[ "$base_errors" != "0" ]]; then
+    rm -f "$BACKUP"; BACKUP=""
+    add "REFUSED   ${id}  ${spec} did not load before the mutation -- ${base_errors} error(s), so the baseline measured nothing"
+    refused=$((refused+1)); continue
+  fi
+
   case "$(named_state "$must")" in
     fail)
       rm -f "$BACKUP"; BACKUP=""
@@ -488,7 +561,14 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
   # The write is verified, not assumed. A read-only subject or a bun that dies
   # mid-write left the file untouched, the spec ran against the original, and
   # the result was UNRESOLVED -- or VALIDATED, once the baseline was missing too.
-  if cmp -s "$abs" "$BACKUP"; then
+  # cmp answers 0 for identical, 1 for different and **2 for trouble** -- a file
+  # it cannot open, which is what a spec that deletes its own subject leaves. Only
+  # 0 refused, so trouble read as "the mutation reached it" and the run went on
+  # against no mutation at all. Anything but 1 is a refusal. Finding 3 of the
+  # 2026-09-30 review, and the line above it already claimed the write was
+  # verified rather than assumed.
+  cmp -s "$abs" "$BACKUP"; cmp_status=$?
+  if [[ "$cmp_status" != "1" ]]; then
     add "REFUSED   ${id}  the mutation did not reach ${file}"; refused=$((refused+1)); restore; continue
   fi
 

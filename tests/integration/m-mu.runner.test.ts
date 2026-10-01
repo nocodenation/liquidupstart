@@ -1001,3 +1001,229 @@ test('an unrelated survivor', () => { expect(1).toBe(1); });
     expect(sha()).toBe(cleanSha);
   }, 300_000);
 });
+
+// ---------------------------------------------------------------------------
+// MU-40 to MU-45 — the second re-review of 2026-09-30, on the JUnit reader.
+//
+// Reading the record instead of the console was right, and it let four things
+// through that the console reader had caught. Three of them are about what an
+// element in that record means; one is older than the reader and one is about
+// the baseline having a tally nobody read.
+// ---------------------------------------------------------------------------
+
+describe('MU-40 a test that did not run is not a test that passed', () => {
+  const skipSpec = (body: string) => {
+    const spec = `spec/skip-${Math.random().toString(36).slice(2, 7)}.test.ts`;
+    writeFileSync(join(root, spec), `
+import { test, expect, describe } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+${body}
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    return spec;
+  };
+
+  test('MU-40 skip, todo and a skipped block are all refused, not read as green', () => {
+    // Finding 1 of the 2026-09-30 review, and finding 8 of the first review
+    // again -- for the variant the refusal message itself names, "renamed,
+    // skipped, or misspelt". bun writes a skipped test as an element with a body
+    // and no <failure>, so the reader took it for a pass and the baseline said
+    // the named test was green before the mutation.
+    //
+    // MU-24 stages only the misspelt one, which is why the suite was green over
+    // this.
+    const cases: [string, string][] = [
+      ['test.skip', `test.skip('the policy is protected', () => { expect(s).toContain('POLICY="protected"'); });`],
+      ['test.todo', `test.todo('the policy is protected');`],
+      [
+        'describe.skip',
+        `describe.skip('a skipped block', () => {
+  test('the policy is protected', () => { expect(s).toContain('POLICY="protected"'); });
+});`
+      ]
+    ];
+    for (const [what, body] of cases) {
+      const r = run(registry([entry({ spec: skipSpec(body) })]));
+      expect(r.output).toContain('did not run in');
+      expect(r.output).not.toContain('UNRESOLVED');
+      expect(r.output).not.toContain('VALIDATED');
+      expect({ what, code: r.code }).toEqual({ what, code: r.code === 0 ? -1 : r.code });
+      expect(r.code).not.toBe(0);
+    }
+  }, 300_000);
+});
+
+describe('MU-41 the describe path comes from the nesting, not from classname', () => {
+  const nested = 'spec/nested.test.ts';
+  const seed = () =>
+    writeFileSync(join(root, nested), `
+import { test, expect, describe } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+describe('outer', () => {
+  describe('inner', () => {
+    test('in inner', () => { expect(s).toContain('POLICY="protected"'); });
+  });
+  test('in outer', () => { expect(1).toBe(1); });
+});
+describe('a & b > "c"', () => {
+  describe('deep', () => {
+    test('quoted parents', () => { expect(s).toContain('POLICY="protected"'); });
+  });
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+
+  test('MU-41 the name bun prints is the name that matches', () => {
+    // Finding 2. classname is innermost-first -- `inner > outer` for what the
+    // console prints as `outer > inner` -- and bun 1.3.13 escapes it twice, so
+    // reading it made the verdict depend on which bun was installed. That is the
+    // one thing this reader exists to avoid. The <testsuite> nesting is written
+    // the same way by both and escaped once.
+    seed();
+    const r = run(registry([entry({ spec: nested, mustFail: 'outer > inner > in inner' })]));
+    expect(r.output).toContain('VALIDATED FX-1');
+  }, 300_000);
+
+  test('MU-41 and the reversed order is refused, on either bun', () => {
+    // The counterpart: it validated on 1.4.2 and was refused on 1.3.13, which is
+    // the asymmetry the finding is about.
+    seed();
+    const r = run(registry([entry({ spec: nested, mustFail: 'inner > outer > in inner' })]));
+    expect(r.output).toContain('did not run in');
+  }, 300_000);
+
+  test('MU-41 and a parent whose own name carries the separator is still matched', () => {
+    // `a & b > "c"` has the joining string inside one segment, and ampersands and
+    // quotes besides -- which is where reading an escaped attribute went wrong.
+    seed();
+    const r = run(
+      registry([entry({ spec: nested, mustFail: 'a & b > "c" > deep > quoted parents' })])
+    );
+    expect(r.output).toContain('VALIDATED FX-1');
+  }, 300_000);
+});
+
+describe('MU-42 a case that is a block stands for the tests under it', () => {
+  const block = 'spec/block.test.ts';
+  const seed = () =>
+    writeFileSync(join(root, block), `
+import { test, expect, describe } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+describe('A10-14 a checked-in template is not a credential', () => {
+  for (const name of ['.env.example', '.env.sample']) {
+    test(\`\${name} reaches the remote\`, () => { expect(s).toContain('POLICY="protected"'); });
+  }
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+
+  test('MU-42 the block name is enough, which is how A10-14 is written', () => {
+    // Finding 5, and a decision rather than a repair. Cases in this project are
+    // often a describe whose tests are generated in a loop -- A10-14 and A10-20
+    // on #17, and this file's own MU-40 -- so there is no single test name to
+    // give. A block stands for every test under it: red if any is red, not run if
+    // none ran.
+    seed();
+    const r = run(
+      registry([
+        entry({ spec: block, mustFail: 'A10-14 a checked-in template is not a credential' })
+      ])
+    );
+    expect(r.output).toContain('VALIDATED FX-1');
+  }, 300_000);
+
+  test('MU-42 and a name is still never matched by part of another', () => {
+    // The counterpart, and what keeps the block rule from undoing MU-27: segments
+    // are compared whole. `.env.example reaches the remote` is a test under the
+    // block; `reaches the remote` is nothing.
+    seed();
+    const r = run(registry([entry({ spec: block, mustFail: 'reaches the remote' })]));
+    expect(r.output).toContain('did not run in');
+  }, 300_000);
+});
+
+describe('MU-43 a subject that cannot be compared is not a mutation that landed', () => {
+  test('MU-43 a spec that removes its own subject is refused', () => {
+    // Finding 3, and older than the reader. `cmp` answers 0 for identical, 1 for
+    // different and **2 for trouble** -- a file it cannot open -- and only 0
+    // refused, so trouble read as "the mutation reached it". The line above that
+    // check already claimed the write was verified rather than assumed.
+    const spec = 'spec/vanishing.test.ts';
+    mkdirSync(join(root, 'sub'), { recursive: true });
+    writeFileSync(join(root, 'sub/subject.sh'), subjectBody);
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+const file = join(import.meta.dir, '..', 'sub', 'subject.sh');
+// Read first, so the baseline is green, then remove it -- which is what leaves
+// cmp with nothing to open.
+const s = readFileSync(file, 'utf8');
+rmSync(file, { force: true });
+test('the policy is protected', () => { expect(s).toContain('POLICY="protected"'); });
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ file: 'sub/subject.sh', spec })]));
+    expect(r.output).toContain('the mutation did not reach sub/subject.sh');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+});
+
+describe('MU-44 a baseline that did not load says so, rather than blaming the name', () => {
+  test('MU-44 an import-time throw before the mutation names the error', () => {
+    // Finding 6. The baseline has the same tally to read as the run after it, and
+    // without reading it the message was "renamed, skipped, or misspelt" -- which
+    // sends the author to look at the name instead of at the error. MU-30 covers
+    // the same thing after the mutation.
+    const spec = 'spec/throws-at-baseline.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+throw new Error('this spec does its work at load time, and the work failed');
+test('the policy is protected', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec })]));
+    expect(r.output).toContain('did not load before the mutation');
+    expect(r.output).not.toContain('renamed, skipped, or misspelt');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+});
+
+describe('MU-45 the console differs between a person and an agent, on one machine', () => {
+  test('MU-45 the record is read because of that, not because of a version', () => {
+    // Finding 4, and a correction of my own reasoning rather than a defect. I
+    // reported that bun 1.3.13 prints only `(fail)` lines while 1.4.2 also prints
+    // `(pass)`. Both versions do both; what differs is whether the shell looks
+    // like an agent's. My 1.3.13 runs were in one and the 1.4.2 container was
+    // not, so the measurement was confounded and the conclusion was attributed to
+    // the wrong cause.
+    //
+    // The real reason is better: it does not expire with the next release. This
+    // case is what keeps the claim honest -- it measures the console on *this*
+    // machine with the marker set and unset, so a reader can see which it is.
+    const spec = join(root, 'agent-console.test.ts');
+    writeFileSync(spec, `
+import { test, expect } from 'bun:test';
+test('a green test', () => { expect(1).toBe(1); });
+test('a red test', () => { expect(1).toBe(2); });
+`);
+    const lines = (env: Record<string, string>) =>
+      sh(['bun', 'test', spec], root, { FORCE_COLOR: '0', NO_COLOR: '1', ...env })
+        .output.split('\n')
+        .filter((l) => /^\((pass|fail)\)/.test(l));
+
+    const asAgent = lines({ CLAUDECODE: '1' });
+    const asPerson = lines({ CLAUDECODE: '' });
+
+    // The red test is named either way; the green one only for a person.
+    expect(asAgent.some((l) => l.includes('a red test'))).toBe(true);
+    expect(asAgent.some((l) => l.includes('a green test'))).toBe(false);
+    expect(asPerson.some((l) => l.includes('a green test'))).toBe(true);
+  }, 300_000);
+});

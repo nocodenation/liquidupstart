@@ -131,9 +131,31 @@ finding, and why it needs a second mutation of a different shape before anybody 
 
 ### Things the first real run found about bun
 
-**bun names a test on the line only when it FAILS.** Passing ones appear solely in the tally at the
-end, so the first version counted `(pass)` lines, found zero survivors for every entry, and
-classified each one as a broken file.
+**The console is not the same for a person and for an agent.** With `CLAUDECODE` set, bun names only
+the failing tests; without it, passing ones get a line too. Measured on one two-test file on one
+machine, both ways, on 1.3.13 and 1.4.2 — the version makes no difference. So the first version of the
+runner counted `(pass)` lines, found zero survivors for every entry, and classified each one as a
+broken file.
+
+*Corrected 2026-10-01.* This said the behaviour was bun 1.3.13's and that 1.4.2 differed. The
+measurement behind that ran 1.3.13 in an agent shell and 1.4.2 in a container without one, so it
+compared two things at once and named the wrong one. A reviewer took it apart. The corrected reason is
+the stronger one: a difference between a person and an agent on the same machine does not expire with
+the next release, and it is why the verdict is read from the JUnit record rather than from the output
+anybody happens to see. MU-45 measures it in place, so the claim cannot go stale unnoticed.
+
+**What the record says that the console does not.** A test that was skipped is an element with a
+`<skipped>` child, and reading it as green let `test.skip`, `test.todo`, `test.if(false)` and
+everything under `describe.skip` pass the baseline. The describe path comes from the nesting of
+`<testsuite>` elements, not from `classname`: classname is innermost-first and bun 1.3.13 escapes it
+twice, which was the one place where the verdict still depended on the version. Both found by the
+review of 2026-09-30; MU-40 and MU-41.
+
+**What `mustFail` may name.** A test's own name; a describe path joined by ` > `, as the console prints
+it; or a describe, which stands for every test under it — red if any of them is red, not run if none
+ran. That last form is there because a case in this project is often a block whose tests are generated
+in a loop, so there is no single test name to give. Segments are compared whole either way, so a name
+is never matched by part of another. MU-42.
 
 **And the name has to be matched as a whole.** The `mustFail` needle was searched inside the
 `(fail)` line, so a sibling whose name merely contained it stood in for the named test —
