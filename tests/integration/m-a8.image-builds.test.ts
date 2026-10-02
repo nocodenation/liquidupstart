@@ -15,7 +15,9 @@
  *           was theoretical until M-A8, which is the first milestone to change
  *           +page.svelte and +page.server.ts.
  * Given:    The dashboard/ build context as it stands in the working tree, and
- *           the throwaway tag liquidupstart/dashboard:m-a8-compiles.
+ *           a throwaway tag of its own, liquidupstart/dashboard:m-a8-compiles
+ *           with this run id appended -- per run since 2026-10-02, so two
+ *           checkouts on one host do not remove each other's image.
  * When:     docker build runs on it — the command run.sh itself runs, not
  *           `bun run build`, which exits 127 with "vite: command not found" in
  *           a checkout because there is no dashboard/node_modules.

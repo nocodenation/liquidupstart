@@ -41,6 +41,7 @@
  * Requirements covered: OC-G4, N1 and N4 of the #11 second review, and the
  * 2026-09-14 correction to N1 above.
  */
+import { containerName } from '../lib/dashboardserver';
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -82,7 +83,7 @@ describe('N1 every bounded docker run can actually be bounded', () => {
       expect({ skipped: 'image absent', image }).toEqual({ skipped: 'image absent', image });
       return;
     }
-    const name = `lu-bound-probe-${process.pid}`;
+    const name = containerName('lu-bound-probe');
     const snippet = `
       set -uo pipefail
 . ${LIB}

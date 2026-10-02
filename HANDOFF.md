@@ -594,22 +594,31 @@ and what it found; the live list is here.*
    mutation runner's wire format gained a `kind` column instead of overloading the `all` column to
    carry `"exempt"`, and a run stopped by its budget is **refused** rather than failed-by-timeout,
    because `failed` in that vocabulary means the named test passed.
-3. **The `operator.admin` exposure** is in `BACKLOG.md` with the measurement and two directions. It
-   needs the operator's decision on whether the agents lose the `openclaw.localhost` vhost, so it is
-   not a thing to start without asking.
+3. **The `operator.admin` exposure** is in `BACKLOG.md` with the measurement, and the direction is
+   **decided**: nginx asserts the identity for the host and one named address on the stack network.
+   What is not settled is a precondition the review of 2026-10-01 measured — on rootless Docker
+   `$remote_addr` is the same for a loopback request and a LAN one, so "the host" is the whole LAN
+   until the proxy port is bound to `127.0.0.1`. Read the entry before starting; it is on #15, not
+   here.
 4. **The toolbox image still only changes when something removes it.** `update.sh` removes it and the
    start refuses before the teardown when its tools are missing, but the durable form is a label
    carrying a hash of its Dockerfile. `BACKLOG.md`.
 
 ### If a test fails on your machine and passed on the one it was written on
 
-Three shapes have cost real time, and all three are in the suite now with the measurement:
+Three shapes have cost real time. Two are addressed; the first is not, and is the one you are most
+likely to meet:
 
 - **A contract check against an installed stack.** A3-3, A4-16 and A1-4 read `volumes/`. In a git
-  worktree there is none, so they fail there and pass in the main checkout. Not a regression.
-- **Docker objects shared between checkouts.** Container names and image tags are per-run since
-  2026-09-30 (`RUN_ID` in `tests/lib/dashboardserver.ts`). Before that, two runs on one host removed
-  each other's containers.
+  worktree there is none, so they fail there and pass in the main checkout. **Not addressed** — they
+  have no fixture and no skip, so in a worktree they are simply red. Not a regression, and not a
+  thing to spend a morning rediscovering.
+- **Docker objects shared between checkouts.** Container names, image tags, networks and the two
+  subnets in `m-oc.subnet-preflight` are per-run since 2026-10-02, for everything that goes through
+  `tests/lib/dashboardserver.ts`. Before that, two runs on one host removed each other's containers.
+  Objects the helpers create carry `lu-test=1`, and a run sweeps stale ones at its start — because
+  the run that leaks is the run that did not reach its own cleanup. Anything that names a docker
+  object without those helpers is still shared; `grep -rn "docker.*--name" tests/` is the check.
 - **A host write the container has not seen yet.** The project is a bind mount and Docker Desktop
   propagates with a delay. Fetching a page straight after writing a fixture file failed **2 of 3 runs
   on an idle machine**. Wait on the condition with `getWhen`, never on the clock.

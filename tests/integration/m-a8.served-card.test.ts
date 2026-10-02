@@ -39,10 +39,21 @@
  * is a bind mount and Docker Desktop propagates a host write with a delay, so a
  * manifest narrowed and fetched at once was served as it had been. A 1.5s wait
  * made it 3 of 3, which is what identified the cause -- and is why the wait is on
- * the condition instead: a fixed sleep is a guess that goes flaky again on a
- * slower host. `getWhen` polls until the page reflects the change and fails with
- * what it last saw. The truncated manifest is waited for the same way; it had the
- * same race and had simply not been caught at it.
+ * a condition rather than on the clock: a fixed sleep is a guess that goes flaky
+ * again on a slower host.
+ *
+ * *Amended again 2026-10-02.* The first repair polled the **page** until it said
+ * what the case expected, and that was worse than the flake in the way that
+ * matters. A predicate about the product turns a product defect into a timeout:
+ * reword the heading and the wait expires, bun reports one `(unnamed)` failure,
+ * and none of the ten tests runs -- where before the repair the same change gave a
+ * named A8-20 failure beside nine passes. The truncated-manifest predicate waited
+ * for `could not be read`, which no assertion here checks, so it added an
+ * assertion the specification does not have. A1 of the 2026-10-01 review.
+ *
+ * The wait is on the bytes the container reads -- `docker exec cat` against the
+ * manifest -- and the verdict is left to the assertions, which is where it
+ * belongs.
  *
  * **And two runs on one host destroyed each other.** The container names and the
  * image tag were fixed strings, and startDashboard runs `docker rm -f <name>`
@@ -74,7 +85,7 @@ import {
   removeImage,
   startDashboard,
   withoutScripts,
-  getWhen,
+  awaitFileInContainer,
   throwawayTag,
   type Dashboard
 } from '../lib/dashboardserver';
@@ -121,14 +132,12 @@ beforeAll(async () => {
   unknownPage = await get(c, '/');
 
   writeFileSync(manifestPath(unknown), TRUNCATED);
-  // Waited for, not assumed: the project is a bind mount and the container does
-  // not see a host write at once. See getWhen.
-  truncatedPage = await getWhen(
-    c,
-    '/',
-    (html) => html.includes('could not be read'),
-    'the truncated manifest'
-  );
+  // Waited for, not assumed, and waited on the file rather than on the page: the
+  // project is a bind mount and the container does not see a host write at once.
+  // See awaitFileInContainer -- a predicate about the page would add an assertion
+  // this case does not make, and report a product change as a timeout.
+  await awaitFileInContainer(c, manifestPath(unknown), TRUNCATED);
+  truncatedPage = await get(c, '/');
 
   // Last, and restored immediately: the manifest loses one of the two the
   // declaration names, which is what a save without a restart leaves and what a
@@ -136,26 +145,19 @@ beforeAll(async () => {
   // merely carry it -- the same claim A8-6 makes about the repositories.
   reloadedPage = await get(a, '/');
 
-  // Which repository the narrowing drops, read out of the manifest rather than
-  // assumed: slice(0, 1) keeps the first, and which that is comes from the
-  // declaration.
-  const narrowedAway = (json: string) => {
-    const all = JSON.parse(json).repositories as { host: string; path: string }[];
-    return `${all[1].host}/${all[1].path}`;
-  };
   const whole = readFileSync(manifestPath(ready), 'utf8');
   const narrowed = JSON.parse(whole);
   narrowed.repositories = narrowed.repositories.slice(0, 1);
-  writeFileSync(manifestPath(ready), JSON.stringify(narrowed, null, 2));
-  const dropped = narrowedAway(whole);
-  driftedPage = await getWhen(
-    a,
-    '/',
-    (html) => !html.includes(`>${dropped}</span>`) || html.includes('not yet prepared'),
-    `${dropped} being gone from the manifest`
-  );
+  const narrowedJson = JSON.stringify(narrowed, null, 2);
+  writeFileSync(manifestPath(ready), narrowedJson);
+  await awaitFileInContainer(a, manifestPath(ready), narrowedJson);
+  driftedPage = await get(a, '/');
   writeFileSync(manifestPath(ready), whole);
-});
+  // An explicit budget, because the default is bun's 60s hook timeout: an image
+  // build, three container starts and two waits all live in here, and past 60s bun
+  // prints one `(unnamed)` failure and the diagnosis is lost. B1c of the
+  // 2026-10-01 review.
+}, 600_000);
 
 afterAll(() => {
   for (const dashboard of started) dashboard.stop();

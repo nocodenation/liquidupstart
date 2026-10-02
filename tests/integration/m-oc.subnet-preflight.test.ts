@@ -21,16 +21,25 @@
  *
  * Requirements covered: OC-G5, R1 of the #11 third review.
  */
+import { RUN_ID, containerName, fixtureLabels, runSubnets } from '../lib/dashboardserver';
 import { test, expect, describe, afterAll } from 'bun:test';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 
 const SCRIPT = 'scripts/linux/start.sh';
 // Ranges nothing here uses; the decoy holds the first, the second stays free.
-const TAKEN = '10.123.45.0/24';
-const FREE = '10.123.46.0/24';
-const DECOY = 'lu-r1-decoy';
-const LEGACY = 'nocodenation_playground_network_65535';
+// Per run, names and ranges both. Fixed ones meant two runs on one host destroyed
+// each other's fixtures -- every test here begins by removing the shared network
+// and afterAll removes both -- and a name suffix alone would not do, because two
+// decoys on one range collide with "Pool overlaps". B3 of the 2026-10-01 review.
+//
+// The legacy name is suffixed too. `lu_drop_legacy_network` is called here with the
+// name as its argument, so nothing depends on the shape -- what it stands for is
+// "a network main left behind", and the start script composes its own from the
+// port.
+const { taken: TAKEN, free: FREE } = runSubnets();
+const DECOY = containerName('lu-r1-decoy');
+const LEGACY = `nocodenation_playground_network_65535-${RUN_ID}`;
 
 function call(fn: string, ...args: string[]): { code: number; out: string } {
   const snippet = `
@@ -52,7 +61,7 @@ afterAll(() => {
 describe('R1 the subnet preflight', () => {
   test('refuses a range another network holds, and names the key to change', () => {
     sh(['docker', 'network', 'rm', '-f', DECOY]);
-    const made = sh(['docker', 'network', 'create', '--subnet', TAKEN, DECOY]);
+    const made = sh(['docker', 'network', 'create', ...fixtureLabels(), '--subnet', TAKEN, DECOY]);
     expect({ decoy: made.code, hint: made.code === 0 ? '' : made.output }).toEqual({
       decoy: 0,
       hint: ''
@@ -81,7 +90,7 @@ describe('R1 the subnet preflight', () => {
 describe("R1 main's leftover network", () => {
   test('is removed when nothing is attached', () => {
     sh(['docker', 'network', 'rm', '-f', LEGACY]);
-    expect(sh(['docker', 'network', 'create', LEGACY]).code).toBe(0);
+    expect(sh(['docker', 'network', 'create', ...fixtureLabels(), LEGACY]).code).toBe(0);
     const r = call('lu_drop_legacy_network', LEGACY);
     expect({ code: r.code, gone: !networks().includes(LEGACY) }).toEqual({ code: 0, gone: true });
   });
@@ -93,12 +102,12 @@ describe("R1 main's leftover network", () => {
     // removal that did not happen -- measured 2026-09-14, the guardless version
     // prints "Removing ..." and swallows the refusal through `|| true`.
     sh(['docker', 'network', 'rm', '-f', LEGACY]);
-    expect(sh(['docker', 'network', 'create', LEGACY]).code).toBe(0);
+    expect(sh(['docker', 'network', 'create', ...fixtureLabels(), LEGACY]).code).toBe(0);
     const img = 'liquidupstart/bun-runner:latest';
     expect(sh(['docker', 'image', 'inspect', img]).code).toBe(0);
-    const cname = 'lu-r1-attached';
+    const cname = containerName('lu-r1-attached');
     sh(['docker', 'rm', '-f', cname]);
-    const up = sh(['docker', 'run', '-d', '--init', '--name', cname, '--network', LEGACY, '--entrypoint', 'sleep', img, '30']);
+    const up = sh(['docker', 'run', '-d', '--init', '--name', cname, ...fixtureLabels(), '--network', LEGACY, '--entrypoint', 'sleep', img, '30']);
     expect({ started: up.code, hint: up.code === 0 ? '' : up.output }).toEqual({ started: 0, hint: '' });
     try {
       const r = call('lu_drop_legacy_network', LEGACY);
