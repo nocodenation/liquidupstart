@@ -83,6 +83,35 @@ Decided with the operator on 2026-10-02. Everything else waits.
    "$KNOWN_HOSTS"`) — write beside and rename. It also explains the reviewer's #18 finding 6, which he
    saw once in twenty runs and could not reproduce.
 
+### Why #10's security finding comes after those three, not before
+
+#10's B1 — build-time code runs as root with write access to every clone, the shared Maven cache and
+the drop directory — is the most serious-sounding item in the whole round, and it was deliberately not
+pulled forward. The reason is a measurement, not a preference:
+
+| | in `main`, and therefore in 0.7.0? |
+|---|---|
+| #10 B1, build-time code as root | **no** — `config/nar_builder` and `narcheck.py` are not in `main` |
+| step 3, `} > "$MANIFEST"` | **yes**, `config/scripts/start/git.sh:562` |
+| step 1, A16-11 | **yes** |
+
+**Urgency follows exposure, not the word "security".** B1 is in code nobody has: the builder exists on
+the branch only, so it cannot do anything to anybody today. Step 3 is in the version running on the
+operator's machine and can hand the dashboard and the agents a half-written manifest.
+
+Three further reasons, in order:
+
+- **B1 needs a decision from the operator** about what a build may do on their machine, and a
+  trust-boundary decision taken at a context boundary is taken badly.
+- **It is large.** The repair reaches the builder image, `compose.yml`, the mounts and probably the
+  check itself. It is a round of its own with its own measurements, not an insert before three small
+  things.
+- **#10 carries eleven more findings**, among them B3, two cases that hang for ever on Linux in the
+  default tier. Taking B1 alone means touching #10 twice and asking the reviewer to read it twice.
+
+So: the three, then #10 whole, with B1 first inside it and the decision put to the operator before
+anything is built.
+
 ### Decisions, and whose they are
 
 - **Settled 2026-09-30, operator:** nginx asserts the identity for the host and one named address.
