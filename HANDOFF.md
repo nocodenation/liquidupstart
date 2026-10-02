@@ -8,32 +8,107 @@ proceeds, what the failures taught — is still current. The branch table and *N
 2026-09-30; everything else was written on 2026-09-09 and describes the end of 2026-09-08. Where an
 older section makes a claim about the present, believe the dated one.
 
-## Where it stands, 2026-09-30
+## Where it stands, 2026-10-02
 
-**The git integration is merged.** #9 was approved and merged on 2026-09-30 and released as
-**0.7.0**. `main` carries it, and the four remaining branches are rebased onto `main` and conflict
+**The git integration is merged.** #9 was approved and merged on 2026-09-30 and released as **0.7.0**.
+`main` is `fc03344` plus what has landed since. Everything else is open, based on `main`, and conflict
 free.
 
-| PR | Branch | State |
-|---|---|---|
-| ~~#9~~ | `feature/git-integration` | **merged, 0.7.0** |
-| #10 | `feature/liquid-java-extensions` | answered, awaiting re-review |
-| #15 | `feature/openclaw-pairing-recovery` | answered, awaiting re-review |
-| #17 | `feature/test-mutation-control` | answered, awaiting re-review |
-| #18 | `feature/mutation-registry` | answered, awaiting re-review |
+**Every open PR has an unanswered review from 2026-10-01.** That is the single most important fact on
+this page. The work below is not "finish the last thing"; it is five review rounds in parallel, 48
+findings in all.
 
-**#17 must not merge before #18.** #17 carried its own older copy of the mutation runner; both
-branches add the same four files, so `git merge-tree` gives add/add conflicts on all of them, and a
-resolution toward #17 would silently restore every defect #18 fixed. #17 now holds the registry alone
-and the runner arrives from `main` with #18.
+| PR | Branch | Findings open | State |
+|---|---|---|---|
+| ~~#9~~ | `feature/git-integration` | — | **merged, 0.7.0** |
+| #10 | `feature/liquid-java-extensions` | **12** (3 blocking) | review of 10-01 **unanswered** |
+| #15 | `feature/openclaw-pairing-recovery` | **11** (A1–A5 before merge) | review of 10-01 **unanswered** |
+| #17 | `feature/test-mutation-control` | **8** (A1–A3 before merge) | review of 10-01 **unanswered** |
+| #18 | `feature/mutation-registry` | **10** (2 before merge) | third re-review of 10-01 **unanswered**; verdict *merge after fixes* |
+| #19 | `fix/fixture-names-per-run` | **7** | A1, A2, B1–B4 built in `2dbb523`; **no reply posted yet** |
+| #20 | `fix/bind-address` | — | opened 10-02, awaiting first review |
 
-**What a review round costs, and what it returns.** Five reviews in ten days produced 13 findings on
-#10, 9 on #15, 6 on #17, 3 on #18 and a blocking one on #9 that no suite could have seen -- it came
-from pressing Start on an installation that already existed. Three of the findings were defects **in
-the checks themselves**: a case that asserted the blindness it was written to prevent, a default test
-run that drove the operator's own stack, and a case whose registry entry pointed at a case that no
-longer existed. A suite cannot find a case that agrees with the defect. That is the argument for the
-review round and for the mutation registry, in one sentence each.
+**#17 must not merge before #18.** #17 carried its own older copy of the mutation runner; both branches
+add the same four files, so `git merge-tree` gives add/add conflicts on all of them and a resolution
+toward #17 would silently restore every defect #18 fixed. #17 holds the registry alone now.
+
+### Getting the reviews back
+
+They are long and they are the actual specification of the remaining work. Do not work from this
+summary:
+
+```bash
+gh pr view <N> --json reviews --jq '[.reviews[] | select(.author.login=="iztiev")] | last | .body'
+gh pr view <N> --json comments --jq '.comments[] | "\(.createdAt) \(.author.login)"'   # what has been answered
+```
+
+A review is unanswered when its `submittedAt` is later than the last `cdilcher` comment.
+
+### The agreed next three, in order
+
+Decided with the operator on 2026-10-02. Everything else waits.
+
+1. **A16-11, and a sweep for the same shape** — on #19, where that family lives.
+   `tests/integration/m-a16.lock-identity.test.ts:142` does `await Bun.sleep(900)` and then reads
+   `volumes/_git-secrets/locks/<slug>/pid`. Under load the file is still empty and the case fails
+   `expect(holder).toMatch(/^.+:[0-9]+$/)` with `""`. It passes 5 of 5 alone, and it is on `main`, so
+   0.7.0 has it. Poll for the file to be non-empty with a deadline instead.
+   Then `grep -rn "Bun.sleep\|sleep [0-9]" tests/` and look at every place that reads something after
+   waiting. Three instances turned up in one day by accident; the fourth should be found on purpose.
+2. **The `operator.admin` entry moves to #15.** It is out of #19 already (B5: approving a harness fix
+   must not also sign off a security direction). Write it on #15 with the distinction the operator and
+   the reviewer between them established:
+   - The **agents** are what the finding is about, and the decision of 2026-09-30 answers it: nginx
+     asserts `X-Forwarded-User` for the host and one named stack-network address. An agent arrives from
+     a container address and no longer gets it.
+   - The **LAN** side is a different thing and is **not** part of that decision. It was a promise
+     README.md broke, and #20 repairs it. Say so, so nobody reads the identity rule as doing more than
+     it does.
+   - Three omissions the reviewer named, all to be written in: the pairing helper has **no** fixed
+     address today (`docker run --network` with no `--ip`), so a key, a template variable and an `--ip`
+     are new — "introduces nothing to keep" was false; two concurrent helper runs on a pinned address
+     collide with *address already in use*; an orphaned helper holds the address. In its favour and
+     unsaid: `ip_range: 10.99.0.128/25` in `compose.yml` keeps a pinned address below `.128` out of the
+     pool.
+   - And drop "name them by address" as if an address were a principal. It is a position.
+3. **The manifest write in `git.sh`** — its own PR, off `main`.
+   Line ~562 is `} > "$MANIFEST"`, which truncates and fills. Any reader can see a half-written file:
+   `m-a12.manifest-while-waiting.test.ts` caught `SyntaxError: JSON Parse error: Unexpected EOF` at
+   load time in a full run. The dashboard and `git-repo-info` read the same file, so this is a product
+   defect, not a test one. The same script already does it correctly for `known_hosts` (`mv "$scanned"
+   "$KNOWN_HOSTS"`) — write beside and rename. It also explains the reviewer's #18 finding 6, which he
+   saw once in twenty runs and could not reproduce.
+
+### Decisions, and whose they are
+
+- **Settled 2026-09-30, operator:** nginx asserts the identity for the host and one named address.
+- **Settled 2026-10-02, operator:** the proxy binds to `127.0.0.1` by default with `SYSTEM_BIND_ADDRESS`
+  to open it. #20.
+- **Waiting on the reviewer, #18:** the wire format gained a `kind` column rather than overloading
+  `all` to carry `"exempt"`; and a run stopped by its budget is **refused** rather than
+  failed-by-timeout, because `failed` there means the named test passed. Both are stated in the reply
+  on #18 as deviations from what he proposed.
+- **Not started, and not to be started without asking:** the real nginx rule for the identity. It needs
+  a measurement first — whether nginx can tell host traffic from stack traffic, on rootless **and**
+  rootful, on Linux **and** macOS. The reviewer measured one host: loopback and LAN both arrived as the
+  bridge gateway address.
+
+### The worktrees in use
+
+They are outside the repository, under the session scratchpad, and they are where the work happens:
+
+| Path | Branch |
+|---|---|
+| `/Users/christof/repos/liquidupstart` | the main checkout |
+| `…/scratchpad/wt-10` | `feature/liquid-java-extensions` |
+| `…/scratchpad/wt-15` | `feature/openclaw-pairing-recovery` |
+| `…/scratchpad/wt-17` | `feature/test-mutation-control` |
+| `…/scratchpad/wt-18b` | `feature/mutation-registry` |
+| `…/scratchpad/wt-names` | `fix/fixture-names-per-run` (#19) — **this file lives here** |
+| `…/scratchpad/wt-bind` | `fix/bind-address` (#20) |
+
+`git worktree list` is the authority. Each needs `cd dashboard && bun install --frozen-lockfile` once,
+or the component tier cannot resolve svelte.
 
 ## What is being built
 
@@ -585,29 +660,25 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
 
-*Rewritten 2026-09-30. The struck-through entries below are kept because they record what was walked
-and what it found; the live list is here.*
+**The live list is at the top of this file**, under *Where it stands* — the agreed next three, and the
+table of what each PR still owes. What is here is the standing material: how a failure on your machine
+differs from a failure in the product, and the struck-through entries, which are kept because they
+record what was walked and what it found.
 
-1. **Wait on Timur.** All four open PRs are answered and back with him. Nothing in them is waiting on
-   this side.
-2. **Two deviations are his to settle**, both stated in the replies rather than taken silently: the
-   mutation runner's wire format gained a `kind` column instead of overloading the `all` column to
-   carry `"exempt"`, and a run stopped by its budget is **refused** rather than failed-by-timeout,
-   because `failed` in that vocabulary means the named test passed.
-3. **The `operator.admin` exposure** is in `BACKLOG.md` with the measurement, and the direction is
-   **decided**: nginx asserts the identity for the host and one named address on the stack network.
-   What is not settled is a precondition the review of 2026-10-01 measured — on rootless Docker
-   `$remote_addr` is the same for a loopback request and a LAN one, so "the host" is the whole LAN
-   until the proxy port is bound to `127.0.0.1`. Read the entry before starting; it is on #15, not
-   here.
-4. **The toolbox image still only changes when something removes it.** `update.sh` removes it and the
-   start refuses before the teardown when its tools are missing, but the durable form is a label
-   carrying a hash of its Dockerfile. `BACKLOG.md`.
+*Rewritten 2026-09-30, and again 2026-10-02.* The 09-30 version said "wait on Timur, all four PRs are
+answered". That was true for about twenty hours. It also carried the `operator.admin` direction as if
+the `127.0.0.1` binding were an unsettled precondition of it; both halves of that are now resolved and
+separated — see the top of the file, and #20.
+
+Still open and not in the live list, because it is small and nobody is waiting on it: **the toolbox
+image only changes when something removes it.** `update.sh` removes it and the start refuses before the
+teardown when its tools are missing, but the durable form is a label carrying a hash of its Dockerfile.
+`BACKLOG.md`.
 
 ### If a test fails on your machine and passed on the one it was written on
 
-Three shapes have cost real time. Two are addressed; the first is not, and is the one you are most
-likely to meet:
+Four shapes have cost real time. The last one is not an instance but a habit, and it is the one to
+watch for:
 
 - **A contract check against an installed stack.** A3-3, A4-16 and A1-4 read `volumes/`. In a git
   worktree there is none, so they fail there and pass in the main checkout. **Not addressed** — they
@@ -621,7 +692,21 @@ likely to meet:
   object without those helpers is still shared; `grep -rn "docker.*--name" tests/` is the check.
 - **A host write the container has not seen yet.** The project is a bind mount and Docker Desktop
   propagates with a delay. Fetching a page straight after writing a fixture file failed **2 of 3 runs
-  on an idle machine**. Wait on the condition with `getWhen`, never on the clock.
+  on an idle machine**. `awaitFileInContainer` waits until `docker exec cat` returns the bytes that were
+  written.
+
+- **Waiting on the clock instead of on the condition.** Three instances in one day, 2026-10-02, and
+  that is a habit rather than a coincidence:
+  1. the page fetched straight after a host write (above);
+  2. the first repair for it, which polled the **page** until it said what the case expected — worse
+     than the flake, because a product change then becomes one `(unnamed)` timeout and no test runs at
+     all, where before it was a named failure beside nine passes;
+  3. `m-a16.lock-identity.test.ts`, `Bun.sleep(900)` and then read the lock file, empty under load.
+
+  The rule the three of them give: **wait on the thing you are diagnosing, never on the clock, and
+  never on a sentence the product renders.** A predicate about the product turns a product defect into
+  a timeout. A fixed sleep is a guess that holds until the machine is busy. Both report on the host
+  instead of on the subject, which is what makes them worse than no wait at all.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
