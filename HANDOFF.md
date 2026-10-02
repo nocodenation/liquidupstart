@@ -1,12 +1,16 @@
-# Handover — 2026-09-30
+# Handover — 2026-10-02
 
-Read this first. It is the map and the current state; the specifications are the documents in
-`docs/`.
+Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
-**The state below is dated per section.** The map — what is being built, where things live, how work
-proceeds, what the failures taught — is still current. The branch table and *Next* were rewritten on
-2026-09-30; everything else was written on 2026-09-09 and describes the end of 2026-09-08. Where an
-older section makes a claim about the present, believe the dated one.
+**The state below is dated per section, and the current state is the next one.** *Where it stands,
+2026-10-02* has the live picture: what each open PR owes, the agreed order of work, and which decisions
+are settled and whose they were. Read that and the review bodies it points to; the rest of this file is
+the map and the lessons.
+
+Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
+unless a paragraph carries its own later date. It still says "three features and two repairs, on five
+branches", and there are six open PRs now. **Where an older section makes a claim about the present,
+believe the dated one.**
 
 ## Where it stands, 2026-10-02
 
