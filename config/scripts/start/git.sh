@@ -354,6 +354,14 @@ lu_take_lock_waiting() {  # lu_take_lock_waiting <slug> <seconds>
   local slug="$1" budget="$2" waited=0
   while ! lu_take_lock "$slug"; do
     (( waited >= budget )) && return 1
+    # At the first refusal, not only once 30s have gone. This wait may legitimately
+    # run the whole 300s, and for its first half minute a start that is waiting
+    # and a start that is hung looked identical to the operator. It is also the
+    # only evidence the wait happened, which is what A16-27 now reads instead of
+    # the clock it was reading.
+    if (( waited == 0 )); then
+      echo "Waiting for another run to finish preparing ${slug}..." >&2
+    fi
     sleep 5
     waited=$(( waited + 5 ))
     [[ $(( waited % 30 )) -eq 0 ]] &&

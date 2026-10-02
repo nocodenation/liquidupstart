@@ -52,13 +52,18 @@ A review is unanswered when its `submittedAt` is later than the last `cdilcher` 
 
 Decided with the operator on 2026-10-02. Everything else waits.
 
-1. **A16-11, and a sweep for the same shape** — on #19, where that family lives.
-   `tests/integration/m-a16.lock-identity.test.ts:142` does `await Bun.sleep(900)` and then reads
-   `volumes/_git-secrets/locks/<slug>/pid`. Under load the file is still empty and the case fails
-   `expect(holder).toMatch(/^.+:[0-9]+$/)` with `""`. It passes 5 of 5 alone, and it is on `main`, so
-   0.7.0 has it. Poll for the file to be non-empty with a deadline instead.
-   Then `grep -rn "Bun.sleep\|sleep [0-9]" tests/` and look at every place that reads something after
-   waiting. Three instances turned up in one day by accident; the fourth should be found on purpose.
+1. ~~**A16-11, and a sweep for the same shape**~~ — **done 2026-10-02**, and the sweep found three
+   more: A15-1's `Bun.sleep(700)`, A16-27 passing over a `git.sh` with no wait at all, and five cases
+   running the start script in bun's default 5s budget. The six of them are the *"Waiting on the clock"*
+   entry below. One further thing came out of it and is **not** repaired: eight case ids used in the
+   A16 tests — A16-21, 22, 24, 25, 26, 27, 28, 29 — appear in no row of the test specification, and
+   `A16-20` names two different cases, a NUL unit check and a stale-foreign-lock integration case. The
+   cases are on `main`; renumbering one of them is a decision for the reviewer, so it is reported on
+   #19 and belongs with the `git.sh` manifest repair rather than inside a harness fix.
+   What it was: `m-a16.lock-identity.test.ts:142` did `await Bun.sleep(900)` and then read
+   `volumes/_git-secrets/locks/<slug>/pid`, which is empty under load — the case passed 5 of 5 alone
+   and failed 8 of 8 with eight starts at once. It waits on the holder landing now, and the fourth
+   instance was found on purpose, as this entry asked.
 2. **The `operator.admin` entry moves to #15.** It is out of #19 already (B5: approving a harness fix
    must not also sign off a security direction). Write it on #15 with the distinction the operator and
    the reviewer between them established:
@@ -728,18 +733,40 @@ watch for:
   on an idle machine**. `awaitFileInContainer` waits until `docker exec cat` returns the bytes that were
   written.
 
-- **Waiting on the clock instead of on the condition.** Three instances in one day, 2026-10-02, and
-  that is a habit rather than a coincidence:
+- **Waiting on the clock instead of on the condition.** Six instances in one day, 2026-10-02, all
+  repaired. Three were found by accident and three by looking:
   1. the page fetched straight after a host write (above);
   2. the first repair for it, which polled the **page** until it said what the case expected — worse
      than the flake, because a product change then becomes one `(unnamed)` timeout and no test runs at
      all, where before it was a named failure beside nine passes;
   3. `m-a16.lock-identity.test.ts`, `Bun.sleep(900)` and then read the lock file, empty under load.
+     Measured: the holder lands after about 250ms on an idle host and 1047 to 1342ms with eight starts
+     at once, so eight of eight concurrent runs were red;
+  4. `m-a15.clone-lock.test.ts`, `Bun.sleep(700)` and then ask whether the lock exists — the same
+     mechanism, governing two assertions;
+  5. `m-a16.lock-wait.test.ts`, which released a lock after 3000ms and asserted that 3000ms had
+     passed. **That one could pass over the defect it exists to catch**: with the wait removed from
+     `git.sh` altogether and the release brought forward, all four cases in the file passed. A flake
+     costs a rerun; this costs the guard;
+  6. and five cases in `m-a16.lock-identity.test.ts` that ran the start script inside bun's **default
+     5s budget**, one of which timed out at 6055ms in eight of eight. A budget is a wait too.
 
-  The rule the three of them give: **wait on the thing you are diagnosing, never on the clock, and
-  never on a sentence the product renders.** A predicate about the product turns a product defect into
-  a timeout. A fixed sleep is a guess that holds until the machine is busy. Both report on the host
-  instead of on the subject, which is what makes them worse than no wait at all.
+  The rule they give: **wait on the thing you are diagnosing, never on the clock, and never on a
+  sentence the product renders.** A predicate about the product turns a product defect into a timeout.
+  A fixed sleep is a guess that holds until the machine is busy. Both report on the host instead of on
+  the subject, which is what makes them worse than no wait at all.
+
+  **How to look for the next one**, since three of these were found on purpose: `grep -rn "Bun.sleep"
+  tests/` and read every hit — a sleep inside a polling loop is a poll interval and fine, a sleep
+  followed by a read is the defect. Then find the cases that run something slow without a budget:
+  a `test()` whose body spawns the start script, docker or the dashboard and whose closing is `});`
+  rather than `}, BUDGET);`. Eight copies of the same file at once is what makes any of it visible —
+  `for i in $(seq 8); do bun test <files> > /tmp/load-$i.txt 2>&1 & done; wait`.
+
+  **One is reported and not repaired:** `tests/system/m-oc.proxy-attribution.test.ts:135` calls
+  `docker compose logs` in the default 5s. It is in the opt-in `--system` tier, it has never been seen
+  to time out, and verifying a change there needs a running stack — so it is named on #19 rather than
+  changed blind.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
