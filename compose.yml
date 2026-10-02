@@ -117,8 +117,18 @@ services:
     container_name: proxy
     restart: unless-stopped
     ports:
-      - "${SYSTEM_HTTP_PORT:-8888}:${SYSTEM_HTTP_PORT:-8888}"
-      - "${SYSTEM_HTTPS_PORT:-8833}:${SYSTEM_HTTPS_PORT:-8833}"
+      # Bound to this machine by default, which is what README.md promises under
+      # "Sandbox by design": *"All services bind to localhost on purpose … without
+      # exposing anything to your network."* These two lines published on 0.0.0.0
+      # from the day that sentence was written (ca92e16, 2026-07-17) until
+      # 2026-10-02, so the promise was never true. The dashboard in run.sh always
+      # kept it.
+      #
+      # SYSTEM_BIND_ADDRESS opens it again for the two features that need to be
+      # reached from elsewhere -- the OpenClaw node bridge and the Teams endpoint --
+      # and .env.example says what it costs.
+      - "${SYSTEM_BIND_ADDRESS:-127.0.0.1}:${SYSTEM_HTTP_PORT:-8888}:${SYSTEM_HTTP_PORT:-8888}"
+      - "${SYSTEM_BIND_ADDRESS:-127.0.0.1}:${SYSTEM_HTTPS_PORT:-8833}:${SYSTEM_HTTPS_PORT:-8833}"
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./config/openproject/theme:/usr/share/nginx/custom-theme:ro

@@ -350,6 +350,22 @@ echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost
 echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
 echo ""
 
+# Both states, said out loud. The ports bind to this machine by default since
+# 2026-10-02, which the README had promised since July without compose.yml doing
+# it -- so an installation that was reaching the stack from a phone will stop, and
+# a silent stop is the worst way to learn about a default. The other direction is
+# worth a line too: reachable from the network is the surprising state, and the two
+# endpoints above are the only reason to want it.
+BIND_ADDRESS="$(get_env SYSTEM_BIND_ADDRESS)"; BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
+if [[ "$BIND_ADDRESS" == "127.0.0.1" || "$BIND_ADDRESS" == "localhost" ]]; then
+  echo "  ${DIM}Reachable from: this machine only (SYSTEM_BIND_ADDRESS=${BIND_ADDRESS}).${RST}"
+  echo "  ${DIM}  Another device needs SYSTEM_BIND_ADDRESS=0.0.0.0, or an SSH tunnel.${RST}"
+else
+  echo "  ${WARN}Reachable from: your network (SYSTEM_BIND_ADDRESS=${BIND_ADDRESS}).${RST}"
+  echo "  ${DIM}  Every service above is, including the ones with no password.${RST}"
+fi
+echo ""
+
 ATTENTION="$(unreachable_repositories)"
 if [[ -n "$ATTENTION" ]]; then
   echo "${WARN}=== Needs your attention =========================================${RST}"
