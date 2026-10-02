@@ -30,6 +30,39 @@
  * Unhappy:  A8-7 and A8-14 are the unhappy twins of A8-6: an empty card in
  *           either state reads as "nothing declared", which is false and leaves
  *           the operator with nothing to do next.
+ *
+ * Amended 2026-09-30, after this file failed 2 of 3 runs on an idle machine.
+ * Twice it was measuring the machine rather than the product, and both times the
+ * red said A8-20 was broken.
+ *
+ * **The page was fetched before the container could see the write.** The project
+ * is a bind mount and Docker Desktop propagates a host write with a delay, so a
+ * manifest narrowed and fetched at once was served as it had been. A 1.5s wait
+ * made it 3 of 3, which is what identified the cause -- and is why the wait is on
+ * a condition rather than on the clock: a fixed sleep is a guess that goes flaky
+ * again on a slower host.
+ *
+ * *Amended again 2026-10-02.* The first repair polled the **page** until it said
+ * what the case expected, and that was worse than the flake in the way that
+ * matters. A predicate about the product turns a product defect into a timeout:
+ * reword the heading and the wait expires, bun reports one `(unnamed)` failure,
+ * and none of the ten tests runs -- where before the repair the same change gave a
+ * named A8-20 failure beside nine passes. The truncated-manifest predicate waited
+ * for `could not be read`, which no assertion here checks, so it added an
+ * assertion the specification does not have. A1 of the 2026-10-01 review.
+ *
+ * The wait is on the bytes the container reads -- `docker exec cat` against the
+ * manifest -- and the verdict is left to the assertions, which is where it
+ * belongs.
+ *
+ * **And two runs on one host destroyed each other.** The container names and the
+ * image tag were fixed strings, and startDashboard runs `docker rm -f <name>`
+ * before it starts, so a second checkout removed the first one's containers:
+ * `could not start lu-a8-unprepared: … No such container`. Both carry a per-run
+ * id now, from `RUN_ID` in tests/lib/dashboardserver.ts.
+ *
+ * Measured after both: 3 of 3 alone, and two concurrent runs from different
+ * checkouts both green.
  */
 import { test, expect, afterAll, beforeAll } from 'bun:test';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -52,11 +85,13 @@ import {
   removeImage,
   startDashboard,
   withoutScripts,
+  awaitFileInContainer,
+  throwawayTag,
   type Dashboard
 } from '../lib/dashboardserver';
 import { join } from 'node:path';
 
-const TAG = 'liquidupstart/dashboard:m-a8-served';
+const TAG = throwawayTag('liquidupstart/dashboard:m-a8-served');
 const TRUNCATED = '{\n  "generated": "2026-09-07T09:00:00Z",\n  "repositories": [\n    { "name": "liq';
 
 const ready = newProject('lu-a8-served-ready-');
@@ -97,6 +132,11 @@ beforeAll(async () => {
   unknownPage = await get(c, '/');
 
   writeFileSync(manifestPath(unknown), TRUNCATED);
+  // Waited for, not assumed, and waited on the file rather than on the page: the
+  // project is a bind mount and the container does not see a host write at once.
+  // See awaitFileInContainer -- a predicate about the page would add an assertion
+  // this case does not make, and report a product change as a timeout.
+  await awaitFileInContainer(c, manifestPath(unknown), TRUNCATED);
   truncatedPage = await get(c, '/');
 
   // Last, and restored immediately: the manifest loses one of the two the
@@ -108,10 +148,16 @@ beforeAll(async () => {
   const whole = readFileSync(manifestPath(ready), 'utf8');
   const narrowed = JSON.parse(whole);
   narrowed.repositories = narrowed.repositories.slice(0, 1);
-  writeFileSync(manifestPath(ready), JSON.stringify(narrowed, null, 2));
+  const narrowedJson = JSON.stringify(narrowed, null, 2);
+  writeFileSync(manifestPath(ready), narrowedJson);
+  await awaitFileInContainer(a, manifestPath(ready), narrowedJson);
   driftedPage = await get(a, '/');
   writeFileSync(manifestPath(ready), whole);
-});
+  // An explicit budget, because the default is bun's 60s hook timeout: an image
+  // build, three container starts and two waits all live in here, and past 60s bun
+  // prints one `(unnamed)` failure and the diagnosis is lost. B1c of the
+  // 2026-10-01 review.
+}, 600_000);
 
 afterAll(() => {
   for (const dashboard of started) dashboard.stop();

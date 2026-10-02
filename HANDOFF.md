@@ -1,7 +1,152 @@
-# Handover — 2026-09-09 (evening)
+# Handover — 2026-10-02
 
-Read this first. It is the map and the current state; the specifications are the documents in
-`docs/`. Everything here was true at the end of 2026-09-08.
+Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
+
+**The state below is dated per section, and the current state is the next one.** *Where it stands,
+2026-10-02* has the live picture: what each open PR owes, the agreed order of work, and which decisions
+are settled and whose they were. Read that and the review bodies it points to; the rest of this file is
+the map and the lessons.
+
+Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
+unless a paragraph carries its own later date. It still says "three features and two repairs, on five
+branches", and there are six open PRs now. **Where an older section makes a claim about the present,
+believe the dated one.**
+
+## Where it stands, 2026-10-02
+
+**The git integration is merged.** #9 was approved and merged on 2026-09-30 and released as **0.7.0**.
+`main` is `fc03344` plus what has landed since. Everything else is open, based on `main`, and conflict
+free.
+
+**Every open PR has an unanswered review from 2026-10-01.** That is the single most important fact on
+this page. The work below is not "finish the last thing"; it is five review rounds in parallel, 48
+findings in all.
+
+| PR | Branch | Findings open | State |
+|---|---|---|---|
+| ~~#9~~ | `feature/git-integration` | — | **merged, 0.7.0** |
+| #10 | `feature/liquid-java-extensions` | **12** (3 blocking) | review of 10-01 **unanswered** |
+| #15 | `feature/openclaw-pairing-recovery` | **11** (A1–A5 before merge) | review of 10-01 **unanswered** |
+| #17 | `feature/test-mutation-control` | **8** (A1–A3 before merge) | review of 10-01 **unanswered** |
+| #18 | `feature/mutation-registry` | **10** (2 before merge) | third re-review of 10-01 **unanswered**; verdict *merge after fixes* |
+| #19 | `fix/fixture-names-per-run` | **7** | A1, A2, B1–B4 built in `2dbb523`; **no reply posted yet** |
+| #20 | `fix/bind-address` | — | opened 10-02, awaiting first review |
+
+**#17 must not merge before #18.** #17 carried its own older copy of the mutation runner; both branches
+add the same four files, so `git merge-tree` gives add/add conflicts on all of them and a resolution
+toward #17 would silently restore every defect #18 fixed. #17 holds the registry alone now.
+
+### Getting the reviews back
+
+They are long and they are the actual specification of the remaining work. Do not work from this
+summary:
+
+```bash
+gh pr view <N> --json reviews --jq '[.reviews[] | select(.author.login=="iztiev")] | last | .body'
+gh pr view <N> --json comments --jq '.comments[] | "\(.createdAt) \(.author.login)"'   # what has been answered
+```
+
+A review is unanswered when its `submittedAt` is later than the last `cdilcher` comment.
+
+### The agreed next three, in order
+
+Decided with the operator on 2026-10-02. Everything else waits.
+
+1. ~~**A16-11, and a sweep for the same shape**~~ — **done 2026-10-02**, and the sweep found three
+   more: A15-1's `Bun.sleep(700)`, A16-27 passing over a `git.sh` with no wait at all, and five cases
+   running the start script in bun's default 5s budget. The six of them are the *"Waiting on the clock"*
+   entry below. One further thing came out of it and is **not** repaired: eight case ids used in the
+   A16 tests — A16-21, 22, 24, 25, 26, 27, 28, 29 — appear in no row of the test specification, and
+   `A16-20` names two different cases, a NUL unit check and a stale-foreign-lock integration case. The
+   cases are on `main`; renumbering one of them is a decision for the reviewer, so it is reported on
+   #19 and belongs with the `git.sh` manifest repair rather than inside a harness fix.
+   What it was: `m-a16.lock-identity.test.ts:142` did `await Bun.sleep(900)` and then read
+   `volumes/_git-secrets/locks/<slug>/pid`, which is empty under load — the case passed 5 of 5 alone
+   and failed 8 of 8 with eight starts at once. It waits on the holder landing now, and the fourth
+   instance was found on purpose, as this entry asked.
+2. **The `operator.admin` entry moves to #15.** It is out of #19 already (B5: approving a harness fix
+   must not also sign off a security direction). Write it on #15 with the distinction the operator and
+   the reviewer between them established:
+   - The **agents** are what the finding is about, and the decision of 2026-09-30 answers it: nginx
+     asserts `X-Forwarded-User` for the host and one named stack-network address. An agent arrives from
+     a container address and no longer gets it.
+   - The **LAN** side is a different thing and is **not** part of that decision. It was a promise
+     README.md broke, and #20 repairs it. Say so, so nobody reads the identity rule as doing more than
+     it does.
+   - Three omissions the reviewer named, all to be written in: the pairing helper has **no** fixed
+     address today (`docker run --network` with no `--ip`), so a key, a template variable and an `--ip`
+     are new — "introduces nothing to keep" was false; two concurrent helper runs on a pinned address
+     collide with *address already in use*; an orphaned helper holds the address. In its favour and
+     unsaid: `ip_range: 10.99.0.128/25` in `compose.yml` keeps a pinned address below `.128` out of the
+     pool.
+   - And drop "name them by address" as if an address were a principal. It is a position.
+3. **The manifest write in `git.sh`** — its own PR, off `main`.
+   Line ~562 is `} > "$MANIFEST"`, which truncates and fills. Any reader can see a half-written file:
+   `m-a12.manifest-while-waiting.test.ts` caught `SyntaxError: JSON Parse error: Unexpected EOF` at
+   load time in a full run. The dashboard and `git-repo-info` read the same file, so this is a product
+   defect, not a test one. The same script already does it correctly for `known_hosts` (`mv "$scanned"
+   "$KNOWN_HOSTS"`) — write beside and rename. It also explains the reviewer's #18 finding 6, which he
+   saw once in twenty runs and could not reproduce.
+
+### Why #10's security finding comes after those three, not before
+
+#10's B1 — build-time code runs as root with write access to every clone, the shared Maven cache and
+the drop directory — is the most serious-sounding item in the whole round, and it was deliberately not
+pulled forward. The reason is a measurement, not a preference:
+
+| | in `main`, and therefore in 0.7.0? |
+|---|---|
+| #10 B1, build-time code as root | **no** — `config/nar_builder` and `narcheck.py` are not in `main` |
+| step 3, `} > "$MANIFEST"` | **yes**, `config/scripts/start/git.sh:562` |
+| step 1, A16-11 | **yes** |
+
+**Urgency follows exposure, not the word "security".** B1 is in code nobody has: the builder exists on
+the branch only, so it cannot do anything to anybody today. Step 3 is in the version running on the
+operator's machine and can hand the dashboard and the agents a half-written manifest.
+
+Three further reasons, in order:
+
+- **B1 needs a decision from the operator** about what a build may do on their machine, and a
+  trust-boundary decision taken at a context boundary is taken badly.
+- **It is large.** The repair reaches the builder image, `compose.yml`, the mounts and probably the
+  check itself. It is a round of its own with its own measurements, not an insert before three small
+  things.
+- **#10 carries eleven more findings**, among them B3, two cases that hang for ever on Linux in the
+  default tier. Taking B1 alone means touching #10 twice and asking the reviewer to read it twice.
+
+So: the three, then #10 whole, with B1 first inside it and the decision put to the operator before
+anything is built.
+
+### Decisions, and whose they are
+
+- **Settled 2026-09-30, operator:** nginx asserts the identity for the host and one named address.
+- **Settled 2026-10-02, operator:** the proxy binds to `127.0.0.1` by default with `SYSTEM_BIND_ADDRESS`
+  to open it. #20.
+- **Waiting on the reviewer, #18:** the wire format gained a `kind` column rather than overloading
+  `all` to carry `"exempt"`; and a run stopped by its budget is **refused** rather than
+  failed-by-timeout, because `failed` there means the named test passed. Both are stated in the reply
+  on #18 as deviations from what he proposed.
+- **Not started, and not to be started without asking:** the real nginx rule for the identity. It needs
+  a measurement first — whether nginx can tell host traffic from stack traffic, on rootless **and**
+  rootful, on Linux **and** macOS. The reviewer measured one host: loopback and LAN both arrived as the
+  bridge gateway address.
+
+### The worktrees in use
+
+They are outside the repository, under the session scratchpad, and they are where the work happens:
+
+| Path | Branch |
+|---|---|
+| `/Users/christof/repos/liquidupstart` | the main checkout |
+| `…/scratchpad/wt-10` | `feature/liquid-java-extensions` |
+| `…/scratchpad/wt-15` | `feature/openclaw-pairing-recovery` |
+| `…/scratchpad/wt-17` | `feature/test-mutation-control` |
+| `…/scratchpad/wt-18b` | `feature/mutation-registry` |
+| `…/scratchpad/wt-names` | `fix/fixture-names-per-run` (#19) — **this file lives here** |
+| `…/scratchpad/wt-bind` | `fix/bind-address` (#20) |
+
+`git worktree list` is the authority. Each needs `cd dashboard && bun install --frozen-lockfile` once,
+or the component tier cannot resolve svelte.
 
 ## What is being built
 
@@ -52,16 +197,20 @@ branches.
 
 ## The branches, and how they relate
 
-Current as of 2026-09-08 evening, after #12, #13 and #14 landed. **Nothing has reached `main` yet**:
-all three merged into `fix/openclaw-2026-9-1`, which is #11 — so #11 is now the only door to `main`,
-and it carries far more than the one-line pin its title suggests. Do not take a number from this
-document; it moves every time something lands. Ask:
+*Rewritten 2026-09-30.* The paragraph here described 2026-09-08, when nothing had reached `main` and
+#11 was the only door to it. Both are now false: #11 merged, and #9 merged on 2026-09-30 as 0.7.0.
+The four open branches are based on `main`.
+
+Do not take a number from this document; it moves every time something lands. Ask:
 
 ```bash
-git fetch -q origin && git rev-list --count origin/main..origin/fix/openclaw-2026-9-1
+git fetch -q origin && for b in liquid-java-extensions openclaw-pairing-recovery \
+  test-mutation-control mutation-registry; do
+  printf '%-28s %s ahead\n' "$b" "$(git rev-list --count origin/main..origin/feature/$b)"
+done
 ```
 
-It answered **39** on the evening of 2026-09-08, having answered 36 two hours earlier.
+The table below is the shape of the tree, not its state; the dated table at the top is the state.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
@@ -548,6 +697,76 @@ not to be automatable at all: with and without the setting the stack answers ide
 route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
+
+**The live list is at the top of this file**, under *Where it stands* — the agreed next three, and the
+table of what each PR still owes. What is here is the standing material: how a failure on your machine
+differs from a failure in the product, and the struck-through entries, which are kept because they
+record what was walked and what it found.
+
+*Rewritten 2026-09-30, and again 2026-10-02.* The 09-30 version said "wait on Timur, all four PRs are
+answered". That was true for about twenty hours. It also carried the `operator.admin` direction as if
+the `127.0.0.1` binding were an unsettled precondition of it; both halves of that are now resolved and
+separated — see the top of the file, and #20.
+
+Still open and not in the live list, because it is small and nobody is waiting on it: **the toolbox
+image only changes when something removes it.** `update.sh` removes it and the start refuses before the
+teardown when its tools are missing, but the durable form is a label carrying a hash of its Dockerfile.
+`BACKLOG.md`.
+
+### If a test fails on your machine and passed on the one it was written on
+
+Four shapes have cost real time. The last one is not an instance but a habit, and it is the one to
+watch for:
+
+- **A contract check against an installed stack.** A3-3, A4-16 and A1-4 read `volumes/`. In a git
+  worktree there is none, so they fail there and pass in the main checkout. **Not addressed** — they
+  have no fixture and no skip, so in a worktree they are simply red. Not a regression, and not a
+  thing to spend a morning rediscovering.
+- **Docker objects shared between checkouts.** Container names, image tags, networks and the two
+  subnets in `m-oc.subnet-preflight` are per-run since 2026-10-02, for everything that goes through
+  `tests/lib/dashboardserver.ts`. Before that, two runs on one host removed each other's containers.
+  Objects the helpers create carry `lu-test=1`, and a run sweeps stale ones at its start — because
+  the run that leaks is the run that did not reach its own cleanup. Anything that names a docker
+  object without those helpers is still shared; `grep -rn "docker.*--name" tests/` is the check.
+- **A host write the container has not seen yet.** The project is a bind mount and Docker Desktop
+  propagates with a delay. Fetching a page straight after writing a fixture file failed **2 of 3 runs
+  on an idle machine**. `awaitFileInContainer` waits until `docker exec cat` returns the bytes that were
+  written.
+
+- **Waiting on the clock instead of on the condition.** Six instances in one day, 2026-10-02, all
+  repaired. Three were found by accident and three by looking:
+  1. the page fetched straight after a host write (above);
+  2. the first repair for it, which polled the **page** until it said what the case expected — worse
+     than the flake, because a product change then becomes one `(unnamed)` timeout and no test runs at
+     all, where before it was a named failure beside nine passes;
+  3. `m-a16.lock-identity.test.ts`, `Bun.sleep(900)` and then read the lock file, empty under load.
+     Measured: the holder lands after about 250ms on an idle host and 1047 to 1342ms with eight starts
+     at once, so eight of eight concurrent runs were red;
+  4. `m-a15.clone-lock.test.ts`, `Bun.sleep(700)` and then ask whether the lock exists — the same
+     mechanism, governing two assertions;
+  5. `m-a16.lock-wait.test.ts`, which released a lock after 3000ms and asserted that 3000ms had
+     passed. **That one could pass over the defect it exists to catch**: with the wait removed from
+     `git.sh` altogether and the release brought forward, all four cases in the file passed. A flake
+     costs a rerun; this costs the guard;
+  6. and five cases in `m-a16.lock-identity.test.ts` that ran the start script inside bun's **default
+     5s budget**, one of which timed out at 6055ms in eight of eight. A budget is a wait too.
+
+  The rule they give: **wait on the thing you are diagnosing, never on the clock, and never on a
+  sentence the product renders.** A predicate about the product turns a product defect into a timeout.
+  A fixed sleep is a guess that holds until the machine is busy. Both report on the host instead of on
+  the subject, which is what makes them worse than no wait at all.
+
+  **How to look for the next one**, since three of these were found on purpose: `grep -rn "Bun.sleep"
+  tests/` and read every hit — a sleep inside a polling loop is a poll interval and fine, a sleep
+  followed by a read is the defect. Then find the cases that run something slow without a budget:
+  a `test()` whose body spawns the start script, docker or the dashboard and whose closing is `});`
+  rather than `}, BUDGET);`. Eight copies of the same file at once is what makes any of it visible —
+  `for i in $(seq 8); do bun test <files> > /tmp/load-$i.txt 2>&1 & done; wait`.
+
+  **One is reported and not repaired:** `tests/system/m-oc.proxy-attribution.test.ts:135` calls
+  `docker compose logs` in the default 5s. It is in the opt-in `--system` tier, it has never been seen
+  to time out, and verifying a change there needs a running stack — so it is named on #19 rather than
+  changed blind.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
