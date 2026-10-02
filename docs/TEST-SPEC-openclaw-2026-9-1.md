@@ -75,6 +75,27 @@ here; each is executed where its subject exists.
 | **N1b** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
+| **OC-39** | contract | positive | The start writes `gateway.auth.identityScopes` for the identity nginx actually sets — **built 2026-09-19** |
+| **OC-40** | contract | **negative** | The identity is never written twice, and a template with none or two stops the start — **built 2026-09-19** |
+| **OC-41** | system, **manual** | positive | The CLI sent **through** nginx is authenticated and can approve a pending request |
+| **OC-42** | system, **manual** | **negative** | Identity scopes do **not** release a repair: the browser is still refused, so nobody proposes this as the cure again |
+| **OC-43** | contract | positive | The dashboard draws a card only when something is pending, and it offers one control — **built 2026-09-19** |
+| **OC-44** | contract | **negative** | The id is read when the button is pressed, never taken from what the page rendered — **built 2026-09-19** |
+| **OC-45** | contract | **negative** | A `requestId` that is not a uuid never reaches a shell — **built 2026-09-19** |
+| **OC-46** | system, **manual** | positive | With admin granted per identity instead of in the cap, a fresh browser still connects — **run and passed 2026-09-19** |
+| **OC-47** | system, **manual** | positive | The whole way back, walked: revoke → refused browser → card → Approve → connected. **Run 2026-09-19**, and it found a defect no automated case had |
+| **OC-48** | unit | **negative** | Approve never means a request that is not a Control UI browser asking for operator access — **2026-09-29 review, finding 2** |
+| **OC-49** | unit | positive | One browser retrying is still approved, at its newest id. The counterpart to OC-48 and OC-50 |
+| **OC-50** | unit | **negative** | Two different browsers pending is a question, not a guess |
+| **OC-51** | unit | **negative** | A refusal carries the reason, not the CLI usage footer — **finding 3** |
+| **OC-52** | component | **negative** | A listing that failed is said out loud — **finding 4** |
+| **OC-53** | component | positive | An empty queue still draws nothing. The counterpart to OC-52 |
+| **OC-54** | component | positive and **negative** | The button is offered for the operator browser and not for anything else, and it names the device |
+| **OC-55** | component | positive | A request arriving after mount shows without a reload — **finding 5** |
+| **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
+| **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
+| **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
+| **OC-59** | contract | **negative** | A GET from another origin is refused too — **minor** |
 
 ### Suite 2 — compatibility
 
@@ -334,6 +355,10 @@ the released stack, belongs in a repair cut from `main`, and is recorded in
 | §5.3 device pairing | OC-8, OC-9, OC-10, OC-11, OC-12 |
 | §5.4 proxy attribution | OC-13, OC-14 |
 | §5.5 npm allowScripts | OC-15, OC-16 |
+| **OC-G5** a way back that needs no terminal | OC-39 to OC-47, and OC-47 is the one that walks it end to end |
+| §9 R1 the grant the recovery rests on | OC-39, OC-40, OC-41, OC-42 |
+| §9 R2 the card the operator uses | OC-43, OC-44, OC-45, OC-48 to OC-55, OC-58, OC-59 |
+| §9 R3 where admin is granted | OC-46, with OC-38 as its control; OC-56 and OC-57 for what the grant must not do |
 
 ### OC-32 / OC-33 — the configuration is written once, by someone who can see the network
 
@@ -457,5 +482,156 @@ not have: "operator.admin is excluded unless a case proves the interface unusabl
 | **Expected, and measured** | The browser does **not** connect. It shows *"Role upgrade pending. This browser is already known, but the requested access changed and needs a fresh approval."* The gateway logs `security audit: device access upgrade requested reason=role-upgrade device=<id>` on each attempt and never approves. With `operator.admin` added to the cap and the gateway restarted, a **new** device — a private window, since revocation is sticky per device — connects, and the gateway logs `SECURITY WARNING: gateway.auth.trustedProxy.deviceAutoApprove.scopes includes operator.admin`, which is what OC-10 asserts. |
 | **What must not be trusted** | An existing device. The one in use on 2026-09-10 carried `operator.admin` from a grant made under 2026.7.1's `dangerouslyDisableDeviceAuth` and kept it — while `operator.talk`, which *was* configured, was absent from the same device. Every page worked and a `config.patch` write from the UI succeeded. **Only a fresh approval exercises the cap.** A run that checks the interface with the device it already has proves nothing, which is why this went unnoticed through the whole migration. |
 | **The recovery is part of the case** | The interface names `openclaw devices approve <id>`. It answers `unauthorized` from inside the gateway container and from `openclaw-cli`, which shares the gateway's network namespace: `trusted-proxy` mode wants a header the CLI does not send. `gateway.auth.identityScopes` was tried and changes nothing — it grants scopes to an identity, while what blocks is the cap on the approval. The way back is to add the scope to the cap, restart the gateway, and connect from a browser with no stored device identity. Anyone running this case should know that before running it. |
+| **Corrected 2026-09-19** | The row above is right about the browser and wrong about the CLI, and the error matters because this row is what justified granting `operator.admin`. The CLI is refused because it reaches the gateway **directly**. Sent through nginx — `--url ws://openclaw.localhost:8888` — it is authenticated by the same header the browser gets, and with `identityScopes` granting `operator.pairing` it approves the request. Measured 2026-09-19; OC-41 and OC-42 are the pair that hold it. |
 | **Covers** | OC-G1, OC-G3, F3 of the #11 review, §5.3. |
+
+### OC-39 / OC-40 — the identity is written once, or it is written wrong
+
+*Specified and **built** 2026-09-19. `tests/contract/m-oc.identity-scopes.test.ts`, six tests, run
+against the unfixed script first: **five of the six were red**, and the one that passed is the half
+asserting the nginx template sets a single identity, which was already true.*
+
+| | |
+|---|---|
+| **Premise** | The recovery of §9 works only while `gateway.auth.identityScopes` names **exactly** the identity nginx injects. Today's grant is a hand edit of `volumes/_openclaw/openclaw.json`, and `config/scripts/start/openclaw.sh` rewrites that file on every start — so the next `./scripts/linux/start.sh` removes the way back without saying anything. The second hazard is subtler: an identity spelled in two files is an identity that will one day differ in one of them, and the failure is silent — the grant simply never matches, and the CLI is refused for a reason that looks like a scope problem. |
+| **Component** | OC-39: `config/scripts/start/openclaw.sh` and the configuration it produces. OC-40: that file together with `config/nginx/templates/nginx.conf`, as text. |
+| **Test data** | The header, as the template sets it today: `proxy_set_header X-Forwarded-User "user@nocodenation.org";` — three times, for `openclaw.localhost`, `bridge.openclaw.localhost` and `msteams.openclaw.localhost`. The config key that must match it: `gateway.auth.identityScopes["user@nocodenation.org"]`. The scopes written: `operator.admin, operator.read, operator.write, operator.talk, operator.pairing, operator.approvals, operator.questions` — the same list `deviceAutoApprove.scopes` carries, until R3 changes both. |
+| **Expected** | OC-39: after the start script has run, the written configuration contains `gateway.auth.identityScopes` with at least `operator.pairing` for the proxy's identity, and `openclaw config validate` accepts it. OC-40: the identity string appears in the repository in **one** place, and both the nginx template and the start script derive it from there. A change to one that is not reflected in the other fails the case and names both files. |
+| **Unhappy** | OC-40 is the negative half and it is the one that earns its place: OC-39 alone is satisfied by writing any identity at all, including one no request will ever carry. The counterpart the pair needs is that a **matching** identity passes — otherwise the rule could be met by refusing everything. |
+| **Why a case and not a comment** | The same shape has already cost this project twice: `trustedProxies` written from a lookup that was empty (OC-32), and a subnet pinned to the one range docker hands out first. A value that two files must agree on is a fact to compute, not a string to remember. |
+| **How it was built** | `config/scripts/start/openclaw.sh` reads the identity out of `config/nginx/templates/nginx.conf` with awk, refuses to start when the template holds none or more than one, and passes it to the config writer as `LU_PROXY_IDENTITY`. The grant is written inside the `schemaNew` branch and deleted in the other, because `identityScopes` is not a key 2026.7.1 knows. The case asserts the identity string appears in **no** literal form in the script, which is the assertion that would have caught a second copy. |
+| **What it found while being built** | A defect of its own, and one worth carrying: the whole config writer is a single-quoted bash string, so the apostrophe in a comment reading *"what OpenClaw's own warning recommends"* **ended the string** and the start script stopped parsing at `bash -n`. Two more apostrophes had been written into the same block. The rule is now in the block itself, and the check is one line: `bash -n config/scripts/start/openclaw.sh` before trusting any edit to that program. |
+| **Covers** | OC-G5, §9 R1. |
+
+### OC-41 / OC-42 — the way back exists, and it is not the one that was tried
+
+*Measured 2026-09-19 against the live stack. OC-41 passed; OC-42 is the negative result that keeps §9 honest.*
+
+| | |
+|---|---|
+| **Premise** | `gateway.auth.mode` is `trusted-proxy`, so identity comes only from nginx's header. A CLI inside the gateway container sends no such header and is refused. The same CLI **through** nginx is authenticated, because nginx sets the header for whatever arrives on that route. What it then lacks is a scope, and `identityScopes` supplies it. OC-42 is the other half: that grant does **not** release a device whose token was revoked, because the device gate is evaluated before identity scopes are applied. |
+| **Component** | The running gateway, nginx, and the `openclaw` CLI from `liquidupstart/openclaw:latest`. Manual: it needs a device in the repair state, which means revoking one. |
+| **Test data** | The call, exactly: `docker run --rm --network nocodenation_liquid_upstart_network_8888 --add-host openclaw.localhost:<proxy ip> -e OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1 liquidupstart/openclaw:latest openclaw devices list --url ws://openclaw.localhost:8888 --token unused --timeout 20000`. Each part is load-bearing: without `--add-host` the name does not resolve inside the network; without the environment variable the CLI refuses plaintext `ws://` to a non-loopback address; without `--token` it refuses `--url` outright. **The token's value is never checked** — `unused` is the literal string that was measured, and it is chosen to say so. The device in the repair state on the measuring host: `a26aab16fdf39295924c5e2497dbc9c6b08920f5a2af8d4eef7e3fe744e5b435`, revoked 2026-09-10 12:35:16, approved again 2026-09-19 09:39:52. |
+| **Expected, and measured** | OC-41: without the grant the call answers `missing scope: operator.pairing` — authentication already succeeded. With the grant it prints the device table, and the gateway logs `security audit: identity scope grant elevated connection identity=user@nocodenation.org addedScopes=…`. Approving then prints `Approved <device id> (<request id>)`, and the browser's next connection logs `[ws] webchat connected client=openclaw-control-ui remote=10.99.0.2`. OC-42: with the same grant in place and the gateway restarted, a browser whose device is in the repair state is **still** refused, logging `reason=role-upgrade roleFrom=<none> roleTo=operator`. |
+| **Unhappy** | OC-42 *is* the unhappy half, and it exists because the opposite was proposed twice — on 2026-09-10 and again on 2026-09-19 — as the fix for the browser. Without it, §9's R1 reads like a cure and the next person spends an afternoon rediscovering that it is only an enabler. |
+| **What must not be trusted** | `missing scope` as evidence that authentication failed. It is the opposite: the refusal that proves the header arrived. The 2026-09-10 attempt recorded `unauthorized` from a CLI that never went through the proxy and generalised it to "no path back". |
+| **Covers** | OC-G5, §9 R1, and the correction to §5.3. |
+
+### OC-43 / OC-44 / OC-45 — the card an operator can actually use
+
+*Specified and **built** 2026-09-19. `tests/contract/m-oc.pairing-card.test.ts`, seventeen tests.*
+
+| | |
+|---|---|
+| **Premise** | The operator's own words are the requirement: deleting site data is not a recovery a user performs. The dashboard already carries the pattern — the deploy-key queue of M-A9 — and the same place is where someone looks when a service will not open. The one mechanism this card must respect is the id churn: a refused browser retries and **mints a new request id every time**, so an id rendered into a page is stale before it is clicked. |
+| **Component** | The dashboard's server route and the CLI behind it. Integration: no browser, but a real gateway. |
+| **Test data** | Four request ids observed for one device within thirty minutes on 2026-09-19: `e626a793-ea03-4672-b21c-868a7fd5268c`, `0e4e2a95-2bac-480e-9500-1b50f1117bdd`, `53176b95-6c01-4e92-9d23-14d888066ab3`, `09cc464f-690a-4a51-9ac9-c97b7011eb34`. The last is the one that was approved; the first is the one the browser had printed for copying and is what a careful operator would have pasted. The listing shape the route must return: `{ "pending": [ { "requestId", "deviceId", "clientId", "isRepair", "requestedAt" } ] }`, read from the CLI's `--json` output at `.pending[0].requestId`. |
+| **Expected** | OC-43: with a pending request present, the route lists it; pressing approve re-reads the current id, approves it, and the device's stored token is valid afterwards rather than revoked. OC-44: approving an id that is no longer pending answers with the CLI's own refusal and a 502 — never a quiet success, and never a message this project invented. OC-45: a `requestId` failing `/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/` is rejected before any command is built, with the same shape as `start-skip`'s step guard. |
+| **Unhappy** | OC-44 and OC-45 are the negative halves; OC-43 is their counterpart and is what stops the guard from being satisfied by a route that refuses everything. OC-45 needs both signs in the same run — a well-formed id passes the guard and reaches the command, a malformed one does not. |
+| **Test data, both sides** | Must be accepted: `09cc464f-690a-4a51-9ac9-c97b7011eb34`, a real id from the measurement. Must be refused: `"; docker rm -f openclaw-gateway; #`, `09cc464f-690a-4a51-9ac9-c97b7011eb34 extra` — because a guard that only looks for a prefix is the usual way this kind of check is written wrong — `x09cc464f-…`, the empty string, `latest-ish`, and the same id in upper case. |
+| **How it was built** | `config/scripts/openclaw-pairing.sh` holds the docker invocation, the way `git.sh` holds the clone the retry reuses; `dashboard/src/lib/server/pairing.ts` spawns it and parses the CLI JSON, because the dashboard container has `docker` and `bash` but **no `jq`**, and a shell that reshapes JSON is a second place for the shape to be wrong. The card posts the literal `latest` and the route resolves it against what is pending at that moment. The card draws nothing at all while nothing is waiting. |
+| **The control that earns the green** | The churn rule was broken on purpose — the card changed to post `req.requestId`, the id it had rendered — and the case went **red**, naming that assertion. Restored afterwards. Without that, seventeen passing tests would only have shown that the file says what it says. |
+| **OC-47 · the whole mechanism, walked · manual** | Run 2026-09-19 on the operator machine, and the only run that exercises all of §9 at once. A device was **revoked on purpose** — the same act that caused the incident on 2026-09-10 — so a browser in the repair state existed to look at. Timeline: `devices revoke` at 16:03:10 through nginx; the private window reloaded and showed *"Role upgrade pending"*; the dashboard drew the card, naming `openclaw-control-ui`, **returning**, `8349140452f9`; **Approve** pressed; gateway logged `device pairing approved device=8349… role=operator` at 16:06:53; the private window reloaded and `webchat connected` at 16:07:27. No terminal, no request id carried by hand, no site data deleted. |
+| **And what walking it found** | **The confirmation disappeared with the card.** Approving empties the pending list, the card is drawn only while something is pending, and the result line lived inside it — so the operator pressed the button and the card simply vanished. That is the operator own finding of 2026-09-18 about the skip panel, reintroduced one component later by the person who had just fixed it. The card is now held open while it has an answer to show, and the list, the explanation and the button are what disappear. This is the case that would have caught it: `{#if loaded && (pending.length > 0 \|\| result)}`. |
+| **Covers** | OC-G5, §9 R2, §9.4. |
+
+### OC-48 to OC-59 — the 2026-09-29 review of the recovery path
+
+The review of #15 at `6b1d7e9`: five "should fix" and four minors, and one measurement that is not a
+defect of this work (finding 1, `operator.admin` through nginx — see FEATURE §5.3, which now says so
+plainly instead of treating the gateway's warning as resolved).
+
+**Finding 6 is the one that decided the shape of these cases.** The card's own test read the source as
+text, and the reviewer showed what that was worth: it stayed 18/18 with the id guard removed, with
+`latest` picking the oldest request, with the result line deleted, and with the Origin check replaced
+by `if (false)`. Four defects, no red. So the card is mounted and driven here, and the two contract
+cases that asserted its `{#if}` conditions are gone, with a note in their place saying where the claim
+moved to.
+
+| # | Level | Case | Expectation |
+|---|---|---|---|
+| **OC-48** | unit | **negative** | A pending request that is not a Control UI browser asking for operator access is never what Approve means — not when it is newest, and not when its id is named. Finding 2: `openclaw node run` from a container leaves a `role: node` request, and the reviewer's run approved it |
+| **OC-49** | unit | positive | One browser retrying is still approved without a question, and its **newest** id is the one used. The counterpart: four ids for one device within thirty minutes are not four browsers |
+| **OC-50** | unit | **negative** | Two different browsers pending is a 409 naming how many, not a guess |
+| **OC-51** | unit | **negative** | A refusal carries `Reason: missing scope: operator.pairing`, not the CLI's usage footer. Finding 3: `firstLine()` returned the **last** line |
+| **OC-52** | component | **negative** | A listing that failed is said out loud with the CLI's words. Finding 4: `ok` and `message` were ignored, so the card stayed silent and the operator was locked out with no hint |
+| **OC-53** | component | positive | An empty queue still draws nothing. The counterpart — a card always on the page is a card nobody reads |
+| **OC-54** | component | positive and **negative** | The operator's browser gets a button showing role, address and scopes; the node host is named and gets none; the press names the **device** | 
+| **OC-55** | component | positive | A request that arrives after mount appears on `focus`, with no reload. Finding 5: one read at mount |
+| **OC-56** | component | **negative** | With no `LU_PROXY_IDENTITY`, nothing is granted — and certainly not under the literal key `"undefined"`. Minor, and the reason the old OC-46 assertion passed over it: it read `Object.values(...)[0]` |
+| **OC-57** | component | positive | An identity the operator granted by hand survives a start. Minor: the line replaced the whole map while the rest of the writer preserves edits |
+| **OC-58** | unit | positive | `SYSTEM_HTTP_PORT='9999'` gives the same network, host and address as `"9999"` and `9999`. Minor: single quotes were not stripped, so the network name carried them |
+| **OC-59** | contract | **negative** | A GET from another origin is refused as well as a POST. Minor: a GET spawns one `docker run` per request |
+
+#### Detail per case
+
+##### OC-48 / OC-49 / OC-50 — which request Approve means
+
+| | |
+|---|---|
+| **Premise** | The operator presses Approve to let **their own browser** back in. `latest` approved `pending[0]`, the newest request of any device, and anything on the stack's network can put one there. So the click let in the wrong thing **and** left the operator locked out, because their own request was still pending — and the card's copy, "Approving gives it back what it had", was false for such a request. `toRequest` dropped `role` as well, so neither the rule nor the operator could tell the two apart. |
+| **Component** | `chooseRequest` in `dashboard/src/lib/server/pairing.ts`, called directly. The rule lives there rather than in `openclaw-pairing.sh` because that is where the list is parsed; the script keeps its id guard and has no jq in any case. |
+| **Test data** | Two devices in the queue. `dev-alpha-aaaaaaaaaaaa`: `requestId 09cc464f-690a-4a51-9ac9-c97b7011eb34` — the real id approved on 2026-09-19 — `clientId openclaw-control-ui`, `role operator`, scopes `operator.read, operator.write`, from `10.99.0.2`, `isRepair: true`, ts 945. `dev-bravo-bbbbbbbbbbbb`: `requestId 22222222-2222-2222-2222-222222222222`, `clientId node-host`, `role node`, scopes `node.run`, ts 1000 — 55 ms later, the gap the reviewer measured. For OC-49, two ids of the **same** device at ts 900 and 990. For OC-50, a second control-ui device `dev-charlie-cccccccccccc` at ts 1200. |
+| **Expected** | OC-48: alpha's id is chosen although bravo is newer; naming bravo's id gives 409 with "not a Control UI browser"; with only bravo pending, 409 naming what **is** there and pointing at the CLI. OC-49: the newest id of the one device, and a named device resolved to its own newest. OC-50: 409 saying "2 different browsers". |
+| **Failure** | A rule that refuses whenever anything is ambiguous, which would break the case this card exists for — one browser retrying. OC-49 is what stops it. |
+| **Covers** | OC-48, OC-49, OC-50, §9 R2. |
+| **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
+| **What it found** | Red: with the eligibility filter removed all three OC-48 assertions fail, and with the two-device check removed OC-50 fails alone. The reviewer's own run: `POST {"requestId":"latest"}` → `200 "Approved dev-bravo-bbbbbbbbbbbb"`, alpha still pending; and `openclaw node run --host openclaw.localhost` from a container was approved with `device pairing approved … role=node`. |
+
+##### OC-51 — a refusal carries the reason
+
+| | |
+|---|---|
+| **Premise** | This card is read while something is wrong, so the message is the whole product at that moment. |
+| **Component** | `cliMessage` in `pairing.ts`. |
+| **Test data** | The CLI's refusal as captured live on 2026-09-29, five lines: `[openclaw] Gateway call failed: devices.approve`, `[openclaw] Reason: missing scope: operator.pairing`, `[openclaw] The gateway requires operator.pairing for this method.`, `[openclaw] Usage: openclaw devices approve <requestId>`, `[openclaw] Help: openclaw --help`. And a one-line answer, `[openclaw] Request 09cc464f is no longer pending.` |
+| **Expected** | The reason survives and the usage footer does not; the one-line answer passes through unchanged; an empty output stays empty so the caller can say its own thing. |
+| **Failure** | Taking the first line unconditionally would be as arbitrary as taking the last; the one-line case is what keeps the repair honest, since it is the ordinary answer here — a request id goes stale within seconds. |
+| **Covers** | OC-51, §9 R2. |
+| **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
+| **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
+
+##### OC-52 / OC-53 / OC-54 / OC-55 — the card, mounted and driven
+
+| | |
+|---|---|
+| **Premise** | Finding 6. Every claim about this card was read out of its source, and four defects passed that reading. |
+| **Component** | `OpenClawPairing.svelte` mounted in the component tier, with `globalThis.fetch` replaced — so what the card does with an answer is what is under test, rather than the route. |
+| **Test data** | Three answers. `{ok: false, pending: [], message: 'Gateway call failed: devices.list — Reason: missing scope: operator.pairing'}`; `{ok: true, pending: []}`; and the two-device queue of OC-48. For OC-55 an answer that is empty at mount and holds the operator's request afterwards, with a `focus` event dispatched. |
+| **Expected** | OC-52: "could not be asked" and the reason. OC-53: nothing drawn at all. OC-54: `openclaw-control-ui`, `role operator`, `from 10.99.0.2`, `node-host` named with "does not approve", and **one** button; pressing it posts `{deviceId: 'dev-alpha-aaaaaaaaaaaa'}`. OC-55: the request appears after the focus event. |
+| **Failure** | A card drawn on every load, which OC-53 prevents; and an Approve button offered for a request the server will refuse, which OC-54's button count prevents. |
+| **Covers** | OC-52, OC-53, OC-54, OC-55, §9 R2, U11. |
+| **Implemented by** | `tests/component/m-oc.pairing-card.test.ts`. |
+| **What it found** | Red: with `ok`/`message` ignored the card renders empty against a failed listing (OC-52), and with the focus and visibility listeners removed a request arriving after mount is never shown (OC-55). If the identity grant is missing because the stack started before it existed, **every** listing fails — so the old card was silent exactly when the operator was locked out, which is the dead end §9 exists to remove, reached by a different road. |
+
+##### OC-56 / OC-57 / OC-58 / OC-59 — the four minors
+
+| | |
+|---|---|
+| **Premise** | Each is small and each is the kind of thing nobody notices: a grant to nobody that reads as a grant, an edit silently lost, a port that stops working when it is quoted, and a GET that does work for anyone who asks. |
+| **Component** | The config writer out of `config/scripts/start/openclaw.sh`, run in `ghcr.io/openclaw/openclaw:2026.9.1`; `config/scripts/openclaw-pairing.sh` with a stub `docker`; the route, read as text. |
+| **Test data** | OC-56: the writer with `LU_PROXY_IDENTITY` empty. OC-57: a state file already holding `{"gateway":{"auth":{"identityScopes":{"ops@example.invalid":["operator.read"]}}}}`. OC-58: three `.env` files with `SYSTEM_HTTP_PORT` as `'9999'`, `"9999"` and `9999`, each with `SYSTEM_PROXY_IP` quoted to match, and a stub `docker` on PATH printing its arguments. OC-59: the route source. |
+| **Expected** | OC-56: no key at all, and `"undefined"` not among them. OC-57: `ops@example.invalid` keeps `operator.read` **and** the proxy identity gets `operator.admin`. OC-58: all three give `--network nocodenation_liquid_upstart_network_9999`, `--add-host openclaw.localhost:10.99.0.5` and `ws://openclaw.localhost:9999`, with no quote anywhere. OC-59: the GET handler consults the Origin check, and an absent Origin is not what it refuses — a same-origin GET from the address bar sends none, and refusing that would make the card unreachable. |
+| **Failure** | OC-58's unquoted form is the counterpart: a repair that stripped a leading character unconditionally would break it, which is the usual way this is written wrong. |
+| **Covers** | OC-56, OC-57, OC-58, OC-59, §9 R2, R3. |
+| **Implemented by** | `tests/component/m-oc.config-shape.test.ts` (OC-56, OC-57), `tests/unit/m-oc.pairing-env.test.ts` (OC-58), `tests/contract/m-oc.pairing-card.test.ts` (OC-59). |
+| **What it found** | Red: replacing the map again reddens OC-56 and OC-57 together; stripping only double quotes reddens OC-58's single-quoted case alone; removing the GET check reddens OC-59. OC-58 is also why the harness in `m-oc.config-shape.test.ts` now passes `LU_PROXY_IDENTITY` at all — it never did, so the grant it asserted was the one written under the key `"undefined"`. |
+
+### OC-46 — whether admin still has to be in the cap
+
+*Specified and **run** 2026-09-19, in a private window on the operator's own machine. **It passes**,
+so R3 is built: `operator.admin` is out of the cap and granted per identity.*
+
+| | |
+|---|---|
+| **Premise** | `operator.admin` sits in `deviceAutoApprove.scopes` because of OC-38: without it a freshly approved browser could not connect, and there was no way back. §9 removes the second half of that reason. What is not known is the first half — whether a browser whose auto-approval is capped below admin can connect once `identityScopes` grants admin to the identity. §9.2's M4 proved identity scopes do not release a **repair**; it says nothing about a **fresh** device, whose approval does complete. The two are different paths and must not be argued from one another. |
+| **Component** | The gateway and a browser with no stored device identity. Manual, and the one case in this set that can lock the operator out of the UI while it runs. |
+| **Test data** | `deviceAutoApprove.scopes` reduced to the six non-admin scopes — `operator.read, write, talk, pairing, approvals, questions` — with `identityScopes["user@nocodenation.org"]` carrying all seven including `operator.admin`. Run from a private window, since revocation and pairing are both sticky per device. The control is OC-38's measurement of 2026-09-10: the same six scopes, no identity grant, browser refused. |
+| **Expected** | The browser connects **on the first try, with nobody approving anything** — the operator's requirement of 2026-09-19, and the bar this case is measured against rather than "connects eventually". Every admin-gated page works, and the gateway logs **no** `SECURITY WARNING` naming `operator.admin`, the absence of that line being the observable that says the trade was actually taken rather than merely intended. |
+| **If it fails** | R3 is refused, `operator.admin` stays in `deviceAutoApprove.scopes`, and its justification is rewritten: not *"there is no way back"*, which is false, but *"the cap is the only place the Control UI's own request can be satisfied"* — which OC-38 and this case together would then have measured. A refusal here is a result, not a failure of the milestone. |
+| **Unhappy** | OC-38 is the counterpart and it already ran. This case is only meaningful beside it: one shows the six scopes failing without an identity grant, the other shows them passing with one — and if it does not, the pair still answers the question, which is why it is worth running either way. |
+| **Before running it** | Read §9.2. A device in the repair state cannot be released from the browser, and until R1 is written into the start script the recovery depends on a hand edit that `./scripts/linux/start.sh` will remove. |
+| **What it found** | **It passes, and it passes through the mechanism rather than past it.** Three audit lines within twelve milliseconds: `trusted-proxy browser device auto-approved … scopes=operator.approvals,operator.pairing,operator.questions,operator.read,operator.write` — five scopes, no admin — then `identity scope grant elevated connection identity=user@nocodenation.org addedScopes=operator.admin`, then `webchat connected client=openclaw-control-ui`. The device row in `device_pairing_paired` carries the five, not six. The operator confirmed the admin-gated surfaces render: *Gateway auth*, *Exec policy*, the tool profile switcher and *Pair device* on the Privacy & Security page. And the `SECURITY WARNING` naming `operator.admin` is gone from the startup log for the first time since 2026-09-10. |
+| **Why the device row matters more than the screenshot** | A browser that connects proves the cap admits it; only the stored scope set proves the cap is what admitted it. Without that row the same result would be explained equally well by the configuration change never having taken effect — which is the failure shape this project has met three times, where a check that could not run looked exactly like a check that ran. |
+| **Covers** | OC-G5, §9 R3, and reverses OC-10 / OC-11. |
 

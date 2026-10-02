@@ -80,6 +80,12 @@ type Env = Record<string, string>;
 function writeConfig(env: Env): any {
   const dir = mkdtempSync(join(workRoot, 'state-'));
   writeFileSync(join(dir, 'openclaw.json'), '{}\n');
+  return writeConfigIn(dir, env);
+}
+
+// The same run over a state directory the caller has already seeded, so a case
+// can start from a configuration the operator edited.
+function writeConfigIn(dir: string, env: Env): any {
   const progFile = join(dir, 'writer.js');
   writeFileSync(progFile, program);
   const envArgs: string[] = [];
@@ -92,6 +98,11 @@ function writeConfig(env: Env): any {
     ENABLE_GROK: '0',
     ENABLE_LOCAL: '0',
     LU_NETWORK_SUBNET: '172.18.0.0/16',
+    // The identity nginx asserts. It was never passed, so the grant landed under
+    // the literal key "undefined" and the assertion below -- which read
+    // Object.values(...)[0] -- found it anyway. A grant to nobody read as a grant.
+    // Minor of the 2026-09-29 review.
+    LU_PROXY_IDENTITY: 'user@nocodenation.org',
     PLUGIN_PATHS: '',
     MODEL_WILDCARDS: '',
     OPENROUTER_MODELS_JSON: '[]',
@@ -136,7 +147,6 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove).toEqual({
       enabled: true,
       scopes: [
-        'operator.admin',
         'operator.read',
         'operator.write',
         'operator.talk',
@@ -147,29 +157,74 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     });
   });
 
-  test('OC-12 the scope set contains operator.admin, and that is the decision', () => {
-    // Reversed on 2026-09-10, by measurement rather than by preference. This list
-    // is a CAP on what an auto-approval may grant, and the Control UI requests
-    // operator.admin: without it a freshly approved browser does not lose pages,
-    // it cannot connect at all — "Role upgrade pending" — and the recovery the
-    // interface names answers `unauthorized` from every container that could run
-    // it. OC-38 is that measurement; §5.3 of the feature document carries the
-    // reasoning it overturned. The price is a SECURITY WARNING from the gateway,
-    // which OC-11 now requires to be present rather than absent: if it ever
-    // disappears, somebody has taken the scope back out and the next fresh
-    // browser is locked out.
-    expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes).toContain('operator.admin');
+  test('OC-46 admin is not in the cap, and is granted per identity instead', () => {
+    // Reversed twice, and this is the reversal that has both halves measured.
+    //
+    // 2026-09-10 put operator.admin IN the cap, because without it a fresh
+    // browser could not connect and "no documented recovery worked". OC-38
+    // measured the first half correctly and the second half wrongly: the
+    // recovery does work, through nginx, which is R1. With that reason gone,
+    // what was left was the gateway telling us at every start to grant admin per
+    // identity instead — advice logged since 2026-09-10 and read by nobody.
+    //
+    // 2026-09-19 measured the replacement in a private window, end to end: the
+    // device was auto-approved with five scopes and no admin, the connection was
+    // elevated by the identity grant, and the Control UI connected on the first
+    // try with its admin-gated pages working. Twelve milliseconds, no approval.
+    //
+    // Both assertions together are the decision. The cap alone would be
+    // satisfied by granting nothing anywhere, which locks every browser out.
+    const d = cfg.gateway.auth.trustedProxy.deviceAutoApprove;
+    expect(d.scopes).not.toContain('operator.admin');
+    // By key, not by position: Object.values(...)[0] passed over a grant written
+    // under the key "undefined".
+    const identity = cfg.gateway.auth.identityScopes;
+    expect(Object.keys(identity)).toEqual(['user@nocodenation.org']);
+    expect(identity['user@nocodenation.org']).toContain('operator.admin');
+    // And the cap still admits a browser at all: the scopes it does carry are
+    // what the device receives, so an empty cap is not the same decision.
+    expect(d.enabled).toBe(true);
+    expect(d.scopes.length).toBeGreaterThan(0);
   });
 
-  test('N10 and no rationale in the writer still says the opposite', () => {
-    // The paragraph above the block kept the pre-measurement reasoning --
-    // operator.admin "is excluded" and admin goes to identityScopes -- while the
-    // code three lines down granted it. A reader or a security review takes the
-    // prose at face value; the code is what runs. Whichever one is wrong, they
-    // must not disagree.
+  test('OC-56 nothing is granted when no identity is named', () => {
+    // The grant used to be written unconditionally, so without LU_PROXY_IDENTITY
+    // it landed under the literal key "undefined" -- a grant to nobody that reads
+    // as a grant, and one no reader of the file would question. Minor of the
+    // 2026-09-29 review.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', LU_PROXY_IDENTITY: '' });
+    const identity = cfg.gateway.auth.identityScopes ?? {};
+    expect(Object.keys(identity)).not.toContain('undefined');
+    expect(Object.keys(identity)).toEqual([]);
+  });
+
+  test('OC-57 and an identity the operator granted by hand survives a start', () => {
+    // The rest of this writer preserves what the operator edited; this line
+    // replaced the whole map, so a grant they had added was lost on the next
+    // start with nothing said. Minor of the 2026-09-29 review.
+    const dir = mkdtempSync(join(workRoot, 'kept-'));
+    writeFileSync(
+      join(dir, 'openclaw.json'),
+      JSON.stringify({
+        gateway: { auth: { identityScopes: { 'ops@example.invalid': ['operator.read'] } } }
+      }) + '\n'
+    );
+    const cfg = writeConfigIn(dir, { OC_SCHEMA_NEW: '1' });
+    const identity = cfg.gateway.auth.identityScopes;
+    expect(identity['ops@example.invalid']).toEqual(['operator.read']);
+    expect(identity['user@nocodenation.org']).toContain('operator.admin');
+  });
+
+  test('N10 and the rationale in the writer does not contradict it', () => {
+    // The paragraph above the block once kept the pre-measurement reasoning --
+    // admin "is excluded" -- while the code three lines down granted it. A
+    // reader or a security review takes the prose at face value; the code is
+    // what runs. The direction has flipped since, so the assertion flips with
+    // it: the code now excludes admin from the cap, and the prose must not claim
+    // it is granted there.
     const script = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
-    const claimsExcluded = /operator\.admin[\s\S]{0,200}?(so it is excluded|is excluded)/.test(script);
-    expect({ granted: true, claimsExcluded }).toEqual({ granted: true, claimsExcluded: false });
+    const claimsGranted = /so operator\.admin is in|admin is in the cap|granting it restores/i.test(script);
+    expect({ excluded: true, claimsGranted }).toEqual({ excluded: true, claimsGranted: false });
   });
 });
 

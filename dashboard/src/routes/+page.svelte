@@ -3,6 +3,7 @@
   import TaskRunner from '$lib/components/TaskRunner.svelte';
   import NextcloudAppPassword from '$lib/components/NextcloudAppPassword.svelte';
   import GitRepositories from '$lib/components/GitRepositories.svelte';
+  import OpenClawPairing from '$lib/components/OpenClawPairing.svelte';
   import SecretValue from '$lib/components/SecretValue.svelte';
 
   const SECRET_LABEL = /password|token|key|secret/i;
@@ -105,6 +106,10 @@
       />
     </section>
   {/if}
+
+  <!-- Above the repositories, because it is only ever drawn when something is
+       stuck, and what is stuck is the operator getting into OpenClaw at all. -->
+  <OpenClawPairing />
 
   <GitRepositories git={data.git} />
 

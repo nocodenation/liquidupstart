@@ -330,8 +330,17 @@ Recorded 2026-09-18.
 Raised by the reviewer on 2026-09-28 against #9's base `e33d1e6`, measured live, and recorded here at
 their request. It is a design question, and the answer changes nginx.
 
+**Rewritten 2026-10-02, and what stood here was wrong about this branch's own feature.** The entry
+existed on two branches: this one from 2026-09-30, and #19, which carried the decision taken later
+that day. The #19 copy is removed — approving a harness fix should not also sign off a trust boundary —
+and this is now the only one. The version it replaces proposed *"set `X-Forwarded-User` only for
+requests arriving from the host rather than from the stack's network, or do not route the agents to the
+`openclaw.localhost` vhost at all"* and called that the direction that answers the finding. **It would
+break the recovery path #15 exists to provide**, which runs its CLI inside that network and through
+that vhost. The catch is below, and it is why the decision went to a named address instead.
+
 nginx attaches one constant identity to every request it forwards —
-`X-Forwarded-User "user@nocodenation.org"`, `nginx.conf:92` — and the proxy's address is in OpenClaw's
+`X-Forwarded-User "user@nocodenation.org"` — and the proxy's address is in OpenClaw's
 `trustedProxies`. So a container on the stack network that connects to OpenClaw through nginx with a
 fresh device key, presenting itself as the Control UI, is auto-approved with `operator.admin` and no
 human involved:
@@ -346,35 +355,93 @@ control or true for every request: `clientId: openclaw-control-ui` is a connect 
 provenance check, `allowedOrigins` is `["*"]`, and `clientBuildId: "dev"` is accepted because it is a
 cache-bust guard rather than a boundary.
 
-**Why it matters on a local single-user stack.** Admin in the Control UI is expected — it is the
-operator's own machine. The concern is the agents, which run on the same network. `operator.admin`
-covers `exec.approvals.set` — whether an agent's shell commands need the operator's approval — as well
-as `config.apply`, `terminal.open` and `plugins.install`. An agent that has been steered by a prompt
-injection in a page or a repository it read can switch off the step that is meant to supervise it.
-Secondarily, the proxy port is published on every host interface, so the local network can do the same;
-other services on that port are already unauthenticated, so that part is not new.
+**The finding is about the agents.** Admin in the Control UI is expected — it is the operator's own
+machine. The agents run on the same network, and `operator.admin` covers `exec.approvals.set` —
+whether an agent's shell commands need the operator's approval — as well as `config.apply`,
+`terminal.open` and `plugins.install`. An agent steered by a prompt injection in a page or a
+repository it read can switch off the step that is meant to supervise it.
+
+**The local network is a second thing, and not what the decision below is about.** The proxy port was
+published on every host interface, so anything on the LAN could do the same. That was a promise
+`README.md` had made since 2026-07-17 and the compose file did not keep; **#20 repairs it**, with
+`SYSTEM_BIND_ADDRESS` defaulting to `127.0.0.1`. Read the identity rule below as doing nothing about
+the LAN, and the binding as doing nothing about the agents.
+
+They are not independent, though, and the reviewer's measurement of 2026-10-01 is why: on rootless
+Docker a request to `127.0.0.1` and a request to the host's LAN address both reached nginx with the
+same `$remote_addr`, the bridge gateway (`10.231.7.1`), while a container on the network arrived as
+`10.231.7.3`. So any rule that keys on the address cannot tell the operator's own browser from the LAN
+until the port is bound. **#20 is a precondition of the direction below**, not a smaller thing beside
+it.
 
 **What #15 changed, and did not.** It moved admin out of the device auto-approval cap into
 `gateway.auth.identityScopes`. That removes a pairing step a container could script and stops the
-gateway logging its SECURITY WARNING; it leaves the exposure exactly as it is, because the identity is
-what nginx asserts for everything.
+gateway logging its SECURITY WARNING; it leaves the exposure as it is, because the identity is what
+nginx asserts for everything.
 
-**Two directions, neither built:**
+**The direction, decided by the operator on 2026-09-30:** nginx asserts the identity for the host and
+for one named address on the stack network, and for nothing else. It sets `X-Forwarded-User`
+unconditionally in three vhosts today — `openclaw.localhost`, `bridge.openclaw.localhost` and
+`msteams.openclaw.localhost`, at lines 92, 114 and 136 of
+**`config/nginx/templates/nginx.conf`**. That file, not `config/nginx/nginx.conf`: the rendered one is
+generated and is not in the repository, and editing it is how a fix survives until the next render.
 
-1. **Assert the identity only for the operator.** Set `X-Forwarded-User` in nginx only for requests
-   arriving from the host rather than from the stack's network, or do not route the agents to the
-   `openclaw.localhost` vhost at all. Then the identity means "the operator's browser", and the
-   separation between the agents and the gateway that supervises them becomes real. This is the one
-   that answers the finding.
-2. **Bind the proxy port to `127.0.0.1` by default.** Smaller, and it only addresses the local network.
+An address is a position on a network, not a principal. Whoever holds it gets the identity, so the
+rule is only as strong as the guarantee that nothing else can hold it — which is the next paragraph,
+and the reason this is not one line.
+
+**The catch that shaped the decision.** The obvious form — *"only for requests from the host"* —
+breaks the recovery path #15 exists to provide. `config/scripts/openclaw-pairing.sh` runs a throwaway
+OpenClaw CLI **inside the stack network** (`--network "$NETWORK"`, with
+`--add-host openclaw.localhost:${PROXY_IP}`), because a CLI reaching the gateway directly sends no
+identity header and is refused — the dead end of 2026-09-19. So a stack-network client has to keep the
+identity, and the question is what nginx can tell that container apart by.
+
+*Two answers were weighed:*
+
+1. **A fixed address.** nginx sets the identity for the host and that address alone. **Chosen.**
+2. **A shared secret in a header.** More flexible, and it adds a secret to generate, mount, rotate and
+   keep out of logs. Rejected: this stack's argument is that a fact you can read beats one you have to
+   remember.
+
+**What the fixed address costs, which an earlier version of this entry understated.** It said the
+choice "introduces nothing new to keep". That was false, and the reviewer's #15 review of 2026-10-01
+is what corrected it:
+
+- **The pairing helper has no fixed address today.** It runs `docker run --network "$NETWORK"` with no
+  `--ip`, so docker assigns one from the pool. A pinned address means a new `.env.example` key, a new
+  variable in the nginx template, and an `--ip` on that `docker run` — three things to keep in step,
+  not none.
+- **Two concurrent helper runs collide.** With the address pinned, the second `docker run` fails with
+  *address already in use*. Today they simply get different addresses.
+- **An orphaned helper holds the address.** A run killed before its cleanup keeps the container, and
+  the next one cannot have the address until something removes it.
+- **In its favour, and unsaid until now:** `ip_range: ${SYSTEM_NETWORK_POOL:-10.99.0.128/25}` in
+  `compose.yml:898` keeps docker's dynamic pool above `.128`, so a pinned address below it cannot be
+  handed to anything else. That is the guarantee the rule needs, and it already exists — **and it is
+  enforced rather than assumed**: `lu_ip_in_cidr` in `scripts/linux/start.sh` refuses a
+  `SYSTEM_PROXY_IP` that falls inside the pool, and does it before `down.sh` runs, which
+  `m-oc.env-reads` holds in four cases. Extending that guard to a second pinned key is the known
+  shape of the work, not new ground. It is also where the cost sits: the pool is a variable with a
+  default, so two keys have to agree and nothing checks the new one until the guard is extended. That
+  is the lesson of the subnet pin, one layer along — ask what else knows the number you just wrote
+  down.
 
 Narrowing `allowedOrigins` does not help: a non-browser client sends whatever `Origin` it likes.
 
-Not built in #9 or #15 because it is a change to the stack's trust boundary rather than to either
-feature, it needs the operator's decision on whether the agents lose the OpenClaw vhost entirely, and
-every case for it has to be written against a live gateway.
+**What has to be measured before any of it is written.** Whether nginx can distinguish host traffic at
+all, and by what. The reviewer measured one host — Linux, rootless, port published on all interfaces —
+and loopback and LAN were indistinguishable there. That is one of four combinations that matter:
+**rootless and rootful, on Linux and on macOS**, with loopback and LAN tested separately in each.
+Docker Desktop routes host traffic through a userland proxy, and what `$remote_addr` holds there is
+exactly the kind of thing this project has been wrong about before (A8-13, N1b, the `stat -f`
+ordering). The rule is written against what the measurement says, and if no combination separates
+them, the fixed address alone does not carry the decision and the header has to be reconsidered.
 
-Recorded 2026-09-30.
+**Not built in #9, #15 or #19** because it changes the stack's trust boundary rather than any of those
+features, and every case for it has to be written against a live gateway.
+
+Recorded 2026-09-30, direction decided the same day, corrected here 2026-10-02.
 
 ---
 
