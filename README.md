@@ -63,9 +63,16 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 
 ## Sandbox by design
 
-Liquid Upstart is a prototyping sandbox. All services bind to `localhost` on purpose:
+Liquid Upstart is a prototyping sandbox. All services bind to `localhost` by default:
 the stack is self-contained, and you can safely run agent tools inside it without
-exposing anything to your network. It is not meant to be a production system. When a
+exposing anything to your network. It is not meant to be a production system.
+
+> **This was not true until 2026-10-02.** The sentence above was written on 2026-07-17 and the proxy
+> published its two ports on every interface from that same day — so the stack was reachable from the
+> local network while this section said it was not. `SYSTEM_BIND_ADDRESS` in `.env` is the default now,
+> and a test asserts the published address, so the promise and the behaviour cannot part company again
+> without something going red. Set it to `0.0.0.0` if you need the OpenClaw node bridge or the Teams
+> endpoint; `.env.example` says what that costs. When a
 prototype earns its keep, deploy it to [Liquid.PM](https://liquid.pm) — the managed
 platform that adds security, backups, and operations, in the cloud or on-premise.
 
