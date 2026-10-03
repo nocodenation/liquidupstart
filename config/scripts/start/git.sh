@@ -76,6 +76,8 @@ HOOKS_DIR="${SECRETS_DIR}/hooks"
 HOOKS_MOUNT="${SECRETS_MOUNT}/hooks"
 GITCONFIG="${SECRETS_DIR}/gitconfig"
 MANIFEST="${SECRETS_DIR}/repositories.json"
+# Per run, so two starts writing at once cannot share one temporary.
+MANIFEST_TMP="${MANIFEST}.$$.tmp"
 ENV_FILE="${PROJECT_DIR}/.env"
 
 mkdir -p "$HOOKS_DIR"
@@ -115,7 +117,13 @@ fi
 seed_known_hosts() {  # prints the reason and returns 1
   [[ -f "$KNOWN_HOSTS" ]] && return 0
   local scanned published fp
-  scanned="$(mktemp)"
+  # Beside the target rather than in $TMPDIR, for the reason `lu_write_manifest`
+  # gives: `mv` across filesystems copies, and a copy has the window a rename
+  # does not. This one has never been seen to go wrong -- the function returns
+  # early once known_hosts exists, so it writes once per installation, and on the
+  # machine it was written on $TMPDIR and volumes/ share a filesystem. Neither of
+  # those is a property of the code.
+  scanned="$(mktemp "${KNOWN_HOSTS}.XXXXXX")"
   if ! ssh-keyscan -T 20 github.com 2>/dev/null > "$scanned" || [[ ! -s "$scanned" ]]; then
     rm -f "$scanned"
     printf '%s' "could not reach github.com to seed known_hosts"
@@ -137,8 +145,8 @@ seed_known_hosts() {  # prints the reason and returns 1
       return 1
     fi
   done < <(ssh-keygen -l -f "$scanned")
+  chmod 644 "$scanned"
   mv "$scanned" "$KNOWN_HOSTS"
-  chmod 644 "$KNOWN_HOSTS"
   echo "Seeded known_hosts with verified github.com host keys"
   return 0
 }
@@ -257,6 +265,11 @@ release_locks() {
   for d in ${HELD[@]+"${HELD[@]}"}; do
     rm -rf "$d"
   done
+  # A run that dies between the write and the rename leaves its temporary. It is
+  # never read -- readers read repositories.json -- but litter in a directory the
+  # operator browses is worth not leaving. A SIGKILL skips this, which is the
+  # limit of a trap rather than of this line.
+  rm -f "$MANIFEST_TMP"
 }
 trap release_locks EXIT
 
@@ -555,12 +568,26 @@ JSON
 }${entry}"
   done
 
+  # Written beside the file and renamed, rather than `> "$MANIFEST"`, which
+  # truncates and then fills. Every reader of this file reads it whole and parses
+  # it -- the dashboard's card, `git-repo-info` in every agent container,
+  # `unreachable_repositories` in start.sh -- and this function runs twice per
+  # start. Measured against the truncating form, eight repositories over six
+  # runs: 88,365 reads, 893 of them empty and 30 unparseable, the longest 5,274
+  # bytes ending mid-entry. The suite caught it once by accident as
+  # `JSON Parse error: Unexpected EOF` at load time, and it is the likeliest
+  # explanation for the #18 finding seen once in twenty runs.
+  #
+  # Beside it, not in $TMPDIR: `mv` is a rename within one filesystem and a copy
+  # across one, and a copy has the same window. The mode is set before the
+  # rename, so the file is never visible at mktemp's 600.
   {
     printf '{\n  "generated": "%s",\n  "repositories": [\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     [[ -n "$ENTRIES" ]] && printf '%s\n' "$ENTRIES"
     printf '  ]\n}\n'
-  } > "$MANIFEST"
-  chmod 644 "$MANIFEST"
+  } > "$MANIFEST_TMP"
+  chmod 644 "$MANIFEST_TMP"
+  mv "$MANIFEST_TMP" "$MANIFEST"
 }
 
 # A refused lock is not a clone result, and a dashboard Test must not merge one

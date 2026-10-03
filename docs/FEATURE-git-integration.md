@@ -1441,6 +1441,17 @@ What the milestone added, for a session that starts from these documents alone:
   the `git-auth` route. One object per declared repository: `name`, `url`, `host`, `path`, `access`,
   `policy`, `slug`, `keyDir`, `publicKeyFile`, `clonePath`, `containerKey`, `containerClone`,
   `cloned`, `error`. Paths are relative to the project directory; no key material is in it.
+  **Written beside and renamed, since 2026-10-02.** It used to be written with `} > "$MANIFEST"`,
+  which truncates the file and then fills it, twice per start — so every reader could read nothing, or
+  half a document. Measured over 88,365 reads during six runs: 893 empty and 30 unparseable, the
+  longest 5,274 bytes ending mid-entry. The suite caught it once by accident, as
+  `JSON Parse error: Unexpected EOF` at load time, and it is the likeliest explanation for the #18
+  finding seen once in twenty runs. Three readers were exposed — the dashboard's card,
+  `git-repo-info` in every agent container, and `unreachable_repositories` in `start.sh` — and none of
+  them was ever *misled*: across all 923 bad reads the file was empty or unparseable, never valid JSON
+  with the wrong contents. `seed_known_hosts` was changed with it, and both temporaries now sit beside
+  the file they replace rather than in `$TMPDIR`, because `mv` renames within one filesystem and
+  copies across one. A12-3 to A12-6.
 - `GIT_SSH_COMMAND` in `compose.yml` no longer names a key. It keeps the host-key policy and the
   timeouts and appends `-i` from the clone's `liquidupstart.identity`, because git's environment
   variable overrides `core.sshCommand` and would otherwise defeat the per-repository keys.
