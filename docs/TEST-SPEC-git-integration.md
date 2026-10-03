@@ -3070,6 +3070,10 @@ capture taken after another file had written held the changed state as the thing
 |---|---|---|---|
 | A12-1 | Integration **unhappy** | The manifest is written before the waiting starts | The card rendered the previous start while this one waited: *"1 of 4"* beside a panel saying *"1 of 2"*, and *"Start the stack so it gets one"* during a start |
 | A12-2 | Integration | And the manifest written at the end is the one that counts | A provisional record that became the final answer would leave a key registered during the wait showing as unreachable until the next start |
+| A12-3 | Integration | A reader never sees a half-written manifest | The write truncated the file and then filled it. 88,365 reads over six runs found **893 empty** and **30 unparseable**, the longest 5,274 bytes ending mid-entry |
+| A12-4 | Integration | The counterpart: each run does leave a whole manifest | Without it A12-3 is satisfied by a script that never writes one, which is how a "nothing bad was observed" case goes green over nothing |
+| A12-5 | Contract | The write goes to a temporary and arrives by rename | The form is what makes A12-3's measurement a rule rather than luck, and it is what the dashboard's own writer already does |
+| A12-6 | Contract | Both temporaries sit beside the file they replace | `mv` renames within one filesystem and **copies** across one, so a temporary in `$TMPDIR` would leave the window open wherever TMPDIR is elsewhere |
 
 #### Detail per case
 
@@ -3081,6 +3085,23 @@ capture taken after another file had written held the changed state as the thing
 | **Steps** | Run `git.sh` in the background. Poll for the manifest until it lists both repositories, and read it **there**, while the run is still waiting. Then write the sentinel, let the run finish, and read the manifest again. |
 | **Expected** | During the wait: both repositories listed, `agent-skills` cloned with no error, `flows` not cloned and carrying the error its clone gave. Afterwards: both still listed, `flows` recorded as this run left it. And the run's own output must contain `::aiw-git-key-required::`, or the case was reading the final manifest and proving nothing. |
 | **Covers** | The operator's observation of 2026-09-17, FR3, FR20, U11. |
+
+#### A12-3 to A12-6 — the write itself, added 2026-10-02
+
+| | |
+|---|---|
+| **Premise** | `lu_write_manifest` ended with `} > "$MANIFEST"`, which truncates the file and then fills it, and it runs twice per start. Every reader of `repositories.json` reads it whole and parses it: the dashboard's card, `git-repo-info` in every agent container, and `unreachable_repositories` in `start.sh`. So each write opens a window in which all three fail. |
+| **How it was found** | By the suite, by accident. A full run on 2026-10-02 ended with `SyntaxError: JSON Parse error: Unexpected EOF` at **load time** in `m-a12.manifest-while-waiting`, which parses the manifest in a module-scope helper. A second full run on the same tree did not, which is what makes it the likeliest explanation for finding 6 of the 2026-10-01 review of #18 — seen once in twenty runs and never reproduced. |
+| **Component** | `lu_write_manifest` and `seed_known_hosts` in `config/scripts/start/git.sh`. |
+| **Test data** | Three repositories — `probe-a`, `probe-b`, `probe-c`, each `git@github.com:nocodenation/<name>.git\|read\|protected` and each routed to its own seeded bare repository through the suite's fake ssh, so every run writes a complete three-entry manifest twice. `SYSTEM_SIGNIN_WAIT_SECONDS=0`, because the subject is the write and not the wait. |
+| **Steps** | Start a reader that reads the manifest and parses it as fast as it can, with no sleep and no deadline: it stops when the last run has exited. Run `git.sh` three times in sequence. Count the reads, the empty ones and the unparseable ones, and keep the longest bad read. Then assert on the three documents the runs left. |
+| **Expected** | Zero empty reads and zero unparseable reads, out of more than a thousand; and each of the three documents names all three repositories and carries a `generated` stamp. |
+| **Measured against the unfixed code** | 3 of 7 red, twice on two different trees: A12-3 failed with **118 empty reads** on the first and **891** on the second, and A12-5 and A12-6 failed on the form both times. The count varies with the machine and the signal does not. The four that passed are A12-3's own control, A12-4's two, and A12-5's litter check — every one of them a control or a counterpart, which is what those are for. Against the repaired script, twice at the size the defect was first measured at: **93,421 and 101,102 reads, zero empty and zero unparseable.** |
+| **What is not asserted, and why** | That a bad read ever happens. With the repair there is no window to observe, so the case can only count that it looked often enough — which is what the control does, and why the count matters more than it looks. |
+| **Not one bad read was plausible** | Across all 923, the file was always either empty or unparseable, never valid JSON with the wrong contents. So the defect produced readers that **fail**, never readers that are misled, which is why nothing downstream ever reported anything false. |
+| **What it leaves uncovered** | `seed_known_hosts` is changed for the same reason and is exercised by no case: it returns early once `known_hosts` exists, and every fixture seeds that file. It was run by hand instead, on 2026-10-02 — the function reached github.com, verified all three offered host keys against GitHub's published fingerprints, wrote the file at mode 644 and left no temporary. Recorded as a manual observation rather than asserted, because a case for it would need the network and GitHub's API on every run. |
+| **And a limit that is not touched** | Two writers can still lose each other's update: a dashboard retry writes `repositories.json.tmp` and renames while a start renames its own. Neither ever reads a fragment now, and which complete document survives is governed by the lock and by a Test writing nothing. The names cannot collide — the start's temporary carries its pid. |
+| **Covers** | A12-3 to A12-6, the `} > "$MANIFEST"` defect, FR3, U11. |
 
 ---
 
