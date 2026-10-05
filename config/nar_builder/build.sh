@@ -387,19 +387,54 @@ NOSPI
   proj="${work}/project"
   mkdir -p "$proj"
 
+  module=""
   if [ -f "${src}/pom.xml" ]; then
     pom_mode=author
-    cp -a "${src}/." "${proj}/"
+    # The reactor root, not the directory that was named. A module whose pom
+    # declares a parent one level up cannot resolve it when only the module is
+    # copied: Maven answers "Some problems were encountered while processing the
+    # POMs" and the build is refused with 422, over a project that is perfectly
+    # ordinary. The refusal then told the author to "point nar-build at its
+    # directory", which is what they had just done. S7c of the 2026-10-01 review.
+    #
+    # So walk up while the parent is still inside /repos and carries a pom.xml,
+    # copy from there, and build the one module with `-pl`.
+    root="$src"
+    while [ "$root" != "$REPOS" ]; do
+      up="$(dirname "$root")"
+      case "$up" in
+        "$REPOS"|"$REPOS"/*) ;;
+        *) break ;;
+      esac
+      [ -f "${up}/pom.xml" ] || break
+      root="$up"
+    done
+    module="${src#"$root"}"
+    module="${module#/}"
+    cp -a "${root}/." "${proj}/"
     # Every target/, not only the top one. A multi-module author pom keeps its
     # artefacts in nar/target and the like, and the deploy step takes the first
     # */target/*.nar it finds -- so a leftover old-stale-0.9.nar from the source
     # tree was reported as freshly built and written into the drop directory.
     # Item 10 of the 2026-09-28 review.
     rm -rf "${proj}/.git"
-    find "$proj" -type d -name target -prune -exec rm -rf {} + 2>/dev/null || true
+    # Only a directory named `target` that sits beside a pom.xml, which is what
+    # Maven writes into. The blanket `-exec rm -rf` removed a *Java package*
+    # named target as well: a project holding com/acme/target/T.java failed with
+    # "package com.acme.target does not exist" and 422, and nothing in the
+    # message pointed at the builder. S7a of the 2026-10-01 review.
+    find "$proj" -type d -name target -prune -print 2>/dev/null | while IFS= read -r d; do
+      [ -f "$(dirname "$d")/pom.xml" ] && rm -rf "$d"
+    done || true
   else
     pom_mode=synthesised
-    art="$(basename "$rel" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-' \
+    # From the whole repository-relative path, not the leaf. With the leaf,
+    # /repos/good/proc and /repos/other/proc both produced proc-nar-1.0.0.nar at
+    # a hard-coded version 1.0.0: the second replaced the first in the drop
+    # directory and reported a plain success. S7b of the 2026-10-01 review. The
+    # `/` is outside the class of characters kept, so it becomes a hyphen like
+    # anything else: good/proc -> good-proc.
+    art="$(printf '%s' "$rel" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-' \
           | sed 's/^[.-]*//; s/[.-]*$//')"
     [ -n "$art" ] || art=liquid-processor
     synthesise "$proj" "$art" "$nifi" "$api" "$major" "$src"
@@ -445,7 +480,12 @@ NOTCLOSED
   # author's: the pom, its plugins and its dependencies. The work tree and the
   # cache are handed over for the duration; nothing else is.
   chown -R "$BUILD_USER" "$work" 2>/dev/null || true
-  if ! run_maven -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" package > "$log" 2>&1; then
+  if [ -n "$module" ]; then
+    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" -pl "$module" -am package
+  else
+    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" package
+  fi
+  if ! run_maven "$@" > "$log" 2>&1; then
     cat "$log" >&2
     cat >&2 <<BUILDFAILED
 
@@ -464,8 +504,30 @@ BUILDFAILED
   # in target/test-classes/ and used to be counted, so an ordinary project with a
   # test fixture was refused for "producing 2 NAR files". `|| true` because grep
   # exits 1 on no match, and this script runs under set -e.
-  nars="$(find "$proj" -type f -name '*.nar' -path '*/target/*' \
-          | grep -E '/target/[^/]+\.nar$' | sort || true)"
+  # The module's own target when one was named, so a sibling module's bundle is
+  # not counted as this build's output.
+  searched="$proj"
+  [ -n "$module" ] && searched="${proj}/${module}"
+  # A bundle counts when it sits directly in a `target/` **beside a pom.xml**.
+  #
+  # Directly in one, because that is where nifi-nar-maven-plugin writes
+  # <build.directory>/<finalName>.nar and anything deeper is something Maven
+  # copied -- a single fixture under src/test/resources lands in
+  # target/test-classes/ and used to make an ordinary project "produce 2 NAR
+  # files". M9 of the 2026-10-01 review.
+  #
+  # And beside a pom, because the clean-up above now removes only a module's own
+  # build directory -- a blanket `rm -rf` on every directory named `target` also
+  # deleted a Java *package* called target, which is S7a. Searching more widely
+  # than it cleans is how a stale `old-stale-0.9.nar` in a pom-less target/ came
+  # back as this build's output, which is item 10 of the 2026-09-28 review
+  # reopening. The two now follow one rule.
+  nars="$(find "$searched" -type f -name '*.nar' -path '*/target/*' 2>/dev/null \
+          | grep -E '/target/[^/]+\.nar$' \
+          | while IFS= read -r f; do
+              d="$(dirname "$(dirname "$f")")"
+              [ -f "${d}/pom.xml" ] && printf '%s\n' "$f"
+            done | sort || true)"
   nar_count="$(printf '%s\n' "$nars" | grep -c . || true)"
   if [ "$nar_count" -gt 1 ]; then
     # Deploying the first of several in directory order is a coin toss the
@@ -477,7 +539,8 @@ nar-build refused: the build of /repos/${rel} produced ${nar_count} NAR files:
 $(printf '  %s\n' $nars)
 
 Only one bundle can be deployed, and nothing here can tell which you meant.
-Build the module you want on its own, or point nar-build at its directory.
+Point nar-build at the module's own directory -- /repos/${rel}/<module> -- and it
+is built inside its parent project, or leave one NAR module in the project.
 MANY
     rm -rf "$work"
     return 2

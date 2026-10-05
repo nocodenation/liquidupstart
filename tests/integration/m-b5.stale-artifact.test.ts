@@ -67,6 +67,14 @@ PY
     # An author pom that keeps its artefacts in nar/target, with one left over.
     mk() {
       rm -rf "/repos/$1"; mkdir -p "/repos/$1/nar/target"
+      # nar/ carries a pom of its own, because that is the only way Maven can put
+      # an artefact in nar/target. The fixture had none until 2026-10-05, which
+      # made it a shape no real project has: since S7a the builder removes and
+      # searches only a target/ sitting beside a pom.xml, so a pom-less
+      # nar/target is neither cleaned nor counted and this whole scenario went
+      # silent. Item 10 stays closed by the clean-up, where it was closed before.
+      # No backticks in here: this block is a template literal, and one closed it.
+      printf '<project><modelVersion>4.0.0</modelVersion><parent><groupId>g</groupId><artifactId>%s</artifactId><version>1.0.0</version></parent><artifactId>nar</artifactId></project>\n' "$1" > "/repos/$1/nar/pom.xml"
       printf '<project><modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>%s</artifactId><version>1.0.0</version><packaging>pom</packaging></project>\\n' "$1" > "/repos/$1/pom.xml"
       printf 'stale bundle from the source tree\\n' > "/repos/$1/nar/target/old-stale-0.9.nar"
     }

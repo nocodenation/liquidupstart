@@ -183,7 +183,11 @@ PY
 #!/bin/sh
 proj=""
 for a in "$@"; do case "$a" in */pom.xml) proj="$(dirname "$a")";; esac; done
-mkdir -p "\${proj}/nar/target"; printf 'built\\n' > "\${proj}/nar/target/fresh-1.0.0.nar"
+# Into the project's own target, beside its pom: since S7a a bundle counts only
+# in a target/ next to a pom.xml, and a pom-less nar/target left this case
+# refusing with 2 for "produced no .nar" before it ever reached the deploy step
+# the sabotage below is about.
+mkdir -p "\${proj}/target"; printf 'built\\n' > "\${proj}/target/fresh-1.0.0.nar"
 exit 0
 MVN
       chmod +x /stub/mvn

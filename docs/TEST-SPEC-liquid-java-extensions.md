@@ -705,6 +705,9 @@ carried.
 | B6-15 | Integration | A copy that pauses is not a bundle that is wrong | A slow drop was refused and finished inside `refused/`. The first repair counted still passes and was measured failing |
 | B6-16 | Integration **unhappy** | The counterpart: something that is not an archive stays unloaded | Not refusing is not permitting, and no `.part` may be left where the auto-loader will be pointed |
 | B6-17 | Integration **unhappy** | The budget stops the build, not just the shell | `destroyForcibly()` reached the shell alone: 504 to the client while `su`, Maven and its sleep ran on with PPID 1 and the work directory stayed in /tmp |
+| B6-18 | Integration **unhappy** | A Java package named `target` is not a build directory | A blanket `rm -rf` on every directory of that name deleted `com/acme/target/`, and the project failed with "package does not exist" and 422 |
+| B6-19 | Integration **unhappy** | Two repositories with the same leaf do not overwrite each other | `/repos/good/proc` and `/repos/other/proc` both produced `proc-nar-1.0.0.nar`; the second replaced the first and reported success |
+| B6-20 | Integration **unhappy** | A module is built inside the project that owns its parent pom | Only the named directory was copied, so a parent one level up could not resolve — and the refusal then advised what the author had just done |
 
 #### Detail per case
 
@@ -766,6 +769,18 @@ carried.
 | **Test data** | The builder image built in the run and tagged per run, with `BuildServer.java` compiled **inside** it from the file under review rather than trusting the image's class files. A stub `mvn` answering the api probe and then sleeping 60s on `package`; a stub `curl` for the reachability probe, with the real one kept aside as `/realcurl` — the first run of this probe reported `code=` empty, because the stub had answered the probe's own client. |
 | **Measured against the unfixed server** | 2 fail / 2 pass. The passes are the premise — that the file compiles — and the 504, which held before. |
 | **Covers** | S2 of the 2026-10-01 review, FR24, NFR2. |
+
+#### B6-18 to B6-20 — three ordinary projects, and the rule that unified them
+
+| | |
+|---|---|
+| **Premise** | S7 of the 2026-10-01 review, in three parts that share the same lines and the refusal text one of them prints. A blanket `find … -name target -prune -exec rm -rf {} +` removed a Java *package* called target, so a project holding `com/acme/target/T.java` failed with `package com.acme.target does not exist` and 422, with nothing pointing at the builder. The synthesised artifact id was the leaf directory name at a fixed version 1.0.0, so `/repos/good/proc` and `/repos/other/proc` both produced `proc-nar-1.0.0.nar` and the second replaced the first silently. And only the named directory was copied, so a module whose pom declares a parent one level up could not resolve it. |
+| **Repairing S7a reopened item 10 of the 2026-09-28 review, which is why these are one change** | Item 10 was a leftover `old-stale-0.9.nar` in the source tree being reported as freshly built, and the blanket `rm -rf` is what had closed it. Removing only a module's own build directory leaves a `target/` beside no pom — and the search still looked there. **Cleaning and searching follow one rule now:** a bundle counts when it sits directly in a `target/` next to a `pom.xml`, which is where `nifi-nar-maven-plugin` writes and nowhere else. |
+| **That rule exposed four fixtures as unfaithful** | `m-b5.stale-artifact` built `/repos/<p>/nar/target/` with no pom in `nar/`, which is a shape Maven cannot produce; `m-b5.minors`' stub wrote into the same place; and two of this round's own scenarios did as well. Every one of them now puts the artefact in a `target/` beside a pom — `nar/` carries its own pom in the B5 fixture, which also keeps item 10 closed by the clean-up rather than by the search. B6-8's `processors/` is a real module for the same reason: without a pom there the test fixture under `target/test-classes/` would be excluded twice over, and the case would pass without M9's filter doing anything. |
+| **Test data** | The builder image built in the run and tagged per run; a stub `mvn` that answers the api probe, records the arguments it was given and what survived the copy, and writes one bundle into the module's own `target/` named after that pom's **first** artifactId — reading the last one gave `slf4j-api`, which is a dependency. `/repos/pkg` with a pom and `processors/src/main/java/com/acme/target/T.java`; `/repos/good/proc` and `/repos/other/proc` with no pom, so the project is synthesised; `/repos/multi` listing the module `nar`, whose pom declares it as parent. |
+| **What these cases cannot show** | With a stub `mvn` none of the three *fails*: the exit code was 0 on the unfixed tree for S7a and S7c too, because nothing compiles and nothing resolves a pom. What is asserted is the mechanism — `s7a-package=deleted` against `kept`, one bundle against two, no `-pl` against `-pl nar`. The 422s and the Maven messages are the reviewer's, with real Maven. |
+| **Measured against the unfixed code** | 3 fail / 3 pass, one failure per finding, the passes being the counterparts inside each scenario. The first control run came back `0 pass / 1 fail "(unnamed)"` instead, because the probe emitted no `s7c-pl` line at all when there was no `-pl` — A1 of the same review, in a probe written after it. It always answers now, `none` included. |
+| **Covers** | S7a, S7b and S7c of the 2026-10-01 review, and item 10 of 2026-09-28 restated, FR24. |
 
 ---
 
