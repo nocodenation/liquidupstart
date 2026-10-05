@@ -127,6 +127,16 @@ const PROBE =
     "chmod 755 \"$stub\"",
     "eval \"$(sed -n '/^BUILD_USER=/p;/^run_maven() {/,/^}/p' /opt/builder/build.sh)\"",
     "echo \"run_maven-uid: $(run_maven -q 2>/dev/null | tail -1)\"",
+    "# drop_is_closed, out of the shipped build.sh, in both shapes: the real",
+    "# mount under a root-only parent, and a reachable 777 directory, which is",
+    "# what an image built before 2026-10-05 gives.",
+    "eval \"$(sed -n '/^drop_is_closed() {/,/^}/p' /opt/builder/build.sh)\"",
+    "DROP=/deploy/nar_extensions",
+    "if drop_is_closed; then echo \"guard-closed-mount: may-build\"; else echo \"guard-closed-mount: refused\"; fi",
+    "mkdir -p /open/nar_extensions && chmod 755 /open && chmod 777 /open/nar_extensions",
+    "DROP=/open/nar_extensions",
+    "if drop_is_closed; then echo \"guard-open-mount: may-build\"; else echo \"guard-open-mount: refused\"; fi",
+    "echo \"guard-left-behind=[$(ls -A /open/nar_extensions | tr '\\n' ' ')]\"",
   ].join('\n') + '\n';
 
 writeFileSync(probe, PROBE, { mode: 0o755 });
@@ -230,5 +240,26 @@ describe('B6-4 and the mount itself is read-only', () => {
   test('B6-4 compose declares it read-only', () => {
     const compose = sh(['sed', '-n', '/nar_builder:/,/^  [a-z]/p', join(repoRoot, 'compose.yml')]);
     expect(compose.stdout).toMatch(/\.\/volumes\/repos:\/repos:ro/);
+  });
+});
+
+describe('B6-5 the build asks whether the containment holds, and refuses when it does not', () => {
+  test('B6-5 it permits the build against the real mount', () => {
+    // The counterpart, and it has to come first: a guard that refuses everything
+    // would satisfy the next test and stop the builder working at all.
+    expect(out).toContain('guard-closed-mount: may-build');
+  });
+
+  test('B6-5 and refuses it when the drop directory is reachable', () => {
+    // What an image built before 2026-10-05 gives: the same 777 directory with no
+    // root-only parent. The build is refused rather than a detector running after
+    // the fact over writes it cannot attribute -- which is what B2 was.
+    expect(out).toContain('guard-open-mount: refused');
+  });
+
+  test('B6-5 and the question leaves nothing behind', () => {
+    // It writes a probe file to find out. A guard that litters the load path is
+    // its own small version of the defect it guards.
+    expect(out).toContain('guard-left-behind=[]');
   });
 });

@@ -37,6 +37,24 @@ out() { printf '%s\n' "$*"; }
 # without it su reads Maven's own flags as its own, and the first run of this came
 # back as `su: invalid option -- 'o'`. After it the first operand becomes $0 and
 # mvn's argv is passed through untouched.
+# Whether the build user can reach the drop directory -- asked rather than
+# assumed. The containment rests on /deploy being root-owned and mode 700 in the
+# image (see the Dockerfile); an image built before that, or a BUILD_USER that
+# does not exist, silently reopens the one route a bundle can take into NiFi's
+# autoload directory without passing narcheck. So the script measures it and
+# refuses to build when it holds no longer. Only meaningful as root with that
+# user present, which is the container; on the host, where the suite runs this
+# against a stub mvn as an ordinary user, there is nothing to drop from.
+drop_is_closed() {
+  [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1 || return 0
+  probe="${DROP}/.build-user-probe.$$"
+  if su "$BUILD_USER" -s /bin/sh -c "touch '$probe' 2>/dev/null"; then
+    rm -f "$probe"
+    return 1
+  fi
+  return 0
+}
+
 run_maven() {
   if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
     su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
@@ -387,16 +405,40 @@ NOSPI
     synthesise "$proj" "$art" "$nifi" "$api" "$major" "$src"
   fi
 
-  # What the drop directory held before Maven ran. The build runs the author's
-  # own pom, so it can write into ${DROP} itself -- an antrun `echo file=` puts a
-  # bundle straight into the load path, past narcheck, and the build then
-  # reports "produced no .nar". Blocker 6 of the 2026-09-28 review. The mount is
-  # shared with the deployment step, so this catches it rather than preventing
-  # it; preventing it means the build and the deployment not sharing a view of
-  # that directory, which is a change of shape rather than a repair.
-  before="${work}/drop-before.txt"
-  after="${work}/drop-after.txt"
-  ls -A "$DROP" 2>/dev/null | sort > "$before" || : > "$before"
+  # Blocker 6 of the 2026-09-28 review -- an author's pom writing a bundle
+  # straight into the load path, past narcheck -- used to be caught here by
+  # snapshotting ${DROP} around the Maven run and deleting whatever had appeared.
+  # It is prevented instead, as of 2026-10-05: the build user cannot reach that
+  # directory at all. The comment this replaces said preventing it "means the
+  # build and the deployment not sharing a view of that directory, which is a
+  # change of shape rather than a repair" -- which was right, and the change of
+  # shape turned out to cost four lines, because traversal is decided by the
+  # parent and the parent lives in this image.
+  #
+  # The snapshot had to go rather than be kept as a second line of defence. Once
+  # the build cannot write there, everything that appears during the window
+  # belongs to somebody else: a concurrent build's deployment, an operator's hand
+  # drop, or `refused/` created by the liquid container. Deleting any of those is
+  # the defect B2 of the 2026-10-01 review names -- measured, two builds came back
+  # "A exit 0" and "B exit 2" with an empty drop directory, and a first-time
+  # quarantine went with it. There is nothing left for the comparison to be right
+  # about, so what stands in its place is the question above: the build is refused
+  # when the containment does not hold, instead of a detector running after the
+  # fact over writes it cannot attribute.
+  if ! drop_is_closed; then
+    cat >&2 <<NOTCLOSED
+
+nar-build refused: this builder is misconfigured and no build will run.
+${DROP} is writable by the unprivileged build user ${BUILD_USER}, so a pom could
+put a bundle into Liquid's autoload directory without narcheck ever judging it.
+The directory is mounted under a root-only parent on purpose; an image built
+before 2026-10-05 does not have it. Rebuild the builder image:
+
+  ./config/scripts/build/nar-builder.sh && docker compose up -d nar_builder
+NOTCLOSED
+    rm -rf "$work"
+    return 2
+  fi
 
   log="${work}/maven.log"
   # Maven runs as the unprivileged build user, because everything it runs is the
@@ -407,35 +449,23 @@ NOSPI
     cat "$log" >&2
     cat >&2 <<BUILDFAILED
 
-nar-build refused: the build of /repos/${rel} failed, so nothing was written to
-${DROP} — the artifact that was there before, if any, is untouched.
+nar-build refused: the build of /repos/${rel} failed, so this build deployed
+nothing. The artifact that was there before, if any, is untouched.
 Fix the errors Maven reported above in /repos/${rel} and run nar-build again.
 BUILDFAILED
     rm -rf "$work"
     return 2
   fi
 
-  ls -A "$DROP" 2>/dev/null | sort > "$after" || : > "$after"
-  intruders="$(comm -13 "$before" "$after" || true)"
-  if [ -n "$intruders" ]; then
-    for name in $intruders; do
-      rm -rf "${DROP:?}/${name}"
-    done
-    cat >&2 <<INTRUDER
-
-nar-build refused: the build of /repos/${rel} wrote into ${DROP} by itself:
-
-$(printf '  %s\n' $intruders)
-
-Those entries have been removed. A bundle reaches ${DROP} only after narcheck
-has judged it; a build that puts one there directly is bypassing the one check
-that stands between it and the running Liquid.
-INTRUDER
-    rm -rf "$work"
-    return 2
-  fi
-
-  nars="$(find "$proj" -type f -name '*.nar' -path '*/target/*' | sort)"
+  # M9 of the 2026-10-01 review: only a bundle sitting *directly* in a target/ is
+  # a build artefact -- nifi-nar-maven-plugin writes
+  # ${project.build.directory}/${finalName}.nar -- and anything nested deeper is
+  # something Maven copied. A single fixture .nar under src/test/resources lands
+  # in target/test-classes/ and used to be counted, so an ordinary project with a
+  # test fixture was refused for "producing 2 NAR files". `|| true` because grep
+  # exits 1 on no match, and this script runs under set -e.
+  nars="$(find "$proj" -type f -name '*.nar' -path '*/target/*' \
+          | grep -E '/target/[^/]+\.nar$' | sort || true)"
   nar_count="$(printf '%s\n' "$nars" | grep -c . || true)"
   if [ "$nar_count" -gt 1 ]; then
     # Deploying the first of several in directory order is a coin toss the
