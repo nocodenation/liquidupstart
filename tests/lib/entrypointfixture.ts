@@ -49,6 +49,18 @@ export type Sandbox = {
   launched: string;
 };
 
+
+// A jar named as the API jar, carrying one class entry. The name is what
+// narcheck keys on; the entry is what makes its package judged.
+function writeApiJar(path: string): void {
+  const script = `import zipfile,sys
+z = zipfile.ZipFile(sys.argv[1], "w")
+z.writestr("org/apache/nifi/processor/Processor.class", b"")
+z.close()`;
+  const r = sh(['python3', '-c', script, path]);
+  if (r.code !== 0) throw new Error(`could not write the sandbox api jar ${path}: ${r.output}`);
+}
+
 export function sandbox(opts: { nars?: string[]; loadIsFile?: boolean } = {}): Sandbox {
   const base = mkdtempSync(join(tmpdir(), 'm-b2-entrypoint-'));
   const home = join(base, 'nifi-current');
@@ -63,6 +75,17 @@ export function sandbox(opts: { nars?: string[]; loadIsFile?: boolean } = {}): S
   if (opts.loadIsFile) writeFileSync(load, LOAD_AS_FILE_CONTENT);
   else mkdirSync(load, { recursive: true });
   mkdirSync(lib, { recursive: true });
+  // One jar named as the API jar, so narcheck has something to judge against.
+  //
+  // It was empty until 2026-10-05. `check` permitted every bundle against an
+  // empty lib, because with no nifi-api jar nothing is in the judged set and
+  // every reference is skipped -- S4 of the 2026-10-01 review. `check` refuses
+  // that condition now, so an empty lib here would refuse the fixture bundle and
+  // B2-5 would be red for a reason that has nothing to do with the copy it is
+  // about. The jar declares one class and the fixture bundle carries none, so
+  // nothing is resolved either way; what it restores is that the check runs at
+  // all.
+  writeApiJar(join(lib, 'nifi-api-0.0.0-probe.jar'));
   for (const nar of opts.nars ?? []) writeNar(join(drop, nar));
   writeFileSync(
     join(base, 'scripts/start.sh'),

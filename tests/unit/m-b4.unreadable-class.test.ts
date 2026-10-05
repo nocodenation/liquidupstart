@@ -26,7 +26,7 @@
 import { test, expect, afterAll } from 'bun:test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { guard, narWithEntries, scratch, discardScratch, MISSING_CLASS } from '../lib/narcheckfixture';
+import { guard, narWithEntries, fakeApiJar, scratch, discardScratch, MISSING_CLASS } from '../lib/narcheckfixture';
 import type { Result } from '../lib/shell';
 
 const BROKEN_ENTRY = 'org/nocodenation/probe/Broken.class';
@@ -36,8 +36,23 @@ const EMPTY_BYTES = 'probe';
 
 const work = join(scratch(), 'b4-3');
 mkdirSync(work, { recursive: true });
-const emptyLib = join(work, 'lib');
-mkdirSync(emptyLib, { recursive: true });
+// A lib holding one nifi-api jar, and nothing else.
+//
+// **It was empty until 2026-10-05, and that made the control worthless.** With no
+// nifi-api jar there is nothing in `judged`, so every reference is skipped and
+// any bundle is permitted -- so "the control is permitted" could not be told
+// apart from "the control was judged against nothing". S4 of the 2026-10-01
+// review names the product half of that; this is the fixture half, and the two
+// were the same oversight. `check` now refuses a lib with no nifi-api jar, which
+// turned this case red until the jar was added.
+//
+// The jar declares one package, which is enough to make `judged` non-empty. The
+// bundle under test carries no class at all, so nothing is resolved against it
+// either way: what the control still shows is that a readable archive with
+// nothing to judge is permitted, which is the counterpart to the refusal.
+const judgedLib = join(work, 'lib');
+mkdirSync(judgedLib, { recursive: true });
+fakeApiJar(judgedLib, 'nifi-api-0.0.0-probe.jar', ['org/apache/nifi/processor/Processor.class']);
 const broken = narWithEntries(join(work, 'b4-broken.nar'), { [BROKEN_ENTRY]: BROKEN_BYTES });
 const clean = narWithEntries(join(work, 'b4-empty.nar'), { [EMPTY_ENTRY]: EMPTY_BYTES });
 
@@ -46,7 +61,7 @@ let refused: Result;
 afterAll(() => discardScratch());
 
 test('B4-3 the bundle carrying an unreadable class is refused', () => {
-  refused = guard(broken, emptyLib);
+  refused = guard(broken, judgedLib);
   expect(refused.code).toBe(1);
 });
 
@@ -67,7 +82,7 @@ test('B4-3 it names a next step', () => {
 });
 
 test('B4-3 an archive it can read, carrying no classes, is permitted', () => {
-  const r = guard(clean, emptyLib);
+  const r = guard(clean, judgedLib);
   expect(r.code).toBe(0);
   expect(r.output.trim()).toBe('');
 });

@@ -180,6 +180,27 @@ def _bundled_jars(zf):
     return [n for n in zf.namelist() if n.endswith(".jar") and n.startswith(BUNDLED_DIRS)]
 
 
+def bundle_class_names(path):
+    """Every class the NAR carries, by name, without reading any of them.
+
+    `bundle_classes` holds every class file's bytes so the constant pool can be
+    parsed; the index only needs the names, and the largest bundle the stock image
+    ships declares 196 MB of them. Written for the parent index S1 of the
+    2026-10-01 review added, and it is what a names-only caller should use."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    names = set()
+    root = _open_zip(data, os.path.basename(path))
+    for name in zf_names(root):
+        names.add(name[:-6])
+    for jar in sorted(_bundled_jars(root)):
+        where = "%s!%s" % (os.path.basename(path), jar)
+        inner = _open_zip(_read(root, jar, where), where)
+        for name in zf_names(inner):
+            names.add(name[:-6])
+    return names
+
+
 def bundle_classes(path):
     """Every class the NAR carries, as {name: (data, where)}, its own and its bundled jars'."""
     with open(path, "rb") as fh:
@@ -269,6 +290,12 @@ def lib_jars(lib_dir):
     return sorted(os.path.join(lib_dir, n) for n in os.listdir(lib_dir) if n.endswith(".jar"))
 
 
+def lib_nars(lib_dir):
+    if not os.path.isdir(lib_dir):
+        return []
+    return sorted(os.path.join(lib_dir, n) for n in os.listdir(lib_dir) if n.endswith(".nar"))
+
+
 def jar_class_names(path):
     try:
         with zipfile.ZipFile(path) as zf:
@@ -304,6 +331,21 @@ def lib_index(lib_dir):
 def check(nar, lib_dir):
     """Returns a list of refusal lines. Empty means the bundle may be copied."""
     resolvable, judged = lib_index(lib_dir)
+    # An empty `judged` means every reference is skipped by the filter below and
+    # the bundle is permitted for having been judged against nothing. Measured in
+    # S4 of the 2026-10-01 review: a NAR with its parent stripped is refused
+    # against the full lib, and permitted against the same lib without its
+    # nifi-api jar, and permitted against /does/not/exist. `index` mode already
+    # refuses this condition; `check` said yes to it.
+    #
+    # The B4-3 positive control used an empty lib, so it could not tell
+    # "permitted because sound" from "permitted because nothing is judged" --
+    # which is why this shipped.
+    if not judged:
+        raise Unreadable(
+            "%s holds no nifi-api-*.jar, so there is nothing to judge a reference against"
+            % lib_dir
+        )
     return check_against(nar, resolvable, judged, lib_dir, parent_chain_classes(nar, lib_dir))
 
 
@@ -335,6 +377,20 @@ def check_against(nar, lib_resolvable, judged, provider, parent_classes=frozense
 
 CLASSES_FILE = "lib-classes.txt"
 PACKAGES_FILE = "api-packages.txt"
+# The parent chain, written out so `check-index` can walk it without the NARs.
+#
+# `check` resolves a bundle's references against its declared parent as well --
+# that is blocker 3 of the 2026-09-28 review, and without it narcheck refused 11
+# of the 118 NARs the stock image ships. `check-index`, which is the mode
+# `nar-build` runs, was given no parent at all, so the two sides answered
+# differently: measured over the stock image, `check` refused 0 and `check-index`
+# refused 11, citing KerberosUserService and FlowFileFilters. The comment at
+# build.sh:8-11 promised one answer either way. S1 of the 2026-10-01 review.
+#
+# Two files rather than one so each line stays a pair: `<nar> <class>` and
+# `<nar> <parent-artifact-id>`.
+NAR_CLASSES_FILE = "nar-classes.txt"
+NAR_PARENTS_FILE = "nar-parents.txt"
 
 NEXT_STEP = (
     "Rebuild it against the API this Liquid loads and drop it in again. "
@@ -377,7 +433,34 @@ def main(argv):
             fh.write("\n".join(sorted(resolvable)) + "\n")
         with open(os.path.join(out_dir, PACKAGES_FILE), "w") as fh:
             fh.write("\n".join(sorted(judged)) + "\n")
-        sys.stdout.write("%d classes, %d api packages\n" % (len(resolvable), len(judged)))
+        # What each NAR carries in a judged package, and what it calls its parent.
+        # Only judged packages: those are the only names check_against compares,
+        # so the rest would be weight without effect.
+        nar_classes = []
+        nar_parents = []
+        for nar in sorted(lib_nars(lib_dir)):
+            base = os.path.basename(nar)
+            try:
+                names = bundle_class_names(nar)
+            except Unreadable:
+                # A NAR the index cannot read is left out of the chain rather than
+                # silently treated as empty: a bundle whose parent is unreadable is
+                # then refused by check-index, which is the closed failure.
+                continue
+            for name in sorted(names):
+                if name.rsplit("/", 1)[0] in judged:
+                    nar_classes.append("%s %s" % (base, name))
+            parent = nar_parent(nar)
+            if parent:
+                nar_parents.append("%s %s" % (base, parent[1]))
+        with open(os.path.join(out_dir, NAR_CLASSES_FILE), "w") as fh:
+            fh.write("\n".join(nar_classes) + "\n")
+        with open(os.path.join(out_dir, NAR_PARENTS_FILE), "w") as fh:
+            fh.write("\n".join(nar_parents) + "\n")
+        sys.stdout.write(
+            "%d classes, %d api packages, %d parent links, %d chain classes\n"
+            % (len(resolvable), len(judged), len(nar_parents), len(nar_classes))
+        )
         return 0
     if mode == "check-index":
         if len(argv) != 3:
@@ -389,6 +472,22 @@ def main(argv):
                 resolvable = set(fh.read().split())
             with open(os.path.join(index_dir, PACKAGES_FILE)) as fh:
                 judged = set(fh.read().split())
+            # The parent chain, read from the same index. A chain that cannot be
+            # read must not quietly become empty -- that is how this mode came to
+            # refuse 11 stock NARs while `check` refused none -- so a missing or
+            # unreadable file takes the same refusal as a missing class index.
+            chain_of = {}
+            parent_of = {}
+            with open(os.path.join(index_dir, NAR_CLASSES_FILE)) as fh:
+                for line in fh:
+                    base, _, name = line.strip().partition(" ")
+                    if base and name:
+                        chain_of.setdefault(base, set()).add(name)
+            with open(os.path.join(index_dir, NAR_PARENTS_FILE)) as fh:
+                for line in fh:
+                    base, _, aid = line.strip().partition(" ")
+                    if base and aid:
+                        parent_of[base] = aid
         except OSError as exc:
             sys.stdout.write("REFUSED %s\n" % nar)
             sys.stdout.write("  the index of what Liquid can load is not readable: %s\n" % exc)
@@ -397,8 +496,33 @@ def main(argv):
                 "  Silence is not consent: it is not deployed.\n"
             )
             return 1
+        # The same matching rule as parent_chain_classes: the parent is named by
+        # artifact id, and a NAR whose basename starts with `<aid>-` is it. Walked
+        # rather than followed once, because a parent may declare a parent, and
+        # guarded against a cycle by the set of names already taken.
+        parent_classes = set()
+        aid = None
         try:
-            lines = check_against(nar, resolvable, judged, "the running Liquid")
+            parent = nar_parent(nar)
+            aid = parent[1] if parent else None
+        except Unreadable:
+            aid = None
+        taken = set()
+        while aid:
+            nxt = None
+            for base in sorted(chain_of):
+                if base in taken or not base.startswith(aid + "-"):
+                    continue
+                taken.add(base)
+                parent_classes |= chain_of[base]
+                nxt = parent_of.get(base)
+            for base in sorted(parent_of):
+                if base.startswith(aid + "-") and base not in taken:
+                    taken.add(base)
+                    nxt = nxt or parent_of.get(base)
+            aid = nxt
+        try:
+            lines = check_against(nar, resolvable, judged, "the running Liquid", parent_classes)
         except Unreadable as exc:
             sys.stdout.write("REFUSED %s\n" % nar)
             sys.stdout.write("  %s\n" % exc)

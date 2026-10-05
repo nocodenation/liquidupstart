@@ -697,6 +697,10 @@ carried.
 | B6-7 | Integration | What arrives during a build is not the build's to delete | A hand drop was deleted; a first-time `refused/` took the whole quarantine with it, because the removal was `rm -rf` on a name that was a directory |
 | B6-8 | Integration | A test fixture is not a build artefact | A single `.nar` under `target/test-classes` made an ordinary project "produce 2 NAR files" |
 | B6-9 | Integration **unhappy** | But two genuine bundles are still refused, and a failed build claims only what it knows | The counterpart that keeps B6-8 honest, plus S5's wording |
+| B6-10 | Unit **unhappy** | A library with nothing to judge against is refused, not permitted | `check` permitted every bundle when no nifi-api jar was present. `index` always refused it, so the two modes disagreed — and `check` is the one in a deployment's path |
+| B6-11 | Unit | The counterpart, and it comes first: a library that can judge permits | Without it B6-10 is met by refusing everything, which the documents call worse than no check |
+| B6-12 | Integration | Both modes give one answer on the eleven that disagreed | `check` refused 0 of 118 stock NARs and `check-index` refused 11. `index` writes the parent chain now — 106 links, 910 chain classes — and `check-index` walks it |
+| B6-13 | Integration **unhappy** | The counterpart: a parent that is not there is still a refusal | Resolving against every class in the library would satisfy B6-12 and reintroduce blocker 3 of 2026-09-28 the other way round |
 
 #### Detail per case
 
@@ -720,6 +724,20 @@ carried.
 | **Test data** | The builder image built in the run and tagged per run; a drop directory mounted **777**; stub `mvn` and `curl` written **over** the real binaries, because `run_maven` goes through `su` and `su` resets `PATH` — a stub in `/stub` was never found and the real Maven ran, which cost one round of all five scenarios coming back `exit 3` from `resolve_target`. The stub answers `dependency:list` with `org.apache.nifi:nifi-api:jar:2.6.0:compile` so the api probe resolves, and `/liquid/api/runtime` holds `nifi_version=2.6.0` / `java_version=21.0.5`. Each source carries its own `pom.xml`, so the Java and service-descriptor guards do not apply. |
 | **Measured against the unfixed block** | 1 pass / 8 fail. The one pass is B6-9's first half — two genuine bundles still refused — which is the counterpart and must pass both ways. |
 | **Covers** | B1 of the 2026-10-01 review, FR25, NFR2. |
+
+#### B6-10 to B6-13 — narcheck's two sides, and the empty library
+
+| | |
+|---|---|
+| **S1's premise** | A NAR inherits its declared parent's classes at runtime, so a reference the parent provides resolves in Liquid and must resolve in the check. That is blocker 3 of the 2026-09-28 review, and it was fixed in `check` only. `check-index` — the mode `nar-build` runs, and therefore the one standing in a deployment's path — was called with `frozenset()` for the chain. Measured over the 118 NARs the stock image ships: `check` refused **0**, `check-index` refused **11**, citing `KerberosUserService` and `FlowFileFilters`. The comment at `build.sh:8-11` promised a bundle gets the same answer either way. B5-4 tested only `check`, which is how one side stayed wrong. |
+| **S1's repair** | `index` writes the chain as well — `nar-classes.txt` as `<nar> <class>` for every class in a judged package, and `nar-parents.txt` as `<nar> <parent-artifact-id>`; 910 and 106 lines for the stock lib. `check-index` walks it with the same matching rule `parent_chain_classes` uses: the parent is named by artifact id, and a NAR whose basename starts with that id and a hyphen is it. A missing or unreadable chain file takes the same refusal as a missing class index, because a chain that cannot be read must not quietly become empty — which is exactly how this mode came to refuse eleven sound bundles. |
+| **S1 measured** | `total=118 refused_check=0 refused_check_index=0`, against `11` before. And the other direction, which is what B6-13 holds: with `nifi-standard-services-api-nar` left out of the library, `nifi-kafka-3-service-nar` is refused by **both** modes, `check-index` naming 4 unresolved references. So the chain index did not become "resolve against everything". |
+| **S4's premise** | `check` builds its judged set from the packages the nifi-api jars declare. With no such jar the set is empty, every reference is skipped by the package filter, and the bundle is permitted for having been judged against nothing. Measured: a stock NAR with its parent stripped is refused against the full lib, permitted against the same lib without its nifi-api jar, and permitted against `/does/not/exist`. |
+| **S4 reverses a recorded decision, and that is the point** | The M-B4 process-log row says: "an API jar it cannot find means nothing is judged at all". Per reference the rule is sound — a name outside the API's packages is not this check's business. Applied to a missing jar it switches the whole check off and reports a pass, which is the A8-26 shape, and `index` mode had always refused the same condition. The row is corrected rather than quietly left standing. |
+| **Two fixtures had to follow it** | B4-3's lib was empty, so "the control is permitted" and "the control was judged against nothing" were one observation — the reason this shipped. And the M-B2 entrypoint sandbox had an empty `lib/` too, which turned B2-5 red for a reason that has nothing to do with the copy it is about. Both now seed `nifi-api-0.0.0-probe.jar` declaring one class, which makes the judged set non-empty without resolving anything. |
+| **Measured against the unfixed code** | B6-10/B6-11: 3 fail / 1 pass, the pass being B6-11. B6-12/B6-13: 2 fail / 2 pass, the passes being B6-13 — the orphan was refused before as well, and preserving that is the whole constraint on S1's repair. |
+| **Why the 118-wide sweep is not asserted** | 236 narcheck runs per execution is minutes of a default-tier run. The eleven are the exact regression set and are named by prefix, so a version bump does not silence the case; the sweep is recorded above as a measurement. |
+| **Covers** | S1 and S4 of the 2026-10-01 review, FR23, FR27, FR36, NFR3. |
 
 ---
 
