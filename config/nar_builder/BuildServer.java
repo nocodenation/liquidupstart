@@ -133,7 +133,7 @@ public class BuildServer {
             // the builder was not answering. A hung test held one of two worker
             // threads for good. Item 8 of the 2026-09-28 review.
             if (!process.waitFor(BUILD_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
-                process.destroyForcibly();
+                endBuildTree(process);
                 respond(exchange, 504, "nar-build refused: the build passed "
                         + BUILD_TIMEOUT_SECONDS + "s and was stopped, so nothing was deployed.\n"
                         + "Run it again, or ask the operator to look at what it is waiting for.\n");
@@ -142,7 +142,7 @@ public class BuildServer {
             code = process.exitValue();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            process.destroyForcibly();
+            endBuildTree(process);
             respond(exchange, 500, "nar-build refused: the build was interrupted before it finished.\n"
                     + "Run nar-build again; if it keeps happening ask the operator to restart the builder:\n"
                     + "docker compose restart nar_builder\n");
@@ -192,4 +192,45 @@ public class BuildServer {
             out.write(payload);
         }
     }
+    /**
+     * End the build and everything it started.
+     *
+     * `destroyForcibly()` on the Process reaches the shell alone. Measured with
+     * NAR_BUILDER_BUILD_TIMEOUT=3 and a stub mvn sleeping: the client got 504
+     * while `su`, the stub and its `sleep` were still running with PPID 1, and
+     * /tmp/tmp.XXXX was left behind. The semaphore slot was released with the
+     * 504, so the two-at-a-time cap did not hold either -- four concurrent Maven
+     * runs were measured under a two-slot semaphore. S2 of the 2026-10-01 review.
+     *
+     * The descendants are collected **before** the parent dies: once the shell is
+     * gone the tree is gone with it and `descendants()` comes back empty. Order
+     * is the whole of this method.
+     *
+     * TERM first and KILL only after a grace, because build.sh has a TERM trap
+     * that removes its work directory (build.sh's `trap ... TERM`). Going
+     * straight to destroyForcibly stops everything and still leaves /tmp/tmp.XXXX
+     * behind, which is the minor this repair also closes.
+     *
+     * Not a process-group kill: `su` has already moved Maven into a session of
+     * its own -- measured, su is pgid 1 / sid 1 while its child is its own pgid
+     * and sid -- so killing the group would miss exactly the process that is
+     * still building.
+     */
+    private static void endBuildTree(Process process) {
+        java.util.List<ProcessHandle> kin = process.toHandle().descendants()
+                .collect(java.util.stream.Collectors.toList());
+        kin.forEach(ProcessHandle::destroy);
+        process.destroy();
+        try {
+            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                kin.forEach(ProcessHandle::destroyForcibly);
+                process.destroyForcibly();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            kin.forEach(ProcessHandle::destroyForcibly);
+            process.destroyForcibly();
+        }
+    }
+
 }

@@ -149,11 +149,18 @@ describe('B5-14 the server answers when it cannot work', () => {
     expect(out2).toContain('third=503');
   });
 
-  test('B5-14 a build that passes its budget is stopped, not left running', () => {
+  test('B5-14 a build that passes its budget is answered 504', () => {
     // Item 8. Nothing killed a build, so when the client gave up the build
     // carried on and could still deploy.
     // 504 is the answer the client gets instead of waiting out the full 1800s
     // while the build runs on and may still deploy.
+    //
+    // **Renamed 2026-10-05, because the old name claimed more than the case
+    // holds.** It read "is stopped, not left running", and it asserts the HTTP
+    // code alone -- which was 504 on both trees while `su`, the stub mvn and its
+    // sleep were still running with PPID 1 and the work directory was still in
+    // /tmp. S2 of the 2026-10-01 review. What is actually still running is held
+    // by B6-17; this case holds what the client is told.
     expect(out2).toContain('stuckA=504');
     expect(out2).toContain('stuckB=504');
   });

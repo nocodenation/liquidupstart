@@ -704,6 +704,7 @@ carried.
 | B6-14 | Integration **unhappy** | The bytes that were judged are the bytes that load | The watcher judged the inbox file and then copied it by path. The inbox is writable by the agents and the builder |
 | B6-15 | Integration | A copy that pauses is not a bundle that is wrong | A slow drop was refused and finished inside `refused/`. The first repair counted still passes and was measured failing |
 | B6-16 | Integration **unhappy** | The counterpart: something that is not an archive stays unloaded | Not refusing is not permitting, and no `.part` may be left where the auto-loader will be pointed |
+| B6-17 | Integration **unhappy** | The budget stops the build, not just the shell | `destroyForcibly()` reached the shell alone: 504 to the client while `su`, Maven and its sleep ran on with PPID 1 and the work directory stayed in /tmp |
 
 #### Detail per case
 
@@ -754,6 +755,17 @@ carried.
 | **Test data** | `ghcr.io/nocodenation/liquid-nifi:latest` with `nar-watch.sh` and `narcheck.py` from this tree copied into a writable tmpfs inside it — both resolve beside the running script, so mounting them read-only in place would not do. A sandbox `NIFI_HOME` under `/tmp`, one nifi-api jar in `lib/`, `NAR_WATCH_INTERVAL_SECONDS=1`, and a real archive carrying `notes.txt` holding `probe`. For S6 the checker is a stand-in that sleeps three seconds and permits, which is what opens the window the swap lands in. |
 | **Measured against the unfixed watcher** | 5 fail / 3 pass. Two of the three passes are B6-16's, which held before as well: not loading something unreadable was never the defect. |
 | **Covers** | S6 and M5 of the 2026-10-01 review, FR30, U10, NFR3. |
+
+#### B6-17 — the build budget, and what B5-14 could not see
+
+| | |
+|---|---|
+| **Premise** | `process.destroyForcibly()` reaches the shell and nothing under it. Measured with `NAR_BUILDER_BUILD_TIMEOUT=3` and a stub mvn that sleeps: the client got its 504 while `su`, the stub and its `sleep` were still running with PPID 1, and `/tmp/tmp.XXXX` was left behind. The semaphore slot is released with the 504, so the two-at-a-time cap did not hold either — four concurrent Maven runs under a two-slot semaphore — and an author pom could still write a bundle after the operator had been told the build was stopped. |
+| **Why B5-14 did not catch it** | It asserts the HTTP code, and the code is 504 either way. Measured on both trees in one sitting: `code=504 survivors=1 workdirs=1` before, `code=504 survivors=0 workdirs=0` after. B5-14 is renamed from "is stopped, not left running" to "is answered 504", because the old name claimed what the case does not hold. |
+| **Three things decide the repair, all measured** | The descendants are collected **before** the parent dies — once the shell is gone `descendants()` comes back empty, so the order is the whole of it. TERM goes first and KILL only after a grace, because `build.sh` has a TERM trap that removes its work directory; going straight to `destroyForcibly` stops everything and still leaves `/tmp/tmp.XXXX`, which is a minor this closes with it. And it is **not** a process-group kill: `su` has moved Maven into a session of its own — su is pgid 1 / sid 1 while its child is its own — so the group no longer holds the process that is still building. That last constraint is new since `1527c86` put Maven behind `su`, and the reviewer could not have known it. |
+| **Test data** | The builder image built in the run and tagged per run, with `BuildServer.java` compiled **inside** it from the file under review rather than trusting the image's class files. A stub `mvn` answering the api probe and then sleeping 60s on `package`; a stub `curl` for the reachability probe, with the real one kept aside as `/realcurl` — the first run of this probe reported `code=` empty, because the stub had answered the probe's own client. |
+| **Measured against the unfixed server** | 2 fail / 2 pass. The passes are the premise — that the file compiles — and the 504, which held before. |
+| **Covers** | S2 of the 2026-10-01 review, FR24, NFR2. |
 
 ---
 
