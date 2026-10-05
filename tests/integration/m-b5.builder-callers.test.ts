@@ -90,6 +90,12 @@ describe('B5-12 while the stack\'s own client is served', () => {
 });
 
 describe('B5-13 and the vhost is for the stack network', () => {
+  // **This case reads the template as text, and that is its limit.** S3 of the
+  // 2026-10-01 review: `allow <subnet>; deny all;` is exactly what it asserts,
+  // and on rootless Docker that admitted the whole LAN -- a request through the
+  // published port arrives as the bridge gateway, which is inside the subnet.
+  // The text was right and the effect was not. The behaviour is B6-21 to B6-23;
+  // what stays here is that the placeholder is rendered at all.
   test('B5-13 the builder vhost refuses anything off the stack network', () => {
     // The proxy port is published on every host interface, so the vhost was
     // reachable from the host and the LAN. Only agents need it.

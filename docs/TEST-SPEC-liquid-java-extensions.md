@@ -708,6 +708,9 @@ carried.
 | B6-18 | Integration **unhappy** | A Java package named `target` is not a build directory | A blanket `rm -rf` on every directory of that name deleted `com/acme/target/`, and the project failed with "package does not exist" and 422 |
 | B6-19 | Integration **unhappy** | Two repositories with the same leaf do not overwrite each other | `/repos/good/proc` and `/repos/other/proc` both produced `proc-nar-1.0.0.nar`; the second replaced the first and reported success |
 | B6-20 | Integration **unhappy** | A module is built inside the project that owns its parent pom | Only the named directory was copied, so a parent one level up could not resolve — and the refusal then advised what the author had just done |
+| B6-21 | Integration **unhappy** | A `deny` beats the `allow` for an address inside the allowed subnet | `allow <subnet>; deny all;` admitted the whole LAN on rootless Docker, because the published path arrives as the bridge gateway and the gateway is inside the subnet |
+| B6-22 | Integration | The gateway is asked for, not assumed | Docker puts it at the start of the **ip range**, not at the subnet's `.1`. The first version of the repair denied `.1` and would have been inert |
+| B6-23 | Integration | What a host request arrives as, recorded rather than assumed | `192.168.65.1` on Docker Desktop, the bridge gateway on rootless Linux. The exposure is host-dependent and the record says so |
 
 #### Detail per case
 
@@ -782,6 +785,19 @@ carried.
 | **Measured against the unfixed code** | 3 fail / 3 pass, one failure per finding, the passes being the counterparts inside each scenario. The first control run came back `0 pass / 1 fail "(unnamed)"` instead, because the probe emitted no `s7c-pl` line at all when there was no `-pl` — A1 of the same review, in a probe written after it. It always answers now, `none` included. |
 | **Covers** | S7a, S7b and S7c of the 2026-10-01 review, and item 10 of 2026-09-28 restated, FR24. |
 
+#### B6-21 to B6-23 — the builder vhost, and the address it has to refuse
+
+| | |
+|---|---|
+| **Premise** | The vhost carried `allow SYSTEM_NETWORK_SUBNET; deny all;` and a comment saying a browser on the host or the LAN does not reach it. On rootless Docker it does: a request through the published proxy port arrives with `$remote_addr` set to the bridge gateway, and the gateway is **inside** the subnet being allowed. The reviewer measured a request to `127.0.0.1` and one to the host's LAN address both logging `10.231.77.1`. So any client that could reach `<host>:8888` and send `X-Liquid-Agent: 1` could start a build of any path under `/repos`. B5-13 greps that text, and the text was right. |
+| **The repair** | `deny` the gateway before the `allow`. Nothing legitimate arrives as the gateway — an agent posts to `proxy:8888` from inside its own container, so its address comes from `SYSTEM_NETWORK_POOL`. |
+| **The first version of the repair was wrong, and a measurement caught it** | It computed the gateway as the subnet's first host address, `10.99.0.1`. The operator's running stack reports `subnet=10.99.0.0/24 iprange=10.99.0.128/25 gateway=10.99.0.128`: docker puts the gateway at the first address of the range it allocates from, and this stack declares one. A `deny 10.99.0.1` would have been an inert line with S3 open behind it. The gateway is taken from `SYSTEM_NETWORK_POOL` when there is one now, and B6-22 compares the computed value against what docker reports for a network created the same way — in the same run, so a difference cannot be the machine. |
+| **And `.env.example` was wrong for the same reason** | It said ".1 is docker's own gateway address, so .2 is the first one free". With a pool declared, `.1` is free and `.128` is the gateway — the opposite. Corrected beside the key; `.2` remains a fine choice and the reason given for it was not. |
+| **The exposure is host-dependent, and the record says so** | Measured here: a request through the published port arrives as `192.168.65.1`, Docker Desktop's own VM gateway, which is **outside** the stack subnet — so `allow <subnet>; deny all;` already refused it on this host. The reviewer measured rootless Docker on Linux, where it arrives as the bridge gateway and is allowed. The repair costs nothing where the hole does not exist and closes it where it does. B6-23 asserts that the address is *not* inside the subnet rather than asserting the literal, so the case does not become a statement about one installation. |
+| **Test data** | A throwaway network on `10.231.91.0/24` with `--ip-range 10.231.91.128/25`, which is the arrangement `compose.yml` uses and is also what moves the gateway. A stub upstream under the alias `nar_builder`. Two nginx containers from one shape, one denying a pinned in-subnet address and one not — the control lives inside the probe, so both readings come from one run against one network. The first attempt pinned `.5` and docker had already given it to the fourth container: `Address already in use`, which is why the range is restricted. |
+| **Measured** | `without-denied-address=200`, `with-denied-address=403`, `with-other-address=200`, `with-no-header=403`. |
+| **Covers** | S3 of the 2026-10-01 review, NFR1. |
+
 ---
 
 ### M-B5 — the second review of this branch, answered
@@ -814,7 +830,7 @@ ask for a build**, not what a build may do once asked for. The open question in 
 | B5-10 | Integration **negative** | `POST /build` and `GET /target` with no `X-Liquid-Agent` | 403. Finding 6: any page the operator had open could start a build |
 | B5-11 | Integration **negative** | The same with `Origin: http://evil.example`, and `GET /build` | 403 and 405 |
 | B5-12 | Integration | The stack's own client, and the healthcheck | 200 each. The counterpart: the guard cannot be met by refusing everything |
-| B5-13 | Contract | The `nar-builder` vhost in the nginx template | `allow SYSTEM_NETWORK_SUBNET; deny all;`, and the placeholder is actually substituted by `start/nginx.sh` |
+| B5-13 | Contract | The `nar-builder` vhost in the nginx template | `allow SYSTEM_NETWORK_SUBNET; deny all;`, and the placeholder is actually substituted by `start/nginx.sh`. **Its limit, from 2026-10-05:** that text is exactly what it asserts, and on rootless Docker it admitted the whole LAN. The text was right and the effect was not; B6-21 to B6-23 hold the effect |
 | B5-14 | Integration **unhappy** | Two builds that never end, a third request, and a 20 KB body | `/health` 200 while both slots are busy, third build 503, both stuck builds 504, oversize body 400. Findings 8, 9, 13 |
 | B5-15 | Integration | `build.sh target` with `api/runtime` present and every `nifi-app*.log` deleted | The versions are read and `read_from …(runtime)` names the source. Finding 7: 409, "ask the operator to restart Liquid" |
 | B5-16 | Integration | The same with the record absent and the startup line present | Still read, from the log. The counterpart: an installation whose Liquid started before the record existed must keep building |
