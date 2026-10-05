@@ -390,6 +390,10 @@ container writes to, and NiFi picks it up within seconds. One that fails is move
    inside the container). Place NARs you did not build with `nar-build` there yourself, and
    put every NAR of a dependency chain there together (§6.5). That directory is an inbox, not
    the load path: everything in it is judged before anything is loaded, whoever put it there.
+   The bundle that is judged is the copy the watcher makes, not the file in the inbox -- the
+   inbox is writable by you and by the builder, so judging the file and then loading it by
+   path would be two reads of something that can change in between. Since 2026-10-05 the
+   watcher copies first, judges the copy, and renames that same copy into place.
 
 3. **Check whether it loaded — do not assume either way.** Liquid watches the drop directory
    while it runs. Every bundle that appears there is judged first: one that passes is copied

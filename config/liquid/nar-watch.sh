@@ -40,23 +40,6 @@ stamp() {  # stamp <file>
                         "$(stat -c %Y "$1" 2>/dev/null || echo 0)"
 }
 
-promote() {  # promote <file>
-  base="$(basename "$1")"
-  part="${LOAD_DIR}/.${base}.part"
-  # Into place under its own name only once it is whole: the auto-loader skips a
-  # dot-file ("Skipping non-nar file"), so it cannot read a partial copy.
-  if cp "$1" "$part" && mv "$part" "${LOAD_DIR}/${base}"; then
-    say "loaded ${base}: it passed the deployment check"
-    return 0
-  fi
-  rm -f "$part"
-  say "WARNING: ${base} passed the check and could not be copied into ${LOAD_DIR};"
-  say "  it is not loaded. ${LOAD_DIR} is inside the container and is written by"
-  say "  this script alone, so this means the container's own filesystem is full"
-  say "  or read-only."
-  return 1
-}
-
 refuse() {  # refuse <file> <reason>
   base="$(basename "$1")"
   say "REFUSED ${base}: it was not loaded."
@@ -70,12 +53,63 @@ refuse() {  # refuse <file> <reason>
   fi
 }
 
+# judge <file> -- 0 when the bundle was loaded, 1 when it was refused, 2 when it
+# may still be arriving and should be looked at again.
+#
+# **The copy is judged, not the original.** The inbox is writable by the agents
+# (compose.yml:339, 817, 926) and by the builder, and this used to judge the file
+# at its inbox path and then copy it by that same path -- so the bytes that were
+# judged and the bytes that loaded were two reads of a file somebody else can
+# replace in between. SKILL.md section 6.4 and FR30 say everything in the inbox is
+# judged before anything is loaded; that was true of a read, not of the file.
+# S6 of the 2026-10-01 review. Copying first closes it: what is judged is the copy
+# under the dot-name, and what is renamed into place is that same copy.
+#
+# `promote` collapsed into this, because the copy now happens before the check
+# rather than after it, and a separate function would have had nothing left to do
+# but the rename.
 judge() {  # judge <file>
-  if REFUSAL="$(python3 "$NAR_CHECK" check "$1" "$LIB_DIR" 2>&1)"; then
-    promote "$1"
-  else
-    refuse "$1" "$REFUSAL"
+  base="$(basename "$1")"
+  part="${LOAD_DIR}/.${base}.part"
+  # The auto-loader skips a dot-file ("Skipping non-nar file"), so a partial copy
+  # cannot be read even while it sits in the load directory.
+  if ! cp "$1" "$part" 2>/dev/null; then
+    rm -f "$part"
+    say "WARNING: ${base} could not be copied into ${LOAD_DIR}; it is not loaded."
+    say "  ${LOAD_DIR} is inside the container and is written by this script"
+    say "  alone, so this means the container's own filesystem is full or"
+    say "  read-only."
+    return 1
   fi
+  if REFUSAL="$(python3 "$NAR_CHECK" check "$part" "$LIB_DIR" 2>&1)"; then
+    if mv "$part" "${LOAD_DIR}/${base}"; then
+      say "loaded ${base}: it passed the deployment check"
+      return 0
+    fi
+    rm -f "$part"
+    say "WARNING: ${base} passed the check and could not be copied into ${LOAD_DIR};"
+    say "  it is not loaded. ${LOAD_DIR} is inside the container and is written by"
+    say "  this script alone, so this means the container's own filesystem is full"
+    say "  or read-only."
+    return 1
+  fi
+  rm -f "$part"
+  # narcheck names the file it was handed, which is the dot-copy. The operator
+  # reads the name they dropped. This substitution runs before the case below, and
+  # must not touch the sentence that case keys on -- it replaces a path, and the
+  # sentence holds none.
+  REFUSAL="$(printf '%s\n' "$REFUSAL" | sed "s|${part}|${1}|g")"
+  case "$REFUSAL" in
+    *"could not be opened as an archive"*)
+      say "${base} cannot be opened as an archive, so it was not judged and is not"
+      say "  loaded. It stays in the inbox, which is not the load path. If it is"
+      say "  still being copied in, it is judged again as soon as it changes; if it"
+      say "  is corrupt, replace it or remove it."
+      return 1
+      ;;
+  esac
+  refuse "$1" "$REFUSAL"
+  return 1
 }
 
 sweep() {
@@ -93,8 +127,17 @@ sweep() {
       *" ${base}=${size} "*) ;;
       *) continue ;;
     esac
-    judge "$nar"
-    [ -f "$nar" ] && next_seen="${next_seen}$(stamp "$nar") "
+    judge "$nar" || true
+    # The stamp taken *before* the judgement, not after. A file swapped between
+    # the copy and this line would otherwise be recorded as judged under its new
+    # bytes and never looked at again -- which is the hole S6 is about, moved one
+    # line down. With the pre-judge stamp, a swap no longer matches `seen` and
+    # the new contents are judged on the next pass. Nothing is recorded for a
+    # bundle still in the inbox, which an unreadable archive is: one line in the
+    # log, and it is judged again when it changes.
+    if [ -f "$nar" ]; then
+      next_seen="${next_seen}${st} "
+    fi
   done
   seen="$next_seen"
   sizes="$next_sizes"

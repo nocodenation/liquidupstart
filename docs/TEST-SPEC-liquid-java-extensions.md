@@ -701,6 +701,9 @@ carried.
 | B6-11 | Unit | The counterpart, and it comes first: a library that can judge permits | Without it B6-10 is met by refusing everything, which the documents call worse than no check |
 | B6-12 | Integration | Both modes give one answer on the eleven that disagreed | `check` refused 0 of 118 stock NARs and `check-index` refused 11. `index` writes the parent chain now — 106 links, 910 chain classes — and `check-index` walks it |
 | B6-13 | Integration **unhappy** | The counterpart: a parent that is not there is still a refusal | Resolving against every class in the library would satisfy B6-12 and reintroduce blocker 3 of 2026-09-28 the other way round |
+| B6-14 | Integration **unhappy** | The bytes that were judged are the bytes that load | The watcher judged the inbox file and then copied it by path. The inbox is writable by the agents and the builder |
+| B6-15 | Integration | A copy that pauses is not a bundle that is wrong | A slow drop was refused and finished inside `refused/`. The first repair counted still passes and was measured failing |
+| B6-16 | Integration **unhappy** | The counterpart: something that is not an archive stays unloaded | Not refusing is not permitting, and no `.part` may be left where the auto-loader will be pointed |
 
 #### Detail per case
 
@@ -738,6 +741,19 @@ carried.
 | **Measured against the unfixed code** | B6-10/B6-11: 3 fail / 1 pass, the pass being B6-11. B6-12/B6-13: 2 fail / 2 pass, the passes being B6-13 — the orphan was refused before as well, and preserving that is the whole constraint on S1's repair. |
 | **Why the 118-wide sweep is not asserted** | 236 narcheck runs per execution is minutes of a default-tier run. The eleven are the exact regression set and are named by prefix, so a version bump does not silence the case; the sweep is recorded above as a measurement. |
 | **Covers** | S1 and S4 of the 2026-10-01 review, FR23, FR27, FR36, NFR3. |
+
+#### B6-14 to B6-16 — the watcher, judged and loaded
+
+| | |
+|---|---|
+| **S6's premise** | `judge()` read the file at its inbox path and `promote()` copied it from that same path afterwards. The inbox is writable by the agents (`compose.yml:339`, `817`, `926`) and by the builder, so the bytes judged and the bytes loaded were two reads of a file somebody else can replace in between. `SKILL.md` §6.4 and FR30 say everything in the inbox is judged before anything is loaded — true of a read, not of a file. Reproduced rather than taken on description: a permitted bundle replaced two seconds into a three-second judgement loaded as **the swapped bytes**. |
+| **S6's repair, and the hole one line down** | The copy is made first, under the load directory's dot-name, and *that* is what narcheck judges and what is renamed into place. The refusal text is run through `sed` so the operator reads the name they dropped rather than `.foo.nar.part`. And the sweep now records the stamp taken **before** the judgement: re-stamping afterwards would file the replacement as already judged and never look at it again, which is the same hole moved one line. B6-14's second half is that half. |
+| **M5's premise** | A zip's central directory is written last, so "could not be opened as an archive" is the one refusal an arriving file produces as readily as a broken one, and the stability gate requires a single unchanged interval — which a copy that pauses mid-stream satisfies. Reproduced: a bundle copied in with a five-second pause was moved into `refused/` and finished there. |
+| **The first repair for M5 was measured and failed** | It counted consecutive still passes and refused after three. At a 1s interval that is three seconds, and the copy under test paused for five: `m5-refused=[slow.nar]`. Any N is the same mistake one layer in — a guess about how long a writer may pause, which holds until the machine is busy, and this repository has the habit written up. So an unreadable archive is not refused at all: it stays in the inbox, which is not the load path, with one line in the log, and is judged again when it changes. What is given up is the move into `refused/` for that one case, and that is a category it never belonged to — `refused/` means judged and found wrong, and this was never judged. |
+| **One wrong measurement on the way, and it was the fixture** | The repaired watcher put the slow copy in `refused/` again, which read as the repair not working. It was the probe: the bundle was a stock kafka NAR and the sandbox `lib/` held only a nifi-api jar, so once the copy completed the bundle was judged on its merits and refused for five genuinely unresolved references. The fixture uses an archive carrying one `notes.txt` now, so the verdict turns on readability alone. |
+| **Test data** | `ghcr.io/nocodenation/liquid-nifi:latest` with `nar-watch.sh` and `narcheck.py` from this tree copied into a writable tmpfs inside it — both resolve beside the running script, so mounting them read-only in place would not do. A sandbox `NIFI_HOME` under `/tmp`, one nifi-api jar in `lib/`, `NAR_WATCH_INTERVAL_SECONDS=1`, and a real archive carrying `notes.txt` holding `probe`. For S6 the checker is a stand-in that sleeps three seconds and permits, which is what opens the window the swap lands in. |
+| **Measured against the unfixed watcher** | 5 fail / 3 pass. Two of the three passes are B6-16's, which held before as well: not loading something unreadable was never the defect. |
+| **Covers** | S6 and M5 of the 2026-10-01 review, FR30, U10, NFR3. |
 
 ---
 
