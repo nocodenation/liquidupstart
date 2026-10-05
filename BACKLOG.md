@@ -9,6 +9,30 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The shared Maven cache stays writable by build-time code.** `compose.yml` mounts
+`./volumes/nar_builder/m2:/m2` read-write, and Maven runs there as the unprivileged `builder` user,
+which can write it. So a pom, a plugin or a dependency can plant an artifact that **every later
+build** resolves from — persistence that survives until somebody clears the directory.
+
+This is the third of B1's three legs, 2026-10-01 review. The other two are closed: `/repos` is
+read-only and `/opt/builder` is unreachable to the build user (B6-1 to B6-4). The operator decided on
+2026-10-04 to take those two and price this one separately, because closing it costs build capability
+rather than configuration:
+
+- **A per-build cache** — a fresh `-Dmaven.repo.local` per build, or an overlay over a seeded one.
+  Every build then re-downloads its dependencies, so a build goes from seconds to minutes and needs
+  the network every time. An overlay (`lowerdir` the seeded cache, `upperdir` per build) keeps the
+  speed and needs a privileged mount or fuse-overlayfs in the builder, which is more capability than
+  the thing it protects against.
+- **A read-only pre-seeded cache** — no runtime cost, and it refuses any dependency nobody seeded,
+  which for an operator writing their own processors is likely unusable.
+
+What makes it the least urgent of the three: it needs a *later* build to pick the artifact up, and it
+reaches nothing outside the builder — where `/repos` read-write was a path to the containers that hold
+the deploy keys. Recorded 2026-10-04.
+
+---
+
 **~~Liquid autoloads from the drop directory, and everything this feature says about deployment is
 built on the assumption that it does not.~~** *Answered 2026-09-14/15. Kept because how the answer
 was reached is the point; FR29, FR30 and FR36 in `docs/FEATURE-liquid-java-extensions.md` carry the

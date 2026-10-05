@@ -15,7 +15,32 @@ LIQUID_HOST="${NAR_BUILD_LIQUID_HOST:-liquid}"
 LIQUID_PORT="${SYSTEM_HTTPS_PORT:-8833}"
 NAR_PLUGIN_VERSION="${NAR_BUILD_PLUGIN_VERSION:-2.4.0}"
 
+# Everything Maven runs during a build is the author's -- the pom, its plugins,
+# its dependencies -- so it runs as this unprivileged user rather than as root.
+# As root it could append to /repos/<any other clone>/.git/config, plant a plugin
+# jar in the shared /m2 that every later build resolves, and rewrite
+# /opt/builder/build.sh, which is the script holding the narcheck gate: measured,
+# a line appended there came back as line 18 of the next, unrelated build.
+# B1 of the 2026-10-01 review. build.sh itself stays root: it reads /repos,
+# writes the drop directory and runs the check.
+BUILD_USER="${NAR_BUILDER_BUILD_USER:-builder}"
+
 out() { printf '%s\n' "$*"; }
+
+# Maven as BUILD_USER when this is root and that user exists -- in the image it
+# does. Outside the container, where the suite runs build.sh against a stub mvn,
+# neither holds and the call is made directly, so a fixture needs no root and no
+# such user. `su` is what the base image has, and the `--` is load-bearing:
+# without it su reads Maven's own flags as its own, and the first run of this came
+# back as `su: invalid option -- 'o'`. After it the first operand becomes $0 and
+# mvn's argv is passed through untouched.
+run_maven() {
+  if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
+    su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
+  else
+    mvn -B "$@"
+  fi
+}
 
 field() {
   printf '%s\n' "$2" | sed -n "s/^$1 \(.*\)$/\1/p"
@@ -50,7 +75,7 @@ resolve_api_version() {
 </project>
 POM
 
-  if ! mvn -B -f "${probe}/pom.xml" -Dmaven.repo.local="$CACHE" dependency:list \
+  if ! run_maven -f "${probe}/pom.xml" -Dmaven.repo.local="$CACHE" dependency:list \
        > "${probe}/resolve.log" 2>&1; then
     API_ERROR="$(grep '^\[ERROR\]' "${probe}/resolve.log" | head -4 | sed 's/^/  /')"
     rm -rf "$probe"
@@ -371,7 +396,11 @@ NOSPI
   ls -A "$DROP" 2>/dev/null | sort > "$before" || : > "$before"
 
   log="${work}/maven.log"
-  if ! mvn -B -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" package > "$log" 2>&1; then
+  # Maven runs as the unprivileged build user, because everything it runs is the
+  # author's: the pom, its plugins and its dependencies. The work tree and the
+  # cache are handed over for the duration; nothing else is.
+  chown -R "$BUILD_USER" "$work" 2>/dev/null || true
+  if ! run_maven -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" package > "$log" 2>&1; then
     cat "$log" >&2
     cat >&2 <<BUILDFAILED
 

@@ -1,4 +1,7 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, readdirSync,
+  copyFileSync, chmodSync, symlinkSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from './paths';
@@ -69,17 +72,48 @@ export function sandbox(opts: { nars?: string[]; loadIsFile?: boolean } = {}): S
   return { base, home, drop, load, lib, launched };
 }
 
+/**
+ * The real entrypoint, run from a copy in the sandbox so that the watcher it
+ * starts is a stand-in.
+ *
+ * `NAR_WATCH` and `NAR_CHECK` both resolve beside the script that is running
+ * (`entrypoint.sh:23`, `:24`), so running the file in place means the real
+ * `nar-watch.sh` -- `while true; do sweep; sleep "$INTERVAL"; done`, which
+ * inherits this helper's stdout and stderr. `sh()` is
+ * `Bun.spawnSync(..., { stdout: 'pipe', stderr: 'pipe' })`, which on Linux waits
+ * for those pipes to close: a plain `./tests/run.sh` blocked in
+ * `m-b2.copy-failure-reported` and never returned, and the two cases finished
+ * only when the watcher was killed by hand, at 239.6s and 152.4s. On macOS
+ * spawnSync returns, and the watcher plus its `sleep` are left reparented to
+ * PID 1 after every run -- measured here, 5 pass in 986ms with two processes
+ * surviving. One defect, two symptoms, and which one you get belongs to the
+ * host. B3 of the 2026-10-01 review.
+ *
+ * The comment this replaces had it backwards: it set the interval to 3600 and
+ * said that "only keeps a stray process out of the run". A longer sleep makes
+ * the wait longer.
+ *
+ * The entrypoint is copied on **every** call, from its real path, so there is no
+ * second copy to go stale -- and `m-b4.entrypoint-in-container` separately
+ * compares what the container runs against that same file. `narcheck.py` is
+ * symlinked rather than stubbed, because what the check permits is part of what
+ * these cases assert.
+ */
 export function runEntrypoint(sb: Sandbox): Result {
-  // NAR_WATCH resolves beside the entrypoint, so in this sandbox it is the real
-  // nar-watch.sh -- a loop that never returns. These cases are about the pass
-  // the entrypoint makes before the launch; the watcher is held by B5-28 to
-  // B5-30, which boot NiFi. `sh` starts it in the background either way, so
-  // this only keeps a stray process out of the run.
-  return sh([entrypointPath], repoRoot, {
-    NIFI_BASE_DIR: sb.base,
-    NIFI_HOME: sb.home,
-    NAR_WATCH_INTERVAL_SECONDS: '3600'
+  const dir = join(sb.base, 'scripts');
+  const entry = join(dir, 'entrypoint.sh');
+  copyFileSync(entrypointPath, entry);
+  chmodSync(entry, 0o755);
+  const link = join(dir, 'narcheck.py');
+  if (!existsSync(link)) symlinkSync(join(repoRoot, 'config/liquid/narcheck.py'), link);
+  // The stand-in. It is executable and it returns, so the branch at
+  // entrypoint.sh:168 is taken exactly as it is in the container -- what differs
+  // is only that this one ends. The watcher itself is held by B5-28 to B5-30,
+  // which boot NiFi.
+  writeFileSync(join(dir, 'nar-watch.sh'), '#!/bin/sh\necho "[nar-watch] stand-in for the suite"\nexit 0\n', {
+    mode: 0o755
   });
+  return sh([entry], repoRoot, { NIFI_BASE_DIR: sb.base, NIFI_HOME: sb.home });
 }
 
 export function loadContents(sb: Sandbox): string[] {

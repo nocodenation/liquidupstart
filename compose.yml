@@ -371,7 +371,12 @@ services:
       # test run brings up. Blocker 6 of the 2026-09-28 review.
       NAR_BUILDER_TEST_HOOKS: ${NAR_BUILDER_TEST_HOOKS:-0}
     volumes:
-      - ./volumes/repos:/repos
+      # Read-only: build.sh copies the source out into /tmp and never writes
+      # here, so nothing is lost -- and as root a build-time plugin could append
+      # to any other clone's .git/config, which is a path from this
+      # credential-free container to the containers that hold /git-secrets.
+      # B1 of the 2026-10-01 review.
+      - ./volumes/repos:/repos:ro
       - ./volumes/nar_extensions:/nar_extensions
       - ./volumes/nar_builder/m2:/m2
       - ./volumes/liquid/logs:/liquid/logs:ro

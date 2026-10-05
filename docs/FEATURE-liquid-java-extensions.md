@@ -268,8 +268,31 @@ down, correct and reported — all four, with nothing traded. The explicit value
 for a project that does not depend on `nifi-utils`, and B1-6's own-`pom.xml` path remains the escape
 hatch for everything else. M-B2's cases should cover both failure modes, not only the loud one.
 
-What remains: a compromised or malicious dependency can read the source being compiled, write
-anything into the drop directory, and reach the network. The third of those is inherent to Maven and
+**Corrected 2026-10-04, and this is the larger of the two corrections this paragraph has needed.**
+It said a compromised dependency could "read the source being compiled, write anything into the drop
+directory, and reach the network". FR25's claim that the builder holds no credentials was literally
+true and the containment it implied was not: build-time code ran **as root**, and B1 of the
+2026-10-01 review measured what that reached. Through a pom with `maven-antrun-plugin` bound to
+`validate`: `uid=0`, a line appended to `/repos/victim/.git/config` — *another repository's clone* —
+a marker in the shared `/m2` that every later build resolves from, and a line appended to
+`/opt/builder/build.sh`, which came back as line 18 of the next, unrelated build. The response to the
+build that did all of it said only "succeeded but produced no .nar". Because the agents run git in
+those clones and hold `/git-secrets`, that was a path from the credential-free builder to the
+credential holders.
+
+Two legs are closed as of 2026-10-04, by the operator's decision of the same day: `/repos` is mounted
+**read-only** — `build.sh` copies the source out into `/tmp` and never writes there, so nothing is
+lost — and Maven runs as an unprivileged `builder` user, which the image measures as unable to write
+`/opt/builder` or `/nar_extensions`. B6-1 to B6-4 hold it.
+
+**One leg is deliberately left open and is recorded in `BACKLOG.md`:** the shared `/m2` stays
+writable, so build-time code can still plant an artifact that a later build resolves. Closing it
+means a per-build cache — every build re-downloads, so seconds become minutes and the network is
+needed every time — or a read-only pre-seeded cache, which refuses any dependency nobody seeded. The
+decision was to take the two cheap legs now and price the third separately.
+
+What remains, then: a compromised or malicious dependency can read the source being compiled, write
+into the shared dependency cache, and reach the network. The third of those is inherent to Maven and
 would only be removed by pre-seeding the dependency cache and building offline, which is the upgrade
 path if the assessment changes. It is not taken now because the stack runs locally under one
 operator and the builds are of the operator's own processors. **This sentence continued "and the
