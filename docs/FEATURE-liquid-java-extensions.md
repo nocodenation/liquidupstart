@@ -280,13 +280,29 @@ build that did all of it said only "succeeded but produced no .nar". Because the
 those clones and hold `/git-secrets`, that was a path from the credential-free builder to the
 credential holders.
 
-Two legs are closed as of 2026-10-04, by the operator's decision of the same day: `/repos` is mounted
+Three legs are closed as of 2026-10-05, by the operator's decision of 2026-10-04: `/repos` is mounted
 **read-only** — `build.sh` copies the source out into `/tmp` and never writes there, so nothing is
-lost — and Maven runs as an unprivileged `builder` user, which the image measures as unable to write
-`/opt/builder` or `/nar_extensions`. B6-1 to B6-4 hold it.
+lost — Maven runs as an unprivileged `builder` user, and the drop directory is mounted under a
+root-only parent. B6-1 to B6-4 hold it.
+
+**The drop directory took a second attempt, and the first was a false green.** The case was written
+against the image's own `/nar_extensions`, root-owned and mode 755, and passed. A real installation
+mounts the host directory over it, and `config/scripts/start/liquid.sh:85` makes that one `chmod 777`
+— Liquid runs as nifi and rootless Docker leaves the bind mount owned by container root, which is
+blocker 4 of the 2026-09-28 review. Measured against a 777 mount on 2026-10-05: the build user wrote
+a bundle into the load path and deleted the quarantine directory. That is a bundle reaching NiFi's
+autoloader **without ever passing narcheck** — blocker 6 of the same review, by the one route the
+intruder check exists to catch.
+
+What closes it is not the leaf's mode, which belongs to the host, but the parent's, which belongs to
+the image: the mount target moved to `/deploy/nar_extensions` with `/deploy` root-owned and mode 700,
+so the build user cannot traverse to it. Measured: it can neither write nor list it; root can. The
+case now mounts a 777 directory on purpose, and against the previous commit it fails with
+`drop: false, quarantineSurvives: false`.
 
 **One leg is deliberately left open and is recorded in `BACKLOG.md`:** the shared `/m2` stays
-writable, so build-time code can still plant an artifact that a later build resolves. Closing it
+writable, so build-time code can still plant an artifact that a later build resolves. It is the last
+of the four, and the only one the operator's decision left standing. Closing it
 means a per-build cache — every build re-downloads, so seconds become minutes and the network is
 needed every time — or a read-only pre-seeded cache, which refuses any dependency nobody seeded. The
 decision was to take the two cheap legs now and price the third separately.

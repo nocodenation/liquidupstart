@@ -17,11 +17,27 @@ RUN apt-get update \
 # `build.sh` itself still runs as root: it has to read /repos, write the drop
 # directory and run the check. Only the Maven call is dropped to this user, so
 # what the author's code can reach is what this user can reach. Measured in the
-# image: /opt/builder and /nar_extensions are root-owned and mode 755, so they
-# are already closed to it; /repos is mounted read-only in compose.yml.
+# image: /opt/builder is root-owned and mode 755, so it is already closed to it,
+# and /repos is mounted read-only in compose.yml.
+#
+# **The drop directory needed more than its own mode.** The first version of this
+# relied on /nar_extensions being root-owned and 755 in the image -- which it is,
+# until compose mounts the host directory over it, and
+# `config/scripts/start/liquid.sh:85` makes that one `chmod 777` because Liquid
+# runs as nifi and rootless Docker leaves the bind mount owned by container root
+# (blocker 4 of the 2026-09-28 review). Measured against a 777 mount, the build
+# user wrote a bundle into the load path and deleted the quarantine directory --
+# so a bundle could reach NiFi's autoloader without ever passing narcheck, which
+# is blocker 6 of that same review.
+#
+# Traversal is decided by the parent, and the parent is in this image rather than
+# on the host. So the mount target moved under a root-only directory: the leaf
+# keeps whatever mode the host gives it, and the build user cannot reach it at
+# all. Measured: `builder` cannot write it and cannot even list it; root can.
 RUN useradd -r -u 1500 -m -d /home/builder builder
 
-RUN mkdir -p /opt/builder /repos /nar_extensions /m2 /liquid/logs
+RUN mkdir -p /opt/builder /repos /deploy/nar_extensions /m2 /liquid/logs \
+    && chmod 700 /deploy
 
 COPY build.sh /opt/builder/build.sh
 COPY BuildServer.java /opt/builder/BuildServer.java

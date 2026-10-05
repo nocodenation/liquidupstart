@@ -32,7 +32,7 @@ const CREDENTIAL_KEYS = envExampleText()
 
 test('B1-1 the working mounts are declared', () => {
   expect(block).toContain('./volumes/repos:/repos');
-  expect(block).toContain('./volumes/nar_extensions:/nar_extensions');
+  expect(block).toContain('./volumes/nar_extensions:/deploy/nar_extensions');
 });
 
 test('B1-1 the dependency cache lives under volumes/', () => {

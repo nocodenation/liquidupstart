@@ -2,7 +2,10 @@
 set -eu
 
 REPOS=/repos
-DROP=/nar_extensions
+# Under a root-only /deploy, so the unprivileged build user cannot reach it: the
+# host directory this is mounted from is `chmod 777` by liquid.sh and its own mode
+# therefore closes nothing. See the Dockerfile for the measurement.
+DROP=/deploy/nar_extensions
 CACHE=/m2
 LIQUID_LOGS=/liquid/logs
 # What a bundle is judged against, and what does the judging. Both are mounted:

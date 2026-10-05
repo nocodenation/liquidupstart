@@ -7,7 +7,7 @@
  *           multi-module author pom keeps its artefacts in `nar/target`, so a
  *           leftover `nar/target/old-stale-0.9.nar` from the source tree came
  *           back as `built old-stale-0.9.nar` / `wrote
- *           /nar_extensions/old-stale-0.9.nar` / HTTP 200 -- an artefact nobody
+ *           /deploy/nar_extensions/old-stale-0.9.nar` / HTTP 200 -- an artefact nobody
  *           built in this run, deployed into the live drop directory. A project
  *           that produces several silently deployed one of them.
  * Given:    `liquidupstart/nar-builder:latest` with `build.sh` mounted in from
@@ -49,7 +49,7 @@ beforeAll(() => {
     '-v', `${BUILD}:/probe/build.sh:ro`,
     '--entrypoint', 'sh', IMAGE, '-c',
     `
-    mkdir -p /liquid/logs /liquid/api /repos /nar_extensions /stub
+    mkdir -p /liquid/logs /liquid/api /repos /deploy/nar_extensions /stub
     printf 'nifi_version=2.11.0\\njava_version=21.0.12+10-LTS\\n' > /liquid/api/runtime
     openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 1 \\
       -nodes -subj /CN=liquid >/dev/null 2>&1
@@ -83,15 +83,15 @@ MVN
 
     echo "== stale =="
     mk stale-proj; MVN_MAKES="" sh /probe/build.sh build stale-proj 2>&1
-    echo "dropAfterStale=[$(ls -A /nar_extensions | tr '\\n' ' ')]"
+    echo "dropAfterStale=[$(ls -A /deploy/nar_extensions | tr '\\n' ' ')]"
 
     echo "== several =="
     mk two-proj; MVN_MAKES="a-1.0.0.nar b-1.0.0.nar" sh /probe/build.sh build two-proj 2>&1
-    echo "dropAfterSeveral=[$(ls -A /nar_extensions | tr '\\n' ' ')]"
+    echo "dropAfterSeveral=[$(ls -A /deploy/nar_extensions | tr '\\n' ' ')]"
 
     echo "== one =="
     mk one-proj; MVN_MAKES="fresh-1.0.0.nar" sh /probe/build.sh build one-proj 2>&1
-    echo "dropAfterOne=[$(ls -A /nar_extensions | tr '\\n' ' ')]"
+    echo "dropAfterOne=[$(ls -A /deploy/nar_extensions | tr '\\n' ' ')]"
     `
   ]).output;
 }, 900_000);
@@ -132,7 +132,7 @@ describe('B5-24 while an ordinary build still deploys', () => {
   test('B5-24 the counterpart: one artefact goes through', () => {
     const s = section('one');
     expect(s).toContain('built fresh-1.0.0.nar');
-    expect(s).toContain('wrote /nar_extensions/fresh-1.0.0.nar');
+    expect(s).toContain('wrote /deploy/nar_extensions/fresh-1.0.0.nar');
     expect(s).toContain('dropAfterOne=[fresh-1.0.0.nar ]');
   });
 });

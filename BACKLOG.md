@@ -14,8 +14,10 @@ are kept under their own heading below rather than mixed in.
 which can write it. So a pom, a plugin or a dependency can plant an artifact that **every later
 build** resolves from — persistence that survives until somebody clears the directory.
 
-This is the third of B1's three legs, 2026-10-01 review. The other two are closed: `/repos` is
-read-only and `/opt/builder` is unreachable to the build user (B6-1 to B6-4). The operator decided on
+This is the last of B1's **four** legs, 2026-10-01 review — the entry said three on 2026-10-04 and was
+wrong, because the drop directory had been recorded as closed when it was not. The other three are
+closed: `/repos` is read-only, `/opt/builder` is unreachable to the build user, and the drop directory
+is mounted under a root-only parent since 2026-10-05 (B6-1 to B6-4). The operator decided on
 2026-10-04 to take those two and price this one separately, because closing it costs build capability
 rather than configuration:
 

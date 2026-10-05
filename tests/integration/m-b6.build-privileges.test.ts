@@ -60,11 +60,22 @@ const BUILD_SH = join(repoRoot, 'config/nar_builder/build.sh');
 const work = mkdtempSync(join(tmpdir(), 'm-b6-privileges-'));
 const repos = join(work, 'repos');
 const cache = join(work, 'm2');
+// 777, because that is what `config/scripts/start/liquid.sh:85` makes it on a
+// real installation -- Liquid runs as nifi and rootless Docker leaves the bind
+// mount owned by container root, which is blocker 4 of the 2026-09-28 review.
+// The first version of this file mounted nothing here and so measured the
+// image's own root-owned 755 directory: the refusal passed for the wrong reason,
+// and in production the build user could write the load path. Corrected
+// 2026-10-05, with the measurement in the block header.
+const drop = join(work, 'nar_extensions');
 const probe = join(work, 'probe.sh');
 
 mkdirSync(join(repos, 'victim', '.git'), { recursive: true });
 writeFileSync(join(repos, 'victim', '.git', 'config'), '[core]\n');
 mkdirSync(cache, { recursive: true });
+mkdirSync(join(drop, 'refused'), { recursive: true });
+chmodSync(drop, 0o777);
+chmodSync(join(drop, 'refused'), 0o777);
 
 // One container, every question, so the file costs one `docker run`. The script
 // is built from plain string literals rather than a template literal, because
@@ -81,7 +92,7 @@ const PROBE =
     "# negative reading satisfied by the mechanism being absent.",
     "if su builder -s /bin/sh -c true 2>/dev/null; then have_user=yes; else have_user=no; fi",
     "echo \"builder-usable: ${have_user}\"",
-    "for t in /repos/victim /opt/builder /nar_extensions /m2; do",
+    "for t in /repos/victim /opt/builder /deploy/nar_extensions /m2; do",
     "  if [ \"$have_user\" = no ]; then",
     "    echo \"builder-writes ${t}: no-such-user\"",
     "  elif su builder -s /bin/sh -c \"touch ${t}/b6-probe 2>/dev/null\"; then",
@@ -94,6 +105,13 @@ const PROBE =
     "  echo \"builder-reads /repos: yes\"",
     "else",
     "  echo \"builder-reads /repos: no\"",
+    "fi",
+    "if [ \"$have_user\" = no ]; then",
+    "  echo \"quarantine-removed: no-such-user\"",
+    "elif su builder -s /bin/sh -c 'rm -rf /deploy/nar_extensions/refused 2>/dev/null'; then",
+    "  echo \"quarantine-removed: yes\"",
+    "else",
+    "  echo \"quarantine-removed: refused\"",
     "fi",
     "if touch /repos/victim/root-probe 2>/dev/null; then",
     "  echo \"root-writes /repos: yes\"",
@@ -121,6 +139,7 @@ beforeAll(() => {
     'docker', 'run', '--rm',
     '-v', `${repos}:/repos:ro`,
     '-v', `${cache}:/m2`,
+    '-v', `${drop}:/deploy/nar_extensions`,
     '-v', `${probe}:/probe.sh:ro`,
     '--entrypoint', '/bin/sh',
     IMAGE, '/probe.sh'
@@ -155,9 +174,21 @@ describe('B6-1 build-time code cannot reach what it has no business with', () =>
     expect({ builder: says('builder-writes /opt/builder: refused') }).toEqual({ builder: true });
   });
 
-  test('B6-1 and it cannot write the load path directly', () => {
-    // build.sh, which is root, is what puts a judged bundle there.
-    expect({ drop: says('builder-writes /nar_extensions: refused') }).toEqual({ drop: true });
+  test('B6-1 and it cannot write the load path, which is mounted 777', () => {
+    // build.sh, which is root, is what puts a judged bundle there. The leaf's
+    // own mode closes nothing -- the host directory is 777 and this case mounts
+    // it that way on purpose. What closes it is the parent: /deploy is
+    // root-owned and 700 in the image, and traversal is the parent's decision.
+    //
+    // Measured before that move, against the same 777 mount: "builder writes the
+    // 777 drop directory: YES" and "builder removes the quarantine: YES" -- so a
+    // bundle could reach NiFi's autoloader without passing narcheck, which is
+    // blocker 6 of the 2026-09-28 review, by the one route the intruder check
+    // was added to catch.
+    expect({
+      drop: says('builder-writes /deploy/nar_extensions: refused'),
+      quarantineSurvives: says('quarantine-removed: refused')
+    }).toEqual({ drop: true, quarantineSurvives: true });
   });
 });
 

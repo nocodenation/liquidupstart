@@ -190,7 +190,10 @@ MVN
       export PATH=/stub:$PATH
       # A drop directory that is a regular file: the deploy step fails and the
       # script leaves under set -e, which is the route with no cleanup.
-      rm -rf /nar_extensions && printf 'x\\n' > /nar_extensions
+      # /deploy is created by the image this case does not rebuild -- it runs
+      # against liquidupstart/nar-builder:latest with build.sh mounted in, which
+      # is S9a. Made here so the sabotage does not depend on the image's age.
+      mkdir -p /deploy && rm -rf /deploy/nar_extensions && printf 'x\\n' > /deploy/nar_extensions
       before="$(ls -d /tmp/tmp.* 2>/dev/null | wc -l)"
       sh /probe/build.sh build p >/dev/null 2>&1
       echo "buildExit=$?"

@@ -377,7 +377,11 @@ services:
       # credential-free container to the containers that hold /git-secrets.
       # B1 of the 2026-10-01 review.
       - ./volumes/repos:/repos:ro
-      - ./volumes/nar_extensions:/nar_extensions
+      # Under /deploy, which is root-only inside the image, because this host
+      # directory is `chmod 777` (liquid.sh:85) and would otherwise be writable
+      # by the unprivileged build user -- a bundle in the load path reaches
+      # NiFi's autoloader without passing narcheck. B1 of the 2026-10-01 review.
+      - ./volumes/nar_extensions:/deploy/nar_extensions
       - ./volumes/nar_builder/m2:/m2
       - ./volumes/liquid/logs:/liquid/logs:ro
       # The deployment check, and what it judges against: the index of everything
