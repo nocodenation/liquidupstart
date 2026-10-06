@@ -441,9 +441,17 @@ container writes to, and NiFi picks it up within seconds. One that fails is move
    no Docker socket is mounted in your container and it is not in `nifi-app.log` either. Ask
    the operator to paste it when a bundle is missing and the API does not say why.
 
-A bundle in the drop directory is loaded within seconds, with no restart, and asking for one
-is a defect (FR29). A restart is needed only to **replace** a version already loaded, as step
-3 says, because the entrypoint's copy into `lib/` wins over the auto-load directory.
+A bundle in the inbox is loaded within seconds, with no restart, and asking for one is a defect
+(FR29). A restart is needed only to **replace** a version already loaded, as step 3 says, because
+the framework keeps the bundle it has already loaded under those coordinates for the life of the
+process: the promoted file is overwritten in the load directory and the running Liquid goes on
+serving the one it has.
+
+*Corrected 2026-10-05.* This read "because the entrypoint's copy into `lib/` wins over the
+auto-load directory", which the 2026-09-29 split made false: what passes the check is promoted
+into `${NIFI_HOME}/nar_extensions`, the auto-load directory itself, and nothing copies into `lib/`
+any more. `lib/` is read and never written — it is what a bundle is judged against, not where one
+is deployed. The reason given for the restart was wrong; the restart itself is not.
 
 ### 6.5 NAR Dependencies & ClassLoading (CRITICAL)
 When a NAR requires parent dependencies (e.g., SSL Context Service API), ALL NARs in the dependency chain must be dropped into `nar_extensions/` together.

@@ -65,7 +65,12 @@ ask() {
   if [ -n "${NAR_BUILD_API_PROBE_VERSION:-}" ]; then
     set -- "$@" -H "X-Nifi-Api-Probe-Version: ${NAR_BUILD_API_PROBE_VERSION}"
   fi
-  set -- "$@" -X "$method" --data-binary "$payload" "http://${PROXY}:${PORT}${path}"
+  # --data-raw, not --data-binary: the latter reads a leading `@` as a file
+  # reference, so a directory under /repos named `@something` was sent to the
+  # builder as that file's contents instead of as the path. Minor of the
+  # 2026-10-01 review, reproduced against a local echo server: `--data-binary
+  # "@acme"` sent the file's bytes, `--data-raw "@acme"` sent the literal.
+  set -- "$@" -X "$method" --data-raw "$payload" "http://${PROXY}:${PORT}${path}"
   set +e
   code="$(curl "$@" 2>"$errors")"
   curl_status=$?

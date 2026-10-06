@@ -254,7 +254,21 @@ version cannot be resolved, which fails at build time with `Could not resolve de
 and easy to give a next step. It did not record the other: the version **resolves and is newer than
 the one that loads**. A processor calling a method the newer API added then compiles cleanly and dies
 at runtime with `NoSuchMethodError`, when someone runs the flow. That is silent at build time, which
-is the failure class FR23 exists to prevent, so recording only the loud half understates it.
+is the failure class FR23 exists to prevent, so recording only the loud half understates it — and
+**stated exactly, 2026-10-05, it is silent at deployment too.**
+
+The deployment check resolves class *names*, never members. `narcheck.py` reads the
+`org.apache.nifi` types a class file names — its `CONSTANT_Class` entries and the types in its
+field and method descriptors and `Signature` attributes — and refuses the bundle when one of them
+lies in a package the `nifi-api` jar provides and is carried by neither the bundle, its declared
+parent chain, nor the library. A method that was **removed from a class that still exists** passes
+every one of those tests: the class name resolves, and nothing here looks at what the class
+contains. So a `NoSuchMethodError` of that shape reaches the canvas and then the flow.
+
+What the check does catch is the shape M-B3 measured: a class that is gone entirely, which is
+`NoClassDefFoundError` at instantiation — a 500 from
+`POST /nifi-api/process-groups/<id>/processors`, before the processor can be placed. D4 of the
+2026-10-01 review: this paragraph cited the error the check cannot see as its motivation.
 
 It is harmless today, and for a reason worth stating rather than trusting: NiFi raises `nifi-api` only
 when the API changes, so 2.11.0 shipping `nifi-api-2.10.0` *is* the statement that nothing changed.

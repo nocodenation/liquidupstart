@@ -711,6 +711,9 @@ carried.
 | B6-21 | Integration **unhappy** | A `deny` beats the `allow` for an address inside the allowed subnet | `allow <subnet>; deny all;` admitted the whole LAN on rootless Docker, because the published path arrives as the bridge gateway and the gateway is inside the subnet |
 | B6-22 | Integration | The gateway is asked for, not assumed | Docker puts it at the start of the **ip range**, not at the subnet's `.1`. The first version of the repair denied `.1` and would have been inert |
 | B6-23 | Integration | What a host request arrives as, recorded rather than assumed | `192.168.65.1` on Docker Desktop, the bridge gateway on rootless Linux. The exposure is host-dependent and the record says so |
+| B6-24 | Unit **unhappy** | A bundle that declares more than the limit is refused unread | `bundle_classes` held every class file's bytes with no cap. The largest real bundle declares 187.2 MB, so the limit is 512 MiB |
+| B6-25 | Unit **unhappy** | A path beginning with `@` is sent as a path | `--data-binary` reads a leading `@` as a file reference, so a directory named `@something` was sent as that file's contents |
+| B6-26 | Unit | A key a test run may flip is in the contract | `NAR_BUILDER_TEST_HOOKS` was declared only in `compose.yml`, and at 1 the builder honours two headers from any caller past the vhost |
 
 #### Detail per case
 
@@ -797,6 +800,25 @@ carried.
 | **Test data** | A throwaway network on `10.231.91.0/24` with `--ip-range 10.231.91.128/25`, which is the arrangement `compose.yml` uses and is also what moves the gateway. A stub upstream under the alias `nar_builder`. Two nginx containers from one shape, one denying a pinned in-subnet address and one not — the control lives inside the probe, so both readings come from one run against one network. The first attempt pinned `.5` and docker had already given it to the fourth container: `Address already in use`, which is why the range is restricted. |
 | **Measured** | `without-denied-address=200`, `with-denied-address=403`, `with-other-address=200`, `with-no-header=403`. |
 | **Covers** | S3 of the 2026-10-01 review, NFR1. |
+
+#### B6-24 to B6-26 — three minors, and what each one needed measuring for
+
+| | |
+|---|---|
+| **M7** | `bundle_classes` keeps every class file's bytes at once so the constant pool can be parsed, and had no cap: a bundle could ask the process for as much as its central directory declared. It fails closed on a crash, so this is a resource question rather than a correctness one. **The number was measured, not chosen:** over all 118 NARs in the stock image the largest declares **187.2 MB** of classes — `nifi-aws-nar-2.11.0.nar` — so 512 MiB is 2.7 times the worst thing this stack ships. A lower limit would refuse that bundle, and a false refusal is what the documents call worse than no check at all. The budget is read off the central directory before anything is unpacked. |
+| **M7's fixture costs nothing** | 600 MB of zero bytes, deflated: 597 KB on disk and 600 MB declared. Since the limit is reached from the declaration, the bytes never have to exist. The counterpart runs in the image, so "the limit does not refuse what we ship" is measured rather than argued. |
+| **M8** | `--data-binary` reads a leading `@` as a file reference, so a directory under `/repos` named `@something` was sent to the builder as that file's contents. One word, `--data-raw`. **The premise needed a receiver:** the first version of the case traced curl against a port nothing listened on, where curl sends nothing and the trace shows nothing — green for no reason. A one-request HTTP server writes down what each flag actually put on the wire: `binary=b'LEAKED\n'`, `raw=b'@acme'`. |
+| **M3** | `NAR_BUILDER_TEST_HOOKS` was declared only in `compose.yml`, and `.env.example` is this project's contract. At 1 the builder honours `X-Liquid-Host` and `X-Nifi-Api-Probe-Version` from any caller that gets past the vhost, so a run that leaves it set lets a later caller point the version probe at another host — and the build is then compiled against whatever that host reports. It is in the contract now, under a banner the dashboard turns into a hidden entry: it is documentation, not a setting anyone should reach for. |
+| **Measured against the unfixed files** | 4 fail / 3 pass. The three passes are the premises — that the fixture declares more than it costs, what curl does with each flag, and that the largest shipped bundle is permitted. |
+| **Covers** | M7, M8 and M3 of the 2026-10-01 review, NFR2. |
+
+#### D1 and D4 — two documents that described a system that had changed
+
+| | |
+|---|---|
+| **D1** | `SKILL.md` §6.4 said a restart is needed to replace a loaded version "because the entrypoint's copy into `lib/` wins over the auto-load directory". The 2026-09-29 split made that false: what passes the check is promoted into `${NIFI_HOME}/nar_extensions`, the auto-load directory itself, and nothing copies into `lib/` any more — `lib/` is read and never written, it is what a bundle is judged against. The restart is still needed, for a different reason: the framework keeps the bundle it has already loaded under those coordinates for the life of the process. The reason was wrong; the instruction was not. |
+| **D4** | §3 cited `NoSuchMethodError` as the motivation for the check. The check resolves class **names**, never members: a method removed from a class that still exists passes every test it makes, because the class name resolves and nothing looks at what the class contains. What it does catch is the shape M-B3 measured — a class gone entirely, which is `NoClassDefFoundError` at instantiation, a 500 from `POST /nifi-api/process-groups/<id>/processors` before the processor reaches the canvas. The paragraph cited the one error the check cannot see. |
+| **Why neither has a case** | Both are sentences. The behaviour each describes is already held: the promotion by B6-14 to B6-16, and what the check resolves by B4-1 and B6-10 to B6-13. A case asserting a paragraph's wording would hold the document to itself. |
 
 ---
 

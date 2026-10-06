@@ -9,6 +9,21 @@ import zlib
 NIFI_PREFIX = "org/apache/nifi/"
 BUNDLED_DIRS = ("NAR-INF/bundled-dependencies/", "META-INF/bundled-dependencies/")
 
+# How many bytes of class files one bundle may declare before it is refused
+# unread.
+#
+# `bundle_classes` holds every class file's bytes at once, so the constant pool
+# can be parsed, and had no cap: a bundle could ask this process for as much
+# memory as its central directory declared. Measured over the stock image, the
+# largest real bundle declares **187.2 MB** of classes -- nifi-aws-nar-2.11.0.nar
+# -- so 512 MiB is 2.7 times the worst thing this stack actually ships. A lower
+# number would refuse that bundle, and a false refusal is what the documents
+# themselves call worse than no check.
+#
+# Read off the central directory, before anything is unpacked, so a declaration
+# of 600 MB costs nothing to refuse. Minor of the 2026-10-01 review.
+MAX_CLASS_BYTES = 512 << 20
+
 FIXED_WIDTH = {
     3: 4, 4: 4, 9: 4, 10: 4, 11: 4, 12: 4, 17: 4, 18: 4,
     5: 8, 6: 8,
@@ -201,17 +216,36 @@ def bundle_class_names(path):
     return names
 
 
+def _declared_class_bytes(zf):
+    return sum(i.file_size for i in zf.infolist() if i.filename.endswith(".class"))
+
+
 def bundle_classes(path):
     """Every class the NAR carries, as {name: (data, where)}, its own and its bundled jars'."""
     with open(path, "rb") as fh:
         data = fh.read()
     carried = {}
-    root = _open_zip(data, os.path.basename(path))
-    for name in sorted(zf_names(root)):
-        carried[name[:-6]] = (_read(root, name, "%s!%s" % (os.path.basename(path), name)),
-                              "%s!%s" % (os.path.basename(path), name))
+    base = os.path.basename(path)
+    root = _open_zip(data, base)
+    # The budget is taken from the central directory and checked before each read,
+    # so a bundle that declares more than MAX_CLASS_BYTES is refused without any
+    # of it being unpacked.
+    budget = _declared_class_bytes(root)
     for jar in sorted(_bundled_jars(root)):
-        where = "%s!%s" % (os.path.basename(path), jar)
+        where = "%s!%s" % (base, jar)
+        budget += _declared_class_bytes(_open_zip(_read(root, jar, where), where))
+        if budget > MAX_CLASS_BYTES:
+            break
+    if budget > MAX_CLASS_BYTES:
+        raise Unreadable(
+            "%s: the classes it carries declare %d bytes, past the %d-byte limit; "
+            "nothing here will unpack it" % (base, budget, MAX_CLASS_BYTES)
+        )
+    for name in sorted(zf_names(root)):
+        carried[name[:-6]] = (_read(root, name, "%s!%s" % (base, name)),
+                              "%s!%s" % (base, name))
+    for jar in sorted(_bundled_jars(root)):
+        where = "%s!%s" % (base, jar)
         inner = _open_zip(_read(root, jar, where), where)
         for name in sorted(zf_names(inner)):
             carried[name[:-6]] = (_read(inner, name, "%s!%s" % (where, name)),
