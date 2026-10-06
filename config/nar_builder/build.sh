@@ -55,6 +55,25 @@ drop_is_closed() {
   return 0
 }
 
+# A directory Maven can actually read.
+#
+# `mktemp -d` makes it `700 root root`, and since Maven runs as BUILD_USER it
+# cannot traverse that at all. Measured in the running builder: `cat` of a file
+# inside gives `Permission denied`, and `mvn -f <that>/pom.xml` then fails with
+# "POM file ... does not exist" and no `[ERROR]` line -- so the refusal printed
+# `Maven said:` followed by nothing. Every real `nar-build` was broken this way
+# from 1527c86 until here, and no fixture could see it: the suite drives build.sh
+# with a stub mvn, which never reads the file.
+#
+# Both temporary directories go through this, rather than a chown beside each
+# `mktemp`, so a third one cannot be added without it.
+work_dir_for_build() {
+  d="$(mktemp -d)"
+  chown -R "$BUILD_USER" "$d" 2>/dev/null || true
+  chmod 755 "$d" 2>/dev/null || true
+  printf '%s' "$d"
+}
+
 run_maven() {
   if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
     su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
@@ -74,7 +93,7 @@ API_ERROR=""
 resolve_api_version() {
   nifi="$1"
   probe_version="${NAR_BUILD_API_PROBE_VERSION:-$nifi}"
-  probe="$(mktemp -d)"
+  probe="$(work_dir_for_build)"
 
   cat > "${probe}/pom.xml" <<POM
 <?xml version="1.0" encoding="UTF-8"?>
@@ -375,7 +394,7 @@ NOSPI
   api="$(field nifi_api_version "$TARGET")"
   major="$(field java_major "$TARGET")"
 
-  work="$(mktemp -d)"
+  work="$(work_dir_for_build)"
   part=""
   # EXIT as well as the signals. `set -e` is on, so any command that fails
   # between here and the end left $work in /tmp -- a cp -a onto a full /tmp left
@@ -477,8 +496,8 @@ NOTCLOSED
 
   log="${work}/maven.log"
   # Maven runs as the unprivileged build user, because everything it runs is the
-  # author's: the pom, its plugins and its dependencies. The work tree and the
-  # cache are handed over for the duration; nothing else is.
+  # author's: the pom, its plugins and its dependencies. The tree is handed over
+  # again here, because `cp -a` above has just put root-owned files into it.
   chown -R "$BUILD_USER" "$work" 2>/dev/null || true
   if [ -n "$module" ]; then
     set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" -pl "$module" -am package
