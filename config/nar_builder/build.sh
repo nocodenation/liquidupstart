@@ -137,7 +137,28 @@ POM
 }
 
 resolve_target() {
-  if ! curl -sk --max-time 10 -o /dev/null "https://${LIQUID_HOST}:${LIQUID_PORT}/nifi" 2>/dev/null; then
+  # The Host header, and -f, and both were measured rather than reasoned.
+  #
+  # Without the header NiFi answers **400** -- `NIFI_WEB_PROXY_HOST` makes it
+  # refuse a request whose Host it does not know -- and this gate had no `-f`, so
+  # curl exited 0 and a 400 counted as "Liquid is up". The gate established that
+  # a TLS server answered on the port, not that Liquid did. With the header the
+  # same request answers 301, and with `-f` a 400 is refused: measured on the
+  # running stack, `direct no Host: 400, exit 0` against `direct with Host: 301,
+  # exit 0` and `no Host with -f: exit 22`. M4 of the 2026-10-01 review.
+  #
+  # **The route stays direct, and that is a decision rather than an oversight.**
+  # CLAUDE.md says container-to-container calls go through the proxy with a Host
+  # header, and its reason is that `X.localhost` names resolve only in the
+  # operator's browser. This call uses `liquid:8833`, a compose service name, so
+  # it was never doing the thing the rule exists to prevent. Asking nginx whether
+  # Liquid is up would also make a readiness question about one service depend on
+  # another: with nginx down and Liquid up, a build would refuse for the wrong
+  # reason. Measured through the proxy for completeness -- also 301, so the hop
+  # buys nothing here.
+  if ! curl -fsk --max-time 10 -o /dev/null \
+       -H "Host: liquid.localhost:${LIQUID_PORT}" \
+       "https://${LIQUID_HOST}:${LIQUID_PORT}/nifi" 2>/dev/null; then
     cat <<UNREACHABLE
 nar-build refused: the target version could not be read, because Liquid does not
 answer at ${LIQUID_HOST}:${LIQUID_PORT}.
@@ -203,6 +224,8 @@ org.apache.nifi:nifi-utils:${NAR_BUILD_API_PROBE_VERSION:-$nifi}, and this build
 guess it. NiFi versions nifi-api on its own line — ${nifi} does not ship nifi-api ${nifi} —
 and a NAR compiled against an API newer than the one Liquid loads compiles cleanly and
 fails at runtime with NoSuchMethodError, which nobody sees until a flow runs.
+${nifi} was read from ${version_source}: /liquid/api/runtime is written by Liquid on
+every start, while a log line is whatever the oldest unrotated log still says.
 Maven said:
 ${API_ERROR}
 Add a pom.xml to the source directory naming the nifi-api version you mean — nar-build uses
@@ -364,6 +387,34 @@ the clone it names.
 NOSOURCE
     return 4
   fi
+
+  # Where that path actually leads, not how it is spelled.
+  #
+  # The case above refuses an absolute path and `..`, and that is a check on the
+  # *text*. A symlink needs neither: measured, `/repos/esc -> /outside` with the
+  # body `esc/api` passed every textual test, and a project outside the workspace
+  # was built and deployed as `escaped-nar-1.0.0.nar`. The agents can write
+  # /repos, so they can plant the symlink. Minor of the 2026-10-01 review.
+  #
+  # And the workspace root itself is refused with it. `.` passed the text check
+  # and was caught one guard later only because the root happened to hold no
+  # pom.xml -- put one there, which any agent can do, and `build .` copies every
+  # clone under /repos into the work tree and builds whatever that pom says. The
+  # refusal then reports one source while having taken them all.
+  resolved="$(cd "$src" 2>/dev/null && pwd -P || true)"
+  case "${resolved}/" in
+    "${REPOS}"/?*/) ;;
+    *)
+      cat >&2 <<OUTSIDE
+nar-build refused: /repos/${rel} leads to ${resolved:-nowhere}, which is not a
+directory inside the workspace.
+A path is judged by where it goes, not by how it is written: a symlink out of
+/repos is refused, and so is /repos itself -- give the directory of one
+processor. Run git-repo-info <repository> to find where a clone is.
+OUTSIDE
+      return 4
+      ;;
+  esac
 
   if [ ! -f "${src}/pom.xml" ]; then
     if [ -z "$(find "${src}/src/main/java" -name '*.java' -type f 2>/dev/null | head -1)" ]; then
@@ -639,10 +690,39 @@ REFUSED
       return 2
     fi
   else
-    # Say it rather than deploy silently unchecked. A check that quietly does not
-    # run is worse than none: everything downstream reads a deployment as proof
-    # the bundle was judged.
-    out "Warning: ${NAR_CHECK} or ${LIQUID_INDEX}/lib-classes.txt is missing; ${base} is deployed unchecked."
+    # Refused, not deployed with a warning.
+    #
+    # The warning that stood here said the bundle "is deployed unchecked", and it
+    # was honest about what it did -- but everything downstream reads a file in
+    # the load path as proof that it was judged, and NiFi loads it within seconds
+    # either way. A check that does not run must not end in a deployment; that is
+    # the shape S4 removed from narcheck two days ago, where an unjudgeable
+    # library produced a pass.
+    #
+    # `config/liquid/entrypoint.sh` already told the operator this is what
+    # happens -- "The NAR builder cannot judge bundles and will refuse them all"
+    # -- and it was the one sentence of the two that was wrong. D2 of the
+    # 2026-10-01 review: one of them had to change, and the entrypoint had the
+    # right intent.
+    #
+    # When this is reached: Liquid is up, because the probe above answered, and
+    # yet the index is not there -- so Liquid could not write it. S8's condition,
+    # and the operator's remedy is the same one.
+    cat >&2 <<NOINDEX
+
+nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
+${NAR_CHECK} or ${LIQUID_INDEX}/lib-classes.txt is missing, and that index is what
+says which classes the running Liquid can load. Deploying without it would put a
+bundle in the load path that nothing has checked, and Liquid loads what is there
+within seconds.
+Liquid writes the index on every start. Ask the operator to look at whether it
+could: docker compose logs liquid | grep "load index", and whether
+volumes/liquid/api is writable by the nifi user.
+NOINDEX
+    rm -f "$part"
+    part=""
+    rm -rf "$work"
+    return 2
   fi
 
   mv "$part" "${DROP}/${base}"
