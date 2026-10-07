@@ -68,13 +68,24 @@ const BAD_NAR = 'probe-mismatch-1.0.0.nar';
 const WEB_PACKAGE = WEB_CLASS.slice(0, WEB_CLASS.lastIndexOf('/'));
 const CONTROLLER_PACKAGE = MISSING_CLASS.slice(0, MISSING_CLASS.lastIndexOf('/'));
 const FAKE_API = 'nifi-api-0.0.0-probe.jar';
-const FAKE_API_ENTRY = 'org/apache/nifi/processor/AbstractProcessor.class';
+// The classes the judged package genuinely has to provide. One entry was not
+// enough: declaring org/apache/nifi/processor judged makes every reference in it
+// judged too, and the bundle's own onTrigger descriptor names ProcessContext and
+// ProcessSession -- narcheck has read descriptors since 63a1ce7. With only
+// AbstractProcessor here the bundle was refused for those two, which is not what
+// this case is about and is why it has never passed. Nothing under
+// org/apache/nifi/controller, which is the package the case needs unjudged.
+const FAKE_API_ENTRIES = [
+  'org/apache/nifi/processor/AbstractProcessor.class',
+  'org/apache/nifi/processor/ProcessContext.class',
+  'org/apache/nifi/processor/ProcessSession.class'
+];
 
 const lib = join(scratch(), 'b4-6-lib');
 const narrowLib = join(scratch(), 'b4-6-narrow-lib');
 mkdirSync(lib, { recursive: true });
 const staged = stageLib(lib);
-fakeApiJar(narrowLib, FAKE_API, [FAKE_API_ENTRY]);
+fakeApiJar(narrowLib, FAKE_API, FAKE_API_ENTRIES);
 
 const web = buildNar(
   '.b4-web',

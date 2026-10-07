@@ -56,7 +56,12 @@ test('B4-1 nar-build produced the bundle the case reads', () => {
 
 test('B4-1 the parser reports exactly the org/apache/nifi classes the source uses', () => {
   // Descriptor-only types are part of that set since 2026-09-28; see below.
-  expect(referenceSet(classFile)).toEqual(new Set([...EXPECTED, ...DESCRIPTOR_ONLY]));
+  //
+  // Compared as a sorted array, because that is what `referenceSet` returns --
+  // `tests/lib/narcheckfixture.ts` declares it `: string[]` and has since it was
+  // written. The Set wrapper that stood here made every comparison false, so this
+  // case has never passed; it is in the stack tier, which nobody could run.
+  expect(referenceSet(classFile)).toEqual([...EXPECTED, ...DESCRIPTOR_ONLY].sort());
 });
 
 test('B4-1 a type named only in a signature is reported too', () => {

@@ -173,6 +173,13 @@ export function discardScratch(): void {
 // there -- reading only nifi-api would make the check look stricter than it is.
 export function stageLib(dest: string): Result {
   mkdirSync(dest, { recursive: true });
+  // The sandbox seeds a stand-in `nifi-api-0.0.0-probe.jar` so narcheck has a
+  // judged package at all (S4 of the 2026-10-01 review). Staging the real library
+  // supersedes it, and leaving it behind makes two files match the nifi-api-
+  // prefix -- which a case asserting "the distribution contributes exactly one"
+  // then reads as 2. Removed here rather than in each caller, so the invariant
+  // "this directory is the distribution's lib" lives in one place.
+  rmSync(join(dest, 'nifi-api-0.0.0-probe.jar'), { force: true });
   const tar = join(dest, '..', 'lib.tar');
   const r = sh([
     'sh',

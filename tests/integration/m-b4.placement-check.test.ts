@@ -50,6 +50,9 @@ import { PROBE_SOURCE } from '../lib/narfixture';
 stackGuard(['liquid', 'nar_builder']);
 
 const DROP = join(repoRoot, 'volumes/nar_extensions');
+// What the builder calls it, which is what its message names. Under a root-only
+// parent since 2026-10-05, so the build user cannot reach the load path.
+const DROP_IN_CONTAINER = '/deploy/nar_extensions';
 const BAD = 'probe-placement-bad-1.0.0.nar';
 // The artifact name comes from the directory when nar-build synthesises the
 // pom, and from the pom when the author ships one.
@@ -106,7 +109,17 @@ describe('B4-10 a sound bundle is deployed and loaded without a restart', () => 
     // The message this replaces said "Liquid loads NARs from /nar_extensions at
     // startup only. Ask the operator to restart it" -- printed to every agent,
     // and false. FR29 rested on it.
-    expect(good.build.output).toContain('autoloads');
+    //
+    // **The assertion used to be `toContain('autoloads')` and had stopped being
+    // satisfiable.** The paragraph was reworded when the inbox and the load
+    // directory were split: it now says Liquid *watches* the drop directory and
+    // judges what arrives there, which is what happens. "autoloads" was one verb
+    // in prose, and asserting a verb held the message to a phrasing rather than to
+    // a claim. What FR29 actually requires is the pair below -- the agent is told
+    // where the bundle landed and that no restart is needed, and is not told to
+    // restart.
+    expect(good.build.output).toContain(DROP_IN_CONTAINER);
+    expect(good.build.output).toMatch(/No restart, and none\s+should be asked for/);
     expect(good.build.output).not.toMatch(/restart it|docker compose restart liquid/);
   });
 });

@@ -98,7 +98,13 @@ test('B4-4 the message names the file, the class and the directory', () => {
   // about the line it names.
   const refusal = run.output.split('\n').find((l) => l.includes(DOTTED));
   expect(refusal).toBeTruthy();
-  expect(refusal).toContain(sb.load);
+  // The library, not the load directory: `check <nar> <lib>` is what the
+  // entrypoint runs (entrypoint.sh), and the refusal line names the directory it
+  // judged against -- structurally it can name no other. 56b8767 renamed the
+  // variable and this assertion followed the new name rather than the meaning,
+  // which is why it has never passed. The strictness the comment above exists for
+  // survives: the line is still found by the dotted class name.
+  expect(refusal).toContain(sb.lib);
   expect(run.output).toContain(BAD_NAR);
 });
 

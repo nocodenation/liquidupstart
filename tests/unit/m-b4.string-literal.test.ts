@@ -35,9 +35,16 @@ import {
 } from '../lib/narcheckfixture';
 
 const CLASS = 'org/nocodenation/probe/LiteralProcessor';
+// What the parser reports for LITERAL_SOURCE. Four names, not two: `onTrigger`
+// is declared `(ProcessContext, ProcessSession)`, so both types live in the
+// method descriptor, and narcheck has walked field and method descriptors and
+// Signature attributes since 63a1ce7 (2026-09-28). This constant was never
+// updated, so the case has never passed -- it sits in a tier nobody could run.
 const GENUINE = [
   'org/apache/nifi/logging/ComponentLog',
-  'org/apache/nifi/processor/AbstractProcessor'
+  'org/apache/nifi/processor/AbstractProcessor',
+  'org/apache/nifi/processor/ProcessContext',
+  'org/apache/nifi/processor/ProcessSession'
 ];
 
 const built = buildNar('.b4-literal', 'LiteralProcessor', LITERAL_SOURCE, 'b4-literal-nar-1.0.0.nar');
