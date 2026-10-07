@@ -46,6 +46,14 @@
  *           `java_version=21.0.5`. Each source carries its own `pom.xml`, so the
  *           Java and service-descriptor guards do not apply and the subject is
  *           the deploy step.
+ *
+ *           Since D2 the probe also supplies a checker that permits and an empty
+ *           `/liquid/api/lib-classes.txt`. A build that cannot be judged is refused
+ *           now rather than deployed with a warning, and in a throwaway container
+ *           neither the mounted checker nor Liquid's index is there -- so without
+ *           them every build here would measure D2 instead of this file's subject.
+ *           B6-29 and B6-30 are where the gate itself is measured, with the real
+ *           checker.
  * When:     Two builds overlap; a hand drop and a first-time quarantine arrive
  *           during a build; a build produces a bundle plus a test fixture; a
  *           build produces two genuine module bundles; a build fails.
@@ -88,6 +96,19 @@ const PROBE =
     "DROP=/deploy/nar_extensions",
     "mkdir -p /liquid/api /liquid/logs /repos",
     "printf \"nifi_version=2.6.0\\njava_version=21.0.5\\n\" > /liquid/api/runtime",
+    "# The deployment gate, stood down on purpose.",
+    "#",
+    "# Since D2 build.sh refuses with 2 when it cannot judge a bundle, instead of",
+    "# deploying it with a warning. The gate runs when /opt/builder/narcheck.py and",
+    "# the load index are both present -- in the stack narcheck is mounted from",
+    "# config/liquid/narcheck.py (compose.yml) and Liquid writes the index on every",
+    "# start, and in a throwaway container neither is there. This case is about",
+    "# project shapes, not about narcheck, so it supplies a checker that permits and",
+    "# an empty index rather than the real pair: an EMPTY file, because build.sh runs",
+    "# the checker as `python3 narcheck.py`, under which an empty file exits 0.",
+    "# B6-29 and B6-30 are where the real gate is measured, with the real checker.",
+    ": > /opt/builder/narcheck.py",
+    ": > /liquid/api/lib-classes.txt",
     "# The stubs are written OVER the real binaries rather than put first on PATH:",
     "# run_maven goes through `su`, and `su` resets PATH to the system default even",
     "# without `-`, so a stub in /stub was never found and the real Maven ran.",

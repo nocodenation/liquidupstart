@@ -25,6 +25,15 @@
  *           `stale-proj` where the stand-in produces nothing, `two-proj` where
  *           it produces `a-1.0.0.nar` and `b-1.0.0.nar`, and `one-proj` where
  *           it produces `fresh-1.0.0.nar`.
+ *
+ *           Two things the stand-in has to supply since the 2026-10-01 review was
+ *           answered. The TLS stand-in now needs a `nifi` path to answer, because
+ *           M4 gave the reachability probe `curl -f` and a 404 is a refusal; and
+ *           the probe supplies a checker that permits with an empty
+ *           `/liquid/api/lib-classes.txt`, because D2 made an unjudgeable build a
+ *           refusal. Without either, every build here refuses and the stale
+ *           artefact this file is about is never reached. B6-29 and B6-30 measure
+ *           the gate itself, with the real checker.
  * When:     `build.sh build <dir>` runs against each.
  * Then:     The stale artefact is gone before the build, several are refused by
  *           name, and a single one is still deployed.
@@ -52,8 +61,25 @@ beforeAll(() => {
     `
     mkdir -p /liquid/logs /liquid/api /repos /deploy/nar_extensions
     printf 'nifi_version=2.11.0\\njava_version=21.0.12+10-LTS\\n' > /liquid/api/runtime
+    # The deployment gate, stood down on purpose. Since D2 build.sh refuses with 2
+    # when it cannot judge a bundle, instead of deploying it with a warning; the gate
+    # runs when /opt/builder/narcheck.py and the load index are both there, which in
+    # the stack they are (narcheck mounted by compose.yml, the index written by Liquid
+    # on every start) and in a throwaway container neither is. This case is about a
+    # stale artefact in the source tree, not about narcheck, so it supplies a checker
+    # that permits and an empty index: an EMPTY file, because build.sh runs the
+    # checker as python3 narcheck.py, under which an empty file exits 0. B6-29 and
+    # B6-30 are where the real gate is measured, against the real checker.
+    : > /opt/builder/narcheck.py
+    : > /liquid/api/lib-classes.txt
     openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 1 \\
       -nodes -subj /CN=liquid >/dev/null 2>&1
+    # The reachability probe sends curl -f .../nifi since M4, so a 404 from the
+    # stand-in is a refusal now rather than a pass, and every build in this file
+    # refused with "Liquid does not answer". SimpleHTTPRequestHandler serves its own
+    # working directory, so the path has to exist there; a directory answers 301,
+    # which is what the running Liquid answers to the same request.
+    mkdir -p "$PWD/nifi"
     python3 - >/tmp/srv.log 2>&1 <<PY &
 import http.server, ssl
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

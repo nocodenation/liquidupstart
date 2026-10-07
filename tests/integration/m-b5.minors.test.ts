@@ -20,6 +20,11 @@
  * Given:    `ghcr.io/nocodenation/liquid-nifi:latest` and
  *           `liquidupstart/nar-builder:latest`, with `narcheck.py`,
  *           `entrypoint.sh` and `build.sh` mounted in from this checkout.
+ *           The stand-in answers a `nifi` path, which it did not have to before:
+ *           M4 gave the reachability probe `curl -f`, so the 404 it used to return
+ *           is a refusal now, and every build in this file refused with "Liquid
+ *           does not answer" until the path existed. A directory answers 301,
+ *           which is what the running Liquid answers to the same request.
  *           The corrupt bundle is a copy of the image's own
  *           `nifi-kafka-nar-2.11.0.nar` whose first bundled jar is stored
  *           uncompressed while both headers claim deflate -- the directory
@@ -168,6 +173,12 @@ describe('B5-27 a build that stops early takes its work directory with it', () =
       printf 'nifi_version=2.11.0\\njava_version=21.0.12+10-LTS\\n' > /liquid/api/runtime
       openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 1 \\
         -nodes -subj /CN=liquid >/dev/null 2>&1
+      # The reachability probe sends curl -f .../nifi since M4, so a 404 from the
+      # stand-in is a refusal now rather than a pass, and every build in this file
+      # refused with "Liquid does not answer". SimpleHTTPRequestHandler serves its own
+      # working directory, so the path has to exist there; a directory answers 301,
+      # which is what the running Liquid answers to the same request.
+      mkdir -p "$PWD/nifi"
       python3 - >/dev/null 2>&1 <<PY &
 import http.server, ssl
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

@@ -45,6 +45,14 @@
  *           synthesised, each with one class and a service descriptor; and
  *           `/repos/multi` whose pom lists the module `nar`, with
  *           `/repos/multi/nar/pom.xml` declaring it as parent.
+ *
+ *           Since D2 the probe also supplies a checker that permits and an empty
+ *           `/liquid/api/lib-classes.txt`. A build that cannot be judged is refused
+ *           now rather than deployed with a warning, and in a throwaway container
+ *           neither the mounted checker nor Liquid's index is there -- so without
+ *           them every build here would measure D2 instead of this file's subject.
+ *           B6-29 and B6-30 are where the gate itself is measured, with the real
+ *           checker.
  * When:     Each is built.
  * Then:     The Java package survives the copy; the two synthesised bundles are
  *           named apart; and the reactor root is copied with the module named by
@@ -82,6 +90,19 @@ const PROBE =
     "set -u",
     "mkdir -p /liquid/api /deploy/nar_extensions",
     "printf \"nifi_version=2.0.0\\njava_version=21.0.1\\n\" > /liquid/api/runtime",
+    "# The deployment gate, stood down on purpose.",
+    "#",
+    "# Since D2 build.sh refuses with 2 when it cannot judge a bundle, instead of",
+    "# deploying it with a warning. The gate runs when /opt/builder/narcheck.py and",
+    "# the load index are both present -- in the stack narcheck is mounted from",
+    "# config/liquid/narcheck.py (compose.yml) and Liquid writes the index on every",
+    "# start, and in a throwaway container neither is there. This case is about",
+    "# project shapes, not about narcheck, so it supplies a checker that permits and",
+    "# an empty index rather than the real pair: an EMPTY file, because build.sh runs",
+    "# the checker as `python3 narcheck.py`, under which an empty file exits 0.",
+    "# B6-29 and B6-30 are where the real gate is measured, with the real checker.",
+    ": > /opt/builder/narcheck.py",
+    ": > /liquid/api/lib-classes.txt",
     "cp \"$(command -v curl)\" /realcurl",
     "printf '#!/bin/sh\\nexit 0\\n' > \"$(command -v curl)\"; chmod 755 \"$(command -v curl)\"",
     "cat > \"$(command -v mvn)\" <<'MVN'",
