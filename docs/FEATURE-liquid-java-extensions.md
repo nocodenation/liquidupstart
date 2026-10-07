@@ -119,6 +119,47 @@ mistake is available here and is cheaper to avoid than to repeat.
   what passes into the load path — as a dot-file renamed into place, so a partial copy is never
   offered. It fails closed: if the watcher dies, nothing is promoted and nothing loads. FR30 holds
   for every route now, not for one of them. B5-28 to B5-32.
+
+  **Removal, written 2026-10-07.** Separating the two directories left the gap M6 of the
+  2026-10-01 review names: a bundle removed from `./volumes/nar_extensions` stays loaded,
+  and no way to take one out was written down. The cause is the separation itself. That
+  directory is the inbox, and the watcher reads *arrivals* in it, so deleting from it never
+  had any bearing on what Liquid loads. The load path is
+  `/opt/nifi/nifi-current/nar_extensions`, which the upstream image declares as a `VOLUME`,
+  so compose backs it with an **anonymous** Docker volume: not under `./volumes/`, not
+  browsable from the host, and out of reach of any `rm` run there.
+
+  Measured on the installed stack, 2026-10-07. Six judged bundles sat in the load path
+  while the inbox held one of them, `b1-noversion-nar-1.0.0.nar`; the catalogue at
+  `/nifi-api/flow/processor-types` reported all six, so the five with no inbox copy were
+  loaded all the same, and `docker compose restart liquid` kept every one of them —
+  `NarClassLoaders Loaded NAR file: ...work/nar/extensions/b3-a-nar-1.0.0.nar-unpacked`
+  at 12:56:08. The finding reproduces.
+
+  The procedure, run rather than reasoned:
+
+  ```bash
+  # Which bundles Liquid currently loads, and the one to take out:
+  docker compose exec liquid ls -A /opt/nifi/nifi-current/nar_extensions
+  docker compose exec liquid rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar
+  docker compose restart liquid
+  ```
+
+  Run against `pr10probe-nar-1.0.0.nar`: afterwards the catalogue reported the other five
+  and not that one, and `work/nar/extensions/pr10probe-nar-1.0.0.nar-unpacked` was **gone**
+  — NiFi removes the stale unpacked copy itself at boot. The second `rm` that the unpacked
+  copy seems to call for is therefore unnecessary, while the restart is required: NiFi
+  unloads nothing while it runs. That restart interrupts every flow the instance is
+  running, which is the operator's call and the reason this is a procedure rather than
+  something `nar-build` performs.
+
+  **A recreate keeps it, measured the same day.** The question was left open above until the
+  `liquid` image had to be rebuilt anyway, which made the measurement free: before
+  `docker compose up -d liquid` the load path held five bundles behind volume
+  `9c46e4f714a1`, and afterwards it held the same five behind the same volume, so compose
+  reattaches the anonymous volume rather than minting a new one. A recreate does not empty
+  the load path. **Still unmeasured:** `docker compose down` without `-v`, which stops the
+  whole stack and is a heavier intervention than this question is worth.
 - **FR31 — A deployment step that fails says so.** The copy in the entrypoint currently ends in
   `|| true`, so a failure is swallowed and Liquid starts without the processor with nothing to read.
   A step whose failure is invisible is worse than one that has none.

@@ -9,6 +9,69 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**Four milestone-A cases read the live installation without saying so, and are red in any bare
+checkout.** `tests/lib/paths.ts:5` computes `repoRoot` from the test file's own location, so in a
+worktree it is the worktree. The state these four assert is created only by
+`config/scripts/start/git.sh` — `volumes/_git-secrets` at lines 60-61, the shared `pre-push` hook at
+83, `known_hosts` at 141, `volumes/repos` mode 777 at 58-59 — and that script never ran there:
+
+- `tests/contract/m-a3.known-hosts.test.ts:32` and `:49` — A3-3, both halves.
+- `tests/contract/m-a4.clones-governed.test.ts:37` — A4-16.
+- `tests/integration/m-a1.workspace-dir.test.ts:65` — A1-4, on the mode.
+
+Measured 2026-10-07 while the whole default tier was run from the #10 worktree: 4 red there, and all
+four green in `/Users/christof/repos/liquidupstart`, where a start has run (`volumes/repos` 777,
+`volumes/_git-secrets` 700, `hooks/pre-push` 755). So the product is right and the cases carry an
+unstated precondition — they pass or fail on which directory the suite was started from, which is
+the one thing their headers do not mention.
+
+The repair is a computed precondition rather than a remembered rule, in the spirit of CLAUDE.md:
+`export const INSTALLED = existsSync(join(repoRoot, 'volumes', '_git-secrets'));` in
+`tests/lib/gitfixture.ts` — `git.sh:60` is the only thing that creates that directory, so its
+presence *is* the question "installation or bare checkout" — and `test.skipIf(!INSTALLED)` on the
+four. It also needs the three test headers to state the precondition, and the three signed-off
+detail blocks in `docs/TEST-SPEC-git-integration.md` (A1-4 at :359, A3-3 at :628, A4-16 at :1656) to
+record the skip as a decision rather than leave it silent.
+
+**And the installation is not the answer either, which is what makes this worth an entry.** Moving
+the run there satisfies those four and breaks ten others, because a release install has no `.git`
+and no `dashboard/node_modules`. Measured the same day, `tests/run.sh --system` from
+`~/.liquidupstart`: **919 pass / 10 fail / 1 error**, every failure milestone-A and none from the
+Java/NAR work.
+
+- No `.git`: `tests/component/m-a6.operator-repository.test.ts:30` wants
+  `git rev-parse --is-inside-work-tree` to say `true` and gets `""`;
+  `tests/contract/m-a16.text-only.test.ts:45` wants more than 50 tracked test files and counts 0;
+  `tests/contract/m-a5.nested-clone.test.ts` A5-8, all three halves, asks `git check-ignore` and
+  `git status` about `volumes/`; and A16-16, A16-17 and A16-24 read a card against clone state.
+- No `dashboard/node_modules`: `tests/lib/mount.ts` cannot resolve
+  `@happy-dom/global-registrator`, which takes A16-18 down as an error rather than a failure.
+
+So **neither location satisfies the whole suite**: a worktree has git and no started state, an
+installation has the started state and no git. The two halves need two computed preconditions, not
+one — `INSTALLED` as above, and a `TRACKED` (or the same question asked of `git rev-parse`) for the
+cases that read the repository. Each is one value read at the moment it is needed, which is the
+form CLAUDE.md argues for; the present arrangement is an assumption about the reader's working
+directory, which is the form it argues against.
+
+**Why it is deferred rather than done:** these are milestone-A files, on `main` since #9. Fixing
+them inside #10 would put unrelated git-integration changes into a pull request under review for the
+Java/NAR work. It belongs in its own branch off `main`, the way the `git.sh` manifest write became
+#21.
+
+Found while answering D2 and M6 of the 2026-10-01 review. Recorded 2026-10-07.
+
+---
+
+**A fifth file writes into the operator's `volumes/repos` from the default tier.**
+`tests/contract/m-a5.nested-clone.test.ts:37` builds `reposDir` from `repoRoot` and `:43-46` writes a
+git repository into it. It is green, because it creates everything it asserts against, so it is not
+in the failure set above — but it means a default-tier run leaves state in whichever checkout it was
+started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
+tier's. Same branch as the entry above. Recorded 2026-10-07.
+
+---
+
 **The shared Maven cache stays writable by build-time code.** `compose.yml` mounts
 `./volumes/nar_builder/m2:/m2` read-write, and Maven runs there as the unprivileged `builder` user,
 which can write it. So a pom, a plugin or a dependency can plant an artifact that **every later

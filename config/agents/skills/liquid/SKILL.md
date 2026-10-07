@@ -453,6 +453,13 @@ into `${NIFI_HOME}/nar_extensions`, the auto-load directory itself, and nothing 
 any more. `lib/` is read and never written — it is what a bundle is judged against, not where one
 is deployed. The reason given for the restart was wrong; the restart itself is not.
 
+**Taking a bundle out is the operator's, and deleting it from the inbox does nothing.**
+`./volumes/nar_extensions` is the inbox: the watcher reads what *arrives* there, so removing a
+file from it leaves the bundle loaded. The load path is inside the container, in a Docker volume
+no path you can see reaches. Removal is one command plus a restart, both the operator's, and the
+procedure is in `docs/FEATURE-liquid-java-extensions.md` under FR30. Ask for it the way step 4
+asks for a restart, and do not report a bundle as removed because you deleted the inbox copy.
+
 ### 6.5 NAR Dependencies & ClassLoading (CRITICAL)
 When a NAR requires parent dependencies (e.g., SSL Context Service API), ALL NARs in the dependency chain must be dropped into `nar_extensions/` together.
 
