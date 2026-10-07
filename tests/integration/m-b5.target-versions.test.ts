@@ -64,7 +64,6 @@ beforeAll(() => {
       -nodes -subj /CN=liquid >/dev/null 2>&1
     python3 - >/tmp/srv.log 2>&1 <<PY &
 import http.server, ssl
-import { afterAll } from 'bun:test';
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 ctx.load_cert_chain("/tmp/c.pem", "/tmp/k.pem")
 s = http.server.HTTPServer(("127.0.0.1", 9443), http.server.SimpleHTTPRequestHandler)

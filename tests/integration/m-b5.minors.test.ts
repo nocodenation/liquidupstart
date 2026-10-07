@@ -170,7 +170,6 @@ describe('B5-27 a build that stops early takes its work directory with it', () =
         -nodes -subj /CN=liquid >/dev/null 2>&1
       python3 - >/dev/null 2>&1 <<PY &
 import http.server, ssl
-import { afterAll } from 'bun:test';
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 ctx.load_cert_chain("/tmp/c.pem", "/tmp/k.pem")
 s = http.server.HTTPServer(("127.0.0.1", 9443), http.server.SimpleHTTPRequestHandler)

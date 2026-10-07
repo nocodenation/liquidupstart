@@ -29,7 +29,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-import { afterAll } from 'bun:test';
 import { builderImage } from '../lib/builderimage';
 
 const IMAGE = builderImage();
