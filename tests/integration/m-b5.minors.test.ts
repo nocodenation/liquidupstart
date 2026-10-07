@@ -42,13 +42,14 @@
  *           which must still be accepted, so the repair cannot be met by
  *           refusing everything.
  */
-import { test, expect, describe, beforeAll } from 'bun:test';
+import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { builderImage } from '../lib/builderimage';
 
 const LIQUID = 'ghcr.io/nocodenation/liquid-nifi:latest';
-const BUILDER = 'liquidupstart/nar-builder:latest';
+const BUILDER = builderImage();
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
 const BUILD = join(repoRoot, 'config/nar_builder/build.sh');
@@ -163,12 +164,13 @@ describe('B5-27 a build that stops early takes its work directory with it', () =
       '-v', `${BUILD}:/probe/build.sh:ro`,
       '--entrypoint', 'sh', BUILDER, '-c',
       `
-      mkdir -p /liquid/api /repos /stub
+      mkdir -p /liquid/api /repos
       printf 'nifi_version=2.11.0\\njava_version=21.0.12+10-LTS\\n' > /liquid/api/runtime
       openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 1 \\
         -nodes -subj /CN=liquid >/dev/null 2>&1
       python3 - >/dev/null 2>&1 <<PY &
 import http.server, ssl
+import { afterAll } from 'bun:test';
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 ctx.load_cert_chain("/tmp/c.pem", "/tmp/k.pem")
 s = http.server.HTTPServer(("127.0.0.1", 9443), http.server.SimpleHTTPRequestHandler)
@@ -179,7 +181,24 @@ PY
       export NAR_BUILD_LIQUID_HOST=127.0.0.1 SYSTEM_HTTPS_PORT=9443
       mkdir -p /repos/p
       printf '<project><modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>p</artifactId><version>1.0.0</version><packaging>pom</packaging></project>\\n' > /repos/p/pom.xml
-      cat > /stub/mvn <<'MVN'
+      # The stub is written OVER the real mvn, not placed first on PATH.
+      #
+      # run_maven goes through su, and su resets PATH to the system default
+      # even without a dash, so a stub in /stub was never found and the REAL Maven ran
+      # -- which then died as the unprivileged build user with
+      # AccessDeniedException on /m2/org and took the whole scenario
+      # with it, long before the code these cases are about. Corrected 2026-10-07.
+      #
+      # **And this file was green for a reason that had nothing to do with it being
+      # right:** the host's nar-builder image predated the builder user, so
+      # run_maven took its direct branch and the PATH worked. The image was rebuilt
+      # on 2026-10-06 and the fixture stopped working the same day. A locally built
+      # image can belong to another branch, and this is what that costs.
+      #
+      # The 755 is load-bearing: the build user has to be able to execute it.
+          # No backticks in here: this block is a template literal, and they close it.
+MVN_PATH="$(command -v mvn)"
+      cat > "$MVN_PATH" <<'MVN'
 #!/bin/sh
 proj=""
 for a in "$@"; do case "$a" in */pom.xml) proj="$(dirname "$a")";; esac; done
@@ -190,8 +209,7 @@ for a in "$@"; do case "$a" in */pom.xml) proj="$(dirname "$a")";; esac; done
 mkdir -p "\${proj}/target"; printf 'built\\n' > "\${proj}/target/fresh-1.0.0.nar"
 exit 0
 MVN
-      chmod +x /stub/mvn
-      export PATH=/stub:$PATH
+      chmod 755 "$MVN_PATH"
       # A drop directory that is a regular file: the deploy step fails and the
       # script leaves under set -e, which is the route with no cleanup.
       # /deploy is created by the image this case does not rebuild -- it runs
@@ -209,3 +227,4 @@ MVN
     expect(r.output).toContain('leaked=0');
   }, 900_000);
 });
+

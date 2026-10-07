@@ -33,12 +33,13 @@
  *           B5-16 keeps the fix from breaking an installation whose Liquid
  *           started before the record existed.
  */
-import { test, expect, describe, beforeAll } from 'bun:test';
+import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { builderImage } from '../lib/builderimage';
 
-const BUILDER = 'liquidupstart/nar-builder:latest';
+const BUILDER = builderImage();
 const LIQUID = 'ghcr.io/nocodenation/liquid-nifi:latest';
 const BUILD = join(repoRoot, 'config/nar_builder/build.sh');
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
@@ -63,6 +64,7 @@ beforeAll(() => {
       -nodes -subj /CN=liquid >/dev/null 2>&1
     python3 - >/tmp/srv.log 2>&1 <<PY &
 import http.server, ssl
+import { afterAll } from 'bun:test';
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 ctx.load_cert_chain("/tmp/c.pem", "/tmp/k.pem")
 s = http.server.HTTPServer(("127.0.0.1", 9443), http.server.SimpleHTTPRequestHandler)
@@ -168,3 +170,4 @@ describe('B5-18 the record is written from the distribution itself', () => {
     expect(published).toContain('Published the runtime versions for the NAR builder');
   });
 });
+

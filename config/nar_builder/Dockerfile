@@ -34,10 +34,19 @@ RUN apt-get update \
 # on the host. So the mount target moved under a root-only directory: the leaf
 # keeps whatever mode the host gives it, and the build user cannot reach it at
 # all. Measured: `builder` cannot write it and cannot even list it; root can.
+#
+# **And /m2 belongs to that user, which is the other half.** Maven writes its
+# dependency cache there, and the directory this image creates is root-owned: as
+# `builder` Maven died with `java.nio.file.AccessDeniedException: /m2/org`. On a
+# running stack it is a bind mount the host owns and Docker Desktop hands over,
+# so the installation worked and every throwaway container did not -- and a
+# throwaway container is how most of the suite builds. Measured in the image
+# before this line: `touch /m2/probe` as builder, `Permission denied`.
 RUN useradd -r -u 1500 -m -d /home/builder builder
 
 RUN mkdir -p /opt/builder /repos /deploy/nar_extensions /m2 /liquid/logs \
-    && chmod 700 /deploy
+    && chmod 700 /deploy \
+    && chown builder /m2
 
 COPY build.sh /opt/builder/build.sh
 COPY BuildServer.java /opt/builder/BuildServer.java

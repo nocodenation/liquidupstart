@@ -24,13 +24,15 @@
  *           agent's own request still works, so the guard cannot be met by
  *           refusing everything.
  */
-import { test, expect, describe, beforeAll } from 'bun:test';
+import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { afterAll } from 'bun:test';
+import { builderImage } from '../lib/builderimage';
 
-const IMAGE = 'liquidupstart/nar-builder:latest';
+const IMAGE = builderImage();
 const SERVER = join(repoRoot, 'config/nar_builder/BuildServer.java');
 
 let out = '';
@@ -178,3 +180,4 @@ describe('B5-14 the server answers when it cannot work', () => {
     expect(out2).toContain('oversize=400');
   });
 });
+

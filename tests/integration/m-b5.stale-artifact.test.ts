@@ -33,12 +33,13 @@
  *           ordinary build still deploys, so neither guard can be met by
  *           refusing everything.
  */
-import { test, expect, describe, beforeAll } from 'bun:test';
+import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { builderImage } from '../lib/builderimage';
 
-const IMAGE = 'liquidupstart/nar-builder:latest';
+const IMAGE = builderImage();
 const BUILD = join(repoRoot, 'config/nar_builder/build.sh');
 
 let out = '';
@@ -49,19 +50,31 @@ beforeAll(() => {
     '-v', `${BUILD}:/probe/build.sh:ro`,
     '--entrypoint', 'sh', IMAGE, '-c',
     `
-    mkdir -p /liquid/logs /liquid/api /repos /deploy/nar_extensions /stub
+    mkdir -p /liquid/logs /liquid/api /repos /deploy/nar_extensions
     printf 'nifi_version=2.11.0\\njava_version=21.0.12+10-LTS\\n' > /liquid/api/runtime
     openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 1 \\
       -nodes -subj /CN=liquid >/dev/null 2>&1
     python3 - >/tmp/srv.log 2>&1 <<PY &
 import http.server, ssl
+import { afterAll } from 'bun:test';
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 ctx.load_cert_chain("/tmp/c.pem", "/tmp/k.pem")
 s = http.server.HTTPServer(("127.0.0.1", 9443), http.server.SimpleHTTPRequestHandler)
 s.socket = ctx.wrap_socket(s.socket, server_side=True)
 s.serve_forever()
 PY
-    for i in $(seq 1 40); do curl -sk -o /dev/null https://127.0.0.1:9443/ 2>/dev/null && break; sleep 0.3; done
+    # Waited on the stand-in answering, and said so when it never does. The loop
+    # here was a bare && break with nothing after it, so when 12s was not enough --
+    # under eight test files sharing a machine it is not -- it fell through in
+    # silence and build.sh then refused with "Liquid does not answer", which reads
+    # like a product refusal and is a fixture that did not wait. Corrected
+    # 2026-10-07; the budget is 60s and a failure is named.
+    standin=no
+    for i in $(seq 1 200); do
+      curl -sk -o /dev/null https://127.0.0.1:9443/ 2>/dev/null && { standin=yes; break; }
+      sleep 0.3
+    done
+    echo "standin=$standin"
     export NAR_BUILD_LIQUID_HOST=127.0.0.1 SYSTEM_HTTPS_PORT=9443
 
     # An author pom that keeps its artefacts in nar/target, with one left over.
@@ -78,7 +91,24 @@ PY
       printf '<project><modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>%s</artifactId><version>1.0.0</version><packaging>pom</packaging></project>\\n' "$1" > "/repos/$1/pom.xml"
       printf 'stale bundle from the source tree\\n' > "/repos/$1/nar/target/old-stale-0.9.nar"
     }
-    cat > /stub/mvn <<'MVN'
+    # The stub is written OVER the real mvn, not placed first on PATH.
+    #
+    # run_maven goes through su, and su resets PATH to the system default
+    # even without a dash, so a stub in /stub was never found and the REAL Maven ran
+    # -- which then died as the unprivileged build user with
+    # AccessDeniedException on /m2/org and took the whole scenario
+    # with it, long before the code these cases are about. Corrected 2026-10-07.
+    #
+    # **And this file was green for a reason that had nothing to do with it being
+    # right:** the host's nar-builder image predated the builder user, so
+    # run_maven took its direct branch and the PATH worked. The image was rebuilt
+    # on 2026-10-06 and the fixture stopped working the same day. A locally built
+    # image can belong to another branch, and this is what that costs.
+    #
+    # The 755 is load-bearing: the build user has to be able to execute it.
+        # No backticks in here: this block is a template literal, and they close it.
+MVN_PATH="$(command -v mvn)"
+    cat > "$MVN_PATH" <<'MVN'
 #!/bin/sh
 # A stand-in for maven: it compiles nothing and creates what MVN_MAKES names.
 proj=""
@@ -86,8 +116,7 @@ for a in "$@"; do case "$a" in */pom.xml) proj="$(dirname "$a")";; esac; done
 for n in \${MVN_MAKES:-}; do mkdir -p "\${proj}/nar/target"; printf 'built\\n' > "\${proj}/nar/target/$n"; done
 exit 0
 MVN
-    chmod +x /stub/mvn
-    export PATH=/stub:$PATH
+    chmod 755 "$MVN_PATH"
 
     echo "== stale =="
     mk stale-proj; MVN_MAKES="" sh /probe/build.sh build stale-proj 2>&1
@@ -144,3 +173,4 @@ describe('B5-24 while an ordinary build still deploys', () => {
     expect(s).toContain('dropAfterOne=[fresh-1.0.0.nar ]');
   });
 });
+
