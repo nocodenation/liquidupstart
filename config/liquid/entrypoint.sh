@@ -147,14 +147,39 @@ if [ -d "$API_DIR" ]; then
     # The build string, which is what java.version reports and therefore what
     # the log line carried: 21.0.12+10-LTS, not 21.0.12.
     JAVA_VERSION="$(java -version 2>&1 | sed -n 's/.*(build \([^)]*\)).*/\1/p' | head -1)"
-    if [ -n "$NIFI_VERSION" ] && [ -n "$JAVA_VERSION" ]; then
-        printf 'nifi_version=%s\njava_version=%s\n' "$NIFI_VERSION" "$JAVA_VERSION" \
-            > "${API_DIR}/runtime"
-        echo "Published the runtime versions for the NAR builder: NiFi ${NIFI_VERSION}, Java ${JAVA_VERSION}"
-    else
+    if [ -z "$NIFI_VERSION" ] || [ -z "$JAVA_VERSION" ]; then
         # The builder falls back to the log, which works until the file rotates.
         echo "Warning: could not read the runtime versions from ${LIB_DIR}" >&2
         echo "  The NAR builder falls back to the startup line in the log." >&2
+    elif printf 'nifi_version=%s\njava_version=%s\n' "$NIFI_VERSION" "$JAVA_VERSION" \
+            > "${API_DIR}/runtime" 2>/dev/null; then
+        echo "Published the runtime versions for the NAR builder: NiFi ${NIFI_VERSION}, Java ${JAVA_VERSION}"
+    else
+        # **This write used to kill Liquid.** It was unguarded under `set -e`, so
+        # an api/ that exists and cannot be written ended the entrypoint -- and
+        # under `restart: unless-stopped` the container then looped, sub-second
+        # at first and backing off to about 13s, with nothing in the log but
+        # bash's own "Permission denied" line. Measured: RestartCount 1 to 9 in
+        # 29 seconds. S8 of the 2026-10-01 review.
+        #
+        # It is not fatal, for the reason the index write above is not: Liquid
+        # reads lib/ directly and needs none of this. What needs it is the
+        # builder, and `build.sh` refuses a bundle it cannot judge rather than
+        # deploying one unchecked (D2), so the failure stays closed at the place
+        # where it matters.
+        #
+        # The message does **not** promise the log fallback here. `build.sh`
+        # prefers the record whenever it parses and reads the log only when the
+        # record gave nothing -- so a stale record that still parses defeats the
+        # fallback, and saying otherwise would send the operator looking in the
+        # wrong place.
+        echo "Warning: could not write ${API_DIR}/runtime, so the NAR builder has no" >&2
+        echo "  record of the versions this instance runs. Liquid is unaffected and" >&2
+        echo "  starts normally; nar-build will refuse until this is fixed." >&2
+        echo "  ${API_DIR} has to be writable by the nifi user, which" >&2
+        echo "  config/scripts/start/liquid.sh arranges. If the stack was brought up" >&2
+        echo "  with docker compose directly, run ./scripts/linux/start.sh instead." >&2
+        ls -ld "$API_DIR" >&2 2>/dev/null || echo "  (${API_DIR} could not be listed either)" >&2
     fi
 fi
 

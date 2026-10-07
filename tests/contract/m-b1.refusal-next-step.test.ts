@@ -44,7 +44,13 @@ function refusals(file: string): Refusal[] {
   const lines = readFileSync(file, 'utf8').split('\n');
   const found: Refusal[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!/refused:/.test(lines[i])) continue;
+    // A source comment is not output to an operator, so it has no next step to
+    // name: the uncommitted M4 commentary in build.sh explains in prose that a 400
+    // "is refused", and the enumeration opened a 17-line block on it. The net stays
+    // deliberately loose on the message itself -- every emitted `refused:` line is
+    // enumerated, so a message added later cannot escape the case -- and excludes
+    // only prose about a refusal.
+    if (!/refused:/.test(lines[i]) || /^\s*(#|\/\/|\*)/.test(lines[i])) continue;
     const block: string[] = [lines[i]];
     for (let j = i + 1; j < lines.length; j++) {
       if (/^\s*(exit|fi|;;|\}|REFUSED)/.test(lines[j])) break;
