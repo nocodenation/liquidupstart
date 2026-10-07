@@ -79,9 +79,24 @@ test('B1-8 the second build, of a source that does not compile, fails', () => {
 }, 1_200_000);
 
 test('B1-8 the earlier artifact is byte-identical', () => {
+  // The baseline is asserted *here*, where it is used, and not only where it was
+  // recorded.
+  //
+  // `shaBefore` and `listingBefore` are assigned in the first test, after its
+  // `expect(good.code).toBe(0)`. A builder that refuses leaves them `''` and
+  // `[]` -- and `'' === ''` is a pass, as is `[]` equalling `[]`. Measured by
+  // replaying this file's control flow with the first build forced to refuse:
+  // 2 pass / 2 fail, and **the two that passed were these two**, the only two
+  // that carry the case's claim. A stack that is not there, or a builder that
+  // cannot build, read as "the artifact survived untouched".
+  //
+  // The #12 leftover the 2026-10-01 review names. Guarding where the value is
+  // read costs one line each and cannot be skipped by an earlier failure.
+  expect(shaBefore).toMatch(/^[0-9a-f]{64}$/);
   expect(shaAfter).toBe(shaBefore);
 });
 
 test('B1-8 no partial or temporary file was left beside it', () => {
+  expect(listingBefore.length).toBeGreaterThan(0);
   expect(listingAfter).toEqual(listingBefore);
 });
