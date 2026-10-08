@@ -141,7 +141,15 @@ if [ -d "$API_DIR" ]; then
     NIFI_VERSION=""
     for JAR in "${LIB_DIR}"/nifi-runtime-*.jar "${LIB_DIR}"/nifi-framework-api-*.jar; do
         [ -f "$JAR" ] || continue
-        NIFI_VERSION="$(basename "$JAR" .jar | sed -n 's/^nifi-\(runtime\|framework-api\)-//p')"
+        # `sed -nE` rather than a BRE with `\|`, which is a GNU extension: on BSD
+        # sed the alternation is read literally and the expression matches
+        # nothing, so the version came back empty and the entrypoint took the
+        # "could not read the runtime versions" branch. In the image this is GNU
+        # sed and it worked; the branch is simply unmeasurable anywhere else, and
+        # B6-31/B6-32 run the entrypoint on the developer's host. Found by writing
+        # those two cases, 2026-10-08. `-E` with `(a|b)` is the same expression in
+        # both dialects.
+        NIFI_VERSION="$(basename "$JAR" .jar | sed -nE 's/^nifi-(runtime|framework-api)-//p')"
         [ -n "$NIFI_VERSION" ] && break
     done
     # The build string, which is what java.version reports and therefore what

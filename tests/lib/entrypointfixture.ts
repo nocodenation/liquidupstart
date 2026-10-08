@@ -47,7 +47,20 @@ export type Sandbox = {
   load: string;
   lib: string;
   launched: string;
+  stubs: string;
+  api: string;
 };
+
+// The versions the sandbox states, rather than whatever the host happens to run.
+//
+// `entrypoint.sh:142-148` reads the NiFi version out of a jar name and the Java
+// version out of `java -version`, so a case that wanted the write to succeed used
+// to need the host's java -- which is S9's complaint about machine state, one
+// file in. The sandbox supplies both: a jar carrying nothing but the name, and a
+// `java` on PATH that prints one line. The version is marked `-probe` so no real
+// distribution can supply it by accident.
+export const SANDBOX_NIFI_VERSION = '2.11.0-probe';
+export const SANDBOX_JAVA_VERSION = '21.0.12+10-LTS';
 
 
 // A jar named as the API jar, carrying one class entry. The name is what
@@ -61,15 +74,51 @@ z.close()`;
   if (r.code !== 0) throw new Error(`could not write the sandbox api jar ${path}: ${r.output}`);
 }
 
-export function sandbox(opts: { nars?: string[]; loadIsFile?: boolean } = {}): Sandbox {
+/**
+ * `api` picks one of three shapes for `${NIFI_HOME}/api`, which is what decides
+ * whether the runtime record can be written:
+ *
+ * - `absent` (the default) -- the directory is not there, so `entrypoint.sh:116`
+ *   and `:140` skip both blocks. Every case written before 2026-10-08 gets this
+ *   and is unchanged by the option existing.
+ * - `writable` -- the directory is there and the record is written.
+ * - `runtimeIsDirectory` -- the directory is there and `api/runtime` is itself a
+ *   directory, so `printf ... > "${API_DIR}/runtime"` cannot succeed.
+ *
+ * **That last shape is chosen deliberately, and a mode would have been wrong.**
+ * S8's condition is "api/ exists and nifi cannot write it", and the obvious
+ * fixture is `chmod 500`. It would be green here and green for the wrong reason
+ * in the reviewer's own run: they test in a container as **uid 0**, where a mode
+ * does not stop a write, so the guard under test would never be reached and the
+ * case would pass without measuring anything. A directory where a file has to be
+ * written fails for root exactly as it does for anyone else.
+ */
+export function sandbox(
+  opts: { nars?: string[]; loadIsFile?: boolean; api?: 'absent' | 'writable' | 'runtimeIsDirectory' } = {}
+): Sandbox {
   const base = mkdtempSync(join(tmpdir(), 'm-b2-entrypoint-'));
   const home = join(base, 'nifi-current');
   const drop = join(home, 'nar_inbox');
   const load = join(home, 'nar_extensions');
   const lib = join(home, 'lib');
   const launched = join(base, 'launched.txt');
+  const stubs = join(base, 'stubs');
+  const api = join(home, 'api');
   mkdirSync(drop, { recursive: true });
+  mkdirSync(stubs, { recursive: true });
   mkdirSync(join(base, 'scripts'), { recursive: true });
+  if ((opts.api ?? 'absent') !== 'absent') {
+    mkdirSync(api, { recursive: true });
+    mkdirSync(lib, { recursive: true });
+    // Named so the version cannot have come from anywhere but here.
+    writeFileSync(join(lib, `nifi-runtime-${SANDBOX_NIFI_VERSION}.jar`), '');
+    writeFileSync(
+      join(stubs, 'java'),
+      `#!/bin/sh\necho 'openjdk version "21.0.12" 2026-01-01' >&2\necho 'OpenJDK Runtime Environment (build ${SANDBOX_JAVA_VERSION})' >&2\nexit 0\n`,
+      { mode: 0o755 }
+    );
+    if (opts.api === 'runtimeIsDirectory') mkdirSync(join(api, 'runtime'), { recursive: true });
+  }
   // The destination that can fail. It used to be lib/, which is where approved
   // bundles went before the split.
   if (opts.loadIsFile) writeFileSync(load, LOAD_AS_FILE_CONTENT);
@@ -92,7 +141,7 @@ export function sandbox(opts: { nars?: string[]; loadIsFile?: boolean } = {}): S
     `#!/bin/sh\nls -1 ${load} > ${launched} 2>&1 || echo "(the load directory is not a directory)" > ${launched}\nexit 0\n`,
     { mode: 0o755 }
   );
-  return { base, home, drop, load, lib, launched };
+  return { base, home, drop, load, lib, launched, stubs, api };
 }
 
 /**
@@ -136,7 +185,14 @@ export function runEntrypoint(sb: Sandbox): Result {
   writeFileSync(join(dir, 'nar-watch.sh'), '#!/bin/sh\necho "[nar-watch] stand-in for the suite"\nexit 0\n', {
     mode: 0o755
   });
-  return sh([entry], repoRoot, { NIFI_BASE_DIR: sb.base, NIFI_HOME: sb.home });
+  // The stub directory goes first so `java` is the sandbox's and not the host's.
+  // It is empty unless the case asked for an api/ directory, and prepending an
+  // empty directory changes nothing for the cases that did not.
+  return sh([entry], repoRoot, {
+    NIFI_BASE_DIR: sb.base,
+    NIFI_HOME: sb.home,
+    PATH: `${sb.stubs}:${process.env.PATH ?? ''}`
+  });
 }
 
 export function loadContents(sb: Sandbox): string[] {
