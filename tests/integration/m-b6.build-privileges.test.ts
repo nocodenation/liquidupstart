@@ -33,7 +33,7 @@
  *           `/nar_extensions`; root is refused `/repos` as well, because the
  *           mount is read-only; and `run_maven` out of the shipped `build.sh`
  *           runs its command as a non-root user.
- * Covers:   B6-1, B6-2, B6-3, B6-4, FR25, NFR2
+ * Covers:   B6-1, B6-2, B6-3, B6-4, B6-5, FR25, NFR2
  * Unhappy:  B6-1 and B6-4 are the refusals. B6-2 is the counterpart and it is
  *           the one that stops the repair being met by a user that can do
  *           nothing: the build user must still read the source it compiles and

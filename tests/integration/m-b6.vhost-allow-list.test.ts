@@ -214,12 +214,30 @@ describe('B6-23 what a host request arrives as, recorded rather than assumed', (
     // therefore allowed. The repair is right on both: it costs nothing where the
     // hole does not exist and closes it where it does.
     //
-    // Asserted as "not inside the subnet" rather than as the literal address,
-    // because the literal belongs to Docker Desktop and this case must not become
-    // a statement about one installation.
+    // **Corrected 2026-10-08.** What stood here was `expect(seen.startsWith(
+    // '10.231.91.')).toBe(false)` -- "not inside the subnet" -- and the comment
+    // above says in its own words why that is wrong: on rootless Docker on Linux
+    // the request arrives AS the bridge gateway, which is inside the subnet. So
+    // the assertion was green only on Docker Desktop and would have turned red on
+    // the reviewer's own host, the one place this case most needs to be readable.
+    // It was a statement about one installation wearing the words of a general
+    // property.
+    //
+    // The assertion is exhaustive over the two readings instead, and in being so
+    // it asserts what the repair actually has to achieve: the exposure is closed
+    // if the host request arrives either as this network's gateway, which `deny
+    // SYSTEM_NETWORK_GATEWAY` refuses, or from outside the subnet, which `deny
+    // all` already refused. The one reading that would leave it open is an
+    // in-subnet address that is not the gateway -- nothing denies that -- and
+    // that is the reading this now rules out.
     const seen = field('host-arrives-as');
+    const gateway = field('network-gateway');
     expect(seen).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
-    expect(seen.startsWith('10.231.91.')).toBe(false);
+    const reading =
+      seen === gateway ? 'the gateway, which the deny line refuses -- the rootless Linux reading'
+      : !seen.startsWith('10.231.91.') ? 'from outside the subnet, which deny all refuses -- the Docker Desktop reading'
+      : 'an in-subnet address that is not the gateway, which nothing refuses';
+    expect(reading).not.toBe('an in-subnet address that is not the gateway, which nothing refuses');
   });
 
   test('B6-23 and the vhost refuses it either way', () => {
