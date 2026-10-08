@@ -9,6 +9,59 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
+has two halves, and only one is closed. The nginx vhost no longer admits the LAN — the gateway is
+denied before the subnet is allowed, and B6-21 to B6-23 measure it — but the reviewer's second
+half stands untouched: *"every container on the compose network can POST to
+`http://nar_builder:8770/build` with the header directly, past the vhost."* `X-Liquid-Agent: 1` is a
+marker, not authentication, and `BuildServer` has nothing else to check.
+
+The reviewer's own suggestion is the right shape: a shared secret mounted only into the agent
+containers and checked by the server. It is deferred rather than declined, and the reason is
+sequencing: with B1's privilege drop in place, what a caller past the vhost can now reach is a build
+that runs as an unprivileged user over a read-only `/repos`, which is a different exposure from the
+one S3 was written against. Closing it needs a secret in `.env.example`, a mount in three agent
+services, a check in `BuildServer.java` and a case on both sides — more than a line, and it changes
+the contract every caller uses.
+
+Until then the honest statement is the one above: on this stack, any container can trigger a build.
+Recorded 2026-10-08, after the decision had been sitting only in the body of commit `03f5620`.
+
+---
+
+**The runtime values still go into the synthesised pom unvalidated.** M2 of the 2026-10-01 review
+asked for two things: validate the NiFi and Java versions against a version pattern before they
+reach the pom, and stop the log fallback trusting any line matching `Starting NiFi X using Java Y`.
+Neither is done. What was applied is one line: the `UNRESOLVED` refusal now names which record the
+version came from, so an operator can tell the authoritative `/liquid/api/runtime` from the
+expiring log line when the version is the thing in doubt.
+
+**Why the rest was not applied as proposed.** The values come from two places the builder cannot be
+compromised through without the attacker already holding more than the pom: `/liquid/api/runtime`,
+written by Liquid's own entrypoint, and `/liquid/logs`, mounted read-only. A pattern check would
+therefore guard against Liquid lying to the builder, and the reviewer's own note names the real
+exposure differently — `config/scripts/start/liquid.sh` makes that directory `chmod 777`, so
+**anything on the host** can write the record. A version pattern does not close that; it only
+narrows what can be written to something that still parses. The fix that would close it is the
+directory's mode, which belongs with the other `volumes/` permissions rather than with the pom.
+That is the open item, stated here rather than half-answered in the builder.
+
+Recorded 2026-10-08.
+
+---
+
+**S9's machine dependencies are half closed.** The builder image is no longer taken from whatever
+`liquidupstart/nar-builder:latest` happens to be on the host: `tests/lib/builderimage.ts` builds it
+from the tree under test and tags it per run, eight files use it, and the specification records the
+change. What is still true of the default-tier M-B5 cases is the rest of the reviewer's sentence:
+they pin `ghcr.io/nocodenation/liquid-nifi:latest`, which is a moving tag, and `nifi-kafka-nar-2.11.0.nar`,
+`nifi-api-2.10.0.jar` and a 2.11.0 `START_LINE` with it, so an image upgrade turns them red — and
+B5-15 and B5-16 reach Maven Central. Pinning the image by digest is the obvious half of the repair
+and would need re-pinning on every upgrade, which is the trade the operator should make rather than
+a branch under review. Recorded 2026-10-08.
+
+---
+
 **Four milestone-A cases read the live installation without saying so, and are red in any bare
 checkout.** `tests/lib/paths.ts:5` computes `repoRoot` from the test file's own location, so in a
 worktree it is the worktree. The state these four assert is created only by
