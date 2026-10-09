@@ -64,11 +64,26 @@ if [[ "${GAPS:-0}" == "1" ]]; then
     const specs = fs.existsSync(dir)
       ? fs.readdirSync(dir).filter((f) => /^TEST-SPEC-.*\.md$/.test(f)) : [];
     const ids = new Set();
+    // First cells that look like a case id and are not counted. The pattern
+    // below requires the id to end in digits, and a manual case does not:
+    // `A16-M1` in TEST-SPEC-git-integration.md was neither counted nor listed,
+    // so a reader comparing 299 against the registry had no way to know one row
+    // had been passed over. Arguably right -- a manual check has nothing to
+    // register -- but silence is the wrong way to be right. Reported rather than
+    // counted, so the number keeps its meaning. The Minor of the 2026-10-01
+    // re-review.
+    const unmatched = new Set();
     for (const f of specs) {
       const body = fs.readFileSync(path.join(dir, f), "utf8");
       // An overview row: the id is the first cell, optionally bolded.
-      for (const m of body.matchAll(/^\|\s*\*{0,2}([A-Z]+[0-9]*[a-z]?-[0-9]+)\*{0,2}\s*\|/gm)) {
-        ids.add(m[1]);
+      // The loose shape has to be a superset of the counted one, or widening the
+      // report narrows the count. The first attempt used `[A-Z][A-Z0-9]*-` and
+      // dropped every id with a lowercase tail -- `A3e-1` and its kind -- which
+      // took `specified` from 299 to 284 while claiming to report what it passed
+      // over. Measured, which is the only reason it was noticed.
+      for (const m of body.matchAll(/^\|\s*\*{0,2}([A-Z][A-Za-z0-9]*-[A-Za-z0-9]+)\*{0,2}\s*\|/gm)) {
+        if (/^[A-Z]+[0-9]*[a-z]?-[0-9]+$/.test(m[1])) ids.add(m[1]);
+        else unmatched.add(m[1] + " (" + f + ")");
       }
     }
     const missing = [...ids].filter((i) => !entries.includes(i)).sort();
@@ -76,6 +91,7 @@ if [[ "${GAPS:-0}" == "1" ]]; then
     console.log(`specified=${ids.size} registered=${entries.length} missing=${missing.length} orphaned=${orphan.length} exempt=${exempt.length}`);
     if (missing.length) console.log("missing:  " + missing.join(" "));
     if (orphan.length) console.log("orphaned: " + orphan.join(" "));
+    if (unmatched.size) console.log("not counted, their ids are not of the registered shape: " + [...unmatched].sort().join(" "));
     for (const [id, reason] of exempt) console.log(`exempt:   ${id}  ${reason}`);
     if (!specs.length) { console.error("no TEST-SPEC-*.md under " + dir + ": nothing to compare against"); process.exit(2); }
     // An orphan is an entry whose case no specification mentions any more: it was
@@ -190,6 +206,16 @@ RUN_OUT="${JUNIT}.out"
 # mid-run -- and deleting it anyway leaves the tracked file broken with nothing
 # to put back.
 restore() {
+  # A backup exists from the moment it is taken, and SUBJECT is set only after
+  # the baseline has run -- so a signal during the baseline left the copy in
+  # TMPDIR for ever. Measured at 0018c6d: TERM while the unmutated spec ran gives
+  # exit 143, the subject untouched, and `lu-mutate.XXXXXX` still there. Nothing
+  # was mutated, so there is nothing to put back and the copy is simply rubbish.
+  # Finding 8 of the third re-review.
+  if [[ -z "$SUBJECT" && -n "$BACKUP" ]]; then
+    rm -f "$BACKUP"; BACKUP=""
+    return
+  fi
   if [[ -n "$SUBJECT" && -n "$BACKUP" && -f "$BACKUP" ]]; then
     if cp "$BACKUP" "$SUBJECT"; then
       rm -f "$BACKUP"
@@ -259,6 +285,24 @@ trap 'interrupted 143 SIGTERM' TERM
 # what refused means here -- and `failed` means something else: the named test
 # passed and the entry protects something other than it.
 RUN_BUDGET_MS="${MUTATE_RUN_BUDGET_MS:-300000}"
+# Checked, because every way of getting it wrong failed differently and two of
+# them failed silently. Measured at 0018c6d: `5m` gave an arithmetic error on
+# every poll, no bound at all, and the entry still printed VALIDATED with exit 0;
+# `abc` killed the runner with `unbound variable` and no report, leaving
+# lu-mutate.XXXXXX and lu-mutate-junit.XXXXXX behind; `0` refused every entry,
+# which is at least visible. Finding 4 of the third re-review.
+#
+# `exit 2` rather than a refusal: a setting the caller got wrong is not a verdict
+# about an entry, and the other bad-input paths in this script exit 2 as well.
+case "$RUN_BUDGET_MS" in
+  ''|*[!0-9]*)
+    echo "mutate: MUTATE_RUN_BUDGET_MS is milliseconds, a whole number above zero -- got '${RUN_BUDGET_MS}'" >&2
+    exit 2 ;;
+esac
+if (( RUN_BUDGET_MS <= 0 )); then
+  echo "mutate: MUTATE_RUN_BUDGET_MS is milliseconds, a whole number above zero -- got '${RUN_BUDGET_MS}'" >&2
+  exit 2
+fi
 
 # It leaves its output in RUN_OUT rather than printing it, and the caller reads
 # that file.
@@ -283,7 +327,25 @@ run_spec() {  # run_spec <spec>; output lands in RUN_OUT
   # Removed first, so a run that writes nothing cannot be read as the previous
   # run's result.
   rm -f "$JUNIT" "$TIMED_OUT" "$RUN_OUT"
-  (cd "$ROOT" && FORCE_COLOR=0 NO_COLOR=1 bun test --timeout "$TIMEOUT_MS" \
+  # `exec`, so that CHILD_PID is bun's pid and not the subshell's.
+  #
+  # Without it the budget and the handler stopped the wrapping subshell and bun
+  # ran on: measured at 0018c6d, a mutation that makes the named test spin gives
+  # `REFUSED ... did not finish within 3000ms`, the subject restored, and
+  # `bun test` still at 98.7% CPU five seconds later. The suite's own MU-37 and
+  # MU-39 left three such processes behind on every run. Worse, the orphan still
+  # holds --reporter-outfile and **writes the record after the handler removed
+  # it**: `lu-mutate-junit.XXXXXX` reappeared in TMPDIR eight seconds after the
+  # runner had gone, and that file is where every later entry reads its verdict.
+  # So "takes bun with it" was simply false. Finding 2 of the third re-review.
+  #
+  # The assignments are exported rather than prefixed: `exec` replaces the shell,
+  # and a prefix on a special builtin is not the same thing.
+  #
+  # What this still does not reach is a process the spec itself started -- that
+  # needs a process group, and it is in BACKLOG.md rather than here.
+  (cd "$ROOT" && export FORCE_COLOR=0 NO_COLOR=1 \
+     && exec bun test --timeout "$TIMEOUT_MS" \
       --reporter=junit --reporter-outfile="$JUNIT" "./$1" >"$RUN_OUT" 2>&1) &
   CHILD_PID=$!
   local waited=0
@@ -338,6 +400,7 @@ named_state() {  # named_state <name>
     const stack = [];
     let depth = 0;
     let ran = 0, red = 0;
+    const ids = new Set();
 
     const re = /<\/?(testsuite|testcase)\b([^>]*?)(\/?)>/g;
     let m;
@@ -363,13 +426,32 @@ named_state() {  # named_state <name>
       // red if any is red, not run if none ran. Segments are compared whole, so
       // MU-27 still holds -- a name is never matched by part of another.
       // Finding 5.
-      const mine =
-        name === want ||
-        full === want ||
-        path === want ||
-        segs.includes(want) ||
-        (path !== "" && path.startsWith(want + " > "));
-      if (!mine) continue;
+      // Which *thing* the name resolved to, not merely whether it matched.
+      //
+      // The predicate below used to be a plain OR, and "red if any is red" then
+      // credited whichever test happened to redden. Measured at 0018c6d with a
+      // spec holding two blocks, policy and mode, each containing a test named
+      // "rejects a bad value": an entry meaning the
+      // policy test, mutating MODE, printed
+      // `VALIDATED FX-1  rejects a bad value  (1 red, 2 green)` and exit 0 while
+      // the policy test stayed green. A false VALIDATED is the one thing this
+      // tool must not produce. Finding 1 of the third re-review.
+      //
+      // The runner already refuses a `from` that occurs twice, because nobody
+      // can say which occurrence carried the rule. This is that same ambiguity
+      // on the other side, so it gets the same answer: collect what the name
+      // resolved to and let the caller refuse when it is more than one thing.
+      //
+      // A leaf match is identified by its describe chain, so the same test name
+      // under two different blocks is two things. A block match is identified by
+      // the block name, so a describe standing for twenty generated tests stays
+      // one thing -- which is the case this predicate was widened for.
+      let identity = "";
+      if (name === want || full === want) identity = "test@" + path;
+      else if (path === want || segs.includes(want) || (path !== "" && path.startsWith(want + " > "))) {
+        identity = "block@" + want;
+      } else continue;
+      ids.add(identity);
 
       const body = m[3] === "/"
         ? ""
@@ -388,9 +470,96 @@ named_state() {  # named_state <name>
       if (/<(failure|error)\b/.test(body)) red += 1;
     }
 
-    console.log(red > 0 ? "fail" : ran > 0 ? "pass" : "none");
+    console.log(ids.size > 1 ? "ambiguous" : red > 0 ? "fail" : ran > 0 ? "pass" : "none");
    } catch (e) { console.error("junit: " + (e && e.message ? e.message : e)); process.exit(2); }
   ' "$JUNIT" 2>/dev/null || printf none
+}
+
+# How many tests ran and how many reddened, from the record rather than from the
+# console.
+#
+# `tally` reads bun summary lines out of combined stdout and stderr, and a test
+# can print one. Measured at 0018c6d: a two-test spec where both redden under the
+# mutation -- the broken-file condition -- with one test doing
+# `console.log(" 3 pass")` printed `VALIDATED ... (2 red, 3 green)` instead of the
+# refusal. A false VALIDATED, from a line the subject under test chose.
+# Finding 6 of the third re-review.
+#
+# The record cannot be written by the spec. It carries the numbers directly:
+# `<testsuites ... tests="2" failures="2" skipped="0">`, measured on bun 1.3.13.
+# Skipped tests are taken off the total, because a skipped test did not run --
+# the same rule named_state applies per test.
+counts() {  # counts; prints "<ran> <red>"
+  [[ -f "$JUNIT" ]] || { printf '0 0'; return; }
+  bun -e '
+   try {
+    const fs = require("fs");
+    const xml = fs.readFileSync(process.argv[1], "utf8");
+    const m = xml.match(/<testsuites\b[^>]*>/);
+    if (!m) { console.log("0 0"); process.exit(0); }
+    const n = (k) => {
+      const a = m[0].match(new RegExp("\\b" + k + "=\"([0-9]+)\""));
+      return a ? parseInt(a[1], 10) : 0;
+    };
+    const ran = n("tests") - n("skipped");
+    console.log((ran < 0 ? 0 : ran) + " " + n("failures"));
+   } catch (e) { console.log("0 0"); }
+  ' "$JUNIT" 2>/dev/null || printf '0 0'
+}
+
+# Where a path leads, after every link on it.
+#
+# The shape checks above are lexical, on the string the registry carries, and a
+# link needs none of them: measured at 0018c6d with `alias.sh -> spec/a.test.ts`
+# and `file: "alias.sh"`, the runner rewrote the assertion inside the test file
+# and printed VALIDATED -- the redness it credited was the test's own source
+# being edited. A directory link, `lnk/helper.ts -> tests/lib`, passed the same
+# way. MU-9, MU-21 and MU-28 claim that property holds. Finding 5 of the third
+# re-review.
+#
+# `readlink` in a loop rather than `realpath -f` or `readlink -f`: neither is
+# portable to the BSD userland this project already tripped over once, and the
+# comment on the lexical normaliser above says why. The directory part is
+# resolved by `cd`+`pwd -P`, which also catches the directory-link case, where
+# the final component is not a link at all.
+resolve_path() {  # resolve_path <path>; prints it with every link followed
+  local p="$1" n=0 t d
+  while [[ -L "$p" && $n -lt 40 ]]; do
+    t="$(readlink "$p")"
+    case "$t" in
+      /*) p="$t" ;;
+      *)  p="$(dirname "$p")/$t" ;;
+    esac
+    n=$((n+1))
+  done
+  d="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
+  [[ -n "$d" ]] || return 1
+  printf '%s/%s' "$d" "$(basename "$p")"
+}
+
+# The names of the tests that reddened, for a message that can be acted on.
+red_names() {  # red_names; prints the failing test names, comma separated
+  [[ -f "$JUNIT" ]] || return 0
+  bun -e '
+   try {
+    const fs = require("fs");
+    const xml = fs.readFileSync(process.argv[1], "utf8");
+    const un = (t) => t.replace(/&quot;/g, String.fromCharCode(34)).replace(/&apos;/g, String.fromCharCode(39))
+                       .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    const out = [];
+    const re = /<testcase\b([^>]*?)(\/?)>/g;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+      if (m[2] === "/") continue;
+      const at = xml.indexOf("</testcase>", re.lastIndex);
+      const body = at === -1 ? xml.slice(re.lastIndex) : xml.slice(re.lastIndex, at);
+      if (!/<(failure|error)\b/.test(body)) continue;
+      const nm = m[1].match(/\bname="([^"]*)"/);
+      if (nm) out.push(un(nm[1]));
+    }
+    console.log(out.join(", "));
+   } catch (e) { }
+  ' "$JUNIT" 2>/dev/null || true
 }
 
 tally() {  # tally <output> <word>
@@ -451,6 +620,31 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
   if [[ ! -f "$absspec" ]]; then
     add "REFUSED   ${id}  no such test file: ${spec}"; refused=$((refused+1)); continue
   fi
+
+  # The same two refusals, against the resolved path. Lower-cased as well,
+  # because the patterns are case-sensitive and this project's own development
+  # machine has a case-insensitive filesystem: `X.TEST.ts` reached the same file
+  # and matched none of them. The reviewer named that half as reasoned rather
+  # than run; it is run here.
+  if ! lead="$(resolve_path "$abs")"; then
+    add "REFUSED   ${id}  could not resolve where ${file} leads"; refused=$((refused+1)); continue
+  fi
+  root_p="$(cd "$ROOT" && pwd -P)"
+  case "${lead}/" in
+    "${root_p}"/*) rel="${lead#"${root_p}/"}" ;;
+    *)
+      add "REFUSED   ${id}  ${file} leads to ${lead}, which is outside the repository"
+      refused=$((refused+1)); continue ;;
+  esac
+  rel_lc="$(printf '%s' "$rel" | tr '[:upper:]' '[:lower:]')"
+  case "$rel_lc" in
+    *.test.*|*.spec.*|*_test.*|*_spec.*|*.snap)
+      add "REFUSED   ${id}  ${file} leads to ${rel}, which is a test file"
+      refused=$((refused+1)); continue ;;
+    tests/lib/*|*/__snapshots__/*|tests/mutations.json|tests/mutate.sh)
+      add "REFUSED   ${id}  ${file} leads to ${rel}, which is test infrastructure: assertions read it"
+      refused=$((refused+1)); continue ;;
+  esac
 
   # Restoration works by putting back what was there, so it cannot run over
   # somebody else's uncommitted work -- "restore" would mean "discard it".
@@ -519,7 +713,12 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
   # work at load time; staged deterministically with a spec that throws at import.
   # Finding 6 of the 2026-09-30 review.
   base_errors="$(tally "$base" error)"
-  if [[ "$base_errors" != "0" ]]; then
+  # Corroborated by the record, for the reason the mutated run's check is: a test
+  # that prints a line shaped like bun's summary had its entry refused as "did
+  # not load before the mutation" -- measured at 0018c6d with a spec doing
+  # `console.log(" 1 error")`. A baseline that really did not load ran nothing.
+  read -r base_ran _ <<<"$(counts)"
+  if [[ "$base_errors" != "0" && "$base_ran" == "0" ]]; then
     rm -f "$BACKUP"; BACKUP=""
     add "REFUSED   ${id}  ${spec} did not load before the mutation -- ${base_errors} error(s), so the baseline measured nothing"
     refused=$((refused+1)); continue
@@ -534,7 +733,35 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
       rm -f "$BACKUP"; BACKUP=""
       add "REFUSED   ${id}  '${must}' did not run in ${spec} -- renamed, skipped, or misspelt"
       refused=$((refused+1)); continue ;;
+    ambiguous)
+      rm -f "$BACKUP"; BACKUP=""
+      add "REFUSED   ${id}  '${must}' resolves to more than one test in ${spec}; name it in full, as 'describe > test'"
+      refused=$((refused+1)); continue ;;
   esac
+
+  # A red sibling before the mutation, and the same answer the named test gets.
+  #
+  # The baseline ran the whole spec and kept only the named test's state, so
+  # anything else that was red went unnoticed and the count after the mutation
+  # carried it. Measured at 0018c6d: a spec with one unrelated red test and a
+  # mutation on a line nothing asserts gave
+  # `FAILED ... 1 test(s) red but not 'the policy is protected'` -- nothing
+  # reddened, so by this tool's own definition that is unresolved, not failed.
+  # And a spec whose other test was already red, with a correct mutation, gave
+  # `REFUSED ... every test ... failed -- that is a broken file`, which blames the
+  # mutation for a file that was broken beforehand. Both failed safe and both
+  # stated the wrong reason. Finding 3 of the third re-review.
+  #
+  # The rule is the one already applied to the named test one case up: a control
+  # means "everything green except what the mutation reddens", so a baseline that
+  # is red anywhere measured nothing. It names the tests rather than counting
+  # them, because a count sends the author looking.
+  read -r _ base_red <<<"$(counts)"
+  if [[ "$base_red" != "0" ]]; then
+    rm -f "$BACKUP"; BACKUP=""
+    add "REFUSED   ${id}  ${spec} is already red before the mutation: ${base_red} test(s) -- $(red_names)"
+    refused=$((refused+1)); continue
+  fi
 
   SUBJECT="$abs"
   FROM="$from" TO="$to" ALL="$all" bun -e '
@@ -591,15 +818,28 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
   named_failed=0
   [[ "$(named_state "$must")" == "fail" ]] && named_failed=1
 
-  passes="$(tally "$out" pass)"
-  fails="$(tally "$out" fail)"
+  read -r ran red <<<"$(counts)"
+  fails="$red"
+  passes=$(( ran - red ))
+  (( passes < 0 )) && passes=0
   errors="$(tally "$out" error)"
 
   # bun 1.4.2 reports an import-time throw as `0 pass / 1 fail / 1 error`, not
   # as an empty tally. The earlier comment claimed otherwise and MU-20 only
   # covered a file with no tests, so a spec the mutation broke at load time was
   # read as "the entry protects nothing". It did not run at all.
-  if [[ "$errors" != "0" ]]; then
+  # Corroborated, because `errors` still comes from the console and a test can
+  # print a line shaped like bun's: at 0018c6d a test doing
+  # `console.log(" 1 error")` had its entry refused as "did not load". A spec that
+  # really did not load ran nothing, so the record agrees -- and when the record
+  # shows tests, the console line is the subject talking.
+  #
+  # Not measured here: what bun 1.4.2 writes to the record for an import-time
+  # throw. The comment below records that it reports `0 pass / 1 fail / 1 error`
+  # on the console; on 1.3.13 it writes no record at all, which is what makes
+  # `ran == 0` the right corroboration. Either way the entry is refused -- the
+  # wording is what could differ, and the reviewer runs 1.4.2.
+  if [[ "$errors" != "0" && "$ran" == "0" ]]; then
     add "REFUSED   ${id}  ${spec} did not load -- ${errors} error(s), so nothing was measured"
     refused=$((refused+1)); continue
   fi
