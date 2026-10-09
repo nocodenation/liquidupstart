@@ -22,112 +22,32 @@ wearing the uniform of the cure.
 | The report | contract | Read as text: the shape a reader relies on |
 | Backfill coverage | contract | Which specified cases have an entry, computed rather than counted by hand |
 
-## 2. Overview
+## 2. The MU cases are specified on #18, and only there
 
-| ID | Level | Sign | Case |
-|---|---|---|---|
-| **MU-1** | integration | positive | A registered mutation turns **its own** named test red, and the run reports it as validated |
-| **MU-2** | integration | **negative** | A `from` that does not occur in the subject fails the run and names the entry — it is never skipped |
-| **MU-3** | integration | **negative** | A `from` that occurs twice fails the run, because a mutation that could land in two places is not a controlled experiment |
-| **MU-4** | integration | **negative** | A mutation whose named test still passes fails the run, even when other tests in the file went red |
-| **MU-5** | integration | **negative** | A mutation that reddens the whole file — a syntax error — is refused rather than counted as a pass |
-| **MU-6** | integration | positive | The subject is byte-identical after the run: on success, on failure, and after an interrupt. **The interrupt half is a documented manual check** -- see the detail block |
-| **MU-7** | contract | **negative** | The runner refuses to start when a subject has uncommitted changes |
-| **MU-8** | contract | positive | The report lists every specified case **without** an entry, so the gap is a number rather than an impression |
-| **MU-9** | unit | **negative** | An entry whose `file` is a **test** is refused: the registry mutates subjects, never assertions. **Corrected 2026-09-30** -- it is the file being a test that decides, not its living under `tests/`; see the detail block |
-| **MU-10** | integration | **negative** | An entry that hangs is bounded, **refused**, and the subject is still restored. **Built 2026-09-30 on `feature/mutation-registry`** as MU-37, and the outcome corrected there -- see the detail block |
-| **MU-11** | integration | **negative** | A mutation that reddens nothing is reported **unresolved**, never as a finding — added 2026-09-19 after the sample |
-| **MU-12** | integration | positive | An entry whose mutation reddens its named test **and a sibling** is accepted — corrected 2026-09-19, same sample |
+*Rewritten 2026-10-09, A1 of the 2026-10-01 re-review, on the operator's decision to delete rather
+than to cross-reference.*
 
----
+This section held an overview of MU-1 to MU-12 and §3 held seven detail blocks for them. They were
+written before the work, signed off, and then the runner moved to `feature/mutation-registry` (#18)
+and took its cases with it. From that point the same twelve ids were specified in two documents, and
+the two disagreed:
 
-## 3. Detail blocks
+| | here | `TEST-SPEC-mutation-runner.md` on #18 |
+|---|---|---|
+| the row for **MU-5** | a whole-file syntax error is refused (negative) | a mutation may span several lines (positive) |
+| the rows for **MU-7** and **MU-9** | the runner "exits non-zero before touching anything" | only the affected entry is refused, and a run agrees: `REFUSED P-test-subject`, then `VALIDATED A4-6`, exit 1 |
+| the row for **MU-8** | "the report" lists the gap, and unresolved entries separately | `--gaps` lists the gap; it runs no mutation, so it cannot list unresolved entries |
+| the row for **MU-10** | existed here, as "built as MU-37" | no row — it has no test, and MU-37's two scenarios stand in its place |
 
-### MU-1 / MU-4 / MU-5 — the named test must fall, and not everything with it
+Two documents specifying one id with different meanings is worse than one of them being wrong,
+because a reader cannot tell which they are holding. So **every MU id is specified in
+`docs/TEST-SPEC-mutation-runner.md` on #18**, which is where the runner and its 91 scenarios live,
+and this file keeps only what is about *this* branch: the levels above, the omissions below, and the
+requirement traceability.
 
-| | |
-|---|---|
-| **Premise** | The point of an entry is that *this* rule is what *this* case protects. A run that accepts "some test went red" proves nothing: a mutation that breaks the file's syntax reddens every test in it, and would validate every entry at once — the same shape as a broken query satisfying an assertion that something is absent (M-B3). |
-| **Component** | `tests/mutate.sh` and the registry, against a real case. |
-| **Test data** | The entry measured by hand on 2026-09-19, which is why it is the fixture: `case: OC-44`, `file: dashboard/src/lib/components/OpenClawPairing.svelte`, `from: "requestId: 'latest'"`, `to: "requestId: req.requestId"`, `mustFail: "the card posts \`latest\` rather than an id it rendered"`. Measured result: that test red, the other sixteen in the file green. MU-4's fixture is the same entry with `mustFail` pointing at a sibling test that the mutation does not affect — *"the guard accepts a real id"*. MU-5's fixture mutates `from: "let pending = $state([]);"` to `to: "let pending = $state([;"`, which is a syntax error. |
-| **Expected** | MU-1: the named test fails, at least one test in the file still passes, the entry is reported **validated**. MU-4: the named test passes, so the entry is reported **not validated**, and the run fails. MU-5: **every** test in the file fails, so the entry is **refused** with the reason, rather than counted. |
-| **Unhappy** | MU-4 and MU-5 are the negatives and they carry the weight: MU-1 alone is satisfied by a runner that reports success whenever anything at all goes red. |
-| **Corrected 2026-09-19 by the sample** | The rule was *"the remaining tests must pass"*. Four of ten sampled entries reddened a sibling as well — a rule covered from both sides by two tests, which is the shape this project asks for everywhere else. Requiring the rest to stay green would have refused honest entries, so MU-5's bar moved from *more than one fails* to *all of them fail*, which is still exactly the syntax-error mutation it was written to catch. MU-12 is the positive counterpart. |
-| **Covers** | MU-FR1, MU-FR4. |
-
-### MU-11 / MU-12 — a green run is a question, and a reddened sibling is not a failure
-
-*Both added 2026-09-19, after the sample of §12 in the feature document. **MU-11 is the most
-important case in this specification.***
-
-| | |
-|---|---|
-| **Premise** | When a mutation is applied and nothing goes red, that reads as *"no case protects this rule"* — the discovery this whole milestone exists to make. **In the sample it was wrong four times out of thirteen.** The mutation was too narrow, or landed at the wrong site, or replaced one of two occurrences; each time the run was green and each time it looked exactly like a finding. MU-2 and MU-3 catch *not found* and *found twice*; the fourth shape — **found once, applied, and still ineffective** — cannot be caught mechanically at all. So the runner must refuse to conclude, rather than conclude wrongly. |
-| **Component** | The runner and its report. |
-| **Test data** | MU-11 uses the sample's own bad attempt, kept for the purpose: `file: config/scripts/start/lib/git-repos.sh`, `from: "      protected\|direct) ;;"`, `to: "      protected\|direct\|anything) ;;"` — applied cleanly, matching exactly once, and changing behaviour only for a word no case uses. The good entry beside it is the same file with the rejection line removed, which reddens A3c-3. MU-12 uses `file: config/scripts/start/git.sh`, `from: "GIT_ONLY_SLUG"`, which reddens A13-2 and two A13-3 tests together. |
-| **Expected** | MU-11: the entry is reported **unresolved**, counted as neither validated nor failed, and the report names it as needing a second mutation of a different shape. The run's exit status does not treat it as a discovery. MU-12: the entry is **validated**, because its named test failed and a passing test remains in the file. |
-| **Unhappy** | MU-11 is the negative and MU-12 the positive, and they must be read together: a runner that marks everything unresolved would satisfy MU-11 alone, and one that accepts any reddening would satisfy MU-12 alone. |
-| **What must not be trusted** | The word *unresolved* becoming a place things go to be forgotten. MU-8's report lists unresolved entries separately from missing ones, because they mean different work: a missing entry needs writing, an unresolved one needs a **better** mutation or is a real finding nobody has confirmed yet. |
-| **Covers** | MU-FR4, MU-FR7, and §11 D2 of the feature document — with no second reader, this is the mechanical compensation for the author marking their own homework. |
-
-### MU-2 / MU-3 — a mutation that cannot be applied is a failure, not a silence
-
-| | |
-|---|---|
-| **Premise** | **This is the case the whole milestone exists to earn.** A registry entry whose `from` no longer appears in the subject — because the code was refactored, renamed, or reformatted — describes an experiment that cannot be run. Skipping it, or reporting it as passed, reproduces exactly the defect this work removes, inside the tool built to remove it. The same applies to a `from` that matches twice: the runner cannot say which occurrence carried the rule. |
-| **Component** | The runner, with a registry seeded for the purpose. |
-| **Test data** | MU-2: an entry whose `from` is `requestId: 'yesterday'`, a string that occurs nowhere in the repository and cannot occur by accident. MU-3: an entry whose `from` is `pending` against the same component, which occurs twenty-plus times. |
-| **Expected** | Both fail the run, with a message naming the entry, the file, and which of the two conditions was violated — *not found* against *found N times*, because the repairs differ. The exit status is non-zero. |
-| **Unhappy** | The positive counterpart is MU-1's entry, whose `from` occurs exactly once: without it the rule could be met by a runner that refuses every entry. |
-| **What must not be trusted** | A quiet run. A run that reports "0 entries validated, 0 failures" over an empty or unreadable registry is indistinguishable from a healthy one, which is why MU-8 requires the count to be printed and compared against the specifications. |
-| **Covers** | MU-FR3, MU-NFR1. |
-
-### MU-6 / MU-10 — the subject goes back, however the run ends
-
-| | |
-|---|---|
-| **Premise** | The runner deliberately writes a broken line into a file that is under version control and mounted into running containers. An interrupted run that leaves it there is worse than no runner: the next suite run measures the mutant, and the dashboard image would be built from it. `tests/verify/m-b2.sh` shipped a `trap … INT` that ran its handler and then *resumed*, so the promise of restoration on `Ctrl-C` had never once been exercised — that is the precedent, and it is why this is a case rather than a comment. |
-| **Component** | The runner, the real file, and `git diff` as the judge. |
-| **Test data** | `dashboard/src/lib/components/OpenClawPairing.svelte`, with its SHA-256 taken before the run and compared after. Two automated runs: one where the entry validates, one where it fails (MU-4's fixture). MU-10 uses an entry whose mutation makes the test loop -- `to` replaces the fetch with `while (true) {}` -- against a two-second bound; built as MU-37 on `feature/mutation-registry`. |
-| **The interrupt, as a manual check** | **Stated 2026-09-30, because it was specified and never built.** Sending `SIGINT` to the runner from inside a case means signalling a process the test framework owns, and a case that kills its own runner is the kind that goes flaky and teaches everyone to ignore red. It is a documented manual check instead: start a run over an entry whose spec sleeps, press Ctrl-C while the spec is executing, then read `git status --porcelain` for the subject. Carried out 2026-09-19 and again 2026-09-30 against the runner on `feature/mutation-registry`: the subject came back and the run exited 130 both times. The behaviour holds; what did not exist was the evidence that anyone had looked. |
-| **Expected** | The file's SHA-256 is unchanged after all four runs, `git status --porcelain` is empty for it, and MU-10 additionally reports the entry as **refused** rather than hanging the run. **Corrected 2026-09-30.** This said "failed-by-timeout". In the runner's four outcomes `failed` means the named test *passed*, so the entry protects something other than what it claims -- a run that did not finish measured neither that nor anything else, which is what refused means. The message names the budget and says the mutation may have made the spec hang, which is what the author needs. Built as MU-37 and MU-38 on `feature/mutation-registry`, together with the bound itself: `bun --timeout` ends a test that awaits too long and cannot end one that never yields. |
-| **Unhappy** | This case is itself a negative: it asserts the absence of damage. Its positive counterpart is MU-1, which requires the mutation to have been genuinely applied — otherwise "the file is unchanged" is satisfied by a runner that does nothing at all. **The two must be run together or neither means anything.** |
-| **Covers** | MU-FR5, MU-NFR2. |
-
-### MU-7 — it does not run over uncommitted work
-
-| | |
-|---|---|
-| **Premise** | Restoration is implemented by putting back what was there. If the operator has uncommitted changes in a subject, the runner cannot tell its own edit from theirs, and "restore" becomes "discard their work". |
-| **Component** | The runner and `git status`. |
-| **Test data** | A subject with one uncommitted line added; and, as the counterpart, the same tree with that change stashed. |
-| **Expected** | With the change present the runner exits non-zero before touching anything, naming the file. With the tree clean it proceeds. |
-| **Unhappy** | The counterpart is the clean tree: a guard that refuses always would satisfy the first half. |
-| **Covers** | MU-FR6. |
-
-### MU-8 — the gap is a number
-
-| | |
-|---|---|
-| **Premise** | The registry's own coverage is the thing nobody will notice going stale. A hundred validated entries mean nothing if three hundred decision-carrying cases have none, and the only honest way to know is to compute it rather than to feel it. |
-| **Component** | The report, against the case tables in the four test specifications. |
-| **Test data** | The overview tables of `TEST-SPEC-git-integration.md`, `TEST-SPEC-liquid-java-extensions.md`, `TEST-SPEC-openclaw-2026-9-1.md` and this document, parsed for their case ids; the registry, for the ids it carries. |
-| **Expected** | The report prints the count of specified cases, the count with an entry, and the list without one. A case deliberately exempt under §6 of the feature document is listed as **exempt with its reason**, never silently absent — the distinction between a decision and an oversight is the entire value of the list. |
-| **Unhappy** | The negative half: a case id present in the registry but absent from every specification also fails, because it means a case was renamed or deleted and its entry outlived it. |
-| **Covers** | MU-FR7. |
-
-### MU-9 — the registry may not edit the assertions
-
-| | |
-|---|---|
-| **Premise** | A tool that can rewrite tests can make anything pass. The registry mutates the **subject**; an entry pointing at a test file is either a mistake or the beginning of a very bad habit, and the check is one line. |
-| **Component** | The registry loader. |
-| **Test data** | Refused: an entry with `file: tests/contract/m-oc.pairing-card.test.ts`. Accepted: the same entry pointing at the component the case is about. |
-| **Expected** | The loader refuses any `file` that is a **test** -- `*.test.*`, `*.spec.*`, `*_test.*`, `*_spec.*`, `*.snap`, anything under `tests/lib/` or `__snapshots__/`, and the runner's own registry and script -- names the entry, and exits non-zero before running anything. **Corrected 2026-09-30.** This said "any `file` under `tests/`", which the runner's own MU-21 contradicts: `tests/run.sh` is a subject in its own right and nothing asserts against its contents, so a blanket prefix would have taken A0-4 with it. The rule is what the file *is*, not where it sits. |
-| **Unhappy** | Both sides in one run, as above: the refusal is only meaningful beside the acceptance. |
-| **Covers** | MU-NFR3. |
-
----
+The test data those blocks named went with them, and it had drifted too: MU-1 named OC-44 and
+`OpenClawPairing.svelte`, and #18's suite uses a throwaway repository and contains neither; MU-8 named
+`TEST-SPEC-liquid-java-extensions.md`, which is on none of `main`, this branch or #18.
 
 ## 4. Deliberate omissions
 
@@ -142,15 +62,20 @@ and a predicted number would be the kind of claim this project has stopped makin
 
 ## 5. Traceability
 
-| Requirement | Covered by |
-|---|---|
-| MU-FR1 the entry format | MU-1, MU-9 |
-| MU-FR2 one entry, one file, restored | MU-1, MU-6 |
-| MU-FR3 an unapplicable mutation fails | MU-2, MU-3 |
-| MU-FR4 the named test, and one survivor | MU-1, MU-4, MU-5, MU-11, MU-12 |
-| MU-FR5 restored however it ends | MU-6, MU-10 |
-| MU-FR6 not over uncommitted work | MU-7 |
-| MU-FR7 the report names the gaps | MU-8, MU-11 |
-| MU-NFR1 it is a tool that is run | MU-2, MU-8 |
-| MU-NFR2 bounded | MU-10 |
-| MU-NFR3 never edits a test | MU-9 |
+The cases are on #18, so the authoritative table is
+`docs/TEST-SPEC-mutation-runner.md` §*Traceability*. This one records which requirement each of this
+branch's own concerns answers to, and the wording is the corrected wording — four of these said
+something the runner does not do, which is the other half of A1:
+
+| Requirement | Covered by, on #18 | Corrected 2026-10-09 |
+|---|---|---|
+| MU-FR1 the entry format | MU-1, MU-19, MU-32 | — |
+| MU-FR2 one entry, one file, restored | MU-1, MU-6, MU-31 | — |
+| MU-FR3 a `from` that does not occur exactly once fails, **unless `"all": true` declares that every occurrence is meant** | MU-2, MU-3, MU-35 | said "exactly once" with no exception, while MU-35 is that exception |
+| MU-FR4 the named test, and one survivor | MU-4, MU-12, MU-14, MU-22, MU-24, MU-27, MU-30, MU-40 to MU-42, MU-46, MU-47, MU-52, MU-54 | — |
+| MU-FR5 restored however it ends | MU-6, MU-23, MU-25, MU-26, MU-33, MU-37, MU-39, MU-43, MU-49, MU-51 | — |
+| MU-FR6 it refuses **the entry** whose subject has uncommitted changes, and carries on with the rest | MU-7 | said "refuses to start", which §5 of the feature document already contradicted |
+| MU-FR7 the report lists each entry and its outcome, and **the gap on every run** | MU-8, MU-13, MU-20, MU-29, MU-34, MU-36, MU-60 | said it lists "the mutation" per entry; it prints the case and `mustFail`. The gap is on every run since MU-60 |
+| MU-NFR1 the gap is computed, not counted | MU-8, MU-36 | said "a tool that is run in the milestone cycle", which is about *when* and not about *what* |
+| MU-NFR2 the run is bounded, and an entry that does not finish is **refused** | MU-37, MU-38, MU-39, MU-48 | said such an entry "fails". `failed` means the named test passed; a run that did not finish measured nothing. The reviewer confirmed `refused` |
+| MU-NFR3 never edits a test | MU-9, MU-21, MU-28, MU-53 | — |

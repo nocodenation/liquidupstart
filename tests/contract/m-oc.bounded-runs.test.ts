@@ -38,7 +38,7 @@
  * number — and the mechanism did nothing. A contract case alone would have
  * passed over it exactly as the previous review's fix did.
  *
- * Requirements covered: OC-G4, OC-60 and OC-61 of the #11 second review, and the
+ * Requirements covered: OC-G4, OC-60 (N1) and OC-61 (N4) of the #11 second review, and the
  * 2026-09-14 correction to OC-60 above.
  */
 import { test, expect, describe } from 'bun:test';

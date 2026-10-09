@@ -43,7 +43,7 @@ here; each is executed where its subject exists.
 |---|---|---|---|
 | OC-1 | component | positive | On 2026.9.1 the written config contains **no** `agents.defaults.cliBackends`, and `config validate` passes |
 | OC-2 | component | **negative** | On 2026.9.1 a config that **does** contain it is rejected by `config validate` |
-| OC-3 | contract | **negative** | Every unattended `docker run` in the start script is bounded, or is a named exception with a reason — **replaced 2026-09-07 by OC-60 and OC-61**, see below |
+| OC-3 | contract | **negative** | Every unattended `docker run` in the start script is bounded, or is a named exception with a reason. **Live, and the only case asserting that rule** — `tests/contract/m-oc.bounded-calls.test.ts:119`. It carries no registry entry; see the note under OC-60 |
 | OC-4 | system | positive | On **2026.7.1**, with `cliBackends` absent, Claude requests still run through the wrapper |
 | OC-5 | component | positive | With Copilot enabled on 2026.9.1, the config carries `memory.search.*` and validates |
 | OC-6 | component | **negative** | `agents.defaults.memorySearch` on 2026.9.1 is rejected |
@@ -72,8 +72,24 @@ here; each is executed where its subject exists.
 | **OC-34** | contract | **negative** | No `docker compose restart` in the start scripts drags its dependants along |
 | **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
 | **OC-36** | contract + unit | **negative** | `with_timeout` is never handed a shell function, because `timeout` cannot see one |
-| **OC-60** | contract | **negative** | Every unattended `docker run` in the start script is bounded by `with_timeout`, or is a named exception carrying its reason, and each bounded helper names its container and force-removes it. **The case that replaced OC-3** -- given a row of its own 2026-09-30, because the registry named OC-3 while the test carries OC-60 and the link between them existed only in a header comment |
+| **OC-60** | contract | **negative** | Every bounded `docker run` **can actually be bounded**: each carries `--init`, without which `timeout` frees the client and leaves the container, and each bounded helper names its container and force-removes it |
 | **OC-61** | contract | **negative** | A named container is removed when its run does not end by itself: `timeout` kills the docker client, not the container |
+
+**OC-3, OC-60 and OC-61 are three rules, not one replaced by two.** *Corrected 2026-10-09, A3 of the
+2026-10-01 re-review of #17.* The OC-60 row said this case asserts that every unattended `docker run`
+"is bounded by `with_timeout`, or is a named exception carrying its reason", and the OC-3 row said
+OC-3 had been "replaced 2026-09-07 by OC-60 and OC-61". Both were wrong about the same thing: that
+rule is asserted by `describe('OC-3 every unattended docker call in the start script is bounded')` at
+`tests/contract/m-oc.bounded-calls.test.ts:119`, which was never touched and still carries OC-3. What
+OC-60 asserts is that a bounded run *can* be bounded — `--init`, the named container, the forced
+removal — which is a different rule standing behind OC-3's.
+
+The reviewer measured the difference rather than reading it: with `with_timeout 60` removed from
+`config/scripts/start/openclaw.sh:173`, all five OC-60 and OC-61 tests stayed green and only
+`OC-3 ... > each call is bounded, or is a named exception` went red. So the registry reported OC-60
+validated while a reader took the bounding rule to be proven, and `--gaps` listed OC-3 as missing
+beside a row saying OC-3 was gone. OC-3 is the live case with no entry, which is the honest state and
+is what `--gaps` now reports.
 | **OC-62** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |

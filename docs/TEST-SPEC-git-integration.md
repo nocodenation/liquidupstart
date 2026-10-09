@@ -1585,10 +1585,10 @@ difference in outcome is attributable to the one setting the case names.
 | **Premise** | The declaration already distinguishes read from write, and a read-only repository should not depend on its branch policy to be safe. Checked before any other rule, so the message is about access rather than about branches. |
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; set `access=read` and `policy=direct` — the most permissive branch setting; commit on a feature branch; push. |
-| **Expected** | Non-zero exit; the message contains `read` and does not mention the branch, so it is clear the access rule fired first. |
+| **Expected** | Non-zero exit; the message contains the phrase **`declared with access read`**, and does not carry the git-publish gate's `did not come through git-publish`, so it is clear the access rule fired first and not the gate. *Corrected 2026-10-09: this said "the message contains `read`", which is what the test asserted until those four letters were found inside the word "reads" — a vacuous match. The assertion was strengthened then and this row was not. B4 of the 2026-10-01 re-review.* |
 | **Test data** | `hookFixture()` with two settings changed: `liquidupstart.access=read` and `liquidupstart.policy=direct` — the most permissive branch setting, so a refusal cannot be attributed to the branch. Commit `add probe note` on `feature/probe`. |
 | **Covers** | U1, U4, §1.3. |
-| **What it found** | Passed, including the negative half: with `policy=direct` and the push aimed at a feature branch, the output names neither the branch nor a branch policy, so the access rule is demonstrably the one that fired. |
+| **What it found** | Passed, including the negative half: with `policy=direct` and the push aimed at a feature branch, the output names neither the branch nor a branch policy, so the access rule is demonstrably the one that fired. | *Amended 2026-10-09.* What this row did not say is the thing worth recording: the first version of the case asserted `toContain('read')` and passed against a message that never mentioned access at all, because the four letters sit inside "reads". A case that cannot fail is the defect this whole practice exists to find, and it was found here by reading rather than by the suite. The assertion is the phrase now, plus the absence of the gate's own sentence, which is what makes "the access rule fired first" an observation instead of an inference.
 
 ##### A4-11 — a branch behind the remote is refused rather than integrated
 

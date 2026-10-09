@@ -145,7 +145,8 @@ describe('OC-3 every unattended docker call in the start script is bounded', () 
     // timeout by five minutes.
     //
     // Re-founded 2026-09-11. It used to require the literal `124` in each helper,
-    // which is the circumstance rather than the property: N1 measured that a
+    // which is the circumstance rather than the property: N1, OC-60 since the
+    // 2026-09-07 rename, measured that a
     // bound docker run does not return 124 at all without --init, and that a
     // client killed any other way leaves the container too. The helpers now clean
     // up on any non-zero status, so asserting the magic number would have failed

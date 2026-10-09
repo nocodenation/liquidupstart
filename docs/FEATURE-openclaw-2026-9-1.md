@@ -344,7 +344,7 @@ with neither `timeout` nor `gtimeout` — both GNU coreutils, and macOS ships ne
 `docker run …`. So on the machine the operator actually starts the stack from, none of the eleven was
 bounded.
 
-It was found by running the suite, three times in one afternoon: N1's own probe container, bounded at
+It was found by running the suite, three times in one afternoon: N1's -- OC-60's since the 2026-09-07 rename -- own probe container, bounded at
 8s with a 10s grace, stood for 13 minutes and then twice for over a minute. The case could not report
 it — a bun test cannot interrupt a synchronous spawn, so the suite hung instead of going red, and it
 had been skipping silently before that because the probe image did not exist on this machine yet.

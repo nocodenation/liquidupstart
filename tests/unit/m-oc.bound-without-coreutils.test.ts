@@ -31,7 +31,7 @@
  * from a scratch directory plus `/usr/bin:/bin`, which on this host holds no
  * coreutils `timeout` — verified by the first case rather than assumed.
  *
- * Requirements covered: OC-G4, OC-60 of the #11 second review, and the 2026-09-17
+ * Requirements covered: OC-G4, OC-60 (N1 of the #11 second review), and the 2026-09-17
  * finding that its fallback removed the bound.
  */
 import { test, expect, describe } from 'bun:test';

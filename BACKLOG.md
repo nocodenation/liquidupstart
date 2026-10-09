@@ -275,9 +275,9 @@ than the papercut warrants. Every fallback on a path the stack actually walks wa
 migration; these two are what is left.
 
 **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
-Suggested in the third review of #11 as an optional improvement to N1, and deferred here on the
+Suggested in the third review of #11 as an optional improvement to N1 (OC-60 since the 2026-09-07 rename), and deferred here on the
 grounds that the situation justifying it could not be produced. It produced itself two days later: a
-suite run hung fifteen minutes on the N1 case itself, a hand-run of the same command sat attached to
+suite run hung fifteen minutes on the N1 (OC-60) case itself, a hand-run of the same command sat attached to
 a live container for eight minutes, and an outer `timeout 40` around the whole thing did not return
 either — GNU timeout waits for its child after signalling. In that window three of four attempts
 needed the kill (rc 137 after the grace) rather than the signal (rc 124). It is **intermittent and

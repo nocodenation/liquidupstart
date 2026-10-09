@@ -11,7 +11,14 @@
  *           and liquidupstart.policy=direct, the most permissive branch setting
  *           there is, so a refusal cannot be attributed to the branch.
  * When:     The ordinary commit on feature/probe is pushed.
- * Then:     Non-zero exit, the message says `read`, and it mentions neither the
+ * Then:     Non-zero exit; the message carries the phrase `declared with access
+ *           read`, and does not carry the git-publish gate's own sentence, so the
+ *           access rule is demonstrably the one that fired. Corrected 2026-10-09:
+ *           this read "the message says `read`", which is what the case asserted
+ *           until those four letters turned up inside the word "reads" -- a match
+ *           that could not fail. B4 of the 2026-10-01 re-review; the assertion was
+ *           strengthened then and this header was not.
+ *           It mentions neither the
  *           branch nor the branch policy.
  * Covers:   A4-10, U1, U4, §1.3
  * Unhappy:  The whole case. Its counterweight is A4-1, the same push in the same
