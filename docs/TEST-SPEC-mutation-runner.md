@@ -13,9 +13,29 @@ report reads case ids out of `TEST-SPEC-*.md`, and a case with no row is invisib
 counts coverage. That is why this file exists at all — a reviewer found that the runner's own cases,
 MU-13 upward, were in no specification.
 
+**That file is not in this tree, and neither is the feature document.** `docs/TEST-SPEC-test-mutation.md`
+and `docs/FEATURE-test-mutation.md` live on `feature/test-mutation-control` (#17), which this branch is
+not stacked on — it is cut from `main`. So the `MU-FR*` and `MU-NFR*` ids the traceability table below
+uses cannot be looked up here. Their wording is restated in that table for exactly that reason: this
+file is readable on its own, and a reader who wants the reasoning behind a requirement follows it to
+#17. Finding 9 of the 2026-10-01 re-review named the dangling reference; it is a cross-branch fact and
+not something this file can fix by itself.
+
 **Level.** Every case here is integration: each one runs `tests/mutate.sh` as a process against a
-throwaway git repository holding one subject and a two-test spec. A unit test of the loader would assert
-the shape of a row, which is not what goes wrong; what goes wrong is what the whole tool answers.
+throwaway directory holding one subject and a spec. A unit test of the loader would assert the shape of
+a row, which is not what goes wrong; what goes wrong is what the whole tool answers.
+
+*Corrected 2026-10-09, because the sentence above described a fixture that does not exist.* It said
+"a two-git repository holding one subject and a two-test spec", and three things in that were wrong.
+The shared spec holds **four** tests — `the policy is protected`, `the mode is 600`, `field A is
+carried` and `field B is carried` — which is what gives every case a survivor to point at. The
+directory becomes a **git repository only when MU-7 runs `git init`** in it, so cases before MU-7 and
+cases after it see different state; the runner's uncommitted-changes check is skipped where there is no
+repository, which is why MU-7 is the case that needs one. And **four cases do not use the fixture at
+all**: MU-8's pair at `and it reads the real specifications of whatever branch it runs on` and `and an
+entry no specification mentions is reported as orphaned` run `--gaps` against this checkout, as does
+the count scenario, and MU-59 reads this document and the test file from the repository. Finding 9 of
+the 2026-10-01 re-review.
 
 **Runner and hosts.** `bun test tests/integration/m-mu.runner.test.ts`. Run on bun 1.3.13 as uid 501 on
 macOS and on bun 1.4.2 as uid 0 on Linux, because two of these cases were green on one of those and red
@@ -30,7 +50,7 @@ difference ever reached a verdict, and it is gone.
 | **MU-2** | **negative** | A `from` that is not in the subject is refused and named |
 | **MU-3** | **negative** | A `from` that occurs more than once is refused, unless `"all": true` says every one is meant |
 | **MU-4** | **negative** | A mutation that reddens a sibling and not the named test is **failed**, not validated |
-| **MU-5** | positive | A mutation may span several lines |
+| **MU-5** | **negative** | A mutation that reddens every test is refused as a broken file, not credited as a control. **The missing-spec refusal in the same group is MU-58** |
 | **MU-6** | positive | The subject is byte-identical after the run, whatever the outcome. **The interrupt half is MU-39** |
 | **MU-7** | **negative** | It does not run over a subject with uncommitted changes |
 | **MU-8** | positive | `--gaps` counts specified cases against registered ones |
@@ -38,9 +58,9 @@ difference ever reached a verdict, and it is gone.
 | **MU-11** | **negative** | A mutation that reddens nothing is **unresolved**, never a finding |
 | **MU-12** | positive | The named test red **and** a sibling green is the shape that validates |
 | **MU-13** | **negative** | A run that validated nothing says so, rather than reporting success over an empty registry |
-| **MU-14** | **negative** | `--case` naming nothing is an error |
+| **MU-14** | positive | A file holding a single test is validated when that test reddens: a survivor is required only where one can exist. **`--case` naming nothing is MU-55** |
 | **MU-19** | **negative** | An empty `to` — which is what a deletion looks like — stays its own field on the wire |
-| **MU-20** | **negative** | A run in which no test executed is refused: it answered nothing |
+| **MU-20** | **negative** | A spec path matching no file is refused, and the message is the baseline's — "did not run in". **The `no test executed` branch is MU-57** |
 | **MU-21** | **negative** | The subject guard is about the file being a **test**, not about living under `tests/` |
 | **MU-22** | **negative** | The named test is matched as a whole name, not as a substring |
 | **MU-23** | **negative** | A backup that could not be taken stops the mutation, and the subject is untouched |
@@ -66,6 +86,97 @@ difference ever reached a verdict, and it is gone.
 | **MU-43** | **negative** | A subject `cmp` cannot open is not a mutation that landed |
 | **MU-44** | **negative** | A baseline that did not load says so, rather than reporting the name as misspelt |
 | **MU-45** | positive | The console differs between a person and an agent on one machine, which is why the record is read |
+| **MU-46** | **negative** | A test name that resolves to more than one test is refused before the mutation, and the refusal names the remedy |
+| **MU-47** | **negative** | A describe block whose name is also a test name is the same ambiguity, and naming it in full resolves it |
+| **MU-48** | **negative** | A run the budget stops takes bun with it, and leaves no record behind |
+| **MU-49** | **negative** | A signal while the subject is mutated takes bun with it, and nothing writes the record afterwards |
+| **MU-50** | **negative** | `MUTATE_RUN_BUDGET_MS` is milliseconds: zero, a word and a unit are each refused with exit 2, while a whole number is accepted |
+| **MU-51** | **negative** | A signal during the baseline leaves neither the backup nor the record behind |
+| **MU-52** | **negative** | The counts come from the JUnit record, so a line the spec itself prints cannot change a verdict |
+| **MU-53** | **negative** | A subject is judged by where it leads: a link to a test file, a directory link into `tests/lib` and an upper-case test name are refused, and a link to an ordinary file is not |
+| **MU-54** | **negative** | A spec that is red before the mutation is refused and its red tests are named, rather than the mutation being blamed |
+| **MU-55** | **negative** | `--case` naming nothing is an error, not a run that found nothing |
+| **MU-56** | positive | A mutation may span several lines: a `from` carrying a newline is applied byte-exactly, and a multi-line `from` that is absent is still refused |
+| **MU-57** | **negative** | A mutation that stops the tests registering at all is `no test executed`, not a test that passed |
+| **MU-58** | **negative** | A spec that does not exist is refused before anything is mutated |
+| **MU-59** | positive | This document and the test file name the same scenarios, in both directions |
+
+## Scenarios
+
+One row per case above; one row per **scenario** here, because a case usually holds several and a
+guard that only refuses is as useless as one that only permits. A reader cannot tell from a single
+line which half was tested.
+
+**This table is generated from the test file and `MU-59` keeps it that way**, in both directions: a
+scenario here that the file does not have fails, and a test the file has that is not here fails too.
+That is the answer to finding 9 of the 2026-10-01 re-review, which was eight drifts found by one
+human comparison that nothing repeated. Renaming a test is a two-file change now.
+
+| Case | Scenarios, named as the tests are named |
+|---|---|
+| **MU-1** | the named test goes red and a survivor remains |
+| **MU-2** | a `from` that is not in the subject is refused, and says the subject moved |
+| **MU-3** | a `from` that occurs twice is refused, and says how often<br>and neither left the subject changed |
+| **MU-4** | a red test that is not the named one is a failure, not a pass |
+| **MU-5** | a mutation that reddens every test is refused as a broken file |
+| **MU-6** | after a validated run, a failed run and an unresolved run alike<br>and the backup file is not left behind either |
+| **MU-7** | a tracked subject with local changes stops the entry |
+| **MU-8** | the report counts specified cases, registered ones and the difference<br>and it reads the real specifications of whatever branch it runs on<br>and an entry no specification mentions is reported as orphaned |
+| **MU-9** | an entry naming a test file is refused before anything runs |
+| **MU-11** | a mutation that changes nothing observable is unresolved<br>and it is neither validated nor failed, so nothing is concluded from it |
+| **MU-12** | and a mutation that also reddens a sibling is still validated |
+| **MU-13** | an empty registry is reported, not printed as four zeros |
+| **MU-14** | but a file holding one test is validated when that test reddens |
+| **MU-19** | a deletion mutation validates, and for its own reason<br>and an empty `from` is refused before anything is touched |
+| **MU-20** | a spec that matches no file is refused, not called quiet |
+| **MU-21** | a test file reached by a roundabout path is still refused<br>and a test file outside tests/ is refused too<br>while a script that merely lives under tests/ is a subject |
+| **MU-22** | a sibling whose name merely contains the needle does not stand in<br>and the named test itself still validates |
+| **MU-23** | an impossible backup refuses, and the subject is untouched |
+| **MU-24** | a named test failing for its own reasons is refused<br>and a mustFail nobody answers to is refused as well |
+| **MU-25** | an edit that leaves the subject unchanged is refused<br>the counterpart: an edit that does land is measured |
+| **MU-26** | the backup survives and the run says where it is |
+| **MU-27** | a sibling whose name ends with it does not stand in |
+| **MU-28** | test infrastructure is refused whatever it is called<br>while a runner script under tests/ is still a subject<br>and a path that climbs out of the tree is refused |
+| **MU-29** | a registry it cannot parse is an error, not a silence |
+| **MU-30** | an import-time throw is refused, not called a failure |
+| **MU-31** | a sibling file is not counted into the tally |
+| **MU-32** | a normal run says so and exits 2 |
+| **MU-33** | neither refusal path leaves a copy behind |
+| **MU-34** | it is reported with its reason and counted apart<br>and the same checks apply to it as to everything else<br>and an entry that is both is a contradiction, not an exemption |
+| **MU-35** | without it, a `from` that occurs twice is still refused<br>with it, every occurrence is replaced and the subject goes back<br>and a non-boolean `all` is an error rather than a guess |
+| **MU-36** | an exemption is listed with its reason<br>and a registered case no specification mentions is an error |
+| **MU-37** | a mutation that makes the spec hang is refused, and the subject goes back<br>and a spec that is already too slow unmutated is refused before anything is touched |
+| **MU-38** | the counterpart: a normal entry still validates |
+| **MU-39** | SIGTERM ends it mid-run, the subject goes back, and no verdict is printed |
+| **MU-40** | skip, todo and a skipped block are all refused, not read as green |
+| **MU-41** | the name bun prints is the name that matches<br>and the reversed order is refused, on either bun<br>and a parent whose own name carries the separator is still matched |
+| **MU-42** | the block name is enough, which is how A10-14 is written<br>and a name is still never matched by part of another |
+| **MU-43** | a spec that removes its own subject is refused |
+| **MU-44** | an import-time throw before the mutation names the error |
+| **MU-45** | the record is read because of that, not because of a version |
+| **MU-46** | the same test name in two blocks is refused, and the remedy is named |
+| **MU-47** | a block whose name is also a test name is refused too<br>and naming it in full resolves the ambiguity rather than only reporting it |
+| **MU-48** | a run stopped by the budget leaves no bun behind, and no record either |
+| **MU-49** | a TERM while the subject is mutated takes bun with it, and nothing writes the record afterwards |
+| **MU-50** | a budget of zero is refused before anything runs<br>a budget that is not a number at all is refused before anything runs<br>a budget carrying a unit is refused before anything runs<br>and a whole number is still accepted, so the check refuses only what it should |
+| **MU-51** | TERM while the unmutated spec runs leaves no backup and no record |
+| **MU-52** | a spec printing a pass line does not get a survivor it has not got<br>and a spec printing an error line is still read as the control it is |
+| **MU-53** | a link to a test file is refused, and the refusal says where it led<br>a directory link into tests/lib is refused too<br>and an upper-case test name is refused, which was reasoned rather than run<br>the counterpart: a link to an ordinary file is still a subject |
+| **MU-54** | a red sibling is named, and the mutation is not blamed for it<br>and a correct mutation over a red sibling is refused for the right reason<br>the counterpart: a green baseline is still measured rather than refused |
+| **MU-55** | and a --case that matches nothing is an error |
+| **MU-56** | a from carrying a newline is applied, and the subject goes back<br>and a multi-line from that is not there is still refused |
+| **MU-57** | is refused as a run that did not happen, not as a test that passed |
+| **MU-58** | and a spec that does not exist is refused before anything is mutated |
+| **MU-59** | every scenario in this file has a row in the specification<br>and the specification lists no scenario this file does not have<br>and the comparison is over something, so an empty read fails |
+
+**What the blocks below do not carry, and that is a decision.** They are per group — the fixture and
+the reasoning are shared, and repeating them 89 times would bury the differences. They do not carry
+per-scenario steps or dependencies, which the reviewer also asked for. The steps for every scenario
+here are the same three: write a registry, run `tests/mutate.sh` against the fixture, read the verdict
+and the subject; the dependency is bun and a POSIX shell, stated under *Runner and hosts*. Where a
+scenario needs more than that — a git repository, a signal, a private `TMPDIR`, the real checkout — the
+block says so. If that turns out to be too thin for signing off, the per-scenario blocks are the next
+thing to write and not a disagreement.
 
 ## Detail per group
 

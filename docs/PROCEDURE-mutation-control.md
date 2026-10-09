@@ -62,7 +62,7 @@ finish, so it measured nothing. The subject is restored either way.
 
 | | |
 |---|---|
-| **validated** | the named test failed and at least one test still passed |
+| **validated** | the named test failed and at least one test still passed -- **except in a file holding a single test**, where that test reddening is the whole file reddening and no survivor can exist (`mutate.sh`, and MU-14) |
 | **failed** | the named test passed — the entry does not protect what it claims |
 | **refused** | the mutation could not be applied, **every** test failed — a broken file rather than a control — or the run did not finish inside its budget |
 | **unresolved** | nothing went red at all |
@@ -253,9 +253,13 @@ That is stricter than a mutation on the point that matters, and weaker on one th
 **So it was a substitute for one milestone, not a relaxation of the rule.** Once this branch reaches
 `main`, every branch cut from it carries the runner and the reason M-A16 had gives out; its cases are
 registered then, like any others. The evidence for the walk sits under M-A16 in
-`docs/TEST-SPEC-git-integration.md`, which records the 18 and the 9 and names which 9 they were -- that
-file arrives on `main` with the git integration, so until both are merged it is reachable only on that
-branch. Said here because a pointer to a file the reader cannot open is worse than no pointer.
+`docs/TEST-SPEC-git-integration.md`, which records the 18 and the 9 and names which 9 they were.
+
+*Corrected 2026-10-09.* This said the file "arrives on `main` with the git integration, so until both
+are merged it is reachable only on that branch", and that stopped being true when #9 merged: the file
+is in this tree, at `docs/TEST-SPEC-git-integration.md`, and the pointer works. The numbers stay
+restated below anyway, because a reader should not have to open a second document to see what the walk
+measured. Finding 10 of the 2026-10-01 re-review.
 
 **What it cost, written down because it is the argument for finishing the registry.** That evidence
 cannot be re-run. Anyone reviewing M-A16 in a month has the number and this paragraph and no way to
