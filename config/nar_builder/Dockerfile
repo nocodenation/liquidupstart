@@ -44,9 +44,21 @@ RUN apt-get update \
 # before this line: `touch /m2/probe` as builder, `Permission denied`.
 RUN useradd -r -u 1500 -m -d /home/builder builder
 
-RUN mkdir -p /opt/builder /repos /deploy/nar_extensions /m2 /liquid/logs \
+# `/liquid/api` is here although this container only ever reads it, and the uid is
+# written as a number on purpose.
+#
+# Since 2026-10-09 that path is a volume shared with `liquid` rather than a host
+# bind, and docker gives a fresh named volume the ownership of the image path it is
+# **first** mounted on. Neither service declares a `depends_on` that would fix the
+# order, so if this container were created first the volume would be root-owned and
+# Liquid -- uid 1000 -- could not write the load index into it. Both images
+# therefore name the directory with the same owner, and the order stops mattering.
+# 1000 is nifi's uid in the Liquid image; B6-33 reads both images and asserts they
+# agree, rather than trusting this comment.
+RUN mkdir -p /opt/builder /repos /deploy/nar_extensions /m2 /liquid/logs /liquid/api \
     && chmod 700 /deploy \
-    && chown builder /m2
+    && chown builder /m2 \
+    && chown 1000:1000 /liquid/api
 
 COPY build.sh /opt/builder/build.sh
 COPY BuildServer.java /opt/builder/BuildServer.java

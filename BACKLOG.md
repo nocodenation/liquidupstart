@@ -29,6 +29,28 @@ Recorded 2026-10-08, after the decision had been sitting only in the body of com
 
 ---
 
+**~~The runtime values still go into the synthesised pom unvalidated.~~** *Answered 2026-10-09 by
+moving the directory, not by validating the values. Kept because how the answer was reached is the
+point: two proposed fixes were measured and both were wrong before the third worked.*
+
+**The measurement that settled it.** With `volumes/liquid/api` a shared volume, a sentinel written on
+the host — `nifi_version=0.0.0-SENTINEL` — is invisible to the builder, which goes on reading
+`2.11.0`, and `nar-build target` still resolves `nifi_api_version 2.10.0` through
+`read_from liquid at liquid:8833 (runtime)`. Before the move that sentinel **was** the attack this
+entry describes: the builder would have compiled against NiFi 0.0.0. The directory is `nifi:nifi 755`
+in both images now, and the builder's mount answers `Read-only file system` to a `touch`. B6-33 and
+B6-34; CLAUDE.md's rule distinguishes state from a generated index rather than carrying an exception.
+
+The two that did not work, measured rather than argued: a **version pattern** narrows what can be
+written to something that still parses and stops nothing, since a host-side writer picks a valid
+version as easily as an invalid one; and the **mode** could not be narrowed while the directory was a
+bind, because under rootless Docker the host user maps to container root while Liquid runs as nifi —
+`chmod 755` there would simply have stopped Liquid starting. Asking Liquid for its version instead
+needs credentials the builder deliberately does not hold: `/nifi-api/flow/about` and
+`/nifi-api/system-diagnostics` both answer 401.
+
+*The original entry follows.*
+
 **The runtime values still go into the synthesised pom unvalidated.** M2 of the 2026-10-01 review
 asked for two things: validate the NiFi and Java versions against a version pattern before they
 reach the pom, and stop the log fallback trusting any line matching `Starting NiFi X using Java Y`.

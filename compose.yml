@@ -395,7 +395,7 @@ services:
       # than from the author's pom.xml is the whole point -- a bundle that
       # compiles against one version and is loaded by another is the M-B2 defect.
       - ./config/liquid/narcheck.py:/opt/builder/narcheck.py:ro
-      - ./volumes/liquid/api:/liquid/api:ro
+      - liquid_api:/liquid/api:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8770/health >/dev/null"]
       interval: 30s
@@ -692,7 +692,7 @@ services:
       # the container. Item 11 of the 2026-09-28 review.
       - ./volumes/nar_extensions:/opt/nifi/nifi-current/nar_inbox
       # Written here on every start, read by nar_builder. See entrypoint.sh.
-      - ./volumes/liquid/api:/opt/nifi/nifi-current/api
+      - liquid_api:/opt/nifi/nifi-current/api
       - ./volumes/liquid/conf:/opt/nifi/nifi-current/conf
       - ./volumes/liquid/database_repository:/opt/nifi/nifi-current/database_repository
       - ./volumes/liquid/flowfile_repository:/opt/nifi/nifi-current/flowfile_repository
@@ -955,3 +955,26 @@ networks:
           # out .2 to whichever container starts first and the proxy, which starts
           # last, cannot take the address the gateway trusts.
           ip_range: ${SYSTEM_NETWORK_POOL:-10.99.0.128/25}
+
+# The one named volume in this file, and the exception is argued rather than taken.
+#
+# CLAUDE.md says all state lives in browsable `./volumes/` bind mounts and never in
+# named Docker volumes, and the reason is that state should be readable and a reset
+# should be `rm -rf volumes/`. `liquid/api` is not state: Liquid regenerates both
+# files in it on every start -- the load index from `lib/`, and the runtime record
+# from the jar names and `java -version`. Nothing reads it but `nar_builder`, which
+# mounts it read-only.
+#
+# What the bind cost was M2 of the 2026-10-01 review: the host side had to be
+# `chmod 777`, because under rootless Docker the host user maps to container root
+# while Liquid runs as nifi, so anything on this machine could write the record the
+# builder compiles against. Measured 2026-10-09 -- the mode could not be narrowed
+# without stopping Liquid, and asking Liquid for its version instead needs
+# credentials the builder deliberately does not hold (both endpoints answer 401).
+#
+# So the directory moves and the rule is sharpened rather than excepted: it governs
+# **state**, and a generated index regenerated on every start is not state. The rule
+# in CLAUDE.md now says so, which also explains why `nar_extensions` has been an
+# anonymous volume all along.
+volumes:
+  liquid_api:

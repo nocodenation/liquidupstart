@@ -23,8 +23,10 @@
  *           `docker` on PATH that appends its arguments to `docker.log`
  *           instead of running anything.
  * When:     That copy runs against an empty `volumes/`.
- * Then:     The seeding `docker run` appears in the log, and
- *           `volumes/liquid/api` exists afterwards.
+ * Then:     The seeding `docker run` appears in the log, `volumes/liquid` exists,
+ *           and `volumes/liquid/api` does **not** -- it is a volume shared with
+ *           `nar_builder` since 2026-10-09 rather than a host bind, so the script
+ *           creates nothing there and the ordering hazard above cannot return.
  * Covers:   B5-1, B5-2, B5-3, FR21, U9
  * Unhappy:  B5-1 is the fresh install that seeded nothing. B5-2 is its
  *           counterpart — a state directory that is already there is still left
@@ -77,11 +79,54 @@ describe('B5-1 a fresh install seeds the state folder', () => {
     expect(log).toContain('nifi-current/conf');
   });
 
-  test('B5-1 and the api directory is still created', () => {
-    // The reason that line was unconditional: an installation predating it
-    // would have docker create the directory as root on the first mount, which
-    // the nifi user in the container cannot write. Moving it must not lose that.
+  test('B5-1 and no api directory is created on the host at all', () => {
+    // **Inverted 2026-10-09, and the inversion is the repair.**
+    //
+    // This asserted that `volumes/liquid/api` exists afterwards, because
+    // `liquid.sh` created it and the hazard was the *order*: creating
+    // `${STATE_DIR}/api` also creates `${STATE_DIR}`, so with the mkdir before the
+    // seeding branch `[ -d "$STATE_DIR" ]` was always true and a fresh install
+    // seeded nothing -- blocker 1 of the 2026-09-28 review, which is what this
+    // file exists for.
+    //
+    // The directory is a volume shared between `liquid` and `nar_builder` now,
+    // created by docker and owned by nifi because both images carry the path, so
+    // `liquid.sh` creates nothing and no ordering can reintroduce the blocker.
+    // M2 of the 2026-10-01 review; the mode it used to need was `chmod 777`, which
+    // put the record `nar-build` compiles against within reach of anything on the
+    // host.
+    //
+    // The seeded directories are asserted beside it, so this cannot be met by a
+    // script that creates nothing at all.
+    expect(existsSync(join(p.root, 'volumes', 'liquid', 'api'))).toBe(false);
+    expect(existsSync(join(p.root, 'volumes', 'liquid'))).toBe(true);
+    rmSync(p.root, { recursive: true, force: true });
+  });
+});
+
+describe('B5-1 a leftover api directory is named, and not deleted', () => {
+  test('B5-1 the start says it is no longer used', () => {
+    // The trap the move would otherwise leave: an installation that ran before
+    // 2026-10-09 still has `volumes/liquid/api` on disk, and it looks
+    // authoritative while being read by nobody. Editing the record there changes
+    // nothing, silently.
+    //
+    // Named once rather than removed -- deleting a directory the operator may have
+    // copied something into is not the start script's call, and the counterpart
+    // below is what stops the notice from becoming noise on a fresh install.
+    const p = project();
+    mkdirSync(join(p.root, 'volumes', 'liquid', 'api'), { recursive: true });
+    const r = runLiquid(p);
+    expect(r.output).toContain('is left over from before 2026-10-09');
+    expect(r.output).toContain('you can delete it');
     expect(existsSync(join(p.root, 'volumes', 'liquid', 'api'))).toBe(true);
+    rmSync(p.root, { recursive: true, force: true });
+  });
+
+  test('B5-1 and a fresh install says nothing about it', () => {
+    const p = project();
+    const r = runLiquid(p);
+    expect(r.output).not.toContain('is left over from before');
     rmSync(p.root, { recursive: true, force: true });
   });
 });
