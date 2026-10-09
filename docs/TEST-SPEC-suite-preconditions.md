@@ -9,9 +9,26 @@ suite was started from, which is the one thing its header did not mention.
 
 | Where | Has | Lacks | The tier gave |
 |---|---|---|---|
-| a feature worktree | `.git` | the started state, `dashboard/node_modules` | 9 fail / 1 error |
-| the release installation, `~/.liquidupstart` | the started state | `.git`, `dashboard/node_modules` | 10 fail / 1 error |
+| a feature worktree | `.git` | the started state, `dashboard/node_modules` | **9 fail / 1 error** over 561 |
+| the release installation, `~/.liquidupstart` | the started state | `.git`, `dashboard/node_modules` | 10 fail / 1 error — measured while that installation carried #10's overlay rather than `main`, so it is the *shape* and not a figure to compare |
 | the operator's checkout, after a start | everything | — | green |
+
+**The pair that counts, both from a pristine worktree with no `volumes/` and no
+`dashboard/node_modules`, on a quiet machine:**
+
+```
+main                       552 pass / 0 skip / 9 fail / 1 error   over 561 in 114 files
+fix/suite-preconditions    566 pass / 4 skip / 0 fail / 0 error   over 570 in 115 files
+```
+
+*Corrected 2026-10-09, and how the first version of this went wrong is the better half of the
+argument for this branch.* It gave the baseline as **7 fail / 1 error**, from one run in a worktree
+where `A3-3` (twice), `A4-16` and `A1-4` did not fail. They fail when run alone there, and they fail
+in a pristine worktree, so during that one run something created `volumes/_git-secrets` against the
+repository root before those files ran and removed it after. **The order-dependence this branch
+exists against falsified the measurement of its own baseline.** The direction was favourable — the
+problem was understated — but a published number a reviewer cannot reproduce is a defect, so the pair
+above is measured under stated conditions instead.
 
 Neither of the first two satisfies the whole suite, so no instruction of the form "run it from X"
 is true. CLAUDE.md's rule applies exactly: **prefer a computed answer to a rule an agent has to
@@ -75,9 +92,13 @@ the precondition holds does, and it is how the counterpart was measured rather t
 cases absent to **9 pass / 2 skip / 0 fail**. A machine can check that a case asked about its
 environment; only a run in that environment can check the case.
 
-**No case covers the fourth precondition, docker.** `OC-15` and `OC-16` build an image inside a
-60-second budget and fail on this machine for that reason, in the baseline as well — a budget, not a
-precondition, and recorded in `BACKLOG.md` rather than answered here.
+**No case covers the fourth precondition, the machine's load.** `OC-15` and `OC-16` build an image
+inside a 60-second budget. They failed in two measurements and **passed in both runs of the pair
+above**, which were taken on a quiet machine — so they are not a budget that is simply too small,
+they are load-dependent, and that is the worse finding of the two: a case whose colour depends on what
+else is running is what makes red stop meaning anything. Recorded in `BACKLOG.md` rather than answered
+here, because the two ways out — a larger budget, or a precondition of its own — are the operator's
+choice.
 
 ## Traceability
 

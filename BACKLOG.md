@@ -9,11 +9,13 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
-**OC-15 and OC-16 build an image inside a 60-second budget, and on this machine it is not enough.**
-Both fail in the default tier -- `Received: 130` and a `this test timed out after 60000ms` -- and they
-fail in the baseline too, so this is not a regression. It is also not a missing precondition: docker
-is there and the build starts. The budget is the problem, because the build installs
-`@anthropic-ai/claude-code` from the network inside it.
+**OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
+budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
+and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.
+*Corrected 2026-10-09: this entry first said "on this machine it is not enough", which was a
+conclusion from the two failures alone.* A case whose colour depends on the load is the worse of the
+two findings, because it is what makes red stop meaning anything. Not a regression either way, and
+not a missing precondition: docker is there and the build starts.
 
 Two ways out, and the choice is the operator's. Raise the budget for these two, which makes a slow
 network a slow suite rather than a red one. Or give them a precondition of their own -- a reachable
