@@ -1,4 +1,4 @@
-# Handover — maintained continuously, last touched 2026-09-23
+# Handover — maintained continuously, last touched 2026-10-08
 
 **What this file is.** The working handover between the operator and the agent, on **one machine**.
 It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
@@ -154,6 +154,46 @@ the next restart of the gateway fails and leaves it down — with an exit code, 
 about why. The full mechanism and the two-step cleanup it needs are under *2026-09-23* below. Read
 that before concluding anything from a dead gateway.
 
+### The stack can be an overlaid installation, and then none of the above applies
+
+*Written 2026-10-08, and the first time this project ran a stack this way.*
+
+The stack tier has to run against a started stack, and the one on this machine is a **release
+install** at `~/.liquidupstart` rather than a checkout — so `git checkout` reaches nothing it uses.
+Restarting it "from the branch" was proposed on 2026-10-07 and would have been destructive, because
+the install is not a working copy: the premise was wrong before the command was.
+
+What works is the overlay `scripts/install/update.sh` already performs for a release — `cp -a` of
+everything the release ships over the installation, leaving `.env`, `volumes/`,
+`.liquidupstart-version` and `.dashboard-port` in place. From a working copy the same thing is done
+with git's own file list, so that uncommitted work comes too and everything ignored stays out:
+
+```bash
+cd <worktree>
+{ git ls-files; git ls-files --others --exclude-standard; } | sort -u > /tmp/overlay.txt
+grep -E '^volumes/|^\.env$|node_modules' /tmp/overlay.txt && echo REFUSE   # must print nothing
+tar -cf - -T /tmp/overlay.txt | tar -xf - -C ~/.liquidupstart
+```
+
+`git ls-files --others --exclude-standard` is the load-bearing half: it brings new, untracked test
+files and leaves `volumes/`, `.env`, `node_modules` and `.pr-drafts` out because they are ignored.
+**Check `.env` by checksum before and after** — it is the one file whose loss costs an afternoon.
+
+**An image is not overlaid.** `config/liquid/entrypoint.sh` is baked into `liquidupstart/liquid`,
+not mounted, so after an overlay that touched it: `./config/scripts/build/liquid.sh` and
+`docker compose up -d liquid`. B4-7 asserts byte identity between the container's copy and the file
+on disk and is the thing that tells you if you forgot. `narcheck.py` **is** mounted, so it needs
+neither.
+
+**Undoing it** is the same overlay from `fc03344` — `git archive fc03344 | tar -x -C ~/.liquidupstart`
+— plus the same rebuild and recreate.
+
+**And a recreate keeps the load path.** `docker compose up -d liquid` reattaches the anonymous volume
+behind `${NIFI_HOME}/nar_extensions`: measured on 2026-10-08, the same volume id and the same five
+judged bundles before and after. That volume comes from a `VOLUME` line in the upstream image, so the
+load path is state that is **not** under `volumes/` and that deleting `volumes/` does not reset.
+FR30 carries the removal procedure.
+
 **A container from another branch's compose file survives every start.** `down.sh` runs
 `docker compose down` with no `--remove-orphans`, and `docker compose` only knows the services the
 *checked-out* compose file declares. So `nar_builder` — declared on #10, absent from #9 — has sat
@@ -185,6 +225,26 @@ the file on disk, and it exists because a green test over a container running so
 indistinguishable from a fix that works.
 
 ## State
+
+**2026-10-08: the stack is a release installation with this branch overlaid on top of it, and that
+is a different arrangement from everything else this file describes.** It is not a checkout. See
+*"The stack can be an overlaid installation"* under *One working copy, one stack* for how it is made
+and how to undo it. `~/.liquidupstart` reports `.liquidupstart-version` **0.7.0** while its
+`compose.yml`, `config/`, `tests/` and `docs/` come from `feature/liquid-java-extensions`, its
+`liquid` image is built from that branch, and `.env` and `volumes/` are the installation's own and
+untouched. The operator decided on 2026-10-08 to keep it that way until Timur's re-review of #10
+arrives, because a branch-shaped stack is the easier ground for his follow-up questions.
+
+Measured there the same day, `tests/run.sh --system`: **924 pass / 10 fail / 1 error** over 934
+tests in 185 files, 52 m-b files covered, and **no failure from the Java side**. The ten failures and
+the one error are milestone-A cases that assume which directory the suite was started from — a
+release install has no `.git` and no `dashboard/node_modules`, a worktree has git and no started
+state, and **neither place satisfies the whole suite**. In `BACKLOG.md`, with the computed repair,
+deliberately not fixed on #10.
+
+**The paragraph below is older and describes a checkout-shaped stack.** It is kept because it is
+what the *dashboard* path produces and what a reader will meet again as soon as the overlay is
+undone.
 
 **The stack runs OpenClaw 2026.9.1 and is shaped by `feature/git-integration`**, started from the
 dashboard on 2026-09-22 while walking A16-M1. Nineteen services plus `liquidupstart-dashboard`, and
@@ -477,6 +537,34 @@ that exists only in a transcript has to be carried by hand, and that is where it
 
 ## What the failures taught
 
+**Never take a control by `git checkout` against work that is not committed.** On 2026-10-07 a
+control for D2 was taken that way, and three repairs that lived only in the working tree went with it
+— M4's reachability probe, the path-resolution guard and D2 itself. They came back only because
+`config/nar_builder/Dockerfile` does `COPY build.sh /opt/builder/build.sh` and `builderimage.ts` had
+built an image from the undamaged tree minutes earlier: `docker create` on that tag, `docker cp` the
+file out, diff against HEAD, three additions and nothing else. **A control is taken by editing the
+file and editing it back**, with a copy kept aside and the checksum compared afterwards — or by
+committing first. The accident did produce a valid control for the path guard, which is recorded
+where that case is documented, and that is luck rather than method.
+
+**An assertion about one host wearing the words of a general property.** B6-23 read
+`expect(seen.startsWith('10.231.91.')).toBe(false)` — the host request does not arrive from inside
+the subnet — while the comment directly above it said that on rootless Docker on Linux it arrives
+**as the bridge gateway**, which is inside the subnet. True on Docker Desktop, false on the
+reviewer's machine, and it was his measurement that produced the finding in the first place. It is
+exhaustive over both readings now and asserts what the repair has to achieve rather than what this
+installation happens to report. **When a comment has to name the host for the assertion to make
+sense, the assertion is about the host.**
+
+**A product change with no case is invisible to every measurement.** S8's repair — the runtime-record
+write made non-fatal — shipped inside a commit whose message named two other findings, with no case
+and no block in the specification, in a review round where everything else got both. It was found by
+asking of all 25 findings "what can I actually claim", not by the suite, which was green throughout.
+Writing the two cases then found a defect in the product: the entrypoint read the NiFi version with
+a BRE using `\|`, a GNU extension that matches nothing on BSD sed, so the branch was unmeasurable on
+any developer host. **The suite cannot tell you about a path it never runs; a list of findings
+crossed against the cases can.**
+
 **One process, and the globals are shared.** `bun test` runs every file in one process, so anything
 a case installs globally outlives it. Registering a DOM for the component tier replaced `fetch`,
 `Request`, `FormData` and the rest, and thirteen cases in two files nobody had touched went red in
@@ -668,6 +756,46 @@ route, and the pairing decision happens only after a browser signs a challenge.
 Everything below is live. Finished items moved to *"Done, and what each turned up"* on
 2026-09-15, because the list had grown three items numbered 0, two numbered 3, and a contradiction
 between them.
+
+**Where the review cycle stands, 2026-10-08.** Read this before the numbered items, which are older
+and go back to 2026-09-15.
+
+| | Branch | Ball with |
+|---|---|---|
+| #10 | `feature/liquid-java-extensions` | **Timur** — all 25 findings of the 2026-10-01 re-review answered at `21e6a92`, re-review requested |
+| #19 | `fix/fixture-names-per-run` | **Timur** — answered 2026-10-02, request standing |
+| #20 | `fix/bind-address` | **Timur** — never reviewed, request standing |
+| #21 | `fix/manifest-atomic-write` | **Timur** — never reviewed, request standing |
+| #18 | `feature/mutation-registry` | **Timur** — all ten findings and the minor answered at `70e12e1` on 2026-10-09, re-review requested |
+| #17 | `feature/test-mutation-control` | **us** — work reported 2026-10-01, no re-review requested. Read the thread before asking for one |
+| #15 | `feature/openclaw-pairing-recovery` | **the operator** — the rule itself is deliberately not started and needs four measurements first |
+| #16 | `feature/memory-midterm` | outside the plan this cycle |
+
+#10's reply counts itself honestly, and the four deferrals in it are in `BACKLOG.md` rather than in
+the comment alone: `/m2` writable by build-time code, any container on the stack network able to
+trigger a build, the runtime record's `chmod 777` directory, and the M-B5 cases' moving image tag.
+Two things in it are stated as unanswerable from here — whether an unprivileged Maven can write a
+bind-mounted `/m2` on **rootless Docker**, which is the reviewer's host and not this one, and that
+there is still no automated case in which a real Maven runs as the build user.
+
+The milestone-A precondition defect is written up in `BACKLOG.md` with its repair ready and belongs
+on its own branch off `main`, the way the `git.sh` manifest write became #21. It bites on **both**
+stacked branches now: the #18 worktree runs 641 pass / 9 fail / 1 error for the same two reasons, no
+MU case among them.
+
+**What #18's round added to the practice, and it is the transferable part.** Its finding 9 was eight
+places where the test specification described something other than the test carrying its id — found by
+the reviewer reading the names out of the file by hand. Fixing the eight would have left the mechanism
+that produced them, so `MU-59` compares the document's scenario table against the test titles in both
+directions, with a third assertion so two empty reads cannot satisfy the first two. **That shape is
+worth copying to the other specifications**: `docs/TEST-SPEC-liquid-java-extensions.md` has the same
+exposure, and #10's own round found a case id drift of exactly this kind (B6-5 missing from the header
+that runs it).
+
+Three of the cases written for that round measured nothing and the controls found all three — a
+subject hash that is green on every path, a spec that had already finished when the signal arrived,
+and a guard reading a number where the number could be "the poll gave up". The lesson is in *What the
+failures taught* below.
 
 1. **Timur's reviews of #9 and #10.** Requested 2026-09-15; he is assigned on both and has read
    neither before — #11 was the only one he had seen. Both descriptions were rewritten that day,
