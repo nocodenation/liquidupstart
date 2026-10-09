@@ -94,6 +94,22 @@ describe('A13-8 and the marker is printed where a Claude sign-in is actually wai
     // Within a few lines of the banner it belongs to.
     expect(banner - at).toBeLessThan(400);
     expect(banner).toBeGreaterThan(at);
+
+    // **And inside the branch, which this case claimed in its own title and never
+    // asserted.** Strengthened 2026-10-09: the three assertions above are a
+    // presence check and a distance, both of which a marker printed outside the
+    // guard would satisfy -- which is the finding this case exists against. The
+    // reviewer named it in B3 of the 2026-10-01 re-review: the registered mutation
+    // renames the marker, so the presence check carries the entry and the title's
+    // claim is carried by nothing.
+    //
+    // The guard sits at column 0, so "inside it" is: it opens before the marker,
+    // and no top-level `fi` closes in between. Written against the script's shape
+    // rather than a line number, which would go stale on the next edit.
+    const guard = OPENCLAW.indexOf('if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then');
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(at);
+    expect(OPENCLAW.slice(guard, at)).not.toContain('\nfi\n');
   });
 
   test('and it appears only in the Claude branch, not once per banner', () => {

@@ -115,8 +115,8 @@
     "case": "A4-6",
     "file": "config/agents/hooks/pre-push",
     "spec": "tests/unit/m-a4.ref-deletion.test.ts",
-    "from": "    say \"If it really should go, that is the operator's call, not yours.\"\n    exit 1",
-    "to": "    say \"If it really should go, that is the operator's call, not yours.\"\n    exit 0",
+    "from": "if is_zero \"$local_sha\"; then",
+    "to": "if false; then",
     "mustFail": "A4-6 deleting a remote branch is refused and the branch survives"
   },
   {
@@ -189,15 +189,15 @@
     "file": "config/agents/hooks/pre-push",
     "spec": "tests/unit/m-a10.scan-paths.test.ts",
     "from": "  IFS='\n'",
-    "to": "  IFS=' '",
+    "to": "  IFS=' \n'",
     "mustFail": "A10-20 a key file whose name carries a space is still seen"
   },
   {
     "case": "A14-3",
     "file": "dashboard/src/app.css",
     "spec": "tests/contract/m-a14.skip-button-shape.test.ts",
-    "from": "\nbutton.skip {",
-    "to": "\nbutton.skipx {",
+    "from": "button.skip {\n  padding: 0.6rem 2rem;",
+    "to": "button.skip {\n  padding: 0.5rem 2rem;",
     "mustFail": "it borrows the size of button.save"
   },
   {
@@ -226,6 +226,14 @@
     "mustFail": "A10-14 a checked-in template is not a credential"
   },
   {
+    "case": "A10-10",
+    "file": "config/scripts/start/git.sh",
+    "spec": "tests/integration/m-a10.offline-start.test.ts",
+    "from": "if ! grep -qxF \"$fp\" <<<\"$published\"; then",
+    "to": "if false; then",
+    "mustFail": "A10-10 a host key GitHub does not publish is still refused"
+  },
+  {
     "case": "A6-12",
     "file": "compose.yml",
     "spec": "tests/contract/m-a6.command-mounted.test.ts",
@@ -236,7 +244,7 @@
   },
   {
     "case": "A3-3",
-    "exempt": "asserts the generated volumes/_git-secrets/known_hosts, not the code that writes it: the file was produced by a start days ago, so mutating the keyscan changes nothing about what the case reads. An artefact assertion under §6, not decision logic."
+    "exempt": "its test reads the generated volumes/_git-secrets/known_hosts, which a start wrote days ago, so it cannot fail against the code and in a clean clone it is red for the fixture's reason. The rule under that artefact -- seed_known_hosts refusing a host key GitHub does not publish -- is a refusing guard and \u00a76 says it needs a mutation: A10-10 is registered with it. Corrected 2026-10-09; the reason given before was \"an artefact assertion under \u00a76, not decision logic\", which said the rule needed no mutation rather than that this test cannot carry it. B2 of the 2026-10-01 re-review."
   },
   {
     "case": "OC-60",
@@ -250,9 +258,8 @@
     "case": "A6-2",
     "file": "config/agents/bin/git-publish.sh",
     "spec": "tests/unit/m-a6.publish.test.ts",
-    "from": "protected",
-    "to": "protectedx",
-    "all": true,
+    "from": "[ \"$policy\" = protected ]",
+    "to": "[ \"$policy\" = protectedx ]",
     "mustFail": "A6-2 the protected default branch is refused, naming the branch, the policy and the way forward"
   }
 ]
