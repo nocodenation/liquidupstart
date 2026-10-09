@@ -36,17 +36,39 @@ Neither is done. What was applied is one line: the `UNRESOLVED` refusal now name
 version came from, so an operator can tell the authoritative `/liquid/api/runtime` from the
 expiring log line when the version is the thing in doubt.
 
-**Why the rest was not applied as proposed.** The values come from two places the builder cannot be
-compromised through without the attacker already holding more than the pom: `/liquid/api/runtime`,
-written by Liquid's own entrypoint, and `/liquid/logs`, mounted read-only. A pattern check would
-therefore guard against Liquid lying to the builder, and the reviewer's own note names the real
-exposure differently — `config/scripts/start/liquid.sh` makes that directory `chmod 777`, so
-**anything on the host** can write the record. A version pattern does not close that; it only
-narrows what can be written to something that still parses. The fix that would close it is the
-directory's mode, which belongs with the other `volumes/` permissions rather than with the pom.
-That is the open item, stated here rather than half-answered in the builder.
+**Why the rest was not applied as proposed.** A pattern check guards against Liquid lying to the
+builder. The reviewer's own note names the real exposure differently —
+`config/scripts/start/liquid.sh` makes that directory `chmod 777`, so **anything on the host** can
+write the record — and a pattern narrows what can be written to something that still parses while
+stopping nothing, because a host-side writer can choose a valid version as easily as an invalid one.
 
-Recorded 2026-10-08.
+**And the mode is not the fix either, measured 2026-10-09.** NiFi runs as uid 1000 inside the
+container, and under rootless Docker — the arrangement CLAUDE.md documents — the host user maps to
+container root, so a 755 directory owned by the operator appears root-owned inside and uid 1000
+cannot write it. That is why `$STATE_DIR`, `api/` and the drop directory are all 777. The exposure is
+structural to *state in a browsable host directory, written by a container process under a different
+uid*, and narrowing this one line would only stop Liquid starting.
+
+**The obvious alternative does not exist.** The builder already talks to Liquid over HTTPS, so it
+could ask for the version rather than read a file. Measured: `/nifi-api/flow/about` and
+`/nifi-api/system-diagnostics` both answer **401**, and the builder deliberately holds no credentials
+(FR25).
+
+**What contains it today, and only partly.** A bundle compiled against the wrong API is judged at
+deployment against the classes the running Liquid loads (FR36, B6-29). A version that is too **high**
+produces references the index does not have and is refused; one that is too **low** resolves and
+deploys, compiled against an older API than the instance runs. *Read out of `narcheck.py:396`, where
+a reference whose package is not in the judged set is skipped — reasoned from the code, not run.*
+
+**So the decision left is one the operator has to take, and it is not about the pom.** Carry
+`volumes/liquid/api` as a volume shared between `liquid` and `nar_builder` instead of a host bind,
+the way `nar_extensions` already is — which closes the host's write path completely and contradicts
+CLAUDE.md's *"all state lives in browsable ./volumes/ bind mounts; never use named Docker volumes"*.
+The index is generated and arguably not state worth browsing, which is the argument for; the rule is
+the argument against. Either way, `liquid.sh` now says at the line what it costs rather than leaving
+a reader to infer it.
+
+Recorded 2026-10-08, measured and rewritten 2026-10-09.
 
 ---
 
@@ -144,6 +166,30 @@ rather than configuration:
   the thing it protects against.
 - **A read-only pre-seeded cache** — no runtime cost, and it refuses any dependency nobody seeded,
   which for an operator writing their own processors is likely unusable.
+- **A read-only seed as a `file://` remote, with a per-build local repository** — *added
+  2026-10-09, and it is the first of these four with a measurement behind it.* The seed is mounted
+  `:ro` and declared as a repository and a pluginRepository; each build gets its own
+  `-Dmaven.repo.local`. Measured in the builder image against the installation's 84 MB, 256-jar
+  cache, with **`--network none`** so that nothing but the seed could have answered:
+
+  ```
+  today, /m2 mounted read-write        exit=0   3 seconds
+  seed :ro + per-build local repo      exit=0   3 seconds   47 jars copied, seed untouched
+  ```
+
+  So it costs no measurable time on this probe and closes the write path completely. Two things it
+  is not free of, and the second is the real one:
+
+  - **`-o` cannot be used.** Maven's offline mode forbids every remote, `file://` included — measured,
+    it fails on `maven-resources-plugin` before compiling. Remote resolution has to be allowed, so
+    the network has to be closed at the container instead, which `--network none` did here.
+  - **The cache stops accumulating.** A read-only seed never learns a dependency a build fetched, so
+    anything the seed lacks is re-fetched on every build. The arrangement only makes sense with a
+    deliberate seeding step — a warm-up build, or a layer in the image — rather than ordinary builds
+    filling it. Somebody has to own that step.
+
+  Not measured: a real processor with a larger dependency closure, and a build that needs something
+  the seed lacks.
 
 What makes it the least urgent of the three: it needs a *later* build to pick the artifact up, and it
 reaches nothing outside the builder — where `/repos` read-write was a path to the containers that hold

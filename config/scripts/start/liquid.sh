@@ -71,6 +71,40 @@ fi
 # would have docker create it as root on the first mount, which the nifi user in
 # the container cannot write.
 mkdir -p "${STATE_DIR}/api"
+# **777, and it is the exposure M2 of the 2026-10-01 review actually names.**
+#
+# Anything on this host can write `volumes/liquid/api/runtime`, and `nar-build`
+# reads that record to decide which nifi-api it compiles against. The reviewer
+# asked for the values to be validated against a version pattern; that narrows
+# what can be written to something which still parses and stops nothing, because
+# a host-side writer can choose a valid version as easily as an invalid one.
+#
+# **The mode cannot be narrowed here, measured 2026-10-09.** NiFi runs as uid 1000
+# inside the container, and under rootless Docker -- the arrangement CLAUDE.md
+# documents -- the host user maps to container root, so a 755 directory owned by
+# the operator appears root-owned inside and uid 1000 cannot write it. That is the
+# same reason the drop directory below is 777, and the reason `$STATE_DIR` itself
+# is. The exposure is structural to "state in a browsable host directory, written
+# by a container process under a different uid", and not to this line.
+#
+# **The obvious alternative does not exist either.** The builder already talks to
+# Liquid over HTTPS, so it could ask for the version instead of reading a file --
+# measured, `/nifi-api/flow/about` and `/nifi-api/system-diagnostics` both answer
+# **401**, and the builder deliberately holds no credentials (FR25).
+#
+# What contains it today is downstream and only partly: a bundle compiled against
+# the wrong API is judged at deployment against the classes the running Liquid
+# loads (FR36). A version that is too **high** produces references the index does
+# not have and is refused; one that is too **low** resolves and deploys, compiled
+# against an older API than the instance runs. That asymmetry is read out of
+# `narcheck.py:396`, where a reference whose package is not in the judged set is
+# skipped, rather than run.
+#
+# What would close it, and it is a decision rather than an oversight: carry this
+# directory as a volume shared between `liquid` and `nar_builder` instead of a
+# host bind, the way `nar_extensions` already is. That contradicts CLAUDE.md's
+# "all state lives in browsable ./volumes/ bind mounts; never use named Docker
+# volumes", so it is in BACKLOG.md for the operator rather than taken here.
 chmod 777 "${STATE_DIR}/api"
 
 # The drop directory and the quarantine beside it, made here for the same
