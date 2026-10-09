@@ -9,6 +9,322 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
+has two halves, and only one is closed. The nginx vhost no longer admits the LAN — the gateway is
+denied before the subnet is allowed, and B6-21 to B6-23 measure it — but the reviewer's second
+half stands untouched: *"every container on the compose network can POST to
+`http://nar_builder:8770/build` with the header directly, past the vhost."* `X-Liquid-Agent: 1` is a
+marker, not authentication, and `BuildServer` has nothing else to check.
+
+The reviewer's own suggestion is the right shape: a shared secret mounted only into the agent
+containers and checked by the server. It is deferred rather than declined, and the reason is
+sequencing: with B1's privilege drop in place, what a caller past the vhost can now reach is a build
+that runs as an unprivileged user over a read-only `/repos`, which is a different exposure from the
+one S3 was written against. Closing it needs a secret in `.env.example`, a mount in three agent
+services, a check in `BuildServer.java` and a case on both sides — more than a line, and it changes
+the contract every caller uses.
+
+Until then the honest statement is the one above: on this stack, any container can trigger a build.
+Recorded 2026-10-08, after the decision had been sitting only in the body of commit `03f5620`.
+
+---
+
+**~~The runtime values still go into the synthesised pom unvalidated.~~** *Answered 2026-10-09 by
+moving the directory, not by validating the values. Kept because how the answer was reached is the
+point: two proposed fixes were measured and both were wrong before the third worked.*
+
+**The measurement that settled it.** With `volumes/liquid/api` a shared volume, a sentinel written on
+the host — `nifi_version=0.0.0-SENTINEL` — is invisible to the builder, which goes on reading
+`2.11.0`, and `nar-build target` still resolves `nifi_api_version 2.10.0` through
+`read_from liquid at liquid:8833 (runtime)`. Before the move that sentinel **was** the attack this
+entry describes: the builder would have compiled against NiFi 0.0.0. The directory is `nifi:nifi 755`
+in both images now, and the builder's mount answers `Read-only file system` to a `touch`. B6-33 and
+B6-34; CLAUDE.md's rule distinguishes state from a generated index rather than carrying an exception.
+
+The two that did not work, measured rather than argued: a **version pattern** narrows what can be
+written to something that still parses and stops nothing, since a host-side writer picks a valid
+version as easily as an invalid one; and the **mode** could not be narrowed while the directory was a
+bind, because under rootless Docker the host user maps to container root while Liquid runs as nifi —
+`chmod 755` there would simply have stopped Liquid starting. Asking Liquid for its version instead
+needs credentials the builder deliberately does not hold: `/nifi-api/flow/about` and
+`/nifi-api/system-diagnostics` both answer 401.
+
+*The original entry follows.*
+
+**The runtime values still go into the synthesised pom unvalidated.** M2 of the 2026-10-01 review
+asked for two things: validate the NiFi and Java versions against a version pattern before they
+reach the pom, and stop the log fallback trusting any line matching `Starting NiFi X using Java Y`.
+Neither is done. What was applied is one line: the `UNRESOLVED` refusal now names which record the
+version came from, so an operator can tell the authoritative `/liquid/api/runtime` from the
+expiring log line when the version is the thing in doubt.
+
+**Why the rest was not applied as proposed.** A pattern check guards against Liquid lying to the
+builder. The reviewer's own note names the real exposure differently —
+`config/scripts/start/liquid.sh` makes that directory `chmod 777`, so **anything on the host** can
+write the record — and a pattern narrows what can be written to something that still parses while
+stopping nothing, because a host-side writer can choose a valid version as easily as an invalid one.
+
+**And the mode is not the fix either, measured 2026-10-09.** NiFi runs as uid 1000 inside the
+container, and under rootless Docker — the arrangement CLAUDE.md documents — the host user maps to
+container root, so a 755 directory owned by the operator appears root-owned inside and uid 1000
+cannot write it. That is why `$STATE_DIR`, `api/` and the drop directory are all 777. The exposure is
+structural to *state in a browsable host directory, written by a container process under a different
+uid*, and narrowing this one line would only stop Liquid starting.
+
+**The obvious alternative does not exist.** The builder already talks to Liquid over HTTPS, so it
+could ask for the version rather than read a file. Measured: `/nifi-api/flow/about` and
+`/nifi-api/system-diagnostics` both answer **401**, and the builder deliberately holds no credentials
+(FR25).
+
+**What contains it today, and only partly.** A bundle compiled against the wrong API is judged at
+deployment against the classes the running Liquid loads (FR36, B6-29). A version that is too **high**
+produces references the index does not have and is refused; one that is too **low** resolves and
+deploys, compiled against an older API than the instance runs. *Read out of `narcheck.py:396`, where
+a reference whose package is not in the judged set is skipped — reasoned from the code, not run.*
+
+**So the decision left is one the operator has to take, and it is not about the pom.** Carry
+`volumes/liquid/api` as a volume shared between `liquid` and `nar_builder` instead of a host bind,
+the way `nar_extensions` already is — which closes the host's write path completely and contradicts
+CLAUDE.md's *"all state lives in browsable ./volumes/ bind mounts; never use named Docker volumes"*.
+The index is generated and arguably not state worth browsing, which is the argument for; the rule is
+the argument against. Either way, `liquid.sh` now says at the line what it costs rather than leaving
+a reader to infer it.
+
+Recorded 2026-10-08, measured and rewritten 2026-10-09.
+
+---
+
+**S9's machine dependencies are half closed.** The builder image is no longer taken from whatever
+`liquidupstart/nar-builder:latest` happens to be on the host: `tests/lib/builderimage.ts` builds it
+from the tree under test and tags it per run, eight files use it, and the specification records the
+change. What is still true of the default-tier M-B5 cases is the rest of the reviewer's sentence:
+they pin `ghcr.io/nocodenation/liquid-nifi:latest`, which is a moving tag, and `nifi-kafka-nar-2.11.0.nar`,
+`nifi-api-2.10.0.jar` and a 2.11.0 `START_LINE` with it, so an image upgrade turns them red — and
+B5-15 and B5-16 reach Maven Central. Pinning the image by digest is the obvious half of the repair
+and would need re-pinning on every upgrade, which is the trade the operator should make rather than
+a branch under review. Recorded 2026-10-08.
+
+---
+
+**Four milestone-A cases read the live installation without saying so, and are red in any bare
+checkout.** `tests/lib/paths.ts:5` computes `repoRoot` from the test file's own location, so in a
+worktree it is the worktree. The state these four assert is created only by
+`config/scripts/start/git.sh` — `volumes/_git-secrets` at lines 60-61, the shared `pre-push` hook at
+83, `known_hosts` at 141, `volumes/repos` mode 777 at 58-59 — and that script never ran there:
+
+- `tests/contract/m-a3.known-hosts.test.ts:32` and `:49` — A3-3, both halves.
+- `tests/contract/m-a4.clones-governed.test.ts:37` — A4-16.
+- `tests/integration/m-a1.workspace-dir.test.ts:65` — A1-4, on the mode.
+
+Measured 2026-10-07 while the whole default tier was run from the #10 worktree: 4 red there, and all
+four green in `/Users/christof/repos/liquidupstart`, where a start has run (`volumes/repos` 777,
+`volumes/_git-secrets` 700, `hooks/pre-push` 755). So the product is right and the cases carry an
+unstated precondition — they pass or fail on which directory the suite was started from, which is
+the one thing their headers do not mention.
+
+The repair is a computed precondition rather than a remembered rule, in the spirit of CLAUDE.md:
+`export const INSTALLED = existsSync(join(repoRoot, 'volumes', '_git-secrets'));` in
+`tests/lib/gitfixture.ts` — `git.sh:60` is the only thing that creates that directory, so its
+presence *is* the question "installation or bare checkout" — and `test.skipIf(!INSTALLED)` on the
+four. It also needs the three test headers to state the precondition, and the three signed-off
+detail blocks in `docs/TEST-SPEC-git-integration.md` (A1-4 at :359, A3-3 at :628, A4-16 at :1656) to
+record the skip as a decision rather than leave it silent.
+
+**And the installation is not the answer either, which is what makes this worth an entry.** Moving
+the run there satisfies those four and breaks ten others, because a release install has no `.git`
+and no `dashboard/node_modules`. Measured the same day, `tests/run.sh --system` from
+`~/.liquidupstart`: **919 pass / 10 fail / 1 error**, every failure milestone-A and none from the
+Java/NAR work.
+
+- No `.git`: `tests/component/m-a6.operator-repository.test.ts:30` wants
+  `git rev-parse --is-inside-work-tree` to say `true` and gets `""`;
+  `tests/contract/m-a16.text-only.test.ts:45` wants more than 50 tracked test files and counts 0;
+  `tests/contract/m-a5.nested-clone.test.ts` A5-8, all three halves, asks `git check-ignore` and
+  `git status` about `volumes/`; and A16-16, A16-17 and A16-24 read a card against clone state.
+- No `dashboard/node_modules`: `tests/lib/mount.ts` cannot resolve
+  `@happy-dom/global-registrator`, which takes A16-18 down as an error rather than a failure.
+
+So **neither location satisfies the whole suite**: a worktree has git and no started state, an
+installation has the started state and no git. The two halves need two computed preconditions, not
+one — `INSTALLED` as above, and a `TRACKED` (or the same question asked of `git rev-parse`) for the
+cases that read the repository. Each is one value read at the moment it is needed, which is the
+form CLAUDE.md argues for; the present arrangement is an assumption about the reader's working
+directory, which is the form it argues against.
+
+**Why it is deferred rather than done:** these are milestone-A files, on `main` since #9. Fixing
+them inside #10 would put unrelated git-integration changes into a pull request under review for the
+Java/NAR work. It belongs in its own branch off `main`, the way the `git.sh` manifest write became
+#21.
+
+Found while answering D2 and M6 of the 2026-10-01 review. Recorded 2026-10-07.
+
+---
+
+**A fifth file writes into the operator's `volumes/repos` from the default tier.**
+`tests/contract/m-a5.nested-clone.test.ts:37` builds `reposDir` from `repoRoot` and `:43-46` writes a
+git repository into it. It is green, because it creates everything it asserts against, so it is not
+in the failure set above — but it means a default-tier run leaves state in whichever checkout it was
+started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
+tier's. Same branch as the entry above. Recorded 2026-10-07.
+
+---
+
+**The shared Maven cache stays writable by build-time code.** `compose.yml` mounts
+`./volumes/nar_builder/m2:/m2` read-write, and Maven runs there as the unprivileged `builder` user,
+which can write it. So a pom, a plugin or a dependency can plant an artifact that **every later
+build** resolves from — persistence that survives until somebody clears the directory.
+
+This is the last of B1's **four** legs, 2026-10-01 review — the entry said three on 2026-10-04 and was
+wrong, because the drop directory had been recorded as closed when it was not. The other three are
+closed: `/repos` is read-only, `/opt/builder` is unreachable to the build user, and the drop directory
+is mounted under a root-only parent since 2026-10-05 (B6-1 to B6-4). The operator decided on
+2026-10-04 to take those two and price this one separately, because closing it costs build capability
+rather than configuration:
+
+- **A per-build cache** — a fresh `-Dmaven.repo.local` per build, or an overlay over a seeded one.
+  Every build then re-downloads its dependencies, so a build goes from seconds to minutes and needs
+  the network every time. An overlay (`lowerdir` the seeded cache, `upperdir` per build) keeps the
+  speed and needs a privileged mount or fuse-overlayfs in the builder, which is more capability than
+  the thing it protects against.
+- **A read-only pre-seeded cache** — no runtime cost, and it refuses any dependency nobody seeded,
+  which for an operator writing their own processors is likely unusable.
+- **A read-only seed as a `file://` remote, with a per-build local repository** — *added
+  2026-10-09, and it is the first of these four with a measurement behind it.* The seed is mounted
+  `:ro` and declared as a repository and a pluginRepository; each build gets its own
+  `-Dmaven.repo.local`. Measured in the builder image against the installation's 84 MB, 256-jar
+  cache, with **`--network none`** so that nothing but the seed could have answered:
+
+  ```
+  today, /m2 mounted read-write        exit=0   3 seconds
+  seed :ro + per-build local repo      exit=0   3 seconds   47 jars copied, seed untouched
+  ```
+
+  So it costs no measurable time on this probe and closes the write path completely. Two things it
+  is not free of, and the second is the real one:
+
+  - **`-o` cannot be used.** Maven's offline mode forbids every remote, `file://` included — measured,
+    it fails on `maven-resources-plugin` before compiling. Remote resolution has to be allowed, so
+    the network has to be closed at the container instead, which `--network none` did here.
+  - **The cache stops accumulating.** A read-only seed never learns a dependency a build fetched, so
+    anything the seed lacks is re-fetched on every build. The arrangement only makes sense with a
+    deliberate seeding step — a warm-up build, or a layer in the image — rather than ordinary builds
+    filling it. Somebody has to own that step.
+
+  Not measured: a real processor with a larger dependency closure, and a build that needs something
+  the seed lacks.
+
+What makes it the least urgent of the three: it needs a *later* build to pick the artifact up, and it
+reaches nothing outside the builder — where `/repos` read-write was a path to the containers that hold
+the deploy keys. Recorded 2026-10-04.
+
+---
+
+**~~Liquid autoloads from the drop directory, and everything this feature says about deployment is
+built on the assumption that it does not.~~** *Answered 2026-09-14/15. Kept because how the answer
+was reached is the point; FR29, FR30 and FR36 in `docs/FEATURE-liquid-java-extensions.md` carry the
+outcome, and `docs/verification/M-B4-verification.md` the evidence. The decision was not to argue
+with the auto-loader but to move the check to the moment of placement, and to take a refused bundle
+out of the load path into `refused/` rather than leave it lying where NiFi would load it.*
+Measured 2026-09-09, while a red check in `tests/verify/m-b4.sh` refused to be explained. It is the
+largest open question this feature has.
+
+```
+nifi.nar.library.autoload.directory=/opt/nifi/nifi-current/nar_extensions
+```
+
+**The measurement.** A NAR named `b4-autoload-nar-1.0.0.nar` was built into
+`volumes/nar_extensions` and nothing else was done — no restart, no copy. After **20 seconds**
+`org.nocodenation.probe.AutoloadProbe` was listed by `/nifi-api/flow/processor-types`, the container's
+`StartedAt` was unchanged, and the NAR was **not** in `lib/`. Independently, the catalogue was already
+listing `ProbeA` and `ProbeB` — B3-3's concurrency fixtures, which the suite writes into the drop
+directory and deletes again, which were never in `lib/`, and which no restart followed. NiFi loads
+them and does not unload them.
+
+**What that puts in question, none of it settled:**
+
+- **FR36 and M-B4.** The guard refuses to copy a mismatched bundle into `lib/`. NiFi loads it from the
+  drop directory anyway, about twenty seconds later. The milestone is built, its 32 cases are green,
+  and it guards a path that is not the one that loads. This is why §4's check 3 stayed red through two
+  repairs of the check.
+- **FR29, and what `nar-build` prints to an agent.** *"Liquid loads NARs from /nar_extensions at
+  startup only. Ask the operator to restart it"* — the restart is not required. That sentence reaches
+  every agent that builds a NAR.
+- **FR30.** *"On start, every `*.nar` in it is copied into `lib/`"* holds, and appears to be
+  redundant: the autoload directory would have reached the load path without it.
+- **M-B3's check 3.** It established that Liquid lists what `nar-build` produces. It never separated
+  whether that was the copy into `lib/` or the autoload directory.
+- **Where the setting lives.** `volumes/liquid/conf/nifi.properties:37` — persistent local state. The
+  stock `apache/nifi:2.11.0` image says `./extensions`. Nothing in `config/liquid/`, `compose.yml`,
+  `.env.example` or a `NIFI_*` variable sets it, so **a fresh installation may not behave the way this
+  one does**, and no branch carries the difference.
+
+**Deliberately not repaired on 2026-09-09.** Two explanations for the red check were offered and
+withdrawn that day — a leftover unpacked bundle, and an answer from the instance being replaced — and
+the third is the first that rests on a measured configuration value rather than on reasoning about
+behaviour. The right next step is to decide what the deployment path *should* be, not to adjust a
+guard until a check goes green.
+
+**~~Nothing in the stack notices a NAR built against an API Liquid does not provide.~~** *Closed
+2026-09-15: `nar-build` now refuses such a bundle before it enters the drop directory, judging it
+against an index of the running distribution's `lib/`. The entrypoint keeps its own check for
+bundles placed by hand. What follows was the case for doing it, and it still reads true.*
+Established by B3-2 on 2026-09-08, and the reason FR23 was rewritten the same day. A NAR compiled
+against `nifi-api` 2.11.0, referencing a class the loaded 2.10.0 jar does not contain, is accepted:
+the bundle loads, the processor is listed in the catalogue, and `nifi-app.log` says nothing. The
+break waits for the first run of the processor — inferred from how the JVM resolves method
+signatures, and **not yet tested**.
+
+`nar-build` prevents it at the source by resolving the API through `nifi-utils`, which is FR27, and
+that covers every NAR this stack builds. It does not cover a NAR built elsewhere and dropped into
+`volumes/nar_extensions` by hand, which is a documented path in the `liquid` skill.
+
+**The first half was done on 2026-09-09, and the inference was wrong about when.** A mismatched
+processor was added from the canvas against a stack built from this branch. It fails at
+**instantiation**, not at trigger: `POST /nifi-api/process-groups/<id>/processors` answers **500**
+with `java.lang.NoClassDefFoundError: org/apache/nifi/controller/NodeConnectionState`. The processor
+never reaches the canvas, so it never runs — the predicted error type was right and the predicted
+moment was not. The control ran beside it flawlessly: the same processor built against the resolved
+2.10.0 reached 4,114,541 invocations in five minutes.
+
+**Two things came out of it that are worse than the original finding.** The error is written to
+`nifi-user.log` and **not** to `nifi-app.log`, which is where every check in this repository looks —
+so "the framework says nothing" was a conclusion drawn from one log rather than an observation. And
+the UI turns the 500 into `/nifi/#/error` reading *"Your session has expired. Please click on the
+Home button to renew the session."* That is false, and it points the operator at re-authentication,
+which reproduces the failure. Both are recorded in B3-2 and in §4, and §4 now reads both logs.
+
+**~~What is still open is the deployment-time check.~~** *Built as M-B4 and, on 2026-09-15, moved to
+where deployment actually happens.* The entrypoint's walk into `lib/` turned out not to be that
+place: NiFi auto-loads from the drop directory, so a bundle refused there was loaded anyway. The
+check now runs in `nar-build`, between writing the artifact as a dot-file the auto-loader skips and
+renaming it into place, and a refused bundle is moved to `refused/` — a subdirectory the auto-loader
+does not descend into. Measured on 2026-09-15: placed 06:43:13, loaded 06:43:18, `500` at 06:43:37
+with the real error in `nifi-user.log` and nothing in `nifi-app.log`.
+
+**Nothing sweeps a staging file the builder abandoned.**
+Introduced by M-B3's own fix on 2026-09-08, and recorded because it is a property the milestone
+changed rather than one it found. `config/nar_builder/build.sh` used to stage into
+`${DROP}/.${base}.part`, a name derived from the artifact alone: two concurrent builds of one source
+wrote into a single file, which is the defect B3-4 exists for. The staging path is now private to the
+build process, `${DROP}/.${base}.$$.part` — and with that, the old name's one accidental virtue is
+gone. A leftover used to be overwritten by the next build of the same artifact; now every abandoned
+attempt keeps a name of its own and nothing ever touches it again. The `trap` covers `INT` and
+`TERM`, so a `SIGKILL`, a container stop mid-copy or a `docker compose down` during a build leaves a
+file in `volumes/nar_extensions` for good.
+
+**It is litter, not a hazard, and that was checked rather than assumed.** Liquid's entrypoint counts
+with `find -name "*.nar"` and iterates `"$DROP_DIR"/*.nar`; a name with a leading dot and a `.part`
+suffix matches neither, so nothing reaches `lib/`. B3-4 asserts the directory is clean after a normal
+pair, which is the case that matters for the fix; nothing asserts it after an abandoned build,
+because nothing cleans up after one.
+
+**Left because the cheap fix is not obviously the right one.** A sweep of `.*.part` at the start of
+`build_command` would delete the staging file of a build running concurrently — the very situation
+this milestone made safe. Sweeping only files older than some age reintroduces a criterion that
+depends on when you look, which this project has already removed once. The honest options are an age
+the builder itself owns, or leaving the directory's hygiene to `cleanup.sh`, and neither is worth
+deciding under a milestone that is otherwise closed.
+
 **A locally built image can belong to another branch, and nothing on this one says so.**
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
@@ -62,6 +378,25 @@ image rather than listing what the image should contain — so the next start sc
 dependency fails there too. The same gap existed in `dashboard/Dockerfile` and was fixed by M-A8, and
 M-A3 found it in the agent images. Three images, one mistake, three separate discoveries: nothing
 compares what the scripts invoke against what the images carry.
+
+**nginx appends to `X-Forwarded-For` instead of overwriting it.**
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` has been in this repository since
+2026-06-01, arriving with the original webdb-playground base, and appears seventeen times: sixteen in
+`config/nginx/templates/nginx.conf` and once in the generator that emits the hundred Liquid ingress
+blocks. It preserves whatever the client sent and appends the real address, so a request arriving with
+its own `X-Forwarded-For` has that value passed downstream as the first hop.
+
+**Not a defect anyone has demonstrated.** It surfaced on 2026-09-05 while repairing OpenClaw's
+`proxy_attribution_required`, and was changed to `$remote_addr` on the assumption it was part of that
+fix. It was not: measured afterwards, appending with a narrow `gateway.trustedProxies` answers HTTP
+200 exactly as overwriting does. The change was reverted, because a hotfix for a released stack
+should carry only what the break requires.
+
+What would settle it: whether anything downstream reads the first entry and trusts it — NextCloud,
+OpenProject and pgAdmin all have their own trusted-proxy handling, and none has been checked. Against
+that stands a real cost: overwriting discards the true client address for an operator who puts their
+own reverse proxy in front of this stack. Decide it on those two facts, not on the tidiness of the
+directive.
 
 **`cleanup.sh` asks for a sudo password in the middle of a long run, and need not ask at all.**
 Noticed during A7-5 on 2026-09-05. Under rootless Docker the host user maps to container root, so
@@ -288,6 +623,57 @@ at all, and that without `-k` the start then hangs forever. The lesson is not ab
 **"I cannot reproduce it" is a statement about the attempt, not about the system**, and it is a weak
 reason to defer something whose cost was one flag.
 
+**`HANDOFF.md` mixes two kinds of content, and only one of them ages.**
+It carries durable project knowledge — the lessons, which four other documents already cite as rules
+(*"`HANDOFF.md` records the general rule"*) — alongside the state of one machine at one moment. The
+second kind goes stale, and because both live in one file, all of it reads as stale. Splitting the
+lessons into `docs/LESSONS.md` would leave the handover holding state and plans only, and would put
+the cited rules where a citation expects to find them.
+
+Deferred on 2026-09-15 rather than done: it touches four cross-references while #9 and #10 are under
+review, and moving files under a reviewer mid-review is how a review gets read twice. The cheap half
+was done instead — the file and `CLAUDE.md` now say what the handover is, what it is not, and which
+copy is current.
+
+**~~The repositories card contradicts the key panel while the start is waiting.~~** *Done
+2026-09-17, as M-A12 -- the manifest is written after pass 1 as well, and again at the end.* Kept for
+what it records: the entry below was written as a deferral and built four hours later, which is the
+right order round. The original text:
+`git.sh` writes `volumes/_git-secrets/repositories.json` in its third pass, at the end. So while the
+start waits for a deploy key, the card above it still describes the **last completed** start.
+Observed by the operator on 2026-09-17: the panel said *"Add a deploy key to continue — 1 of 2"* and
+the card below it said *"1 of 4 prepared repositories could not be reached … 1 declared repository
+has no deploy key yet. Start the stack so it gets one."* — while that start was running. Nothing is
+wrong in either statement; they describe different moments, and the card cannot know about a
+repository declared since the last start.
+
+The fix is small: write the manifest provisionally after pass 1, where every clone has already been
+attempted and the outcome per repository is known, and write it again at the end. The case is
+*"while the start waits, the card does not contradict the panel"* — one start against a remote that
+refuses, the manifest read during the wait rather than after it.
+
+Deferred on 2026-09-17 rather than done: M-A9 had just been observed end to end, review points 1 to
+4 of #9 were answered, and the reply to the review had been waiting since that morning. The
+contradiction is visible but harmless, and it lasts only as long as a wait does.
+
+**~~A system case did not give the operator's gateway configuration back.~~** *Done 2026-09-17, as
+M-A11.* `tests/system/m-oc.{codex-plugin,proxy-attribution,device-scopes}.test.ts` write
+`volumes/_openclaw/openclaw.json` and restart the gateway. After a run the file had lost
+`"claude-cli/*"` from `agents.defaults.models` — the entry `openclaw.sh` writes so that the model
+policy it derives lists the CLI's own provider — and the gateway was left exited 127, which took 26
+M-B4 cases down with it.
+
+Both halves are now built, and the entry is kept because what it found is worth more than the fix.
+*The restores were the wrong shape twice over:* two of the three put back a **single field** into a
+document read back at restore time, so whatever else had changed in between survived wearing the
+original's name; and each file captured its own "original", so a file whose capture happened after
+another had already written held the changed state as the thing to restore.
+`tests/lib/installation.ts` captures whole files, once per path however many files ask for it, and
+A11-9 refuses a bespoke restore beside it. *And the tier was opt-out:* `./tests/run.sh m-oc` ran it,
+`--no-system` turned it off. A default that is safe only when you remember a flag is not a default,
+so `--system` is now how you ask for it, `--no-system` describes the default, and every run says how
+many files it did not run and how to run them.
+
 
 **The start waits on one missing deploy key at a time, and the panel shows it that way.**
 Proposed by the operator on 2026-09-18, watching the queue: *"die 1. Karte wird zu schnell von der
@@ -321,6 +707,24 @@ questions have to be answered first -- by the operator, before any case is writt
    is the shape of half the findings this feature has already produced.
 
 Recorded 2026-09-18.
+
+**A run killed mid-clone leaves a clone that the next run adopts.**
+M-A15 stops two runs from preparing one repository at the same time, which is what produced a
+dashboard Test reporting a repository as reachable while a start was still trying to clone it. It
+does not cover the leftovers: `git clone` writes `dest/.git` and the remote within 20 ms, so a run
+killed in that window leaves a half-written clone whose `remote.origin.url` already matches the
+declaration. The next run sees a `.git` with the right origin and adopts it as a finished clone.
+
+There is no cheap inspection that settles it -- a clone in flight and a finished clone of an **empty**
+repository are the same thing on disk, a repository with a remote and no commits. What would settle
+it is a marker of the run's own: the lock directory could hold the destination it is cloning into,
+and a `.git` whose lock is gone but whose clone never completed could be recognised and removed. That
+is a design decision with an edge case of its own (an operator's half-done manual clone), so it is
+written down rather than guessed at.
+
+Recorded 2026-09-18, when the lock was built. The window is narrow and needs a run to die inside it;
+the reason it is here is that `docs/FEATURE-git-integration.md` and the test specification both say
+it is, and a document that claims a record must have one.
 
 ---
 

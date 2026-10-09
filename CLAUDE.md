@@ -31,7 +31,8 @@ from the browser.
 
 ## Services & images
 
-Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-runner,liquid,openclaw}:latest`.
+Most images are pulled; five are built locally as
+`liquidupstart/{opencode,bun-runner,liquid,openclaw,nar-builder}:latest`.
 `hermes` exists in config but is **disabled** (commented out in `compose.yml`, `build.sh`,
 `start.sh`). Service UIs are reached at `http://<name>.localhost:${SYSTEM_HTTP_PORT}`
 (HTTP default 8888; Liquid over HTTPS on `${SYSTEM_HTTPS_PORT}`, default 8833).
@@ -46,12 +47,30 @@ Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-r
 - **Container-to-container calls go through the proxy** — `X.localhost:PORT` URLs only
   resolve in the user's browser. Server-side calls (curl, fetch, Liquid processors) must hit
   the nginx `proxy` with a `Host:` header instead.
-- **Persist on host disk** — all state lives in browsable `./volumes/` bind mounts; never
-  use named Docker volumes. This includes NextCloud's `/var/www/html`
+- **Persist on host disk** — all **state** lives in browsable `./volumes/` bind mounts; never
+  use named Docker volumes for it. This includes NextCloud's `/var/www/html`
   (`./volumes/nextcloud/html`): the official image extracts ~30k tiny files into it on first
   boot, which on Docker Desktop for Windows (project on a Windows filesystem) routes through
   the slow WSL↔host bridge and can be slow, but keeping everything on `./volumes/` makes all
   state browsable and a reset is just deleting `volumes/nextcloud/`.
+
+  **State is what a container would miss if it vanished.** A directory a service rewrites from
+  scratch on every start is not state, and the rule does not reach it — which is why
+  `nar_extensions` has been a volume all along, and why `liquid/api` became one on 2026-10-09.
+  Both hold a generated index; Liquid writes the one in `api/` from `lib/` and from
+  `java -version` on each boot, and nothing but `nar_builder` reads it, read-only.
+
+  The distinction is drawn here rather than left as an exception because **the bind had a cost
+  and the volume does not**: under rootless Docker the host user maps to container root while
+  Liquid runs as `nifi`, so a host-bound `api/` had to be `chmod 777` and anything on the machine
+  could write the record `nar-build` compiles against. Measured 2026-10-09 — the mode could not
+  be narrowed while it was a bind, and asking Liquid for its version instead needs credentials
+  the builder deliberately does not hold. M2 of the 2026-10-01 review; `compose.yml`'s own note
+  carries the argument, and B6-33 and B6-34 hold the shape.
+
+  **A named volume for state still needs a reason written where it is taken**, not a precedent
+  pointed at: a reader resetting an installation by deleting `volumes/` has to be able to see
+  what that will and will not clear.
 - **Rootless Docker** — the host user maps to container root, so containers run as root;
   don't add `--user $(id -u)` (it breaks bind mounts).
 - **Minimal code comments** — match the surrounding density; don't over-explain.

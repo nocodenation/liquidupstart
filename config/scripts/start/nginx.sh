@@ -92,6 +92,31 @@ echo "Keystore/truststore generated. Password: ${STORE_PASSWORD}"
 API_KEY="$(grep -E '^API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+NETWORK_SUBNET="$(grep -E '^SYSTEM_NETWORK_SUBNET=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+NETWORK_SUBNET="${NETWORK_SUBNET:-10.99.0.0/24}"
+# Docker's own address on this network, and it is **not** the subnet's `.1` when
+# an ip_range is declared -- which this stack declares.
+#
+# Measured on the operator's running stack: `subnet=10.99.0.0/24
+# iprange=10.99.0.128/25 gateway=10.99.0.128`. Docker puts the gateway at the
+# first address of the range it allocates from, so the first version of this
+# computed 10.99.0.1 and would have denied an address that is not the gateway --
+# an inert rule, and S3 left open. `.env.example:48-49` says ".1 is docker's own
+# gateway address" and is wrong for this stack for the same reason; it is
+# corrected there.
+#
+# So: the first address of SYSTEM_NETWORK_POOL when there is one, and the
+# subnet's first host address otherwise. Both are read out of .env at the moment
+# they are needed rather than written down a second time, which is what this
+# project asks of a rule that would otherwise have to be remembered -- and this
+# finding is exactly why: the remembered rule was already false.
+NETWORK_POOL="$(grep -E '^SYSTEM_NETWORK_POOL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+if [[ -n "$NETWORK_POOL" ]]; then
+  NETWORK_GATEWAY="${NETWORK_POOL%%/*}"
+else
+  NETWORK_GATEWAY="$(printf '%s' "${NETWORK_SUBNET%%/*}" \
+    | awk -F. '{ printf "%s.%s.%s.%s", $1, $2, $3, $4 + 1 }')"
+fi
 HTTP_PORT="${HTTP_PORT:-8888}"
 HTTPS_PORT="${HTTPS_PORT:-8833}"
 
@@ -106,6 +131,8 @@ for template in "${TEMPLATES_DIR}"/*; do
   sed_inplace "s|API_KEY_PLACEHOLDER|${API_KEY}|g" "${CONFIG_DIR}/${filename}"
   sed_inplace "s|SYSTEM_HTTP_PORT|${HTTP_PORT}|g" "${CONFIG_DIR}/${filename}"
   sed_inplace "s|SYSTEM_HTTPS_PORT|${HTTPS_PORT}|g" "${CONFIG_DIR}/${filename}"
+  sed_inplace "s|SYSTEM_NETWORK_GATEWAY|${NETWORK_GATEWAY}|g" "${CONFIG_DIR}/${filename}"
+  sed_inplace "s|SYSTEM_NETWORK_SUBNET|${NETWORK_SUBNET}|g" "${CONFIG_DIR}/${filename}"
 done
 
 
