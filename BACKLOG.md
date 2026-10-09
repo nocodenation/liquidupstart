@@ -9,6 +9,22 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.**
+`tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
+space')`; `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so there
+is something to judge')`. They share nothing but the number.
+
+`TR-1` does not catch it, by construction: both resolve to a declared row, which is all that case
+asserts. What does catch it is `mutate.sh`, which refuses a `mustFail` resolving to more than one
+test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer. That is
+the good failure mode, and it is why this is recorded rather than urgent.
+
+The row in `docs/TEST-SPEC-git-integration.md` describes the `text-only` one. Whichever is renumbered,
+its id moves in a signed-off specification and in a test title at once, which is an operator decision.
+Recorded 2026-10-09, alongside the thirteen ids that *were* documented.
+
+---
+
 **A locally built image can belong to another branch, and nothing on this one says so.**
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that

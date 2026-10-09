@@ -3249,6 +3249,36 @@ reviews that followed, and each has its evidence in its own block.
 | A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
 | A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
 | A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
+
+#### Cases documented after the fact
+
+*Written 2026-10-09.* Eleven cases in this milestone's test files carried an id that no row here
+declared, which `--gaps` cannot see and a reviewer cannot sign. They are gathered rather than
+interleaved on purpose: interleaving them would imply they were signed off with the rows around
+them, and they were not — they were written after, during the rounds of review that followed.
+`TR-1` is what stops this recurring.
+
+| # | Level | Sign | Case | Implemented by |
+|---|---|---|---|---|
+| A8-27 | Unit | positive | An update replaces every locally built image, the toolbox included: `update.sh` names all five, while the dashboard asks for the four that must already exist | `tests/unit/m-a8.built-images.test.ts` |
+| A14-7 | Contract | positive | A finished run refreshes what the page shows, and the refresh is **not** inside the success branch — `invalidateAll()` runs either way, while the success-only callback still means success | `tests/contract/m-a14.skip-button-shape.test.ts` |
+| A14-8 | Contract | positive | Each repository keeps its own test result: the state is a map keyed by slug rather than one answer per card, and starting one test clears only that repository's answer | `tests/contract/m-a14.skip-button-shape.test.ts` |
+| A16-21 | Integration | positive | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-22 | Integration **unhappy** | positive + negative | An abandoned `mkdir` is not forever either — an empty pid file older than any hold is taken over, and a fresh one is still held | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-24 | Component **unhappy** | negative | A contradicted result line is dropped, not hidden: it does not come back when the clone state flips back | `tests/component/m-a16.result-line.test.ts` |
+| A16-25 | Integration | positive | A folder that appeared during the wait survives it, and the start says it left it alone | `tests/integration/m-a16.wait-cleanup.test.ts` |
+| A16-26 | Integration | positive | The counterpart: a partial clone **this run** made is still cleaned up | `tests/integration/m-a16.wait-cleanup.test.ts` |
+| A16-27 | Integration | positive | The wait really waits and then works: a lock released during the wait is picked up and the clone happens | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-28 | Integration **unhappy** | negative | A start that gives up waiting changes nothing: the budget ends without a clone, and the manifest still says what the last start found | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-29 | Integration **unhappy** | negative | And it says what it did instead of writing it down | `tests/integration/m-a16.lock-wait.test.ts` |
+
+**One collision is deliberately left standing and recorded instead.** `A16-19` names two unrelated
+cases: `describe('A16-19 skip-all says it too, with the space')` in
+`tests/component/m-a16.skip-panel.test.ts` and `test('A16-19 git tracks test files, so there is
+something to judge')` in `tests/contract/m-a16.text-only.test.ts`. The row above describes the
+second. Renumbering a signed-off id is the operator's decision, and `mutate.sh` refuses a `mustFail`
+that resolves to more than one test, so the collision surfaces as a refusal rather than a wrong
+answer. In `BACKLOG.md`.
 | A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Detail per case
