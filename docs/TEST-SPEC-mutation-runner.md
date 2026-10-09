@@ -100,6 +100,7 @@ difference ever reached a verdict, and it is gone.
 | **MU-57** | **negative** | A mutation that stops the tests registering at all is `no test executed`, not a test that passed |
 | **MU-58** | **negative** | A spec that does not exist is refused before anything is mutated |
 | **MU-59** | positive | This document and the test file name the same scenarios, in both directions |
+| **MU-60** | positive | An ordinary run ends with the gap line, it agrees with `--gaps`, and it does not change what the run concluded |
 
 ## Scenarios
 
@@ -168,6 +169,7 @@ human comparison that nothing repeated. Renaming a test is a two-file change now
 | **MU-57** | is refused as a run that did not happen, not as a test that passed |
 | **MU-58** | and a spec that does not exist is refused before anything is mutated |
 | **MU-59** | every scenario in this file has a row in the specification<br>and the specification lists no scenario this file does not have<br>and the comparison is over something, so an empty read fails |
+| **MU-60** | an ordinary run ends with the gap line, and it agrees with --gaps<br>and the line does not change what the run concluded |
 
 **What the blocks below do not carry, and that is a decision.** They are per group — the fixture and
 the reasoning are shared, and repeating them 89 times would bury the differences. They do not carry

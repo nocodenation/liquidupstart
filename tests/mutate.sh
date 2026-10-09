@@ -42,15 +42,28 @@ done
 # gap is computed from the specifications rather than counted by hand, and a case
 # id in the registry that no specification mentions is reported too -- it means a
 # case was renamed or deleted and its entry outlived it.
-if [[ "${GAPS:-0}" == "1" ]]; then
-  # try/catch and an explicit exit, not an uncaught throw. In bun 1.3.13 a
-  # program that calls require() runs as CJS, and an uncaught error there exits
-  # **0 with no message** -- measured 2026-09-28. Every `|| exit` around a
-  # `bun -e` in this file was therefore decorative.
+# The coverage report, in two modes.
+#
+# `full` is what --gaps prints: the counts, the missing and orphaned lists, each
+# exemption with its reason, and a non-zero exit on an orphan. `line` is the one
+# summary line, for the end of an ordinary run.
+#
+# One computation rather than two, because the whole point of the line is that it
+# agrees with --gaps. `docs/FEATURE-test-mutation.md` said the gap "is printed on
+# every run" and called that the thing that makes the backfill decision safe,
+# while the gap appeared under --gaps alone -- so a reader concluded the debt was
+# visible where it was not. A2 of the 2026-10-01 re-review of #17; the operator
+# chose to make the document true rather than to narrow it.
+#
+# try/catch and an explicit exit inside, not an uncaught throw. In bun 1.3.13 a
+# program that calls require() runs as CJS, and an uncaught error there exits
+# **0 with no message** -- measured 2026-09-28. Every `|| exit` around a
+# `bun -e` in this file was therefore decorative.
+gaps_report() {  # gaps_report <full|line>
   bun -e '
    try {
     const fs = require("fs"), path = require("path");
-    const [registry, root] = process.argv.slice(1);
+    const [registry, root, mode] = process.argv.slice(1);
     const raw = JSON.parse(fs.readFileSync(registry, "utf8"));
     const entries = raw.map((e) => e.case);
     // An exemption is a registered decision, and the decision is the reason. It
@@ -88,7 +101,14 @@ if [[ "${GAPS:-0}" == "1" ]]; then
     }
     const missing = [...ids].filter((i) => !entries.includes(i)).sort();
     const orphan = entries.filter((e) => !ids.has(e)).sort();
-    console.log(`specified=${ids.size} registered=${entries.length} missing=${missing.length} orphaned=${orphan.length} exempt=${exempt.length}`);
+    const counts = `specified=${ids.size} registered=${entries.length} missing=${missing.length} orphaned=${orphan.length} exempt=${exempt.length}`;
+    if (mode === "line") {
+      // Nothing to compare against is not an error at the end of a run that did
+      // its own work; --gaps says so because answering nothing is its failure.
+      if (specs.length) console.log("gap: " + counts + " -- mutate.sh --gaps lists them");
+      process.exit(0);
+    }
+    console.log(counts);
     if (missing.length) console.log("missing:  " + missing.join(" "));
     if (orphan.length) console.log("orphaned: " + orphan.join(" "));
     if (unmatched.size) console.log("not counted, their ids are not of the registered shape: " + [...unmatched].sort().join(" "));
@@ -104,7 +124,11 @@ if [[ "${GAPS:-0}" == "1" ]]; then
       process.exit(1);
     }
    } catch (e) { console.error("mutate --gaps: " + (e && e.message ? e.message : e)); process.exit(2); }
-  ' "$REGISTRY" "$ROOT" || exit $?
+  ' "$REGISTRY" "$ROOT" "$1"
+}
+
+if [[ "${GAPS:-0}" == "1" ]]; then
+  gaps_report full || exit $?
   exit 0
 fi
 
@@ -887,6 +911,12 @@ if [[ "$seen" == "0" ]]; then
 fi
 
 echo "validated=${validated} failed=${failed} refused=${refused} unresolved=${unresolved} exempt=${exempt}"
+
+# The gap, on every run, which is what the feature document always claimed.
+# Informational: it does not touch the exit status, because a gap is the ordinary
+# state of a registry being filled in -- an orphan is the error, and --gaps is
+# where that is enforced. Said in the line itself.
+gaps_report line || true
 
 # Unresolved is deliberately not an error: making it one pushes authors towards
 # a mutation that reddens something rather than the one that tests the rule.

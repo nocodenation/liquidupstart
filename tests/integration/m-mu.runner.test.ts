@@ -1894,3 +1894,52 @@ describe('MU-59 the specification and this file say the same thing', () => {
     expect(scenariosInSpec().length).toBeGreaterThan(80);
   });
 });
+
+describe('MU-60 the gap is printed on every run, which the documents always claimed', () => {
+  // A2 of the 2026-10-01 re-review of #17. `docs/FEATURE-test-mutation.md` said a
+  // missing mutation "blocks", that the gap "is printed on every run", and called
+  // the second of those "the thing that makes this decision safe" -- the decision
+  // being to backfill the registry per milestone. Neither held: `--gaps` exits 0
+  // with `missing=271`, and an ordinary run printed the per-entry verdicts and the
+  // tally and no gap at all. So a reader concluded the debt was visible where it
+  // was not.
+  //
+  // The operator chose to make the document true rather than to narrow it to
+  // "on --gaps". One computation serves both, because the whole value of the line
+  // is that it agrees with `--gaps` -- and this case is what says it does.
+  //
+  // **Informational by decision.** It does not touch the exit status: a gap is the
+  // ordinary state of a registry being filled in, and the error is an orphan,
+  // which `--gaps` enforces. MU-36 holds that. The second scenario here is what
+  // stops the line quietly becoming a failure.
+  test('MU-60 an ordinary run ends with the gap line, and it agrees with --gaps', () => {
+    const reg = registry([entry()]);
+    const run1 = run(reg);
+    const gaps = run(reg, ['--gaps']);
+
+    const line = run1.output.split('\n').find((l) => l.startsWith('gap: '));
+    expect(line).toBeDefined();
+    expect(line).toContain('mutate.sh --gaps lists them');
+
+    // The same five numbers, read out of both, which is the claim worth holding:
+    // two computations that drift are worse than one report.
+    const numbers = (s: string) =>
+      (s.match(/specified=\d+ registered=\d+ missing=\d+ orphaned=\d+ exempt=\d+/) ?? [''])[0];
+    expect(numbers(line ?? '')).not.toBe('');
+    expect(numbers(line ?? '')).toBe(numbers(gaps.output));
+  }, 300_000);
+
+  test('MU-60 and the line does not change what the run concluded', () => {
+    // A validated entry still exits 0 with the gap beside it, and a refused one
+    // still exits non-zero for its own reason rather than for the gap.
+    const good = run(registry([entry()]));
+    expect(good.code).toBe(0);
+    expect(good.output).toContain('VALIDATED');
+
+    const bad = run(registry([entry({ from: 'NOT_IN_THE_SUBJECT=1' })]));
+    expect(bad.code).not.toBe(0);
+    expect(bad.output).toContain('is not in');
+    // Printed in both cases: a run that refused still owes the reader the gap.
+    expect(bad.output.split('\n').some((l) => l.startsWith('gap: '))).toBe(true);
+  }, 300_000);
+});
