@@ -429,19 +429,63 @@ is what corrected it:
 
 Narrowing `allowedOrigins` does not help: a non-browser client sends whatever `Origin` it likes.
 
-**What has to be measured before any of it is written.** Whether nginx can distinguish host traffic at
-all, and by what. The reviewer measured one host — Linux, rootless, port published on all interfaces —
-and loopback and LAN were indistinguishable there. That is one of four combinations that matter:
-**rootless and rootful, on Linux and on macOS**, with loopback and LAN tested separately in each.
-Docker Desktop routes host traffic through a userland proxy, and what `$remote_addr` holds there is
-exactly the kind of thing this project has been wrong about before (A8-13, N1b, the `stat -f`
-ordering). The rule is written against what the measurement says, and if no combination separates
-them, the fixed address alone does not carry the decision and the header has to be reconsidered.
+**What had to be measured before any of it was written, and two of the four now are.** Whether nginx
+can distinguish host traffic at all, and by what. The four combinations that matter are **rootless and
+rootful, on Linux and on macOS**, with loopback and LAN read separately in each. The two that are
+measured are the **diagonal** — they differ in both dimensions — and they agree:
+
+| Measured | Loopback | The host's LAN address | A container on the stack network |
+|---|---|---|---|
+| Linux, **rootless**, reviewer, 2026-10-01 | `10.231.7.1` | `10.231.7.1` | `10.231.7.3` |
+| macOS, **rootful** (Docker Desktop 4.93.0), 2026-10-10 | `192.168.65.1` | `192.168.65.1` | `10.99.0.148` |
+
+Different mechanisms — a bridge gateway on one, a userland proxy on the other — and the same verdict.
+**The rule splits into a half that works and a half that does not, and only the second is a problem:**
+
+- **Host against container separates, on both.** That is the half the decision rests on, and it holds.
+  nginx can tell a stack-network client from everything else.
+- **Host against LAN does not separate, on either.** The address that identifies the operator's own
+  browser identifies every machine that can reach the published port.
+
+The macOS reading was taken six ways, because one reading of an address is a reading of a route and not
+of a property: IPv4 loopback, IPv6 loopback (`openclaw.localhost` resolves to both here), the hostname,
+the host's LAN address, and — to get a client out of the host's own network namespace — a container on
+an unrelated docker network reaching the published port through `host-gateway` and through that LAN
+address. **All six arrived as `192.168.65.1`.** The stack-network container was the only client that
+arrived as itself.
+
+**Still not measured, and stated rather than implied:** no reading was taken from a second physical
+machine. Both rows above originate on the host under test, as did the reviewer's. What the six readings
+establish is that the published port collapses the source address of every client that is not on the
+stack network, which is the mechanism a LAN peer would also arrive through — but it is an inference from
+the route, and the measurement that would close it is one `curl` from another machine.
+
+**One thing was observed that had until now only been read.** `ip_range: ${SYSTEM_NETWORK_POOL:-10.99.0.128/25}`
+is the guarantee the pinned address depends on, and the entry above argued it from `compose.yml`. The
+container in the table arrived from `10.99.0.148` — inside the pool, where docker's dynamic assignment
+belongs — while the proxy itself sits at `10.99.0.2`, below it. The guarantee is now a reading.
+
+**What the pair above does to the decision.** It does not overturn the fixed address; it makes
+**#20 a hard precondition rather than an ordering preference**, on two of two combinations measured and
+by two unrelated mechanisms. And it exposes a coupling that no document has yet named: #20 makes the
+binding a *variable*, `SYSTEM_BIND_ADDRESS`, defaulting to `127.0.0.1` and openable. An operator who
+opens the port for a reason that has nothing to do with OpenClaw — reaching pgAdmin from a laptop —
+would, once the identity rule is in, hand `operator.admin` to the LAN, silently, because the host
+address the rule names is the address the LAN arrives as.
+
+**So the rule cannot be written as a rule about an address alone.** The shape that fits this stack is
+the one `lu_ip_in_cidr` already uses: a guard that refuses the combination. If `SYSTEM_BIND_ADDRESS` is
+not a loopback address, either the start refuses, or nginx does not assert the identity at all and the
+operator is told why. That is a computed answer where the alternative is an operator remembering that
+two unrelated keys constrain each other — which is the thing this project does not rely on.
+
+**That is the operator's decision and it is open.** It is written up for #15 rather than built.
 
 **Not built in #9, #15 or #19** because it changes the stack's trust boundary rather than any of those
 features, and every case for it has to be written against a live gateway.
 
-Recorded 2026-09-30, direction decided the same day, corrected here 2026-10-02.
+Recorded 2026-09-30, direction decided the same day, corrected here 2026-10-02, second measurement
+and the binding coupling added 2026-10-10.
 
 ---
 

@@ -250,10 +250,20 @@ device path before this change — a container presenting itself as the Control 
 with `operator.admin` and could call `exec.approvals.get`, measured on 2026-09-19 — so the move
 removes a pairing step a container could script, and opens no door that was shut. It does not create
 the separation between the agents and the gateway that supervises them; that separation does not
-exist on this branch or its base, and making it real would mean nginx asserting the identity for
-requests from the host and not from the stack network. Finding 1 of the 2026-09-29 review, which
-raised it as a measurement rather than a defect of this work; it is a design question for #9 or a
-follow-up, and it is recorded here rather than treated as resolved.
+exist on this branch or its base. Finding 1 of the 2026-09-29 review, which raised it as a
+measurement rather than a defect of this work; it is a design question for #9 or a follow-up, and it
+is recorded in `BACKLOG.md` rather than treated as resolved.
+
+> **Corrected 2026-10-10, and the same mistake had already been corrected once elsewhere.** This
+> paragraph used to end *"making it real would mean nginx asserting the identity for requests from the
+> host and not from the stack network"*. **That would break the recovery path §9 exists to provide** —
+> `openclaw-pairing.sh` runs its CLI inside the stack network and through that vhost on purpose,
+> because a CLI reaching the gateway directly sends no identity header. The backlog entry carried the
+> same sentence and was rewritten on 2026-10-02 for exactly this reason; this copy was missed, so the
+> document went on recommending the removal of its own §9 for eight days. The decided direction is the
+> host **and one named stack-network address**, and what it now waits on is in `BACKLOG.md` under
+> *`operator.admin` is reachable from any container on the stack network* — where two of the four
+> address measurements are recorded as of 2026-10-10.
 
 > **What that sentence got wrong, corrected 2026-09-19.** *Changes nothing* was read as a verdict on
 > the setting. It is a verdict on one of its two uses. The same grant makes the **CLI** usable
