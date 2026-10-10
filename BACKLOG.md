@@ -188,30 +188,78 @@ rather than configuration:
   the thing it protects against.
 - **A read-only pre-seeded cache** — no runtime cost, and it refuses any dependency nobody seeded,
   which for an operator writing their own processors is likely unusable.
-- **A read-only seed as a `file://` remote, with a per-build local repository** — *added
-  2026-10-09, and it is the first of these four with a measurement behind it.* The seed is mounted
-  `:ro` and declared as a repository and a pluginRepository; each build gets its own
-  `-Dmaven.repo.local`. Measured in the builder image against the installation's 84 MB, 256-jar
-  cache, with **`--network none`** so that nothing but the seed could have answered:
+- **A read-only seed as a `file://` remote, with a per-build local repository** — added 2026-10-09,
+  **and the figures published that day were wrong. Corrected 2026-10-10, below.** The seed is
+  declared as a repository and a pluginRepository; each build gets its own `-Dmaven.repo.local`.
+
+  **What was published on 2026-10-09, and what it actually measured.** The entry said
+  `exit=0, 3 seconds, 47 jars copied, seed untouched`, against the installation's 84 MB / 256-jar
+  cache with `--network none`. Re-run on 2026-10-10 against the skeleton `build.sh` itself generates,
+  that arrangement **fails**:
 
   ```
-  today, /m2 mounted read-write        exit=0   3 seconds
-  seed :ro + per-build local repo      exit=0   3 seconds   47 jars copied, seed untouched
+  [ERROR] Error resolving version for plugin 'org.apache.maven.plugins:maven-resources-plugin'
+          from the repositories [local, liquid-seed (file:///seed), central]:
+          Plugin not found in any plugin repository
   ```
 
-  So it costs no measurable time on this probe and closes the write path completely. Two things it
-  is not free of, and the second is the real one:
+  and it fails the same way against the accumulated 256-jar cache and against a purpose-built seed.
+  So the 2026-10-09 run was measuring a different build from the one `nar-build` performs — the
+  number was real and the thing it was taken on was not the subject. **A measurement is only as good
+  as the subject it was run against, and that is the half this got wrong.**
 
-  - **`-o` cannot be used.** Maven's offline mode forbids every remote, `file://` included — measured,
-    it fails on `maven-resources-plugin` before compiling. Remote resolution has to be allowed, so
-    the network has to be closed at the container instead, which `--network none` did here.
-  - **The cache stops accumulating.** A read-only seed never learns a dependency a build fetched, so
-    anything the seed lacks is re-fetched on every build. The arrangement only makes sense with a
-    deliberate seeding step — a warm-up build, or a layer in the image — rather than ordinary builds
-    filling it. Somebody has to own that step.
+  **The mechanism, which is the useful part.** A local repository is not a remote repository. Maven
+  writes the repository-qualified `maven-metadata-central.xml` into a local repository and never the
+  unqualified `maven-metadata.xml` that a `file://` remote is looked up for — measured on the
+  installation's cache: **5 files matching `maven-metadata*.xml`, 0 named `maven-metadata.xml`.**
+  Artifact resolution does not need that file and **plugin *version* resolution does**, so a seed can
+  serve a version that is pinned and cannot serve one that has to be resolved. Maven resolves a
+  version for **every plugin the lifecycle binds**, including goals the build never executes: with
+  `resources`, `compiler`, `jar` and `surefire` pinned it still refused on `maven-install-plugin`,
+  whose goal `package` does not reach.
 
-  Not measured: a real processor with a larger dependency closure, and a build that needs something
-  the seed lacks.
+  **With the whole default lifecycle pinned, it works.** Measured 2026-10-10, seed built by a
+  dedicated step in the image build — the arrangement the operator chose on 2026-10-09 — using the
+  same pins the later build uses, so the seed is by construction that build's closure:
+
+  ```
+  the seeding step, in the image build       24.1 s   178 jars   57,406,710 B   67.7 MB layer
+  a build against it, --network none         exit=0    3 s   73 jars copied into the per-build repo
+    compiled 1 source file, produced seed-probe-nar-1.0.0.nar
+    nifi-api-2.11.0.jar served by file:///opt/builder/m2-seed, nothing else reachable
+    seed after the build: 178 jars, mtime unchanged, `touch` by the build user refused
+  a version the seed lacks, --network none   exit=1    2 s   refuses, rather than half-building
+  today's shape, one shared cache, rw        exit=0    2 s   the baseline
+  ```
+
+  **So the honest cost is one second per build on this probe, not zero**, plus a 67.7 MB image layer
+  and 24 seconds of image build time. Pinning made the seed *smaller and faster* to build than an
+  unpinned one (178 jars / 24.1 s against 214 / 33.3 s), because an unpinned resolution pulls metadata
+  and several versions of each plugin.
+
+  **A result that was not expected and bears on the “what should the warm-up pull in” question.** One
+  skeleton build's closure is **178 jars against the 256** that months of real use accumulated in the
+  installation. The common case needs no curating — the seed is whatever the generated skeleton
+  itself pulls.
+
+  **The limit, and it is the one that decides this.** `build.sh` generates that pom only for the
+  **synthesised** project. A project that brings its own `pom.xml` goes through untouched, so the pins
+  cannot be put there, and an author's unpinned pom still needs version resolution from central. The
+  offline property therefore holds for the skeleton and **not in general**, and the per-build
+  repository means such a project re-downloads its closure on **every** build. Not measured: a real
+  processor with a large closure, which is where that cost would show.
+
+  **What survives the correction.** The security property does not depend on any of it: a per-build
+  local repository discarded with the build closes the write path for every build, pinned or not,
+  synthesised or the author's own. `-o` remains unusable — Maven's offline mode forbids every remote
+  including `file://`, measured, failing on `maven-resources-plugin` before compiling — so a network
+  that must be closed has to be closed at the container.
+
+  **And option (d) is measured now too, as a consequence.** Promoting what a build downloaded into the
+  next seed works: the per-build repository wrote **259 `_remote.repositories` files** naming
+  `liquid-seed` and **0 metadata files**, and offering that repository as the next seed built
+  `exit=0`. It works for the same reason and under the same condition — everything pinned, so no
+  metadata is wanted.
 
 What makes it the least urgent of the three: it needs a *later* build to pick the artifact up, and it
 reaches nothing outside the builder — where `/repos` read-write was a path to the containers that hold
