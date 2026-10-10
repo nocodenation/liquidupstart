@@ -9,6 +9,37 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
+budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
+and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.
+*Corrected 2026-10-09: this entry first said "on this machine it is not enough", which was a
+conclusion from the two failures alone.* A case whose colour depends on the load is the worse of the
+two findings, because it is what makes red stop meaning anything. Not a regression either way, and
+not a missing precondition: docker is there and the build starts.
+
+Two ways out, and the choice is the operator's. Raise the budget for these two, which makes a slow
+network a slow suite rather than a red one. Or give them a precondition of their own -- a reachable
+registry -- and skip them where it is absent, which is what `SP-1` would extend to. Measured
+2026-10-09 on bun 1.3.13, macOS; `docs/TEST-SPEC-suite-preconditions.md` records it as the fourth
+precondition it deliberately does not cover. Recorded 2026-10-09.
+
+---
+
+**Two different cases are both called A16-19, and eight A16 ids are in no specification.**
+`tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
+space')` and `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so
+there is something to judge')`. They are unrelated. `--gaps` reads ids out of specifications, so a
+registry entry naming A16-19 would be ambiguous in exactly the way #18's own finding 1 describes --
+and `mutate.sh` refuses a `mustFail` that resolves to more than one test, so the collision would
+surface as a refusal rather than a wrong answer. That is the good case; the bad one is a reader.
+
+Found alongside: the A16 tests run to **A16-29** while `docs/TEST-SPEC-git-integration.md` documents
+only to **A16-20**, so eight ids have no row and `--gaps` cannot see them. Both were reported during
+the 2026-10-01 round and not fixed, because renumbering a signed-off id is a decision and this
+branch's subject is the suite's preconditions. Recorded 2026-10-09.
+
+---
+
 **A locally built image can belong to another branch, and nothing on this one says so.**
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that

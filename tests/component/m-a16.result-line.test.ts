@@ -27,10 +27,21 @@
  *           run of A16-16 during the spike passed over a component whose props
  *           never reached it, so the card was stale in its entirety and the
  *           "stale line" it asserted was simply the original line.
+ *
+ * Precondition: DASHBOARD_DEPS -- the dashboard's dependencies are installed. Skipped where it does not,
+ *           because the component tier needs a DOM, which comes from
+ *           `dashboard/node_modules`. Measured 2026-10-08: the
+ *           whole default tier from a feature worktree gave 9 failures and 1
+ *           error, every one of them a case of this kind, and the release
+ *           installation gave the same count for the opposite reason. Neither
+ *           place satisfies the whole suite, so the precondition is a value
+ *           asked for rather than a directory prescribed. SP-1, SP-2.
  */
 import { test, expect, describe, afterEach } from 'bun:test';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { repoRoot } from '../lib/paths';
+import { DASHBOARD_DEPS } from '../lib/preconditions';
 import { mountComponent, reactiveProps } from '../lib/mount';
 
 const CARD = join(repoRoot, 'dashboard/src/lib/components/GitRepositories.svelte');
@@ -78,7 +89,12 @@ function answering(message: string, ok = false) {
     })) as any;
 }
 
-describe('A16-18 the tier can see a change at all', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-18 the tier can see a change at all', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('a prop change reaches a mounted component', async () => {
     // Nothing below this line means anything if this fails. It is here rather
     // than in a helper because a control that lives somewhere else is a control
@@ -94,7 +110,12 @@ describe('A16-18 the tier can see a change at all', () => {
   });
 });
 
-describe('A16-16 a line that the card contradicts is gone', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-16 a line that the card contradicts is gone', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('a later start clones the repository and the old answer goes with it', async () => {
     answering(UNREACHABLE);
     const props: any = await reactiveProps({ git: view(repo()) });
@@ -115,7 +136,12 @@ describe('A16-16 a line that the card contradicts is gone', () => {
   });
 });
 
-describe('A16-17 and a line the card still agrees with stays', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-17 and a line the card still agrees with stays', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('the answer survives the reload the Test itself causes', async () => {
     answering(UNREACHABLE);
     const props: any = await reactiveProps({ git: view(repo()) });
@@ -133,7 +159,12 @@ describe('A16-17 and a line the card still agrees with stays', () => {
   });
 });
 
-describe('A16-24 a contradicted line is dropped, not hidden', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-24 a contradicted line is dropped, not hidden', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('A16-24 it does not come back when the clone state flips back', async () => {
     // Finding 4 of the 2026-09-28 review. Hiding kept the entry: a Test says
     // "Permission denied", a start clones the repository (line hidden), a
@@ -158,3 +189,14 @@ describe('A16-24 a contradicted line is dropped, not hidden', () => {
     m.unmount();
   });
 });
+
+// **Why this file says something when it does nothing.** The describes above
+// return early without the dashboard's dependencies, so they register no tests and
+// the run would simply not mention them -- a silent skip, which is the shape this
+// project refuses everywhere else. This one runs only in that case, and names it.
+test.skipIf(DASHBOARD_DEPS)(
+  'SP-2 the cases in this file need the dashboard dependencies, which are absent here',
+  () => {
+    expect(existsSync(join(repoRoot, 'dashboard', 'node_modules'))).toBe(false);
+  }
+);
