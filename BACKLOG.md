@@ -9,6 +9,14 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**~~OC-15 and OC-16 depend on what else the machine is doing.~~** *Answered 2026-10-10, and it took
+two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
+precondition could not reach the thing that failed: the registry was reachable in both failing runs
+and the machine was busy. `SP-3` asks whether a registry answers and skips them on an offline machine;
+their own **180-second** budget answers the load, against a build measured at **14 seconds** quiet —
+so the 60 they had was already four times it and still not enough. The cost is stated at the test: a
+genuinely broken build now takes three minutes to say so. The original entry follows.*
+
 **OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
 and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.
@@ -39,6 +47,21 @@ the 2026-10-01 round and not fixed, because renumbering a signed-off id is a dec
 branch's subject is the suite's preconditions. Recorded 2026-10-09.
 
 ---
+
+**~~Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.~~**
+*Resolved 2026-10-10 on the operator's word, and the entry below got one thing wrong that is worth
+keeping visible.*
+
+It said `text-only`'s two A16-19 tests were half of the collision. They are not: that file carries
+two tests under one id **legitimately** — "git tracks test files, so there is something to judge" is
+the premise "no test file is binary to git" needs, the same shape as `TR-2`. The signed-off row
+describes the second of those, not the first, which this entry also had backwards.
+
+The real collision was `tests/component/m-a16.skip-panel.test.ts`, unrelated to either. **It moved,
+to `A16-30`**, because there was nothing on that side to move in an approved document — and its own
+header had never listed the id at all, which is the drift `TR-1` exists for and is how this was found.
+Asked whether the choice of side mattered, the answer was almost no: one had a signed-off row and the
+other had none. The original entry follows.
 
 **Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.**
 `tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the

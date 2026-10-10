@@ -30,6 +30,19 @@
  * nothing else changed.
  *
  * Requirements covered: OC-G4, FEATURE-openclaw-2026-9-1.md §5.5.
+ *
+ * Precondition: registryReachable() -- a package registry answers, because the
+ *           build does `npm install -g`. Skipped where it does not, which is an
+ *           offline machine.
+ *
+ *           **And a budget of its own, because the precondition is not what the
+ *           failures were.** These two failed twice by timing out at the suite's
+ *           60s and passed twice on a quiet machine -- the registry was reachable
+ *           every time and the machine was busy. Measured 2026-10-10: the build
+ *           takes **14s** quiet, so 60s was already four times it and still not
+ *           enough under load. 180s is thirteen times the measured duration; the
+ *           cost is that a genuinely broken build takes that long to say so.
+ *           SP-3, and the second finding of #22.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
@@ -37,6 +50,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { registryReachable } from '../lib/preconditions';
 
 let workRoot: string;
 
@@ -78,18 +92,26 @@ describe('OC-15/OC-16 the install script flag', () => {
     expect(line).toContain('claude --version');
   });
 
-  test('OC-15 with the flag, the image is built and the CLI reports a version', () => {
-    const r = build('lu-oc15-with', installLine());
-    expect(r.code).toBe(0);
-    expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
-  });
+  test.skipIf(!registryReachable())(
+    'OC-15 with the flag, the image is built and the CLI reports a version',
+    () => {
+      const r = build('lu-oc15-with', installLine());
+      expect(r.code).toBe(0);
+      expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
+    },
+    180_000
+  );
 
-  test('OC-16 without the flag, the build fails instead of shipping an empty launcher', () => {
-    const without = installLine().replace('--allow-scripts=@anthropic-ai/claude-code ', '');
-    expect(without).not.toContain('--allow-scripts');
-    const r = build('lu-oc16-without', without);
-    expect(r.code).not.toBe(0);
-    // npm names the script it refused to run; the build then dies on the version check.
-    expect(r.output).toContain('install.cjs');
-  });
+  test.skipIf(!registryReachable())(
+    'OC-16 without the flag, the build fails instead of shipping an empty launcher',
+    () => {
+      const without = installLine().replace('--allow-scripts=@anthropic-ai/claude-code ', '');
+      expect(without).not.toContain('--allow-scripts');
+      const r = build('lu-oc16-without', without);
+      expect(r.code).not.toBe(0);
+      // npm names the script it refused to run; the build then dies on the version check.
+      expect(r.output).toContain('install.cjs');
+    },
+    180_000
+  );
 });
