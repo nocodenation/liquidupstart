@@ -382,7 +382,6 @@ services:
       # by the unprivileged build user -- a bundle in the load path reaches
       # NiFi's autoloader without passing narcheck. B1 of the 2026-10-01 review.
       - ./volumes/nar_extensions:/deploy/nar_extensions
-      - ./volumes/nar_builder/m2:/m2
       - ./volumes/liquid/logs:/liquid/logs:ro
       # The deployment check, and what it judges against: the index of everything
       # the running Liquid can load -- 1512 class names and 49 API packages as

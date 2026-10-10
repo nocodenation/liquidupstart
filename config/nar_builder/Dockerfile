@@ -35,13 +35,12 @@ RUN apt-get update \
 # keeps whatever mode the host gives it, and the build user cannot reach it at
 # all. Measured: `builder` cannot write it and cannot even list it; root can.
 #
-# **And /m2 belongs to that user, which is the other half.** Maven writes its
-# dependency cache there, and the directory this image creates is root-owned: as
-# `builder` Maven died with `java.nio.file.AccessDeniedException: /m2/org`. On a
-# running stack it is a bind mount the host owns and Docker Desktop hands over,
-# so the installation worked and every throwaway container did not -- and a
-# throwaway container is how most of the suite builds. Measured in the image
-# before this line: `touch /m2/probe` as builder, `Permission denied`.
+# **There is no shared /m2 any more, which was the other half of this.** It used
+# to be a host bind mounted read-write, and build-time code could plant an
+# artifact there that every later build resolved -- the last of B1's four legs.
+# Each build now resolves into its own local repository, created for it and
+# discarded with it, and reads a root-owned seed below. So the question of who
+# owns the cache does not arise: nothing is shared between two builds.
 RUN useradd -r -u 1500 -m -d /home/builder builder
 
 # `/liquid/api` is here although this container only ever reads it, and the uid is
@@ -55,15 +54,39 @@ RUN useradd -r -u 1500 -m -d /home/builder builder
 # therefore name the directory with the same owner, and the order stops mattering.
 # 1000 is nifi's uid in the Liquid image; B6-33 reads both images and asserts they
 # agree, rather than trusting this comment.
-RUN mkdir -p /opt/builder /repos /deploy/nar_extensions /m2 /liquid/logs /liquid/api \
+RUN mkdir -p /opt/builder /repos /deploy/nar_extensions /liquid/logs /liquid/api \
     && chmod 700 /deploy \
-    && chown builder /m2 \
     && chown 1000:1000 /liquid/api
 
 COPY build.sh /opt/builder/build.sh
 COPY BuildServer.java /opt/builder/BuildServer.java
+COPY lifecycle-pins.xml /opt/builder/lifecycle-pins.xml
+COPY settings.xml /opt/builder/settings.xml
+COPY seed.sh /opt/builder/seed.sh
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /opt/builder/build.sh /entrypoint.sh
+RUN chmod +x /opt/builder/build.sh /opt/builder/seed.sh /entrypoint.sh
+
+# The seed: the closure of the project `build.sh` synthesises, resolved once here
+# so an ordinary build copies out of the image instead of out of the internet.
+#
+# The versions are arguments with defaults rather than a key in `.env.example`,
+# because a stale seed costs time and never correctness -- `build.sh` still reads
+# the running Liquid's version for the pom it generates, and a dependency the
+# seed lacks is fetched. It writes `${SEED}.record` so `build.sh` can say in one
+# line that the seed holds a different version, instead of re-fetching silently.
+#
+# Root-owned and mode 755: readable by `builder`, writable by nobody but root.
+# Measured 2026-10-10 -- after a build the seed's jar count and mtime are
+# unchanged and `touch` by the build user is refused.
+# One version, not two. The nifi-api version is resolved by the step itself,
+# because NiFi versions it separately -- 2.11.0 ships nifi-api 2.10.0 -- and an
+# argument for it is an argument that can disagree with reality. It did: the
+# first end-to-end run reported `downloads 438, from_seed 329`.
+ARG SEED_NIFI_VERSION=2.11.0
+ARG SEED_NAR_PLUGIN_VERSION=2.4.0
+RUN /opt/builder/seed.sh \
+      "$SEED_NIFI_VERSION" "$SEED_NAR_PLUGIN_VERSION" /opt/builder/m2-seed \
+    && chmod -R a+rX /opt/builder/m2-seed /opt/builder/m2-seed.record
 
 WORKDIR /opt/builder
 

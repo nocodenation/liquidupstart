@@ -1,0 +1,48 @@
+<!--
+  Every plugin the default lifecycle binds, pinned to one version.
+
+  This is spliced into the root pom of the synthesised project by build.sh, and
+  into the identical pom the image build's seeding step packages. One
+  declaration, two readers, so the seed is by construction the closure of the
+  build that will later run against it — rather than of a build that resolved
+  something else.
+
+  **Why pinning is required rather than tidy.** The seed is offered as a
+  `file://` repository, and a local Maven repository is not a remote one: Maven
+  writes the repository-qualified `maven-metadata-central.xml` into a local
+  repository and never the unqualified `maven-metadata.xml` that a remote is
+  looked up for. Measured 2026-10-10 on the installation's 84 MB cache: 5 files
+  matching `maven-metadata*.xml`, 0 named `maven-metadata.xml`. Artifact
+  resolution does not want that file; plugin **version** resolution does. So a
+  seed can serve a version that is pinned and cannot serve one that has to be
+  resolved.
+
+  **And the lifecycle is resolved whole, including goals that never run.** With
+  resources, compiler, jar and surefire pinned, a `package` still refused on
+  `maven-install-plugin` — whose goal `package` does not reach. Measured the
+  same day. That is why install, deploy, clean and site are here: not because
+  their goals run, but because their versions are resolved.
+
+  **Where the numbers come from.** They are what an unpinned resolution against
+  central chose on 2026-10-10, read out of the seeding build's own log rather
+  than from a directory listing — an earlier attempt took them from
+  `ls | head -1` and pinned `maven-jar-plugin:3.4.2`, whose `plexus-utils:4.0.1`
+  no seeding run had ever fetched. To move them: change a version here, rebuild
+  the builder image, and the seeding step fetches that closure. A version the
+  image build cannot resolve fails the image build, which is the loud place for
+  it to fail rather than an operator's first build.
+-->
+<build>
+  <pluginManagement>
+    <plugins>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId><version>3.5.0</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.16.0</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.5.0</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.6.0</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId><version>3.2.0</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-deploy-plugin</artifactId><version>3.2.0</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-clean-plugin</artifactId><version>3.2.0</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-site-plugin</artifactId><version>3.12.1</version></plugin>
+    </plugins>
+  </pluginManagement>
+</build>

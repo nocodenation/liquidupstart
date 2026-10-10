@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The seed, offered to every build as a repository and a pluginRepository.
+
+  It is a `file://` remote rather than the build's local repository, because the
+  build's local repository has to be writable and per-build (FR37) while the seed
+  has to be read-only and shared. Maven copies what it needs out of the seed into
+  the per-build repository and leaves the seed untouched: measured 2026-10-10,
+  73 jars copied, the seed's jar count and mtime unchanged afterwards, and a
+  `touch` on it by the build user refused.
+
+  Central stays declared by the super-POM and is not mirrored away on purpose. A
+  project that brings its own pom.xml cannot be given the lifecycle pins, so it
+  still resolves plugin versions remotely; mirroring the seed over central would
+  break exactly those builds. The seed makes the common case fast and nothing
+  here makes a build offline — closing the network is a separate decision and
+  would be taken at the container.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <profiles>
+    <profile>
+      <id>liquid-seed</id>
+      <repositories>
+        <repository>
+          <id>liquid-seed</id>
+          <url>file:///opt/builder/m2-seed</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>liquid-seed</id>
+          <url>file:///opt/builder/m2-seed</url>
+          <releases><enabled>true</enabled></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+  <activeProfiles><activeProfile>liquid-seed</activeProfile></activeProfiles>
+</settings>

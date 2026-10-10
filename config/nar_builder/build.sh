@@ -6,7 +6,21 @@ REPOS=/repos
 # host directory this is mounted from is `chmod 777` by liquid.sh and its own mode
 # therefore closes nothing. See the Dockerfile for the measurement.
 DROP=/deploy/nar_extensions
-CACHE=/m2
+# No shared dependency cache. Each build resolves into its own local repository,
+# created under its work directory and discarded with it, so an artifact planted
+# by one build's code cannot be resolved by the next -- the last of B1's four
+# legs, 2026-10-01 review. What keeps that affordable is SEED, a read-only
+# closure baked into the image by `seed.sh`, offered to Maven as a `file://`
+# repository through SETTINGS. Measured 2026-10-10: 3 seconds against the shared
+# cache's 2, with 73 jars copied out of the seed and the seed untouched.
+SEED=/opt/builder/m2-seed
+SEED_RECORD=/opt/builder/m2-seed.record
+SETTINGS=/opt/builder/settings.xml
+# The lifecycle pins, spliced into the generated pom. The file says why they are
+# required: a local repository never writes the `maven-metadata.xml` a `file://`
+# remote is looked up for, so the seed can serve a pinned version and cannot
+# serve one that has to be resolved.
+PINS=/opt/builder/lifecycle-pins.xml
 LIQUID_LOGS=/liquid/logs
 # What a bundle is judged against, and what does the judging. Both are mounted:
 # the index of everything the running Liquid can load, written by its entrypoint
@@ -74,11 +88,53 @@ work_dir_for_build() {
   printf '%s' "$d"
 }
 
-run_maven() {
-  if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
-    su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
+# A Maven local repository for one build, inside the directory that build is
+# already working in, so it goes when that goes. Handed to BUILD_USER because
+# Maven writes it as that user.
+repo_for() {
+  d="${1}/m2"
+  mkdir -p "$d"
+  chown -R "$BUILD_USER" "$d" 2>/dev/null || true
+  printf '%s' "$d"
+}
+
+# What the seed holds against what this build wants, read rather than assumed.
+#
+# A stale seed costs time and never correctness: `build.sh` reads the running
+# Liquid's version for the pom it generates, so a dependency the seed lacks is
+# simply fetched. The failure mode is therefore a build that is mysteriously
+# slow, which is the kind that gets diagnosed three times. One line removes the
+# mystery, and it is computed from the record `seed.sh` wrote rather than from a
+# version somebody remembered to keep in step.
+seed_notice() {
+  [ -f "$SEED_RECORD" ] || return 0
+  seeded="$(sed -n 's/^nifi_version=//p' "$SEED_RECORD" | head -1)"
+  seeded_api="$(sed -n 's/^nifi_api_version=//p' "$SEED_RECORD" | head -1)"
+  [ -n "$seeded" ] || return 0
+  if [ "$seeded" != "${1:-}" ] || [ "$seeded_api" != "${2:-}" ]; then
+    out "seed ${seeded}/${seeded_api}, this build ${1:-?}/${2:-?} -- the"
+    out "  difference is fetched from the network on every build until the"
+    out "  builder image is rebuilt with SEED_NIFI_VERSION=${1:-?}."
   else
-    mvn -B "$@"
+    out "seed ${seeded}/${seeded_api}, matching this build"
+  fi
+}
+
+# The seed is offered only when it is there. Outside the container the suite
+# drives this script against a stub `mvn` with no image around it, so adding
+# `-s` unconditionally would hand every fixture a flag pointing at nothing.
+maven_settings() {
+  [ -f "$SETTINGS" ] && printf '%s' "-s $SETTINGS"
+}
+
+run_maven() {
+  settings="$(maven_settings)"
+  if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn $settings "$@"
+  else
+    # shellcheck disable=SC2086
+    mvn -B $settings "$@"
   fi
 }
 
@@ -115,7 +171,7 @@ resolve_api_version() {
 </project>
 POM
 
-  if ! run_maven -f "${probe}/pom.xml" -Dmaven.repo.local="$CACHE" dependency:list \
+  if ! run_maven -f "${probe}/pom.xml" -Dmaven.repo.local="$(repo_for "$probe")" dependency:list \
        > "${probe}/resolve.log" 2>&1; then
     API_ERROR="$(grep '^\[ERROR\]' "${probe}/resolve.log" | head -4 | sed 's/^/  /')"
     rm -rf "$probe"
@@ -255,6 +311,14 @@ synthesise() {
   mkdir -p "${proj}/processors" "${proj}/nar"
   cp -a "${src}/src" "${proj}/processors/src"
 
+  # The lifecycle pins, from the same file the image build's seeding step read,
+  # so the seed is the closure of this build rather than of a different one.
+  # Empty when the file is absent, which is the case outside the container where
+  # the suite drives this against a stub mvn -- the pom is then unpinned and no
+  # fixture depends on the block.
+  pins=""
+  [ -f "$PINS" ] && pins="$(sed '/<!--/,/-->/d' "$PINS")"
+
   cat > "${proj}/pom.xml" <<POM
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -291,6 +355,7 @@ synthesise() {
     <module>processors</module>
     <module>nar</module>
   </modules>
+${pins}
 </project>
 POM
 
@@ -550,10 +615,11 @@ NOTCLOSED
   # author's: the pom, its plugins and its dependencies. The tree is handed over
   # again here, because `cp -a` above has just put root-owned files into it.
   chown -R "$BUILD_USER" "$work" 2>/dev/null || true
+  build_repo="$(repo_for "$work")"
   if [ -n "$module" ]; then
-    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" -pl "$module" -am package
+    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$build_repo" -pl "$module" -am package
   else
-    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" package
+    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$build_repo" package
   fi
   if ! run_maven "$@" > "$log" 2>&1; then
     cat "$log" >&2
@@ -728,14 +794,24 @@ NOINDEX
   mv "$part" "${DROP}/${base}"
   part=""
 
-  downloads="$(grep -c 'Downloading from ' "$log" || true)"
+  # Two numbers rather than one, because the seed is a `file://` repository and
+  # Maven logs copying out of it as `Downloading from liquid-seed`. Counting
+  # both together would have made `downloads` stop meaning network traffic
+  # while still looking like it did -- the reading would have gone from 0 to 73
+  # on a build that touched no remote at all.
+  attempts="$(grep -c 'Downloading from ' "$log" || true)"
+  from_seed="$(grep -c 'Downloading from liquid-seed:' "$log" || true)"
+  : "${attempts:=0}" "${from_seed:=0}"
+  downloads=$((attempts - from_seed))
   printf '%s\n' "$TARGET"
   out "built ${base}"
   out "wrote ${DROP}/${base}"
   out "source /repos/${rel}"
   out "pom ${pom_mode}"
   out "downloads ${downloads}"
-  out "cache ${CACHE}"
+  out "from_seed ${from_seed}"
+  out "repository ${build_repo}"
+  seed_notice "$nifi" "$api"
   out ""
   out "Liquid watches ${DROP}, judges what arrives there, and loads what passes:"
   out "the processor is in the catalogue within seconds. No restart, and none"
