@@ -24,7 +24,7 @@
  *           provider panel after the git step is done.
  * Then:     The last repository counts down to "Closing", and a provider skip
  *           does not reopen the deploy-key panel at all.
- * Covers:   A16-12, A16-13, A16-14, A16-15, U11
+ * Covers:   A16-12, A16-13, A16-14, A16-15, A16-30, U11
  * Unhappy:  A16-12 and A16-14 are the refusals; A16-13 and A16-15 are their
  *           counterparts — the panel *is* still held for a git-key skip, and
  *           the label *does* say "Next repository" when one follows. Without
@@ -38,6 +38,14 @@
  *           cannot resolve @happy-dom/global-registrator and the failure arrives
  *           as an unhandled error between tests rather than as a red case --
  *           which is how it stayed unexplained in two measurements. SP-1, SP-2.
+ *
+ * *Renumbered 2026-10-10.* This block was A16-19, and so is a test in
+ * `m-a16.text-only.test.ts` about test files being binary to git -- two unrelated
+ * cases under one id. This side moved because the signed-off row in
+ * `TEST-SPEC-git-integration.md` describes the other one, so there was nothing
+ * here to move in a document somebody had approved. The header above also did not
+ * list the id at all, which is the same drift TR-1 was built for and is why this
+ * was found rather than guessed.
  */
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
 import { join } from 'node:path';
@@ -143,13 +151,13 @@ describe.skipIf(!DASHBOARD_DEPS)('A16-13 a git-key skip is still held long enoug
   });
 });
 
-describe.skipIf(!DASHBOARD_DEPS)('A16-19 skip-all says it too, with the space', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-30 skip-all says it too, with the space', () => {
   // A skipped describe still has its body evaluated -- bun has to run it to
   // register the tests it contains -- and this body awaits a mount at that
   // point, so `skipIf` alone leaves the failure arriving as an unhandled error
   // between tests. Measured twice before the cause was found. SP-2.
   if (!DASHBOARD_DEPS) return;
-  test('A16-19 "All skipped" renders a space before the countdown', async () => {
+  test('A16-30 "All skipped" renders a space before the countdown', async () => {
     // The same whitespace trim as the single skip, one block up, missed when
     // that one was fixed on 2026-09-22. Finding 3 of the 2026-09-28 review.
     const m = await panel(waitingOn(A, [A, B]));

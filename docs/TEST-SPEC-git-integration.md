@@ -3271,14 +3271,22 @@ them, and they were not — they were written after, during the rounds of review
 | A16-27 | Integration | positive | The wait really waits and then works: a lock released during the wait is picked up and the clone happens | `tests/integration/m-a16.lock-wait.test.ts` |
 | A16-28 | Integration **unhappy** | negative | A start that gives up waiting changes nothing: the budget ends without a clone, and the manifest still says what the last start found | `tests/integration/m-a16.lock-wait.test.ts` |
 | A16-29 | Integration **unhappy** | negative | And it says what it did instead of writing it down | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-30 | Component | positive | `All skipped` renders a space before the countdown — **renumbered from A16-19 on 2026-10-10**, see below | `tests/component/m-a16.skip-panel.test.ts` |
 
-**One collision is deliberately left standing and recorded instead.** `A16-19` names two unrelated
-cases: `describe('A16-19 skip-all says it too, with the space')` in
-`tests/component/m-a16.skip-panel.test.ts` and `test('A16-19 git tracks test files, so there is
-something to judge')` in `tests/contract/m-a16.text-only.test.ts`. The row above describes the
-second. Renumbering a signed-off id is the operator's decision, and `mutate.sh` refuses a `mustFail`
-that resolves to more than one test, so the collision surfaces as a refusal rather than a wrong
-answer. In `BACKLOG.md`.
+**The `A16-19` collision is resolved, and the first account of it here was wrong.** *Corrected
+2026-10-10.*
+
+It said the row describes `test('A16-19 git tracks test files, so there is something to judge')`. It
+does not: the signed-off row at the head of this milestone describes **`no test file is binary to
+git`**, which is a different test in the same file. `m-a16.text-only.test.ts` carries both under one
+id, and legitimately — "git tracks test files, so there is something to judge" is the premise the
+other one needs, the same shape as `TR-2`: without it, a reader that matched nothing would make the
+binary-file assertion green for ever.
+
+The real collision was with `tests/component/m-a16.skip-panel.test.ts`, which had nothing to do with
+either. **That side moved**, to `A16-30`, because there was nothing here to move in a document
+somebody had approved — and its own header had never listed the id at all. Deciding *which* side
+moves looked arbitrary and was not: one of them had a signed-off row and the other had none.
 | A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Detail per case

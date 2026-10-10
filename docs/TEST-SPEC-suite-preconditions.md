@@ -54,6 +54,9 @@ like a suite that ran.
 | **SP-1** | positive + **negative** | A dashboard without its dependencies is told apart from one with them |
 | **SP-1** | positive | The exported constants describe *this* checkout, and `preconditions()` names it |
 | **SP-2** | positive | Each of the eight dependent files names the precondition it skips on, in its header, and uses it |
+| **SP-3** | **negative** | An unreachable host answers false — against `.invalid`, which RFC 2606 reserves so it cannot resolve |
+| **SP-3** | positive | And the real registry answers true, taken only where it does |
+| **SP-3** | positive | The answer is memoised per url, so two asking cases pay for one round trip |
 
 ## Detail
 
@@ -92,13 +95,35 @@ the precondition holds does, and it is how the counterpart was measured rather t
 cases absent to **9 pass / 2 skip / 0 fail**. A machine can check that a case asked about its
 environment; only a run in that environment can check the case.
 
-**No case covers the fourth precondition, the machine's load.** `OC-15` and `OC-16` build an image
-inside a 60-second budget. They failed in two measurements and **passed in both runs of the pair
-above**, which were taken on a quiet machine — so they are not a budget that is simply too small,
-they are load-dependent, and that is the worse finding of the two: a case whose colour depends on what
-else is running is what makes red stop meaning anything. Recorded in `BACKLOG.md` rather than answered
-here, because the two ways out — a larger budget, or a precondition of its own — are the operator's
-choice.
+**The fourth precondition is covered now, and it took two answers rather than one.** *Written
+2026-10-10, after the operator chose "a precondition of its own".*
+
+`OC-15` and `OC-16` build an image with `npm install -g`, so `SP-3` asks whether a registry answers
+and skips them where none does — an offline machine, which is a real and common case.
+
+**That alone would not have prevented what was measured, and saying so is the point.** Those two
+failed twice by *timing out* at the suite's 60 seconds and passed twice on a quiet machine: the
+registry was reachable every time. The build takes **14 seconds** quiet, measured 2026-10-10 — so 60
+was already four times it and still not enough under load. They carry their own **180-second** budget
+now, thirteen times the measured duration, and the cost is stated where it is taken: a genuinely
+broken build takes three minutes to say so.
+
+So the precondition answers the offline machine and the budget answers the load. A case whose colour
+depends on what else is running is what makes red stop meaning anything, and it is the half a
+reachability check cannot reach.
+
+### SP-3 — a registry answers, and what a precondition cannot fix
+
+| | |
+|---|---|
+| **Premise** | `OC-15` and `OC-16` run `docker build --no-cache` over an `npm install -g`, so they need a registry. Without one they were simply red, with no case saying why. |
+| **Component** | `registryReachable()` in `tests/lib/preconditions.ts`, and the two cases that call it. |
+| **A function, not a constant** | It costs a network round trip, and a constant would charge every file importing that module for a question two cases ask. Memoised, so the two pay once between them. |
+| **Test data** | `https://not-a-registry.invalid/` for the false half — **RFC 2606 reserves `.invalid` precisely so it cannot resolve**, which is why it is used rather than a name that might one day belong to somebody — and the real registry for the true half, which can only be taken where it answers. |
+| **What writing it found, in my own function** | The first version memoised **one** answer regardless of the url. `skipIf` is evaluated at registration time, so the default url's `true` was already cached when the test for an unreachable host ran — and that test was **green against a host that does not exist**. It is a `Map` keyed by url now. The case caught its own helper, which is the argument for writing the false half first. |
+| **What it does not fix** | The measured failures. Both cases timed out at 60s twice and passed twice on a quiet machine, with the registry reachable every time. The build takes 14s quiet, so 60 was four times it and not enough under load; they carry 180s now, thirteen times measured. The precondition answers an offline machine; the budget answers the load. Neither answers the other, and the specification says so rather than letting the precondition look like a repair. |
+| **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`, with `tests/component/m-oc.allow-scripts.test.ts` as the pair that asks. |
+| **Covers** | SP-FR1, SP-FR2, SP-FR3. |
 
 ## Traceability
 
