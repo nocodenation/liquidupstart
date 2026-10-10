@@ -75,6 +75,13 @@ here; each is executed where its subject exists.
 | **N1b** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
+| **OC-40** | contract | **negative** | The embedded node programs survive the shell that carries them: a `-e` program reaches node as one argument and nothing inside it is re-split |
+| **OC-42** | contract | positive | The proxy address is one default, written the same in every place that carries it |
+
+*OC-40 and OC-42 were documented on 2026-10-09, after the fact.* Their tests carried ids that no row
+here declared, which `--gaps` cannot see and a reviewer cannot sign. `TR-1` in
+`docs/TEST-SPEC-case-id-traceability.md` is what stops this recurring; the same had happened to
+eleven cases in `TEST-SPEC-git-integration.md`.
 
 ### Suite 2 — compatibility
 
