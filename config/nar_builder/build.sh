@@ -9,13 +9,13 @@ DROP=/deploy/nar_extensions
 # No shared dependency cache. Each build resolves into its own local repository,
 # created under its work directory and discarded with it, so an artifact planted
 # by one build's code cannot be resolved by the next -- the last of B1's four
-# legs, 2026-10-01 review. What keeps that affordable is SEED, a read-only
-# closure baked into the image by `seed.sh`, offered to Maven as a `file://`
-# repository through SETTINGS. Measured 2026-10-10: 3 seconds against the shared
-# cache's 2, with 73 jars copied out of the seed and the seed untouched.
+# legs, 2026-10-01 review.
+#
+# What keeps that affordable is SEED, a closure baked into the image by
+# `seed.sh` and **copied into** each build's repository. `repo_for` says why a
+# copy rather than a `file://` remote, and what the difference measured.
 SEED=/opt/builder/m2-seed
 SEED_RECORD=/opt/builder/m2-seed.record
-SETTINGS=/opt/builder/settings.xml
 # The lifecycle pins, spliced into the generated pom. The file says why they are
 # required: a local repository never writes the `maven-metadata.xml` a `file://`
 # remote is looked up for, so the seed can serve a pinned version and cannot
@@ -91,9 +91,33 @@ work_dir_for_build() {
 # A Maven local repository for one build, inside the directory that build is
 # already working in, so it goes when that goes. Handed to BUILD_USER because
 # Maven writes it as that user.
+#
+# **It starts as a copy of the seed, and the copy is the design.** Offering the
+# seed as a `file://` repository was measured first and does not work. Maven
+# records which repository each artifact came from in `_remote.repositories`,
+# and the nar plugin's documentation step re-resolves the tree in a context
+# where the id `liquid-seed` is unknown. Maven says so -- *"present in the local
+# repository, but cached from a remote repository ID that is unavailable in
+# current build context, verifying that is downloadable"* -- and re-fetches
+# every artifact from central to check.
+#
+# Copied in, the artifacts carry the seed's own `_remote.repositories`, which
+# say `central=` because that is where the image build fetched them, so every
+# context accepts them. Measured 2026-10-11, the same end-to-end build:
+#
+#   seed as a file:// remote    20-26 s   438 downloads   28.5 MB   86 warnings
+#   seed copied in                 7 s      0 downloads      0 B     0 warnings
+#
+# A copy rather than a hardlink farm on purpose: `cp -al` would share inodes
+# with the seed, and a build writing through one of those links would alter the
+# seed itself -- the write path this whole change exists to close.
 repo_for() {
   d="${1}/m2"
-  mkdir -p "$d"
+  if [ -d "$SEED" ]; then
+    cp -a "$SEED" "$d"
+  else
+    mkdir -p "$d"
+  fi
   chown -R "$BUILD_USER" "$d" 2>/dev/null || true
   printf '%s' "$d"
 }
@@ -102,10 +126,15 @@ repo_for() {
 #
 # A stale seed costs time and never correctness: `build.sh` reads the running
 # Liquid's version for the pom it generates, so a dependency the seed lacks is
-# simply fetched. The failure mode is therefore a build that is mysteriously
-# slow, which is the kind that gets diagnosed three times. One line removes the
-# mystery, and it is computed from the record `seed.sh` wrote rather than from a
-# version somebody remembered to keep in step.
+# simply fetched. The failure mode is a build that is mysteriously slow, which
+# is the kind that gets diagnosed three times. One line removes the mystery, and
+# it is computed from the record `seed.sh` wrote rather than from a version
+# somebody remembered to keep in step.
+#
+# It earned itself on its first real run: the seeding step took the nifi-api
+# version as an argument then, defaulted to the NiFi version, and NiFi 2.11.0
+# ships nifi-api 2.10.0. The build deployed a bundle while the seed served
+# almost none of it, and this line is what said so.
 seed_notice() {
   [ -f "$SEED_RECORD" ] || return 0
   seeded="$(sed -n 's/^nifi_version=//p' "$SEED_RECORD" | head -1)"
@@ -120,21 +149,11 @@ seed_notice() {
   fi
 }
 
-# The seed is offered only when it is there. Outside the container the suite
-# drives this script against a stub `mvn` with no image around it, so adding
-# `-s` unconditionally would hand every fixture a flag pointing at nothing.
-maven_settings() {
-  [ -f "$SETTINGS" ] && printf '%s' "-s $SETTINGS"
-}
-
 run_maven() {
-  settings="$(maven_settings)"
   if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
-    # shellcheck disable=SC2086
-    su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn $settings "$@"
+    su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
   else
-    # shellcheck disable=SC2086
-    mvn -B $settings "$@"
+    mvn -B "$@"
   fi
 }
 
@@ -794,23 +813,21 @@ NOINDEX
   mv "$part" "${DROP}/${base}"
   part=""
 
-  # Two numbers rather than one, because the seed is a `file://` repository and
-  # Maven logs copying out of it as `Downloading from liquid-seed`. Counting
-  # both together would have made `downloads` stop meaning network traffic
-  # while still looking like it did -- the reading would have gone from 0 to 73
-  # on a build that touched no remote at all.
-  attempts="$(grep -c 'Downloading from ' "$log" || true)"
-  from_seed="$(grep -c 'Downloading from liquid-seed:' "$log" || true)"
-  : "${attempts:=0}" "${from_seed:=0}"
-  downloads=$((attempts - from_seed))
+  # `downloads` means what it says: artifacts this build pulled over the network.
+  # With the seed copied into the local repository there is no second source to
+  # separate out, and a build whose seed matches reports 0 -- measured. The
+  # version of this change that offered the seed as a `file://` remote needed
+  # this count to subtract the seed's own lines, or it read 329 on a build that
+  # touched nothing remote.
+  downloads="$(grep -c 'Downloading from ' "$log" || true)"
+  : "${downloads:=0}"
   printf '%s\n' "$TARGET"
   out "built ${base}"
   out "wrote ${DROP}/${base}"
   out "source /repos/${rel}"
   out "pom ${pom_mode}"
   out "downloads ${downloads}"
-  out "from_seed ${from_seed}"
-  out "repository ${build_repo}"
+  out "repository ${build_repo}, seeded from ${SEED}"
   seed_notice "$nifi" "$api"
   out ""
   out "Liquid watches ${DROP}, judges what arrives there, and loads what passes:"

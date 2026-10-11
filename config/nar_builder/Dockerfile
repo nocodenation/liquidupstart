@@ -61,7 +61,6 @@ RUN mkdir -p /opt/builder /repos /deploy/nar_extensions /liquid/logs /liquid/api
 COPY build.sh /opt/builder/build.sh
 COPY BuildServer.java /opt/builder/BuildServer.java
 COPY lifecycle-pins.xml /opt/builder/lifecycle-pins.xml
-COPY settings.xml /opt/builder/settings.xml
 COPY seed.sh /opt/builder/seed.sh
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /opt/builder/build.sh /opt/builder/seed.sh /entrypoint.sh

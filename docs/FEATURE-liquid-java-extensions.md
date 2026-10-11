@@ -80,8 +80,34 @@ mistake is available here and is cheaper to avoid than to repeat.
   empty one.
 - **FR25 — The builder holds no credentials.** No `_git-secrets`, no deploy keys, no `.env` secrets.
   It compiles source and writes one file.
-- **FR26 — The dependency cache lives under `volumes/`.** Like all state (NFR3). Without it every
-  build re-downloads the NiFi API and the Maven plugin chain.
+- **FR26 — The dependency closure is in the builder image, and no cache is shared between builds.**
+  Each build resolves into its own Maven local repository, created from a copy of a seed baked into
+  the image and discarded with the build.
+
+  > **Rewritten 2026-10-11, and it used to say the opposite.** The text was *"The dependency cache
+  > lives under `volumes/`. Like all state (NFR3). Without it every build re-downloads the NiFi API
+  > and the Maven plugin chain."* Both halves needed changing for different reasons. **A dependency
+  > cache is not state** — CLAUDE.md's rule is that state is what a container would miss if it
+  > vanished, and this is rebuilt by the image build, so NFR3 never reached it. And the shared
+  > directory was the **write path** B1's fourth leg exploited: build-time code could plant an
+  > artifact there that every later build resolved. The requirement's *reason* survives intact and is
+  > measured — a build whose seed matches downloads **nothing**, where the old arrangement's first
+  > build pulled 82 MB.
+
+- **FR37 — Each build gets its own local repository, discarded with the build.** Nothing one build
+  writes can be resolved by the next. This holds whatever the project is: the synthesised skeleton or
+  an author's own `pom.xml`.
+- **FR38 — The image build owns the seeding step.** A dedicated step resolves the closure of the
+  project `build.sh` synthesises, and **resolves the `nifi-api` version itself** rather than taking
+  it — NiFi versions `nifi-api` separately (FR27), so an argument for it is an argument that can
+  disagree with the distribution. The seed is root-owned and the build user cannot write it.
+- **FR39 — The lifecycle is pinned from one declaration both the seeding step and the build read.**
+  Not tidiness: a build whose plugin versions have to be *resolved* needs remote metadata, and that
+  is 84 downloads and 6.9 MB per build against zero (measured). One declaration, so the seed cannot
+  be the closure of a different build than the one that runs.
+- **FR40 — A seed that does not match the build says so in one line.** Computed from a record the
+  seeding step writes, not from a version somebody keeps in step. A stale seed costs time and never
+  correctness, and the failure mode it prevents is a build that is mysteriously slow.
 - **FR27 — The API compiled against is resolved, not assumed, and is stated.** NiFi versions
   `nifi-api` on its own line: 2.11.0 ships `nifi-api-2.10.0.jar`. The build resolves what the
   distribution was actually built against, writes that version into the project, and prints it. FR23
@@ -355,12 +381,42 @@ so the build user cannot traverse to it. Measured: it can neither write nor list
 case now mounts a 777 directory on purpose, and against the previous commit it fails with
 `drop: false, quarantineSurvives: false`.
 
-**One leg is deliberately left open and is recorded in `BACKLOG.md`:** the shared `/m2` stays
-writable, so build-time code can still plant an artifact that a later build resolves. It is the last
-of the four, and the only one the operator's decision left standing. Closing it
-means a per-build cache — every build re-downloads, so seconds become minutes and the network is
-needed every time — or a read-only pre-seeded cache, which refuses any dependency nobody seeded. The
-decision was to take the two cheap legs now and price the third separately.
+**The fourth leg is closed as of 2026-10-11, and the priced choice turned out to be a false one.**
+The shared `/m2` was writable, so build-time code could plant an artifact that a later build
+resolved. The entry in `BACKLOG.md` offered two ways out and both looked expensive: a per-build cache
+where every build re-downloads, or a read-only pre-seeded cache that refuses any dependency nobody
+seeded. **It is both at once and it costs nothing**, which no amount of reasoning produced and one
+afternoon of measuring did.
+
+There is no `/m2`. Each build resolves into its own local repository, started as a copy of a seed in
+the image, and discarded with the build (FR37, FR38). Measured end-to-end on the running stack, the
+same source and the same throwaway drop directory:
+
+| | wall | downloads |
+|---|---|---|
+| shared cache, first build (what this replaces) | 67 s | 665, pulling 82 MB |
+| shared cache, warm | 9 s | 0 |
+| **seeded, per-build repository** | **7 s** | **0** |
+
+So it is faster than the arrangement it replaces even in the warm case the old one was best at, and
+the first build on a new installation stops being a 67-second download. `cp -a` of the 79 MB seed
+costs **163 ms**.
+
+**Two things had to be measured rather than reasoned, and both inverted a plan.** The seed was first
+offered as a `file://` repository, which is what the backlog entry described. That does not work:
+Maven records each artifact's origin in `_remote.repositories`, and the nar plugin's documentation
+step re-resolves the tree in a context where the id `liquid-seed` is unknown — *"present in the local
+repository, but cached from a remote repository ID that is unavailable in current build context"* —
+and re-fetches **28.5 MB** from central for artifacts the seed already held. Copied into the local
+repository instead, the artifacts carry the seed's own `_remote.repositories`, which say `central=`,
+and every context accepts them. And the lifecycle has to be pinned (FR39), because a local repository
+never writes the unqualified `maven-metadata.xml` a remote is looked up for, so plugin *version*
+resolution is the one thing a seed cannot serve.
+
+**What this does not close.** A project that brings its own `pom.xml` cannot be given the pins, so it
+still resolves plugin versions remotely, and the per-build repository means its closure is fetched on
+every build. FR37's security property holds for it regardless — that is the leg — but the speed does
+not, and it is unmeasured because no such project exists here yet.
 
 What remains, then: a compromised or malicious dependency can read the source being compiled, write
 into the shared dependency cache, and reach the network. The third of those is inherent to Maven and
@@ -409,8 +465,9 @@ broken on first use — see FR23, rewritten 2026-09-08 against B3-2's observatio
 unchanged and the reason is sharper, so the version is computed at build time and a build that cannot
 read it stops.
 
-**The trust surface is §3.2, not a footnote.** The builder holds no credentials (FR25) and its
-dependency cache lives under `volumes/` like all other state (FR26).
+**The trust surface is §3.2, not a footnote.** The builder holds no credentials (FR25), and since
+2026-10-11 it shares no dependency cache between builds — the closure is in the image and each build
+resolves into its own repository (FR26, FR37).
 
 *Done when:* `./tests/run.sh m-b1` is green — a Java source in the workspace producing a loadable NAR
 in `nar_extensions`, a source that does not compile failing with the compiler's own error and leaving

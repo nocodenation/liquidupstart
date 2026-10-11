@@ -1145,6 +1145,72 @@ ask for a build**, not what a build may do once asked for. The open question in 
 | **Implemented by** | `tests/unit/m-b5.load-path-unreachable.test.ts`. |
 | **What it found** | Green on the first run, which is what a case written after its fix looks like. It is worth having for the control: putting the mount back reddens B5-31 twice and B5-32 once, while the booted B5-28 stays green — which is precisely the gap it was written to close. |
 
+### M-B7 — B1's fourth leg, and the measurement that inverted the plan
+
+The last of B1's four legs, 2026-10-01 review: `volumes/nar_builder/m2` was mounted read-write, so
+build-time code could plant an artifact that every later build resolved. The operator decided on
+2026-10-09 that the image build owns a seeding step, and the work was done on 2026-10-11.
+
+**Two things here were decided by measurement against a plan that said otherwise, and both are
+recorded because a reader cannot otherwise tell why the code looks as it does.** The backlog entry
+described the seed as a read-only `file://` repository. That does not work: Maven records each
+artifact's origin in `_remote.repositories`, and the nar plugin's documentation step re-resolves the
+tree in a context where the id `liquid-seed` is unknown — *"present in the local repository, but
+cached from a remote repository ID that is unavailable in current build context, verifying that is
+downloadable"* — and re-fetches from central to check. Copying the seed **into** each build's local
+repository instead carries the seed's own `_remote.repositories`, which say `central=`.
+
+| | wall | downloads | from central |
+|---|---|---|---|
+| shared cache, first build (replaced) | 67 s | 665 | 82 MB |
+| shared cache, warm (replaced) | 9 s | 0 | — |
+| seed as a `file://` remote (abandoned) | 20–26 s | 438 | 28.5 MB, 86 warnings |
+| **seed copied in (built)** | **7 s** | **0** | **0 B** |
+
+And the lifecycle has to be pinned: without the pins the same build makes **84 downloads and pulls
+6.9 MB**, because a local repository never writes the unqualified `maven-metadata.xml` a remote is
+looked up for, so plugin *version* resolution is the one thing a seed cannot serve.
+
+| # | Sign | Level | Case | Expectation |
+|---|---|---|---|---|
+| **B7-1** | **negative** | Contract | No shared Maven cache is mounted into any service, by any spelling | Matched on the container side of the mount, so moving the host directory cannot let it back in unnoticed. The image does not create `/m2` either |
+| **B7-1** | positive | Contract | Each build resolves into its own repository, copied from the seed | The three things that make it per-build: under the build's own work directory, started as a copy, and `cp -al` refused — a hardlink farm would share inodes with the seed and reopen the write path |
+| **B7-2** | positive | Contract | The image build owns the seeding step, with the api version **resolved** rather than passed | One version argument. Two was a defect: NiFi 2.11.0 ships `nifi-api` 2.10.0 (FR27), the Dockerfile defaulted the api version to the NiFi version, and the build deployed while the seed served almost none of it |
+| **B7-2** | **negative** | Contract | The seed is not chowned to the build user | Root-owned, so the build user can read it and not write it |
+| **B7-3** | positive | Contract | The pins file parses, by a real parser, and names every plugin the default lifecycle binds | Including the goals `package` never executes — with resources, compiler, jar and surefire pinned, a build still refused on `maven-install-plugin` |
+| **B7-3** | **negative** | Contract | A `--` inside an XML comment is refused | Not rhetorical: `settings.xml` was rejected by Maven with *Non-parseable settings* for exactly this, and only a parse would have caught it |
+| **B7-3** | positive | Contract | Both readers take the pins from the one file | If the seeding step and the build could pin differently, the seed would be the closure of a build that never runs |
+| **B7-4** | positive | Contract | The stale host directory is named once | An installation that ran before the move still holds tens of megabytes that nothing reads |
+| **B7-4** | **negative** | Contract | …and not deleted, and `start.sh` invokes the notice | Removing a directory the operator may have copied into is not a start script's call — the same shape and reason as `liquid.sh`'s notice about `volumes/liquid/api` |
+| **B1-9** | positive + **negative** | Integration | *Rewritten here.* No cache is shared between builds, and the seed is why that is affordable | See its own block below |
+
+#### B7-1 to B7-4 — the declarations
+
+| | |
+|---|---|
+| **Premise** | The behaviour was measured end-to-end and the numbers are in the table above. What a case can hold cheaply and for ever is that the mount has not come back, that the pins are where both readers look, and that the files parse. |
+| **Component** | `compose.yml`, `config/nar_builder/{Dockerfile,build.sh,seed.sh,lifecycle-pins.xml}`, `config/scripts/start/nar-builder.sh`, `scripts/linux/start.sh`, read as text — and the pins file parsed by `python3 -c "…ET.parse…"`. |
+| **Steps** | Read each file; strip comment lines before any assertion that something is **absent**; parse the pins file; compare the plugin list against the default lifecycle. |
+| **Test data, and why the comments are stripped** | `cp -al` is the case in point. `repo_for`'s comment says *why* a hardlink farm is not used, so a naive `not.toContain('cp -al')` matched the explanation and the case failed against correct code. The same shape as the `refused:` reader in `m-b1.refusal-next-step`, and the reason `code()` exists in this file. The pins are checked against the eight plugins by name — `maven-resources-plugin`, `maven-compiler-plugin`, `maven-jar-plugin`, `maven-surefire-plugin`, `maven-install-plugin`, `maven-deploy-plugin`, `maven-clean-plugin`, `maven-site-plugin` — rather than by counting, so dropping one is caught by name. |
+| **Expected** | Six passes. |
+| **What it found** | Green, 6 scenarios, 39 assertions. Writing it found two defects of my own: the `--` in `settings.xml` that Maven refused outright, and the comment-matching above. **Controls, each reverting the one thing a case guards: 7 run, each reddening exactly one case and nothing else** — the mount restored, the copy removed, the seeding step disabled, `maven-install-plugin` dropped, a `--` returned to the comment, the notice turned into an `rm -rf`, and `start.sh` stopping invoking it. |
+| **Implemented by** | `tests/contract/m-b7.seeded-cache.test.ts`. |
+| **Covers** | B7-1, B7-2, B7-3, B7-4, FR26, FR37, FR38, FR39. |
+
+#### B1-9 — rewritten, and the case it replaces asserted the opposite
+
+| | |
+|---|---|
+| **Premise** | It was *"The dependency cache is state, and lives where state lives"*, and it asserted that `volumes/nar_builder/m2` existed on the host, that it held `org/apache/nifi/nifi-api`, and that the build reported `cache /m2`. **That mount is the fourth leg**, so the assertion that signed it off became the defect. What survives is the half worth having: a build still has to download nothing. |
+| **Component** | The installed stack's `nar_builder`, driven through `nar-build` as before. |
+| **Steps** | Build the same source twice. Read the repository path out of the build's own output; ask the container whether it still exists; read the download count and the seed line. |
+| **Test data** | `volumes/repos/.b1-cache` holding the B1-5 fixture. The repository path is taken from the output rather than guessed, so the case cannot pass against a path nobody used. |
+| **Expected** | Both builds exit 0; each repository is `/tmp/<work>/m2`; no `cache` line; the first build's repository is **gone** afterwards; the second build reports `downloads 0` from a **different** repository; and the build names the seed it matched. |
+| **Its precondition, computed** | `docker exec nar_builder test -d /opt/builder/m2-seed`. This case drives the running stack, and against an image built before 2026-10-11 every assertion is false for a reason that has nothing to do with the code — the failure mode #22 exists against. It skips, and the skip has a voice: one case runs only in that state, asserts the absence, and says to rebuild. |
+| **What it found** | 2 pass / 4 skip / 0 fail in a checkout whose installed image predates the change, which is the honest reading there. The four were measured by hand against a purpose-built image on 2026-10-11 and are the `7 s / 0 downloads / 0 B` row above. |
+| **Implemented by** | `tests/integration/m-b1.dependency-cache.test.ts`. |
+| **Covers** | B1-9, FR26, FR37, FR38, FR40. |
+
 ## 4. Independent verification
 
 The form is the one established by M-A5 and M-A6 in the git integration: the checks in copy-and-paste
