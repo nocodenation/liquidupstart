@@ -125,7 +125,7 @@ describe('R1 the default subnet is one value', () => {
 });
 
 /**
- * OC-42 — the proxy address is one value, and it lies where it has to.
+ * OC-64 — the proxy address is one value, and it lies where it has to.
  *
  * `gateway.trustedProxies` names the proxy by address, so that address has to be
  * fixed before anything starts: compose gives it to the container, openclaw.sh
@@ -135,7 +135,7 @@ describe('R1 the default subnet is one value', () => {
  * the pair only at `up`, with a message that names neither key and after down.sh
  * has emptied the stack.
  */
-describe('OC-42 the proxy address', () => {
+describe('OC-64 the proxy address', () => {
   const read = (f: string) => readFileSync(join(repoRoot, f), 'utf8');
 
   test('is one default, written the same in every place that carries it', () => {
