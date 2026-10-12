@@ -27,12 +27,13 @@
  *
  * Requirements covered: OC-G1, OC-G4.
  */
-import { test, expect, describe, afterAll } from 'bun:test';
+import { test, expect, describe } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { protect } from '../lib/installation';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-import { compose } from '../lib/stack';
+import { compose, restartAndWait } from '../lib/stack';
 import { stackGuard } from '../lib/guard';
 
 stackGuard(['openclaw-gateway']);
@@ -49,8 +50,7 @@ function restartWith(cfg: any): void {
   // Synchronous: Bun.write returns a promise, and the restart below blocks the
   // JS thread without draining it, so the gateway could boot on the old config.
   writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
-  compose(['restart', 'openclaw-gateway']);
-  sh(['sh', '-c', 'for i in $(seq 1 60); do docker inspect openclaw-gateway --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done']);
+  restartAndWait('openclaw-gateway');
 }
 
 function doctorPluginErrors(): string {
@@ -58,10 +58,10 @@ function doctorPluginErrors(): string {
   return out.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-afterAll(() => {
-  writeFileSync(CONFIG, original);
-  compose(['restart', 'openclaw-gateway']);
-  sh(['sh', '-c', 'for i in $(seq 1 60); do docker inspect openclaw-gateway --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy && break; sleep 1; done']);
+// Whole file, captured once for every case that touches it, and put back only
+// if something actually changed -- the restart below costs half a minute.
+protect(CONFIG, () => {
+  restartAndWait('openclaw-gateway');
 });
 
 describe('OC-31 the codex plugin error', () => {

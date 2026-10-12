@@ -165,14 +165,19 @@ describe('OC-3 every unattended docker call in the start script is bounded', () 
   });
 
   test('with_timeout hands its command no terminal to read', () => {
-    const body = readFileSync(join(repoRoot, SCRIPT), 'utf8');
+    // Read from the library since 2026-09-17: openclaw.sh and git.sh each
+    // defined the function, and the copy here outlived the fix to the other.
+    const body = readFileSync(join(repoRoot, 'config/scripts/start/lib/with-timeout.sh'), 'utf8');
     const start = body.indexOf('with_timeout() {');
     expect(start).toBeGreaterThan(-1);
     const end = body.indexOf('\n}', start);
     const invocations = body
       .slice(start, end)
       .split('\n')
-      .filter((l) => /(timeout "\$secs"|^\s*"\$@")/.test(l));
+      // `timeout\b.*"$secs"` rather than the literal: flags live between the two
+      // (-k 10 since 2026-09-14), and the property is the stdin redirect, not the
+      // spelling of the line it sits on.
+      .filter((l) => /(timeout\b.*"\$secs"|^\s*"\$@")/.test(l));
     expect(invocations.length).toBe(3);
     expect(invocations.filter((l) => !l.includes('</dev/null'))).toEqual([]);
   });

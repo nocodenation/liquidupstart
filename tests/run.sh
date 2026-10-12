@@ -15,7 +15,13 @@ TEST_TIMEOUT_MS="${TEST_TIMEOUT_MS:-60000}"
 MILESTONE=""
 ROOT="$SCRIPT_DIR"
 LIST=0
-NO_SYSTEM=0
+# Opt-in since 2026-09-17. The stack levels write into volumes/ and restart
+# containers -- that is what makes them the stack levels -- and they do it to the
+# installation on this machine, not to a fixture. `--no-system` was opt-out, so
+# `./tests/run.sh m-oc` ran them by accident: on 2026-09-17 that left the gateway
+# exited 127 and its configuration missing a key, and took 26 unrelated cases
+# down with it. Asking for them is now a decision someone makes.
+WITH_SYSTEM=0
 DASHBOARD_ONLY=0
 ROOT_GIVEN=0
 
@@ -25,7 +31,10 @@ Usage: tests/run.sh [milestone] [options]
 
   milestone        run only files named m-<milestone>.*.test.ts
   --list           print the files that would run, then exit
-  --no-system      skip the levels that need the running stack (system, e2e)
+  --system         ALSO run the levels that need the running stack (system, e2e).
+                   They write into volumes/ and restart containers on this
+                   machine, so they are not run unless you ask for them.
+  --no-system      accepted and unnecessary: it is the default
   --dashboard      run only the dashboard suite
   --root DIR       discover tests under DIR instead of tests/
   -h, --help       this text
@@ -35,7 +44,10 @@ USAGE
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --list) LIST=1 ;;
-    --no-system) NO_SYSTEM=1 ;;
+    --system) WITH_SYSTEM=1 ;;
+    # Kept because documents, milestones and habits name it, and it still says
+    # exactly what it did: do not run the stack levels.
+    --no-system) WITH_SYSTEM=0 ;;
     --dashboard) DASHBOARD_ONLY=1 ;;
     --root)
       [[ $# -ge 2 ]] || { echo "--root needs a directory" >&2; exit 2; }
@@ -105,15 +117,19 @@ if [[ $total -eq 0 ]]; then
 fi
 
 SELECTED=()
-if [[ $NO_SYSTEM -eq 1 ]]; then
-  [[ $other_count -gt 0 ]] && SELECTED=("${OTHER_FILES[@]}")
-else
-  [[ $other_count -gt 0 ]] && SELECTED=("${OTHER_FILES[@]}")
-  [[ $system_count -gt 0 ]] && SELECTED=(${SELECTED[@]+"${SELECTED[@]}"} "${SYSTEM_FILES[@]}")
+[[ $other_count -gt 0 ]] && SELECTED=("${OTHER_FILES[@]}")
+if [[ $WITH_SYSTEM -eq 1 && $system_count -gt 0 ]]; then
+  SELECTED=(${SELECTED[@]+"${SELECTED[@]}"} "${SYSTEM_FILES[@]}")
+fi
+
+# Said out loud, every time, whether or not anything else matched: a tier that is
+# skipped silently is a tier nobody remembers exists.
+if [[ $WITH_SYSTEM -eq 0 && $system_count -gt 0 ]]; then
+  echo "SKIPPED: ${system_count} file(s) at the stack levels (${STACK_LEVELS}). They write into volumes/ and restart containers on this machine. Pass --system to run them."
 fi
 
 if [[ ${#SELECTED[@]} -eq 0 ]]; then
-  echo "SKIPPED: ${system_count} test file(s) at the stack levels (${STACK_LEVELS}) need the running stack; nothing else matched."
+  echo "nothing to run."
   exit 0
 fi
 

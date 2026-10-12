@@ -29,6 +29,9 @@ import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
 
 const SCRIPT = 'config/scripts/start/openclaw.sh';
+// with_timeout moved into a library on 2026-09-17: openclaw.sh and git.sh each
+// carried a copy, and both ended in a branch that ran the command unbounded.
+const LIB = JSON.stringify(join(repoRoot, 'config/scripts/start/lib/with-timeout.sh'));
 const IMAGE = 'liquidupstart/openclaw:latest';
 const BODY = readFileSync(join(repoRoot, SCRIPT), 'utf8');
 
@@ -37,7 +40,8 @@ const BODY = readFileSync(join(repoRoot, SCRIPT), 'utf8');
 function probe(image: string): number {
   const snippet = `
     set -uo pipefail
-    eval "$(sed -n '/^with_timeout() {/,/^}/p;/^claude_wrapper_shadowed() {/,/^}/p' ${SCRIPT})"
+    . ${LIB}
+    eval "$(sed -n '/^claude_wrapper_shadowed() {/,/^}/p' ${SCRIPT})"
     claude_wrapper_shadowed ${image}
   `;
   return sh(['bash', '-c', snippet], repoRoot).code;

@@ -15,12 +15,31 @@ was available and deliberately not used, so the run walked the path a new operat
 choice is why the 2026-09-05 run found two product defects, and it is recorded here because a cold
 start that skipped the sign-in and one that went through it are different results.
 
+## A correction to check 2, added 2026-09-16
+
+**This check asked one kind of client, and answered for that one only.** It was made from the host,
+which on Docker Desktop reaches nginx as `192.168.65.1` — outside the stack subnet that
+`trustedProxies` named at the time, so the gateway kept it as the client and answered 200.
+
+Two things the check could not see, both measured on 2026-09-16:
+
+- **A client inside the stack network got 403** on the same configuration — that is every container
+  in this stack that reaches the gateway through the proxy.
+- **On rootless docker with the `builtin` port driver the host itself arrives inside the subnet**
+  (`10.99.0.1`), so there the Control UI answers 403 to a browser and OpenClaw does not come up at
+  all. Found on such a host by Timur on 2026-09-16, reviewing #9.
+
+The rule is membership, not width: a hop the gateway trusts is discarded, and if nothing is left the
+request cannot be attributed. `trustedProxies` names the proxy's own address as a `/32` now, and
+OC-13 asks both kinds of client. The `HTTP 200` recorded above was true, on this host, for this
+client — it was the conclusion drawn from it that was too wide.
+
 ## Acceptance
 
 | # | Check | Result |
 |---|---|---|
 | 1 | Version equals the pin | `OpenClaw 2026.9.1 (ad6fe23)` — the pin read from the Dockerfile, not typed |
-| 2 | Control UI through the proxy | `HTTP 200` |
+| 2 | Control UI through the proxy | `HTTP 200` — **from the host, and that is the whole limit of the claim.** See the note below. |
 | 3 | Live configuration | `Config valid` |
 | 4 | Claude CLI in the image | `2.1.263 (Claude Code)` |
 | 5 | `bun_runner` | `status=healthy streak=0` |

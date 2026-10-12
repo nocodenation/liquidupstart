@@ -12,7 +12,8 @@ WORKDIR /app
 # docker CLI: page actions drive build.sh/start.sh in the toolbox container
 # against the host engine. buildx provides the BuildKit builder for the
 # one-time toolbox image build (legacy builder is deprecated).
-RUN apk add --no-cache docker-cli docker-cli-buildx util-linux-misc
+RUN apk add --no-cache docker-cli docker-cli-buildx util-linux-misc \
+      bash git openssh-client openssh-keygen curl
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./
 # Run as root: rootless Docker maps the host user to container root, keeping the
