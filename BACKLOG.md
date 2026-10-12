@@ -9,6 +9,33 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
+ids in `TEST-SPEC-*.md` rows, in both directions, and has nothing to say about two different cases
+sharing one id.
+
+That is not hypothetical. `OC-40` and `OC-42` were specified on #15 on 2026-09-19 — two signed detail
+blocks, a traceability row, test headers and a comment in `config/scripts/start/openclaw.sh` — and the
+same two numbers were assigned again on `main` on 2026-10-09 while back-filling rows for tests that
+had none. Four cases, two ids. **`OC-40` collided between two automated tests**,
+`m-oc.identity-scopes` on #15 and `m-oc.bound-arguments` on `main`, and both branches' suites were
+green throughout: each tree held only one of the two. It surfaced on 2026-10-12 when #15 was merged
+with `main`, as a conflict in the specification rather than as a failing test. `main`'s pair was
+renumbered to `OC-63` and `OC-64` because it was the later and much cheaper half to move.
+
+**What a check would be.** Per specification file, no id in a first table cell twice; across files, no
+id declared in two documents; and across test files, no id on two different titles. The third is the
+one that matters and it is the one `TR-1` is already positioned to do — it builds `Map<id, files[]>`
+and then throws the file list away.
+
+Not built here because it belongs with `TR-1` and would arrive with its own controls and rows, and
+because the collision it exists against is being repaired in the same breath — building the check and
+the repair together would leave the check never having been seen to fail against a real collision.
+**The repair should go first and the check second, against this commit's parent**, where a real
+collision still exists to catch.
+
+Recorded 2026-10-12.
+
+---
 **~~OC-15 and OC-16 depend on what else the machine is doing.~~** *Answered 2026-10-10, and it took
 two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
 precondition could not reach the thing that failed: the registry was reachable in both failing runs

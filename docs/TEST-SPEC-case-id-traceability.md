@@ -8,7 +8,17 @@ reviewer signing the milestone off never sees it.
 specification rows, and **13 tested ids that no row declared** — `A8-27`, `A14-7`, `A14-8`, `A16-21`,
 `A16-22`, `A16-24` to `A16-29`, `OC-40` and `OC-42`. None of them was wrong. They were written after
 the rows around them, during the rounds of review that followed, and nothing brought the document
-along. The thirteen are documented now, gathered in sections of their own rather than interleaved,
+along.
+
+> **The two `OC-` ids in that list are `OC-63` and `OC-64` since 2026-10-12, and they are left as
+> `OC-40` and `OC-42` here on purpose.** This paragraph is a measurement taken on a given day, and the
+> ids it names are part of what was measured; rewriting them would make the record describe a
+> measurement nobody took. What happened afterwards is that #15 turned out to have specified `OC-40`
+> and `OC-42` on 2026-09-19 for two entirely different cases, so these two were renumbered — see the
+> note under their rows in `TEST-SPEC-openclaw-2026-9-1.md`. **And it is worth noting what this check
+> did and did not catch.** `TR-1` compares tested ids against declared ids; it has nothing to say about
+> two cases sharing one id, which is why the collision survived until a merge surfaced it. A uniqueness
+> check is the obvious next case and is not written. The thirteen are documented now, gathered in sections of their own rather than interleaved,
 because interleaving them would imply they were signed off with their neighbours.
 
 **Level.** Contract. The two artefacts are read as text, which is the only level at which "the
@@ -30,6 +40,7 @@ every milestone at once.
 | **TR-1** | **negative** | No test carries a case id that no `TEST-SPEC-*.md` row declares |
 | **TR-2** | positive | The comparison is over something: both sets are read and both are large, so two empty reads cannot satisfy TR-1 |
 | **TR-1** | positive | A declared id with no test is reported and not failed, and the case asserts that such ids exist |
+| **TR-3** | positive + **negative** | The reader sees a case wherever the file puts it: a top-level `describe` after a blank line **and** one after `});`, because the first passing is what hid the second |
 
 ## Detail
 
@@ -57,6 +68,28 @@ every milestone at once.
 | **Expected** | Both above the floor. |
 | **Implemented by** | `tests/contract/m-tr.case-ids.test.ts`. |
 | **Covers** | TR-FR2. |
+
+### TR-3 — the reader, which nothing held until it was wrong
+
+| | |
+|---|---|
+| **Premise** | `TR-1` is only as good as the set of ids it reads, and nothing checked that set. The reader was anchored `^\s+` — "indented" — so that a fixture spec inside a template literal, which starts at column 0, is not read as a case of this suite. But `\s` includes the newline, so under the `m` flag the anchor could reach back over a **blank line** and match a top-level `describe(` after all, while the same call preceded by `});` stayed invisible. Whether a case was checked depended on the blank line above it. |
+| **Component** | `idsInTests()` in `tests/contract/m-tr.case-ids.test.ts`. |
+| **Steps** | Ask the reader for the ids it finds in this tree, and look for one of each shape: a column-0 `describe` after a blank line, and a column-0 `describe` after `});`. |
+| **Test data, and why these two** | `OC-63` in `m-oc.bound-arguments.test.ts` is preceded by a blank line — the shape that **was** seen. `OC-64` in `m-oc.env-reads.test.ts` is preceded by `});` — the shape that was **not**. Both are real cases on this tree rather than fixtures, so the data cannot drift out from under the case without a test file changing. |
+| **Expected** | Both ids present. |
+| **What it found** | The defect was found sideways, by a control: renumbering `OC-40` to `OC-63` turned `TR-1` red as it should, and renumbering `OC-42` to `OC-64` turned nothing red at all. One control working and its twin not working is what exposed the reader. **Measured before the correction: 253 id/file pairs seen against 260 when anchored to columns — 7 invisible**, being `A13-9`, `A14-8`, `A9-11`, `A9-12`, `OC-64` and `SP-2` in two files. Every one of those six ids turned out to be declared, so `TR-1` was giving the right answer for the wrong reason; a count of zero is not a result until something that must be there is counted. And with the reader corrected, `TR-1` immediately reported one genuinely undeclared id: **`TR-3`, this case**, which had no row yet. |
+| **Implemented by** | `tests/contract/m-tr.case-ids.test.ts`. |
+| **Covers** | TR-3, TR-FR1. |
+
+## What this check still does not do
+
+**It does not check that an id is used once.** `TR-1` compares tested ids against declared ids in both
+directions and has nothing to say about two different cases sharing one id. That is not hypothetical:
+`OC-40` and `OC-42` were specified on #15 on 2026-09-19 and assigned again here on 2026-10-09 for
+different cases, and the collision survived both branches' suites until a merge surfaced it — which is
+why those two were renumbered to `OC-63` and `OC-64` on 2026-10-12. A uniqueness check is the obvious
+next case and is **not written**; it is recorded in `BACKLOG.md` rather than left implied.
 
 ## Traceability
 
