@@ -19,23 +19,33 @@
  * Covers:   A3-3, A3-4, FR4
  * Unhappy:  A seeded key GitHub does not publish fails the comparison, which is
  *           the machine-in-the-middle case this exists for.
+ *
+ * Precondition: STARTED -- a start has run in this checkout. Skipped where it does not,
+ *           because `config/scripts/start/git.sh` is the only thing that creates
+ *           `volumes/_git-secrets`, so its presence is the question. Measured 2026-10-08: the
+ *           whole default tier from a feature worktree gave 9 failures and 1
+ *           error, every one of them a case of this kind, and the release
+ *           installation gave the same count for the opposite reason. Neither
+ *           place satisfies the whole suite, so the precondition is a value
+ *           asked for rather than a directory prescribed. SP-1, SP-2.
  */
 import { test, expect } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
+import { STARTED } from '../lib/preconditions';
 import { sh } from '../lib/shell';
 
 const knownHosts = join(repoRoot, 'volumes/_git-secrets/known_hosts');
 
-test('A3-3 known_hosts is seeded with github.com entries', () => {
+test.skipIf(!STARTED)('A3-3 known_hosts is seeded with github.com entries', () => {
   expect(existsSync(knownHosts)).toBe(true);
   const text = readFileSync(knownHosts, 'utf8');
   expect(text).toContain('github.com');
   expect(text.trim().split('\n').filter((l) => l.trim() && !l.startsWith('#')).length).toBeGreaterThan(0);
 });
 
-test('A3-3 every seeded github.com key is one GitHub publishes', () => {
+test.skipIf(!STARTED)('A3-3 every seeded github.com key is one GitHub publishes', () => {
   const published = sh([
     'curl', '-s', '--max-time', '20', 'https://api.github.com/meta'
   ]);
