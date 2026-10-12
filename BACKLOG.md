@@ -153,6 +153,16 @@ a branch under review. Recorded 2026-10-08.
 
 ---
 
+**~~Four milestone-A cases read the live installation without saying so, and are red in any bare
+checkout.~~** *Answered by #22, merged into `main` on 2026-10-10 and present on this branch since the
+merge of 2026-10-12.* The repair is `tests/lib/preconditions.ts`: three values a case asks for —
+`STARTED`, `IN_GIT_REPO`, `DASHBOARD_DEPS` — computed from current state rather than a rule somebody
+remembers, with the eight dependent files guarded and each skip given a voice. The entry is kept
+because the reasoning below is what produced that shape, and because **its last paragraph did not
+travel with it**: see the note there.
+
+The entry as it stood:
+
 **Four milestone-A cases read the live installation without saying so, and are red in any bare
 checkout.** `tests/lib/paths.ts:5` computes `repoRoot` from the test file's own location, so in a
 worktree it is the worktree. The state these four assert is created only by
@@ -207,12 +217,21 @@ Found while answering D2 and M6 of the 2026-10-01 review. Recorded 2026-10-07.
 
 ---
 
-**A fifth file writes into the operator's `volumes/repos` from the default tier.**
-`tests/contract/m-a5.nested-clone.test.ts:37` builds `reposDir` from `repoRoot` and `:43-46` writes a
-git repository into it. It is green, because it creates everything it asserts against, so it is not
-in the failure set above — but it means a default-tier run leaves state in whichever checkout it was
-started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
-tier's. Same branch as the entry above. Recorded 2026-10-07.
+**A fifth file writes into the operator's `volumes/repos` from the default tier. Still open, and
+`main` no longer records it.** `tests/contract/m-a5.nested-clone.test.ts` builds `reposDir` from
+`repoRoot` and writes a git repository into it — `git init -q -b main <reposDir>/.a5-nested-probe`,
+read out of the file on 2026-10-12. It is green, because it creates everything it asserts against, so
+it was never in the failure set above — but a default-tier run leaves state in whichever checkout it
+was started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
+tier's.
+
+**#22 does not close it, and it is worth saying why rather than assuming the merge did.** That branch
+*did* change this file — it gave it `IN_GIT_REPO` — but a precondition decides whether a case **runs**,
+not whether it **writes**. The `git init` is unchanged. And when #22 rewrote `BACKLOG.md` this
+paragraph went with the rest of the entry, so on `main` the concern is recorded nowhere: checked
+2026-10-12, `grep -c "fifth file writes into the operator"` against `origin/main:BACKLOG.md` is **0**.
+It survives here, which is the only copy that still has it. Recorded 2026-10-07, confirmed open
+2026-10-12.
 
 ---
 

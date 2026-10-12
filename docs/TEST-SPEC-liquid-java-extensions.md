@@ -573,6 +573,17 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | B4-6 | Integration | A NAR referencing an `org.apache.nifi` class the check cannot judge or can resolve elsewhere | Copied. The check does not pronounce on what it cannot see, and does not refuse what `lib/` provides |
 | B4-7 | Contract | The entrypoint on disk checks before it copies, and the container runs that entrypoint | Both, compared as text — §4 check 3b's lesson, which caught a green case over a stale container on 2026-09-08 |
 | B4-8 | **End-to-end** · §4 | Restart with both NARs in the drop directory | The good type is in the catalogue, the mismatched one is not, the refusal is in `docker compose logs liquid`, and Liquid started |
+| **B4-9** | Integration **negative** | A bundle that cannot link never enters the drop directory | Three readings of one refusal: `nar-build` names the bundle *and* the class it cannot resolve; it says where the bundle itself is, which is **outside** the load path; and the drop directory never held it at any point. The third is the one that matters — a bundle that arrives and is then removed has already been seen by the auto-loader |
+| **B4-10** | Integration | The counterpart: a sound bundle is deployed and loaded without a restart | Written into the drop directory, and the output **does not ask for a restart**, because none is needed — the auto-loader takes it within seconds. Without this row B4-9 shows only that something was refused, and the restart half is what FR29's wrong sentence used to tell every agent |
+| **B4-11** | Integration | The builder and Liquid reach the same verdict | Two halves: the index the builder reads holds what `lib/` holds, and Liquid refuses the same bundle the builder refused. Two checkers that disagree are worse than one, and this is the only case that compares them rather than each against its own fixture |
+
+*Rows added 2026-10-12, and how they were missing is the point.* `B4-9` to `B4-11` were
+written during the review rounds that followed this table and nothing brought the document
+along. They were found by **`TR-1`**, which arrived on this branch with the merge of `main`
+on 2026-10-12 and immediately named three tested ids that no row declared — the check doing
+on this branch exactly what it was built for on another. Written against the test file's
+`describe` titles rather than from recollection, which is the rule this project has for
+documenting tests that already exist.
 
 #### Detail per case
 
