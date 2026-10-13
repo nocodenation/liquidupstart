@@ -514,20 +514,67 @@ measured are the **diagonal** — they differ in both dimensions — and they ag
 | Linux, **rootless**, reviewer, 2026-10-01 | `10.231.7.1` | `10.231.7.1` | `10.231.7.3` |
 | macOS, **rootful** (Docker Desktop 4.93.0), 2026-10-10 | `192.168.65.1` | `192.168.65.1` | `10.99.0.148` |
 
-Different mechanisms — a bridge gateway on one, a userland proxy on the other — and the same verdict.
-**The rule splits into a half that works and a half that does not, and only the second is a problem:**
+Different mechanisms — a bridge gateway on one, a userland proxy on the other — and the same verdict
+on the LAN half.
 
-- **Host against container separates, on both.** That is the half the decision rests on, and it holds.
-  nginx can tell a stack-network client from everything else.
-- **Host against LAN does not separate, on either.** The address that identifies the operator's own
-  browser identifies every machine that can reach the published port.
+> **Retracted 2026-10-13, and it was the load-bearing half.** This entry said *"Host against container
+> separates, on both. That is the half the decision rests on, and it holds."* **It does not hold.** The
+> reviewer measured the route neither row had: a container **on the stack network** reaching the host's
+> LAN address through the **published port**. On rootless Linux it arrived as the host; re-measured the
+> same day on macOS/rootful with `tests/verify/address-routes.sh`, it arrives as the host there too.
+> Both rows had only ever measured a stack container talking to nginx **directly**, where of course it
+> arrives as itself. My own sixth macOS reading — a container on an *unrelated* network, through the
+> published port, arriving as the host — pointed straight at it, and I did not follow it.
+>
+> So **neither half separates while the port is published on all interfaces**, and the agent case this
+> entry says the rule answers is open, not closed.
+
+**The matrix, reproducible as of 2026-10-13.** `tests/verify/address-routes.sh` builds a throwaway
+network with the stack's own shape, a throwaway nginx returning `$remote_addr`, and asks every route.
+macOS, rootful, Docker 29.8.1:
+
+| client → target | `$remote_addr` |
+|---|---|
+| host → `127.0.0.1`, published on all interfaces | `192.168.65.1` |
+| host → the host's LAN address | `192.168.65.1` |
+| stack-network container → nginx **directly** | `10.77.5.130`, its own |
+| **stack-network container → the host's LAN address** | **`192.168.65.1`, the host** |
+| container on an unrelated network → the host's LAN address | `192.168.65.1` |
+| stack-network container → the network gateway, published port | `10.77.5.130`, its own |
+| host → `127.0.0.1`, **bound to loopback** | **`10.77.5.128`, the gateway** |
+| **stack-network container → the host's LAN address, bound to loopback** | **no answer** |
+
+**Three things in that table change the entry.**
+
+1. **The last row is why #20 is enough for this.** With the port bound to loopback the container's
+   route through it is simply refused, so the published port — not the network — is what let a
+   container present itself as the host. #20 is therefore a precondition for **both** halves of the
+   rule, not only for host-against-LAN as written above.
+2. **The host's address is not fixed, and it is not `.1`.** With the port on all interfaces the host
+   arrives as the userland proxy's `192.168.65.1`; bound to loopback it arrives as the **network
+   gateway**, which docker sets to the **first address of the pool** — `10.77.5.128` here, because
+   `ip_range` starts there and no `gateway:` is declared. The reviewer found the same on Linux. So any
+   rule naming the host address must **compute it from the running network** rather than carry a
+   constant.
+3. **The binding coupling below is larger than it was written.** Opening `SYSTEM_BIND_ADDRESS` does not
+   only expose the LAN: it hands the identity to **every container on the host**, agents included, by
+   the route in the fourth row. The guard proposed there — refuse, or do not assert, when the bind
+   address is not a loopback address — is unchanged in shape and carries more weight.
+
+**Still not measured:** rootful Linux, the `slirp4netns` and `pasta` port drivers, and a request from
+a second physical machine. Two of the four combinations remain, and the probe above is what they should
+be measured with so the readings can be compared rather than retold.
 
 The macOS reading was taken six ways, because one reading of an address is a reading of a route and not
 of a property: IPv4 loopback, IPv6 loopback (`openclaw.localhost` resolves to both here), the hostname,
 the host's LAN address, and — to get a client out of the host's own network namespace — a container on
 an unrelated docker network reaching the published port through `host-gateway` and through that LAN
-address. **All six arrived as `192.168.65.1`.** The stack-network container was the only client that
-arrived as itself.
+address. **All six arrived as `192.168.65.1`.**
+
+*And the sentence that followed was wrong: "the stack-network container was the only client that
+arrived as itself".* It arrives as itself when it talks to nginx **directly**, which is the only way
+it was asked. Through the published port it arrives as the host — see the retraction above. Six
+readings of one route are still one route.
 
 **Still not measured, and stated rather than implied:** no reading was taken from a second physical
 machine. Both rows above originate on the host under test, as did the reviewer's. What the six readings
