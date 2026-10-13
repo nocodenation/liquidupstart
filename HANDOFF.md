@@ -1,4 +1,4 @@
-# Handover — 2026-10-10
+# Handover — 2026-10-13
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one: #19 still carries an older
@@ -9,13 +9,76 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-10* has the live picture. Read that and the review bodies it points to; the rest of this file
+2026-10-13* has the live picture. Read that and the review bodies it points to; the rest of this file
 is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; there are nine of ours open now, and two have merged since. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-13
+
+**`main` is `de83bfc`.** #26 merged on 2026-10-12, the third thing to land since 0.7.0 after #22 and
+#23.
+
+**A conflict round, caused by our own merges.** #22 and #23 had touched `BACKLOG.md`, and five branches
+had too, so #10, #15, #16, #17 and #24 all went `CONFLICTING` within a day. All five are resolved and
+all six open pull requests are `MERGEABLE` again.
+
+| PR | Branch | Conflict was | Resolved |
+|---|---|---|---|
+| ~~#26~~ | `fix/oc-id-collision` | — | **merged 2026-10-12** |
+| #10 | `feature/liquid-java-extensions` | `BACKLOG.md`, one 400-line region | Union — the two sides were *different entries* in one list |
+| #15 | `feature/openclaw-pairing-recovery` | an **OC id collision** | #26 moved `main`'s pair; the rest was a pure union |
+| #16 | `feature/memory-midterm` | `BACKLOG.md`, the tail | `main` wins on `timeout -k`, which it has struck through and this branch still had open |
+| #17 | `feature/test-mutation-control` | `tests/mutations.json`, add/add | Toward #17 — #18 ships it empty on purpose, #17 fills it |
+| #24 | `fix/fourth-precondition` | `BACKLOG.md`, the head | Union |
+| #25 | `feature/builder-seeded-cache` | — | cleared with #10 |
+
+**Resolving a `BACKLOG.md` conflict is a union four times out of five**, because the file is a list of
+independent entries and the two sides are usually different ones. The fifth case is the one to watch:
+when both sides have *the same* entry with different verdicts, the newer verdict wins and the stale copy
+goes, or the finding ends up recorded twice with opposite answers. #16 was that case.
+
+**And once, counting nearly produced the wrong answer.** On #24 a count said `OC-15 and OC-16` appeared
+twice, which is the shape of a stale copy surviving a merge. It is not one: the entry is a struck-through
+header, the sentence *"The original entry follows."*, and then the original verbatim, which is how the
+answered entries here are written. Reading it was the difference between a correct resolution and
+deleting the record of what the finding had said.
+
+### What the round found that nobody was looking for
+
+- **`TR-1` could not see a case that followed `});`.** Its reader was anchored `^\s+` — "indented" — so
+  a fixture spec inside a template literal at column 0 is not read as a case. But `\s` includes the
+  newline, so under the `m` flag the anchor reached back over a *blank line* and matched a top-level
+  `describe(` after all, while the same call after `});` stayed invisible. **Whether a case was checked
+  depended on the blank line above it.** Measured: 253 id/file pairs seen against 260 anchored to
+  columns — seven invisible, all seven ids declared, so the check was right for the wrong reason. Fixed
+  in #26 with `TR-3` holding the reader. Found sideways: one renumbering control fired and its twin did
+  not.
+- **Nothing checks that a case id is used once.** That is why `OC-40` wore two meanings across #15 and
+  `main` through two green suites, surfacing only as a merge conflict. In `BACKLOG.md`, with the
+  argument that the check should be written against #26's **parent**, where a real collision still
+  exists for it to be seen catching.
+- **#22's precondition repair does not reach `m-oc.pairing-card`**, which exists only on #15 and uses
+  `lib/mount.ts` without a `DASHBOARD_DEPS` guard, so five cases are red in any bare checkout. A branch
+  off `main` was tried and removed again: `main`'s only two DOM files already carry the guard, and
+  `main` cannot make an unguarded file on another branch skip. **The guard has to go on #15.**
+
+### What is ours, and what is Timur's
+
+Every open pull request has a review requested and a comment newer than its last review. **That does
+not mean nothing is pending on our side.** Two substantive debts are:
+
+1. **#15's eleven findings of 2026-10-01**, still to build. The largest piece of work outstanding.
+2. **#16's review of 2026-09-28**, never answered. Deliberately after the 2026-10-01 round, and the
+   date-based heuristic above now reports it as answered, which is why that rule gained a caveat.
+
+Smaller: #25 records that a project bringing its own `pom.xml` cannot be given the lifecycle pins, so
+its closure is re-fetched per build — the security property holds, the speed is **unmeasured**.
+
+Waiting on Timur and never reviewed by him: **#20, #21, #24, #25**.
 
 ## Where it stands, 2026-10-10
 
@@ -105,6 +168,14 @@ gh pr view <N> --json comments --jq '.comments[] | "\(.createdAt) \(.author.logi
 ```
 
 A review is unanswered when its `submittedAt` is later than the last `cdilcher` comment.
+
+> **That rule is false for #16 as of 2026-10-12, and the exception is the useful part.** A merge
+> comment was posted there on 2026-10-12, later than the review of 2026-09-28, so the rule now reports
+> that review as answered. It is not: the comment says so in its own body, and none of its findings has
+> been addressed. The rule measures *any* comment where what matters is *a reply to that review*, and
+> nothing in the data distinguishes them. So treat it as a first pass and read the last comment before
+> believing it — or, better, give each reply a line naming the review it answers, which is the computed
+> form this project would normally insist on and does not yet have.
 
 ### The agreed next three, in order
 
