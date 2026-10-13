@@ -1,29 +1,366 @@
-# Handover — maintained continuously, last touched 2026-10-08
+# Handover — 2026-10-13
 
-**What this file is.** The working handover between the operator and the agent, on **one machine**.
-It carries the map, what is next, and what the failures so far have taught. Claims about *state* —
-which stack is running, how many services are up, which version is on disk — describe that machine at
-the moment they were written, and each carries its own date. They are not project facts and a second
-installation will not match them.
+> **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
+> committed copy lived on #19. There is one copy now and it is this one: #19 still carries an older
+> version on its branch, so a merge of #19 must resolve `HANDOFF.md` **toward `main`**. Two copies of
+> one document with different content is the defect `A1` on #17 was — twelve rows specified twice,
+> disagreeing in four places, and nobody could tell which they were holding.
 
-**What it is not.** It is not a specification and not a requirement. Those are
-`docs/FEATURE-*.md` and `docs/TEST-SPEC-*.md`, which are written and signed off before the work they
-describe. **Reviewing a pull request does not require this file**, and nothing in it should be read
-as a promise the code has to keep.
+Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
-**Which copy is current.** The one on the branch that last touched it -- for this file, #10. Merges
-flow upward only (`main` → `#9` → `#10`), and the three branches cut on 2026-09-19 sit beside that
-stack rather than in it, so a copy on a lower branch is a snapshot from the last forward merge and is
-expected to be behind. There is no rule that the copies match, and trying to make them match by
-editing downward is work that the merge direction undoes.
+**The state below is dated per section, and the current state is the first one.** *Where it stands,
+2026-10-13* has the live picture. Read that and the review bodies it points to; the rest of this file
+is the map and the lessons.
+
+Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
+unless a paragraph carries its own later date. It still says "three features and two repairs, on five
+branches"; there are nine of ours open now, and two have merged since. **Where an older section makes a claim about the present,
+believe the dated one.**
+
+## Where it stands, 2026-10-13
+
+**`main` is `de83bfc`.** #26 merged on 2026-10-12, the third thing to land since 0.7.0 after #22 and
+#23.
+
+**A conflict round, caused by our own merges.** #22 and #23 had touched `BACKLOG.md`, and five branches
+had too, so #10, #15, #16, #17 and #24 all went `CONFLICTING` within a day. All five are resolved and
+all six open pull requests are `MERGEABLE` again.
+
+| PR | Branch | Conflict was | Resolved |
+|---|---|---|---|
+| ~~#26~~ | `fix/oc-id-collision` | — | **merged 2026-10-12** |
+| #10 | `feature/liquid-java-extensions` | `BACKLOG.md`, one 400-line region | Union — the two sides were *different entries* in one list |
+| #15 | `feature/openclaw-pairing-recovery` | an **OC id collision** | #26 moved `main`'s pair; the rest was a pure union |
+| #16 | `feature/memory-midterm` | `BACKLOG.md`, the tail | `main` wins on `timeout -k`, which it has struck through and this branch still had open |
+| #17 | `feature/test-mutation-control` | `tests/mutations.json`, add/add | Toward #17 — #18 ships it empty on purpose, #17 fills it |
+| #24 | `fix/fourth-precondition` | `BACKLOG.md`, the head | Union |
+| #25 | `feature/builder-seeded-cache` | — | cleared with #10 |
+
+**Resolving a `BACKLOG.md` conflict is a union four times out of five**, because the file is a list of
+independent entries and the two sides are usually different ones. The fifth case is the one to watch:
+when both sides have *the same* entry with different verdicts, the newer verdict wins and the stale copy
+goes, or the finding ends up recorded twice with opposite answers. #16 was that case.
+
+**And once, counting nearly produced the wrong answer.** On #24 a count said `OC-15 and OC-16` appeared
+twice, which is the shape of a stale copy surviving a merge. It is not one: the entry is a struck-through
+header, the sentence *"The original entry follows."*, and then the original verbatim, which is how the
+answered entries here are written. Reading it was the difference between a correct resolution and
+deleting the record of what the finding had said.
+
+### What the round found that nobody was looking for
+
+- **`TR-1` could not see a case that followed `});`.** Its reader was anchored `^\s+` — "indented" — so
+  a fixture spec inside a template literal at column 0 is not read as a case. But `\s` includes the
+  newline, so under the `m` flag the anchor reached back over a *blank line* and matched a top-level
+  `describe(` after all, while the same call after `});` stayed invisible. **Whether a case was checked
+  depended on the blank line above it.** Measured: 253 id/file pairs seen against 260 anchored to
+  columns — seven invisible, all seven ids declared, so the check was right for the wrong reason. Fixed
+  in #26 with `TR-3` holding the reader. Found sideways: one renumbering control fired and its twin did
+  not.
+- **Nothing checks that a case id is used once.** That is why `OC-40` wore two meanings across #15 and
+  `main` through two green suites, surfacing only as a merge conflict. In `BACKLOG.md`, with the
+  argument that the check should be written against #26's **parent**, where a real collision still
+  exists for it to be seen catching.
+- **#22's precondition repair does not reach `m-oc.pairing-card`**, which exists only on #15 and uses
+  `lib/mount.ts` without a `DASHBOARD_DEPS` guard, so five cases are red in any bare checkout. A branch
+  off `main` was tried and removed again: `main`'s only two DOM files already carry the guard, and
+  `main` cannot make an unguarded file on another branch skip. **The guard has to go on #15.**
+
+### What is ours, and what is Timur's
+
+Every open pull request has a review requested and a comment newer than its last review. **That does
+not mean nothing is pending on our side.** Two substantive debts are:
+
+1. **#15's eleven findings of 2026-10-01**, still to build. The largest piece of work outstanding.
+2. **#16's review of 2026-09-28**, never answered. Deliberately after the 2026-10-01 round, and the
+   date-based heuristic above now reports it as answered, which is why that rule gained a caveat.
+
+Smaller: #25 records that a project bringing its own `pom.xml` cannot be given the lifecycle pins, so
+its closure is re-fetched per build — the security property holds, the speed is **unmeasured**.
+
+Waiting on Timur and never reviewed by him: **#20, #21, #24, #25**.
+
+## Where it stands, 2026-10-10
+
+**`main` is `c9a0567`.** #22 and #23 merged this morning, which is the first movement on `main` since
+#9 went in as 0.7.0.
+
+**Every review is answered except one.** The 2026-10-01 round — five parallel reviews, 48 findings —
+is replied to on #10, #15, #17, #18 and #19. **#16's review of 2026-09-28 is the one outstanding
+reply**, and it is deliberately outside this cycle.
+
+| PR | Branch | Head | State |
+|---|---|---|---|
+| ~~#22~~ | `fix/suite-preconditions` | — | **merged 2026-10-10** — the suite computes where it is running |
+| ~~#23~~ | `fix/case-id-traceability` | — | **merged 2026-10-10** — 13 unsigned case ids, and `TR-1` against a 14th |
+| #10 | `feature/liquid-java-extensions` | `c2bc3c3` | 25 findings answered 10-09; the `/m2` retraction posted 10-10. With the reviewer |
+| #15 | `feature/openclaw-pairing-recovery` | `a5d3c30` | **11 findings of 10-01 still to build.** The address measurement it was blocked behind was delivered 10-10 |
+| #16 | `feature/memory-midterm` | — | **the one unanswered review**, 2026-09-28. Outside this cycle by decision |
+| #17 | `feature/test-mutation-control` | `be75d5b` | answered; base retargeted to #18, so it cannot merge first |
+| #18 | `feature/mutation-registry` | `b8b608b` | answered; verdict was *merge after fixes* |
+| #19 | `fix/fixture-names-per-run` | — | answered 10-02. Carries an **older `HANDOFF.md`** — see the note at the top |
+| #20 | `fix/bind-address` | — | never reviewed. **A precondition of #15's identity rule**, not a smaller thing beside it |
+| #21 | `fix/manifest-atomic-write` | — | never reviewed |
+| #24 | `fix/fourth-precondition` | `c40606a` | opened 10-10 off `main`: `registryReachable()`, `A16-30`, and three of my own mistakes. `572 pass / 4 skip / 0 fail` |
+
+### What is open, and whose it is
+
+- **The operator's, priced and waiting:** `/m2` option (c). One second per build, a 67.7 MB image
+  layer, 24 s of image build. Unmeasured: a real processor with a large closure, where a per-build
+  repository means re-downloading on every build.
+- **The operator's, newly sharpened on #15:** the identity rule cannot be a rule about an address
+  alone. #20 makes the binding a *variable*, so opening the port for pgAdmin would hand
+  `operator.admin` to the LAN. The recommendation is a guard refusing the combination, in the shape of
+  `lu_ip_in_cidr`.
+- **Mine:** #15's eleven findings. That is the largest piece of built work outstanding.
+- **Deliberately not done:** `BACKLOG.md` on `main` still carries the `operator.admin` entry in its
+  pre-10-02 version, which recommends asserting the identity *only for the host* — retracted, because
+  it would break the recovery path #15 exists to provide. The corrected entry is on #15's branch and
+  **its merge is what should carry the fix.** Editing `main`'s copy as well would put the same block
+  on two branches with different content, which is the defect above.
+
+### Two measurements that corrected published figures, 2026-10-10
+
+Both were mine, and they went opposite ways — which is the point.
+
+- **The `/m2` seed figure was wrong.** `exit=0, 3 s, 47 jars` was real and taken on the wrong subject:
+  against the skeleton `build.sh` generates, the arrangement fails on plugin **version** resolution. A
+  local repository is not a remote repository — Maven writes `maven-metadata-central.xml` and never
+  the unqualified `maven-metadata.xml` a `file://` remote is looked up for (5 against 0, measured).
+- **The `723 pass / 4 fail over 727` on #10 was right.** It was suspected after the worktree damage
+  below and **re-measured instead of withdrawn**: identical, over 143 files, where a run missing the
+  six lost test files would have given 698 over 137. Suspecting a number is a reason to measure it
+  again, not to retract it. The retraction had already been drafted.
+
+## Where it stands, 2026-10-02
+
+**The git integration is merged.** #9 was approved and merged on 2026-09-30 and released as **0.7.0**.
+`main` is `fc03344` plus what has landed since. Everything else is open, based on `main`, and conflict
+free.
+
+**Every open PR has an unanswered review from 2026-10-01.** That is the single most important fact on
+this page. The work below is not "finish the last thing"; it is five review rounds in parallel, 48
+findings in all.
+
+| PR | Branch | Findings open | State |
+|---|---|---|---|
+| ~~#9~~ | `feature/git-integration` | — | **merged, 0.7.0** |
+| #10 | `feature/liquid-java-extensions` | **12** (3 blocking) | review of 10-01 **unanswered** |
+| #15 | `feature/openclaw-pairing-recovery` | **11** (A1–A5 before merge) | review of 10-01 **unanswered** |
+| #17 | `feature/test-mutation-control` | **8** (A1–A3 before merge) | review of 10-01 **unanswered** |
+| #18 | `feature/mutation-registry` | **10** (2 before merge) | third re-review of 10-01 **unanswered**; verdict *merge after fixes* |
+| #19 | `fix/fixture-names-per-run` | **7** | A1, A2, B1–B4 built in `2dbb523`; **no reply posted yet** |
+| #20 | `fix/bind-address` | — | opened 10-02, awaiting first review |
+| #21 | `fix/manifest-atomic-write` | — | opened 10-03, off `main`, awaiting first review |
+
+**#17 must not merge before #18.** #17 carried its own older copy of the mutation runner; both branches
+add the same four files, so `git merge-tree` gives add/add conflicts on all of them and a resolution
+toward #17 would silently restore every defect #18 fixed. #17 holds the registry alone now.
+
+### Getting the reviews back
+
+They are long and they are the actual specification of the remaining work. Do not work from this
+summary:
+
+```bash
+gh pr view <N> --json reviews --jq '[.reviews[] | select(.author.login=="iztiev")] | last | .body'
+gh pr view <N> --json comments --jq '.comments[] | "\(.createdAt) \(.author.login)"'   # what has been answered
+```
+
+A review is unanswered when its `submittedAt` is later than the last `cdilcher` comment.
+
+> **That rule is false for #16 as of 2026-10-12, and the exception is the useful part.** A merge
+> comment was posted there on 2026-10-12, later than the review of 2026-09-28, so the rule now reports
+> that review as answered. It is not: the comment says so in its own body, and none of its findings has
+> been addressed. The rule measures *any* comment where what matters is *a reply to that review*, and
+> nothing in the data distinguishes them. So treat it as a first pass and read the last comment before
+> believing it — or, better, give each reply a line naming the review it answers, which is the computed
+> form this project would normally insist on and does not yet have.
+
+### The agreed next three, in order
+
+Decided with the operator on 2026-10-02. Everything else waits.
+
+1. ~~**A16-11, and a sweep for the same shape**~~ — **done 2026-10-02**, and the sweep found three
+   more: A15-1's `Bun.sleep(700)`, A16-27 passing over a `git.sh` with no wait at all, and five cases
+   running the start script in bun's default 5s budget. The six of them are the *"Waiting on the clock"*
+   entry below. One further thing came out of it and is **not** repaired: eight case ids used in the
+   A16 tests — A16-21, 22, 24, 25, 26, 27, 28, 29 — appear in no row of the test specification, and
+   `A16-20` names two different cases, a NUL unit check and a stale-foreign-lock integration case. The
+   cases are on `main`; renumbering one of them is a decision for the reviewer, so it is reported on
+   #19 and belongs with the `git.sh` manifest repair rather than inside a harness fix.
+   What it was: `m-a16.lock-identity.test.ts:142` did `await Bun.sleep(900)` and then read
+   `volumes/_git-secrets/locks/<slug>/pid`, which is empty under load — the case passed 5 of 5 alone
+   and failed 8 of 8 with eight starts at once. It waits on the holder landing now, and the fourth
+   instance was found on purpose, as this entry asked.
+2. ~~**The `operator.admin` entry moves to #15.**~~ — **done 2026-10-02**, `3177cc2`, and the note is
+   on #15 as `issuecomment-5956095152`. It was not a move: the entry existed on **both** branches, and
+   #15's copy was the version from *before* the decision of 2026-09-30. That copy proposed setting
+   `X-Forwarded-User` only for host requests, or not routing the agents to the `openclaw.localhost`
+   vhost at all — which would break the recovery path #15 exists to provide, since
+   `openclaw-pairing.sh` runs its CLI inside that network and through that vhost. **#15's own backlog
+   recommended removing what #15 adds.** Two things were measured on the branch rather than taken from
+   the review: the helper really has no `--ip`, and the pool guarantee is *enforced* —
+   `lu_ip_in_cidr` refuses a `SYSTEM_PROXY_IP` inside `SYSTEM_NETWORK_POOL` before `down.sh` runs,
+   held by four cases in `m-oc.env-reads`. Re-review was **not** requested: #15's eleven findings are
+   untouched. What it said to do:
+2b. **The `operator.admin` entry moves to #15.** It is out of #19 already (B5: approving a harness fix
+   must not also sign off a security direction). Write it on #15 with the distinction the operator and
+   the reviewer between them established:
+   - The **agents** are what the finding is about, and the decision of 2026-09-30 answers it: nginx
+     asserts `X-Forwarded-User` for the host and one named stack-network address. An agent arrives from
+     a container address and no longer gets it.
+   - The **LAN** side is a different thing and is **not** part of that decision. It was a promise
+     README.md broke, and #20 repairs it. Say so, so nobody reads the identity rule as doing more than
+     it does.
+   - Three omissions the reviewer named, all to be written in: the pairing helper has **no** fixed
+     address today (`docker run --network` with no `--ip`), so a key, a template variable and an `--ip`
+     are new — "introduces nothing to keep" was false; two concurrent helper runs on a pinned address
+     collide with *address already in use*; an orphaned helper holds the address. In its favour and
+     unsaid: `ip_range: 10.99.0.128/25` in `compose.yml` keeps a pinned address below `.128` out of the
+     pool.
+   - And drop "name them by address" as if an address were a principal. It is a position.
+3. ~~**The manifest write in `git.sh`**~~ — **done 2026-10-03**, `c926797` on
+   `fix/manifest-atomic-write`, **PR #21** against `main`, Timur requested. It was bigger than this
+   entry said: measured against the unfixed script, 88,365 reads over six runs gave **893 empty** and
+   **30 unparseable**, the longest 5,274 bytes ending mid-entry. Not one bad read was a *plausible*
+   document — always empty or unparseable, never valid JSON with the wrong contents — which is why
+   nothing downstream ever reported anything false and why it survived nine milestones.
+   `seed_known_hosts` was repaired with it: its temporary came from `mktemp` with no argument, and
+   `mv` copies across filesystems, so the guarantee depended on where `$TMPDIR` points. Four cases,
+   A12-3 to A12-6; 3 of 7 red against the unfixed script, measured on two trees (118 empty reads on
+   the first, 891 on the second — the count is the machine's, the signal is not). What it said to do:
+   Line ~562 is `} > "$MANIFEST"`, which truncates and fills. Any reader can see a half-written file:
+   `m-a12.manifest-while-waiting.test.ts` caught `SyntaxError: JSON Parse error: Unexpected EOF` at
+   load time in a full run. The dashboard and `git-repo-info` read the same file, so this is a product
+   defect, not a test one. The same script already does it correctly for `known_hosts` (`mv "$scanned"
+   "$KNOWN_HOSTS"`) — write beside and rename. It also explains the reviewer's #18 finding 6, which he
+   saw once in twenty runs and could not reproduce.
+
+### Why #10's security finding comes after those three, not before
+
+#10's B1 — build-time code runs as root with write access to every clone, the shared Maven cache and
+the drop directory — is the most serious-sounding item in the whole round, and it was deliberately not
+pulled forward. The reason is a measurement, not a preference:
+
+| | in `main`, and therefore in 0.7.0? |
+|---|---|
+| #10 B1, build-time code as root | **no** — `config/nar_builder` and `narcheck.py` are not in `main` |
+| step 3, `} > "$MANIFEST"` | **yes**, `config/scripts/start/git.sh:562` |
+| step 1, A16-11 | **yes** |
+
+**Urgency follows exposure, not the word "security".** B1 is in code nobody has: the builder exists on
+the branch only, so it cannot do anything to anybody today. Step 3 is in the version running on the
+operator's machine and can hand the dashboard and the agents a half-written manifest.
+
+Three further reasons, in order:
+
+- **B1 needs a decision from the operator** about what a build may do on their machine, and a
+  trust-boundary decision taken at a context boundary is taken badly.
+- **It is large.** The repair reaches the builder image, `compose.yml`, the mounts and probably the
+  check itself. It is a round of its own with its own measurements, not an insert before three small
+  things.
+- **#10 carries eleven more findings**, among them B3, two cases that hang for ever on Linux in the
+  default tier. Taking B1 alone means touching #10 twice and asking the reviewer to read it twice.
+
+So: the three, then #10 whole, with B1 first inside it and the decision put to the operator before
+anything is built.
+
+**The three are done as of 2026-10-03** — `d645c9c` on #19, `3177cc2` on #15, `c926797` as #21. #10 is
+next, whole, and B1's decision goes to the operator before anything is built.
+
+**One thing the three cost, and it is a lesson about this machine rather than about the code.** The
+work for step 3 sat uncommitted in a worktree under the session scratchpad overnight. The machine
+rebooted, and `/private/tmp` and `/tmp` went with it: the worktree, the reproduction harness and the
+drafted PR text were all gone, and every worktree showed as `prunable`. Steps 1 and 2 lost nothing,
+because they were committed and pushed. Rebuilding step 3 took about twenty minutes and the
+measurements had to be earned again, which is how the 118-versus-891 difference came to light. Two
+rules out of it: **a worktree under the scratchpad is a working surface, not storage** — commit before
+stopping — and PR text belongs in `.pr-drafts/`, which is inside the repository and gitignored, rather
+than in the scratchpad.
+
+**The cause is found, 2026-10-10, and it was never git.** This document recorded the earlier loss as
+a reboot taking `/private/tmp` with it, and a later one as cause unknown. Both were
+**`/usr/libexec/tmp_cleaner`**, a macOS launchd job that runs **daily at midnight**
+(`com.apple.tmp_cleaner.plist`, `StartCalendarInterval Hour 0`) and whose arguments are in the binary:
+
+```
+daily_clean_tmps_dirs="/tmp"
+daily_clean_tmps_days="3"
+args="-atime +3 -mtime +3 -ctime +3"      # files
+dargs="-empty -mtime +3"                  # directories, once empty
+```
+
+**And reading a file does not protect it.** Measured: `cat` on `wt-10/.env.example` left its atime at
+`2026-10-06 04:17`, unchanged, so this filesystem does not refresh atime on reads. Only *writing*
+moves any of the three. The predicate therefore selects **every file checked out more than three days
+ago and not written since** — which, in a git worktree, is almost all of it.
+
+Three observations it predicts rather than merely fits. `wt-manifest` holds **zero files and its
+directory skeleton only**, every directory stamped `Oct 8 00:00` — the midnight run. `wt-10` lost
+**eleven** tracked files, six of them test files, in the first cohort to cross three days. And when
+asked today, the cleaner's own predicate still selected **640 further files in `wt-10`**, due that
+night; after `touch` on the tree it selects none, the worktree is clean, and it is identical to
+`origin`.
+
+The eleven surfaced only because `git diff --stat` for an unrelated one-file edit printed eleven
+deletions beside it.
+
+**The rules out of it.** A worktree under the scratchpad has a **three-day clock per file**, and the
+machine does not have to reboot for it to run — so commit and push, and treat a worktree older than
+that as suspect rather than as a place to measure in. **Check it with `git status`, never by opening
+the files you came for**: a selective checkout restores what you name and is silent about the rest,
+and six test files holding **29 green tests** were gone with nothing turning red, because absent tests
+do not fail. `touch` on the tree buys another three days where recreating it would cost a
+`bun install`.
+
+**And the first conclusion drawn from it was wrong, which is the other half.** The reading was that
+this had corrupted the `723 pass / 4 fail over 727` published on #10 the day before. It had not: with
+everything restored the tier gives exactly that figure again, over 143 files, and a run missing those
+six would have reported 698 across 137. So the damage postdates the measurement. **The exposure was
+real and the check was cheap** — twenty minutes of re-running against a day of a reviewer reading a
+retraction that was not warranted. Suspecting a number is a reason to re-measure it, not to withdraw
+it.
+
+### Decisions, and whose they are
+
+- **Settled 2026-09-30, operator:** nginx asserts the identity for the host and one named address.
+- **Settled 2026-10-02, operator:** the proxy binds to `127.0.0.1` by default with `SYSTEM_BIND_ADDRESS`
+  to open it. #20.
+- **Waiting on the reviewer, #18:** the wire format gained a `kind` column rather than overloading
+  `all` to carry `"exempt"`; and a run stopped by its budget is **refused** rather than
+  failed-by-timeout, because `failed` there means the named test passed. Both are stated in the reply
+  on #18 as deviations from what he proposed.
+- **Waiting on the operator, #15, as of 2026-10-10:** the real nginx rule for the identity. **Two of
+  the four measurements are in, and they are the diagonal** — Linux/rootless (the reviewer,
+  `10.231.7.1` for both loopback and LAN) and macOS/rootful on Docker Desktop (`192.168.65.1` for
+  loopback, LAN, IPv6 loopback, the hostname, and a container on an unrelated network reaching the
+  published port two ways — six readings, one address). Host against **container** separates on both,
+  which is the half the rule rests on; host against **LAN** separates on neither. So #20 is a hard
+  precondition, and the coupling nobody had named is that #20 makes the binding a *variable*: open the
+  port for pgAdmin and the identity rule hands `operator.admin` to the LAN. The recommendation on #15
+  is a guard that refuses the combination, in the shape of `lu_ip_in_cidr`. Not built.
+
+### The worktrees in use
+
+They are outside the repository, under the session scratchpad, and they are where the work happens:
+
+| Path | Branch |
+|---|---|
+| `/Users/christof/repos/liquidupstart` | the main checkout |
+| `…/scratchpad/wt-10` | `feature/liquid-java-extensions` |
+| `…/scratchpad/wt-15` | `feature/openclaw-pairing-recovery` |
+| `…/scratchpad/wt-17` | `feature/test-mutation-control` |
+| `…/scratchpad/wt-18b` | `feature/mutation-registry` |
+| `…/scratchpad/wt-names` | `fix/fixture-names-per-run` (#19) — **this file lives here** |
+| `…/scratchpad/wt-bind` | `fix/bind-address` (#20) |
+
+`git worktree list` is the authority. Each needs `cd dashboard && bun install --frozen-lockfile` once,
+or the component tier cannot resolve svelte.
 
 ## What is being built
 
-**Three features, two repairs, and four more that arrived on 2026-09-19 and 2026-09-20** -- the
-pairing recovery (#15, built), the mid-term memory (#16, specified and switched on), and the
-mutation control for the suite, which is in two pieces: the tool on `main` (#18) and the
-specification with the registry on #17. The branch table below is the map; this section is why each
-exists.
+**Three features and two repairs**, on five branches.
 
 **The git integration** (#9) gives the agent harnesses OpenClaw and OpenCode version control:
 repositories declared in the configuration, cloned into a shared workspace, each with its own deploy
@@ -56,8 +393,7 @@ than tidied away.
 | `docs/FEATURE-liquid-java-extensions.md` | The same, for the Java extensions. Numbering continues from the git document — U9, FR21 upward |
 | `docs/TEST-SPEC-liquid-java-extensions.md` | The Java cases |
 | `docs/FEATURE-openclaw-2026-9-1.md` | The migration analysis, in the three-part view: how each part worked, what changed, what had to be adapted |
-| `docs/TEST-SPEC-openclaw-2026-9-1.md` | The migration cases, OC-1 upward -- OC-39 to OC-47 were added by #15 |
-| `docs/FEATURE-memory-midterm.md` · `docs/PROCEDURE-mutation-control.md` | The mid-term memory (#16) and the mutation runner (#18). The mutation reasoning and its registry are on #17 |
+| `docs/TEST-SPEC-openclaw-2026-9-1.md` | 31 migration cases, OC-1 to OC-31 |
 | `docs/PROCEDURE-cold-start.md` | The cold start, **version-neutral**: it reads the pin out of the Dockerfile rather than naming a version, so one document serves 2026.7.1, 2026.9.1 and whatever is pinned next |
 | `scripts/linux/image-digests.sh` | `before` / `after`: what every image tag resolves to, so a later difference can be told apart from an upstream move |
 | `docs/verification/` | The records, with the raw transcripts. Promoted from `.pr-drafts/` when finished |
@@ -65,53 +401,45 @@ than tidied away.
 | `BACKLOG.md` | What was deliberately deferred, each with why. **Exists only on the feature branches** |
 | `.pr-drafts/` | Scratch. Untracked, and **not gitignored on the `main`-based branches** — stage by name, never `git add -A` |
 
-**Documents live on the branch they belong to**, and `docs/` now exists on `main` as well — it
-arrived with #11 on 2026-09-14, carrying the migration documents. The git, Java, memory and mutation
-documents are each on their own branch.
+**Documents live on the branch they belong to.** *Corrected 2026-10-03:* this said `docs/` does not
+exist on `main` at all, which stopped being true when #9 merged — `main` carries
+`FEATURE-git-integration.md` and `TEST-SPEC-git-integration.md`, and #21 edits them there. The
+migration documents are on `feature/openclaw-2026-9-1`; the git and Java documents on their own
+branches.
 
 ## The branches, and how they relate
 
-**Corrected 2026-09-19. Until then this section said *"nothing has reached `main` yet"*, and that had
-been false for five days.** #11 was merged on **2026-09-14**, and it carried the migration, #12, #13
-and #14 with it — so `main` now holds OpenClaw 2026.9.1, `docs/`, and 19 test files. Anyone who read
-the old sentence would have believed production still ran 2026.7.1.
+*Rewritten 2026-09-30.* The paragraph here described 2026-09-08, when nothing had reached `main` and
+#11 was the only door to it. Both are now false: #11 merged, and #9 merged on 2026-09-30 as 0.7.0.
+The four open branches are based on `main`.
 
-Do not take a number or a state from this document; both move every time something lands. Ask:
+Do not take a number from this document; it moves every time something lands. Ask:
 
 ```bash
-git fetch -q origin && git log -1 --format='%h %ad %s' --date=short origin/main
-git rev-list --count origin/main..origin/feature/git-integration
+git fetch -q origin && for b in liquid-java-extensions openclaw-pairing-recovery \
+  test-mutation-control mutation-registry; do
+  printf '%-28s %s ahead\n' "$b" "$(git rev-list --count origin/main..origin/feature/$b)"
+done
 ```
 
-They answered `f855b11 2026-09-14 Merge pull request #11` and **164** on the evening of 2026-09-19.
+The table below is the shape of the tree, not its state; the dated table at the top is the state.
 
 | Branch | PR | Base | Holds |
 |---|---|---|---|
-| `feature/git-integration` | **#9**, open | `main` | M-A0 to M-A15 |
-| `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B4, and this file |
-| `feature/openclaw-pairing-recovery` | **#15**, open | `feature/git-integration` | §9 of the migration document: the way back into the Control UI. R1, R2 and R3 built, OC-39 to OC-47 |
-| `feature/memory-midterm` | **#16**, open | `main` | The mid-term memory specification. Nothing built |
-| `feature/test-mutation-control` | **#17**, open | `feature/git-integration` | Proving a test can fail: the specification, a measured sample, and the backfill of the registry |
-| `feature/mutation-registry` | **#18**, open | `main` | The mutation runner itself with an **empty** registry, so every branch can register its own cases. Cut 2026-09-20 |
-| ~~`fix/openclaw-2026-9-1`~~ | ~~#11~~ | — | **Merged into `main` 2026-09-14**, with #12, #13 and #14 inside it |
-| ~~`fix/openclaw-start-stdin`~~ | ~~#14~~ | — | Merged into #11 on 2026-09-08 |
-| ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | Merged into #13. The branch exists only locally now |
-| ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | Merged into #11 on 2026-09-08, remote branch deleted |
-| `integration/oc-2026-9-1` | — | — | **Not a merge candidate**, and now largely redundant: it existed so the compatibility cases could run against #11 + #9 + #10, and #11 is in `main` |
-
-**The four branches cut on 2026-09-19 and 2026-09-20 all sit on #9 or `main`, never on #10.** Nothing they do
-needs the Java extensions, and everything they touch — both OpenClaw documents,
-`config/scripts/start/openclaw.sh`, the nginx identity blocks, the whole of `dashboard/` — was
-byte-identical on #9 and #10 when they were cut. That was measured, not assumed.
+| `feature/git-integration` | **#9**, open | `main` | M-A0 to M-A8 |
+| `feature/liquid-java-extensions` | **#10**, open | `feature/git-integration` | M-B1 to M-B3 |
+| `fix/openclaw-2026-9-1` | **#11**, open | `main` | The pin to 2026.7.1 — **and now the migration and #12 with it** |
+| ~~`fix/openclaw-start-stdin`~~ | ~~#14~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`. The `SIGTTIN` hang the migration's own verification found |
+| ~~`fix/bun-runner-health`~~ | ~~#12~~ | — | **Merged** into #13. The branch exists only locally now; the remote one is gone |
+| ~~`feature/openclaw-2026-9-1`~~ | ~~#13~~ | — | **Merged 2026-09-08** into `fix/openclaw-2026-9-1`, remote branch deleted |
+| `integration/oc-2026-9-1` | — | — | **Not a merge candidate.** #13 + #9 + #10 in one place, so the compatibility cases can be *executed* rather than asserted |
 
 Cutting a branch from another is how each PR shows only its own diff. GitHub retargets a stacked PR
 by itself once its base lands, so **the open ones can be reviewed in any order and nothing waits.**
 
-**A merged branch was not a landed change — until #11 landed and made them all landed at once.**
-#12, #13 and #14 sat inside #11 for six days, and reading their PRs as "done" would have misstated
-what production carried. On 2026-09-14 #11 went into `main` and all four arrived together. The rule
-survives its example: **a merged PR says where a change went, not that it reached `main`**, and the
-one-line check above is what answers that.
+**A merged branch is not a landed change.** #12 and #13 are merged and neither is in `main`; they sit
+inside #11, and reading their PRs as "done" would misstate what production carries. The same will be
+true of #14 the moment it lands.
 
 **#9 must be merged with a merge commit, not squashed.** GitHub retargets #10 by itself, but only
 cleanly if the commits it already carries survive — and the individual messages are part of what this
@@ -147,65 +475,6 @@ docker compose exec -T openclaw-gateway sh -lc 'command -v git-repo-info'
 Silence means the running stack predates the git integration, and the red tests describe the
 containers rather than the code.
 
-**And a branch switch can stop the stack coming back at all.** `compose.yml` on #9 and #10 mounts
-`config/agents/bin/git-publish.sh` and `git-repo-info.sh` into the gateway, and neither file exists
-on `main` or on the four branches cut from it. Checking one of those out while this stack runs means
-the next restart of the gateway fails and leaves it down — with an exit code, 127, that says nothing
-about why. The full mechanism and the two-step cleanup it needs are under *2026-09-23* below. Read
-that before concluding anything from a dead gateway.
-
-### The stack can be an overlaid installation, and then none of the above applies
-
-*Written 2026-10-08, and the first time this project ran a stack this way.*
-
-The stack tier has to run against a started stack, and the one on this machine is a **release
-install** at `~/.liquidupstart` rather than a checkout — so `git checkout` reaches nothing it uses.
-Restarting it "from the branch" was proposed on 2026-10-07 and would have been destructive, because
-the install is not a working copy: the premise was wrong before the command was.
-
-What works is the overlay `scripts/install/update.sh` already performs for a release — `cp -a` of
-everything the release ships over the installation, leaving `.env`, `volumes/`,
-`.liquidupstart-version` and `.dashboard-port` in place. From a working copy the same thing is done
-with git's own file list, so that uncommitted work comes too and everything ignored stays out:
-
-```bash
-cd <worktree>
-{ git ls-files; git ls-files --others --exclude-standard; } | sort -u > /tmp/overlay.txt
-grep -E '^volumes/|^\.env$|node_modules' /tmp/overlay.txt && echo REFUSE   # must print nothing
-tar -cf - -T /tmp/overlay.txt | tar -xf - -C ~/.liquidupstart
-```
-
-`git ls-files --others --exclude-standard` is the load-bearing half: it brings new, untracked test
-files and leaves `volumes/`, `.env`, `node_modules` and `.pr-drafts` out because they are ignored.
-**Check `.env` by checksum before and after** — it is the one file whose loss costs an afternoon.
-
-**An image is not overlaid.** `config/liquid/entrypoint.sh` is baked into `liquidupstart/liquid`,
-not mounted, so after an overlay that touched it: `./config/scripts/build/liquid.sh` and
-`docker compose up -d liquid`. B4-7 asserts byte identity between the container's copy and the file
-on disk and is the thing that tells you if you forgot. `narcheck.py` **is** mounted, so it needs
-neither.
-
-**Undoing it** is the same overlay from `fc03344` — `git archive fc03344 | tar -x -C ~/.liquidupstart`
-— plus the same rebuild and recreate.
-
-**And a recreate keeps the load path.** `docker compose up -d liquid` reattaches the anonymous volume
-behind `${NIFI_HOME}/nar_extensions`: measured on 2026-10-08, the same volume id and the same five
-judged bundles before and after. That volume comes from a `VOLUME` line in the upstream image, so the
-load path is state that is **not** under `volumes/` and that deleting `volumes/` does not reset.
-FR30 carries the removal procedure.
-
-**A container from another branch's compose file survives every start.** `down.sh` runs
-`docker compose down` with no `--remove-orphans`, and `docker compose` only knows the services the
-*checked-out* compose file declares. So `nar_builder` — declared on #10, absent from #9 — has sat
-there since the stack was last started from #10: `Exited (127)`, finished 2026-09-20T17:56:59Z, and
-untouched by the four starts since. It is harmless, and it makes two things lie. A service count
-includes it. And `docker ps -a` shows a `nar_builder` on a machine whose `opencode` container has no
-`nar-build` in it, which is the discriminator below answering *absent* at the same moment.
-
-Its exit code is **127, the same signature as the unexplained gateway exit of 2026-09-20** — and the
-two are **eight hours apart**, 09:45:37 against 17:56:59, so this is not a second data point for that
-paragraph. Recorded here so nobody finds it later and reads it as one.
-
 **Each branch has its own discriminator, because each adds something to the stack.** Naming the
 branch a milestone lives on is not enough: the containers are the previous branch's until something
 rebuilds them, and a suite run against them measures the containers.
@@ -226,43 +495,16 @@ indistinguishable from a fix that works.
 
 ## State
 
-**2026-10-08: the stack is a release installation with this branch overlaid on top of it, and that
-is a different arrangement from everything else this file describes.** It is not a checkout. See
-*"The stack can be an overlaid installation"* under *One working copy, one stack* for how it is made
-and how to undo it. `~/.liquidupstart` reports `.liquidupstart-version` **0.7.0** while its
-`compose.yml`, `config/`, `tests/` and `docs/` come from `feature/liquid-java-extensions`, its
-`liquid` image is built from that branch, and `.env` and `volumes/` are the installation's own and
-untouched. The operator decided on 2026-10-08 to keep it that way until Timur's re-review of #10
-arrives, because a branch-shaped stack is the easier ground for his follow-up questions.
+**The stack runs OpenClaw 2026.9.1**, rebuilt from `fix/openclaw-start-stdin` on 2026-09-08 evening
+and migrated from a state 2026.7.1 had written — the path a real installation takes, not a cold
+start. Nineteen services, every healthcheck green. It ran 2026.7.1 for most of that day, for M-A8 and
+M-B3, and was moved forward only to verify the migration; images live on the host and not in the
+branch, which is what *"A locally built image can belong to another branch"* below is about and what
+cost two hangs before it was understood.
 
-Measured there the same day, `tests/run.sh --system`: **924 pass / 10 fail / 1 error** over 934
-tests in 185 files, 52 m-b files covered, and **no failure from the Java side**. The ten failures and
-the one error are milestone-A cases that assume which directory the suite was started from — a
-release install has no `.git` and no `dashboard/node_modules`, a worktree has git and no started
-state, and **neither place satisfies the whole suite**. In `BACKLOG.md`, with the computed repair,
-deliberately not fixed on #10.
-
-**The paragraph below is older and describes a checkout-shaped stack.** It is kept because it is
-what the *dashboard* path produces and what a reader will meet again as soon as the overlay is
-undone.
-
-**The stack runs OpenClaw 2026.9.1 and is shaped by `feature/git-integration`**, started from the
-dashboard on 2026-09-22 while walking A16-M1. Nineteen services plus `liquidupstart-dashboard`, and
-**no `nar_builder`** — that service is declared on #10 only. It was `feature/liquid-java-extensions`-shaped
-from 2026-09-14 until then. It was first migrated from a state 2026.7.1 had written — the path a real
-installation takes, not a cold start — which is why the state in `volumes/_openclaw` is a migrated
-one rather than a fresh one.
-
-**The version hazard that used to sit here is gone, and this paragraph replaces it.** Until
-2026-09-14 `volumes/_openclaw` held a 2026.9.1 state while #9 and #10 still pinned 2026.7.1, so
-switching to either meant clearing that directory and restoring `_openclaw.bak-2026.7.1` — OC-21's
-one-way door. Both branches now carry 2026.9.1 through the forward merge, so a checkout is just a
-checkout. **The backup that instruction named no longer exists**: it was consumed on 2026-09-09
-replaying the migration. Anyone who finds that sentence quoted elsewhere should know both halves.
-
-**Images live on the host, not in the branch**, which is what *"A locally built image can belong to
-another branch"* below is about and what cost two hangs before it was understood. Switching branches
-therefore means rebuilding: `./scripts/linux/build.sh`, then `./scripts/linux/start.sh`.
+**`volumes/_openclaw` now holds a 2026.9.1 state, so the way back is not a checkout.** 2026.7.1
+refuses it — OC-21's one-way door. Returning to #9 or #10 means clearing that directory and
+restoring `_openclaw.bak-2026.7.1`.
 
 **The git integration is complete.** M-A0 to M-A8 built, each verified independently and posted to
 #9. All four manual cases observed, including the three that failed.
@@ -473,9 +715,8 @@ clone the feature did not create.
 
 ### The Claude login expires, and a long-lived token does not help
 
-Five interactive sign-ins in two weeks, the last on 2026-09-19 after a login that had lasted about
-five hours. The login lives only in `volumes/_openclaw-claude` and does not survive a reset. **The
-reason it is so short-lived was measured on 2026-09-19 and is at the end of this section.**
+Four interactive sign-ins in two days. The login lives only in `volumes/_openclaw-claude` and does
+not survive a reset.
 
 **A long-lived `CLAUDE_CODE_OAUTH_TOKEN` was measured and refused.** With the file login set aside and
 the token in the process environment a turn still fails `Not logged in`; the same token in the same
@@ -486,33 +727,6 @@ would fail silently. The full measurement is in `verification/RESULT-openclaw-20
 
 Still open, and now in `BACKLOG.md`: the CLI *does* accept the token, so a CLI call made with it
 might materialise a `.credentials.json` the SDK then reads. Nobody has measured that.
-
-**Why the session dies so fast, measured 2026-09-19: the refresh token does not refresh.** The login
-was alive at 11:39 — the start printed *"Claude CLI: already authenticated"* and `auth status` exited
-0 — and dead by 17:00 the same day, about five hours later. That is the fifth sign-in in two weeks.
-
-What the credentials file says, and what it is worth:
-
-| | |
-|---|---|
-| `claudeAiOauth.expiresAt` | **0** — the access token is gone |
-| `claudeAiOauth.refreshTokenExpiresAt` | `1792108293402`, which is **2026-10-16** — four weeks away |
-| A real turn | `Failed to authenticate: OAuth session expired and could not be refreshed`, exit 1 |
-
-**So `refreshTokenExpiresAt` is a date, not a promise.** The refresh token is inside its validity
-window and still cannot be exchanged, which is why the session ends in hours rather than weeks and
-why reading that field tells you nothing about how long the login will last. Anyone reasoning about
-the lifetime from the file will be wrong in the direction that costs a debugging session.
-
-The recovery is an interactive sign-in and nothing else: the dashboard's Claude panel, or
-`docker compose exec -it openclaw-gateway openclaw-claude auth login --claudeai`. After one, verified
-2026-09-19: `auth status` exits 0 and `openclaw-claude -p` answers.
-
-**And a warning about measuring this.** `openclaw-claude auth status | head` reports exit **0** even
-when nobody is logged in, because the status belongs to `head`. Run without a pipe it is **1**. That
-mistake nearly produced a finding — *"the start script's sign-in check is blind"* — against a check
-that is correct. It is the same shape as the `grep` and `if ! emit` entries below: **the exit status
-you read must be the one you meant.**
 
 ### Docker Hub's quota, because it is invisible until it bites
 
@@ -536,54 +750,6 @@ accumulating conversation; executing them is better served by a clean context an
 that exists only in a transcript has to be carried by hand, and that is where it is lost.
 
 ## What the failures taught
-
-**Never take a control by `git checkout` against work that is not committed.** On 2026-10-07 a
-control for D2 was taken that way, and three repairs that lived only in the working tree went with it
-— M4's reachability probe, the path-resolution guard and D2 itself. They came back only because
-`config/nar_builder/Dockerfile` does `COPY build.sh /opt/builder/build.sh` and `builderimage.ts` had
-built an image from the undamaged tree minutes earlier: `docker create` on that tag, `docker cp` the
-file out, diff against HEAD, three additions and nothing else. **A control is taken by editing the
-file and editing it back**, with a copy kept aside and the checksum compared afterwards — or by
-committing first. The accident did produce a valid control for the path guard, which is recorded
-where that case is documented, and that is luck rather than method.
-
-**An assertion about one host wearing the words of a general property.** B6-23 read
-`expect(seen.startsWith('10.231.91.')).toBe(false)` — the host request does not arrive from inside
-the subnet — while the comment directly above it said that on rootless Docker on Linux it arrives
-**as the bridge gateway**, which is inside the subnet. True on Docker Desktop, false on the
-reviewer's machine, and it was his measurement that produced the finding in the first place. It is
-exhaustive over both readings now and asserts what the repair has to achieve rather than what this
-installation happens to report. **When a comment has to name the host for the assertion to make
-sense, the assertion is about the host.**
-
-**A product change with no case is invisible to every measurement.** S8's repair — the runtime-record
-write made non-fatal — shipped inside a commit whose message named two other findings, with no case
-and no block in the specification, in a review round where everything else got both. It was found by
-asking of all 25 findings "what can I actually claim", not by the suite, which was green throughout.
-Writing the two cases then found a defect in the product: the entrypoint read the NiFi version with
-a BRE using `\|`, a GNU extension that matches nothing on BSD sed, so the branch was unmeasurable on
-any developer host. **The suite cannot tell you about a path it never runs; a list of findings
-crossed against the cases can.**
-
-**One process, and the globals are shared.** `bun test` runs every file in one process, so anything
-a case installs globally outlives it. Registering a DOM for the component tier replaced `fetch`,
-`Request`, `FormData` and the rest, and thirteen cases in two files nobody had touched went red in
-the full suite while passing alone. Two explanations were offered and measured before the real one:
-a cold docker image build, and a shared fixture directory. Both were wrong. **A failure that appears
-only in the full run is a statement about the run, not about the file it lands in.**
-
-**A green case can be green over nothing.** The first component case passed while the props never
-reached the component: the card was stale in its entirety, so the "stale line" it asserted was simply
-the original line. It was caught by a control — change the page text, require the new text to appear
-— and nothing else would have caught it. Every tier needs one case whose only job is to prove the
-tier can see a change, and it belongs beside the cases that depend on it rather than in a helper
-nobody reads.
-
-**A case can encode the defect.** A15-1 required the behaviour that Timur's finding 1 names as the
-bug: exit 0, and a refused lock written into the manifest as a clone result. The case was correct
-about what the code did and wrong about what it should do, and it would have defended the defect
-against anyone who repaired it. When a review finds something a case asserts, the case is part of the
-finding.
 
 **Look in the log the failure belongs to, not the one you know.** For a day this project recorded
 that a mismatched NAR is reported nowhere. It is reported — in `nifi-user.log`, by the web layer that
@@ -700,15 +866,6 @@ Hub's rate limit and reported every image as unreadable — which, diffed agains
 as though every tag had moved at once. Failures are now excluded from both sides, incomplete snapshots
 are named so they cannot become a later reference, and the verdict says what was actually compared.
 
-**A check that cannot run looks exactly like a check that ran.** Three times in two days, in three
-disguises: `if ! emit` could not see a failing stage, so a stub snapshot was stamped as the
-reference; a deployment guard was added to `build.sh` and the image was not rebuilt, so the first
-"green" proof run proved nothing; and a negative control could not stage its own fixture, said so
-only into `/dev/null`, and reported the silence as a finding about NiFi. The common shape is a
-success path and a did-not-happen path that produce the same output. Every guard needs the question
-asked of it once: **what would I see if this never ran?** If the answer is "the same thing", the
-guard is decoration.
-
 **An `if` condition is where `errexit` goes to die.** `if ! emit > "$OUT.partial"` reads like a guard
 and is not one: bash suspends `set -e` for everything the condition calls, so a failed
 `docker compose config | jq` ran on, the later stages produced their lines, and `emit` returned the
@@ -753,401 +910,79 @@ route, and the pairing decision happens only after a browser signs a challenge.
 
 ## Next
 
-Everything below is live. Finished items moved to *"Done, and what each turned up"* on
-2026-09-15, because the list had grown three items numbered 0, two numbered 3, and a contradiction
-between them.
-
-**Where the review cycle stands, 2026-10-08.** Read this before the numbered items, which are older
-and go back to 2026-09-15.
-
-| | Branch | Ball with |
-|---|---|---|
-| #10 | `feature/liquid-java-extensions` | **Timur** — all 25 findings of the 2026-10-01 re-review answered at `21e6a92`, re-review requested |
-| #19 | `fix/fixture-names-per-run` | **Timur** — answered 2026-10-02, request standing |
-| #20 | `fix/bind-address` | **Timur** — never reviewed, request standing |
-| #21 | `fix/manifest-atomic-write` | **Timur** — never reviewed, request standing |
-| #18 | `feature/mutation-registry` | **Timur** — all ten findings and the minor answered at `70e12e1` on 2026-10-09, re-review requested |
-| #17 | `feature/test-mutation-control` | **us** — work reported 2026-10-01, no re-review requested. Read the thread before asking for one |
-| #15 | `feature/openclaw-pairing-recovery` | **the operator** — the rule itself is deliberately not started and needs four measurements first |
-| #16 | `feature/memory-midterm` | outside the plan this cycle |
-
-#10's reply counts itself honestly, and the four deferrals in it are in `BACKLOG.md` rather than in
-the comment alone: `/m2` writable by build-time code, any container on the stack network able to
-trigger a build, the runtime record's `chmod 777` directory, and the M-B5 cases' moving image tag.
-Two things in it are stated as unanswerable from here — whether an unprivileged Maven can write a
-bind-mounted `/m2` on **rootless Docker**, which is the reviewer's host and not this one, and that
-there is still no automated case in which a real Maven runs as the build user.
-
-The milestone-A precondition defect is written up in `BACKLOG.md` with its repair ready and belongs
-on its own branch off `main`, the way the `git.sh` manifest write became #21. It bites on **both**
-stacked branches now: the #18 worktree runs 641 pass / 9 fail / 1 error for the same two reasons, no
-MU case among them.
-
-**What #18's round added to the practice, and it is the transferable part.** Its finding 9 was eight
-places where the test specification described something other than the test carrying its id — found by
-the reviewer reading the names out of the file by hand. Fixing the eight would have left the mechanism
-that produced them, so `MU-59` compares the document's scenario table against the test titles in both
-directions, with a third assertion so two empty reads cannot satisfy the first two. **That shape is
-worth copying to the other specifications**: `docs/TEST-SPEC-liquid-java-extensions.md` has the same
-exposure, and #10's own round found a case id drift of exactly this kind (B6-5 missing from the header
-that runs it).
-
-Three of the cases written for that round measured nothing and the controls found all three — a
-subject hash that is green on every path, a spec that had already finished when the signal arrived,
-and a guard reading a number where the number could be "the poll gave up". The lesson is in *What the
-failures taught* below.
-
-1. **Timur's reviews of #9 and #10.** Requested 2026-09-15; he is assigned on both and has read
-   neither before — #11 was the only one he had seen. Both descriptions were rewritten that day,
-   because they still described the state at M-A0 and M-B1 respectively. #9 first: #10 sits on it.
-   Nothing here is blocked in the meantime; the branches are complete and pushed.
-
-   **Review 3 of #9 arrived 2026-09-16** — four start-up points and one blocker. The blocker
-   (`proxy_attribution_required`) was answered with live before-and-after evidence, and points 1 to 4
-   are M-A9: the deploy key now stops the start like every other credential, through one helper with
-   one deadline and a way out of every wait. The operator walked it in the browser on 2026-09-17 and
-   found three things no case had shown — no panel at all, a Skip that took five seconds to be
-   noticed, and a key that ran past its frame — each now a case. Their question about **more than one
-   unregistered key** turned into the last piece: all clones are attempted before any wait, so the
-   start names the whole queue up front, *Skip all* ends it in one click, and the deadline is the
-   start's budget rather than each wait's.
-
-   **The second review of 2026-09-16, six minutes later, is a different document** — eight findings
-   from a reading of the scripts, the hook, compose and the dashboard. All eight are built as M-A10
-   on 2026-09-17, in the order the reviewer suggested, each case run against the unfixed code first.
-   Two of them destroyed work (`rm -rf` over a directory that was there before the start; a clone of
-   another repository adopted with the declared key), one was a hole in the secret scan (a key file
-   whose name holds a space was never read), and one broke `.env.example`'s promise that a fresh
-   installation needs nothing from the git section.
-
-   **The follow-up review arrived 2026-09-18 at 06:47, at head `3aa7dfb`: five findings, three of
-   them regressions from the fixes of the day before.** That is the part worth carrying forward. Each
-   repaired one path through `git.sh` without thinking about the other path that runs through the
-   same lines: M-A12's early manifest write cut the manifest down to one entry during a dashboard
-   Test, M-A9's wait made a Test sit for seven minutes waiting for an operator who was watching the
-   Test, and M-A9's `ACTION REQUIRED` banner opened the Claude sign-in panel for a provider switched
-   off in `.env`. All five are M-A13, built in the reviewer's order, each case run against the
-   unfixed code first.
-
-   **What the suite did not have**, and now does: no case drove the Test button through the
-   three-pass script — which is where findings 1 and 2 lived; no fixture used a capital letter —
-   which is finding 3; no case had two banners in one log — which is finding 4.
-
-   **M-A14 is the reviewer's styling request plus four things the operator found looking at it**, and
-   **M-A15 is one thing they found using it.** In order: a transparent button is not recognisable as
-   a button until it is touched (it has an outline now); a confirmation that vanishes with its panel
-   was never read (the panel is held, counting down three seconds, showing the repository that was
-   skipped); testing one repository wiped the other's answer (results are per repository); the page
-   stayed stale after a run until reloaded by hand (`invalidateAll` after every run, not only after a
-   successful one). And the one that mattered most: pressing **Test** while a start was waiting made
-   the card report a repository that does not exist as **reachable** — `git clone` writes `.git` and
-   the remote within 20 ms, and the waiting start retried that clone every five seconds, so the Test
-   adopted a clone that was 20 ms old. M-A15 keeps two runs off one repository with a lock.
-
-   Still owed: the reply on the pull request, which covers both reviews, the styling and everything
-   the operator's runs turned up.
-2. **PR #1, `GIT Versioning`, is superseded and should be closed.** Opened by Timur on 2026-06-19 and
-   untouched since 2026-06-22. It is not a second version of #9: it puts a **Gitea** server inside the
-   stack — its own service, nginx route and start script — and gives agents a `publish-to-git` skill
-   pointing at it, where #9 uses real GitHub remotes with a deploy key per repository.
-
-   **The decision, taken 2026-09-15: a self-hosted git server is still wanted, but it will be Forgejo
-   rather than Gitea.** So the intent survives and the implementation in #1 does not. Nothing in the
-   repository says this, which is why it is written here.
-
-   What made it stale regardless: 112 commits behind `main` and seven of its files also changed by
-   #9 — `compose.yml`, `CLAUDE.md`, `.env.example`, `scripts/linux/start.sh` and
-   `config/scripts/start/openclaw.sh` among them, the last rewritten twice since June. Reviving it
-   would be a fresh implementation, not a merge. It also carries a second skill for the same job,
-   which would leave an agent with two instructions describing different paths.
-3. **The second clone on `feature/privacy-gateway` — the operator's, not the agent's.** A separate
-   checkout of this repository, started by hand on 2026-09-11 on Timur's instruction, which took over
-   the shared stack and invalidated a set of measurements before the `privacy-proxy` container gave it
-   away. It is stopped. **The operator intends to test the privacy gateway there when time allows**
-   (stated 2026-09-15), so it stays.
-
-   What matters for anyone else on this machine is *One working copy, one stack* above: starting that
-   clone takes the stack over, and measurements taken here while it runs are measurements of it. The
-   discriminator is the `privacy-proxy` container.
-
-### What 2026-09-19 added, and the one thing on it that expires
-
-**Three branches, all cut that day, none of them on #10.** See the branch table above. What matters
-here is the state they left on **this machine**:
-
-| | |
-|---|---|
-| **The gateway configuration was changed by hand, three times** | `gateway.auth.identityScopes` (now also written by the start script, R1), `operator.admin` removed from `deviceAutoApprove.scopes` (now also in the start script, R3), and — **still only by hand** — `plugins.entries["active-memory"].enabled` plus a `memory.search` block |
-| **The last of those expires on the next start** | `./scripts/linux/start.sh` rewrites `volumes/_openclaw/openclaw.json`, and the memory plugin goes off with it |
-
-**The 05:00 question was answered on 2026-09-20, and the answer was not the plugin.** See below.
-
-Rollback copies, if any of the three need undoing: `volumes/_openclaw/openclaw.json.before-identityscopes`
-and `.before-oc46`.
-
-### 2026-09-20: what the memory consolidation was actually waiting for
-
-The file read exactly like the nine before it — *"Ranked 0 candidate(s)"* — and **taking that as
-"the plugin was not the reason" would have been the third mistake in as many days**, because nothing
-had been written overnight either. The honest state was *inconclusive*.
-
-Asking the tool rather than reading the file settled it:
-
-```
-openclaw memory promote-explain "2026-09-05-1630"
-score=0.789  recalls=0  uniqueQueries=1  ageDays=9.2
-thresholds:  minScore=0.75  minRecallCount=3  minUniqueQueries=3  maxAgeDays=30
-```
-
-**The score already clears its threshold. What is missing is recall.** Promotion needs three
-retrievals across three distinct queries; this installation has asked no questions. All fifteen
-entries in the store come from the one session summary it has ever produced, and all were written
-**before** `active-memory` was switched on — `memory-core` had been indexing throughout.
-
-**So nothing was blocked by a disabled plugin. Promotion is earned by use, and waiting does not
-help**: days accumulate, recalls do not, and `maxAgeDays=30` drops those fifteen entries on
-2026-10-19 unpromoted. The value question is in `BACKLOG.md` with a trigger rather than on a list,
-and `config/scripts/start/openclaw.sh` now writes the memory configuration so the first week of real
-use is measured rather than missed. `docs/FEATURE-memory-midterm.md` §2.2.
-
-### 2026-09-23: the gateway exits 127 because a branch switch took its mount away
-
-**This explains the 2026-09-20 entry below, and `nar_builder`, and it takes the mystery out of the
-exit code.** Measured on 2026-09-23 after the gateway went down at 03:15:33Z.
-
-`compose.yml` on #9 bind-mounts `config/agents/bin/git-publish.sh` and `git-repo-info.sh` into the
-gateway. Those files exist on #9 and #10 and **not** on `main` or anything cut from it — #15, #16,
-#17, #18. Check out one of those while a #9-shaped stack is running, and the next restart of that
-container finds no source for the mount. Docker then creates a **directory** at the source path, the
-mount fails with *"not a directory: Are you trying to mount a directory onto a file"*, and a
-container that cannot start exits **127**.
-
-So exit 127 is not a signature worth chasing. It is what docker reports for a bind mount pointing at
-nothing. `nar_builder` sitting at `Exited (127)` since 2026-09-20T17:56:59Z is the same thing, one
-service further along.
-
-**Three things follow, and the third is the expensive one.**
-
-- **Switching away from the branch that started the stack breaks the next restart**, not merely the
-  freshness of the containers. This is the sharper form of *One working copy, one stack* above.
-- **Docker leaves empty directories in the working tree** where those files belong. Git does not show
-  them, because git has no empty directories — so they are invisible until a later checkout of #9
-  trips over them.
-- **Removing them is not enough.** After `rmdir` and a checkout that restored both files,
-  `docker run -v $PWD/config/agents/bin:/x alpine ls /x/git-repo-info.sh` still answered *No such
-  file or directory*: the Docker Desktop file-sharing layer had cached the old shape, and the next
-  start failed with `mkdir ...: operation not permitted` — a second failure with a message that has
-  nothing to do with the cause. What cleared it was rewriting the files (`cp -p f f.tmp && mv -f
-  f.tmp f`), which produces the filesystem event docker had missed.
-
-**What is still not established: who sent the SIGTERM.** The gateway log shows the nightly memory
-consolidation finishing at 03:00:15, then fifteen minutes of silence, then
-`[admission] closed: restart drain` and `received SIGTERM` at 03:15:31. No host crontab touches this
-project, no restart is scheduled in `openclaw.json`, and no other container was stopped. Only the
-failure *after* the signal is explained.
-
-### 2026-09-20: the gateway went down, and the cause is not established
-
-**`openclaw-gateway` received SIGTERM at 09:45:37 and exited 127**, and stayed down for about half an
-hour before the suite's stack guard surfaced it. It was restarted by hand; the configuration was
-intact, all twenty services are up, and a turn answers.
-
-What is known: the time coincides with a mutation run that had `compose.yml` edited and restored.
-What is **not** known: any mechanism connecting the two. `compose.yml` is byte-identical, the case
-carrying that mutation only reads the file as text, and nothing in the run invoked `docker compose`.
-The same signature — exit 127 — is recorded for the system tier on 2026-09-17, but no system-tier
-case ran that morning.
-
-**It is written down unexplained on purpose.** An explanation that fits the evidence is not a cause,
-and this file has already carried one of those about `volumes/_openclaw` for a day. If it happens
-again, this paragraph is the second data point.
-
-**It happened again on 2026-09-23, and the second data point paid for itself** — see the section
-above. The 127 half is explained: on 2026-09-20 the work was on #17 and #18, both cut from `main`,
-both lacking the two files #9 mounts into the gateway. What sent the signal is still open, on both
-dates.
-
-**What deserves credit is the guard**: `stackGuard` is why anyone noticed. Without it the next
-system-tier run would simply have gone red and read as a defect in the code.
-
-### 2026-09-21/22: M-A16, and the suite learns to mount a component
-
-**A second follow-up review of #9 arrived 2026-09-21 at head `e33d1e6`: six findings, two of them
-regressions from the clone lock built the day before.** That is the second review running whose
-findings are repairs of repairs — 2026-09-18 had three of five — and the shape is identical both
-times: a fix that gets one path through `git.sh` right without asking what else runs through those
-same lines. Worth carrying: **on this branch, the question to ask of any repair is which other caller
-walks it.**
-
-All six are built, each reproduced against the unfixed code before it was touched. The suite is
-**546 across 110 files**, and every case was run against the unfixed code: **18 fail there, 9 pass**,
-the 9 being positive counterparts and one control.
-
-**The lock held too much and said the wrong thing.** A start took a lock per declared repository and
-released them only on exit, so a start waiting for one deploy key held the locks of everything it had
-already finished. A dashboard Test on one of those healthy repositories was refused, and the refusal
-was written into the manifest the way a failed clone is — and `git-repo-info` then told every agent
-`clone (missing)` and instructed it to send the operator after a deploy key. Locks are released as
-each repository settles now; a start waits a bounded 300s; a Test that cannot have the lock exits 4
-and writes nothing, which the dashboard answers as 409.
-
-**And a pid is not an identity.** The liveness test was `kill -0 <pid>`, meaningful inside one
-process table, while `run.sh` mounts the project into the dashboard container at the same path with
-no `--pid=host`. The holder is `<identity>:<pid>` now. **A lock in the old format — a bare number —
-is judged the way the code that wrote it judged**, because treating it as foreign would seal that
-repository until someone deleted a directory by hand. Anyone touching this code should keep that
-branch: it exists for the upgrade, not for correctness.
-
-**The suite mounts Svelte components now, which is a change of kind.** `tests/component/` reached
-load functions and served page data; three of the six findings live in markup. The operator chose the
-tier over text assertions on 2026-09-21. It costs the suite's **first dependency ever**
-(`@happy-dom/global-registrator`, in the dashboard image's build stage only) and `tests/lib/mount.ts`.
-Two rules it cannot work without, both learned by breaking them:
-
-- **Every module in the reactive graph must resolve to one `svelte` install.** The spike was green
-  over a component that had never re-rendered — a second copy of svelte, a second signal registry,
-  updates written in one universe and read in the other. `mount.ts` pins every bare `svelte`
-  specifier to an absolute path. **A16-18 exists only to prove a prop change arrives**, and without
-  it nothing else in that file means anything.
-- **`bun test` runs every file in one process.** Registering a DOM replaces the network and body
-  globals, and a `FormData` from one implementation inside a `Request` from the other answers
-  `ERR_FORMDATA_PARSE_ERROR`. Thirteen cases in two untouched files went red in the full suite while
-  passing alone. Eleven globals are restored after registration.
-
-**A15-1 required the defect.** The case said the second run must exit 0 and write `cloned: false`
-with an error — which is precisely finding 1. It is amended rather than deleted, and both documents
-say so. **A case that fixes the wrong contract in place is worse than no case**, because it makes the
-defect a promise.
-
-**The mutation rule could not be obeyed, and the substitute is written down.** `tests/mutate.sh` lives
-on #17 and #18; M-A16 was built on #9, which carries neither, so the rule was unreachable rather than
-skipped. What stands in for it is the run against the unfixed code — stricter in the fault it uses,
-**and not repeatable once that code is committed**. That cost is the argument for finishing #18, and
-it is in `docs/PROCEDURE-mutation-control.md` on #17.
-
-**A16-M1 was walked on 2026-09-22 and corrected itself three times.** It was started from the
-dashboard, so the crossing walked is toolbox → dashboard rather than host → dashboard; **the host
-variant is still unwalked**. The step *"Test the repository the start is not waiting for"* was
-dropped, because a cloned repository draws no Test button — `canRetry` is `!cloned` — so the
-reviewer's scenario is reachable only when two repositories are unreachable at once. And finding 3
-needed a second run with `ENABLE_GITHUB_COPILOT=1`, because no sign-in panel appears on a machine
-whose credentials are in order.
-
-What it measured, on the real path: one lock held rather than four, `2337dc9ef506:246` as the holder,
-and `kill -0 246` answering *No such process* inside the container that was doing the testing.
-
-### Where the work stands, 2026-09-22
-
-| Branch | What is on it |
-|---|---|
-| `feature/git-integration` (#9) | M-A9 to **M-A16** |
-| `feature/liquid-java-extensions` (#10) | all of it, merged forward, plus this file |
-| `feature/openclaw-pairing-recovery` (#15) | §9: R1, R2, R3, OC-39 to OC-47 |
-| `feature/memory-midterm` (#16) | The memory specification, M-M1 answered, the start script switching it on, and the nine findings of the 2026-09-22 review — including one that had been switching transcript recall on since 2026-09-20 |
-| `feature/test-mutation-control` (#17) | The mutation specification, the sample, 32 registry entries, and the decision of 2026-09-22 |
-| `feature/mutation-registry` (#18) | The runner and an empty registry, for `main` |
-
-The heads are deliberately not in that table any more. Ask:
-
-```bash
-git fetch -q origin && git for-each-ref --format='%(refname:short) %(objectname:short)' \
-  refs/remotes/origin/feature refs/remotes/origin/fix
-```
-
-**Reviewed 2026-09-22: #16 (nine findings, all built 2026-09-23) and #18 (five blocking, three
-cleanups, none built yet).** Two of #18's five are already fixed on #17 and were never carried
-across — the runner exists twice, on #17 and #18, and the copies have drifted. That is the same
-failure as *Do not let a document exist twice*, applied to code.
-
-**Six pull requests of ours are open and three have never been read.** Only #9 has been reviewed —
-four times, most recently 2026-09-21 — and its findings are answered and built. #10 has waited since
-2026-09-15; #15, #16, #17 and #18 since the days they were cut. `iztiev` is the requested reviewer on
-all six.
-
-That is the part of this trial most at risk, and it is worse than it was: #10, #15 and #17 sit on #9,
-so every day adds work that one person will have to read in one sitting. **#18 is the smallest, sits
-on `main`, and unblocks a rule we are currently working around** — see the mutation decision below.
-#16 is the next smallest and equally independent.
-
-**A head written into this file is stale the moment it is written** — the commit that records it
-cannot name itself, and the two documentation commits that closed 2026-09-18 are exactly what the
-first version of this table missed. Ask instead:
-
-```bash
-git rev-parse --short feature/git-integration feature/liquid-java-extensions
-```
-
-**The suite count depends on the branch, and the number this file carried did not.** It said *519
-cases at the levels that need no stack*, which is #9's number written into the copy that lives on
-#10: the thirty `m-b*` test files exist only on #10, so the default run here selects more than #9's
-does — **139 files on 2026-09-22**, against 132 before M-A16. Never read a count out of this file:
-
-```bash
-./tests/run.sh --list | wc -l          # files the default run selects, on whatever is checked out
-```
-
-**And *"levels that need no stack"* is not true on #10.** M-A11 made the stack levels opt-in for the
-M-A and M-OC sides; the M-B cases were written before it and were never reclassified. Twenty of the
-thirty reach into the running stack — `nar-build` inside the `opencode` container — and
-`tests/lib/narfixture.ts` writes into `volumes/nar_extensions` of this working copy. `--system`
-does not hold them back, because they are filed as unit and integration.
-
-**And that situation is live again as of 2026-09-22**: the stack was started from #9 while walking
-A16-M1, so `opencode` has no `nar-build` and every M-B case on #10 will answer `127`. Start from #10
-before reading a red M-B result here.
-
-**Measured 2026-09-18, 16:44:** `./tests/run.sh` on #10 against a stack started from #9 —
-**597 pass, 66 fail, 663 cases across 132 files**, and every one of the 66 in an `m-b*` file, every
-one of them `nar-build ... (exit 127)`. The stack was one branch behind the tests; nothing was
-broken. The paragraph below understated this as *four* M-B1 cases, which was the number that had
-been looked at rather than the number that fails.
-
-**The running stack belongs to whichever branch was checked out when it started.** `compose.yml`
-bind-mounts files into the containers -- `./config/agents/bin/nar-build.sh` into `opencode`, for one
--- and a file that does not exist on the checked-out branch simply is not there in the container. On
-2026-09-18 the stack was started from #9, where the Java tooling does not exist, and **66 M-B cases**
-then answered `127`: command not found. Nothing was broken; the stack was one branch behind the
-tests. The discriminator answers in one line —
-`docker compose exec -T opencode sh -lc 'command -v nar-build'` returned `127` while
-`git-repo-info` in the gateway returned a path, which is a #9-shaped stack exactly. The same suite
-was green on #10 that morning, with a stack started from it. **Before reading a red M-B result here,
-check which branch the running stack came from.**
-
-**What was waiting on the operator, and what became of it.** Five things stood here on the evening of 2026-09-18. By the evening of 2026-09-19 four were done: the reply to Timur is posted, PR #1 is closed with its reasoning, the memory questions are answered and the specification is on its own branch (#16), and the OpenAI key is replaced. **The fifth was decided on 2026-09-21 and is now built:**
-
-1. ~~**Whether the suite should render components.**~~ **Decided 2026-09-21: it should, and it
-   does.** The question had stood since 2026-09-18, when three of four findings were held by text
-   assertions that prove the source says what was decided rather than that the browser does it. The
-   2026-09-21 review put three more findings in the same blind spot — the third review running — and
-   the operator chose the tier. It needs no testing library: `svelte` is already a dashboard
-   devDependency and `@happy-dom/global-registrator` is the only addition, in the build stage and not
-   in what the image ships. See *M-A16* above for the two rules it cannot work without.
-
-**The OpenAI key was replaced on 2026-09-19** after being printed into a session transcript the day
-before. The new key is in `.env`; the four backups in `../liquidupstart-backups/` still carry the old
-one, which is harmless only if it was revoked at OpenAI rather than merely superseded.
-
-### What the suite did to this machine on 2026-09-17
-
-Twice in one day the tests changed the installation they were running on, and both are worth knowing
-before running anything here.
-
-**The system tier is not a read-only tier.** `./tests/run.sh m-oc` includes it; `--no-system` is
-opt-out. Those cases write `volumes/_openclaw/openclaw.json` and restart the gateway. One run left
-the gateway exited 127 — which took 26 M-B4 cases down with it, since they build their bundles
-through `docker compose run` — and left the configuration missing `"claude-cli/*"` from
-`agents.defaults.models`. Both were repaired by hand; both are in `BACKLOG.md`.
-
-**A fixture committed into this repository.** The chain fixtures build under `volumes/repos/.a7-…`,
-inside the working copy. When their clone does not happen the directory exists and holds no
-repository, and git walks up and finds this one. A run committed the working tree as `1` onto
-`feature/liquid-java-extensions`, created `agent/probe-2` and `agent/probe-3`, and left HEAD on the
-last. Recovered with `git reset --soft` off the reflog; nothing was lost and nothing was pushed.
-`GIT_CEILING_DIRECTORIES` now stops git's search before this working copy, and A10-23 holds it.
-
-## Done, and what each turned up
-
-- ~~**Timur's two reviews of #11**~~ — answered 2026-09-10 (F1–F10) and 2026-09-11 (N1–N10), every
+**The live list is at the top of this file**, under *Where it stands* — the agreed next three, and the
+table of what each PR still owes. What is here is the standing material: how a failure on your machine
+differs from a failure in the product, and the struck-through entries, which are kept because they
+record what was walked and what it found.
+
+*Rewritten 2026-09-30, and again 2026-10-02.* The 09-30 version said "wait on Timur, all four PRs are
+answered". That was true for about twenty hours. It also carried the `operator.admin` direction as if
+the `127.0.0.1` binding were an unsettled precondition of it; both halves of that are now resolved and
+separated — see the top of the file, and #20.
+
+Still open and not in the live list, because it is small and nobody is waiting on it: **the toolbox
+image only changes when something removes it.** `update.sh` removes it and the start refuses before the
+teardown when its tools are missing, but the durable form is a label carrying a hash of its Dockerfile.
+`BACKLOG.md`.
+
+### If a test fails on your machine and passed on the one it was written on
+
+Four shapes have cost real time. The last one is not an instance but a habit, and it is the one to
+watch for:
+
+- **A contract check against an installed stack.** A3-3, A4-16 and A1-4 read `volumes/`. In a git
+  worktree there is none, so they fail there and pass in the main checkout. **Not addressed** — they
+  have no fixture and no skip, so in a worktree they are simply red. Not a regression, and not a
+  thing to spend a morning rediscovering.
+- **Docker objects shared between checkouts.** Container names, image tags, networks and the two
+  subnets in `m-oc.subnet-preflight` are per-run since 2026-10-02, for everything that goes through
+  `tests/lib/dashboardserver.ts`. Before that, two runs on one host removed each other's containers.
+  Objects the helpers create carry `lu-test=1`, and a run sweeps stale ones at its start — because
+  the run that leaks is the run that did not reach its own cleanup. Anything that names a docker
+  object without those helpers is still shared; `grep -rn "docker.*--name" tests/` is the check.
+- **A host write the container has not seen yet.** The project is a bind mount and Docker Desktop
+  propagates with a delay. Fetching a page straight after writing a fixture file failed **2 of 3 runs
+  on an idle machine**. `awaitFileInContainer` waits until `docker exec cat` returns the bytes that were
+  written.
+
+- **Waiting on the clock instead of on the condition.** Six instances in one day, 2026-10-02, all
+  repaired. Three were found by accident and three by looking:
+  1. the page fetched straight after a host write (above);
+  2. the first repair for it, which polled the **page** until it said what the case expected — worse
+     than the flake, because a product change then becomes one `(unnamed)` timeout and no test runs at
+     all, where before it was a named failure beside nine passes;
+  3. `m-a16.lock-identity.test.ts`, `Bun.sleep(900)` and then read the lock file, empty under load.
+     Measured: the holder lands after about 250ms on an idle host and 1047 to 1342ms with eight starts
+     at once, so eight of eight concurrent runs were red;
+  4. `m-a15.clone-lock.test.ts`, `Bun.sleep(700)` and then ask whether the lock exists — the same
+     mechanism, governing two assertions;
+  5. `m-a16.lock-wait.test.ts`, which released a lock after 3000ms and asserted that 3000ms had
+     passed. **That one could pass over the defect it exists to catch**: with the wait removed from
+     `git.sh` altogether and the release brought forward, all four cases in the file passed. A flake
+     costs a rerun; this costs the guard;
+  6. and five cases in `m-a16.lock-identity.test.ts` that ran the start script inside bun's **default
+     5s budget**, one of which timed out at 6055ms in eight of eight. A budget is a wait too.
+
+  The rule they give: **wait on the thing you are diagnosing, never on the clock, and never on a
+  sentence the product renders.** A predicate about the product turns a product defect into a timeout.
+  A fixed sleep is a guess that holds until the machine is busy. Both report on the host instead of on
+  the subject, which is what makes them worse than no wait at all.
+
+  **How to look for the next one**, since three of these were found on purpose: `grep -rn "Bun.sleep"
+  tests/` and read every hit — a sleep inside a polling loop is a poll interval and fine, a sleep
+  followed by a read is the defect. Then find the cases that run something slow without a budget:
+  a `test()` whose body spawns the start script, docker or the dashboard and whose closing is `});`
+  rather than `}, BUDGET);`. Eight copies of the same file at once is what makes any of it visible —
+  `for i in $(seq 8); do bun test <files> > /tmp/load-$i.txt 2>&1 & done; wait`.
+
+  **One is reported and not repaired:** `tests/system/m-oc.proxy-attribution.test.ts:135` calls
+  `docker compose logs` in the default 5s. It is in the opt-in `--system` tier, it has never been seen
+  to time out, and verifying a change there needs a running stack — so it is named on #19 rather than
+  changed blind.
+
+0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
+   finding, not the pass.
+0. ~~**Timur's two reviews of #11**~~ — answered 2026-09-10 (F1–F10) and 2026-09-11 (N1–N10), every
    finding reproduced before it was touched and every fix carried by a case run against its control.
    Two of the fixes were the interesting ones. The bound on every `docker run` was decorative:
    coreutils `timeout` reaches the docker *client*, and a node PID 1 without a handler ignores the
@@ -1168,22 +1003,9 @@ last. Recovered with `git reset --soft` off the reflog; nothing was lost and not
    reads the range from `.env`, which is what compose declares as ipam, so the ordering dependency
    between the two scripts no longer exists. Verified by starting: compose created the network on
    10.99.0.0/24, `trustedProxies` names it, and the gateway answers from 10.99.0.3.
-
-- ~~**The autoload finding**~~ — decided and built 2026-09-14/15 on `feature/liquid-java-extensions`.
-   The answer was not to argue with the auto-loader but to move the check to where deployment
-   happens: `nar-build` judges a bundle between writing it as a dot-file the auto-loader skips and
-   renaming it into place, and a refused one goes to `refused/`, which the auto-loader does not
-   descend into. FR29 is corrected — there is no restart, and `nar-build` had been telling every
-   agent to ask for one. Verified by hand: `./tests/verify/m-b4.sh`, all six checks PASS,
-   `docs/verification/M-B4-verification.md`.
-
-   The record carries the first run of that script too, where the negative control reported a
-   finding about NiFi that was really a finding about its own broken setup, silenced by
-   `>/dev/null 2>&1`. That is the third time in two days that **a check which cannot run looked
-   exactly like a check that ran and passed** — see the `if ! emit` and the unrebuilt-image entries
-   below.
-
-- ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
+0. **The autoload finding** — see *"Tomorrow's first question"* above. Nothing else in this list
+   matters until it is decided, because M-B4 and part of M-B2 rest on it.
+1. ~~**M-B3**~~ — built and verified 2026-09-08. Its negative control did not do what it was written
    for, and that is the milestone's result rather than a defect in it: see *"A mismatched NAR loads,
    and nothing says so"* below. The stack on this machine is now `feature/liquid-java-extensions`-shaped
    and its Maven cache is warm again; the four commands that got it there are in the branch table's
@@ -1193,19 +1015,29 @@ last. Recovered with `git reset --soft` off the reflog; nothing was lost and not
    *instantiation*, not at trigger; the error lands in `nifi-user.log` where nothing looked; and the
    operator is told their session expired. See *"A mismatched NAR loads, and then tells the operator
    the wrong thing"* above.
-
-- ~~**The repaired migration path had never been executed.**~~ — run 2026-09-09. A 2026.7.1 state
+3. ~~**The repaired migration path had never been executed.**~~ — run 2026-09-09. A 2026.7.1 state
    was restored from `_openclaw.bak-2026.7.1` and `./scripts/linux/start.sh` migrated it with GNU
    `timeout` on `PATH`, which is the condition that produces the hang: `state migrated.` inside a
    minute, no `SIGCONT`, no stall. The whole upgrade path came with it — `deviceAutoApprove` written
    into a state that had never carried it, `plugins.entries.codex` removed as a key 2026.9.1 refuses,
    and the config shape moved to 2026.9. `tests/run.sh oc` then ran **50 pass, 0 fail** against a
    state that had just been migrated rather than one already on 2026.9.1.
+2. **Timur's reviews.** #12, #13 and #14 were reviewed and merged on 2026-09-08; **#9, #10 and #11
+   are open**, and #11 is next — it is on his list for 2026-09-09. They run in parallel and block
+   nothing, which is what the stacking is for, with one exception: **#11 is the only door to `main`**,
+   and it has stopped being a one-line pin. The whole migration, #12 and #14 sit inside it. Reviewing
+   it as though its title were still accurate would be reviewing the wrong thing.
 
-- ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
-   finding, not the pass.
-
-- ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
+   The working copy is currently on `fix/openclaw-start-stdin` and the stack is 2026.9.1-shaped.
+   `volumes/_openclaw` holds a state 2026.9.1 has written, so **going back to #9 or #10 means
+   clearing it and restoring `_openclaw.bak-2026.7.1`** — OC-21's one-way door, and the discriminators
+   above say which stack is running.
+3. **The repaired migration path has never been executed.** #14 fixes the `SIGTTIN` hang, the case
+   asserts it at the text level and its control was run — but the start that verified it *skipped*
+   `openclaw_migrate_state`, because the state was already 2026.9.1 by then. Running it in anger
+   needs a 2026.7.1 state restored first, which is OC-28's replay. After a day in which eight of nine
+   defects sat in code nobody had ever run, this is the obvious loose end.
+4. ~~`BACKLOG.md`~~ — done 2026-09-07. All three feature branches carry one; the migration branch
    was the one without, and its file holds the four things 2026.9.1 deferred plus the `bun_runner`
    entrypoint alternative that #12 had nowhere to record. Two entries on #9 and #10 are answered
    rather than open — the Claude CLI install, fixed 2026-09-05, and `bun_runner` reporting unhealthy

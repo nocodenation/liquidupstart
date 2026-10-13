@@ -133,7 +133,7 @@ describe('OC-37 a failing probe does not end the start in silence', () => {
   });
 });
 
-describe('OC-40 the embedded node programs survive the shell that carries them', () => {
+describe('OC-63 the embedded node programs survive the shell that carries them', () => {
   // openclaw.sh passes JavaScript to `node -e '...'` inside SINGLE quotes, so one
   // apostrophe in a comment ends the string early and node receives a truncated
   // program: "Expected '}', got '<eof>'". It happened twice on 2026-09-10, both
