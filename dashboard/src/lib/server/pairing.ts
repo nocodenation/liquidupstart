@@ -201,7 +201,54 @@ export async function approve(
 // 3 of the 2026-09-29 review. A one-line answer -- a stale request id, which is
 // the ordinary case here -- is the first line and the last, so it still passes
 // through.
+
+/**
+ * The message out of a JSON answer, or `''` when it is not JSON.
+ *
+ * Shapes seen from `openclaw devices … --json`, both captured by the reviewer:
+ *
+ *   { "ok": false, "error": { "type": "gateway_transport_error", "message": "…" } }
+ *   { "ok": false, "error": { "type": "forbidden", "message": "…", "reason": "…" } }
+ *
+ * `reason` is the half that was lost before: *missing scope: operator.pairing* is
+ * what tells an operator the grant is absent rather than the gateway being down,
+ * and it is the sentence A5 turns into a next step. So it is appended rather than
+ * chosen between, the same shape the line logic uses for `Reason:`.
+ *
+ * Anything that is not an object, or carries no message anywhere, returns `''` so
+ * the caller falls through to the text path. A parse failure is not an error here:
+ * plain text is a legitimate answer.
+ */
+function jsonMessage(s: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(s);
+  } catch {
+    return '';
+  }
+  if (!parsed || typeof parsed !== 'object') return '';
+  const o = parsed as Record<string, unknown>;
+  const err = (o.error ?? null) as Record<string, unknown> | null;
+  const pick = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : '');
+  const message = pick(err?.message) || pick(o.message);
+  const reason = pick(err?.reason) || pick(o.reason);
+  if (message && reason && reason !== message) return `${message} — ${reason}`;
+  return message || reason;
+}
+
 export function cliMessage(s: string): string {
+  // **JSON first, because the CLI answers in it.** `devices list --json` and
+  // `devices approve --json` report a failure as *pretty-printed* JSON on stdout
+  // with a non-zero exit, so the first non-empty line is `{` — and that is what
+  // the operator was shown: "OpenClaw could not be asked what is waiting: {",
+  // with Approve answering 502 carrying the same character. A1 of the 2026-10-01
+  // review, reproduced here against both shapes the reviewer captured.
+  //
+  // The line logic below is kept rather than replaced: the CLI also answers in
+  // plain text (a usage footer, a one-line refusal), and that path is finding 3
+  // of the 2026-09-29 review, which this must not undo.
+  const fromJson = jsonMessage(s);
+  if (fromJson) return fromJson;
   const lines = s
     .split('\n')
     .map((l) => l.trim().replace(/^\[openclaw\]\s*/, ''))

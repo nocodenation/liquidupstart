@@ -93,6 +93,10 @@ here; each is executed where its subject exists.
 | **OC-54** | component | positive and **negative** | The button is offered for the operator browser and not for anything else, and it names the device |
 | **OC-55** | component | positive | A request arriving after mount shows without a reload — **finding 5** |
 | **SP-2** | component | **negative** | The card file's cases need a DOM, and when it is absent that is reported under `SP-2` rather than under a case id — *added 2026-10-13* |
+| **OC-65** | unit | **negative** | A JSON answer is read as JSON, not as its first line: a transport failure says what failed rather than `{` — *A1 of 2026-10-01* |
+| **OC-65** | **negative** | …and the `reason` is carried, because it is the half that names the remedy |
+| **OC-65** | positive | …and plain text still goes through the line reader, which is finding 3 of 2026-09-29 and must not be undone |
+| **OC-65** | positive | …and something that is neither falls back rather than throwing |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -615,6 +619,20 @@ moved to.
 | **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
 | **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
 
+##### OC-65 — a JSON answer is read as JSON
+
+| | |
+|---|---|
+| **Premise** | A1 of the 2026-10-01 review. `openclaw devices … --json` reports a failure as **pretty-printed** JSON on stdout with a non-zero exit, so the first non-empty line is `{` — and `cliMessage` returned the first line. The card read *"OpenClaw could not be asked what is waiting: {"*, and Approve answered 502 carrying the same character. |
+| **Component** | `cliMessage` in `dashboard/src/lib/server/pairing.ts`, called directly. |
+| **Steps** | Pass each of the two JSON shapes the reviewer captured, then the plain-text refusal, then inputs that are neither. |
+| **Test data, and why these shapes** | Both are the reviewer's live captures rather than inventions: `{ "ok": false, "error": { "type": "gateway_transport_error", "message": "connect ECONNREFUSED 10.99.0.2:8833" } }` and the same with `"type": "forbidden"`, `"message": "device approval refused"` and `"reason": "missing scope: operator.pairing"`. The `reason` is the half that was lost, and it is the sentence that tells an operator the grant is absent rather than the gateway being down. |
+| **Expected** | The message, with the reason appended when it differs; plain text unchanged; `''`, `not json at all` and `[]` returned as they are rather than throwing. |
+| **What it found** | Reproduced against the unfixed function first: both JSON shapes returned `"{"`. **`OC-52` passed throughout**, because its fixture is the non-JSON string — which is the reviewer's point, and the reason this case exists at the unit level instead of being bolted onto the card's. |
+| **Controls** | The JSON path removed → the two JSON scenarios red, **the plain-text counterpart and the fallback green**. That asymmetry is what says the counterpart measures something else rather than repeating the first. |
+| **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
+| **Covers** | OC-65, §9 R2. |
+
 ##### OC-52 / OC-53 / OC-54 / OC-55 — the card, mounted and driven
 
 > **Precondition: `DASHBOARD_DEPS`** — the scenario is its own row above, under `SP-2`, because the
@@ -645,7 +663,7 @@ moved to.
 |---|---|
 | **Premise** | Finding 6. Every claim about this card was read out of its source, and four defects passed that reading. |
 | **Component** | `OpenClawPairing.svelte` mounted in the component tier, with `globalThis.fetch` replaced — so what the card does with an answer is what is under test, rather than the route. |
-| **Test data** | Three answers. `{ok: false, pending: [], message: 'Gateway call failed: devices.list — Reason: missing scope: operator.pairing'}`; `{ok: true, pending: []}`; and the two-device queue of OC-48. For OC-55 an answer that is empty at mount and holds the operator's request afterwards, with a `focus` event dispatched. |
+| **Test data, and why the refusal is plain text here** | `OC-65` covers the JSON shape at the unit level, where `cliMessage` lives; this file drives the card against a message the server has already turned into text, which is what the card actually receives. Keeping a JSON blob here would test the parser twice and the card not at all. Three answers. `{ok: false, pending: [], message: 'Gateway call failed: devices.list — Reason: missing scope: operator.pairing'}`; `{ok: true, pending: []}`; and the two-device queue of OC-48. For OC-55 an answer that is empty at mount and holds the operator's request afterwards, with a `focus` event dispatched. |
 | **Expected** | OC-52: "could not be asked" and the reason. OC-53: nothing drawn at all. OC-54: `openclaw-control-ui`, `role operator`, `from 10.99.0.2`, `node-host` named with "does not approve", and **one** button; pressing it posts `{deviceId: 'dev-alpha-aaaaaaaaaaaa'}`. OC-55: the request appears after the focus event. |
 | **Failure** | A card drawn on every load, which OC-53 prevents; and an Approve button offered for a request the server will refuse, which OC-54's button count prevents. |
 | **Covers** | OC-52, OC-53, OC-54, OC-55, §9 R2, U11. |

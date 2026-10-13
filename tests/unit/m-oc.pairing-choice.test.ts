@@ -154,3 +154,69 @@ describe('OC-51 a refusal carries the reason, not the usage footer', () => {
     expect(cliMessage('\n  \n')).toBe('');
   });
 });
+
+/**
+ * A1 of the 2026-10-01 review: `devices … --json` reports a failure as
+ * **pretty-printed** JSON on stdout with a non-zero exit, so the first non-empty
+ * line is `{` — and `cliMessage` returned exactly that. The card read "OpenClaw
+ * could not be asked what is waiting: {", and Approve answered 502 carrying the
+ * same character.
+ *
+ * Reproduced against the unfixed function before this was written:
+ *
+ *   JSON failure      -> "{"
+ *   JSON with reason  -> "{"
+ *   plain text        -> "Gateway call failed: … — Reason: missing scope: …"
+ *
+ * **OC-52 passed throughout**, because its fixture is the non-JSON string, which
+ * is the reviewer's point and the reason these scenarios use the two shapes he
+ * captured live rather than invented ones.
+ */
+describe('OC-65 a JSON answer is read as JSON, not as its first line', () => {
+  // The shapes, as captured from the real CLI by the reviewer.
+  const transportError = JSON.stringify(
+    { ok: false, error: { type: 'gateway_transport_error', message: 'connect ECONNREFUSED 10.99.0.2:8833' } },
+    null,
+    2
+  );
+  const forbidden = JSON.stringify(
+    {
+      ok: false,
+      error: { type: 'forbidden', message: 'device approval refused', reason: 'missing scope: operator.pairing' }
+    },
+    null,
+    2
+  );
+
+  test('OC-65 a transport failure says what failed, not "{"', () => {
+    const got = cliMessage(transportError);
+    expect(got).toBe('connect ECONNREFUSED 10.99.0.2:8833');
+    expect(got).not.toBe('{');
+  });
+
+  test('OC-65 and the reason is carried, because it is the half that names the remedy', () => {
+    // `missing scope: operator.pairing` is what tells an operator the grant is
+    // absent rather than the gateway being down. Appended rather than chosen
+    // between, the same shape the text path uses for `Reason:`.
+    const got = cliMessage(forbidden);
+    expect(got).toContain('device approval refused');
+    expect(got).toContain('missing scope: operator.pairing');
+  });
+
+  test('OC-65 and plain text still goes through the line reader', () => {
+    // The counterpart, and it is not decoration: the CLI also answers in plain
+    // text with a usage footer, and that path is finding 3 of the 2026-09-29
+    // review. A JSON-only reader would undo it.
+    const got = cliMessage(
+      '[openclaw] Gateway call failed: devices.list\nReason: missing scope: operator.pairing\n[openclaw] Help: openclaw --help'
+    );
+    expect(got).toBe('Gateway call failed: devices.list — Reason: missing scope: operator.pairing');
+  });
+
+  test('OC-65 and something that is neither falls back rather than throwing', () => {
+    // A parse failure is a legitimate answer here, so it must not be an error.
+    expect(cliMessage('not json at all')).toBe('not json at all');
+    expect(cliMessage('')).toBe('');
+    expect(cliMessage('[]')).toBe('[]');
+  });
+});
