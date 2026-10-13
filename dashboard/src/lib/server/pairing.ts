@@ -51,26 +51,99 @@ const SCRIPT = () => join(ENV_DIR, 'config', 'scripts', 'openclaw-pairing.sh');
 
 // Long enough for a container start plus the CLI's own 20s timeout, short enough
 // that a wedged docker does not hold a request open for ever.
-const BUDGET_MS = 60_000;
+//
+// Overridable so the timeout path can be driven by a case in seconds rather than
+// in minutes.
+//
+// **Deliberately not in `.env.example`, and that is the opposite of M3 on #10.**
+// There, `NAR_BUILDER_TEST_HOOKS` had to be declared because `compose.yml`
+// injects it into the builder, so an operator could set it and it would take
+// effect. This one cannot: `run.sh:147-149` hands the dashboard container three
+// explicit `-e` values and **not** the env file, so a key in the contract would be
+// a setting that does nothing. Checked rather than assumed. It is a process-level
+// hook for cases that load this module directly, and it is named here instead.
+const BUDGET_MS = Number(process.env.OPENCLAW_PAIRING_BUDGET_MS) || 60_000;
 
+/**
+ * The script, bounded — and the bound reaches the container, which it did not.
+ *
+ * **A2 of the 2026-10-01 review, and worse than first reported.**
+ * `setTimeout(() => child.kill(), …)` signalled `bash` alone. The `docker run`
+ * bash had started was reparented and kept the stdio pipes, and `'close'` waits
+ * for the pipes rather than for the child — so the promise resolved only when
+ * *docker* finished. Reproduced by the reviewer with a 3-second budget and a stub
+ * `docker run … sleep 20`: bash died at 3 s, the container was still running at
+ * 5 s, and `run()` resolved at about 22 s. **So the budget did not bound the HTTP
+ * request at all**, and a wedged docker held it open indefinitely — the case the
+ * budget's own comment says it exists for.
+ *
+ * Three things together, because any one of them alone leaves it open:
+ *
+ *   - `detached: true` puts the child in its own process **group**, so one signal
+ *     can reach bash *and* what bash started.
+ *   - the container is **named** and removed on timeout. Killing the group stops
+ *     the local `docker` CLI; it does not stop a container the daemon is already
+ *     running, and `--rm` only fires when that CLI exits normally.
+ *   - the promise is settled **at the budget**, not on `'close'`. Waiting for the
+ *     pipes is what turned a 3-second budget into 22 seconds, and an orphan that
+ *     never exits would have held it for ever.
+ */
 function run(args: string[]): Promise<{ output: string; code: number | null }> {
   return new Promise((done) => {
+    // Named so the timeout can reach it. Unique per call, because two polls can
+    // overlap -- which A3 is about, and until A3 is built they do.
+    const container = `openclaw-pairing-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
     const child = spawn('bash', [SCRIPT(), ENV_DIR, ...args], {
       cwd: ENV_DIR,
-      env: { ...process.env, LC_ALL: 'C', LANG: 'C' }
+      detached: true,
+      env: {
+        ...process.env,
+        LC_ALL: 'C',
+        LANG: 'C',
+        OPENCLAW_PAIRING_CONTAINER: container
+      }
     });
     let output = '';
-    const timer = setTimeout(() => child.kill(), BUDGET_MS);
+    let settled = false;
+    const finish = (r: { output: string; code: number | null }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      done(r);
+    };
+
+    const timer = setTimeout(() => {
+      // The group, not the child: `-pid` is the group id, which `detached` made
+      // equal to the child's pid. Guarded because the group may already be gone.
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+      // And the container, which no signal here can reach. Detached and
+      // unreferenced on purpose: this is cleanup, and the request must not wait
+      // for it.
+      try {
+        const sweep = spawn('docker', ['rm', '-f', container], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        sweep.unref();
+      } catch {
+        /* docker not reachable; nothing more to do here */
+      }
+      finish({
+        output:
+          `${output}\nThe request was given ${Math.round(BUDGET_MS / 1000)} seconds and did not finish. ` +
+          `It was stopped and its container removed; nothing was approved.`,
+        code: -2
+      });
+    }, BUDGET_MS);
+
     child.stdout.on('data', (d) => (output += d.toString()));
     child.stderr.on('data', (d) => (output += d.toString()));
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      done({ output: `${output}${err.message}`, code: -1 });
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      done({ output, code });
-    });
+    child.on('error', (err) => finish({ output: `${output}${err.message}`, code: -1 }));
+    child.on('close', (code) => finish({ output, code }));
   });
 }
 

@@ -61,7 +61,11 @@ IMAGE="liquidupstart/openclaw:latest"
 HOST="openclaw.localhost:${HTTP_PORT}"
 
 run_cli() {
-  docker run --rm \
+  # Named when the caller gives a name, so a caller that gives up can remove the
+  # container. `--rm` alone is not enough: it fires when this CLI exits normally,
+  # and a caller that killed the process group is exactly the case where it does
+  # not. A2 of the 2026-10-01 review.
+  docker run --rm ${OPENCLAW_PAIRING_CONTAINER:+--name "$OPENCLAW_PAIRING_CONTAINER"} \
     --network "$NETWORK" \
     --add-host "openclaw.localhost:${PROXY_IP}" \
     -e OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1 \

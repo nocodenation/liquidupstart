@@ -97,6 +97,8 @@ here; each is executed where its subject exists.
 | **OC-65** | **negative** | …and the `reason` is carried, because it is the half that names the remedy |
 | **OC-65** | positive | …and plain text still goes through the line reader, which is finding 3 of 2026-09-29 and must not be undone |
 | **OC-65** | positive | …and something that is neither falls back rather than throwing |
+| **OC-66** | integration **unhappy** | A script whose grandchild outlives the budget is stopped, grandchild and all — *A2 of 2026-10-01* |
+| **OC-66** | positive | …and a script that answers at once is not reported as timed out |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -618,6 +620,21 @@ moved to.
 | **Covers** | OC-51, §9 R2. |
 | **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
 | **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
+
+##### OC-66 — the budget bounds the request, and reaches what bash started
+
+| | |
+|---|---|
+| **Premise** | A2 of the 2026-10-01 review, and worse than first reported. `setTimeout(() => child.kill(), …)` signalled `bash` alone; the `docker run` bash had started was reparented and kept the stdio pipes, and `'close'` waits for the **pipes** rather than for the child. The reviewer measured a 3-second budget against a stub `docker run … sleep 20`: bash died at 3 s, the container was still running at 5 s, and `run()` resolved at about **22 s**. The budget did not bound the HTTP request at all, and a wedged docker held it open indefinitely — the case the budget's own comment says it exists for. |
+| **Component** | `run()` in `dashboard/src/lib/server/pairing.ts`, driven through `pendingRequests()`. |
+| **Steps** | One throwaway project whose pairing script is rewritten per scenario; `OPENCLAW_PAIRING_BUDGET_MS=2000` so the timeout path runs in seconds. Call `pendingRequests()`, read the clock, then ask the operating system whether the grandchild still exists. |
+| **Test data, and the seam it uses** | The stub stands in for `docker run`: `sleep 60 &`, its PID written to a file, then `wait`. **The PID file is the point** — asserting only that `pendingRequests()` returned in time would have passed against the defect, because the promise did eventually resolve. One project directory, not two: `$lib/server/project` captures `ENV_DIR` at load, and a query string on the import specifier breaks the module's own relative imports (measured: `Cannot find module './project'`). `SCRIPT()` is a function and `spawn` reads the file at each call, so rewriting the script is the seam that actually exists. |
+| **Expected** | Settled within the budget plus a margin rather than at the grandchild's 60 s; the message says it did not finish and that nothing was approved; and `process.kill(pid, 0)` throws, so the grandchild is gone. |
+| **What it found** | Green, 2 scenarios, 2.4 s. The repair is three things because any one alone leaves it open: `detached: true` for a process **group**, a **named** container removed on timeout (killing the group stops the local CLI, not a container the daemon is already running, and `--rm` only fires when that CLI exits normally), and settling **at the budget** instead of on `'close'`. |
+| **Controls** | `process.kill(-child.pid)` back to `child.kill()` → red, the grandchild survives. Not settling at the budget → red. In both, the counterpart stays green. |
+| **On the budget override** | `OPENCLAW_PAIRING_BUDGET_MS` is **not** in `.env.example`, and that is the opposite of M3 on #10 rather than an oversight: `run.sh:147-149` hands the dashboard container three explicit `-e` values and not the env file, so a key in the contract would be a setting that does nothing. Checked, not assumed. |
+| **Implemented by** | `tests/integration/m-oc.pairing-budget.test.ts`. |
+| **Covers** | OC-66, §9 R2, U11. |
 
 ##### OC-65 — a JSON answer is read as JSON
 
