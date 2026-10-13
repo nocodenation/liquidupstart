@@ -53,7 +53,9 @@ like a suite that ran.
 | **SP-1** | positive + **negative** | A directory that is no git repository is told apart from one that is |
 | **SP-1** | positive + **negative** | A dashboard without its dependencies is told apart from one with them |
 | **SP-1** | positive | The exported constants describe *this* checkout, and `preconditions()` names it |
-| **SP-2** | positive | Each of the eight dependent files names the precondition it skips on, in its header, and uses it |
+| **SP-2** | positive | Each dependent file names the precondition it skips on, in its header, and uses it — and the DOM files are **computed**, not listed |
+| **SP-2** | positive | …the computation is over something: at least three DOM files, the card file among them |
+| **SP-2** | **negative** | …and each DOM file files its voiced skip under `SP-2`, not under a case id |
 
 ## Detail
 
@@ -83,6 +85,21 @@ like a suite that ran.
 | **And a silent skip is not acceptable either** | With the bodies returning early those files register nothing, so a run would not mention them at all. Each carries one test that runs **only** in that case and names it: `SP-2 the cases in this file need the dashboard dependencies, which are absent here`. It asserts the absence rather than nothing, so it is a reading and not a label. |
 | **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
 | **Covers** | SP-FR3. |
+
+### SP-2, widened 2026-10-13 — the list is computed, and the skip belongs to the rule
+
+| | |
+|---|---|
+| **Premise** | Two things went wrong at once when a ninth DOM file arrived with #15. **The list was enumerated by hand and did not grow**, so nothing held the new file's guard. And the voiced skip written in its place was titled `OC-52`, which put a **pass** under `OC-52` in a bare checkout's JUnit report, beside the real `OC-52` marked skipped — "OC-52 passed" for a run in which the card was never mounted. That is the silent green this rule exists to prevent, wearing the id of the defect it covers. N1 of the 2026-10-13 re-review, and the reviewer's own fix. |
+| **Component** | `tests/unit/m-sp.preconditions.test.ts`. |
+| **Steps** | Compute the DOM files with `git grep -l -E "^import .*lib/mount'" -- tests`; assert the computation found something; then, per file, the header names the precondition, the file uses `skipIf(!…)`, and its voiced skip is titled `SP-2 …`. |
+| **Test data, and why the needle is a line shape** | It took three attempts. Grepping `lib/mount` matched **this file**, because the comment explaining the grep contains it. Narrowing to `lib/mount'` with its closing quote matched it again, one level down. **A computed answer whose input includes its own documentation is a computed answer about the wrong thing.** An anchored `^import` cannot be satisfied by prose, because prose here is indented or starts with `//`. The computation finds three files: the two `m-a16` ones and `m-oc.pairing-card`. |
+| **Expected** | Three or more DOM files found, the card file among them, and every one of them filing its skip under `SP-2`. |
+| **What it found** | Green, and the JUnit report of a bare checkout now reads five `SKIP` under `OC-52` to `OC-55` and one `PASS` under `SP-2` — read out of the report, which is where the defect was visible. |
+| **Why this is narrow rather than a general rule** | `TR-1` cannot see it, because `OC-52` *is* declared. `TR-4` cannot either, because it compares ids across **files** and this is one id twice in one file — and widening it is not available: measured 2026-10-13, **86 files legitimately carry one id across several top-level blocks** (`A7-1` has six scenarios of one chain). So the check is about the one thing that is decidable: the skip that reports a precondition belongs to the rule, and the rule is `SP-2`. |
+| **Controls** | The card file's skip renamed back to `OC-52` → red, that scenario alone. The computation's needle widened back to the bare path → red, because this file then demands a precondition it has no use for. |
+| **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
+| **Covers** | SP-2, SP-FR3. |
 
 ## What is deliberately not here
 

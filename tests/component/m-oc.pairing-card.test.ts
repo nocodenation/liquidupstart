@@ -179,8 +179,16 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-55 and a request that arrives later appears
 });
 
 test.skipIf(DASHBOARD_DEPS)(
-  'OC-52 the dashboard dependencies are absent here, so the card cases are skipped',
+  'SP-2 the cases in this file need the dashboard dependencies, which are absent here',
   () => {
+    // **`SP-2`, not `OC-52`.** It was named `OC-52` until 2026-10-13, and that put a
+    // **pass** under `OC-52` in the JUnit report of a run where the card was never
+    // mounted -- next to the real `OC-52`, skipped. Anything reading results by
+    // case id recorded "OC-52 passed" for exactly the run the guard exists to make
+    // visible: the silent green, under the id of the defect it covers. N1 of the
+    // 2026-10-13 re-review. `SP-2` is the case that owns this rule, and the
+    // precedent in `m-a16.result-line` files it there.
+    //
     // Not a label. Without this the four describes above register nothing and a run
     // never mentions them, which is the silent gap #22's SP-2 refused to accept. It
     // asserts the absence, so it is a reading: run `bun install` in `dashboard/` and

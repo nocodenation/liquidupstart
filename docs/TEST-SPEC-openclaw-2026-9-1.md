@@ -92,6 +92,7 @@ here; each is executed where its subject exists.
 | **OC-53** | component | positive | An empty queue still draws nothing. The counterpart to OC-52 |
 | **OC-54** | component | positive and **negative** | The button is offered for the operator browser and not for anything else, and it names the device |
 | **OC-55** | component | positive | A request arriving after mount shows without a reload — **finding 5** |
+| **SP-2** | component | **negative** | The card file's cases need a DOM, and when it is absent that is reported under `SP-2` rather than under a case id — *added 2026-10-13* |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -616,7 +617,10 @@ moved to.
 
 ##### OC-52 / OC-53 / OC-54 / OC-55 — the card, mounted and driven
 
-> **Precondition, added 2026-10-13: `DASHBOARD_DEPS`.** These four mount a Svelte component, so they
+> **Precondition: `DASHBOARD_DEPS`** — the scenario is its own row above, under `SP-2`, because the
+> skip belongs to the rule and not to the case it covers. Added 2026-10-13, **corrected the same day**:
+> it was first filed under `OC-52`, which put a *pass* under `OC-52` in a bare checkout's JUnit report
+> beside the real `OC-52`, skipped. N1 of that day's re-review. These four mount a Svelte component, so they
 > need a DOM, and `tests/lib/mount.ts` resolves happy-dom and svelte out of `dashboard/node_modules`.
 > Without them the file produced **five failures** reading
 > `Cannot find module .../@happy-dom/global-registrator/lib/index.js`, which is red for a reason that
@@ -632,7 +636,7 @@ moved to.
 > ```
 >
 > The case that passes in the first reading is a skip with a voice: it asserts the **absence** of
-> `dashboard/node_modules` rather than carrying a label, so a run in that state says why four cases are
+> `dashboard/node_modules` rather than carrying a label, so a run in that state says why five tests under four ids are
 > missing instead of leaving a silent gap. That is `SP-2`'s rule, applied here by hand because `SP-2`
 > enumerates eight files and this is not one of them — which is itself worth noting as the limit of
 > that case.
