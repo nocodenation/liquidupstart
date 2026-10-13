@@ -9,6 +9,32 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The embedding credential gate speaks for two providers out of six.** `openclaw.sh` can say whether
+an embedding backend has a credential for `openai` (is `OPENAI_API_KEY` set) and for `github-copilot`
+(is the harness on). The schema also allows `ollama`, `local`, `gemini` and `lmstudio`, and for those
+the start deliberately writes nothing and leaves `memory.search.enabled` as the operator set it —
+blocker 3 of the 2026-09-28 review on #16, where writing it unconditionally had been switching their
+memory off on every start.
+
+**That is correct and it is not complete.** On those four the stack cannot tell the operator whether
+memory search will do anything, because nothing checks the backend is reachable. The operator decided
+on 2026-10-13 to fix the boundary first and document it, and to extend later.
+
+**What extending needs, and why it is not one change.** "Has a credential" is an API key for `openai`
+and a live harness for Copilot; for `ollama` or `lmstudio` it is a reachable endpoint, for `local` a
+model on disk, for `gemini` another key. So it is **one measurement per provider** rather than one
+condition, and the shape that fits is the one `registryReachable()` uses on #24: ask, cheaply, once,
+and cache the answer. The log line should then name what it asked and what answered, because a gate
+that silently decides is what blocker 3 was.
+
+Not built with the repair because the repair is the operator's setting being left alone, which needs
+no knowledge of any backend, and because each provider's check wants a live instance to be measured
+against rather than reasoned about.
+
+Recorded 2026-10-13.
+
+---
+
 **OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
 and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.

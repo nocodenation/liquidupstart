@@ -228,6 +228,29 @@ And no embedding provider is written: it defaults to `openai`, and the Copilot b
 provider when that harness is on; writing one here would win or lose silently depending on the order
 of two blocks.
 
+### Which embedding providers this feature supports, decided 2026-10-13
+
+**`openai` and `github-copilot`, and no others for now.** Those are the two the credential gate can
+speak for: it knows whether `OPENAI_API_KEY` is set and whether the Copilot harness is on, so it can
+say truthfully whether an embedding backend has a credential.
+
+The schema also allows `ollama`, `local`, `gemini` and `lmstudio`. **For those the start writes
+nothing** — it leaves `memory.search.enabled` exactly as the operator set it and logs which provider it
+stepped back for. That is the whole of the repair for blocker 3 of the 2026-09-28 review, and the
+reason it is a repair rather than a feature: the script used to write `enabled` on *every* start while
+the gate knew only two providers, so an operator on `ollama` had memory search switched off each time,
+with a log line claiming there was no embedding credential. For key-less installs it was a regression
+twice over, because the runtime defaults that key to `true`.
+
+**So the support boundary is a statement about the gate, not about the providers.** Nothing here stops
+`ollama` working; what is missing is any check that its backend is reachable, so the stack cannot tell
+an operator whether memory search will actually do anything. Extending the gate to the other four is
+recorded in `BACKLOG.md` rather than implied by silence, and it needs one measurement per provider —
+what counts as "has a credential" for a local backend is a different question from an API key.
+
+A reader should take from this: on `openai` or Copilot the stack decides and says so; on anything else
+the operator decides and the stack keeps its hands off.
+
 Cases M1-1 to M1-6 in `tests/component/m-m1.memory-config.test.ts`, run against the unchanged script
 first: **four of the five original cases were red**, and the three added for the 2026-09-22 review
 are red against the writer as it stood before it.
