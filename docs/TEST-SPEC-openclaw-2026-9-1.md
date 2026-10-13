@@ -99,6 +99,10 @@ here; each is executed where its subject exists.
 | **OC-65** | positive | …and something that is neither falls back rather than throwing |
 | **OC-66** | integration **unhappy** | A script whose grandchild outlives the budget is stopped, grandchild and all — *A2 of 2026-10-01* |
 | **OC-66** | positive | …and a script that answers at once is not reported as timed out |
+| **OC-67** | component **negative** | With the stack down the card does not ask at all, and draws nothing — *A3 of 2026-10-01* |
+| **OC-67** | **negative** | …nor while a task holds the page: a start, a teardown or a rebuild |
+| **OC-67** | positive | …the counterpart: with the stack up it asks, once |
+| **OC-67** | **negative** | …and two triggers while one request is unfinished make no second request |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -620,6 +624,21 @@ moved to.
 | **Covers** | OC-51, §9 R2. |
 | **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
 | **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
+
+##### OC-67 — the card asks nothing while there is nothing it could mean
+
+| | |
+|---|---|
+| **Premise** | A3 of the 2026-10-01 review: a `docker run` every 15 s in every open tab, stack up or down, with no in-flight guard. **The card sits outside the page's `{#if data.running}` block** — `+page.svelte:112`, where the conditional spans 26–108 — so "stack down" is the dashboard's ordinary first state and it polled there. With the gateway stopped one GET took **19.2 s**, longer than the interval, so requests piled up; every poll wrote three lines into the gateway log, among them a scope-grant audit line; and returning to a tab fires `visibilitychange` **and** `focus`, so two loads ran and the later answer won — which may be the older one. |
+| **Component** | `OpenClawPairing.svelte`, mounted with props, and `+page.svelte` which passes them. |
+| **Steps** | Mount with `running: false`; with `running: true, busy: true`; with `running: true`; and then, with one request held open, dispatch both `focus` and `visibilitychange`. Count the fetches each time. |
+| **Test data, and why one scenario stubs fetch itself** | `serve()` answers synchronously, so it cannot hold a request open — and an in-flight guard can only be measured against a request that is still in flight. That one scenario stubs `globalThis.fetch` directly and restores it through the file's own `restore` hook. The others use `serve` with a counting function. |
+| **Expected** | Zero fetches in the first two and an empty card in the first; exactly one in the third, with the heading drawn; and still one after both triggers. |
+| **What it found** | Green, 4 scenarios. The repair is two guards and one prop pair: `running` and `busy` come from the page (`data.running`, `activeTask !== ''`) rather than from the card's position in the markup, because the card is also the way back when OpenClaw refuses a browser and must keep its place; and `inFlight` drops a second trigger rather than queueing it. |
+| **What it cost the other cases** | Every mount in that file now passes `running: true`. That is the honest form: those five scenarios are about what the card does when there *is* something to ask, and they say so at the mount instead of relying on a default. |
+| **Controls** | The `running`/`busy` guard removed → 2 red, the first two scenarios. The in-flight guard removed → 1 red, the fourth. The counterpart stays green in both, which is what says the guards do not simply switch the card off. |
+| **Implemented by** | `tests/component/m-oc.pairing-card.test.ts`. |
+| **Covers** | OC-67, §9 R2, U11. |
 
 ##### OC-66 — the budget bounds the request, and reaches what bash started
 

@@ -6,6 +6,16 @@
   // ever right to show it when there is something to do. A card that says "no
   // pending requests" on every load teaches the operator to stop reading this
   // part of the page.
+  // **The stack's state and the page's, because this card must not poll blind.**
+  // A3 of the 2026-10-01 review: it ran a `docker run` every 15 s in every open
+  // tab, stack up or down -- and the card sits *outside* the page's
+  // `{#if data.running}` block, so "stack down" was the dashboard's ordinary
+  // first state. With the gateway stopped one GET took 19.2 s, longer than the
+  // interval, so requests piled up; and every poll wrote three lines into the
+  // gateway log, among them a scope-grant audit line. Nothing a pairing request
+  // can mean exists while the stack is down, or while a start or teardown runs.
+  let { running = false, busy = false } = $props();
+
   let pending = $state([]);
   let others = $state([]);
   let problem = $state('');
@@ -30,7 +40,14 @@
     return [...seen.values()];
   }
 
+  // One at a time. Returning to a tab fires `visibilitychange` **and** `focus`,
+  // so `again()` ran twice and the later answer won -- which may be the older
+  // one. A3's third leg. Not `$state`, because nothing renders from it.
+  let inFlight = false;
+
   async function load() {
+    if (inFlight) return;
+    inFlight = true;
     try {
       const res = await fetch('/openclaw-pairing');
       const body = await res.json();
@@ -47,6 +64,7 @@
       others = [];
       problem = `The dashboard could not ask OpenClaw: ${e.message}`;
     } finally {
+      inFlight = false;
       loaded = true;
     }
   }
@@ -88,6 +106,17 @@
   const POLL_MS = 15000;
 
   $effect(() => {
+    // Nothing to ask while the stack is down or the page is busy with a start, a
+    // teardown or a rebuild. The card stays silent rather than explaining itself:
+    // it is only ever right to show it when there is something to do, and a
+    // request that cannot exist is not something to do.
+    if (!running || busy) {
+      pending = [];
+      others = [];
+      problem = '';
+      return;
+    }
+
     load();
     const again = () => {
       if (typeof document === 'undefined' || document.visibilityState !== 'hidden') load();

@@ -36,6 +36,13 @@
  *           host is named but has no button, and a request that arrives later
  *           appears without a reload.
  * Covers:   OC-52, OC-53, OC-54, OC-55, R2, U11
+ *
+ * **Every mount passes `running: true` since 2026-10-13.** The card takes
+ * `running` and `busy` now and asks nothing while the stack is down or a task
+ * holds the page — A3 of the 2026-10-01 review, where it ran a `docker run` every
+ * 15 s in every open tab, stack up or down. These five scenarios are about what
+ * the card does when there *is* something to ask, so they say so at the mount
+ * rather than relying on a default. `OC-67` is the case for the other state.
  * Precondition: DASHBOARD_DEPS -- the dashboard's dependencies are installed.
  *           These four cases mount a Svelte component, so they need a DOM, and
  *           `tests/lib/mount.ts` resolves both happy-dom and svelte out of
@@ -116,7 +123,7 @@ afterEach(() => {
 describe.skipIf(!DASHBOARD_DEPS)('OC-52 a listing that failed is said out loud', () => {
   test('OC-52 the card shows the reason instead of nothing', async () => {
     serve([{ ok: false, pending: [], message: REFUSAL }]);
-    mounted = await mountComponent(CARD, {});
+    mounted = await mountComponent(CARD, { running: true });
     await mounted.settle();
     expect(mounted.text()).toContain('could not be asked');
     expect(mounted.text()).toContain('missing scope: operator.pairing');
@@ -128,7 +135,7 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-53 while nothing waiting is still nothing s
     // A card that is always on the page is a card nobody reads, which is the
     // whole reason this one is conditional.
     serve([{ ok: true, pending: [], message: '' }]);
-    mounted = await mountComponent(CARD, {});
+    mounted = await mountComponent(CARD, { running: true });
     await mounted.settle();
     expect(mounted.text().trim()).toBe('');
   });
@@ -137,7 +144,7 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-53 while nothing waiting is still nothing s
 describe.skipIf(!DASHBOARD_DEPS)('OC-54 a request the card cannot approve is named, not offered', () => {
   test('OC-54 the operator browser gets the button and the node host does not', async () => {
     serve([{ ok: true, pending: [NODE_HOST, OPERATOR], message: '' }]);
-    mounted = await mountComponent(CARD, {});
+    mounted = await mountComponent(CARD, { running: true });
     await mounted.settle();
     const text = mounted.text();
     expect(text).toContain('openclaw-control-ui');
@@ -154,7 +161,7 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-54 a request the card cannot approve is nam
     // The id churn: four ids for one device within thirty minutes on 2026-09-19,
     // so an id rendered into a page is stale before it is clicked.
     serve([{ ok: true, pending: [NODE_HOST, OPERATOR], message: '' }]);
-    mounted = await mountComponent(CARD, {});
+    mounted = await mountComponent(CARD, { running: true });
     await mounted.settle();
     mounted.click('Approve this browser');
     await mounted.settle();
@@ -166,7 +173,7 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-55 and a request that arrives later appears
   test('OC-55 a focus event re-reads the list', async () => {
     let queue: unknown[] = [];
     serve(() => ({ ok: true, pending: queue, message: '' }));
-    mounted = await mountComponent(CARD, {});
+    mounted = await mountComponent(CARD, { running: true });
     await mounted.settle();
     // The state the operator was left in: they started the stack, were refused,
     // and this tab drew nothing.
@@ -175,6 +182,82 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-55 and a request that arrives later appears
     window.dispatchEvent(new Event('focus'));
     await mounted.settle();
     expect(mounted.text()).toContain('openclaw-control-ui');
+  });
+});
+
+describe.skipIf(!DASHBOARD_DEPS)('OC-67 the card asks nothing while there is nothing it could mean', () => {
+  // A3 of the 2026-10-01 review. The card sits outside the page's
+  // `{#if data.running}` block, so "stack down" is the dashboard's ordinary first
+  // state -- and it polled there every 15 s, in every open tab, each poll a
+  // `docker run`. With the gateway stopped one GET took 19.2 s, longer than the
+  // interval, so they piled up.
+  let calls = 0;
+  const counting = () => {
+    calls += 1;
+    return { ok: true, pending: [OPERATOR], message: '' };
+  };
+
+  test('OC-67 with the stack down it does not ask at all', async () => {
+    calls = 0;
+    serve(counting);
+    mounted = await mountComponent(CARD, { running: false });
+    await mounted.settle();
+    expect(calls).toBe(0);
+    // And it draws nothing rather than explaining itself.
+    expect(mounted.text().trim()).toBe('');
+  });
+
+  test('OC-67 and while a task holds the page it does not ask either', async () => {
+    // `busy` is the page's `activeTask !== ''`: a start, a teardown or a rebuild.
+    // A poll attached across a `docker compose down` is the fifth leg of A3.
+    calls = 0;
+    serve(counting);
+    mounted = await mountComponent(CARD, { running: true, busy: true });
+    await mounted.settle();
+    expect(calls).toBe(0);
+  });
+
+  test('OC-67 the counterpart: with the stack up it asks, once', async () => {
+    // Without this the guard could be met by never asking at all, which is the
+    // dead end this whole card exists to remove.
+    calls = 0;
+    serve(counting);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    expect(calls).toBe(1);
+    expect(mounted.text()).toContain('waiting to be let in');
+  });
+
+  test('OC-67 and two triggers while one is unfinished make no second request', async () => {
+    // Returning to a tab fires `visibilitychange` **and** `focus`, so two loads
+    // ran and the later answer won -- which may be the older one.
+    //
+    // `serve` answers synchronously, so it cannot hold a request open; this one
+    // stubs fetch directly for that reason, and restores it the same way.
+    let n = 0;
+    let release: (() => void) | null = null;
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      n += 1;
+      await new Promise<void>((r) => (release = r));
+      return new Response(JSON.stringify({ ok: true, pending: [OPERATOR], message: '' }), {
+        status: 200
+      });
+    }) as typeof fetch;
+    restore = () => {
+      globalThis.fetch = original;
+    };
+
+    mounted = await mountComponent(CARD, { running: true });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(n).toBe(1);
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise((r) => setTimeout(r, 60));
+    // Still one: the first has not finished, so both triggers were dropped
+    // rather than queued.
+    expect(n).toBe(1);
+    release?.();
   });
 });
 

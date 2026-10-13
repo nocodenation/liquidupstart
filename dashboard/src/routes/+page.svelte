@@ -109,7 +109,13 @@
 
   <!-- Above the repositories, because it is only ever drawn when something is
        stuck, and what is stuck is the operator getting into OpenClaw at all. -->
-  <OpenClawPairing />
+  <!-- `running` and `activeTask` are handed over because the card must not poll
+       while the stack is down or while a task holds the page: A3 of the
+       2026-10-01 review. This element sits outside the `{#if data.running}`
+       block above on purpose -- the card is also the way back when OpenClaw
+       itself refuses a browser -- so the condition travels as a prop rather than
+       as a position in the markup. -->
+  <OpenClawPairing running={data.running} busy={activeTask !== ''} />
 
   <GitRepositories git={data.git} />
 
