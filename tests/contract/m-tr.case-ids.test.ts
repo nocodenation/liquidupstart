@@ -148,6 +148,84 @@ describe('TR-3 the reader sees a case wherever the file puts it', () => {
   });
 });
 
+/**
+ * Ids carried by more than one test file, each with the reason it is allowed.
+ *
+ * **Why a list and not a rule.** Two shapes look identical from the outside: one
+ * case tested at two levels, which this project asks for, and two unrelated cases
+ * wearing one id, which is a defect. Measured 2026-10-13: 11 ids span files and
+ * nine of them are the first shape, so "one id, one file" would fail nine correct
+ * things. The next rule tried -- that the specification must name every file that
+ * implements an id, using the existing *Implemented by* convention -- failed 12 of
+ * 14, because the older blocks predate that convention.
+ *
+ * So the judgement is made once, written down with its reason, and reviewed like
+ * any other data. A twelfth id spanning files fails this case until somebody looks
+ * at it and either fixes the collision or adds a line here. That is the shape
+ * `mutations.json` uses for its exemptions, and the argument is the same: an
+ * exception with a reason is reviewable, one without is invisible.
+ *
+ * **Two live collisions got through two green suites before this existed.**
+ * `OC-40`/`OC-42` (renumbered on #26, after surfacing as a merge conflict rather
+ * than a test failure) and `A8-24`/`A8-25`/`A8-26` (renumbered on #27, found by
+ * accident while chasing an unrelated red). `TR-1` is blind to both: it compares
+ * tested ids against declared ids, and a stolen id *is* declared -- by the case it
+ * was taken from.
+ */
+const SPANS_FILES: Array<{ id: string; why: string }> = [
+  // One case, two levels. The project's own rule is to test at every level, so
+  // these are the shape it asks for rather than an exception to it.
+  { id: 'A3c-8', why: 'ssh identity isolation: the contract case reads the invocations, the system case reads the clones a real start produced' },
+  { id: 'A6-12', why: 'the mounted commands: contract checks which services carry them, system checks they are on PATH there' },
+  { id: 'A8-20', why: 'manifest-against-declaration drift: integration draws the lost repository, component asserts nothing is pending when they agree' },
+  { id: 'A8-21', why: 'the declaration pre-flight: unit parses it, contract holds that it is judged before the teardown' },
+  { id: 'OC-12', why: 'the retired dangerouslyDisableDeviceAuth: component reads the written config, system reads what doctor says about it' },
+  { id: 'OC-17', why: 'the version probe: unit parses the line, integration runs it against the images themselves' },
+  { id: 'OC-18', why: 'as OC-17 -- the bare form 2026.7.1 prints, parsed and then probed for real' },
+  { id: 'OC-19', why: 'as OC-17 -- a line that is not a version line, and an image that cannot be identified' },
+  { id: 'OC-31', why: 'the codex plugin: component asserts it does not stay enabled unasked, system reads the error it raises' },
+  // By design, and the design is in SP-2 itself.
+  { id: 'SP-2', why: 'SP-2 asserts that a case needing a precondition says so, and the two component files carry the voiced skip it requires -- the id is the rule and its two instances' },
+  // A real collision, already repaired on a branch that has not merged.
+  { id: 'A16-19', why: 'COLLISION, not a level split: m-a16.text-only is about git tracking test files and m-a16.skip-panel about the skip-all wording. Renumbered to A16-30 on #24; delete this entry when #24 merges' }
+];
+
+describe('TR-4 no id is carried by two different cases without that being on record', () => {
+  test('TR-4 every id spanning files is one somebody judged, with a reason', () => {
+    const tested = idsInTests();
+    const spanning = [...tested.entries()]
+      .filter(([, files]) => files.length > 1)
+      .map(([id]) => id)
+      .sort();
+    const allowed = new Set(SPANS_FILES.map((e) => e.id));
+    const unjudged = spanning.filter((id) => !allowed.has(id));
+    // A new one fails here until it is either repaired or written down above.
+    expect(unjudged).toEqual([]);
+  });
+
+  test('TR-4 and every reason is a reason, not a placeholder', () => {
+    // A list whose entries say nothing is a list nobody reviewed. Measured
+    // against the shortest real reason written above.
+    for (const { id, why } of SPANS_FILES) {
+      expect(why.length).toBeGreaterThan(40);
+      expect(why).not.toMatch(/^(todo|tbd|see above|n\/a)/i);
+      expect(id).toMatch(/^[A-Z][A-Za-z0-9]*-[A-Za-z0-9]+$/);
+    }
+  });
+
+  test('TR-4 and the list does not outlive what it exempts', () => {
+    // The other direction, and the one that makes the list shrink rather than
+    // grow for ever: an entry for an id that no longer spans files is stale, and
+    // A16-19's entry says in its own text that it goes when #24 merges.
+    const tested = idsInTests();
+    const stale = SPANS_FILES
+      .map((e) => e.id)
+      .filter((id) => (tested.get(id)?.length ?? 0) < 2)
+      .sort();
+    expect(stale).toEqual([]);
+  });
+});
+
 describe('TR-1 what it deliberately does not assert', () => {
   test('TR-1 a declared id with no test is reported, not failed', () => {
     // The other direction is `mutate.sh --gaps`' *missing* count, and it is the

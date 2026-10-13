@@ -41,6 +41,9 @@ every milestone at once.
 | **TR-2** | positive | The comparison is over something: both sets are read and both are large, so two empty reads cannot satisfy TR-1 |
 | **TR-1** | positive | A declared id with no test is reported and not failed, and the case asserts that such ids exist |
 | **TR-3** | positive + **negative** | The reader sees a case wherever the file puts it: a top-level `describe` after a blank line **and** one after `});`, because the first passing is what hid the second |
+| **TR-4** | **negative** | No id is carried by two different cases without that being on record: an id spanning files must be one somebody judged, with a reason |
+| **TR-4** | positive | …and every reason is a reason rather than a placeholder, because a list whose entries say nothing is a list nobody reviewed |
+| **TR-4** | **negative** | …and the list does not outlive what it exempts: an entry for an id that no longer spans files is stale |
 
 ## Detail
 
@@ -82,10 +85,25 @@ every milestone at once.
 | **Implemented by** | `tests/contract/m-tr.case-ids.test.ts`. |
 | **Covers** | TR-3, TR-FR1. |
 
+### TR-4 — two cases with one id, which TR-1 cannot see
+
+| | |
+|---|---|
+| **Premise** | `TR-1` compares tested ids against declared ids in both directions and says nothing about **two cases sharing one id**. That is not hypothetical: it has happened twice, and both times a green suite on each branch. `OC-40` and `OC-42` were specified on #15 on 2026-09-19 and assigned again on `main` on 2026-10-09 for different cases, surfacing as a merge conflict rather than a test failure (renumbered on #26). And `m-a8.toolbox-tools` was using `A8-24`, `A8-25` and `A8-26`, all three belonging to other cases, with no row of its own — found by accident while chasing an unrelated red (renumbered on #27). A stolen id *is* declared, by the case it was taken from, so `TR-1` passes throughout. |
+| **Component** | `idsInTests()` in `tests/contract/m-tr.case-ids.test.ts`, and a reviewed list beside it. |
+| **Steps** | Compute every id carried by more than one test file; compare that set with the list; then check the list's entries carry real reasons and that none of them is stale. |
+| **Why it is a list and not a rule, measured rather than argued** | Two shapes look identical from outside: one case tested at two levels, which this project asks for, and two unrelated cases wearing one id. **Measured 2026-10-13: 11 ids span files and nine are the first shape**, so "one id, one file" would fail nine correct things — `OC-17`, `OC-18` and `OC-19` are each a unit and an integration case, `SP-2` spans three files by design. The next rule tried was *the specification must name every file that implements an id*, using the existing *Implemented by* convention: **it failed 12 of 14**, because the older blocks predate that convention. So the judgement is made once, written down with its reason, and reviewed like any other data — the shape `mutations.json` uses for exemptions, and for the same argument: an exception with a reason is reviewable, one without is invisible. |
+| **Test data, both sides** | What must be accepted: the nine level splits and `SP-2`, each with the subject that makes it one case. What must not: a twelfth id appearing without a line, which fails until somebody repairs it or judges it. And one entry is a **collision rather than an exception** — `A16-19`, where `m-a16.text-only` is about git tracking test files and `m-a16.skip-panel` about the skip-all wording. Its reason says so and says it goes when #24 merges, so the list records a known defect instead of blessing it. |
+| **Expected** | No unjudged id, every reason over 40 characters and not a placeholder, no stale entry. |
+| **What it found** | Green, 3 scenarios — after `TR-1` immediately failed on `TR-4` itself for having no row, which is the second time that has happened while adding a case to this file. The third scenario exists so the list shrinks rather than grows for ever: when #24 merges and `A16-19` stops spanning files, its entry becomes stale and this case says so. |
+| **Implemented by** | `tests/contract/m-tr.case-ids.test.ts`. |
+| **Covers** | TR-4, TR-FR1. |
+
 ## What this check still does not do
 
-**It does not check that an id is used once.** `TR-1` compares tested ids against declared ids in both
-directions and has nothing to say about two different cases sharing one id. That is not hypothetical:
+**It does check that an id is used once, since 2026-10-13 — see `TR-4` above.** What `TR-1` itself
+still cannot see is a stolen id: it compares tested ids against declared ids, and a stolen one is
+declared by the case it was taken from. That is not hypothetical:
 `OC-40` and `OC-42` were specified on #15 on 2026-09-19 and assigned again here on 2026-10-09 for
 different cases, and the collision survived both branches' suites until a merge surfaced it — which is
 why those two were renumbered to `OC-63` and `OC-64` on 2026-10-12. A uniqueness check is the obvious
