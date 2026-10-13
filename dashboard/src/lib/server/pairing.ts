@@ -147,9 +147,31 @@ function run(args: string[]): Promise<{ output: string; code: number | null }> {
   });
 }
 
+/**
+ * A Control UI browser that was refused and is no longer asking.
+ *
+ * **A4 of the 2026-10-01 review: the card was gone five minutes after the
+ * refusal.** A refused Control UI makes one attempt and stops, and the gateway
+ * drops a pending request after five minutes. Measured by the reviewer: token
+ * revoked, the tab left open for 450 s and polled every 30 s — after the drop
+ * there was no card and no hint, while OpenClaw still showed *"Role upgrade
+ * pending"*. An operator who reaches the dashboard later than five minutes saw
+ * nothing at all, which is the dead end §9 exists to remove, one step along.
+ *
+ * The same listing already carries it: `paired[].tokens[].revokedAtMs`. So the
+ * card can say *"this browser was refused and is not asking any more"* and name
+ * the one thing that brings the request back.
+ */
+export type RevokedDevice = {
+  deviceId: string;
+  clientId: string;
+  revokedAtMs: number | null;
+};
+
 export async function pendingRequests(): Promise<{
   ok: boolean;
   pending: PendingRequest[];
+  revoked: RevokedDevice[];
   message: string;
 }> {
   const { output, code } = await run(['list']);
@@ -157,17 +179,50 @@ export async function pendingRequests(): Promise<{
     // The gateway being down is the ordinary case here, not an exception: this
     // card is read while something is wrong. Say what the CLI said and show no
     // list rather than an empty one, which would read as "nothing pending".
-    return { ok: false, pending: [], message: cliMessage(output) || 'The gateway did not answer.' };
+    return {
+      ok: false,
+      pending: [],
+      revoked: [],
+      message: cliMessage(output) || 'The gateway did not answer.'
+    };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(output);
   } catch {
-    return { ok: false, pending: [], message: 'The gateway answered something that is not JSON.' };
+    return {
+      ok: false,
+      pending: [],
+      revoked: [],
+      message: 'The gateway answered something that is not JSON.'
+    };
   }
   const raw = (parsed as { pending?: unknown })?.pending;
   const pending = Array.isArray(raw) ? raw.map(toRequest).filter((r): r is PendingRequest => !!r) : [];
-  return { ok: true, pending, message: '' };
+  const pairedRaw = (parsed as { paired?: unknown })?.paired;
+  const revoked = Array.isArray(pairedRaw) ? pairedRaw.map(toRevoked).filter((r): r is RevokedDevice => !!r) : [];
+  return { ok: true, pending, revoked, message: '' };
+}
+
+/**
+ * A paired device, if it is a Control UI browser whose token has been revoked.
+ *
+ * Only the Control UI, because that is the browser §9's way back is about, and
+ * only when a token carries `revokedAtMs` — a device with live tokens is working
+ * and is not something to draw a card about. The newest revocation wins when a
+ * device has several tokens, so the card can say when it happened.
+ */
+function toRevoked(v: unknown): RevokedDevice | null {
+  const d = v as Record<string, unknown>;
+  const deviceId = typeof d?.deviceId === 'string' ? d.deviceId : '';
+  const clientId = typeof d?.clientId === 'string' ? d.clientId : '';
+  if (!deviceId || clientId !== 'openclaw-control-ui') return null;
+  const tokens = Array.isArray(d.tokens) ? d.tokens : [];
+  const revokedAt = tokens
+    .map((t) => (t as Record<string, unknown>)?.revokedAtMs)
+    .filter((x): x is number => typeof x === 'number' && x > 0);
+  if (!revokedAt.length) return null;
+  return { deviceId, clientId, revokedAtMs: Math.max(...revokedAt) };
 }
 
 function toRequest(v: unknown): PendingRequest | null {

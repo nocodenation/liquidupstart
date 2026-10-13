@@ -261,6 +261,64 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-67 the card asks nothing while there is not
   });
 });
 
+describe.skipIf(!DASHBOARD_DEPS)('OC-68 a browser that was refused and stopped asking is still said out loud', () => {
+  // A4 of the 2026-10-01 review. A refused Control UI makes **one** attempt and
+  // stops, and the gateway drops a pending request after five minutes. The
+  // reviewer measured it: token revoked, the tab left open for 450 s and polled
+  // every 30 s -- after the drop there was no card and no hint, while OpenClaw
+  // still showed "Role upgrade pending". An operator arriving later than five
+  // minutes saw nothing at all.
+  //
+  // The listing already carried the answer: `paired[].tokens[].revokedAtMs`.
+  const REVOKED = {
+    deviceId: 'dev-alpha-aaaaaaaaaaaa',
+    clientId: 'openclaw-control-ui',
+    revokedAtMs: 1_700_000_000_000
+  };
+
+  test('OC-68 with nothing pending and a revoked Control UI token, the card is drawn', async () => {
+    serve([{ ok: true, pending: [], revoked: [REVOKED], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    const text = mounted.text();
+    expect(text).toContain('refused');
+    expect(text).toContain('no longer asking');
+    // The heading says which state this is, rather than claiming something waits.
+    expect(text).toContain('has stopped asking');
+    expect(text).not.toContain('is waiting to be let in');
+  });
+
+  test('OC-68 and it names the one thing that brings the request back', async () => {
+    // A refusal that does not say the next step is the dead end §9 exists to
+    // remove. The step is not "approve" -- there is nothing to approve yet.
+    serve([{ ok: true, pending: [], revoked: [REVOKED], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    expect(mounted.text()).toContain('reload it once');
+  });
+
+  test('OC-68 the counterpart: a paired browser with live tokens draws nothing', async () => {
+    // Without this the card would be on the page for every installation that has
+    // ever paired a browser, which is the "card nobody reads" failure OC-53 is
+    // about. `revoked` is empty because nothing was revoked.
+    serve([{ ok: true, pending: [], revoked: [], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    expect(mounted.text().trim()).toBe('');
+  });
+
+  test('OC-68 and a pending request still wins the heading', async () => {
+    // Both states at once: the browser asked again while an older revocation is
+    // still on record. What the operator can act on is the pending request, so
+    // that is what the card leads with.
+    serve([{ ok: true, pending: [OPERATOR], revoked: [REVOKED], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    expect(mounted.text()).toContain('is waiting to be let in');
+    expect(mounted.text()).not.toContain('no longer asking');
+  });
+});
+
 test.skipIf(DASHBOARD_DEPS)(
   'SP-2 the cases in this file need the dashboard dependencies, which are absent here',
   () => {

@@ -18,6 +18,12 @@
 
   let pending = $state([]);
   let others = $state([]);
+  // Control UI browsers whose token was revoked and which no longer ask.
+  // A4 of the 2026-10-01 review: a refused browser tries once and stops, and the
+  // gateway drops the pending request after five minutes -- so an operator who
+  // arrives later than that saw an empty page while OpenClaw still said "Role
+  // upgrade pending".
+  let revoked = $state([]);
   let problem = $state('');
   let loaded = $state(false);
   let working = $state('');
@@ -57,11 +63,13 @@
       // operator locked out with a silent page, which is the dead end this card
       // exists to remove. Finding 4 of the 2026-09-29 review.
       problem = body?.ok === false ? (body.message ?? 'The gateway did not answer.') : '';
+      revoked = Array.isArray(body?.revoked) ? body.revoked : [];
       pending = byDevice(all.filter(recoverable));
       others = byDevice(all.filter((r) => !recoverable(r)));
     } catch (e) {
       pending = [];
       others = [];
+      revoked = [];
       problem = `The dashboard could not ask OpenClaw: ${e.message}`;
     } finally {
       inFlight = false;
@@ -113,6 +121,7 @@
     if (!running || busy) {
       pending = [];
       others = [];
+      revoked = [];
       problem = '';
       return;
     }
@@ -140,13 +149,36 @@
      with the card and is never read. That is the operator's finding of
      2026-09-18 about the skip panel, met again here the first time this card was
      used for real, on 2026-09-19. -->
-{#if loaded && (pending.length > 0 || others.length > 0 || problem || result)}
+{#if loaded && (pending.length > 0 || others.length > 0 || revoked.length > 0 || problem || result)}
   <section class="card">
-    <h2>A browser is waiting to be let in</h2>
+    <h2>
+      {pending.length > 0 || others.length > 0
+        ? 'A browser is waiting to be let in'
+        : 'A browser was refused and has stopped asking'}
+    </h2>
 
     {#if problem}
       <p class="gitmessage warn">
         OpenClaw could not be asked what is waiting: {problem}
+      </p>
+    {/if}
+
+    <!-- Nothing pending and a Control UI token revoked: the browser asked once,
+         was refused, and stopped, and the gateway dropped the request after five
+         minutes. Without this the page was empty while OpenClaw still said "Role
+         upgrade pending", so the operator had no way to know this card was the
+         place to look. A4 of the 2026-10-01 review. -->
+    {#if pending.length === 0 && others.length === 0 && revoked.length > 0}
+      <p class="gitmessage warn">
+        {revoked.length === 1 ? 'A browser' : `${revoked.length} browsers`} here
+        {revoked.length === 1 ? 'was' : 'were'} refused by OpenClaw and
+        {revoked.length === 1 ? 'is' : 'are'} no longer asking: a refused browser tries once,
+        and OpenClaw forgets the request after five minutes. It still shows “Role upgrade
+        pending”.
+      </p>
+      <p class="sectdesc">
+        Open OpenClaw in that browser and reload it once. It asks again, and the request
+        appears here for you to approve.
       </p>
     {/if}
 

@@ -25,8 +25,11 @@ function wrongOrigin(request: Request): boolean {
 
 export const GET: RequestHandler = async ({ request }) => {
   if (wrongOrigin(request)) return new Response('Forbidden', { status: 403 });
-  const { ok, pending, message } = await pendingRequests();
-  return json({ ok, pending, message });
+  // `revoked` travels too: a refused browser stops asking and the gateway drops
+  // the request after five minutes, so without it the card is empty for an
+  // operator who arrives late. A4 of the 2026-10-01 review.
+  const { ok, pending, revoked, message } = await pendingRequests();
+  return json({ ok, pending, revoked, message });
 };
 
 export const POST: RequestHandler = async ({ request }) => {

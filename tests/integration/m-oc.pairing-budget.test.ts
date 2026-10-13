@@ -20,7 +20,7 @@
  * When:     `pendingRequests()` is called and the clock is read
  * Then:     it settles at the budget rather than at the grandchild's lifetime,
  *           says it was stopped, and the grandchild is gone
- * Covers:   OC-66, R2, U11
+ * Covers:   OC-66, OC-68, R2, U11
  * Unhappy:  The timeout is the finding. The counterpart is a stub that answers at
  *           once: without it this would pass against a `run()` that always
  *           reports a timeout, which is the same defect wearing the other sign.
@@ -108,4 +108,70 @@ describe('OC-66 the budget bounds the request, and reaches what bash started', (
     expect(r.message).not.toContain('did not finish');
     expect(r.ok).toBe(true);
   }, 60_000);
+});
+
+/**
+ * OC-68's server half, and it exists because a control found it missing.
+ *
+ * The card's own scenarios stub `fetch`, so they hand `revoked` in ready-made —
+ * and when the server's parse of `paired[].tokens[].revokedAtMs` was removed
+ * **nothing went red**. A case that cannot fail on what the fix actually does is
+ * the shape B5 of the 2026-10-01 review is about, and this is one found in my own
+ * work by running the control rather than by reading.
+ *
+ * It drives the real `pendingRequests()` against a stub script that prints the
+ * listing the CLI prints, so the parse is the thing under test.
+ */
+describe('OC-68 the revoked Control UI is read out of the listing itself', () => {
+  const listing = (paired: unknown) =>
+    `#!/usr/bin/env bash\ncat <<'JSON'\n${JSON.stringify({ pending: [], paired })}\nJSON\n`;
+
+  test('OC-68 a revoked token on a Control UI device is reported', async () => {
+    script(
+      listing([
+        {
+          deviceId: 'dev-alpha-aaaaaaaaaaaa',
+          clientId: 'openclaw-control-ui',
+          tokens: [{ revokedAtMs: 1_700_000_000_000 }, { revokedAtMs: 1_700_000_999_000 }]
+        }
+      ])
+    );
+    const r = await pendingRequests();
+    expect(r.ok).toBe(true);
+    expect(r.revoked).toHaveLength(1);
+    expect(r.revoked[0].deviceId).toBe('dev-alpha-aaaaaaaaaaaa');
+    // The newest revocation wins, so the card can say when it happened.
+    expect(r.revoked[0].revokedAtMs).toBe(1_700_000_999_000);
+  }, 30_000);
+
+  test('OC-68 and live tokens are not a revocation', async () => {
+    // The counterpart: without it the parse could report every paired device,
+    // which would put the card on the page for every installation that has ever
+    // paired a browser.
+    script(
+      listing([
+        { deviceId: 'dev-alpha-aaaaaaaaaaaa', clientId: 'openclaw-control-ui', tokens: [{}] },
+        { deviceId: 'dev-beta-bbbbbbbbbbbb', clientId: 'openclaw-control-ui', tokens: [] }
+      ])
+    );
+    const r = await pendingRequests();
+    expect(r.revoked).toEqual([]);
+  }, 30_000);
+
+  test('OC-68 and a revoked token on something that is not the Control UI is not ours', async () => {
+    // §9's way back is about the operator's browser. A node host that lost a
+    // token is not a browser the operator can reload, so a card about it would be
+    // a card with no next step.
+    script(
+      listing([
+        {
+          deviceId: 'dev-node-cccccccccccc',
+          clientId: 'node-host',
+          tokens: [{ revokedAtMs: 1_700_000_000_000 }]
+        }
+      ])
+    );
+    const r = await pendingRequests();
+    expect(r.revoked).toEqual([]);
+  }, 30_000);
 });

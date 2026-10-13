@@ -103,6 +103,12 @@ here; each is executed where its subject exists.
 | **OC-67** | **negative** | …nor while a task holds the page: a start, a teardown or a rebuild |
 | **OC-67** | positive | …the counterpart: with the stack up it asks, once |
 | **OC-67** | **negative** | …and two triggers while one request is unfinished make no second request |
+| **OC-68** | component | With nothing pending and a revoked Control UI token, the card is still drawn — *A4 of 2026-10-01* |
+| **OC-68** | positive | …and it names the one thing that brings the request back: reload OpenClaw in that browser |
+| **OC-68** | **negative** | …a paired browser with live tokens draws nothing |
+| **OC-68** | positive | …and a pending request still wins the heading |
+| **OC-68** | integration | The revocation is read out of the listing itself: the newest `revokedAtMs` of a Control UI device |
+| **OC-68** | **negative** | …live tokens are not a revocation, and a revoked token on a node host is not ours |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -624,6 +630,20 @@ moved to.
 | **Covers** | OC-51, §9 R2. |
 | **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
 | **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
+
+##### OC-68 — a browser that was refused and stopped asking
+
+| | |
+|---|---|
+| **Premise** | A4 of the 2026-10-01 review. A refused Control UI makes **one** attempt and stops, and the gateway drops a pending request after five minutes. The reviewer measured it: token revoked, the tab left open for 450 s and polled every 30 s — after the drop there was no card and no hint, while OpenClaw still showed *"Role upgrade pending"*. An operator reaching the dashboard later than five minutes saw nothing at all: the dead end §9 exists to remove, one step along. |
+| **Component** | `toRevoked`/`pendingRequests` in `dashboard/src/lib/server/pairing.ts`, the route that passes `revoked` through, and the card. |
+| **Steps** | Four scenarios against the card with `revoked` served, and three against `pendingRequests()` with a stub script printing the listing the CLI prints. |
+| **Test data** | `{ deviceId: 'dev-alpha-aaaaaaaaaaaa', clientId: 'openclaw-control-ui', tokens: [{ revokedAtMs: 1700000000000 }, { revokedAtMs: 1700000999000 }] }` — two tokens, so the case shows the **newest** revocation wins. What must *not* count: a Control UI device whose tokens carry no `revokedAtMs`, and a `node-host` device that has one. The second is deliberate: §9's way back is about the operator's browser, and a node host is not something they can reload, so a card about it would have no next step. |
+| **Expected** | The card drawn with a heading that says *has stopped asking* rather than claiming something waits; the remedy named (*reload it once*); nothing drawn when no token is revoked; a pending request winning the heading when both states hold; and the parse reporting the newest revocation, nothing for live tokens, nothing for a node host. |
+| **What it found** | Green, 7 scenarios — **after a control found the first four could not fail on the fix.** The card's scenarios stub `fetch`, so they hand `revoked` in ready-made: with the server's parse of `paired[].tokens[].revokedAtMs` removed entirely, **nothing went red**. That is the shape B5 is about, found here in my own work by running the control rather than by reading it, and the three integration scenarios are what close it. Re-run after: the same control reddens *a revoked token on a Control UI device is reported*. |
+| **Controls** | `revoked` removed from the card's render condition → 2 red. The server's parse removed → 0 red **before** the integration scenarios existed, 1 red after. |
+| **Implemented by** | `tests/component/m-oc.pairing-card.test.ts` and `tests/integration/m-oc.pairing-budget.test.ts`. |
+| **Covers** | OC-68, §9 R2, §9.2. |
 
 ##### OC-67 — the card asks nothing while there is nothing it could mean
 
