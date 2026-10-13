@@ -9,6 +9,15 @@
  *          row declared** -- `A8-27`, `A14-7`, `A14-8`, `A16-21`, `A16-22`,
  *          `A16-24` to `A16-29`, `OC-40` and `OC-42`.
  *
+ *          The two OC ids are `OC-63` and `OC-64` since 2026-10-12 and are left as
+ *          measured here, because this is a reading taken on a day and the ids are
+ *          part of what was read. They moved because #15 had specified those two
+ *          numbers for different cases on 2026-09-19. **What this case does not
+ *          catch is exactly that:** it compares tested ids against declared ids and
+ *          says nothing about two cases sharing one id, which is why the collision
+ *          survived until a merge surfaced it. A uniqueness check is the obvious
+ *          next case and is not written.
+ *
  *          None of them was wrong; they were written after the rows around them,
  *          during the rounds of review that followed, and nothing brought the
  *          document along. That is drift, and the repair for drift is a check
@@ -24,7 +33,7 @@
  * When     the ids in test titles are compared with the ids in specification rows
  * Then     no test carries an id no row declares, and the comparison is over
  *          something rather than over two empty sets
- * Covers:  TR-1, TR-2, TR-FR1, TR-FR2
+ * Covers:  TR-1, TR-2, TR-3, TR-FR1, TR-FR2
  * Unhappy: TR-1 is the finding. TR-2 is its counterpart, and it is the one that
  *          matters most here: `[] ⊆ anything` holds, so a reader that silently
  *          matched nothing would make TR-1 green for ever. That is the shape of
@@ -48,11 +57,31 @@ function idsInTests(): Map<string, string[]> {
       if (!name.endsWith('.test.ts')) continue;
       const src = readFileSync(p, 'utf8');
       // A title at the start of a `test(`/`describe(` call, with or without a
-      // modifier such as `.skipIf(...)`. Anchored to the line's indentation so
-      // that a fixture spec written inside a template literal -- which starts at
-      // column 0 -- is not read as a case of this suite.
+      // modifier such as `.skipIf(...)`.
+      //
+      // **`^[ \t]*` and not `^\s+`, corrected 2026-10-12.** The anchor was
+      // `^\s+`, meaning "indented", so that a fixture spec written inside a
+      // template literal -- which starts at column 0 -- is not read as a case of
+      // this suite. But `\s` includes the newline, so with the `m` flag the
+      // anchor could reach over a **blank line** and match a top-level
+      // `describe(` after all, while the same call preceded by `});` stayed
+      // invisible. Whether a case was checked therefore depended on the blank
+      // line above it.
+      //
+      // Measured on this tree before the change: 253 id/file pairs seen against
+      // 260 seen when anchored to columns, so **7 were invisible** -- `A13-9`,
+      // `A14-8`, `A9-11`, `A9-12`, `OC-64` and `SP-2` in two files. All six ids
+      // turned out to be declared, so the check's answer was right today and
+      // right for the wrong reason, which is the shape this project has three
+      // other entries about.
+      //
+      // The original concern is kept in view rather than dismissed: a template
+      // literal holding a literal `describe('X-1 ...` at column 0 would now be
+      // read as a case. None exists on this tree -- that is what the 7 above
+      // being real test files establishes -- and if one appears, the check
+      // reports an id a human can look at, which is the better failure.
       const re =
-        /^\s+(?:test|describe)(?:\.\w+\([^)]*\))?\(\s*['"`]([A-Z][A-Za-z0-9]*-[A-Za-z0-9]+)\b/gm;
+        /^[ \t]*(?:test|describe)(?:\.\w+\([^)]*\))?\(\s*['"`]([A-Z][A-Za-z0-9]*-[A-Za-z0-9]+)\b/gm;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src)) !== null) {
         const at = found.get(m[1]) ?? [];
@@ -100,6 +129,22 @@ describe('TR-1 a test carries no case id that no specification declares', () => 
     const declared = idsInSpecs();
     expect(tested.size).toBeGreaterThan(200);
     expect(declared.size).toBeGreaterThan(200);
+  });
+});
+
+describe('TR-3 the reader sees a case wherever the file puts it', () => {
+  test('TR-3 a top-level describe is read, whatever precedes it', () => {
+    // The defect this exists against: with `^\s+` the anchor could reach over a
+    // blank line, so a column-0 `describe(` after `});` was invisible while the
+    // same call after an empty line was seen. Both shapes are put to the reader
+    // here, because one of them passing is what hid the other.
+    const tested = idsInTests();
+    // `OC-64` sits at column 0 after a `});` -- the shape that was invisible.
+    expect([...tested.keys()]).toContain('OC-64');
+    // `OC-63` sits at column 0 after a blank line -- the shape that was seen,
+    // and the counterpart that keeps this from passing on a reader that matches
+    // nothing at all.
+    expect([...tested.keys()]).toContain('OC-63');
   });
 });
 
