@@ -735,6 +735,13 @@ carried.
 | B6-32 | Contract | The counterpart: where it can be written, it is, with both values | Without it B6-31 is met by an entrypoint that never writes the record, which leaves `nar-build` guessing on every host |
 | B6-33 | Integration | The two images agree about who owns the shared index directory | A fresh named volume takes the ownership of the image path it is first mounted on, and neither service declares a `depends_on` that fixes the order |
 | B6-34 | Integration | The counterpart: it is shared read-only, and the host bind is gone | On its own the absence would be satisfied by deleting the mount, which leaves the builder unable to read the index and every build refused |
+| **B6-35** | Integration **negative** | A file name is text, not a command: the payload runs nothing | C1 of 2026-10-13. Both refusal paths fed an attacker-controlled basename into a `sed s\|…\|…\|` expression, and GNU sed's `e` command executes the pattern space. Reproduced as root in the builder and as nifi in Liquid |
+| **B6-35** | positive | …and an ordinary name containing a pipe is not mangled | N4 of the same review, and the scenario that rules out the reviewer's own suggested fix — `awk`'s `gsub` stops the execution and still mangles this |
+| **B6-35** | positive | …and the shipped call sites use that replacement, with no `sed` substitution left in either file | The wiring half. Measured: the mechanism half alone does **not** notice a changed call site |
+| **B6-36** | Integration **negative** | A root-owned cache is unwritable by the build user, and the shipped entrypoint fixes that | C2 of 2026-10-13: on rootless Docker every real build died with `AccessDeniedException: /m2/org`. Closes the author's open item #5 — no automated case ran a real Maven as the build user |
+| **B6-36** | positive | …and a real Maven as that user is refused before and builds after | Skipped with a voice when Maven Central is unreachable |
+| **B6-37** | Unit **negative** | A bundled jar is refused on its declared size, before it is read | N3 of 2026-10-13: the 512 MiB class budget bounded the parsing and not the read, so a bundle peaked at 1.57 GB being refused |
+| **B6-37** | positive | …and an ordinary bundled jar is not refused for that reason | Without it the fix could be "refuse every bundled jar" |
 
 #### Detail per case
 
@@ -884,6 +891,48 @@ carried.
 | **Measured** | 5 pass / 0 fail. Control, with the guard removed and the write put back as the branch's last unguarded statement: **3 fail / 2 pass** — all three of B6-31's assertions red, both of B6-32's green. The case separates the guard from its environment. |
 | **Implemented by** | `tests/contract/m-b6.runtime-record.test.ts`. |
 | **Covers** | S8 of the 2026-10-01 review, FR21, FR31. |
+
+#### B6-35 — the refusal path names a file without executing it
+
+| | |
+|---|---|
+| **Premise** | Both the builder and the watcher rewrite narcheck's refusal so it names the file the operator dropped rather than the internal dot-copy, and both did it as `sed "s|${part}|…|g"` — which puts an attacker-controlled basename **unescaped on both sides** of a `sed` expression. GNU sed, which both images ship, has an `e` command that executes the pattern space, so a name shaped `x\|y\|;e <cmd>;#.nar` closes the `s`, opens an `e` and runs `<cmd>`. The watcher leg needs no builder at all: the inbox is writable by the agents. |
+| **Component** | `config/nar_builder/build.sh` (`#!/bin/sh`) and `config/liquid/nar-watch.sh` (bash). |
+| **Steps** | Run each script's own replacement over a refusal naming the dot-copy, under the shell that script declares, with the payload and then with an ordinary name; then read both files' **code** for a remaining `sed` substitution. |
+| **Test data, both sides** | The payload is `x\|y\|;e id>/tmp/PWNED;#.nar` — shaped so the command is slash-free, which the reviewer's second pass established is the real constraint. The counterpart is `ordinary\|name.nar`: a literal pipe, no `;e`. It is not decoration — see the controls. |
+| **Expected** | Nothing executed, the dot-path gone from the text, the ordinary name intact, and no `sed` substitution in either file. |
+| **What it found** | Green, 5 scenarios, after the repair. Reproduced before it: `rc=0` and `/tmp/PWNED` holding `uid=0(root) gid=0(root)`. **And the controls found a defect in this case itself.** Putting the old `sed` line back at `build.sh`'s call site reddens **only** the wiring scenario, because `literal_replace` is still defined in the file and the mechanism scenario calls it directly. The header says so now; the first version of it claimed to drive both callers and did not. |
+| **Controls** | `build.sh`'s `sed` line restored → 1 red, the wiring scenario. `nar-watch.sh`'s restored → 2 red, its own wiring scenario and the global one. Green again after both reverts. |
+| **Implemented by** | `tests/integration/m-b6.refusal-injection.test.ts`. |
+| **Covers** | B6-35, FR30, FR36. |
+
+#### B6-36 — a real Maven, as the build user, against a cache it does not own
+
+| | |
+|---|---|
+| **Premise** | C2 of 2026-10-13. The Dockerfile's `chown builder /m2` applies to the image layer and the compose bind mount shadows it; on rootless Docker the host directory maps to container **root**, so the build user (uid 1500) cannot write it and every real `nar-build` died with `java.nio.file.AccessDeniedException: /m2/org` before compiling. **The suite could not see it**, because inside the image with no bind `/m2` is already builder-owned — the author's own open item #5, *no automated case runs a real Maven as the build user*. |
+| **Component** | The builder image built from this branch, and `config/nar_builder/entrypoint.sh` **as shipped** — not a restated `chown`, which would pass against an entrypoint that lost it. |
+| **Steps** | Make `/m2` root-owned mode 755; probe the build user's write; run the real entrypoint; probe again; and check `/deploy` is still closed to that user. Then the same with a real `mvn package`. |
+| **Test data, and why it is not a bind mount** | The condition is built on the container's **own** filesystem, because it does not reproduce on Docker Desktop at all: bind mounts there ignore the mode, and a `root:root` 755 mount is writable by uid 1500. Measured. On the container's filesystem the permission semantics are the same everywhere, and the reading is the reviewer's error verbatim. |
+| **Expected** | `OWNER_BEFORE=root`, write refused; `OWNER_AFTER=builder`, write allowed; `/deploy` still unreachable; `AccessDeniedException` before the entrypoint and `BUILD SUCCESS` after. |
+| **What it found** | 2 pass / 1 skip / 0 fail — the skip is the voiced one for an unreachable Maven Central, and 9 `expect()` calls confirm both substantive scenarios ran. **Writing it produced a defect worth recording:** the first version wrote a no-op `java` to `/usr/local/bin`, but the image puts `/opt/java/openjdk/bin` ahead of it on `PATH`, so `exec java` started the real `BuildServer` and the container ran for hours until it was killed by hand. The stub is on the front of `PATH` now and the entrypoint call is wrapped in `timeout 60`, so a future `exec` fails in a minute rather than hanging the suite. |
+| **Controls** | The entrypoint's `chown` removed → 2 red, both scenarios. Green again after. |
+| **Implemented by** | `tests/integration/m-b6.build-user-cache.test.ts`. |
+| **Covers** | B6-36, FR26, NFR3. |
+
+#### B6-37 — the class budget bounds the parsing; this bounds the reading
+
+| | |
+|---|---|
+| **Premise** | N3 of 2026-10-13. `MAX_CLASS_BYTES` refuses a bundle whose declared class bytes exceed 512 MiB, read off each archive's central directory so a large declaration "costs nothing to refuse". True of the outer archive, false of a bundled one: reaching a bundled jar's directory means reading that jar whole and decompressing it into memory first. |
+| **Component** | `config/liquid/narcheck.py`, `check`, driven in `python:3.12-slim` with a peak-RSS harness. |
+| **Steps** | Build a NAR whose bundled jar holds one four-byte class and an 800 MB blob; run `check` against a lib holding a `nifi-api-*.jar`; read the exit status, the refusal and the child's peak RSS. Then the same with an ordinary bundled jar. |
+| **Test data, and two things it took to get right** | The blob must be **stored** rather than deflated inside the jar — deflated, the jar's own uncompressed size is 815 KB, the outer directory declares that, and the fixture sails past the defect it exists for. And `lib` must hold a `nifi-api-*.jar`: without one the check refuses earlier for a different reason and never reads the bundle, which made the first two measurements both read 0.01 GB and look like a fix that was not there. |
+| **Expected** | Refused, naming the read limit, `it is not unpacked`, peak under 400 MB; and an ordinary bundled jar not refused for that reason. |
+| **What it found** | Green, 2 scenarios. Before the repair, same fixture: refused correctly at a peak of **1.57 GB**; after, **0.01 GB**. The reviewer measured ~1.6 GB independently. The guard is checked at **three** call sites, not two — the first attempt found only two. |
+| **Controls** | The read limit disabled → 1 red, the bomb scenario; the ordinary-jar counterpart stays green, which is what says the guard does not over-refuse. |
+| **Implemented by** | `tests/unit/m-b6.bundled-jar-read.test.ts`. |
+| **Covers** | B6-37, FR36. |
 
 #### B6-33 and B6-34 — M2 answered by moving the directory, not by validating the values
 
