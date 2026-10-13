@@ -36,13 +36,24 @@
  *           host is named but has no button, and a request that arrives later
  *           appears without a reload.
  * Covers:   OC-52, OC-53, OC-54, OC-55, R2, U11
+ * Precondition: DASHBOARD_DEPS -- the dashboard's dependencies are installed.
+ *           These four cases mount a Svelte component, so they need a DOM, and
+ *           `tests/lib/mount.ts` resolves both happy-dom and svelte out of
+ *           `dashboard/node_modules`. Without them the file used to produce five
+ *           failures reading `Cannot find module .../@happy-dom/global-registrator`
+ *           -- red for a reason that has nothing to do with the code, which is the
+ *           failure mode #22 exists against. Its repair covered the eight
+ *           milestone-A files and could not cover this one, because this file
+ *           arrives with #15. Added 2026-10-13.
  * Unhappy:  OC-52 is the silent failure. OC-53 is its counterpart — an empty
  *           queue must still draw nothing, or the card would be on the page
  *           always and stop being read at all.
  */
 import { test, expect, describe, afterEach } from 'bun:test';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { repoRoot } from '../lib/paths';
+import { DASHBOARD_DEPS } from '../lib/preconditions';
 import { mountComponent } from '../lib/mount';
 
 const CARD = join(repoRoot, 'dashboard/src/lib/components/OpenClawPairing.svelte');
@@ -95,13 +106,14 @@ function serve(answers: Answer[] | (() => Answer)) {
 
 let mounted: Awaited<ReturnType<typeof mountComponent>> | null = null;
 afterEach(() => {
+  if (!DASHBOARD_DEPS) return;
   mounted?.unmount();
   mounted = null;
   restore?.();
   restore = null;
 });
 
-describe('OC-52 a listing that failed is said out loud', () => {
+describe.skipIf(!DASHBOARD_DEPS)('OC-52 a listing that failed is said out loud', () => {
   test('OC-52 the card shows the reason instead of nothing', async () => {
     serve([{ ok: false, pending: [], message: REFUSAL }]);
     mounted = await mountComponent(CARD, {});
@@ -111,7 +123,7 @@ describe('OC-52 a listing that failed is said out loud', () => {
   });
 });
 
-describe('OC-53 while nothing waiting is still nothing shown', () => {
+describe.skipIf(!DASHBOARD_DEPS)('OC-53 while nothing waiting is still nothing shown', () => {
   test('OC-53 the counterpart: an empty queue draws no card', async () => {
     // A card that is always on the page is a card nobody reads, which is the
     // whole reason this one is conditional.
@@ -122,7 +134,7 @@ describe('OC-53 while nothing waiting is still nothing shown', () => {
   });
 });
 
-describe('OC-54 a request the card cannot approve is named, not offered', () => {
+describe.skipIf(!DASHBOARD_DEPS)('OC-54 a request the card cannot approve is named, not offered', () => {
   test('OC-54 the operator browser gets the button and the node host does not', async () => {
     serve([{ ok: true, pending: [NODE_HOST, OPERATOR], message: '' }]);
     mounted = await mountComponent(CARD, {});
@@ -150,7 +162,7 @@ describe('OC-54 a request the card cannot approve is named, not offered', () => 
   });
 });
 
-describe('OC-55 and a request that arrives later appears without a reload', () => {
+describe.skipIf(!DASHBOARD_DEPS)('OC-55 and a request that arrives later appears without a reload', () => {
   test('OC-55 a focus event re-reads the list', async () => {
     let queue: unknown[] = [];
     serve(() => ({ ok: true, pending: queue, message: '' }));
@@ -165,3 +177,14 @@ describe('OC-55 and a request that arrives later appears without a reload', () =
     expect(mounted.text()).toContain('openclaw-control-ui');
   });
 });
+
+test.skipIf(DASHBOARD_DEPS)(
+  'OC-52 the dashboard dependencies are absent here, so the card cases are skipped',
+  () => {
+    // Not a label. Without this the four describes above register nothing and a run
+    // never mentions them, which is the silent gap #22's SP-2 refused to accept. It
+    // asserts the absence, so it is a reading: run `bun install` in `dashboard/` and
+    // the four come back.
+    expect(existsSync(join(repoRoot, 'dashboard', 'node_modules'))).toBe(false);
+  }
+);
