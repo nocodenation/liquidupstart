@@ -616,6 +616,27 @@ moved to.
 
 ##### OC-52 / OC-53 / OC-54 / OC-55 — the card, mounted and driven
 
+> **Precondition, added 2026-10-13: `DASHBOARD_DEPS`.** These four mount a Svelte component, so they
+> need a DOM, and `tests/lib/mount.ts` resolves happy-dom and svelte out of `dashboard/node_modules`.
+> Without them the file produced **five failures** reading
+> `Cannot find module .../@happy-dom/global-registrator/lib/index.js`, which is red for a reason that
+> has nothing to do with the code — the failure mode #22 exists against. Its repair covered the eight
+> milestone-A files and could not reach this one, because this file arrives with #15; on `main` the
+> only two files that use `lib/mount.ts` already carry the guard.
+>
+> **Both halves are measured, because a case that only ever skips is not shown to pass:**
+>
+> ```
+> no dashboard/node_modules          1 pass / 5 skip / 0 fail
+> after bun install in dashboard/    5 pass / 1 skip / 0 fail
+> ```
+>
+> The case that passes in the first reading is a skip with a voice: it asserts the **absence** of
+> `dashboard/node_modules` rather than carrying a label, so a run in that state says why four cases are
+> missing instead of leaving a silent gap. That is `SP-2`'s rule, applied here by hand because `SP-2`
+> enumerates eight files and this is not one of them — which is itself worth noting as the limit of
+> that case.
+
 | | |
 |---|---|
 | **Premise** | Finding 6. Every claim about this card was read out of its source, and four defects passed that reading. |
