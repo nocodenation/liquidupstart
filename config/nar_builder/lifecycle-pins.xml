@@ -7,15 +7,26 @@
   build that will later run against it — rather than of a build that resolved
   something else.
 
-  **Why pinning is required rather than tidy.** The seed is offered as a
-  `file://` repository, and a local Maven repository is not a remote one: Maven
-  writes the repository-qualified `maven-metadata-central.xml` into a local
-  repository and never the unqualified `maven-metadata.xml` that a remote is
-  looked up for. Measured 2026-10-10 on the installation's 84 MB cache: 5 files
-  matching `maven-metadata*.xml`, 0 named `maven-metadata.xml`. Artifact
-  resolution does not want that file; plugin **version** resolution does. So a
-  seed can serve a version that is pinned and cannot serve one that has to be
-  resolved.
+  **Why pinning is required rather than tidy.** The seed is **copied into** each
+  build's local repository by `repo_for`, and a local Maven repository is not a
+  remote one: Maven writes the repository-qualified `maven-metadata-central.xml`
+  into a local repository and never the unqualified `maven-metadata.xml` that a
+  remote is looked up for. Measured 2026-10-10 on the installation's 84 MB
+  cache: 5 files matching `maven-metadata*.xml`, 0 named `maven-metadata.xml`.
+  Artifact resolution does not want that file; plugin **version** resolution
+  does. So a seed can serve a version that is pinned and cannot serve one that
+  has to be resolved — measured without the pins on the same day: 84 downloads
+  and 6.9 MB, for plugin versions alone.
+
+  **This paragraph used to say the seed is offered as a `file://` repository**,
+  which is the arrangement that was tried and abandoned — it is in the table in
+  `build.sh` at 20-26 s and 438 downloads, against 7 s and 0 for the copy. The
+  premise was stale and the conclusion was not: a copied-in local repository has
+  no remote id to be looked up *at all*, so it serves an unqualified metadata
+  lookup even less than a `file://` remote did. Corrected 2026-10-14, because a
+  reader meeting the old premise would reasonably conclude these pins are a
+  leftover of a design that is gone — and dropping them costs that 6.9 MB on
+  every first build, which is the kind of thing that gets diagnosed three times.
 
   **And the lifecycle is resolved whole, including goals that never run.** With
   resources, compiler, jar and surefire pinned, a `package` still refused on
