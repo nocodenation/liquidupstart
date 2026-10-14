@@ -9,6 +9,81 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
+ids in `TEST-SPEC-*.md` rows, in both directions, and has nothing to say about two different cases
+sharing one id.
+
+That is not hypothetical. `OC-40` and `OC-42` were specified on #15 on 2026-09-19 — two signed detail
+blocks, a traceability row, test headers and a comment in `config/scripts/start/openclaw.sh` — and the
+same two numbers were assigned again on `main` on 2026-10-09 while back-filling rows for tests that
+had none. Four cases, two ids. **`OC-40` collided between two automated tests**,
+`m-oc.identity-scopes` on #15 and `m-oc.bound-arguments` on `main`, and both branches' suites were
+green throughout: each tree held only one of the two. It surfaced on 2026-10-12 when #15 was merged
+with `main`, as a conflict in the specification rather than as a failing test. `main`'s pair was
+renumbered to `OC-63` and `OC-64` because it was the later and much cheaper half to move.
+
+**What a check would be.** Per specification file, no id in a first table cell twice; across files, no
+id declared in two documents; and across test files, no id on two different titles. The third is the
+one that matters and it is the one `TR-1` is already positioned to do — it builds `Map<id, files[]>`
+and then throws the file list away.
+
+Not built here because it belongs with `TR-1` and would arrive with its own controls and rows, and
+because the collision it exists against is being repaired in the same breath — building the check and
+the repair together would leave the check never having been seen to fail against a real collision.
+**The repair should go first and the check second, against this commit's parent**, where a real
+collision still exists to catch.
+
+Recorded 2026-10-12.
+
+---
+
+**OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
+budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
+and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.
+*Corrected 2026-10-09: this entry first said "on this machine it is not enough", which was a
+conclusion from the two failures alone.* A case whose colour depends on the load is the worse of the
+two findings, because it is what makes red stop meaning anything. Not a regression either way, and
+not a missing precondition: docker is there and the build starts.
+
+Two ways out, and the choice is the operator's. Raise the budget for these two, which makes a slow
+network a slow suite rather than a red one. Or give them a precondition of their own -- a reachable
+registry -- and skip them where it is absent, which is what `SP-1` would extend to. Measured
+2026-10-09 on bun 1.3.13, macOS; `docs/TEST-SPEC-suite-preconditions.md` records it as the fourth
+precondition it deliberately does not cover. Recorded 2026-10-09.
+
+---
+
+**Two different cases are both called A16-19, and eight A16 ids are in no specification.**
+`tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
+space')` and `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so
+there is something to judge')`. They are unrelated. `--gaps` reads ids out of specifications, so a
+registry entry naming A16-19 would be ambiguous in exactly the way #18's own finding 1 describes --
+and `mutate.sh` refuses a `mustFail` that resolves to more than one test, so the collision would
+surface as a refusal rather than a wrong answer. That is the good case; the bad one is a reader.
+
+Found alongside: the A16 tests run to **A16-29** while `docs/TEST-SPEC-git-integration.md` documents
+only to **A16-20**, so eight ids have no row and `--gaps` cannot see them. Both were reported during
+the 2026-10-01 round and not fixed, because renumbering a signed-off id is a decision and this
+branch's subject is the suite's preconditions. Recorded 2026-10-09.
+
+---
+
+**Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.**
+`tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
+space')`; `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so there
+is something to judge')`. They share nothing but the number.
+
+`TR-1` does not catch it, by construction: both resolve to a declared row, which is all that case
+asserts. What does catch it is `mutate.sh`, which refuses a `mustFail` resolving to more than one
+test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer. That is
+the good failure mode, and it is why this is recorded rather than urgent.
+
+The row in `docs/TEST-SPEC-git-integration.md` describes the `text-only` one. Whichever is renumbered,
+its id moves in a signed-off specification and in a test title at once, which is an operator decision.
+Recorded 2026-10-09, alongside the thirteen ids that *were* documented.
+
+---
+
 **The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
 has two halves, and only one is closed. The nginx vhost no longer admits the LAN — the gateway is
 denied before the subnet is allowed, and B6-21 to B6-23 measure it — but the reviewer's second
@@ -106,6 +181,16 @@ a branch under review. Recorded 2026-10-08.
 
 ---
 
+**~~Four milestone-A cases read the live installation without saying so, and are red in any bare
+checkout.~~** *Answered by #22, merged into `main` on 2026-10-10 and present on this branch since the
+merge of 2026-10-12.* The repair is `tests/lib/preconditions.ts`: three values a case asks for —
+`STARTED`, `IN_GIT_REPO`, `DASHBOARD_DEPS` — computed from current state rather than a rule somebody
+remembers, with the eight dependent files guarded and each skip given a voice. The entry is kept
+because the reasoning below is what produced that shape, and because **its last paragraph did not
+travel with it**: see the note there.
+
+The entry as it stood:
+
 **Four milestone-A cases read the live installation without saying so, and are red in any bare
 checkout.** `tests/lib/paths.ts:5` computes `repoRoot` from the test file's own location, so in a
 worktree it is the worktree. The state these four assert is created only by
@@ -160,12 +245,21 @@ Found while answering D2 and M6 of the 2026-10-01 review. Recorded 2026-10-07.
 
 ---
 
-**A fifth file writes into the operator's `volumes/repos` from the default tier.**
-`tests/contract/m-a5.nested-clone.test.ts:37` builds `reposDir` from `repoRoot` and `:43-46` writes a
-git repository into it. It is green, because it creates everything it asserts against, so it is not
-in the failure set above — but it means a default-tier run leaves state in whichever checkout it was
-started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
-tier's. Same branch as the entry above. Recorded 2026-10-07.
+**A fifth file writes into the operator's `volumes/repos` from the default tier. Still open, and
+`main` no longer records it.** `tests/contract/m-a5.nested-clone.test.ts` builds `reposDir` from
+`repoRoot` and writes a git repository into it — `git init -q -b main <reposDir>/.a5-nested-probe`,
+read out of the file on 2026-10-12. It is green, because it creates everything it asserts against, so
+it was never in the failure set above — but a default-tier run leaves state in whichever checkout it
+was started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
+tier's.
+
+**#22 does not close it, and it is worth saying why rather than assuming the merge did.** That branch
+*did* change this file — it gave it `IN_GIT_REPO` — but a precondition decides whether a case **runs**,
+not whether it **writes**. The `git init` is unchanged. And when #22 rewrote `BACKLOG.md` this
+paragraph went with the rest of the entry, so on `main` the concern is recorded nowhere: checked
+2026-10-12, `grep -c "fifth file writes into the operator"` against `origin/main:BACKLOG.md` is **0**.
+It survives here, which is the only copy that still has it. Recorded 2026-10-07, confirmed open
+2026-10-12.
 
 ---
 

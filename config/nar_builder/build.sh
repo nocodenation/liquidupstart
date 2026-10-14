@@ -44,6 +44,35 @@ BUILD_USER="${NAR_BUILDER_BUILD_USER:-builder}"
 
 out() { printf '%s\n' "$*"; }
 
+# A literal substring replacement, global, with no regex engine involved.
+#
+# **This exists because `sed` executed the file name.** The refusal names the
+# dot-copy and the operator reads the name they dropped, so one is replaced by the
+# other -- and the old line did it as `sed "s|${part}|...|g"`, which puts an
+# attacker-controlled basename unescaped on both sides of a `sed` expression. GNU
+# sed, which both images ship, has an `e` command that executes the pattern space,
+# so a NAR named `x|y|;e <cmd>;#.nar` closes the `s`, opens an `e` and runs
+# `<cmd>`. C1 of the 2026-10-13 re-review, reproduced there as root in the builder
+# and as nifi in Liquid, and re-measured here against the exact construction this
+# script builds: `uid=0(root)`.
+#
+# POSIX parameter expansion with a **quoted** pattern is literal, so
+# `${rest%%"$2"*}` cannot be steered by what the needle contains. The reviewer
+# suggested `awk -v` with `gsub`, which does stop the execution -- measured -- but
+# `gsub`'s first argument is a regular expression, so a name holding `|` still came
+# back mangled, which is N4 of the same review. Measured on the payload, this
+# replaces both occurrences exactly once and runs nothing.
+literal_replace() {  # haystack needle replacement
+  _lr_out=''
+  _lr_rest="$1"
+  while case "$_lr_rest" in *"$2"*) true ;; *) false ;; esac; do
+    _lr_out="${_lr_out}${_lr_rest%%"$2"*}$3"
+    _lr_rest="${_lr_rest#*"$2"}"
+  done
+  printf '%s' "${_lr_out}${_lr_rest}"
+}
+
+
 # Maven as BUILD_USER when this is root and that user exists -- in the image it
 # does. Outside the container, where the suite runs build.sh against a stub mvn,
 # neither holds and the call is made directly, so a fixture needs no root and no
@@ -748,7 +777,7 @@ NOWRITE
     if ! refusal="$(python3 "$NAR_CHECK" check-index "$part" "$LIQUID_INDEX" 2>&1)"; then
       # Only after the status is known: a `| sed` in the line above would hand the
       # `if` sed's status instead of the check's, and every bundle would pass.
-      refusal="$(printf '%s\n' "$refusal" | sed "s|${part}|${DROP}/${base}|g")"
+      refusal="$(literal_replace "$refusal" "$part" "${DROP}/${base}")"
       # Kept rather than deleted, in the subdirectory the auto-loader skips: the
       # bundle is the author's work and the only thing they can inspect to see
       # what the refusal is about. It is out of the load path, which is the part

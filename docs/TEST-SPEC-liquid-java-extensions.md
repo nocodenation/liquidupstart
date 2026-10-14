@@ -573,12 +573,17 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | B4-6 | Integration | A NAR referencing an `org.apache.nifi` class the check cannot judge or can resolve elsewhere | Copied. The check does not pronounce on what it cannot see, and does not refuse what `lib/` provides |
 | B4-7 | Contract | The entrypoint on disk checks before it copies, and the container runs that entrypoint | Both, compared as text — §4 check 3b's lesson, which caught a green case over a stale container on 2026-09-08 |
 | B4-8 | **End-to-end** · §4 | Restart with both NARs in the drop directory | The good type is in the catalogue, the mismatched one is not, the refusal is in `docker compose logs liquid`, and Liquid started |
-| B4-9 | Integration **negative** | A bundle that cannot link, built through `nar-build` the way an agent builds | Refused, naming the bundle and the class; kept in `refused/`, said to be outside the load path; and `Nothing was placed in` the drop directory |
-| B4-9 | Integration **negative** | …and the drop directory never held it | Both the message and the directory, because the directory alone proves nothing: the fixture collects the artifact from wherever it lands |
-| B4-10 | Integration positive | A sound bundle, built the same way | Exit 0, written into the drop directory, and the message names where it landed |
-| B4-10 | Integration positive | …and does not ask for a restart, because none is needed | FR29. The message it replaced told every agent to ask the operator to restart Liquid, and that was false |
-| B4-11 | Integration positive | The index the builder reads holds what Liquid's `lib/` holds | Two inputs, one implementation. A builder stricter than Liquid refuses work that would have run, which is worse than not checking |
-| B4-11 | Integration **negative** | …and Liquid refuses the same bundle the builder refused | The same `narcheck.py check`, run inside `liquid` against its own `lib/` |
+| **B4-9** | Integration **negative** | A bundle that cannot link never enters the drop directory | Three readings of one refusal: `nar-build` names the bundle *and* the class it cannot resolve; it says where the bundle itself is, which is **outside** the load path; and the drop directory never held it at any point. The third is the one that matters — a bundle that arrives and is then removed has already been seen by the auto-loader |
+| **B4-10** | Integration | The counterpart: a sound bundle is deployed and loaded without a restart | Written into the drop directory, and the output **does not ask for a restart**, because none is needed — the auto-loader takes it within seconds. Without this row B4-9 shows only that something was refused, and the restart half is what FR29's wrong sentence used to tell every agent |
+| **B4-11** | Integration | The builder and Liquid reach the same verdict | Two halves: the index the builder reads holds what `lib/` holds, and Liquid refuses the same bundle the builder refused. Two checkers that disagree are worse than one, and this is the only case that compares them rather than each against its own fixture |
+
+*Rows added 2026-10-12, and how they were missing is the point.* `B4-9` to `B4-11` were
+written during the review rounds that followed this table and nothing brought the document
+along. They were found by **`TR-1`**, which arrived on this branch with the merge of `main`
+on 2026-10-12 and immediately named three tested ids that no row declared — the check doing
+on this branch exactly what it was built for on another. Written against the test file's
+`describe` titles rather than from recollection, which is the rule this project has for
+documenting tests that already exist.
 
 #### Detail per case
 
@@ -655,29 +660,6 @@ floor, not an oversight, and B4-6 is what keeps it there.
 | **Implemented by** | `tests/integration/m-b4.unjudged-reference.test.ts`. |
 | **What it found** | Green, and it found the specification wrong before it found the code right. This block asserted that `org.apache.nifi.web` is not a package `nifi-api-2.10.0.jar` provides; it provides `ConnectorWebMethod`, `ConnectorWebMethod$AccessType`, `NiFiConnectorWebContext` and `NiFiConnectorWebContext$ConnectorWebContext`. So the stated fixture never exercised the package filter — it exercises the other floor, resolution against `lib/`, where `nifi-framework-api-2.11.0.jar` carries the class. Written as stated it would have passed for a reason nobody had checked, which is the failure this milestone is about. The case now asserts the measured facts and names the jar that resolves it, and covers the package filter separately with the one bundle known to be refused: `probe-mismatch-1.0.0.nar` against an API jar that does not provide `org.apache.nifi.controller` is permitted, and against the real `lib/` is refused. That pair is the filter's two branches. |
 
-##### B4-9 / B4-10 / B4-11 — the check moved to where deployment happens
-
-> **Declared here on 2026-10-14, after the fact.** The cases were built on 2026-09-14 and the file's
-> own header has carried their premise since; what was missing was a row and a block, so `TR-1`
-> flagged all three as undocumented the moment it reached this branch through the merge of `main`.
-> Written against the test file — the scenario names read out of it rather than recalled — because an
-> earlier pass of this kind described one case per id and missed seven of thirteen.
-
-| | |
-|---|---|
-| **Premise** | FR36 defined *"refused"* as **not copied into `lib/`**, and that was never a refusal. `nifi.nar.library.autoload.directory` points at the drop directory, so Liquid loads whatever sits there at runtime — no restart, no `lib/`. Measured twice, and the second time in `nifi-app.log` on 2026-09-14: `Found …/probe-good-…nar in auto-load directory` at 20:07:48,634 and `Loaded NAR file: …-unpacked` at 20:07:53,648. **Five seconds.** So the entrypoint's check, which runs at container start, sat on a path nothing takes, while the path agents do take — `nar-build` writing into the drop directory — was unchecked. B4-1 to B4-8 are all about the path that was not the exposure. |
-| **Component** | `config/nar_builder/build.sh`'s placement step, which now checks between the copy and the rename while the artifact is still a dot-file the auto-loader skips; and `narcheck.py` in both containers. |
-| **What it judges against, and why not the jar** | An index of the running Liquid's `lib/`, written by `narcheck.py` itself on every start: 1512 class names and 49 API packages, 75 KB. Handing the builder the `nifi-api` jar alone was tried first and is wrong — `check` resolves against every jar in `lib/` while judging only the API's packages, and **85 classes live in an API package without being in the API jar**, so a builder holding only that jar would refuse bundles this Liquid loads. That is the asymmetry B4-11 exists for: a builder stricter than Liquid refuses work that would have run, which is worse than not checking at all. |
-| **Steps** | Build both fixtures through `nar-build`, as an agent does. Read the builder's own message and the drop directory for each. Then compare the builder's index against `lib_index()` computed live inside `liquid`, and run `narcheck.py check` inside `liquid` on the bundle the builder refused. |
-| **Test data, both sides** | What must be refused: `probe-placement-bad-1.0.0.nar`, from a source importing `org.apache.nifi.controller.NodeConnectionState` — a real NiFi class that this Liquid's `lib/` does not provide, with the pom naming `2.11.0`, so the mismatch is the genuine article rather than an invented symbol. The assertion looks for its dotted form, `org.apache.nifi.controller.NodeConnectionState`. What must be accepted: `b4-place-good-nar-1.0.0.nar` from `PROBE_SOURCE`, which links against what Liquid loads — and its name comes from the directory, because `nar-build` synthesises the pom there, which is the detail that tells a synthesised build from an authored one. |
-| **Expected** | B4-9: non-zero exit; `nar-build refused`, the bundle's name and the dotted class in the message; `refused/` and `outside the load path` said; `Nothing was placed in`; and the bundle absent from the drop directory. B4-10: exit 0, the drop path `/deploy/nar_extensions` named, `No restart, and none should be asked for`, and **no** `restart it` or `docker compose restart liquid`. B4-11: the builder's class and package indexes equal to `lib_index()` computed in `liquid`, and `REFUSED` plus the same dotted class from `narcheck.py check` inside `liquid`. |
-| **Why B4-9 asserts the message *and* the directory** | Reading the directory alone proves nothing here: the fixture collects the artifact from wherever it lands, so the file is gone by the time the assertion runs even in the version that deployed it. What discriminates is `nar-build` saying it placed nothing — run against the pre-fix `build.sh` on 2026-09-14, the directory assertion passed and that one did not. |
-| **A phrasing this case stopped asserting** | B4-10 read `toContain('autoloads')` and had stopped being satisfiable: the paragraph was reworded when the inbox and the load directory were split, and now says Liquid *watches* the drop directory and judges what arrives there — which is what happens. Asserting a verb held the message to a phrasing rather than to a claim. What FR29 requires is the pair that replaced it: the agent is told where the bundle landed and that no restart is needed, and is **not** told to restart. |
-| **What it found, and when — not re-run for this entry** | **Green on 2026-09-14**, when the three were built, and that is the only run this block can speak for. What it caught then is the defect it was written against: against the pre-fix `build.sh`, `B4-9`'s directory assertion **passed** while `Nothing was placed in` did **not** — the bundle had been deployed and the fixture had already collected it, so the directory was empty by the time anything looked. `B4-10` found a second thing by going red on correct code: it asserted the word `autoloads`, and the paragraph had been reworded when the inbox and the load directory were split, so the assertion had quietly stopped being satisfiable. The declaration of 2026-10-14 adds no run. Written from the dated record in the test file and from its code, which is what is available; a figure for a run nobody made would be worse than this sentence. |
-| **And they are not in the default tier** | The file carries `stackGuard(['liquid', 'nar_builder'])` and calls `buildNar`, so `tests/run.sh` classifies it as needing the running stack and leaves it out unless `--system` is passed. The suite reading that accompanies this entry — 738 pass / 4 skip / 0 fail on 2026-10-14 — therefore **does not include these three**, and saying so is the point: a green total is about the paths it walks. |
-| **Implemented by** | `tests/integration/m-b4.placement-check.test.ts`. |
-| **Covers** | B4-9, B4-10, B4-11, FR29, FR30, FR36. |
-
 ##### B4-7 — the container runs the entrypoint the cases read
 
 | | |
@@ -709,6 +691,38 @@ and easy to pass wrongly — a guard that refuses every bundle satisfies it. Wha
 is that it lets through a correct NAR whose source merely mentions a class name, and a correct NAR
 whose references it cannot resolve. Both were written before the code, and both are expected to be the
 ones that fail first.
+
+##### B4-9 / B4-10 / B4-11 — the check moved to where deployment happens
+
+> **The rows are #10's, from 2026-10-12; this block is what they were still missing.** `B4-1` to
+> `B4-8` each carry one and these three stopped at the table, which the standard this document is
+> held to does not allow — an overview row and a detail block per case, so a reviewer can sign a case
+> off or challenge it without reading the implementation. Written against the test file, with the
+> scenario names read out of it rather than recalled, because an earlier pass of this kind described
+> one case per id and missed seven of thirteen.
+>
+> **And it was written twice, which is the part worth recording.** This branch declared the same
+> three ids on 2026-10-14 in its own words, not knowing `feature/liquid-java-extensions` had already
+> done it two days earlier — because this branch was behind its own base. Both passes were prompted
+> by `TR-1`, independently, and both found the same gap; the earlier rows won and the duplicate was
+> dropped on merge. A stacked branch that is not current with its base will do work that already
+> exists, and no test can catch that.
+
+| | |
+|---|---|
+| **Premise** | FR36 defined *"refused"* as **not copied into `lib/`**, and that was never a refusal. `nifi.nar.library.autoload.directory` points at the drop directory, so Liquid loads whatever sits there at runtime — no restart, no `lib/`. Measured twice, and the second time in `nifi-app.log` on 2026-09-14: `Found …/probe-good-…nar in auto-load directory` at 20:07:48,634 and `Loaded NAR file: …-unpacked` at 20:07:53,648. **Five seconds.** So the entrypoint's check, which runs at container start, sat on a path nothing takes, while the path agents do take — `nar-build` writing into the drop directory — was unchecked. B4-1 to B4-8 are all about the path that was not the exposure. |
+| **Component** | `config/nar_builder/build.sh`'s placement step, which now checks between the copy and the rename while the artifact is still a dot-file the auto-loader skips; and `narcheck.py` in both containers. |
+| **What it judges against, and why not the jar** | An index of the running Liquid's `lib/`, written by `narcheck.py` itself on every start: 1512 class names and 49 API packages, 75 KB. Handing the builder the `nifi-api` jar alone was tried first and is wrong — `check` resolves against every jar in `lib/` while judging only the API's packages, and **85 classes live in an API package without being in the API jar**, so a builder holding only that jar would refuse bundles this Liquid loads. That is the asymmetry B4-11 exists for: a builder stricter than Liquid refuses work that would have run, which is worse than not checking at all. |
+| **Steps** | Build both fixtures through `nar-build`, as an agent does. Read the builder's own message and the drop directory for each. Then compare the builder's index against `lib_index()` computed live inside `liquid`, and run `narcheck.py check` inside `liquid` on the bundle the builder refused. |
+| **Test data, both sides** | What must be refused: `probe-placement-bad-1.0.0.nar`, from a source importing `org.apache.nifi.controller.NodeConnectionState` — a real NiFi class that this Liquid's `lib/` does not provide, with the pom naming `2.11.0`, so the mismatch is the genuine article rather than an invented symbol. The assertion looks for its dotted form, `org.apache.nifi.controller.NodeConnectionState`. What must be accepted: `b4-place-good-nar-1.0.0.nar` from `PROBE_SOURCE`, which links against what Liquid loads — and its name comes from the directory, because `nar-build` synthesises the pom there, which is the detail that tells a synthesised build from an authored one. |
+| **Expected** | B4-9: non-zero exit; `nar-build refused`, the bundle's name and the dotted class in the message; `refused/` and `outside the load path` said; `Nothing was placed in`; and the bundle absent from the drop directory. B4-10: exit 0, the drop path `/deploy/nar_extensions` named, `No restart, and none should be asked for`, and **no** `restart it` or `docker compose restart liquid`. B4-11: the builder's class and package indexes equal to `lib_index()` computed in `liquid`, and `REFUSED` plus the same dotted class from `narcheck.py check` inside `liquid`. |
+| **Why B4-9 asserts the message *and* the directory** | Reading the directory alone proves nothing here: the fixture collects the artifact from wherever it lands, so the file is gone by the time the assertion runs even in the version that deployed it. What discriminates is `nar-build` saying it placed nothing — run against the pre-fix `build.sh` on 2026-09-14, the directory assertion passed and that one did not. |
+| **A phrasing this case stopped asserting** | B4-10 read `toContain('autoloads')` and had stopped being satisfiable: the paragraph was reworded when the inbox and the load directory were split, and now says Liquid *watches* the drop directory and judges what arrives there — which is what happens. Asserting a verb held the message to a phrasing rather than to a claim. What FR29 requires is the pair that replaced it: the agent is told where the bundle landed and that no restart is needed, and is **not** told to restart. |
+| **What it found, and when — not re-run for this entry** | **Green on 2026-09-14**, when the three were built, and that is the only run this block can speak for. What it caught then is the defect it was written against: against the pre-fix `build.sh`, `B4-9`'s directory assertion **passed** while `Nothing was placed in` did **not** — the bundle had been deployed and the fixture had already collected it, so the directory was empty by the time anything looked. `B4-10` found a second thing by going red on correct code: it asserted the word `autoloads`, and the paragraph had been reworded when the inbox and the load directory were split, so the assertion had quietly stopped being satisfiable. The declaration of 2026-10-14 adds no run. Written from the dated record in the test file and from its code, which is what is available; a figure for a run nobody made would be worse than this sentence. |
+| **And they are not in the default tier** | The file carries `stackGuard(['liquid', 'nar_builder'])` and calls `buildNar`, so `tests/run.sh` classifies it as needing the running stack and leaves it out unless `--system` is passed. The suite reading that accompanies this entry — 738 pass / 4 skip / 0 fail on 2026-10-14 — therefore **does not include these three**, and saying so is the point: a green total is about the paths it walks. |
+| **The rows are per id, and the scenarios are not** | Seven scenarios sit under three rows, where this project's rule is one row per scenario labelled positive or negative. They are enumerated in **Expected** above instead, which is where a reader can still check them off. Left as the earlier declaration wrote them rather than rewritten from here: `B4` is `#10`'s work and `#10` is under review, so splitting its signed rows is a change that belongs on that branch. |
+| **Implemented by** | `tests/integration/m-b4.placement-check.test.ts`. |
+| **Covers** | B4-9, B4-10, B4-11, FR29, FR30, FR36. |
 
 ### M-B6 — the third review of this branch
 
@@ -753,6 +767,13 @@ carried.
 | B6-32 | Contract | The counterpart: where it can be written, it is, with both values | Without it B6-31 is met by an entrypoint that never writes the record, which leaves `nar-build` guessing on every host |
 | B6-33 | Integration | The two images agree about who owns the shared index directory | A fresh named volume takes the ownership of the image path it is first mounted on, and neither service declares a `depends_on` that fixes the order |
 | B6-34 | Integration | The counterpart: it is shared read-only, and the host bind is gone | On its own the absence would be satisfied by deleting the mount, which leaves the builder unable to read the index and every build refused |
+| **B6-35** | Integration **negative** | A file name is text, not a command: the payload runs nothing | C1 of 2026-10-13. Both refusal paths fed an attacker-controlled basename into a `sed s\|…\|…\|` expression, and GNU sed's `e` command executes the pattern space. Reproduced as root in the builder and as nifi in Liquid |
+| **B6-35** | positive | …and an ordinary name containing a pipe is not mangled | N4 of the same review, and the scenario that rules out the reviewer's own suggested fix — `awk`'s `gsub` stops the execution and still mangles this |
+| **B6-35** | positive | …and the shipped call sites use that replacement, with no `sed` substitution left in either file | The wiring half. Measured: the mechanism half alone does **not** notice a changed call site |
+| **B6-36** | Integration **negative** | A root-owned cache is unwritable by the build user, and the shipped entrypoint fixes that | C2 of 2026-10-13: on rootless Docker every real build died with `AccessDeniedException: /m2/org`. Closes the author's open item #5 — no automated case ran a real Maven as the build user |
+| **B6-36** | positive | …and a real Maven as that user is refused before and builds after | Skipped with a voice when Maven Central is unreachable |
+| **B6-37** | Unit **negative** | A bundled jar is refused on its declared size, before it is read | N3 of 2026-10-13: the 512 MiB class budget bounded the parsing and not the read, so a bundle peaked at 1.57 GB being refused |
+| **B6-37** | positive | …and an ordinary bundled jar is not refused for that reason | Without it the fix could be "refuse every bundled jar" |
 
 #### Detail per case
 
@@ -902,6 +923,48 @@ carried.
 | **Measured** | 5 pass / 0 fail. Control, with the guard removed and the write put back as the branch's last unguarded statement: **3 fail / 2 pass** — all three of B6-31's assertions red, both of B6-32's green. The case separates the guard from its environment. |
 | **Implemented by** | `tests/contract/m-b6.runtime-record.test.ts`. |
 | **Covers** | S8 of the 2026-10-01 review, FR21, FR31. |
+
+#### B6-35 — the refusal path names a file without executing it
+
+| | |
+|---|---|
+| **Premise** | Both the builder and the watcher rewrite narcheck's refusal so it names the file the operator dropped rather than the internal dot-copy, and both did it as `sed "s|${part}|…|g"` — which puts an attacker-controlled basename **unescaped on both sides** of a `sed` expression. GNU sed, which both images ship, has an `e` command that executes the pattern space, so a name shaped `x\|y\|;e <cmd>;#.nar` closes the `s`, opens an `e` and runs `<cmd>`. The watcher leg needs no builder at all: the inbox is writable by the agents. |
+| **Component** | `config/nar_builder/build.sh` (`#!/bin/sh`) and `config/liquid/nar-watch.sh` (bash). |
+| **Steps** | Run each script's own replacement over a refusal naming the dot-copy, under the shell that script declares, with the payload and then with an ordinary name; then read both files' **code** for a remaining `sed` substitution. |
+| **Test data, both sides** | The payload is `x\|y\|;e id>/tmp/PWNED;#.nar` — shaped so the command is slash-free, which the reviewer's second pass established is the real constraint. The counterpart is `ordinary\|name.nar`: a literal pipe, no `;e`. It is not decoration — see the controls. |
+| **Expected** | Nothing executed, the dot-path gone from the text, the ordinary name intact, and no `sed` substitution in either file. |
+| **What it found** | Green, 5 scenarios, after the repair. Reproduced before it: `rc=0` and `/tmp/PWNED` holding `uid=0(root) gid=0(root)`. **And the controls found a defect in this case itself.** Putting the old `sed` line back at `build.sh`'s call site reddens **only** the wiring scenario, because `literal_replace` is still defined in the file and the mechanism scenario calls it directly. The header says so now; the first version of it claimed to drive both callers and did not. |
+| **Controls** | `build.sh`'s `sed` line restored → 1 red, the wiring scenario. `nar-watch.sh`'s restored → 2 red, its own wiring scenario and the global one. Green again after both reverts. |
+| **Implemented by** | `tests/integration/m-b6.refusal-injection.test.ts`. |
+| **Covers** | B6-35, FR30, FR36. |
+
+#### B6-36 — a real Maven, as the build user, against a cache it does not own
+
+| | |
+|---|---|
+| **Premise** | C2 of 2026-10-13. The Dockerfile's `chown builder /m2` applies to the image layer and the compose bind mount shadows it; on rootless Docker the host directory maps to container **root**, so the build user (uid 1500) cannot write it and every real `nar-build` died with `java.nio.file.AccessDeniedException: /m2/org` before compiling. **The suite could not see it**, because inside the image with no bind `/m2` is already builder-owned — the author's own open item #5, *no automated case runs a real Maven as the build user*. |
+| **Component** | The builder image built from this branch, and `config/nar_builder/entrypoint.sh` **as shipped** — not a restated `chown`, which would pass against an entrypoint that lost it. |
+| **Steps** | Make `/m2` root-owned mode 755; probe the build user's write; run the real entrypoint; probe again; and check `/deploy` is still closed to that user. Then the same with a real `mvn package`. |
+| **Test data, and why it is not a bind mount** | The condition is built on the container's **own** filesystem, because it does not reproduce on Docker Desktop at all: bind mounts there ignore the mode, and a `root:root` 755 mount is writable by uid 1500. Measured. On the container's filesystem the permission semantics are the same everywhere, and the reading is the reviewer's error verbatim. |
+| **Expected** | `OWNER_BEFORE=root`, write refused; `OWNER_AFTER=builder`, write allowed; `/deploy` still unreachable; `AccessDeniedException` before the entrypoint and `BUILD SUCCESS` after. |
+| **What it found** | 2 pass / 1 skip / 0 fail — the skip is the voiced one for an unreachable Maven Central, and 9 `expect()` calls confirm both substantive scenarios ran. **Writing it produced a defect worth recording:** the first version wrote a no-op `java` to `/usr/local/bin`, but the image puts `/opt/java/openjdk/bin` ahead of it on `PATH`, so `exec java` started the real `BuildServer` and the container ran for hours until it was killed by hand. The stub is on the front of `PATH` now and the entrypoint call is wrapped in `timeout 60`, so a future `exec` fails in a minute rather than hanging the suite. |
+| **Controls** | The entrypoint's `chown` removed → 2 red, both scenarios. Green again after. |
+| **Implemented by** | `tests/integration/m-b6.build-user-cache.test.ts`. |
+| **Covers** | B6-36, FR26, NFR3. |
+
+#### B6-37 — the class budget bounds the parsing; this bounds the reading
+
+| | |
+|---|---|
+| **Premise** | N3 of 2026-10-13. `MAX_CLASS_BYTES` refuses a bundle whose declared class bytes exceed 512 MiB, read off each archive's central directory so a large declaration "costs nothing to refuse". True of the outer archive, false of a bundled one: reaching a bundled jar's directory means reading that jar whole and decompressing it into memory first. |
+| **Component** | `config/liquid/narcheck.py`, `check`, driven in `python:3.12-slim` with a peak-RSS harness. |
+| **Steps** | Build a NAR whose bundled jar holds one four-byte class and an 800 MB blob; run `check` against a lib holding a `nifi-api-*.jar`; read the exit status, the refusal and the child's peak RSS. Then the same with an ordinary bundled jar. |
+| **Test data, and two things it took to get right** | The blob must be **stored** rather than deflated inside the jar — deflated, the jar's own uncompressed size is 815 KB, the outer directory declares that, and the fixture sails past the defect it exists for. And `lib` must hold a `nifi-api-*.jar`: without one the check refuses earlier for a different reason and never reads the bundle, which made the first two measurements both read 0.01 GB and look like a fix that was not there. |
+| **Expected** | Refused, naming the read limit, `it is not unpacked`, peak under 400 MB; and an ordinary bundled jar not refused for that reason. |
+| **What it found** | Green, 2 scenarios. Before the repair, same fixture: refused correctly at a peak of **1.57 GB**; after, **0.01 GB**. The reviewer measured ~1.6 GB independently. The guard is checked at **three** call sites, not two — the first attempt found only two. |
+| **Controls** | The read limit disabled → 1 red, the bomb scenario; the ordinary-jar counterpart stays green, which is what says the guard does not over-refuse. |
+| **Implemented by** | `tests/unit/m-b6.bundled-jar-read.test.ts`. |
+| **Covers** | B6-37, FR36. |
 
 #### B6-33 and B6-34 — M2 answered by moving the directory, not by validating the values
 

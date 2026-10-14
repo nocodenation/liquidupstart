@@ -98,7 +98,15 @@ judge() {  # judge <file>
   # reads the name they dropped. This substitution runs before the case below, and
   # must not touch the sentence that case keys on -- it replaces a path, and the
   # sentence holds none.
-  REFUSAL="$(printf '%s\n' "$REFUSAL" | sed "s|${part}|${1}|g")"
+  # Literal, and bash's own: `${var//"needle"/repl}` with the needle **quoted**
+  # treats it as text. The old line was `sed "s|${part}|${1}|g"`, which puts an
+  # attacker-controlled basename unescaped into a `sed` expression -- and GNU
+  # sed's `e` command executes the pattern space, so a file named
+  # `x|y|;e <cmd>;#.nar` dropped into the inbox ran `<cmd>` as nifi. The inbox is
+  # writable by the agents, so this leg needs no builder at all. C1 of the
+  # 2026-10-13 re-review. Dropping the quotes around "$part" would reopen it as a
+  # glob, which is why they are there.
+  REFUSAL="${REFUSAL//"$part"/$1}"
   case "$REFUSAL" in
     *"could not be opened as an archive"*)
       say "${base} cannot be opened as an archive, so it was not judged and is not"

@@ -24,6 +24,21 @@ BUNDLED_DIRS = ("NAR-INF/bundled-dependencies/", "META-INF/bundled-dependencies/
 # of 600 MB costs nothing to refuse. Minor of the 2026-10-01 review.
 MAX_CLASS_BYTES = 512 << 20
 
+# What a single bundled jar may declare before this refuses to read it at all.
+#
+# **The class budget does not bound peak memory, and that is a different limit.**
+# `MAX_CLASS_BYTES` is summed from each archive's central directory, which is
+# cheap -- but to reach a *bundled* jar's directory the jar has to be read whole
+# and decompressed into memory first. A bundle carrying one four-byte class and an
+# 800 MB blob inside a bundled jar was therefore refused, correctly, after peaking
+# at about 1.6 GB doing it. N3 of the 2026-10-13 re-review.
+#
+# This is read off the *outer* directory, before any read, so an over-large bundled
+# jar costs its directory entry and nothing more. It is deliberately not the class
+# budget: a jar may be large while its classes are small, and this bounds what has
+# to be held in memory to look at one rather than what it declares.
+MAX_BUNDLED_JAR_BYTES = 256 << 20
+
 FIXED_WIDTH = {
     3: 4, 4: 4, 9: 4, 10: 4, 11: 4, 12: 4, 17: 4, 18: 4,
     5: 8, 6: 8,
@@ -187,6 +202,28 @@ def _read(zf, name, where):
         raise Unreadable("%s: could not be read out of the archive (%s)" % (where, exc))
 
 
+def _read_bundled_jar(zf, name, where):
+    """A bundled jar's bytes, refused on its declared size before it is read.
+
+    `_read` returns the whole decompressed member, so asking a bundled jar for its
+    central directory costs the jar's uncompressed size in memory. Checking the
+    outer directory's own entry first makes that cost refusable rather than
+    unavoidable. N3 of the 2026-10-13 re-review.
+    """
+    try:
+        declared = zf.getinfo(name).file_size
+    except KeyError as exc:
+        raise Unreadable("%s: it is not in the archive's directory (%s)" % (where, exc))
+    except ZIP_ERRORS as exc:
+        raise Unreadable("%s: its directory entry could not be read (%s)" % (where, exc))
+    if declared > MAX_BUNDLED_JAR_BYTES:
+        raise Unreadable(
+            "%s: the bundled jar declares %d bytes, past the %d-byte read limit; "
+            "it is not unpacked" % (where, declared, MAX_BUNDLED_JAR_BYTES)
+        )
+    return _read(zf, name, where)
+
+
 def _class_names(zf):
     return set(n[:-6] for n in zf.namelist() if n.endswith(".class"))
 
@@ -210,7 +247,7 @@ def bundle_class_names(path):
         names.add(name[:-6])
     for jar in sorted(_bundled_jars(root)):
         where = "%s!%s" % (os.path.basename(path), jar)
-        inner = _open_zip(_read(root, jar, where), where)
+        inner = _open_zip(_read_bundled_jar(root, jar, where), where)
         for name in zf_names(inner):
             names.add(name[:-6])
     return names
@@ -233,7 +270,7 @@ def bundle_classes(path):
     budget = _declared_class_bytes(root)
     for jar in sorted(_bundled_jars(root)):
         where = "%s!%s" % (base, jar)
-        budget += _declared_class_bytes(_open_zip(_read(root, jar, where), where))
+        budget += _declared_class_bytes(_open_zip(_read_bundled_jar(root, jar, where), where))
         if budget > MAX_CLASS_BYTES:
             break
     if budget > MAX_CLASS_BYTES:
@@ -246,7 +283,7 @@ def bundle_classes(path):
                               "%s!%s" % (base, name))
     for jar in sorted(_bundled_jars(root)):
         where = "%s!%s" % (base, jar)
-        inner = _open_zip(_read(root, jar, where), where)
+        inner = _open_zip(_read_bundled_jar(root, jar, where), where)
         for name in sorted(zf_names(inner)):
             carried[name[:-6]] = (_read(inner, name, "%s!%s" % (where, name)),
                                   "%s!%s" % (where, name))

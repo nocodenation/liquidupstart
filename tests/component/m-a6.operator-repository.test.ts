@@ -19,14 +19,24 @@
  *           The positive counterpart is A6-6, where the same push in a governed
  *           clone is refused: together they show the rule is bounded rather
  *           than absent.
+ *
+ * Precondition: IN_GIT_REPO -- this checkout is a git repository. Skipped where it does not,
+ *           because a release installation at `~/.liquidupstart` is not one, and the
+ *           stack tier runs there. Measured 2026-10-08: the
+ *           whole default tier from a feature worktree gave 9 failures and 1
+ *           error, every one of them a case of this kind, and the release
+ *           installation gave the same count for the opposite reason. Neither
+ *           place satisfies the whole suite, so the precondition is a value
+ *           asked for rather than a directory prescribed. SP-1, SP-2.
  */
 import { test, expect } from 'bun:test';
 import { repoRoot } from '../lib/paths';
+import { IN_GIT_REPO } from '../lib/preconditions';
 import { git, hooksSource, HOOKS_MOUNT } from '../lib/gitfixture';
 
 const config = (key: string) => git(repoRoot, ['config', '--get', key]).stdout.trim();
 
-test('A6-10 the project root is a git repository', () => {
+test.skipIf(!IN_GIT_REPO)('A6-10 the project root is a git repository', () => {
   expect(git(repoRoot, ['rev-parse', '--is-inside-work-tree']).stdout.trim()).toBe('true');
 });
 
