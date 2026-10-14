@@ -148,7 +148,11 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-54 a request the card cannot approve is nam
     await mounted.settle();
     const text = mounted.text();
     expect(text).toContain('openclaw-control-ui');
-    expect(text).toContain('role operator');
+    // Wording changed with B2: client and role are labelled as the requester's
+    // own words, and the address leads because it is the one thing here that is
+    // not. The property this row asserts is unchanged.
+    expect(text).toContain('asking for the role');
+    expect(text).toContain('operator');
     expect(text).toContain('from 10.99.0.2');
     // Named, so the operator is not left wondering where their click went.
     expect(text).toContain('node-host');
@@ -316,6 +320,35 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-68 a browser that was refused and stopped a
     await mounted.settle();
     expect(mounted.text()).toContain('is waiting to be let in');
     expect(mounted.text()).not.toContain('no longer asking');
+  });
+});
+
+describe.skipIf(!DASHBOARD_DEPS)('OC-70 the row claims nothing it cannot know', () => {
+  test('OC-70 no retry count is shown, because it could only ever be one', async () => {
+    // B1 of the 2026-10-01 review. The row read "asked N times", and N was always
+    // 1: the gateway keeps **one** pending request per device and the request id
+    // stayed the same across retries, so the listing never carried two entries for
+    // one device. A number that cannot change is worse than no number, because it
+    // reads as information.
+    serve([{ ok: true, pending: [OPERATOR], revoked: [], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    // The pattern, not the word: "One browser has **asked** for access" is the
+    // card's own sentence and legitimate. What must be gone is `asked N times`.
+    expect(mounted.text()).not.toMatch(/asked \d+ times?/);
+  });
+
+  test('OC-70 and it says whose words the client and the role are', async () => {
+    // B2: both are connect parameters the requester chooses, so anything that can
+    // open a gateway connection can file a request declaring them. The address
+    // leads because it is the one thing here the requester does not declare.
+    serve([{ ok: true, pending: [OPERATOR], revoked: [], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    const text = mounted.text();
+    expect(text).toContain('its own words');
+    // And the address is there, ahead of the claims.
+    expect(text.indexOf('from 10.99.0.2')).toBeLessThan(text.indexOf('its own words'));
   });
 });
 

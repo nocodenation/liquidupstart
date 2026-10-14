@@ -55,11 +55,17 @@
 
   // One row per device, newest request first: a refused browser mints a new id on
   // every retry, and four rows for one browser is not four browsers.
+  //
+  // **The retry count is gone, B1 of the 2026-10-01 review.** It read "asked N
+  // times", and it could never say anything: the gateway keeps **one** pending
+  // request per device and the request id stayed the same across retries, so the
+  // listing never carried two entries for one device and N was always 1. A number
+  // that cannot change is worse than no number, because it reads as information.
   function byDevice(list) {
     const seen = new Map();
     for (const r of [...list].sort((a, b) => (b.requestedAt ?? 0) - (a.requestedAt ?? 0))) {
-      if (!seen.has(r.deviceId)) seen.set(r.deviceId, { ...r, retries: 1 });
-      else seen.get(r.deviceId).retries += 1;
+      if (!seen.has(r.deviceId)) seen.set(r.deviceId, { ...r });
+      // Nothing to count: see the note above byDevice.
     }
     return [...seen.values()];
   }
@@ -223,10 +229,18 @@
                  question the operator is actually being asked, and a client id
                  plus twelve characters of device id does not answer it. -->
             <p class="sectdesc">
-              role {req.role || 'unstated'}{req.remoteAddress ? ` · from ${req.remoteAddress}` : ''}{req.retries >
-              1
-                ? ` · asked ${req.retries} times`
-                : ''}
+              {req.remoteAddress ? `from ${req.remoteAddress}` : 'from an address the gateway did not report'}
+              </p>
+              <!-- Client and role are connect parameters the requester chooses: `client.id =
+                   opts.clientName` and `role = opts.role` in the client bundle. Anything that
+                   can open a gateway connection can file a request declaring them, and it then
+                   appears here next to the operator's own browser. The address above is the
+                   one thing on this card the requester does not declare about itself, so it
+                   leads -- and these two say whose words they are. B2 of the 2026-10-01
+                   review. -->
+              <p class="sectdesc dim">
+                calls itself {req.clientId || 'an unnamed client'}, asking for the role
+                {req.role || 'it did not state'} — both its own words
             </p>
             {#if req.scopes?.length}
               <p class="sectdesc">asking for {req.scopes.join(', ')}</p>

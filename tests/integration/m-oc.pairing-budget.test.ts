@@ -20,7 +20,7 @@
  * When:     `pendingRequests()` is called and the clock is read
  * Then:     it settles at the budget rather than at the grandchild's lifetime,
  *           says it was stopped, and the grandchild is gone
- * Covers:   OC-66, OC-68, R2, U11
+ * Covers:   OC-66, OC-68, OC-70, R2, U11
  * Unhappy:  The timeout is the finding. The counterpart is a stub that answers at
  *           once: without it this would pass against a `run()` that always
  *           reports a timeout, which is the same defect wearing the other sign.
@@ -173,5 +173,49 @@ describe('OC-68 the revoked Control UI is read out of the listing itself', () =>
     );
     const r = await pendingRequests();
     expect(r.revoked).toEqual([]);
+  }, 30_000);
+});
+
+/**
+ * OC-70 — the address comes from the field the gateway emits.
+ *
+ * B1 of the 2026-10-01 review: `toRequest` read `remoteAddress` and the gateway
+ * writes `remoteIp`, so the route always returned `""` and the card said "role
+ * operator" with no address. The reviewer checked the pinned 2026.9.1 image —
+ * `remoteAddress` occurs nowhere in the pairing or devices CLI code.
+ *
+ * **The card's own scenarios cannot see this.** They stub `fetch` and hand in the
+ * route's output shape, where the field *is* called `remoteAddress`. That is the
+ * same blindness the control found for OC-68, so this drives the real parse.
+ */
+describe('OC-70 the requester address is read from remoteIp', () => {
+  const listing = (pending: unknown) =>
+    `#!/usr/bin/env bash\ncat <<'JSON'\n${JSON.stringify({ pending, paired: [] })}\nJSON\n`;
+  const request = (extra: Record<string, unknown>) => ({
+    requestId: '09cc464f-690a-4a51-9ac9-c97b7011eb34',
+    deviceId: 'dev-alpha-aaaaaaaaaaaa',
+    clientId: 'openclaw-control-ui',
+    role: 'operator',
+    scopes: ['operator.read'],
+    ts: 1000,
+    ...extra
+  });
+
+  test('OC-70 remoteIp reaches the card as the address', async () => {
+    // The reviewer's own capture: `"remoteIp": "10.123.45.3"`.
+    script(listing([request({ remoteIp: '10.123.45.3' })]));
+    const r = await pendingRequests();
+    expect(r.pending).toHaveLength(1);
+    expect(r.pending[0].remoteAddress).toBe('10.123.45.3');
+  }, 30_000);
+
+  test('OC-70 and the old field name is not accepted', async () => {
+    // The counterpart, and it is the finding: accepting `remoteAddress` as well
+    // would keep alive a fixture no gateway produces, which is exactly how this
+    // hid for two review rounds.
+    script(listing([request({ remoteAddress: '10.123.45.3' })]));
+    const r = await pendingRequests();
+    expect(r.pending).toHaveLength(1);
+    expect(r.pending[0].remoteAddress).toBe('');
   }, 30_000);
 });

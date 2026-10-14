@@ -114,6 +114,10 @@ here; each is executed where its subject exists.
 | **OC-69** | unit | The observed network, address and port win over `.env` |
 | **OC-69** | **negative** | …an answer that is not an observation is ignored |
 | **OC-69** | positive | …and with no proxy at all the `.env` values stand |
+| **OC-70** | integration | The requester address is read from `remoteIp`, the field the gateway emits — *B1 of 2026-10-01* |
+| **OC-70** | **negative** | …and the old field name is not accepted, because accepting it kept a fixture alive that no gateway produces |
+| **OC-70** | **negative** | No retry count is shown: it could only ever be one |
+| **OC-70** | positive | …and the row says whose words the client and the role are, with the address ahead of them — *B2* |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -635,6 +639,21 @@ moved to.
 | **Covers** | OC-51, §9 R2. |
 | **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
 | **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
+
+##### OC-70 — the address is read, the claims are labelled, and the count that could not change is gone
+
+| | |
+|---|---|
+| **Premise** | B1 and B2 of the 2026-10-01 review, taken together because the reviewer's fix for the second needs the first. `toRequest` read `remoteAddress` while the gateway writes **`remoteIp`**, so the route always returned `''` and the card said "role operator" with no address — checked against the pinned 2026.9.1 image, where `remoteAddress` occurs nowhere in the pairing or devices CLI code. The row also read *"asked N times"*, and N was always 1: the gateway keeps **one** pending request per device and the request id stayed the same across retries. And eligibility rests on `clientId` and `role`, which are connect parameters the requester chooses — `client.id = opts.clientName`, `role = opts.role` in the client bundle — so anything that can open a gateway connection can file a request declaring them, and it appeared on the card next to the operator's own browser. |
+| **Component** | `toRequest` in `dashboard/src/lib/server/pairing.ts`, and the card's request row. |
+| **Steps** | Drive the real `pendingRequests()` against a listing carrying `remoteIp`, then against one carrying the old name; and mount the card to read the row. |
+| **Test data, both sides** | The reviewer's own capture, `"remoteIp": "10.123.45.3"`. What must **not** work: the same request with `remoteAddress` instead, which must yield `''`. |
+| **Expected** | `remoteIp` reaching the card as the address; the old name yielding nothing; no `asked N times`; and the row saying *both its own words* for client and role, with the address appearing **before** them. |
+| **What it found** | Green, 4 scenarios. **The card's own scenarios cannot see the field fix**, because they stub `fetch` and hand in the route's output shape, where the field *is* called `remoteAddress` — the same blindness a control found for OC-68, so the field half is driven through the real parse. `OC-54` went red on the wording and was pulled to the new text; its property is unchanged, and it is the case the reviewer named as passing only because its fixture used the old field. |
+| **Why the old name is refused rather than accepted as well** | Accepting both would keep alive a fixture no gateway produces, which is exactly how this hid through two review rounds. A guard checked only against something invented is not shown to accept anything real. |
+| **Controls** | The server reading `remoteAddress` again → 2 red. The claims not labelled → 1 red. The count returning → 1 red. |
+| **Implemented by** | `tests/integration/m-oc.pairing-budget.test.ts` and `tests/component/m-oc.pairing-card.test.ts`. |
+| **Covers** | OC-70, §9 R2. |
 
 ##### OC-69 — a refusal the operator can act on, and values read from the stack that is running
 

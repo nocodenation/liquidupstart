@@ -237,7 +237,18 @@ function toRequest(v: unknown): PendingRequest | null {
     clientId: typeof r.clientId === 'string' ? r.clientId : 'unknown client',
     role: typeof r.role === 'string' ? r.role : '',
     scopes: Array.isArray(r.scopes) ? r.scopes.filter((x): x is string => typeof x === 'string') : [],
-    remoteAddress: typeof r.remoteAddress === 'string' ? r.remoteAddress : '',
+    // **`remoteIp`, which is the field the gateway emits.** This read
+    // `remoteAddress` and therefore always produced `''`, so the card said
+    // "role operator" with no "· from …" -- and the address is the only thing on
+    // that card the requester does not declare about itself (B2). The reviewer
+    // checked the pinned 2026.9.1 image: the pending request is built with
+    // `remoteIp`, and `remoteAddress` occurs nowhere in the pairing or devices
+    // CLI code. B1 of the 2026-10-01 review.
+    //
+    // Only `remoteIp` is read. Accepting the old name as well would keep a
+    // fixture alive that no gateway produces, which is exactly how this hid:
+    // `OC-54` passed throughout because its fixture used `remoteAddress`.
+    remoteAddress: typeof r.remoteIp === 'string' ? r.remoteIp : '',
     isRepair: r.isRepair === true,
     requestedAt: typeof r.ts === 'number' ? r.ts : null
   };
