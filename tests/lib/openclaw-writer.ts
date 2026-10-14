@@ -125,6 +125,34 @@ export function validate(o: { workRoot: string; config: unknown; image: string }
 }
 
 /**
+ * `openclaw doctor --fix` over a seeded config, and the config it leaves behind.
+ *
+ * This is the stack's own upgrade path, not a hypothetical: `openclaw.sh`'s
+ * `openclaw_migrate_state` runs exactly this **before** the config writer
+ * whenever the state was written by an older version. One of its rules is
+ * *"agents.list moved to keyed agents.entries"*, so a roster an operator wrote
+ * on 2026.7.1 arrives at the writer in the keyed shape — which is why a guard
+ * that walked `agents.list` only could be bypassed by doing nothing unusual at
+ * all. C1 of the 2026-10-13 re-review.
+ */
+export function doctorFix(o: { workRoot: string; config: unknown; image: string }): {
+  code: number;
+  output: string;
+  config: any;
+} {
+  const home = mkdtempSync(join(o.workRoot, 'doctor-'));
+  mkdirSync(join(home, '.openclaw'), { recursive: true });
+  const at = join(home, '.openclaw/openclaw.json');
+  writeFileSync(at, JSON.stringify(o.config, null, 2));
+  const r = sh([
+    'docker', 'run', '--rm', '--user', '0:0',
+    '-v', `${home}:/home/node`, '-e', 'HOME=/home/node', '-e', 'OPENCLAW_HOME=/home/node',
+    '--entrypoint', 'openclaw', o.image, 'doctor', '--fix'
+  ]);
+  return { code: r.code, output: r.output, config: JSON.parse(readFileSync(at, 'utf8')) };
+}
+
+/**
  * The two gates the active-memory plugin actually consults before a reply,
  * evaluated by the image's own code rather than by reading ours.
  *
@@ -148,14 +176,31 @@ export function activeMemoryGates(o: {
     `import { readFileSync } from "node:fs";
 const cfg = JSON.parse(readFileSync("/probe/config.json", "utf8"));
 const m = await import("/app/dist/extensions/active-memory/session-policy.js");
+const k = await import("/app/dist/extensions/active-memory/config.js");
 const entry = cfg?.plugins?.entries?.["active-memory"] ?? {};
-const agents = Array.isArray(entry?.config?.agents) ? entry.config.agents : [];
 const pluginEnabled = m.isActiveMemoryPluginEnabled(cfg);
-const namesAgent = Boolean(entry.enabled) && agents.includes(${JSON.stringify(agent)});
+// The image's own predicate, not a copy of it. This was
+// \`Boolean(entry.enabled) && agents.includes(agent)\`, and the runtime checks
+// \`normalizePluginConfig(entry.config).enabled\` -- the INNER flag. Two shapes
+// where the copy said active and the runtime said otherwise, both run by the
+// reviewer: an operator who has typed \`/active-memory off --global\`, which
+// writes \`config.enabled: false\` and the writer preserves; and
+// \`plugins.deny: ["active-memory"]\`. N2 of the 2026-10-13 re-review.
+// It takes the plugin config, not the whole openclaw config: its body is
+// \`if (!config.enabled) return false; if (!agentId) return false; return
+// config.agents.includes(agentId)\`, read out of the image. Handing it \`cfg\`
+// returns false for every agent, which looks exactly like blocker 1 being open
+// and is not -- measured while writing this, and it nearly became a report.
+const inner = k.normalizePluginConfig(entry?.config ?? {});
+const namesAgent = m.isEnabledForAgent(inner, ${JSON.stringify(agent)});
 const remembers = m.shouldRememberAcrossConversations(cfg, ${JSON.stringify(agent)});
+// \`index.ts\` opens on isEnabledForAgent(config, agent) || (config.enabled &&
+// shouldRemember(...)), where \`config\` is the NORMALISED plugin config -- and
+// the whole plugin is off unless isActiveMemoryPluginEnabled holds, which the
+// old definition of \`active\` ignored.
 console.log(JSON.stringify({
   pluginEnabled, namesAgent, remembers,
-  active: namesAgent || (Boolean(entry.enabled) && remembers)
+  active: pluginEnabled && (namesAgent || (Boolean(inner?.enabled) && remembers))
 }));
 `
   );

@@ -195,6 +195,27 @@ why. Anyone meeting the old sentence should read §2.4 instead.
 
 ### 2.4 Built 2026-09-20, and one thing it owes
 
+**The stack owns the memory-search switch, and that was not written down.** With an embedding
+credential present, an operator who sets `memory.search.enabled: false` or the plugin entry's
+`enabled: false` has it turned back to `true` on the next start. N3 of the 2026-10-13 re-review found
+this undocumented, and it is deliberate rather than an oversight: NFR-M1's guarantee is written on
+every start — transcript recall off, `sources` narrowed, `experimental.sessionMemory` off, in both
+roster representations — and a guarantee that can be switched off by editing the file it is written
+into is not one. So the switch is the stack's, by the same reasoning that makes the guard
+unconditional.
+
+**What the operator does keep**, so this is a division rather than a confiscation:
+
+- `/active-memory off --global` writes the plugin's **inner** `config.enabled: false`, which the
+  writer preserves — the plugin then does nothing for any agent, and `M1-7` holds that.
+- `plugins.deny: ["active-memory"]` switches it off outright; `M1-7` holds that too.
+- Choosing another embedding provider, which the gate leaves alone (`M1-9`), including an own
+  OpenAI-compatible endpoint with its own key (`M1-12`).
+
+What there is no switch for is *indexing by the memory search itself while a credential exists*, and
+naming it here is the point: the reviewer had to run the writer twice to discover it.
+
+
 The hand edit is now written by `config/scripts/start/openclaw.sh`: `active-memory` and
 `memory.search` inside the 2026.9 branch, with the entry **merged** rather than replaced — the plugin
 manifest declares 29 keys with `additionalProperties: false`, and assigning a fresh object discarded
@@ -202,14 +223,22 @@ every one an operator had tuned. On the 2026.7 shape both are removed by the ret
 says what it removed, because that version knows neither key and an unknown key there is a failed
 start rather than a warning.
 
-**It switches the memory on only where an embedding backend has a credential** — `OPENAI_API_KEY`
-set, or Copilot on, which writes its own provider. `.env.example:85` promises that an installation
-with no keys at all is fine, and `memory.search` defaults to the `openai` provider, so switching it
-on regardless buys a failed embedding call per turn for a feature the operator never asked for. The
-answer is computed in the shell, where the keys are read, and handed to the writer as
-`MEMORY_EMBEDDINGS`; it is deliberately not inferred from `MODEL_WILDCARDS`, which also carries
+**It switches the memory on only where an embedding backend has a credential**, and *which*
+credential depends on the provider the configuration names. `.env.example:85` promises that an
+installation with no keys at all is fine, and `memory.search` defaults to the `openai` provider, so
+switching it on regardless buys a failed embedding call per turn for a feature the operator never
+asked for. The answer is computed in the shell, where the keys are read, and handed to the writer as
+**`MEMORY_OPENAI_KEY`**; it is deliberately not inferred from `MODEL_WILDCARDS`, which also carries
 `openai/*` for `ENABLE_OPENAI_CODEX=1` and would answer yes without a key. Where there is no
 credential the start says so and the guards below are still written.
+
+*Corrected 2026-10-14, N5 of the 2026-10-13 re-review.* This said the gate is *"`OPENAI_API_KEY` set,
+or Copilot on"* and that the answer is passed as `MEMORY_EMBEDDINGS`. The variable is
+`MEMORY_OPENAI_KEY`, and the gate is **per provider**: for `openai` or an unnamed provider it reads
+that credential, for `github-copilot` it reads whether that harness is on, and for any other provider
+— `ollama`, for one — it decides nothing at all and leaves the operator's setting alone, which is
+blocker 3 of 2026-09-28 and `M1-9`. The old wording described the gate as it was before that blocker
+was fixed.
 
 Two guards, written on every start rather than filled in when missing — a value that is only
 defaulted is not an invariant, and a `"sessions"` that reached the file once survived every start
@@ -227,6 +256,12 @@ after it:
 And no embedding provider is written: it defaults to `openai`, and the Copilot branch above owns the
 provider when that harness is on; writing one here would win or lose silently depending on the order
 of two blocks.
+
+*Corrected 2026-10-14, N5.* This said *"no embedding provider is written"* without qualification, and
+the block does now **delete** one: a `github-copilot` provider left behind by a harness that has since
+been switched off is removed, with a line saying so, and the gate falls back to the `openai`
+credential. Nothing is ever written; one thing is taken away. The comment at
+`config/scripts/start/openclaw.sh:650` carried the same omission and is corrected with it.
 
 ### Which embedding providers this feature supports, decided 2026-10-13
 

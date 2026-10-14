@@ -50,6 +50,7 @@ import {
   dropWorkRoot,
   newWorkRoot,
   validate,
+  doctorFix,
   writeConfig as runWriter,
   type Env
 } from '../lib/openclaw-writer';
@@ -248,6 +249,85 @@ describe('M1-7 enabled is not the same as acting', () => {
     expect(gates.active).toBe(true);
   });
 
+  test('M1-7 and it is active for an agent that is not called main', () => {
+    // **N1 of the 2026-10-13 re-review.** The writer wrote `agents: ["main"]`
+    // whatever the roster said, so on an installation whose agent is `ops` the
+    // config validated and `isEnabledForAgent(..., "ops")` was false — blocker 1
+    // again for every install off the stock roster. The operator decided the
+    // rule: the plugin covers **every agent the roster names**, computed from
+    // `agents.entries`, because NFR-M1 closes transcripts and says nothing about
+    // which agents may have a memory.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      agents: { entries: { ops: { memory: { search: { sources: ['memory'] } } } } }
+    });
+    expect(cfg.plugins.entries['active-memory'].config.agents).toEqual(['ops']);
+    const gates = activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW, agentId: 'ops' });
+    expect(gates.namesAgent).toBe(true);
+    expect(gates.active).toBe(true);
+    // And still no transcripts, which is the thing being protected.
+    expect(gates.remembers).toBe(false);
+    expect(validate({ workRoot, config: cfg, image: IMAGE_NEW }).code).toBe(0);
+  }, 600_000);
+
+  test('M1-7 and with two agents it covers both, not whichever is first', () => {
+    // `openclaw agents add ops` on a stock install gives exactly this, and the
+    // plugin then acted for `main` alone. Both ids are asserted **and** both are
+    // asked of the image, because a list containing an id says nothing about
+    // whether the gate opens for it.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      agents: { entries: {
+        main: { memory: { search: { sources: ['memory'] } } },
+        ops: { memory: { search: { sources: ['memory'] } } }
+      } }
+    });
+    expect(cfg.plugins.entries['active-memory'].config.agents.sort()).toEqual(['main', 'ops']);
+    for (const id of ['main', 'ops']) {
+      expect(activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW, agentId: id }).active).toBe(true);
+    }
+  }, 900_000);
+
+  test('M1-7 and an operator list is still left alone', () => {
+    // The counterpart: computing the roster must not mean overwriting a choice
+    // the operator made. M1-4 holds this for the stock shape; this one holds it
+    // against a roster that would otherwise have supplied a different answer.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      agents: { entries: { main: {}, ops: {} } },
+      plugins: { entries: { 'active-memory': { config: { agents: ['ops'] } } } }
+    });
+    expect(cfg.plugins.entries['active-memory'].config.agents).toEqual(['ops']);
+  }, 600_000);
+
+  test('M1-7 and the probe agrees with the runtime when the operator has switched it off', () => {
+    // **N2 of the 2026-10-13 re-review: the probe re-implemented the gate it
+    // claims to measure.** `namesAgent` was
+    // `Boolean(entry.enabled) && agents.includes(agent)`, while the runtime calls
+    // `isEnabledForAgent(normalizePluginConfig(entry.config), agent)` — the
+    // **inner** flag. An operator who has typed `/active-memory off --global`
+    // has `config.enabled: false` written, and the writer preserves it; the probe
+    // said `active: true` and the runtime says the plugin does nothing.
+    //
+    // This scenario is about the measuring instrument, which is why it exists at
+    // all: every M1 gate reading rests on it, and a probe that is wrong in this
+    // direction makes the other cases green over a stack that is not working.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      plugins: { entries: { 'active-memory': { config: { enabled: false } } } }
+    });
+    const gates = activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW });
+    expect(gates.namesAgent).toBe(false);
+    expect(gates.active).toBe(false);
+  }, 600_000);
+
+  test('M1-7 and a denied plugin is not active, whatever the entry says', () => {
+    // The second shape, and it is why `active` has to include `pluginEnabled`:
+    // `isEnabledForAgent` is given the plugin's own config, which cannot know
+    // about `plugins.deny`. So `namesAgent` is **true** here and the plugin still
+    // does nothing — a reading the old definition of `active` could not produce.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, { plugins: { deny: ['active-memory'] } });
+    const gates = activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW });
+    expect(gates.pluginEnabled).toBe(false);
+    expect(gates.active).toBe(false);
+  }, 600_000);
+
   test('M1-7 and it still does not recall transcripts to get there', () => {
     // The counterpart. Opening the first gate must not be done by opening the
     // second, which is what NFR-M1 forbids.
@@ -279,13 +359,129 @@ describe('M1-8 a per-agent override does not bring transcripts back', () => {
     expect(activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW }).remembers).toBe(false);
   });
 
-  test('M1-8 and an unrelated per-agent setting survives', () => {
-    // The counterpart: forcing two keys must not mean rewriting the subtree.
+  test('M1-8 the guard reaches agents.entries, which is the shape that persists', () => {
+    // **C1 of the 2026-10-13 re-review: blocker 2 was only half closed.** The
+    // guard walked `agents.list`, and in 2026.9.1 that is the *legacy* roster:
+    // `listAgentEntries` reads `agents.entries` first, the validator reports
+    // `agents.list` problems under `agents.entries.<id>`, `config validate` warns
+    // about any `agents.list`, and the image calls the keyed map canonical.
+    //
+    // Reproduced before the repair, with this seed: the block came through the
+    // writer **untouched** -- `{"rememberAcrossConversations":true,"sources":["memory","sessions"]}`
+    // -- the config validated, and the image resolver answered
+    // `remembers: true`. The guard protected the one representation that cannot
+    // persist and missed the one every tool writes.
     const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
-      agents: { list: [{ id: 'main', memory: { search: { sources: ['memory'], maxResults: 9 } } }] }
+      agents: { entries: { main: { memory: { search: {
+        rememberAcrossConversations: true, sources: ['memory', 'sessions']
+      } } } } }
     });
-    expect(cfg.agents.list[0].memory.search.maxResults).toBe(9);
-  });
+    const a = cfg.agents.entries.main.memory.search;
+    expect(a.rememberAcrossConversations).toBe(false);
+    expect(a.sources).toEqual(['memory']);
+    expect(activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW }).remembers).toBe(false);
+  }, 600_000);
+
+  test('M1-8 and experimental.sessionMemory is a third route to the same outcome', () => {
+    // The resolver turns transcript indexing on when this flag is true and
+    // `sessions` is in the agent sources -- **even with
+    // rememberAcrossConversations false**, so forcing two keys left a way in
+    // that `remembers` does not report. Measured before the repair: the flag
+    // survived the writer with `sources` intact.
+    //
+    // Asserted on the written config rather than on a gate, deliberately:
+    // `shouldRememberAcrossConversations` reads the other key, so a gate reading
+    // would be green here in both worlds and say nothing. The flag itself is the
+    // observable.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      agents: { entries: { main: { memory: { search: {
+        rememberAcrossConversations: false, sources: ['memory', 'sessions'],
+        experimental: { sessionMemory: true }
+      } } } } }
+    });
+    const a = cfg.agents.entries.main.memory.search;
+    expect(a.experimental.sessionMemory).toBe(false);
+    expect(a.sources).toEqual(['memory']);
+  }, 600_000);
+
+  test('M1-8 and the stack own upgrade path does not open it either', () => {
+    // The sequence the stack really performs: a roster an operator wrote on
+    // 2026.7.1, through `doctor --fix` -- which `openclaw_migrate_state` runs
+    // **before** this writer whenever the state came from an older version --
+    // and then through the writer. One of the migration rules is literally
+    // "agents.list moved to keyed agents.entries", so this is how an ordinary
+    // installation arrives at the keyed shape without anybody choosing it.
+    const seeded = {
+      agents: { list: [{ id: 'main', memory: { search: {
+        rememberAcrossConversations: true, sources: ['memory', 'sessions'],
+        experimental: { sessionMemory: true }
+      } } } ] }
+    };
+    const migrated = doctorFix({ workRoot, config: seeded, image: IMAGE_NEW });
+    // What the migration did is the premise of the case, so it is read rather
+    // than assumed: if a later image stops moving the roster, this says so
+    // instead of quietly testing the legacy path twice.
+    const movedToEntries = Boolean(migrated.config?.agents?.entries?.main);
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, migrated.config);
+    const block = movedToEntries
+      ? cfg.agents.entries.main.memory.search
+      : cfg.agents.list[0].memory.search;
+    expect(block.rememberAcrossConversations).toBe(false);
+    expect(block.sources).toEqual(['memory']);
+    expect(activeMemoryGates({ workRoot, config: cfg, image: IMAGE_NEW }).remembers).toBe(false);
+  }, 900_000);
+
+  test('M1-8 and an unrelated per-agent setting survives', () => {
+    // The counterpart: forcing three keys must not mean rewriting the subtree.
+    //
+    // **The seed was invalid, which N4 of the 2026-10-13 re-review found.** It
+    // was `maxResults: 9` directly under `memory.search`, and 2026.9.1 rejects
+    // that — `× agents.entries.main.memory.search: Unrecognized key:
+    // "maxResults"`, exit 1. So the counterpart proved a subtree survives on a
+    // configuration that cannot exist, and it never called `validate`. The real
+    // key is `query.maxResults`, and the seed is on `agents.entries`, the shape
+    // that persists (C1). Validation is asserted here rather than assumed,
+    // because that is the half whose absence let the wrong shape through.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1' }, {
+      agents: { entries: { main: { memory: { search: {
+        sources: ['memory'], query: { maxResults: 9 }
+      } } } } }
+    });
+    expect(cfg.agents.entries.main.memory.search.query.maxResults).toBe(9);
+    expect(validate({ workRoot, config: cfg, image: IMAGE_NEW }).code).toBe(0);
+  }, 600_000);
+});
+
+describe('M1-12 a credential the operator configured is a credential', () => {
+  test('M1-12 an own OpenAI-compatible endpoint is not switched off for having no env key', () => {
+    // **N3 of the 2026-10-13 re-review**, and it is blocker 3 for a shape the
+    // schema supports: `provider: "openai"` with `memory.search.remote.baseUrl`
+    // and `remote.apiKey` — an endpoint the operator runs — and no
+    // `OPENAI_API_KEY` in the environment. The gate read the environment only,
+    // so this was switched off on every start with a line claiming there was no
+    // embedding credential. There was one; we looked in the wrong place.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', MEMORY_OPENAI_KEY: '0' }, {
+      memory: { search: { enabled: true, provider: 'openai', remote: {
+        baseUrl: 'http://embeddings.localhost:8080/v1', apiKey: 'operator-own-key'
+      } } }
+    });
+    expect(cfg.memory.search.enabled).toBe(true);
+    expect(cfg.plugins.entries['active-memory'].enabled).toBe(true);
+    // The operator settings are theirs and survive.
+    expect(cfg.memory.search.remote.baseUrl).toBe('http://embeddings.localhost:8080/v1');
+    expect(validate({ workRoot, config: cfg, image: IMAGE_NEW }).code).toBe(0);
+  }, 600_000);
+
+  test('M1-12 the counterpart: no key anywhere is still no credential', () => {
+    // Without this the repair could be "always on", which is the thing
+    // `.env.example:85` promises against — an installation with no keys at all
+    // must not buy a failed embedding call per turn. An empty string is not a
+    // key either, which is the shape a half-filled `.env` leaves.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', MEMORY_OPENAI_KEY: '0' }, {
+      memory: { search: { enabled: true, provider: 'openai', remote: { baseUrl: 'http://x/v1', apiKey: '   ' } } }
+    });
+    expect(cfg.memory.search.enabled).toBe(false);
+  }, 600_000);
 });
 
 describe('M1-9 a provider this stack does not hold credentials for is not ours to switch', () => {

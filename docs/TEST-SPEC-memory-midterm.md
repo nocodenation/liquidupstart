@@ -45,10 +45,20 @@ was green throughout the defect that blocker 1 of the 2026-09-28 review found, w
 | **M1-7** | positive | The plugin is **active** for the default agent, asked of the image's own policy module |
 | **M1-7** | **negative** | …and it still does not recall transcripts to get there |
 | **M1-7** | positive | …and an agent list the operator set is left alone |
+| **M1-7** | positive | …and it is active for an agent that is not called `main` — *N1 of 2026-10-13* |
+| **M1-7** | positive | …and with two agents it covers both, not whichever is first |
+| **M1-7** | positive | …and an operator list is still left alone |
+| **M1-7** | **negative** | …and the probe agrees with the runtime when the operator has switched it off globally — *N2 of 2026-10-13* |
+| **M1-7** | **negative** | …and a denied plugin is not active, whatever the entry says |
 | **M1-8** | **negative** | A per-agent override does not bring transcripts back: the guard reaches `agents.list` too |
+| **M1-8** | **negative** | …and `agents.entries`, which is the shape that persists — *C1 of 2026-10-13* |
+| **M1-8** | **negative** | …and `experimental.sessionMemory`, a third route to the same outcome with `rememberAcrossConversations` already false |
+| **M1-8** | **negative** | …and the stack's own upgrade path, 2026.7.1 → `doctor --fix` → writer, does not open it either |
 | **M1-8** | positive | …and an unrelated per-agent setting survives |
 | **M1-9** | positive | `ollama` on a key-less install keeps `memory.search.enabled` as it was |
 | **M1-9** | **negative** | …while `openai` with no key is still switched off |
+| **M1-12** | positive | An own OpenAI-compatible endpoint is not switched off for having no env key — *N3 of 2026-10-13* |
+| **M1-12** | **negative** | …and no key anywhere is still no credential, a blank one included |
 | **M1-10** | **negative** | A leftover `github-copilot` from a harness that is off is removed, and the gate falls back to the OpenAI question |
 | **M1-10** | positive | …and with Copilot on it is kept and used |
 | **M1-11** | positive + **negative** | The key in `.env` becomes the flag, and its absence does not |
@@ -125,12 +135,18 @@ was green throughout the defect that blocker 1 of the 2026-09-28 review found, w
 
 | | |
 |---|---|
-| **Premise** | The plugin acts before a reply only when `isEnabledForAgent` finds the agent in `config.agents`, or `shouldRememberAcrossConversations` is on. NFR-M1 keeps the second shut, and `config.agents` defaults to an empty list, which names nobody — so the entry said `enabled: true` and the plugin did nothing. Blocker 1 of 2026-09-28. And OpenClaw resolves these as `agents.list[i].memory.search.X ?? memory.search.X`, so a per-agent block brought transcripts straight back past a guard written only at the defaults level. Blocker 2. |
-| **Component** | `openclaw.sh`'s writer, and **the image's own policy module**: `tests/lib/openclaw-writer.ts` imports the plugin's `session-policy.js` inside 2026.9.1 and reports both gates. |
-| **Steps** | Write; ask the image whether the plugin is active for `main`; assert transcript recall is still off; seed an operator agent list and assert it survives. Then seed `agents.list[0].memory.search` with `rememberAcrossConversations: true` and `sources: ["memory","sessions"]`, write, and resolve again. |
-| **Test data** | The per-agent seed is the reviewer's own: `"agents": {"list": [{"id": "main", "memory": {"search": {"rememberAcrossConversations": true, "sources": ["memory","sessions"]}}}]}`, which validated and resolved to `{"remember":true,"sources":["memory","sessions"]}` against the writer as reviewed. |
+| **Premise** | The plugin acts before a reply only when `isEnabledForAgent` finds the agent in `config.agents`, or `shouldRememberAcrossConversations` is on. NFR-M1 keeps the second shut, and `config.agents` defaults to an empty list, which names nobody — so the entry said `enabled: true` and the plugin did nothing. Blocker 1 of 2026-09-28. And OpenClaw resolves these as `<agent>.memory.search.X ?? memory.search.X`, so a per-agent block brought transcripts straight back past a guard written only at the defaults level. Blocker 2. |
+| **And blocker 2 was only half closed, which C1 of 2026-10-13 found** | The guard walked `agents.list`, and in 2026.9.1 that is the **legacy** roster: `listAgentEntries` reads `agents.entries` first, the validator reports `agents.list` problems under `agents.entries.<id>`, `config validate` warns about any `agents.list`, and the image documents `toAgentEntriesRecord` as converting either representation into *the canonical keyed shape*. So the guard protected the one representation that cannot persist and missed the one every tool writes — `openclaw agents add`, `config set`, and `doctor --fix` all produce `agents.entries`. **And the stack performs that migration itself**: `openclaw_migrate_state` runs `doctor --fix` before this writer whenever the state came from an older version, under the rule *"agents.list moved to keyed agents.entries"*. Reproduced before the repair: the keyed seed came through the writer untouched, the config validated, and the image resolver answered `remembers: true`. A third key with it — `experimental.sessionMemory` — turns transcript indexing on when `sessions` is among the agent's sources **even with `rememberAcrossConversations` false**, so forcing two keys left a route that `remembers` does not report. |
+| **Component** | `openclaw.sh`'s writer, and **the image's own policy module**: `tests/lib/openclaw-writer.ts` imports the plugin's `session-policy.js` and `config.js` inside 2026.9.1 and reports the gates. |
+| **The instrument was wrong, which N2 of 2026-10-13 found** | Only two of the three readings came from the image. `namesAgent` was a **copy** of the gate — `Boolean(entry.enabled) && agents.includes(agent)` — while the runtime calls `isEnabledForAgent(normalizePluginConfig(entry.config), agent)`, the *inner* flag; and `active` ignored `pluginEnabled` altogether. Two shapes where the probe said active and the runtime did not, both the reviewer's: an operator who has typed `/active-memory off --global`, which writes `config.enabled: false` and the writer preserves, and `plugins.deny: ["active-memory"]`. The probe now calls the image's own predicate, and the two shapes are scenarios — **because every M1 gate reading rests on this instrument**, and a probe wrong in that direction makes the rest green over a stack that is not working. |
+| **And correcting it nearly produced a false report** | `isEnabledForAgent(config, agentId)` takes the **plugin** config, not the whole openclaw config: its body is `if (!config.enabled) return false; if (!agentId) return false; return config.agents.includes(agentId)`, read out of the image. Called with the whole config it answers `false` for every agent, which turned `M1-7` red and looked exactly like blocker 1 being open again. It was the call, not the product. Measured rather than reported, and recorded here because the failure mode — an image function given the wrong argument, failing like a defect — will happen again. |
+| **Steps** | Write; ask the image whether the plugin is active for `main`; assert transcript recall is still off; seed an operator agent list and assert it survives. Then seed the per-agent block in **each** roster shape, write, and resolve again. For the migration scenario: seed a 2026.7.1-shaped `agents.list`, run `openclaw doctor --fix` in the image, feed **its output** to the writer, and resolve. |
+| **Test data, both sides** | The per-agent seeds are the reviewer's own. Legacy: `"agents": {"list": [{"id": "main", "memory": {"search": {"rememberAcrossConversations": true, "sources": ["memory","sessions"]}}}]}`. Canonical: the same block under `"agents": {"entries": {"main": …}}`, which validated and resolved to `{"remember":true,"sources":["memory","sessions"]}` against the writer as reviewed. The third route adds `"experimental": {"sessionMemory": true}` with `rememberAcrossConversations` already **false**, so the scenario cannot pass on the key the other two force. The migration seed is a 2026.7.1 roster carrying all three. What must **not** change: an unrelated per-agent `maxResults: 9`, so forcing three keys is not rewriting the subtree. |
+| **Why the `sessionMemory` scenario asserts the written config, not a gate** | `shouldRememberAcrossConversations` reads the other key, so a gate reading is `false` in both worlds and says nothing. The flag itself is the observable, which is the same reason the other scenarios read the gate rather than our own output. |
+| **And the migration scenario reads what the migration did** | Whether `doctor --fix` moved the roster is the premise, so it is read out of the migrated config rather than assumed: if a later image stops moving it, the case says so instead of quietly exercising the legacy path twice. |
 | **Expected** | Active for `main`; recall off; an operator-set agent list untouched; the per-agent override forced back; an unrelated per-agent setting surviving. |
-| **What it found** | Green, 5 scenarios. **This is the pair that `.enabled === true` could not see**: `M1-1` and `M1-4` were green throughout blocker 1, because they asked our config and not the image's behaviour. |
+| **What it found** | Green, 8 scenarios. **This is the pair that `.enabled === true` could not see**: `M1-1` and `M1-4` were green throughout blocker 1, because they asked our config and not the image's behaviour. And the first repair of blocker 2 was green here for the same kind of reason — the case seeded only the shape the guard happened to walk, so it measured the guard against its own assumption. |
+| **Controls** | The `agents.entries` walk removed → 3 red, all three new scenarios. The `experimental.sessionMemory` clause removed → 1 red, only its own. Each half of the repair is therefore measured separately. |
 | **Implemented by** | `tests/component/m-m1.memory-config.test.ts`. |
 | **Covers** | M1-7, M1-8, F1, NFR-M1. |
 
@@ -159,6 +175,20 @@ rather than an error.
 what is being tested is that the gate **steps back**, which is one behaviour and not four. Extending
 the gate to answer *for* them needs a live backend per provider and is in `BACKLOG.md`.
 
+### M1-12 — a credential the operator configured is a credential
+
+| | |
+|---|---|
+| **Premise** | N3 of the 2026-10-13 re-review, and it is blocker 3 of 2026-09-28 for a configuration the schema supports. The gate read `MEMORY_OPENAI_KEY` — the environment — and nothing else, so an installation pointing `memory.search` at its own OpenAI-compatible endpoint (`provider: "openai"` with `remote.baseUrl` and `remote.apiKey`) and holding no `OPENAI_API_KEY` had memory search and the plugin switched **off on every start**, with a log line saying there was no embedding credential. There was one. We looked in the wrong place. |
+| **Component** | the embedding-credential gate in `config/scripts/start/openclaw.sh`, driven through the real writer. |
+| **Steps** | Write with `MEMORY_OPENAI_KEY=0` and an operator `remote.apiKey`; read `memory.search.enabled`, the plugin entry, the operator settings, and `config validate`. Then the same with a blank key. |
+| **Test data, both sides** | What must be accepted: `provider: "openai"`, `remote.baseUrl: "http://embeddings.localhost:8080/v1"`, `remote.apiKey: "operator-own-key"`, with `MEMORY_OPENAI_KEY=0`. What must still be refused: the same with `apiKey: "   "` — three spaces, which is the shape a half-filled `.env` leaves and which must not count, because `.env.example:85` promises an installation with no keys at all is not given a failed embedding call per turn. |
+| **Expected** | `memory.search.enabled` true and the plugin enabled in the first; the operator's `baseUrl` untouched; `config validate` exit 0. `enabled` false in the second. |
+| **What it found** | Green, 2 scenarios. The counterpart is what keeps the repair from being *"always on"*, which would be blocker 3 facing the other way. |
+| **The other half of N3, settled by decision rather than by code** | With a key present, an operator's explicit `memory.search.enabled: false` is turned back to `true` on every start. That is deliberate and it was simply not written down: NFR-M1 can only hold if the stack owns that switch, so §2.4 now says so, and says what the operator does keep — `/active-memory off --global`, which writes the plugin's inner `config.enabled: false` and the writer preserves (`M1-7`). |
+| **Implemented by** | `tests/component/m-m1.memory-config.test.ts`. |
+| **Covers** | M1-12, F3, NFR-M1. |
+
 ## Traceability
 
 | Requirement | Covered by |
@@ -167,4 +197,4 @@ the gate to answer *for* them needs a live backend per provider and is in `BACKL
 | F2 an operator's tuning survives a start | M1-5 |
 | F3 search reads memory files, not transcripts | M1-1, M1-6 |
 | F4 the 2026.7 path carries neither key | M1-2 |
-| NFR-M1 transcripts stay out until NFR-M4 redaction exists | M1-5, M1-6, M1-7, M1-8 |
+| NFR-M1 transcripts stay out until NFR-M4 redaction exists | M1-5, M1-6, M1-7, M1-8, M1-12 |
