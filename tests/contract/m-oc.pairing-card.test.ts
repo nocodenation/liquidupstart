@@ -77,12 +77,25 @@ describe('OC-43 the operator has a control, and it is on the page', () => {
   // tests/component/m-oc.pairing-card.test.ts: OC-53 requires an empty queue to
   // draw nothing, OC-52 requires a failed listing to be said out loud, and
   // OC-54 counts the buttons. Finding 6 of the 2026-09-29 review.
-  test('the card has a condition on it at all, and a result that outlives the list', () => {
-    // What text can still say: the two states exist in the file. What they do is
-    // OC-52 to OC-55.
-    expect(card).toContain('{#if loaded &&');
-    expect(card).toContain('|| result)}');
-  });
+  // **And this one is gone too**, which is B5 of the 2026-10-01 review: *"OC-43
+  // checks that `{#if loaded &&` appears in the file. The comment above it
+  // explains why such cases were retired."* It did, and the case survived the
+  // argument because it looked like the modest remainder -- "what text can still
+  // say". What text could say was the spelling of a Svelte condition: it would
+  // go red on `{#if loaded && (` or on the two states being hoisted into a
+  // `$derived`, neither of which is a defect, and it would stay green on any
+  // change to what the conditions decide.
+  //
+  // Read out of the component file rather than recalled: OC-52 requires a failed
+  // listing to be said out loud, OC-53 an empty queue to draw nothing, OC-54
+  // counts the buttons and names the device pressed, OC-55 re-reads on focus --
+  // and the second half of this case, the clause that holds the panel open once
+  // the queue is empty, had **no** counterpart at all. OC-73 was written for it:
+  // it approves, the queue goes empty, and the confirmation has to still be
+  // there. Its control is the clause removed, which reddens OC-73 alone.
+  //
+  // So the retirement cost one property and replaced it with a case that can
+  // fail. Nothing here is left for the source to add.
 
   test('a well-formed id reaches the command, so the guard is not refusing everything', () => {
     expect(REQUEST_ID.test(REAL_ID)).toBe(true);
@@ -107,19 +120,18 @@ describe('OC-44 the id is read when the button is pressed, not when the page was
     expect(route).toContain('pendingRequests()');
   });
 
-  test('OC-59 a GET from another origin is refused as well as a POST', () => {
-    // A GET spawns one `docker run` of the OpenClaw image, so any page the
-    // operator had open could make the dashboard do that once per request --
-    // through an <img> tag, whose response it cannot read but whose work it costs.
-    // Minor of the 2026-09-29 review.
-    //
-    // Text, because the alternative is a route harness for one branch: what is
-    // read is that the GET handler consults the check and that an absent Origin
-    // is not what it refuses -- a same-origin GET from the address bar sends none,
-    // and refusing that would make the card unreachable.
-    expect(route).toMatch(/export const GET[\s\S]{0,200}wrongOrigin\(request\)/);
-    expect(route).toContain('!!origin && origin !== process.env.ORIGIN');
-  });
+  // **OC-59 was here and is retired**, which is C3 and B5 of the 2026-10-01
+  // review taken together. It read the route's source for
+  // `wrongOrigin(request)`, and its own note gave the reason -- *"the alternative
+  // is a route harness for one branch"*. That harness now exists:
+  // `tests/integration/m-oc.pairing-route.test.ts` drives both handlers with the
+  // header sets a browser really sends, so the property is held by behaviour
+  // instead of by spelling.
+  //
+  // Retiring it rather than repointing it, because the pattern was not merely
+  // weaker than the behaviour -- it was green over a defect. It asserted that an
+  // absent `Origin` is *not* refused, and a cross-origin `<img>` sends none, so
+  // the one shape the check existed to stop was the shape the test signed off.
 
   test('an id that is no longer pending fails loudly, in the CLI words', () => {
     // 502 with the message, never a quiet success. "No longer pending" is an
@@ -128,7 +140,12 @@ describe('OC-44 the id is read when the button is pressed, not when the page was
     // cliMessage, not firstLine: firstLine returned the LAST line, so the CLI's
     // usage footer replaced `Reason: missing scope: operator.pairing` on its way
     // to the operator. Finding 3. OC-51 holds the behaviour.
-    expect(server).toContain('cliMessage(output)');
+    // Spelling updated with C2 of the 2026-10-01 review: the two streams are
+    // separate now, so the answer is read first and the CLI's prose second. What
+    // this line is for is unchanged -- the 502 carries the CLI's words and not
+    // ours -- and `OC-72` holds it by driving the route, which is what makes this
+    // one a reading of the wiring rather than the whole guarantee.
+    expect(server).toContain('cliMessage(stdout) || cliMessage(stderr)');
     expect(server).toContain('Nothing is waiting for approval.');
   });
 });

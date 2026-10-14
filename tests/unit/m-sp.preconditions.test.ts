@@ -28,7 +28,7 @@
  *          everything and is indistinguishable from a suite that does not run.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
@@ -54,7 +54,11 @@ afterAll(() => roots.forEach((p) => rmSync(p, { recursive: true, force: true }))
 describe('SP-1 each discriminator answers for the state in front of it', () => {
   test('SP-1 a started checkout is told apart from one where nothing has run', () => {
     const bare = root();
-    const started = root((p) => mkdirSync(join(p, 'volumes', '_git-secrets'), { recursive: true }));
+    const started = root((p) => {
+      mkdirSync(join(p, 'volumes', '_git-secrets'), { recursive: true });
+      // What `git.sh:55` generates on every start, and the discriminator.
+      writeFileSync(join(p, 'volumes', '_git-secrets', 'id_ed25519'), 'not a key\n');
+    });
     // `volumes/repos` is deliberately present in the bare one: it is what the
     // obvious discriminator would have used, and three other places create it --
     // m-a5.nested-clone, m-a10.fixture-ceiling and gitfixture -- so it is there
@@ -64,6 +68,19 @@ describe('SP-1 each discriminator answers for the state in front of it', () => {
       bare: false,
       started: true
     });
+  });
+
+  test('SP-1 and an empty _git-secrets is not a start, which is what it used to be', () => {
+    // **Negative counterpart to the one above, and a regression.** Until
+    // 2026-10-14 the directory's presence *was* the answer, and it exists empty in
+    // a worktree where no start has ever run. `A3-3` (twice), `A4-16` and `A1-4`
+    // then read state that was not there and reported four defects that did not
+    // exist. Without this scenario the tighter discriminator reads as a
+    // preference; with it, the thing that went wrong cannot come back quietly.
+    const hollow = root((p) =>
+      mkdirSync(join(p, 'volumes', '_git-secrets'), { recursive: true })
+    );
+    expect(startedIn(hollow)).toBe(false);
   });
 
   test('SP-1 a directory that is no git repository is told apart from one that is', () => {

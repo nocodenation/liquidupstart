@@ -534,8 +534,9 @@ throwaway container **on the compose network** and hands the script's own words 
 |---|---|
 | **Route** | `POST /openclaw-pairing` with `{ "deviceId": "<id>" }` — the card posts the **device**, so a request that arrives 55 ms after the operator opened the card cannot take their click; an explicit `{ "requestId": "<id>" }` is also accepted and is what `chooseRequest` resolves. `GET` is the listing, shaped `{ "ok", "pending": [ { "requestId", "deviceId", "clientId", "role", "scopes", "remoteAddress", "isRepair", "requestedAt" } ], "revoked": [ { "deviceId", "clientId", "revokedAtMs" } ], "message" }` |
 | **Guard** | `requestId` is matched against `/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/` before it reaches a shell, exactly as `start-skip` guards a step name |
+| **Who may call it** | `POST` is refused unless `Origin` equals `ORIGIN`; an absent `Origin` is refused with it, because a browser appends one to every POST. `GET` cannot use `Origin` at all and uses **`Sec-Fetch-Site`**: refused unless it is `same-origin`, and served when the header is absent entirely, which is a client that is not a browser. Measured 2026-10-14 (headless Chrome 152, two servers on `localhost:7901` and `:7902`): the card's own same-origin `fetch` GET sends **no `Origin`**, so requiring one answers 403 to every operator — while a cross-origin `<img>` and a `no-cors` fetch send none either, and a `GET` here spends one `docker run` of the OpenClaw image. `Sec-Fetch-Site` is the only header that separates them. It is checked against `same-origin` rather than for `cross-site`, because both probes were on `localhost` and a port does not make a different site: another service on another local port is this dashboard's ordinary neighbour, and a `cross-site` test would miss exactly that. C3 of the 2026-10-01 review |
 | **Transport** | `ws://openclaw.localhost:8888` with `--token unused`, from inside the compose network, with `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1`. Each of those three is load-bearing and each is measured in §9.2 |
-| **Failure** | A non-zero exit becomes a 502 carrying the CLI's own message, never a message this project invented. An approval attempt against an id that is no longer pending must say so rather than succeeding quietly |
+| **Failure** | A non-zero exit becomes a **502** carrying the CLI's own message, never a message this project invented. A **409** is the other half, and it is not an error of the stack but a question only the operator can answer: two different browsers waiting, an id that is pending but is not a Control UI browser asking for `operator`, or nothing of ours waiting at all — each with the text `chooseRequest` chose. An approval against an id that is no longer pending must say so rather than succeeding quietly. Driven by `OC-72` |
 
 ### 9.5 Deliberately not in scope
 
@@ -549,6 +550,38 @@ ceremony.
 **Making the gateway's own error text correct.** The red box names a command this stack cannot run
 and an id that is already stale. That is upstream's to fix; what we can do is make sure an operator
 never has to read it.
+
+### 9.7 The planned narrowing, and what it is not
+
+Nothing here is built. It is written down because the reviewer read §9 with the planned change in
+mind — nginx asserting `X-Forwarded-User` for the host **and for one named address** — and answered
+four things about it on 2026-10-01, of which the fourth is the one that must not be lost.
+
+**1. The pairing container has no fixed address today.** `config/scripts/openclaw-pairing.sh` runs
+`docker run --network …` without `--ip`, so it takes whatever docker hands it out of
+`10.99.0.128/25`. The plan needs an address pinned outside that pool, as `SYSTEM_PROXY_IP` is, which
+means **a new `.env.example` key** — and by this repository's own contract that key goes into
+`.env.example` first, before any service template declares it.
+
+**2. A pinned address turns A3 from a tidiness question into a correctness bug.** Docker refuses a
+second container on an address already in use. Today two loads on tab return, a poll landing during
+a POST — which runs `list` and then `approve` — and two open tabs all overlap harmlessly; each
+becomes *"address already in use"* on the card once the address is fixed. The in-flight guard in the
+card exists (A5); one-at-a-time locking around `run()` does not, and it is cheap now and necessary
+then.
+
+**3. A2's orphan would hold that address** for as long as it lives, so naming the container and
+removing it on timeout — built for A2 — stops being hygiene and becomes the thing that lets the next
+request happen at all.
+
+**4. An address is still a position, not a principal — and that does not close the question.**
+Whatever can occupy the named address while the pairing container is not running receives the
+operator identity. On a rootless single-host stack that is a real narrowing and worth having: the
+set of things that can take a pinned address inside the stack network is much smaller than the set
+that can reach the gateway. It is **not** authentication, and it must not be written up as though
+the pairing path were then authenticated. The reviewer asked for this to be said in the entry rather
+than implied by its absence, and that is the reason this section exists in a document describing
+work that has not started.
 
 ### 9.6 What the operator decided, 2026-09-19
 
@@ -570,7 +603,12 @@ none of which this work reads or changes.
 
 So it goes on its own branch, cut from **`feature/git-integration` (#9)**, with its pull request
 based on #9 — the same stacking #10 already uses, so its diff shows only its own work and GitHub
-retargets it when #9 lands. Gateway auth does not end up inside the Java feature's history, and the
+retargets it when #9 lands.
+
+> **Since 2026-09-30 that has happened.** #9 merged at 10:49 UTC and GitHub retargeted this pull
+> request, so #15 is now based on **`main`** and the stacking above is history rather than the
+> current arrangement. The reasoning is kept because it is why the branch exists at all; the state
+> claim is not. B6 of the 2026-10-01 review. Gateway auth does not end up inside the Java feature's history, and the
 work does not inherit a 66-file diff it has nothing to do with.
 
 **The cost is named rather than hidden:** these two documents will then exist on three branches —

@@ -77,13 +77,21 @@ describe('OC-39 the grant names the identity nginx sets', () => {
 });
 
 describe('OC-40 and a template it cannot read stops the start', () => {
-  test('no identity at all is an error, not an empty grant', () => {
-    expect(script).toContain('no X-Forwarded-User identity found');
-  });
-
-  test('two identities are an error, not a coin toss', () => {
-    expect(script).toContain('sets more than one X-Forwarded-User identity');
-  });
+  // **Two cases were here and are retired into `OC-74`.** They read this script
+  // for the strings `no X-Forwarded-User identity found` and `sets more than one
+  // X-Forwarded-User identity`, which is what B5 of the 2026-10-01 review was
+  // about: *"No test runs the awk extraction."* One does now --
+  // `tests/integration/m-oc.identity-extraction.test.ts` calls the reader
+  // against nine templates, the shipped one among them, and both of the
+  // reviewer's controls redden it.
+  //
+  // They also could not have survived the repair. C4 moved the reader into
+  // `config/scripts/start/lib/proxy-identity.sh` so `start.sh` can ask for the
+  // verdict **before** `down.sh` empties the stack, so those strings are no
+  // longer in this file at all. Repointing them at the library would have kept
+  // a text check over a function that is now executed; the only reason to read
+  // the source here is what the case below does, which is where a thing sits
+  // relative to another thing.
 
   test('the grant is written only on the 2026.9 shape, and removed on the other', () => {
     // 2026.7.1's schema has no identityScopes, and a key it does not know is a

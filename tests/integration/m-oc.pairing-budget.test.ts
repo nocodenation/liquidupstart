@@ -30,36 +30,26 @@
  * process still exists. Asserting only that `pendingRequests()` returned in time
  * would have passed against the defect, since the promise did eventually resolve.
  */
-import { test, expect, describe, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { test, expect, describe } from 'bun:test';
+import { rmSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const BUDGET_MS = 2000;
-
 /**
- * One project directory for the file, and the script rewritten per scenario.
- *
- * `$lib/server/project` captures `ENV_DIR` when it is first loaded, so a second
- * directory cannot be introduced by importing again -- and a query string on the
- * specifier breaks the module's own relative imports (measured: `Cannot find
- * module './project'`). `SCRIPT()` is a function and `spawn` reads the file at
- * each call, so swapping the script's contents is the seam that actually exists.
+ * The directory and the script seam come from `tests/lib/pairingproject.ts`, which
+ * owns both for every pairing file at this level. They used to be declared here,
+ * and the header of that module records what that cost once a second file wanted
+ * them: `ENV_DIR` is captured on the first load of `$lib/server/project`, so the
+ * file that lost the race set a variable nothing would read again.
  */
-const dir = mkdtempSync(join(tmpdir(), 'm-oc-budget-'));
-mkdirSync(join(dir, 'config', 'scripts'), { recursive: true });
-const scriptPath = join(dir, 'config', 'scripts', 'openclaw-pairing.sh');
-const script = (body: string) => writeFileSync(scriptPath, body, { mode: 0o755 });
+import { BUDGET_MS, projectDir as dir, script } from '../lib/pairingproject';
 
-script('#!/usr/bin/env bash\nprintf \'%s\' \'{"pending":[]}\'\n');
-process.env.ENV_DIR = dir;
-process.env.OPENCLAW_PAIRING_BUDGET_MS = String(BUDGET_MS);
 const { pendingRequests } = await import('../../dashboard/src/lib/server/pairing');
 
-afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
-  delete process.env.OPENCLAW_PAIRING_BUDGET_MS;
-});
+// Nothing to undo. The directory is left standing, the way `newProject` leaves
+// the ones it makes -- it is shared now, and deleting it here removed it from
+// under the route cases that ran afterwards (`ENOENT`, measured). The budget was
+// captured by `$lib/server/pairing` on its first load, so unsetting the variable
+// would not reach it either.
 
 describe('OC-66 the budget bounds the request, and reaches what bash started', () => {
   test('OC-66 a script whose grandchild outlives the budget is stopped, grandchild and all', async () => {
@@ -122,6 +112,54 @@ describe('OC-66 the budget bounds the request, and reaches what bash started', (
  * It drives the real `pendingRequests()` against a stub script that prints the
  * listing the CLI prints, so the parse is the thing under test.
  */
+describe('OC-77 a warning on stderr does not make the answer unreadable', () => {
+  test('OC-77 valid JSON on stdout with a warning beside it is still parsed', async () => {
+    // C2 of the 2026-10-01 review. Both streams were appended to one string and
+    // that string was handed to `JSON.parse`, so one line on stderr answered "The
+    // gateway answered something that is not JSON." with the answer sitting in
+    // stdout the whole time. The reviewer found no real trigger in about sixty
+    // runs; that is the odds, not the consequence.
+    //
+    // The warning is the shape docker really writes to stderr on this machine
+    // rather than an invented one, so the case is run against something that
+    // happens.
+    script(
+      '#!/usr/bin/env bash\n' +
+        'echo "WARNING: daemon is not using the overlay2 storage driver" >&2\n' +
+        `printf '%s' '${JSON.stringify({
+          pending: [
+            {
+              requestId: '09cc464f-690a-4a51-9ac9-c97b7011eb34',
+              deviceId: 'dev-alpha-aaaaaaaaaaaa',
+              clientId: 'openclaw-control-ui',
+              role: 'operator',
+              scopes: ['operator.read'],
+              remoteIp: '10.99.0.9',
+              ts: 1000
+            }
+          ],
+          paired: []
+        })}'\n` +
+        'exit 0\n'
+    );
+    const r = await pendingRequests();
+    expect(r.ok).toBe(true);
+    expect(r.message).toBe('');
+    expect(r.pending).toHaveLength(1);
+    expect(r.pending[0].deviceId).toBe('dev-alpha-aaaaaaaaaaaa');
+  });
+
+  test('OC-77 the counterpart: output that really is not JSON is still reported as that', async () => {
+    // Otherwise the fix would be a parser that never complains, which is the
+    // same defect facing the other way: a card that says nothing is waiting
+    // because it could not read the answer.
+    script('#!/usr/bin/env bash\nprintf \'%s\' \'not json at all\'\nexit 0\n');
+    const r = await pendingRequests();
+    expect(r.ok).toBe(false);
+    expect(r.message).toBe('The gateway answered something that is not JSON.');
+  });
+});
+
 describe('OC-68 the revoked Control UI is read out of the listing itself', () => {
   const listing = (paired: unknown) =>
     `#!/usr/bin/env bash\ncat <<'JSON'\n${JSON.stringify({ pending: [], paired })}\nJSON\n`;

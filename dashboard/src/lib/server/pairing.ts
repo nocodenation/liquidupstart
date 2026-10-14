@@ -12,7 +12,7 @@
 // is where the docker invocation belongs, this is where HTTP belongs.
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { ENV_DIR } from './project';
+import { envDir } from './project';
 
 // A request id, exactly. This is the only value that reaches a command line, and
 // the script checks it a second time because this is not the only caller it
@@ -47,7 +47,7 @@ export function isRecoverable(r: PendingRequest): boolean {
   return r.clientId === CONTROL_UI && r.role === OPERATOR;
 }
 
-const SCRIPT = () => join(ENV_DIR, 'config', 'scripts', 'openclaw-pairing.sh');
+const SCRIPT = () => join(envDir(), 'config', 'scripts', 'openclaw-pairing.sh');
 
 // Long enough for a container start plus the CLI's own 20s timeout, short enough
 // that a wedged docker does not hold a request open for ever.
@@ -62,7 +62,11 @@ const SCRIPT = () => join(ENV_DIR, 'config', 'scripts', 'openclaw-pairing.sh');
 // explicit `-e` values and **not** the env file, so a key in the contract would be
 // a setting that does nothing. Checked rather than assumed. It is a process-level
 // hook for cases that load this module directly, and it is named here instead.
-const BUDGET_MS = Number(process.env.OPENCLAW_PAIRING_BUDGET_MS) || 60_000;
+// Read per call, for the same reason `envDir()` is: captured at module load it
+// belonged to whichever test file imported this one first, and under
+// `tests/run.sh` that is the unit level -- so `OC-66` ran against 60 seconds
+// while its own header said 2000ms, and waited out the full minute to say so.
+const budgetMs = () => Number(process.env.OPENCLAW_PAIRING_BUDGET_MS) || 60_000;
 
 /**
  * The script, bounded — and the bound reaches the container, which it did not.
@@ -88,13 +92,30 @@ const BUDGET_MS = Number(process.env.OPENCLAW_PAIRING_BUDGET_MS) || 60_000;
  *     pipes is what turned a 3-second budget into 22 seconds, and an orphan that
  *     never exits would have held it for ever.
  */
-function run(args: string[]): Promise<{ output: string; code: number | null }> {
+/**
+ * **The two streams are kept apart.** C2 of the 2026-10-01 review: both were
+ * appended to one string, and that string was handed to `JSON.parse`. One warning
+ * on stderr beside valid JSON on stdout and exit 0 therefore answered *"The
+ * gateway answered something that is not JSON."* -- with the answer sitting in
+ * `stdout` the whole time. The reviewer saw no real trigger in about sixty runs,
+ * and that is the measure of the odds, not of the consequence: the card would say
+ * the gateway is broken because something wrote a deprecation notice.
+ *
+ * It is not hypothetical from here on. Captured 2026-10-14 against the running
+ * stack, `devices list --json` with a missing grant writes the JSON to **stdout**
+ * and five `[openclaw] …` lines to **stderr** in the same call. So the shapes this
+ * module reads arrive on different streams by design, and joining them lost the
+ * one that parses.
+ */
+function run(args: string[]): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((done) => {
     // Named so the timeout can reach it. Unique per call, because two polls can
     // overlap -- which A3 is about, and until A3 is built they do.
     const container = `openclaw-pairing-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
-    const child = spawn('bash', [SCRIPT(), ENV_DIR, ...args], {
-      cwd: ENV_DIR,
+    // Once per call, so the timer and the sentence it writes cannot disagree.
+    const budget = budgetMs();
+    const child = spawn('bash', [SCRIPT(), envDir(), ...args], {
+      cwd: envDir(),
       detached: true,
       env: {
         ...process.env,
@@ -103,9 +124,10 @@ function run(args: string[]): Promise<{ output: string; code: number | null }> {
         OPENCLAW_PAIRING_CONTAINER: container
       }
     });
-    let output = '';
+    let stdout = '';
+    let stderr = '';
     let settled = false;
-    const finish = (r: { output: string; code: number | null }) => {
+    const finish = (r: { stdout: string; stderr: string; code: number | null }) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -133,17 +155,20 @@ function run(args: string[]): Promise<{ output: string; code: number | null }> {
         /* docker not reachable; nothing more to do here */
       }
       finish({
-        output:
-          `${output}\nThe request was given ${Math.round(BUDGET_MS / 1000)} seconds and did not finish. ` +
+        stdout,
+        stderr:
+          `${stderr}\nThe request was given ${Math.round(budget / 1000)} seconds and did not finish. ` +
           `It was stopped and its container removed; nothing was approved.`,
         code: -2
       });
-    }, BUDGET_MS);
+    }, budget);
 
-    child.stdout.on('data', (d) => (output += d.toString()));
-    child.stderr.on('data', (d) => (output += d.toString()));
-    child.on('error', (err) => finish({ output: `${output}${err.message}`, code: -1 }));
-    child.on('close', (code) => finish({ output, code }));
+    child.stdout.on('data', (d) => (stdout += d.toString()));
+    child.stderr.on('data', (d) => (stderr += d.toString()));
+    // This project's own words go to stderr, where the CLI's human lines are:
+    // stdout is the answer, and nothing but the answer may be parsed as one.
+    child.on('error', (err) => finish({ stdout, stderr: `${stderr}${err.message}`, code: -1 }));
+    child.on('close', (code) => finish({ stdout, stderr, code }));
   });
 }
 
@@ -174,7 +199,7 @@ export async function pendingRequests(): Promise<{
   revoked: RevokedDevice[];
   message: string;
 }> {
-  const { output, code } = await run(['list']);
+  const { stdout, stderr, code } = await run(['list']);
   if (code !== 0) {
     // The gateway being down is the ordinary case here, not an exception: this
     // card is read while something is wrong. Say what the CLI said and show no
@@ -183,12 +208,17 @@ export async function pendingRequests(): Promise<{
       ok: false,
       pending: [],
       revoked: [],
-      message: cliMessage(output) || 'The gateway did not answer.'
+      // The answer first, then the human lines: a `--json` failure puts its
+      // message in `stdout` (A1) while the `[openclaw] …` prose goes to `stderr`,
+      // and either can be the only one there.
+      message: cliMessage(stdout) || cliMessage(stderr) || 'The gateway did not answer.'
     };
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(output);
+    // `stdout` alone. C2: with `stderr` joined on, one warning made a valid
+    // answer unparseable.
+    parsed = JSON.parse(stdout);
   } catch {
     return {
       ok: false,
@@ -288,6 +318,22 @@ export function chooseRequest(
     : newestFirst;
 
   if (forDevice.length === 0) {
+    // C1 of the 2026-10-01 review. The device asked for is gone, but another
+    // browser **is** waiting -- and the operator was told "Nothing is waiting for
+    // approval." while the card beside that sentence listed one. It happens on
+    // the ordinary path: a refused browser stops asking, the gateway drops its
+    // request after about five minutes, and a card left open still carries the
+    // button. `others` counts only the requests this cannot approve, so it was 0
+    // here and the message fell through to the emptiest one of the three.
+    if (eligible.length > 0) {
+      return {
+        kind: 'refuse',
+        status: 409,
+        message:
+          `That browser is no longer waiting — it stopped asking, and the gateway drops a request it has not heard from. ` +
+          `${eligible.length} other request${eligible.length === 1 ? ' is' : 's are'} waiting; the card lists ${eligible.length === 1 ? 'it' : 'them'}, so press the one you mean.`
+      };
+    }
     const others = pending.length - eligible.length;
     return {
       kind: 'refuse',
@@ -318,16 +364,20 @@ export async function approve(
   if (!REQUEST_ID.test(requestId)) {
     return { ok: false, message: 'That is not a pairing request id.', status: 400 };
   }
-  const { output, code } = await run(['approve', requestId]);
+  const { stdout, stderr, code } = await run(['approve', requestId]);
   if (code === 0) {
-    return { ok: true, message: cliMessage(output) || `Approved ${requestId}.`, status: 200 };
+    return {
+      ok: true,
+      message: cliMessage(stdout) || cliMessage(stderr) || `Approved ${requestId}.`,
+      status: 200
+    };
   }
   // The CLI's own words, not ours. A request id goes stale within seconds
   // because a refused browser mints a new one on every retry, so "no longer
   // pending" is a normal answer and has to arrive as one rather than as silence.
   return {
     ok: false,
-    message: cliMessage(output) || `The approval failed (exit ${code}).`,
+    message: cliMessage(stdout) || cliMessage(stderr) || `The approval failed (exit ${code}).`,
     status: 502
   };
 }

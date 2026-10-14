@@ -11,20 +11,37 @@ import { json, error } from '@sveltejs/kit';
 import { approve, chooseRequest, pendingRequests } from '$lib/server/pairing';
 import type { RequestHandler } from './$types';
 
-// The same Origin check as POST. A GET spawns one `docker run` of the OpenClaw
-// image, so any page the operator had open could make the dashboard do that once
-// per request -- through an `<img>` tag, whose response it cannot read but whose
-// work it still costs. Minor of the 2026-09-29 review.
-//
-// An absent Origin passes: a same-origin GET from the address bar sends none.
-// What is refused is a different origin naming itself.
-function wrongOrigin(request: Request): boolean {
-  const origin = request.headers.get('origin');
-  return !!process.env.ORIGIN && !!origin && origin !== process.env.ORIGIN;
-}
-
 export const GET: RequestHandler = async ({ request }) => {
-  if (wrongOrigin(request)) return new Response('Forbidden', { status: 403 });
+  // C3 of the 2026-10-01 review. A GET here spawns one `docker run` of the
+  // OpenClaw image, so any page the operator had open could make the dashboard do
+  // that once per request -- through an `<img>` tag, whose response it cannot read
+  // but whose work it still costs. The old check only refused an origin that
+  // *names itself* and differs, which is the loud shape and not the quiet one.
+  //
+  // `Origin` cannot carry this on a GET, and that was measured rather than
+  // assumed: two local origins, headless Chrome, 2026-10-14. The card's own
+  // same-origin `fetch` GET sends **no** `Origin` at all, so refusing an absent
+  // one would 403 every operator -- the first form of this fix did exactly that.
+  // A cross-origin `<img>` and a `no-cors` fetch send none either. The one header
+  // that separates them is `Sec-Fetch-Site`.
+  //
+  // Checked against `same-origin` rather than for `cross-site`: both probes were
+  // on `localhost`, different ports, and Chrome called the attacker `same-site`.
+  // Another service on another local port is this dashboard's ordinary
+  // neighbour, so a `cross-site` test would miss precisely the realistic case.
+  //
+  // Absent on both means a client that is not a browser -- curl, which sends
+  // neither -- and that is not this threat: the attack needs a browser the
+  // operator already has open. POST keeps its own stricter check below, because
+  // a browser does append `Origin` to every POST.
+  const origin = request.headers.get('origin');
+  const site = request.headers.get('sec-fetch-site');
+  if (process.env.ORIGIN && origin && origin !== process.env.ORIGIN) {
+    return new Response('Forbidden', { status: 403 });
+  }
+  if (site && site !== 'same-origin') {
+    return new Response('Forbidden', { status: 403 });
+  }
   // `revoked` travels too: a refused browser stops asking and the gateway drops
   // the request after five minutes, so without it the card is empty for an
   // operator who arrives late. A4 of the 2026-10-01 review.

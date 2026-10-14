@@ -173,6 +173,44 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-54 a request the card cannot approve is nam
   });
 });
 
+describe.skipIf(!DASHBOARD_DEPS)('OC-73 the answer outlives the thing it is about', () => {
+  test('OC-73 the approval is still readable once the queue it emptied is gone', async () => {
+    // **The gap left by retiring a source pattern.** OC-43 asserted that the
+    // card's markup contained `|| result)}` -- the clause that holds the panel
+    // open once nothing is pending. B5 of the 2026-10-01 review asked for that
+    // pattern to go, and nothing else held the property: the component tier has
+    // OC-52 for a failed listing, OC-53 for an empty queue, OC-54 for the buttons
+    // and OC-55 for the re-read, and none of them presses Approve and then looks.
+    //
+    // The defect it guards against is the operator's own finding of 2026-09-18 in
+    // the deploy-key panel: a confirmation that leaves with the thing it confirms
+    // was never read. Here the approval empties the queue that drew the card, so
+    // the clause is the only reason the operator ever sees "Approved."
+    let queue: unknown[] = [OPERATOR];
+    serve(() => ({ ok: true, pending: queue, message: '' }));
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    expect(mounted.text()).toContain('openclaw-control-ui');
+
+    // What the real sequence does: the POST succeeds, the card re-reads, and the
+    // request it approved is no longer pending.
+    queue = [];
+    mounted.click('Approve this browser');
+    await mounted.settle();
+
+    const text = mounted.text();
+    expect(text).toContain('Approved.');
+    // Still a card at all -- the clause under test. Without it the section closes
+    // on the same tick and the sentence above is drawn into nothing.
+    expect(text.trim()).not.toBe('');
+    // And the next step, which only makes sense once the queue is empty.
+    expect(text).toContain('Reload that browser and it is in.');
+    // The approved device is gone from the list, so this is not the panel simply
+    // having failed to re-read.
+    expect(text).not.toContain('asking for the role');
+  });
+});
+
 describe.skipIf(!DASHBOARD_DEPS)('OC-55 and a request that arrives later appears without a reload', () => {
   test('OC-55 a focus event re-reads the list', async () => {
     let queue: unknown[] = [];

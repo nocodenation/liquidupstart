@@ -47,6 +47,7 @@ get_env() {
 # stop at a deadline. Before it, each wait below carried its own copy of the
 # deadline and none of them could be skipped.
 . "${SCRIPT_DIR}/lib/wait-for-operator.sh"
+. "${SCRIPT_DIR}/lib/proxy-identity.sh"
 
 OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 
@@ -408,28 +409,12 @@ else
   # a browser whose device token was revoked has no way back. Measured 2026-09-19;
   # the case is OC-41, and OC-42 is the half that shows this does not by itself
   # release such a browser. See §9 of docs/FEATURE-openclaw-2026-9-1.md.
+  # One place computes this, and `scripts/linux/start.sh` asks it **before**
+  # down.sh so a template this cannot read does not end the start with the stack
+  # already emptied. C4 of the 2026-10-01 review; the function's own header has
+  # the reasoning and the spellings it refuses.
   NGINX_TEMPLATE="${PROJECT_DIR}/config/nginx/templates/nginx.conf"
-  LU_PROXY_IDENTITY=""
-  if [[ -f "$NGINX_TEMPLATE" ]]; then
-    LU_IDENTITIES="$(awk -F'"' '
-      /^[[:space:]]*proxy_set_header[[:space:]]+X-Forwarded-User[[:space:]]+"/ { print $2 }
-    ' "$NGINX_TEMPLATE" | sort -u)"
-    LU_PROXY_IDENTITY="$(printf '%s\n' "$LU_IDENTITIES" | head -n 1)"
-    if [[ "$(printf '%s\n' "$LU_IDENTITIES" | grep -c .)" -gt 1 ]]; then
-      echo "Error: ${NGINX_TEMPLATE} sets more than one X-Forwarded-User identity:" >&2
-      printf '  %s\n' $LU_IDENTITIES >&2
-      echo "  The gateway grants scopes to one identity. With two, whichever is" >&2
-      echo "  granted leaves the other unable to approve a device pairing, and the" >&2
-      echo "  refusal reads as a scope error rather than a mismatch." >&2
-      exit 1
-    fi
-  fi
-  if [[ -z "$LU_PROXY_IDENTITY" ]]; then
-    echo "Error: no X-Forwarded-User identity found in ${NGINX_TEMPLATE}." >&2
-    echo "  nginx is what authenticates here; without that header the gateway" >&2
-    echo "  attributes nothing and every proxied request is refused." >&2
-    exit 1
-  fi
+  LU_PROXY_IDENTITY="$(lu_proxy_identity "$NGINX_TEMPLATE")" || exit 1
 
   # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
   # relocated agents.defaults.memorySearch to memory.search, and retired

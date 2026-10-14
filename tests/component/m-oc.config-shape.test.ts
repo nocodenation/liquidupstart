@@ -157,7 +157,16 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     });
   });
 
-  test('OC-46 admin is not in the cap, and is granted per identity instead', () => {
+  test('OC-75 admin is not in the cap, and is granted per identity instead', () => {
+    // **Renumbered from OC-46 on 2026-10-14.** B6 of the 2026-10-01 review: the
+    // overview carries `OC-46` as a *manual system* case -- the fresh browser
+    // connecting in a private window on 2026-09-19 -- and this automated case
+    // carried the same id, so a report showed a pass under `OC-46` for a run in
+    // which no browser connected at all. Same precedent as `OC-40`/`OC-42`
+    // becoming `OC-63`/`OC-64`: the later case moves. The manual run keeps the id
+    // it was signed off under, and what this one reads about the written config
+    // is `OC-75`.
+    //
     // Reversed twice, and this is the reversal that has both halves measured.
     //
     // 2026-09-10 put operator.admin IN the cap, because without it a fresh

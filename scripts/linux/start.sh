@@ -16,6 +16,7 @@ fi
 # A skip is a decision about this run. Clearing the directory here is what keeps
 # it from becoming a permanent setting nobody remembers making.
 . "${PROJECT_DIR}/config/scripts/start/lib/wait-for-operator.sh"
+. "${PROJECT_DIR}/config/scripts/start/lib/proxy-identity.sh"
 lu_clear_skips
 
 "${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
@@ -133,6 +134,18 @@ fi
 
 lu_drop_legacy_network "nocodenation_playground_network_${HTTP_PORT}"
 lu_require_free_subnet "$LU_NETWORK" "$LU_SUBNET_CIDR" || exit 1
+
+# --- Pre-flight: the identity nginx vouches for must be readable --------------
+# Before down.sh, for the reason the subnet check is: `openclaw.sh` needs this
+# value and runs **after** the teardown, so a template it could not read ended
+# the start with the stack already emptied and a message about nginx. C4 of the
+# 2026-10-01 review. The value is not kept -- `openclaw.sh` asks the same
+# function again when it needs it -- because what belongs here is the verdict,
+# and a value carried across a teardown is a second place for it to be stale.
+if ! lu_proxy_identity "${PROJECT_DIR}/config/nginx/templates/nginx.conf" >/dev/null; then
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
 
 "${PROJECT_DIR}/scripts/linux/down.sh"
 

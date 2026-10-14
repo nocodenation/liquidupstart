@@ -62,12 +62,30 @@ const NODE_HOST = req({
   requestedAt: 1000
 });
 
-// The refusal the real CLI prints, captured on 2026-09-29.
+/**
+ * The refusal the real CLI prints, captured 2026-10-14.
+ *
+ * **It was not a capture before**, which is B5 of the 2026-10-01 review: it was
+ * labelled "captured on 2026-09-29" and carried `Gateway call failed:
+ * devices.approve`, `The gateway requires operator.pairing for this method.` and
+ * `Usage: openclaw devices approve <requestId>` -- three lines the CLI does not
+ * print. The reviewer noticed because it disagreed with their own capture, and
+ * said it was harmless since `cliMessage` handles both. Harmless and wrong are
+ * different things: a fixture that is labelled as a measurement is the thing a
+ * reviewer trusts instead of running the command.
+ *
+ * Taken from `liquidupstart/openclaw:latest` on the running stack, the same
+ * invocation `config/scripts/openclaw-pairing.sh` makes -- `devices list --json`
+ * over `ws://openclaw.localhost:8888` with `--token unused`, inside
+ * `nocodenation_liquid_upstart_network_8888`. Verbatim, five lines, in this
+ * order. The grant is still missing on that stack, which is why the command
+ * answers this at all.
+ */
 const CLI_REFUSAL = [
-  '[openclaw] Gateway call failed: devices.approve',
+  '[openclaw] Could not start the CLI.',
   '[openclaw] Reason: missing scope: operator.pairing',
-  '[openclaw] The gateway requires operator.pairing for this method.',
-  '[openclaw] Usage: openclaw devices approve <requestId>',
+  '[openclaw] Debug: set OPENCLAW_DEBUG=1 to include the stack trace.',
+  '[openclaw] Try: openclaw doctor',
   '[openclaw] Help: openclaw --help'
 ].join('\n');
 
@@ -94,6 +112,57 @@ describe('OC-48 a request that is not the operator browser is never chosen', () 
     expect(choice.kind).toBe('refuse');
     expect(choice.kind === 'refuse' && choice.message).toContain('1 other request is pending');
     expect(choice.kind === 'refuse' && choice.message).toContain('OpenClaw CLI');
+  });
+});
+
+describe('OC-76 a device that is gone is not the same as an empty queue', () => {
+  const CHARLIE = req({
+    requestId: '33333333-3333-3333-3333-333333333333',
+    deviceId: 'dev-charlie-cccccccccccc',
+    requestedAt: 1200
+  });
+
+  test('OC-76 a stale deviceId with another browser waiting says so, and does not claim the queue is empty', () => {
+    // C1 of the 2026-10-01 review, reproduced before it was fixed:
+    // `chooseRequest([charlie], { deviceId: 'dev-alpha-aaaaaaaaaaaa' })` answered
+    // 409 with "Nothing is waiting for approval." -- while charlie was waiting and
+    // the card beside that sentence was listing him. `others` counts only what
+    // this cannot approve, so it was 0 and the message fell through to the
+    // emptiest of three. The path is ordinary: a refused browser stops asking,
+    // the gateway drops its request after about five minutes, and a card left
+    // open still carries the button.
+    const choice = chooseRequest([CHARLIE], { deviceId: 'dev-alpha-aaaaaaaaaaaa' });
+    expect(choice.kind).toBe('refuse');
+    expect(choice.kind === 'refuse' && choice.status).toBe(409);
+    expect(choice.kind === 'refuse' && choice.message).toContain('no longer waiting');
+    expect(choice.kind === 'refuse' && choice.message).toContain('1 other request is waiting');
+    // The sentence that was wrong, named so it cannot come back.
+    expect(choice.kind === 'refuse' && choice.message).not.toContain('Nothing is waiting');
+  });
+
+  test('OC-76 and it counts them, so two waiting browsers do not read as one', () => {
+    const choice = chooseRequest([CHARLIE, req({ deviceId: 'dev-delta-dddddddddddd' })], {
+      deviceId: 'dev-alpha-aaaaaaaaaaaa'
+    });
+    expect(choice.kind === 'refuse' && choice.message).toContain('2 other requests are waiting');
+    expect(choice.kind === 'refuse' && choice.message).toContain('press the one you mean');
+  });
+
+  test('OC-76 the counterpart: with nothing waiting at all, the empty answer is the right one', () => {
+    // Otherwise the fix would be a message that never says the queue is empty,
+    // which is just as wrong in the other direction.
+    const choice = chooseRequest([], { deviceId: 'dev-alpha-aaaaaaaaaaaa' });
+    expect(choice.kind).toBe('refuse');
+    expect(choice.kind === 'refuse' && choice.message).toBe('Nothing is waiting for approval.');
+  });
+
+  test('OC-76 and with only a request it cannot approve, that is still what the refusal says', () => {
+    // The third branch, unchanged: the node host is pending, nothing eligible is,
+    // and the operator is told what is actually there.
+    const choice = chooseRequest([NODE_HOST], { deviceId: 'dev-alpha-aaaaaaaaaaaa' });
+    expect(choice.kind === 'refuse' && choice.message).toContain('1 other request is pending');
+    expect(choice.kind === 'refuse' && choice.message).toContain('OpenClaw CLI');
+    expect(choice.kind === 'refuse' && choice.message).not.toContain('no longer waiting');
   });
 });
 
@@ -138,6 +207,13 @@ describe('OC-51 a refusal carries the reason, not the usage footer', () => {
     const message = cliMessage(CLI_REFUSAL);
     expect(message).toContain('missing scope: operator.pairing');
     expect(message).not.toContain('openclaw --help');
+    // The three trailing lines of the real capture, none of which is the reason.
+    // Asserted by name because the defect was that the **last** line won: with
+    // `.slice(-1)` the operator read `Help: openclaw --help`, and `Try: openclaw
+    // doctor` and the `Debug:` hint are two more ways to be wrong in the same
+    // direction. The old fixture had none of them.
+    expect(message).not.toContain('openclaw doctor');
+    expect(message).not.toContain('OPENCLAW_DEBUG');
   });
 
   test('OC-51 and a one-line answer still passes through unchanged', () => {
