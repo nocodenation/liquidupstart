@@ -1278,6 +1278,10 @@ describe('MU-46 and MU-47 a name that resolves to more than one test is refused'
   // evidence, and MU-33 is where the restore itself is held.
   const twoBlocks = 'spec/samename.test.ts';
   const blockAndTest = 'spec/blockandtest.test.ts';
+  // N1 of the fourth re-review: the same ambiguity one level up, on the block
+  // side. The reviewer's two shapes, by his names.
+  const twoNested = 'spec/f1n.test.ts';
+  const topAndNested = 'spec/f1t.test.ts';
 
   beforeAll(() => {
     const head = `
@@ -1300,6 +1304,22 @@ test('unrelated', () => { expect(1).toBe(1); });
 describe('rejects a bad value', () => { test('under the block', () => { expect(s).toContain('MODE=600'); }); });
 test('rejects a bad value', () => { expect(s).toContain('POLICY="protected"'); });
 `);
+    // Two *nested* blocks with one name: `policy > checks` guards the policy,
+    // `mode > checks` guards the mode. An entry naming `checks` means neither in
+    // particular, and the mutation reddens only the second.
+    writeFileSync(join(root, twoNested), `${head}
+describe('policy', () => { describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); }); });
+describe('mode', () => { describe('checks', () => { test('m', () => { expect(s).toContain('MODE=600'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // The shape where the remedy cannot help: a **top-level** `checks` whose own
+    // full name is `checks`, beside a nested `mode > checks`. No spelling names
+    // the first more precisely than the caller already did.
+    writeFileSync(join(root, topAndNested), `${head}
+describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); });
+describe('mode', () => { describe('checks', () => { test('m', () => { expect(s).toContain('MODE=600'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
   });
 
   test('MU-46 the same test name in two blocks is refused, and the remedy is named', () => {
@@ -1314,6 +1334,47 @@ test('rejects a bad value', () => { expect(s).toContain('POLICY="protected"'); }
     const r = run(registry([entry({ spec: blockAndTest, mustFail: 'rejects a bad value', from: 'MODE=600', to: 'MODE=777' })]));
     expect(r.output).toContain('resolves to more than one test');
     expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-61 two nested blocks with one name are refused, not credited to either', () => {
+    // **N1 of the 2026-10-14 fourth re-review**, and it is finding 1 one level
+    // up. A block match was identified by the name the caller typed, so two
+    // different blocks collapsed into one thing and the ambiguity refusal never
+    // fired. Reproduced at b8b608b: `VALIDATED F1N  checks  (1 red, 2 green)`,
+    // exit 0, with the policy test green throughout. A false VALIDATED is the
+    // one verdict this tool must never print.
+    const r = run(registry([entry({ spec: twoNested, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('resolves to more than one test');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-61 and the remedy resolves it, which is what makes the refusal useful', () => {
+    const r = run(registry([entry({ spec: twoNested, mustFail: 'mode > checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 a top-level block whose name repeats deeper is that block, not an ambiguity', () => {
+    // The shape where the remedy the refusal offers would be the name already
+    // given: the top-level block's full name **is** `checks`. The reviewer left
+    // the choice between precedence and an honest refusal; precedence is taken,
+    // because it leaves the author a way to express both. So this entry means
+    // the top-level block, the mutation reddens the other one, and the verdict
+    // is FAILED — which is true, and is not a false VALIDATED.
+    const r = run(registry([entry({ spec: topAndNested, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('FAILED');
+    expect(r.output).toContain("1 test(s) red but not 'checks'");
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-62 and the nested one is still reachable by its path', () => {
+    // The counterpart: precedence must not make the deeper block unnameable,
+    // which would trade a false VALIDATED for a case nobody can write.
+    const r = run(registry([entry({ spec: topAndNested, mustFail: 'mode > checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
   }, 300_000);
 
   test('MU-47 and naming it in full resolves the ambiguity rather than only reporting it', () => {

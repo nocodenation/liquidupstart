@@ -101,6 +101,10 @@ difference ever reached a verdict, and it is gone.
 | **MU-58** | **negative** | A spec that does not exist is refused before anything is mutated |
 | **MU-59** | positive | This document and the test file name the same scenarios, in both directions |
 | **MU-60** | positive | An ordinary run ends with the gap line, it agrees with `--gaps`, and it does not change what the run concluded |
+| **MU-61** | **negative** | Two nested blocks with one name are refused, not credited to either — *N1 of 2026-10-14* |
+| **MU-61** | positive | …and the remedy the refusal names resolves it |
+| **MU-62** | **negative** | A top-level block whose name repeats deeper is **that** block, so a mutation reddening the other one is `FAILED` and not `VALIDATED` |
+| **MU-62** | positive | …and the nested one is still reachable by its path |
 
 ## Scenarios
 
@@ -170,6 +174,8 @@ human comparison that nothing repeated. Renaming a test is a two-file change now
 | **MU-58** | and a spec that does not exist is refused before anything is mutated |
 | **MU-59** | every scenario in this file has a row in the specification<br>and the specification lists no scenario this file does not have<br>and the comparison is over something, so an empty read fails |
 | **MU-60** | an ordinary run ends with the gap line, and it agrees with --gaps<br>and the line does not change what the run concluded |
+| **MU-61** | two nested blocks with one name are refused, not credited to either<br>and the remedy resolves it, which is what makes the refusal useful |
+| **MU-62** | a top-level block whose name repeats deeper is that block, not an ambiguity<br>and the nested one is still reachable by its path |
 
 **What the blocks below do not carry, and that is a decision.** They are per group — the fixture and
 the reasoning are shared, and repeating them 89 times would bury the differences. They do not carry
@@ -283,17 +289,85 @@ in order to sign a case off or challenge it without opening the implementation.
 | **Covers** | MU-FR3, MU-FR4, MU-NFR2. |
 | **What they found** | The exempt path returned **before** the loader's checks, so a newline in the reason produced a phantom entry, an empty case gave `REFUSED   -  no such subject: -`, and an entry carrying both was silently exempted with its mutation never run — a case that stopped being proven, with nobody deciding that. And MU-10 had been specified since 2026-09-19 and never built: `bun --timeout` ends a test that awaits too long and cannot end one that never yields, so `while (true) {}` hung the runner for ever, while an async hang came back **validated** because bun reddened the test and the run carried on. |
 
+### MU-46, MU-47, MU-61, MU-62 — a name that resolves to more than one thing
+
+| | |
+|---|---|
+| **Premise** | Finding 1 of the third re-review, then **N1 of the fourth**, which is the same defect one level up. A `mustFail` name is matched against the record, and the predicate was widened on purpose so that a `describe` standing for generated tests counts as one thing (MU-42). What it did not do is ask **what** the name resolved to, so "red if any is red" credited whichever test happened to redden. On the leaf side two blocks could share a test name; on the block side a block was identified by *the name the caller typed*, so two different blocks collapsed into one. |
+| **What was measured, and it is the worst shape a verdict can take** | At `0018c6d`, leaf side: `VALIDATED FX-1  rejects a bad value  (1 red, 2 green)`, exit 0, with the policy test green throughout. At `b8b608b`, block side, reproduced here before the repair: `VALIDATED F1N  checks  (1 red, 2 green)`, exit 0, same story. **A false VALIDATED is the one verdict this tool must never print**, because every case that relies on the registry then rests on it. |
+| **Component** | `named_state` in `tests/mutate.sh`, driven through the whole runner against throwaway fixtures. |
+| **Test data, both sides** | Four specs, each with a subject carrying `POLICY="protected"` and `MODE=600`, and each mutation `MODE=600` → `MODE=777`, so the named thing is about POLICY and the mutation is about MODE — the mismatch is what a false VALIDATED hides. `spec/samename.test.ts`: `policy > rejects a bad value` and `mode > rejects a bad value`. `spec/blockandtest.test.ts`: a `describe('rejects a bad value')` and a top-level `test` of the same name. `spec/f1n.test.ts`: `policy > checks > p` and `mode > checks > m`, the reviewer's shape. `spec/f1t.test.ts`: a **top-level** `describe('checks')` beside `mode > checks`. What must still work: `mode > checks` and `rejects a bad value > under the block` resolve, so the remedy the refusal offers is shown to be a remedy. |
+| **Expected** | Refusal naming `resolves to more than one test` for the three ambiguous shapes, with the remedy quoted; `VALIDATED` when the full path is given. For `f1t`, where the top-level block's own full name **is** `checks` and no spelling is more precise, an exact path takes precedence: the entry means that block, the mutation reddens the other, and the verdict is `FAILED  …  1 test(s) red but not 'checks'`. |
+| **Why precedence rather than a refusal for `f1t`** | The reviewer left the choice open. A refusal there would have to say "this is ambiguous and there is nothing you can write", which leaves the author no way to express either block; precedence leaves both expressible — `checks` for the top-level one, `mode > checks` for the other — and still cannot produce a false VALIDATED, because the named block either reddened or it did not. |
+| **What it found** | Green, 8 scenarios. MU-42 is the positive counterpart for the widened predicate and is deliberately not duplicated here: if a repair had closed the ambiguity by narrowing back to exact leaf names, MU-42 would be red. It is green, and all 91 earlier MU scenarios stayed green across this repair. |
+| **Not asserted, because it cannot be** | That the refusal happens *before* the mutation rather than after. A test comparing the subject's hash after the run was written and the control removed it: it was green in both worlds, because every path restores the subject, so the hash cannot tell a baseline refusal from a validated entry. The message is the evidence, and MU-33 holds the restore itself. |
+| **Controls** | The leaf identity reverted to the typed name → the leaf scenarios red. The block identity reverted to `"block@" + want` → MU-61 red, printing the false `VALIDATED` again. The exact-path precedence removed → MU-62 red, refusing where it should resolve. |
+| **Implemented by** | `tests/integration/m-mu.runner.test.ts`. |
+| **Covers** | MU-46, MU-47, MU-61, MU-62, MU-FR4. |
+
+### MU-48 to MU-51 — the bound and the signal reach bun, and the budget is a setting
+
+| | |
+|---|---|
+| **Premise** | Finding 2 and finding 4 of the third re-review. `( … bun test … ) &` put a **subshell** between the runner and bun, so `$!` was the subshell and neither the budget nor the signal handler reached the process doing the work. And the budget itself is a setting that could be wrong in three ways, two of them silent. |
+| **What was measured** | At `0018c6d`, a 3000 ms budget against a mutation that makes the named test spin: `REFUSED … did not finish`, the subject restored — and `bun test` still at **98.7% CPU five seconds later**. The suite's own MU-37 and MU-39 left three such processes behind on every run. **The sharpest consequence is not the CPU**: the orphan still holds `--reporter-outfile`, so it writes the record *after* the handler removed it — `lu-mutate-junit.XXXXXX` reappeared in `TMPDIR` eight seconds after the runner had gone, and that file is where every later entry reads its verdict. For the budget: `5m` gave an arithmetic error on every poll, **no bound at all**, and still printed `VALIDATED` with exit 0 — a verdict from a run nothing was watching; `abc` killed the runner with `unbound variable`, no report, and left two temporary files behind; `0` refused every entry, which is wrong but visible. |
+| **Component** | The spawn and the budget poll in `tests/mutate.sh`, and its TERM handler. |
+| **Test data, both sides** | Specs named for what they do: `slow-when-mutated` spins only once the mutation is applied, `slow-always` spins in the baseline too, so the budget is exercised at both stages. The three bad budgets are **the reviewer's own values**, kept rather than invented, so his reproduction and this case measure the same things: `5m`, `abc`, `0`. What must still be accepted: a plain whole number, so the check refuses only what it should. The signal scenarios send TERM while the subject is mutated and while the unmutated spec runs. |
+| **Expected** | No `bun` process left behind, no `lu-mutate*` file in `TMPDIR` afterwards, the subject restored, and no record written after the handler ran. Each bad budget refused **before anything runs**; a whole number accepted. |
+| **What it found** | Green, 9 scenarios. The three bad-budget titles are written out rather than looped **because `MU-59` compares this document with the test file and a title built by interpolation cannot be compared** — a constraint the drift check imposes on how cases are written, which is worth knowing before adding more. |
+| **What it still does not reach, and it is in the backlog** | A process the **spec itself** started. The subject is `exec`ed inside the subshell, so the signal reaches bun; a grandchild of bun needs a process group. Recorded in `BACKLOG.md` — which N3 of the fourth re-review found was not true when first claimed, and now is. |
+| **Controls** | The `exec` removed, restoring the subshell → the orphan scenarios red. Each budget check removed in turn → its own scenario red, and the whole-number counterpart stays green. |
+| **Implemented by** | `tests/integration/m-mu.runner.test.ts`. |
+| **Covers** | MU-48 to MU-51, MU-FR5, MU-NFR2. |
+
+### MU-52, MU-53, MU-54 — the numbers come from the record, and the subject is where it leads
+
+| | |
+|---|---|
+| **Premise** | Findings 6, 7 and 5 of the third re-review. `tally` matched `^ *N pass|fail|error$` over combined stdout and stderr — **and a test can print such a line**. A subject could be a symlink, so what was judged and what was mutated were two different paths. And a spec that was already red before the mutation had the mutation blamed for it. |
+| **What was measured** | At `0018c6d`: a two-test spec where both redden under the mutation, with one test doing `console.log(" 3 pass")`, printed `VALIDATED FX-6a  the policy is protected  (2 red, 3 green)`, exit 0 — **a false VALIDATED produced by the subject under test**, which is the worst shape a measurement can take. A test doing `console.log(" 1 error")` printed `REFUSED … did not load before the mutation — 1 error(s)`. |
+| **Component** | `counts` and `named_state` reading `<testsuites tests= failures= skipped=>`; the subject resolution; the baseline check. |
+| **Test data, both sides** | For MU-52: specs printing ` 3 pass` and ` 1 error` from inside a test, which is the only way to prove the numbers cannot come from the console. For MU-53: `alias-to-spec.sh` → the spec file, `lnk/helper.ts` → `tests/lib`, `UPPER.TEST.ts` by name — each must be refused and the refusal must say **where it led**, not merely that it was odd — and `alias-to-plain.sh` → an ordinary file, which must still be accepted, so the guard is not "refuse every link". For MU-54: a spec with a red sibling before any mutation, and a correct mutation over that red sibling, which must be refused *for the right reason*; plus a green baseline, which must be measured rather than refused. |
+| **Expected** | The counts taken from the record in every case; the console-printed lines ignored for counting while the error signal still has to agree with a record showing nothing ran. Links and the upper-case name refused with the destination named. A red baseline refused and named, never blamed on the mutation. |
+| **What it found** | Green, 11 scenarios. The upper-case name was *reasoned* rather than run in the earlier round and is now run, which the case says of itself. MU-30 and MU-44 are the counterparts for the record-reading and are deliberately not duplicated. |
+| **Controls** | The console `tally` restored → MU-52 red with the false `VALIDATED` again. The link resolution removed → MU-53's three refusals red, the ordinary-link counterpart green. The baseline check removed → MU-54 red. |
+| **Implemented by** | `tests/integration/m-mu.runner.test.ts`. |
+| **Covers** | MU-52, MU-53, MU-54, MU-FR4, MU-NFR3. |
+
+### MU-55 to MU-60 — what the run says about itself
+
+| | |
+|---|---|
+| **Premise** | The remaining findings of the third re-review and the author's own additions: a `--case` that matches nothing printed a clean report, a mutation spanning several lines could not be expressed, a mutation that stops the tests registering read as a test that passed, a missing spec was discovered after the subject had been mutated, this document and the test file could drift apart unnoticed, and the gap line was documented but only printed with `--gaps`. |
+| **Component** | The argument handling, the mutation application, the report, and the drift check — which reads **this repository** rather than a fixture, as MU-8's `--gaps` scenarios do. |
+| **Test data, both sides** | A `--case` naming an id no registry row carries, which must be an error rather than an empty success. A `from` carrying a newline, applied and then taken back out — with the counterpart of a multi-line `from` that is **not** present, which must still be refused, so the feature is not "accept anything multi-line". A spec whose mutation leaves `while (true) {}` at module scope, so nothing registers at all. A spec path that does not exist, which must be refused **before** anything is mutated. For MU-59: this document and `tests/integration/m-mu.runner.test.ts`, compared in both directions, with a third scenario asserting the comparison is over something, so an empty read fails rather than passes. |
+| **Expected** | An error for the unmatched `--case`; the multi-line mutation applied and reverted, and the absent one refused; the non-registering spec refused as a run that did not happen; the missing spec refused with the subject untouched; the two documents agreeing in both directions; and the gap line on **every** run, agreeing with `--gaps` and changing no verdict. |
+| **What it found** | Green, 12 scenarios — and `MU-59` earned itself immediately: adding `MU-61` and `MU-62` to the test file turned it red until their rows were written here, which is the drift it exists to catch, caught on the first occasion after it was built. |
+| **What MU-59 does not read, stated because the reviewer asked** | It compares **scenario titles**, in both directions. It cannot see a missing *traceability* row — which is how fifteen cases came to have no requirement mapping at all (N2) — nor a missing detail block, nor a row whose wording drifted from what the case asserts. Those are read by a person, and the blocks above are what that person reads. |
+| **Controls** | Each check removed in turn → its own scenario red. For MU-59, the comparison fed an empty document → its third scenario red, which is what keeps a green from meaning "nothing was compared". |
+| **Implemented by** | `tests/integration/m-mu.runner.test.ts`. |
+| **Covers** | MU-55 to MU-60, MU-FR4, MU-FR5, MU-FR7, MU-NFR1. |
+
 ## Traceability
+
+*Rows for MU-46 to MU-62 added 2026-10-14.* **N2 of the fourth re-review: the fifteen cases of the
+third round had overview rows, scenario rows and no traceability at all**, so nothing said which
+requirement any of them served and `MU-59` — which compares this document with the test file — cannot
+see a missing traceability row, only a missing scenario. The mapping is the reviewer's, checked
+against each case rather than taken on trust, with `MU-57` added under MU-FR4 and `MU-56` under
+MU-FR5 because a mutation that stops the tests registering, and one spanning several lines, are both
+about the named test failing and the subject going back.
+
 
 | Requirement | Covered by |
 |---|---|
 | MU-FR1 an entry names case, file, from, to and the test that must fail | MU-1, MU-19, MU-32 |
 | MU-FR2 one entry at a time, only the owning test file, restored | MU-1, MU-6, MU-31 |
 | MU-FR3 a `from` that does not occur exactly once fails and names the entry | MU-2, MU-3, MU-35 |
-| MU-FR4 the named test must fail, and at least one other must pass | MU-4, MU-12, MU-22, MU-24, MU-27, MU-30, MU-40, MU-41, MU-42, MU-44, MU-45 |
-| MU-FR5 restored on success, on failure and on interrupt | MU-6, MU-23, MU-25, MU-26, MU-33, MU-37, MU-39, MU-43 |
+| MU-FR4 the named test must fail, and at least one other must pass | MU-4, MU-12, MU-22, MU-24, MU-27, MU-30, MU-40, MU-41, MU-42, MU-44, MU-45, **MU-46, MU-47, MU-52, MU-54, MU-57, MU-61, MU-62** |
+| MU-FR5 restored on success, on failure and on interrupt | MU-6, MU-23, MU-25, MU-26, MU-33, MU-37, MU-39, MU-43, **MU-48, MU-49, MU-51, MU-56** |
 | MU-FR6 it refuses a subject with uncommitted changes | MU-7 |
-| MU-FR7 the report lists each entry, its mutation and its outcome, and the gap separately | MU-8, MU-13, MU-20, MU-29, MU-34, MU-36 |
-| MU-NFR1 the gap is computed, not counted | MU-8, MU-36 |
-| MU-NFR2 the run is bounded | MU-37, MU-38, MU-39 |
-| MU-NFR3 the registry may not edit the assertions | MU-9, MU-21, MU-28 |
+| MU-FR7 the report lists each entry, its mutation and its outcome, and the gap separately | MU-8, MU-13, MU-20, MU-29, MU-34, MU-36, **MU-55, MU-58, MU-60** |
+| MU-NFR1 the gap is computed, not counted | MU-8, MU-36, **MU-60** |
+| MU-NFR2 the run is bounded | MU-37, MU-38, MU-39, **MU-48, MU-49, MU-50, MU-51** |
+| MU-NFR3 the registry may not edit the assertions | MU-9, MU-21, MU-28, **MU-53** |

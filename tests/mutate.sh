@@ -425,6 +425,7 @@ named_state() {  # named_state <name>
     let depth = 0;
     let ran = 0, red = 0;
     const ids = new Set();
+    const hits = [];
 
     const re = /<\/?(testsuite|testcase)\b([^>]*?)(\/?)>/g;
     let m;
@@ -470,12 +471,39 @@ named_state() {  # named_state <name>
       // under two different blocks is two things. A block match is identified by
       // the block name, so a describe standing for twenty generated tests stays
       // one thing -- which is the case this predicate was widened for.
+      // **A block is identified by where it sits, not by what the caller typed.**
+      // This said "block@" + want, so two different blocks with the same name
+      // collapsed into one thing, the ambiguity refusal never fired, and "red if
+      // any is red" credited whichever of them reddened. Finding 1 again, one
+      // level up. Measured at b8b608b with a spec holding policy > checks > p
+      // and mode > checks > m, an entry meaning the policy block and mutating
+      // MODE: VALIDATED F1N  checks  (1 red, 2 green), exit 0, with the policy
+      // test green throughout. N1 of the 2026-10-14 fourth re-review.
+      //
+      // The prefix up to and including the matched segment is the block, so
+      // those two are two things and the caller refuses. A describe standing for
+      // twenty generated tests is still one thing, which is the case this
+      // predicate was widened for -- MU-42 is that counterpart.
       let identity = "";
-      if (name === want || full === want) identity = "test@" + path;
-      else if (path === want || segs.includes(want) || (path !== "" && path.startsWith(want + " > "))) {
-        identity = "block@" + want;
-      } else continue;
-      ids.add(identity);
+      let exact = false;
+      if (name === want || full === want) { identity = "test@" + path; exact = true; }
+      else if (path === want) {
+        exact = true;
+        // **An exact path wins over a segment match**, and without that rule a
+        // top-level describe named checks and a nested mode > checks are two
+        // things that nothing can tell apart: the full name of the top-level
+        // block IS checks, so no spelling the author can write disambiguates it.
+        // With this, checks means the top-level block and mode > checks means
+        // the other one.
+        identity = "block@" + path;
+      } else {
+        const i = segs.indexOf(want);
+        if (i !== -1) identity = "block@" + segs.slice(0, i + 1).join(" > ");
+        else if (path !== "" && path.startsWith(want + " > ")) identity = "block@" + want;
+        else continue;
+      }
+      // Collected rather than counted here: whether a segment match survives
+      // depends on something only the whole record knows -- see the filter below.
 
       const body = m[3] === "/"
         ? ""
@@ -490,9 +518,20 @@ named_state() {  # named_state <name>
       // refusal message itself names. Finding 1.
       if (/<skipped\b/.test(body)) continue;
 
-      ran += 1;
-      if (/<(failure|error)\b/.test(body)) red += 1;
+      hits.push({ identity: identity, exact: exact, red: /<(failure|error)\b/.test(body) });
     }
+
+    // **An exact match outranks a segment match**, decided once over the whole
+    // record because a single testcase cannot know whether a better match exists
+    // elsewhere in the file. Without this, a top-level describe named checks and
+    // a nested mode > checks are two things that nothing can tell apart: the full
+    // name of the top-level block IS checks, so the remedy the refusal offers --
+    // name it in full -- would be the name already given. N1 of the fourth
+    // re-review named this shape and left the choice open between precedence and
+    // an honest refusal; precedence is taken, because it leaves the author a way
+    // to express both blocks, and mode > checks still means the other one.
+    const kept = hits.some((h) => h.exact) ? hits.filter((h) => h.exact) : hits;
+    for (const h of kept) { ids.add(h.identity); ran += 1; if (h.red) red += 1; }
 
     console.log(ids.size > 1 ? "ambiguous" : red > 0 ? "fail" : ran > 0 ? "pass" : "none");
    } catch (e) { console.error("junit: " + (e && e.message ? e.message : e)); process.exit(2); }
