@@ -31,21 +31,37 @@
  *           them the fix could pass by never holding the panel and never
  *           counting, which is the defect M-A14 was built to remove: a
  *           confirmation swept away with its panel was never read.
+ *
+ * Precondition: DASHBOARD_DEPS -- the dashboard's dependencies are installed.
+ *           This tier mounts components, so it needs a DOM, and the DOM comes
+ *           from `dashboard/node_modules`. Without them `setupComponentTier`
+ *           cannot resolve @happy-dom/global-registrator and the failure arrives
+ *           as an unhandled error between tests rather than as a red case --
+ *           which is how it stayed unexplained in two measurements. SP-1, SP-2.
  */
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { repoRoot } from '../lib/paths';
+import { DASHBOARD_DEPS } from '../lib/preconditions';
 import { mountComponent, reactiveProps, setupComponentTier } from '../lib/mount';
 
 const TASK_RUNNER = join(repoRoot, 'dashboard/src/lib/components/TaskRunner.svelte');
 const A = 'github.com_nocodenation_agent-skills';
 const B = 'github.com_nocodenation_liquid-flows';
 
-await setupComponentTier();
-const { task } = await import(join(repoRoot, 'dashboard/src/lib/task-state.svelte.js'));
+// Reached at file level, so nothing inside a describe can guard it: a module's
+// top-level await runs when the file is loaded, before any block is skipped.
+// Without the dashboard's dependencies this threw as an unhandled error between
+// tests, which is why two measurements reported it without naming a case. SP-2.
+if (DASHBOARD_DEPS) await setupComponentTier();
+const { task } = DASHBOARD_DEPS
+  ? await import(join(repoRoot, 'dashboard/src/lib/task-state.svelte.js'))
+  : ({ task: null } as { task: null });
 
 const originalFetch = globalThis.fetch;
 beforeEach(() => {
+  if (!DASHBOARD_DEPS) return;  // `task` is null without them -- see the note above.
   // Every request this panel makes: the skip is accepted, and the repository
   // lookup answers with nothing, which the panel renders as the slug.
   globalThis.fetch = (async (url: any) => {
@@ -59,6 +75,7 @@ beforeEach(() => {
   }) as any;
 });
 afterEach(() => {
+  if (!DASHBOARD_DEPS) return;  // `task` is null without them -- see the note above.
   globalThis.fetch = originalFetch;
   task.log = '';
 });
@@ -74,7 +91,12 @@ async function panel(log: string) {
   return m;
 }
 
-describe('A16-14 the countdown names what actually follows', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-14 the countdown names what actually follows', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('skipping the last of two says Closing', async () => {
     const m = await panel(waitingOn(B, [A, B]));
     expect(m.text()).toContain('Add a deploy key to continue');
@@ -89,7 +111,12 @@ describe('A16-14 the countdown names what actually follows', () => {
   });
 });
 
-describe('A16-15 and it does say Next repository when one follows', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-15 and it does say Next repository when one follows', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('skipping the first of two', async () => {
     const m = await panel(waitingOn(A, [A, B]));
     m.click('Skip for this start');
@@ -100,7 +127,12 @@ describe('A16-15 and it does say Next repository when one follows', () => {
   });
 });
 
-describe('A16-13 a git-key skip is still held long enough to read', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-13 a git-key skip is still held long enough to read', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('the confirmation is on screen after the panel would have closed', async () => {
     const m = await panel(waitingOn(B, [B]));
     m.click('Skip for this start');
@@ -111,7 +143,12 @@ describe('A16-13 a git-key skip is still held long enough to read', () => {
   });
 });
 
-describe('A16-19 skip-all says it too, with the space', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-19 skip-all says it too, with the space', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('A16-19 "All skipped" renders a space before the countdown', async () => {
     // The same whitespace trim as the single skip, one block up, missed when
     // that one was fixed on 2026-09-22. Finding 3 of the 2026-09-28 review.
@@ -122,7 +159,12 @@ describe('A16-19 skip-all says it too, with the space', () => {
   });
 });
 
-describe('A16-12 a provider skip does not reopen a finished deploy-key panel', () => {
+describe.skipIf(!DASHBOARD_DEPS)('A16-12 a provider skip does not reopen a finished deploy-key panel', () => {
+  // A skipped describe still has its body evaluated -- bun has to run it to
+  // register the tests it contains -- and this body awaits a mount at that
+  // point, so `skipIf` alone leaves the failure arriving as an unhandled error
+  // between tests. Measured twice before the cause was found. SP-2.
+  if (!DASHBOARD_DEPS) return;
   test('skipping Claude leaves the git panel closed', async () => {
     const m = await panel(waitingOn(B, [B]));
     // Deal with the repository the way a start does: the skip, then the start's
@@ -145,3 +187,14 @@ describe('A16-12 a provider skip does not reopen a finished deploy-key panel', (
     m.unmount();
   }, 30_000);
 });
+
+// **Why this file says something when it does nothing.** The describes above
+// return early without the dashboard's dependencies, so they register no tests and
+// the run would simply not mention them -- a silent skip, which is the shape this
+// project refuses everywhere else. This one runs only in that case, and names it.
+test.skipIf(DASHBOARD_DEPS)(
+  'SP-2 the cases in this file need the dashboard dependencies, which are absent here',
+  () => {
+    expect(existsSync(join(repoRoot, 'dashboard', 'node_modules'))).toBe(false);
+  }
+);
