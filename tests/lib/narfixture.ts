@@ -45,6 +45,58 @@ export const BROKEN_SOURCE = probeSource(BROKEN_BODY);
 export const OWN_POM_ARTIFACT = 'probe-with-pom';
 export const OWN_POM_DEPENDENCY = 'commons-lang3';
 
+/**
+ * Two dependencies the seed has never seen, and their marker files inside a NAR.
+ *
+ * The seed is built from what the **synthesiser's** pom needs, so every case that
+ * exercises it so far resolves out of it. Nothing measured an author pom naming
+ * something else, which is the ordinary reason to write a pom at all: an SSL
+ * context service API, a client library, a JSON mapper.
+ *
+ * Jackson and Guava, chosen for three reasons rather than at random. Neither is
+ * anywhere in the NiFi API's own tree, so neither can arrive by accident --
+ * checked, not assumed, by `B7-5`'s first scenario reading the seed. Both are
+ * large enough that resolving them is unambiguous in the `downloads` figure.
+ * And both are ordinary: this is what an author's pom looks like, not a fixture
+ * shaped to pass.
+ */
+export const UNSEEDED_ARTIFACT = 'probe-unseeded';
+export const UNSEEDED_DEPENDENCIES = [
+  { groupId: 'com.fasterxml.jackson.core', artifactId: 'jackson-databind', version: '2.18.2' },
+  { groupId: 'com.google.guava', artifactId: 'guava', version: '33.4.0-jre' }
+] as const;
+/** What must be inside the bundle if the two really resolved and were packaged. */
+export const UNSEEDED_JARS = [
+  'jackson-databind-2.18.2.jar',
+  'jackson-core-2.18.2.jar',
+  'jackson-annotations-2.18.2.jar',
+  'guava-33.4.0-jre.jar'
+];
+
+/**
+ * The same pom `ownPom` builds, with the two unseeded dependencies in place of
+ * `commons-lang3`. Written through one function so the two cases cannot drift
+ * into testing different things.
+ */
+export function unseededPom(nifiVersion: string, javaMajor: string): string {
+  const deps = UNSEEDED_DEPENDENCIES.map(
+    (d) => `    <dependency>
+      <groupId>${d.groupId}</groupId>
+      <artifactId>${d.artifactId}</artifactId>
+      <version>${d.version}</version>
+    </dependency>`
+  ).join('\n');
+  return ownPom(nifiVersion, javaMajor)
+    .replace(`<artifactId>${OWN_POM_ARTIFACT}</artifactId>`, `<artifactId>${UNSEEDED_ARTIFACT}</artifactId>`)
+    .replace(
+      new RegExp(
+        `    <dependency>\\s*<groupId>org\\.apache\\.commons</groupId>\\s*` +
+          `<artifactId>${OWN_POM_DEPENDENCY}</artifactId>\\s*<version>[^<]+</version>\\s*</dependency>`
+      ),
+      deps
+    );
+}
+
 export function ownPom(nifiVersion: string, javaMajor: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"

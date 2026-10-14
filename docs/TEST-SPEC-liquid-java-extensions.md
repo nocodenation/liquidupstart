@@ -1182,6 +1182,12 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 | **B7-3** | positive | Contract | Both readers take the pins from the one file | If the seeding step and the build could pin differently, the seed would be the closure of a build that never runs |
 | **B7-4** | positive | Contract | The stale host directory is named once | An installation that ran before the move still holds tens of megabytes that nothing reads |
 | **B7-4** | **negative** | Contract | …and not deleted, and `start.sh` invokes the notice | Removing a directory the operator may have copied into is not a start script's call — the same shape and reason as `liquid.sh`'s notice about `volumes/liquid/api` |
+| **B7-5** | positive | Integration | The seed holds neither dependency, read rather than assumed | A later change seeding jackson would leave every assertion below passing while the case silently stopped being about the cold path |
+| **B7-5** | positive | Integration | An author pom naming something unseeded **builds** | A seed used as a whitelist would make the fourth leg a ceiling on the feature `B1-6` exists to protect |
+| **B7-5** | positive | Integration | …and `downloads` is greater than zero, with both jars inside the bundle | The opposite reading to `B1-9`'s `downloads 0`, and it has to be, or they came from somewhere they should not have |
+| **B7-5** | positive | Integration | …and the repository it downloaded into does not survive the build | |
+| **B7-5** | **negative** | Integration | A second build downloads them **again** rather than finding them | If this read 0, what the first build fetched outlived it — the shared cache the fourth leg removed, back as a side effect of the seed |
+| **B7-5** | positive | Integration | With no seed in the installed image the file says so, out loud | Five skipped cases are otherwise a silent gap |
 | **B1-9** | positive + **negative** | Integration | *Rewritten here.* No cache is shared between builds, and the seed is why that is affordable | See its own block below |
 
 #### B7-1 to B7-4 — the declarations
@@ -1196,6 +1202,25 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 | **What it found** | Green, 6 scenarios, 39 assertions. Writing it found two defects of my own: the `--` in `settings.xml` that Maven refused outright, and the comment-matching above. **Controls, each reverting the one thing a case guards: 7 run, each reddening exactly one case and nothing else** — the mount restored, the copy removed, the seeding step disabled, `maven-install-plugin` dropped, a `--` returned to the comment, the notice turned into an `rm -rf`, and `start.sh` stopping invoking it. |
 | **Implemented by** | `tests/contract/m-b7.seeded-cache.test.ts`. |
 | **Covers** | B7-1, B7-2, B7-3, B7-4, FR26, FR37, FR38, FR39. |
+
+#### B7-5 — an author pom naming something the seed has never held
+
+> **Specified 2026-10-14 and not yet run.** It needs the builder image built from this branch and the
+> stack started from a checkout that carries it; the installation this machine runs today predates
+> the seed, so the file skips with a voice. The block is written now, with the expectation stated,
+> so that what it found can be added rather than invented. **Nothing in this entry claims a result.**
+
+| | |
+|---|---|
+| **Premise** | The seed is built from what the **synthesiser's** pom needs, so every case that exercises it resolves out of it and reads `downloads 0`. That is the warm path and it is the only one measured. The ordinary reason to write a pom at all is to name something the synthesiser would never add — an SSL context service API, a client library, a JSON mapper — and nothing says what happens then. |
+| **Two ways it could be wrong, and they fail in opposite directions** | A seed treated as a **whitelist** refuses the build, which turns B1's fourth leg into a ceiling on the feature `B1-6` exists to protect. A seed that quietly **persists** what a build downloaded puts the fourth leg back where it started: an artifact one build fetched, there for the next one to resolve. One case cannot be written against both without saying which reading distinguishes them, which is why the second build is a scenario of its own. |
+| **Component** | The installed stack's `nar_builder`, driven through `nar-build` inside `opencode`, as `B1-9` and `B1-6` are. |
+| **Steps** | Read the seed for the two dependencies; build; read `downloads` and the bundle's entries; probe the reported repository path; build again and compare both the figure and the path. |
+| **Test data, both sides, and why these two** | `volumes/repos/.b7-unseeded`: the `B1-5` fixture plus a pom with artifactId `probe-unseeded` declaring `com.fasterxml.jackson.core:jackson-databind:2.18.2` and `com.google.guava:guava:33.4.0-jre`. Neither is anywhere in the NiFi API's own tree, so neither can arrive by accident — and the first scenario **reads the seed** rather than taking that on trust. Both are large enough to be unambiguous in the `downloads` figure, and both are ordinary: this is what an author's pom looks like, not a fixture shaped to pass. What must be in the bundle: `jackson-databind-2.18.2.jar`, `jackson-core-2.18.2.jar`, `jackson-annotations-2.18.2.jar`, `guava-33.4.0-jre.jar`. The nifi-api version and compiler release come from `nar-build --target`, so the fixture bends to the running Liquid rather than pinning a literal. The pom is produced by `unseededPom()` from the same function `B1-6` uses, so the two cases cannot drift into testing different things. |
+| **Expected** | Scenario 1: neither path exists under `/opt/builder/m2-seed`. Scenario 2: exit 0 and `probe-unseeded-1.0.0.nar` in the drop directory, named from the author's pom. Scenario 3: `downloads` greater than 0 and all four jars inside the bundle. Scenario 4: the reported repository path is gone. Scenario 5: exit 0, `downloads` greater than 0 again, and a different repository path from the first build. |
+| **Precondition** | `docker exec nar_builder test -d /opt/builder/m2-seed`, computed rather than remembered — the same guard `B1-9` carries and for the same reason: against an older image every assertion here is false for a reason that has nothing to do with the code. The skip is a scenario that reads the absence, so a run in this state says why five cases are missing. |
+| **Implemented by** | `tests/integration/m-b7.unseeded-dependency.test.ts`. |
+| **Covers** | B7-5, B1-6, FR37, FR38. |
 
 #### B1-9 — rewritten, and the case it replaces asserted the opposite
 
