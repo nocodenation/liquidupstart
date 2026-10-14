@@ -751,6 +751,21 @@ that exists only in a transcript has to be carried by hand, and that is where it
 
 ## What the failures taught
 
+**A test that writes into the checkout it runs from can destroy work, and nothing goes red.**
+`OC-74` on #15 needed to run a fragment of a shell script, so its first form wrote a small bash
+runner into the directory under test and named it **`run.sh`** — and one of its scenarios passes
+`repoRoot`, because the point of that scenario is to run against the file this repository ships. It
+overwrote the project's launcher: 183 lines, gone. The suite stayed green, because nothing in it
+reads `run.sh`. `git status` caught it and `git show HEAD:run.sh` restored it.
+
+This is the **third** time this shape has cost something here — after the two `git checkout`
+accidents above — and the first where the destroyer was a test rather than a command typed by hand.
+The rule that follows is narrower than "be careful": **a fixture writes only into a directory it
+created**, and a path it was handed is for reading. `mkdtemp` per scenario costs nothing; the runner
+is now `ask.sh` inside one. And the general half, which the other two cases already said in their own
+way: *the thing that causes this kind of damage is never the thing that reports it* — so after any
+run that writes, `git status` is the check, not the test result.
+
 **Look in the log the failure belongs to, not the one you know.** For a day this project recorded
 that a mismatched NAR is reported nowhere. It is reported — in `nifi-user.log`, by the web layer that
 refused the request, while `nifi-app.log` holds nothing. Every check here read `docker compose logs`
