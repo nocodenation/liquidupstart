@@ -319,6 +319,50 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-68 a browser that was refused and stopped a
   });
 });
 
+describe.skipIf(!DASHBOARD_DEPS)('OC-69 a refusal the operator can act on', () => {
+  // A5's other half. `openclaw.sh` writes `gateway.auth.identityScopes` only at
+  // start, and `./run.sh` rebuilds the dashboard without restarting the stack --
+  // so a gateway still running on the configuration `main` wrote has no grant,
+  // every listing comes back `missing scope: operator.pairing`, and the card said
+  // only that. A sentence naming a scope nobody can grant by hand here, because
+  // the CLI that would do it is the one being refused.
+  test('OC-69 the scope refusal is turned into the one thing that fixes it', async () => {
+    serve([
+      {
+        ok: false,
+        pending: [],
+        revoked: [],
+        message: 'Gateway call failed: devices.list — Reason: missing scope: operator.pairing'
+      }
+    ]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    const text = mounted.text();
+    // The gateway's own words are kept, verbatim.
+    expect(text).toContain('missing scope: operator.pairing');
+    // And the remedy is said beside them.
+    expect(text).toContain('has not been started since the dashboard was updated');
+    expect(text).toContain('start it once');
+  });
+
+  test('OC-69 the counterpart: another refusal gets no restart instruction', async () => {
+    // Without this the card would tell every operator to restart whatever went
+    // wrong, which is the advice that teaches people to stop reading advice.
+    serve([
+      {
+        ok: false,
+        pending: [],
+        revoked: [],
+        message: 'connect ECONNREFUSED 10.99.0.2:8833'
+      }
+    ]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    expect(mounted.text()).toContain('ECONNREFUSED');
+    expect(mounted.text()).not.toContain('has not been started since');
+  });
+});
+
 test.skipIf(DASHBOARD_DEPS)(
   'SP-2 the cases in this file need the dashboard dependencies, which are absent here',
   () => {

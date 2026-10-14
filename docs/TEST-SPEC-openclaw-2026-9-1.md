@@ -109,6 +109,11 @@ here; each is executed where its subject exists.
 | **OC-68** | positive | …and a pending request still wins the heading |
 | **OC-68** | integration | The revocation is read out of the listing itself: the newest `revokedAtMs` of a Control UI device |
 | **OC-68** | **negative** | …live tokens are not a revocation, and a revoked token on a node host is not ours |
+| **OC-69** | component | A scope refusal is turned into the one thing that fixes it: start the stack once — *A5 of 2026-10-01* |
+| **OC-69** | **negative** | …and another refusal gets no restart instruction |
+| **OC-69** | unit | The observed network, address and port win over `.env` |
+| **OC-69** | **negative** | …an answer that is not an observation is ignored |
+| **OC-69** | positive | …and with no proxy at all the `.env` values stand |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -630,6 +635,20 @@ moved to.
 | **Covers** | OC-51, §9 R2. |
 | **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
 | **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
+
+##### OC-69 — a refusal the operator can act on, and values read from the stack that is running
+
+| | |
+|---|---|
+| **Premise** | A5 of the 2026-10-01 review, and it has two halves. `config/scripts/start/openclaw.sh` writes `gateway.auth.identityScopes` **only at start**, and `./run.sh` rebuilds the dashboard without restarting the stack — so a gateway still running on the configuration `main` wrote has no grant, every listing comes back `missing scope: operator.pairing`, and the card said only that. A sentence naming a scope nobody can grant by hand here, because the CLI that would do it is the one being refused. The same class: `.env` can describe a stack that is not the one running, so a changed port or proxy address made this script join a network that does not exist. |
+| **Component** | the card's derived `remedy`, and `config/scripts/openclaw-pairing.sh`'s network, address and port. |
+| **Steps** | Serve the scope refusal and then an unrelated one; and run the script against a stale `.env` with a stub `docker` answering `inspect` three ways — a real observation, noise, and nothing. |
+| **Test data, both sides** | The scope message is the CLI's own: `Gateway call failed: devices.list — Reason: missing scope: operator.pairing`. The unrelated one is `connect ECONNREFUSED 10.99.0.2:8833`, which must get **no** restart instruction. The stale `.env` says port `9999` and `10.99.0.5`; the observation says `nocodenation_liquid_upstart_network_8888 10.99.0.2`, which is what the running proxy actually answered here. |
+| **Expected** | The gateway's words kept verbatim with the remedy beside them; no remedy for the other message; the observed values winning including the port, which comes out of the observed network's **own name** so one fact carries both; noise ignored; and the `.env` values standing when there is no proxy, because there is nothing to pair against then and the CLI's "the gateway did not answer" is true and is the point. |
+| **What it found** | Green, 5 scenarios — **and the first version of the script half broke `OC-58` immediately.** That case drives this script with a stub `docker` that echoes its arguments, so the repair took `inspect` for a network name. The observation is validated now, against the shape of a network name and of an IPv4 address: an answer that does not look like what it claims to be is noise, not an observation. An existing case caught a new change, which is the whole purpose of having it. |
+| **Controls** | The remedy removed → 1 red. The observation removed → 1 red. **The validation removed → 4 red**: the three `OC-58` scenarios and this file's own noise counterpart, which is what says the validation is load-bearing rather than decorative. |
+| **Implemented by** | `tests/component/m-oc.pairing-card.test.ts` and `tests/unit/m-oc.pairing-env.test.ts`. |
+| **Covers** | OC-69, §9 R2, U11. |
 
 ##### OC-68 — a browser that was refused and stopped asking
 

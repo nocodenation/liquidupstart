@@ -31,6 +31,28 @@ import { repoRoot } from '../lib/paths';
 
 const SCRIPT = join(repoRoot, 'config/scripts/openclaw-pairing.sh');
 
+/**
+ * Like `derived`, but the stub `docker` answers `inspect` with what a real one
+ * would: `"<network> <ip>"` on one line. Everything else is echoed as before, so
+ * the assertions can still read the `run` argv.
+ */
+function derivedWithProxy(envBody: string, inspectAnswer: string) {
+  const root = mkdtempSync(join(tmpdir(), 'lu-oc-pair-obs-'));
+  writeFileSync(join(root, '.env'), envBody);
+  const bin = join(root, 'bin');
+  sh(['mkdir', '-p', bin]);
+  writeFileSync(
+    join(bin, 'docker'),
+    '#!/bin/sh\nif [ "$1" = inspect ]; then printf "%s\\n" ' +
+      JSON.stringify(inspectAnswer) +
+      '; exit 0; fi\nprintf "%s\\n" "$*"\nexit 0\n'
+  );
+  chmodSync(join(bin, 'docker'), 0o755);
+  const r = sh(['bash', SCRIPT, root, 'list'], root, { PATH: `${bin}:${process.env.PATH}` });
+  rmSync(root, { recursive: true, force: true });
+  return r.output;
+}
+
 function derived(envBody: string) {
   const root = mkdtempSync(join(tmpdir(), 'lu-oc-pair-'));
   writeFileSync(join(root, '.env'), envBody);
@@ -62,4 +84,44 @@ describe('OC-58 a quoted value in .env is read the way compose reads it', () => 
       expect(out).not.toContain('"9999"');
     });
   }
+});
+
+describe('OC-69 the running stack is the authority, and .env is the fallback', () => {
+  // A5 of the 2026-10-01 review. `./run.sh` rebuilds the dashboard without
+  // restarting the stack, so `.env` can describe a stack that is not the one
+  // running: change the port or the proxy address and this script joined a
+  // network that does not exist, or added a host entry pointing at nothing, and
+  // the CLI failed with a transport error that said nothing about why.
+  const STALE = 'SYSTEM_HTTP_PORT=9999\nSYSTEM_PROXY_IP=10.99.0.5\n';
+
+  test('OC-69 the observed network, address and port win over .env', () => {
+    const out = derivedWithProxy(STALE, 'nocodenation_liquid_upstart_network_8888 10.99.0.2');
+    expect(out).toContain('--network nocodenation_liquid_upstart_network_8888');
+    expect(out).toContain('--add-host openclaw.localhost:10.99.0.2');
+    // The port comes out of the observed network's own name, so one fact carries
+    // both rather than one being read and the other remembered.
+    expect(out).toContain('ws://openclaw.localhost:8888');
+    expect(out).not.toContain('9999');
+    expect(out).not.toContain('10.99.0.5');
+  });
+
+  test('OC-69 and an answer that is not an observation is ignored', () => {
+    // The counterpart, and it is the one that earns its place: `OC-58` drives
+    // this script with a stub `docker` that echoes its arguments, so the first
+    // version of the repair took `inspect` for a network name and broke all
+    // three of those scenarios. Noise is not an observation.
+    const out = derivedWithProxy(STALE, 'inspect proxy --format {{.Nonsense}}');
+    expect(out).toContain('--network nocodenation_liquid_upstart_network_9999');
+    expect(out).toContain('--add-host openclaw.localhost:10.99.0.5');
+    expect(out).toContain('ws://openclaw.localhost:9999');
+  });
+
+  test('OC-69 and with no proxy at all the .env values stand', () => {
+    // There is nothing to pair against when the proxy is down, so this falls back
+    // rather than refusing: the refusal the operator then sees comes from the CLI
+    // and says the gateway did not answer, which is true and is the point.
+    const out = derivedWithProxy(STALE, '');
+    expect(out).toContain('--network nocodenation_liquid_upstart_network_9999');
+    expect(out).toContain('ws://openclaw.localhost:9999');
+  });
 });

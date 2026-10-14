@@ -54,9 +54,42 @@ get_env() {
 
 HTTP_PORT="$(get_env SYSTEM_HTTP_PORT)"; HTTP_PORT="${HTTP_PORT:-8888}"
 PROXY_IP="$(get_env SYSTEM_PROXY_IP)";   PROXY_IP="${PROXY_IP:-10.99.0.2}"
-# Both from the same places compose reads them, so a stack on another port or
-# another subnet needs no edit here.
 NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
+
+# **The running stack is the authority; `.env` above is the fallback.**
+#
+# A5 of the 2026-10-01 review. `./run.sh` rebuilds the dashboard without
+# restarting the stack, so `.env` can describe a stack that is not the one
+# running: change `SYSTEM_HTTP_PORT` or `SYSTEM_PROXY_IP` and this joined a
+# network that does not exist, or added a host entry pointing at nothing, and the
+# CLI then failed with a transport error that said nothing about why.
+#
+# The proxy container carries both facts, so they are asked for at the moment they
+# are needed and cannot go stale -- CLAUDE.md's rule, applied to two values that
+# were being remembered. When the proxy is not running there is nothing to pair
+# against anyway, so the fallback stands rather than this refusing outright.
+observed_net=""
+observed_ip=""
+if pair="$(docker inspect proxy --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{$v.IPAddress}}{{end}}' 2>/dev/null)"; then
+  observed_net="${pair%% *}"
+  observed_ip="${pair##* }"
+fi
+# **Validated before it is trusted, and a test is why.** `OC-58` drives this script
+# with a stub `docker` on PATH that echoes its arguments, so the first version of
+# this took `inspect` for a network name and broke all three of its scenarios
+# immediately. An observed value that does not look like what it claims to be is
+# noise, not an observation.
+if [[ "$observed_net" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ &&
+      "$observed_ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+  NETWORK="$observed_net"
+  PROXY_IP="$observed_ip"
+  # The port is in the network's own name when compose made it, so one observed
+  # fact carries both rather than one being read and the other remembered.
+  if [[ "$NETWORK" == *_network_* ]]; then
+    HTTP_PORT="${NETWORK##*_network_}"
+  fi
+fi
+
 IMAGE="liquidupstart/openclaw:latest"
 HOST="openclaw.localhost:${HTTP_PORT}"
 

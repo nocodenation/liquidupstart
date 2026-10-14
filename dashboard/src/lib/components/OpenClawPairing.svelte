@@ -24,6 +24,24 @@
   // arrives later than that saw an empty page while OpenClaw still said "Role
   // upgrade pending".
   let revoked = $state([]);
+
+  // **A refusal the operator can act on, A5 of the 2026-10-01 review.**
+  //
+  // `./run.sh` rebuilds the dashboard without restarting the stack, and
+  // `config/scripts/start/openclaw.sh` writes `gateway.auth.identityScopes` only
+  // at start. So a gateway still running on the configuration `main` wrote has no
+  // grant, every listing comes back `missing scope: operator.pairing`, and the
+  // card said only that -- a sentence that names a scope nobody can grant by hand
+  // here, because the CLI that would do it is the one being refused. The remedy is
+  // one start, and it was nowhere on the page.
+  //
+  // Derived from the message rather than from a flag, because the message is what
+  // the gateway actually said and the server passes it through verbatim.
+  let remedy = $derived(
+    /missing scope: operator\.pairing/.test(problem)
+      ? 'The stack has not been started since the dashboard was updated. OpenClaw only learns this permission when the stack starts, so start it once from this page and the card will work.'
+      : ''
+  );
   let problem = $state('');
   let loaded = $state(false);
   let working = $state('');
@@ -161,6 +179,9 @@
       <p class="gitmessage warn">
         OpenClaw could not be asked what is waiting: {problem}
       </p>
+      {#if remedy}
+        <p class="sectdesc">{remedy}</p>
+      {/if}
     {/if}
 
     <!-- Nothing pending and a Control UI token revoked: the browser asked once,
