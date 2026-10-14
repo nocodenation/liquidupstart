@@ -9,6 +9,80 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
+2026-10-14 re-review closed the way past them — `zf.read` inflated a member whole before truncating
+it to a declared size, so an entry that *claimed* 1000 bytes cost 1610 MB from an 815,695-byte file,
+and the read is now bounded by what the directory declares. What remains is the honest case: a bundle
+may still cost up to 256 MiB of bundled jar **plus** up to 512 MiB of held class bytes. The reviewer
+measured **764 MB from a 1.7 KB `.nar` carrying two 250 MB "classes"**, and the check runs inside the
+Liquid container against an inbox the agents can write.
+
+The fix is to stream the class parse instead of holding each class's bytes — `class_references`
+already walks the constant pool linearly, so it does not need the whole array in memory, and
+`MAX_CLASS_BYTES` would then bound nothing that matters. It is deferred because it changes the one
+function every refusal depends on, and the limits make the exposure bounded rather than open.
+
+**This entry exists because the reply to the 2026-10-13 review said it already did.** It claimed four
+items were deferred here; S3 and S9 were, this one and the next were not. N8 of the 2026-10-14
+re-review found that by looking, which is the only way a claim like that gets checked. Recorded
+2026-10-14 with the measurement, as M7/N3/N6's residual.
+
+---
+
+**#10's controls are run by hand and are not in the mutation registry.** Every case on that branch
+earns its green by reverting the code it guards and watching it redden — written up per case in
+`docs/TEST-SPEC-liquid-java-extensions.md` — but the reverts are performed by a person, recorded in
+prose, and nothing re-runs them. #18 builds the runner and lands it with an **empty** registry, which
+is where those mutations belong: one entry per guarded behaviour, so a control that stops reddening
+is a red suite rather than a paragraph nobody re-reads.
+
+Deferred until #18 is merged, because registering mutations against a tool that is still under review
+would have to be rewritten when its format settles. **Also recorded late**, for the same reason as the
+entry above: the reply of 2026-10-13 said it was already here.
+
+---
+
+**After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
+`cleanup.sh` has no leg for it.** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
+host directory ends up owned by `101499` with every Maven-written subdirectory `101499:100998`, so
+`rm -rf volumes/nar_builder/m2` as the host user fails with `Permission denied` and the tree has to
+be removed from a container. That contradicts CLAUDE.md's *"a reset is just deleting `volumes/`"*. It
+is a consequence of B1's build user and only becomes reachable with C2's `chown`, because before it
+the build user could write nothing there.
+
+**Recorded against #25 rather than fixed here, by decision.** #25 removes `/m2` altogether — each
+build resolves into its own repository under its own work directory, discarded with the build — so
+there is no shared cache for the host to be locked out of. Adding a containerised `rm -rf` to
+`cleanup.sh`, which is a destructive script, for a directory the next branch deletes would be code
+with a short life. **What holds in between**, if #10 merges before #25: an operator who wants that
+cache gone removes it from a container, e.g.
+`docker run --rm -v "$PWD/volumes/nar_builder:/v" alpine rm -rf /v/m2`. Not reproducible on this
+machine — it is Docker Desktop, where bind mounts ignore ownership — so it stands on the reviewer's
+rootless Linux measurement and on `cleanup.sh` having no such leg, which is readable here.
+
+---
+
+**~~`tests/lib/builderimage.ts` leaks its per-run image on normal exits, not only on killed runs.~~**
+*Fixed 2026-10-14 as `B6-39`, the same day it was recorded. Kept because the measurement is the
+interesting part and because the first explanation of it, in the reply to the 2026-10-13 review, was
+wrong.*
+
+Observed by the reviewer out of scope — two runs, two leftovers, bun 1.4.2 — and read by us as a
+killed-run problem, since the cleanup sits on `process.on('exit')`. **It is not.** Measured: a single
+passing file leaves its image behind, because that handler does not run in bun 1.4.2 at all. 21
+images at about 1 GB each had accumulated by the end of the day, **9 of them from one default-tier
+round**. Earlier the same day the Docker VM had filled to 100% at 57 of 59 GB, and a build failing
+with `No space left on device` is indistinguishable from a product failure in that output — which is
+what produced a false "harness artifact" reading in a review round.
+
+The repair is not to delete more reliably: an `afterAll` was already measured wrong, because every
+file captures the tag at module load and the first file's `afterAll` pulls the image out from under
+the rest (8 fail across three files). It is to **mint fewer** — the tag is now a hash of the build
+context, so two runs over one tree share an image, and a bounded sweep takes superseded ones but
+never the image in use, never one built in the last two hours, and never a tag outside the two
+schemes this file has used. Three separate processes now share one image, measured.
+---
+
 **Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
 ids in `TEST-SPEC-*.md` rows, in both directions, and has nothing to say about two different cases
 sharing one id.

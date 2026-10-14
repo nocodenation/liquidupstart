@@ -48,7 +48,17 @@ FIXED_WIDTH = {
 
 
 class Unreadable(Exception):
-    pass
+    """A bundle this cannot judge, with the next step that fits the reason.
+
+    `next_step` exists because the default one does not fit every refusal. A
+    bundle refused for its **size** is told *"Rebuild it against the API this
+    Liquid loads"*, which cannot help: the bundle is not wrong about the API, it
+    is larger than this check will unpack. N8 of the 2026-10-14 re-review.
+    """
+
+    def __init__(self, message, next_step=None):
+        Exception.__init__(self, message)
+        self.next_step = next_step
 
 
 def _descriptor_to_name(raw):
@@ -195,11 +205,66 @@ def _open_zip(data, where):
         raise Unreadable("%s: could not be opened as an archive (%s)" % (where, exc))
 
 
+# One mebibyte, which is enough that the chunking costs nothing measurable and
+# small enough that the overshoot past a declared size is bounded by it.
+READ_CHUNK_BYTES = 1 << 20
+
+
 def _read(zf, name, where):
+    """A member's bytes, bounded by what its own directory entry declares.
+
+    **`zf.read(name)` is not bounded by anything the caller checked.** CPython's
+    `ZipExtFile.read()` decompresses with `max_length = 2 GiB` and only then cuts
+    the result to the declared size, raising the CRC mismatch afterwards. So an
+    entry that *declares* 1000 bytes while its deflated stream inflates to 800 MB
+    was inflated whole before anything refused it -- and `_read_bundled_jar`'s
+    limit, which reads that same declared size, could not see it. Measured at the
+    reviewed head: a 815,695-byte `.nar` cost **1610 MB**, against 13 MB for the
+    same bundle declaring its real size. N6 of the 2026-10-14 re-review, and the
+    same memory exhaustion N3 was about, reached by lying instead of by asking.
+
+    So the read is its own bound: at most `declared + 1` bytes, a chunk at a time.
+
+    **What refuses the liar is then zipfile's own CRC check, not a message here,
+    and that is worth knowing rather than guessing.** `ZipExtFile` takes the
+    declared size as the member's length, so asking for `declared + 1` returns
+    `declared` bytes, sets EOF, and compares the CRC of those bytes against the
+    one in the directory -- which belongs to the real content. The liar is
+    therefore refused as `Bad CRC-32`, truthfully, after inflating about a
+    kilobyte: measured 13 MB peak against 1610 MB before. The bound is what makes
+    it cheap; the sentence the operator reads is unchanged.
+
+    The length check below is a guard against the other direction -- an entry that
+    ends early, where the stream is short rather than long. It is cheap and it is
+    not the N6 path.
+
+    An entry whose declared size is honest reads exactly as before, CRC check
+    included.
+    """
     try:
-        return zf.read(name)
+        declared = zf.getinfo(name).file_size
+    except KeyError as exc:
+        raise Unreadable("%s: it is not in the archive's directory (%s)" % (where, exc))
+    except ZIP_ERRORS as exc:
+        raise Unreadable("%s: its directory entry could not be read (%s)" % (where, exc))
+    try:
+        with zf.open(name) as fh:
+            parts = []
+            total = 0
+            while total <= declared:
+                chunk = fh.read(min(READ_CHUNK_BYTES, declared + 1 - total))
+                if not chunk:
+                    break
+                parts.append(chunk)
+                total += len(chunk)
     except ZIP_ERRORS as exc:
         raise Unreadable("%s: could not be read out of the archive (%s)" % (where, exc))
+    if total != declared:
+        raise Unreadable(
+            "%s: the archive's directory declares %d bytes for it and the entry "
+            "ends after %d; it is not unpacked" % (where, declared, total)
+        )
+    return b"".join(parts)
 
 
 def _read_bundled_jar(zf, name, where):
@@ -219,7 +284,8 @@ def _read_bundled_jar(zf, name, where):
     if declared > MAX_BUNDLED_JAR_BYTES:
         raise Unreadable(
             "%s: the bundled jar declares %d bytes, past the %d-byte read limit; "
-            "it is not unpacked" % (where, declared, MAX_BUNDLED_JAR_BYTES)
+            "it is not unpacked" % (where, declared, MAX_BUNDLED_JAR_BYTES),
+            next_step=SIZE_NEXT_STEP,
         )
     return _read(zf, name, where)
 
@@ -276,7 +342,8 @@ def bundle_classes(path):
     if budget > MAX_CLASS_BYTES:
         raise Unreadable(
             "%s: the classes it carries declare %d bytes, past the %d-byte limit; "
-            "nothing here will unpack it" % (base, budget, MAX_CLASS_BYTES)
+            "nothing here will unpack it" % (base, budget, MAX_CLASS_BYTES),
+            next_step=SIZE_NEXT_STEP,
         )
     for name in sorted(zf_names(root)):
         carried[name[:-6]] = (_read(root, name, "%s!%s" % (base, name)),
@@ -468,6 +535,20 @@ NEXT_STEP = (
     "`nar-build --target` prints that version."
 )
 
+# What a size refusal needs instead, because the bundle is not wrong about the
+# API and rebuilding it changes nothing. The two limits are constants in this
+# file rather than settings: raising one is a deliberate change with a reason,
+# which is why the step names them instead of offering a switch. N8 of the
+# 2026-10-14 re-review; the limits are specified in
+# docs/FEATURE-liquid-java-extensions.md under FR36.
+SIZE_NEXT_STEP = (
+    "This is a size refusal, not an API mismatch: rebuilding against another "
+    "version will not change it. Either split the bundle so no single bundled "
+    "jar passes the read limit and its classes stay inside the budget, or raise "
+    "MAX_BUNDLED_JAR_BYTES / MAX_CLASS_BYTES in narcheck.py deliberately and say "
+    "why. Both limits are in docs/FEATURE-liquid-java-extensions.md under FR36."
+)
+
 
 def main(argv):
     if len(argv) < 2:
@@ -597,7 +678,7 @@ def main(argv):
         except Unreadable as exc:
             sys.stdout.write("REFUSED %s\n" % nar)
             sys.stdout.write("  %s\n" % exc)
-            sys.stdout.write("  %s\n" % NEXT_STEP)
+            sys.stdout.write("  %s\n" % (getattr(exc, "next_step", None) or NEXT_STEP))
             return 1
         if lines:
             sys.stdout.write("REFUSED %s\n" % nar)
@@ -620,7 +701,7 @@ def main(argv):
                 "  A class this bundle carries could not be read, so nothing here can tell a sound\n"
                 "  bundle from a broken one. Silence is not consent: it is not deployed.\n"
             )
-            sys.stdout.write("  %s\n" % NEXT_STEP)
+            sys.stdout.write("  %s\n" % (getattr(exc, "next_step", None) or NEXT_STEP))
             return 1
         if not lines:
             return 0

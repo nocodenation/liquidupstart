@@ -182,6 +182,31 @@ mistake is available here and is cheaper to avoid than to repeat.
   way; the requirement is about **where** it surfaces, and deployment is the only moment at which the
   operator can act on it.
 
+  **Two limits the check refuses on, and they are part of this requirement rather than an
+  implementation detail.** A bundle is read to be judged, and reading is what a hostile or merely
+  enormous bundle can make expensive — the watcher runs the check **inside the Liquid container** and
+  the inbox is writable by the agents, so the cost of judging is a cost an agent can choose. Both
+  limits are constants in `config/liquid/narcheck.py`:
+
+  | Limit | Value | What it refuses |
+  |---|---|---|
+  | `MAX_BUNDLED_JAR_BYTES` | 256 MiB | A single bundled jar whose **own directory entry** declares more. It is refused without being unpacked, so a declaration costs nothing to refuse |
+  | `MAX_CLASS_BYTES` | 512 MiB | The **sum** of the `.class` sizes an archive's directory declares, read before any class is held in memory |
+
+  Neither is configurable, and that is deliberate: raising one is a change with a reason, made in the
+  file, not a setting an operator can be talked into. **A legitimate bundle can hit them** — native
+  machine-learning libraries are the realistic case, and a 300 MB stored jar inside a 306 KB `.nar`
+  was measured — and such a bundle is then refused permanently. That is the trade: an unbounded read
+  inside Liquid is worse than a bundle that has to be split. The refusal says so in its own words
+  rather than giving the API-mismatch advice, which cannot help a bundle that is not wrong about the
+  API: it names both constants and the two ways out, splitting the bundle or raising a limit
+  deliberately. N8 of the 2026-10-14 re-review asked for both the specification and the next step.
+
+  **What the limits do not bound**, stated because it would otherwise read as settled: an honest
+  bundle still costs up to 256 MiB of jar plus up to 512 MiB of held class bytes, and 764 MB was
+  measured from a 1.7 KB `.nar` carrying two 250 MB classes. Bounded, but not small. Streaming the
+  class parse instead of holding the bytes is the open question, and it is recorded in `BACKLOG.md`.
+
   **Why nothing is logged at load time, measured again on 2026-09-15 with the stack running.** The
   bundle was placed into the drop directory by hand, the way an operator would, and then added to the
   canvas through the API:

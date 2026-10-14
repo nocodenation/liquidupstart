@@ -16,7 +16,7 @@
  *           a command inside the Liquid container.
  *
  *           Reproduced again here before the repair, against the exact string the
- *           script builds: `rc=0`, and `/tmp/PWNED` holding
+ *           script builds: `rc=0`, and a `PWNED` marker holding
  *           `uid=0(root) gid=0(root)`.
  * Given:    the two shipped scripts, and a basename carrying a `sed` payload.
  * When:     each script's own substitution is run over a refusal naming the
@@ -63,9 +63,23 @@ const BUILD_SH = join(repoRoot, 'config/nar_builder/build.sh');
 const WATCH_SH = join(repoRoot, 'config/liquid/nar-watch.sh');
 
 /** A basename that closes a `sed s|…|…|` and opens an `e` command. */
-const PAYLOAD = 'x|y|;e id>/tmp/PWNED;#.nar';
+// **A name that could actually exist**, which the first form was not: a basename
+// cannot contain `/`, and this one carried `id>/tmp/PWNED`. As a string handed to
+// a replacement it demonstrated the hole perfectly; as a file dropped into the
+// inbox -- which is the path C1 is about -- it could never have been created.
+// The redirection is therefore relative, and the marker is looked for in the
+// working directory. N8 of the 2026-10-14 re-review; the reviewer's own
+// reproduction used this form.
+const PAYLOAD = 'x|y|;e id>>PWNED;#.nar';
 /** The same shape without the `;e` -- N4's benign leg. */
 const ORDINARY = 'ordinary|name.nar';
+// N5's two. `&` is the one that mattered: with bash 5.2's `patsub_replacement`
+// an unquoted `&` in the replacement stands for the matched text, which here is
+// the dot-copy path the substitution exists to remove. `R&D` is an ordinary
+// name, not a payload. `\&` is the escape for a literal `&`, so a name carrying
+// it lost the backslash instead -- a quieter wrong answer than the first.
+const AMPERSAND = 'R&D-tools.nar';
+const BACKSLASH = 'back\\&slash.nar';
 
 /** Code only: a comment quoting the old line must not satisfy a structural check. */
 const code = (p: string) =>
@@ -88,7 +102,7 @@ describe('B6-35 the builder leg: the replacement it uses treats a name as text',
        part="$DROP/.$base.1.part"
        out="$(literal_replace "refused $part: a reason, and again $part" "$part" "$DROP/$base")"
        printf 'OUT=%s\\n' "$out"
-       printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] && echo yes || echo no)"`
+       printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
     ], undefined, 120_000);
 
   test('B6-35 the payload runs nothing and the dot-path is gone', () => {
@@ -110,30 +124,75 @@ describe('B6-35 the builder leg: the replacement it uses treats a name as text',
 });
 
 describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => {
-  // nar-watch.sh is bash; the expansion is `${REFUSAL//"$part"/$1}`. The quotes
-  // around the needle are what make it literal -- dropping them reopens it as a
-  // glob, which is why the case asserts the expansion as the file spells it.
-  test('B6-35 the payload runs nothing through the watcher substitution', () => {
-    const r = sh([
-      'docker', 'run', '--rm',
-      '--entrypoint', 'bash', 'debian:bookworm-slim', '-c',
-      `base='${PAYLOAD.replace(/'/g, "'\\''")}'
+  /**
+   * The shipped line, taken out of the file and run — not restated here.
+   *
+   * **Both halves of this were wrong until N5.** The scenario restated the
+   * expansion inline, so it could not see what `nar-watch.sh` actually spells;
+   * and the restatement was itself unquoted, so it reproduced the defect without
+   * noticing. The wiring half then pinned the defective spelling verbatim, which
+   * is how a one-character fault survived a case written about that very line.
+   *
+   * So the line is extracted by `grep -F` on its own opening, the way the builder
+   * leg extracts `literal_replace`, and `$1` is set the way `judge` receives it.
+   * A spelling change is then run rather than asserted. It runs in the **Liquid
+   * image**, where this script runs: bash 5.2.15 with `patsub_replacement` on,
+   * which is the behaviour at issue.
+   */
+  const run = (base: string) =>
+    sh([
+      'docker', 'run', '--rm', '-v', `${WATCH_SH}:/nar-watch.sh:ro`,
+      '--entrypoint', 'bash', 'liquidupstart/liquid:latest', '-c',
+      `base='${base.replace(/'/g, "'\\''")}'
+       LOAD_DIR=/nar_extensions
        inbox=/nar_inbox
-       part="$inbox/.$base.part"
-       REFUSAL="refused $part: a reason"
-       REFUSAL="\${REFUSAL//"$part"/$inbox/$base}"
+       part="$LOAD_DIR/.$base.part"
+       REFUSAL="refused $part: a reason, and again $part"
+       line="$(grep -F 'REFUSAL="\${REFUSAL//' /nar-watch.sh | head -1)"
+       printf 'LINE=%s\\n' "$line"
+       set -- "$inbox/$base"
+       eval "$line"
        printf 'OUT=%s\\n' "$REFUSAL"
-       printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] && echo yes || echo no)"`
+       printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
     ], undefined, 120_000);
+
+  test('B6-35 the payload runs nothing through the watcher substitution', () => {
+    const r = run(PAYLOAD);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('RAN=no');
     expect(r.stdout).not.toContain('.part');
+    expect(r.stdout).toContain(`/nar_inbox/${PAYLOAD}`);
   }, 180_000);
 
-  test('B6-35 and the shipped file still spells it that way', () => {
-    // The behavioural half above runs the expansion; this one asserts the file
-    // being shipped is the one that was measured, quotes included.
-    expect(code(WATCH_SH)).toContain('REFUSAL="${REFUSAL//"$part"/$1}"');
+  test('B6-35 and an ordinary name containing a pipe is not mangled', () => {
+    const r = run(ORDINARY);
+    expect(r.stdout).toContain(`OUT=refused /nar_inbox/${ORDINARY}: a reason`);
+  }, 180_000);
+
+  test('B6-35 and a name containing & names the file, not the dot-copy path', () => {
+    // N5, measured: this answered `/nar_inbox/R` + the whole dot-copy path +
+    // `D-tools.nar`, so the operator was pointed at a path that does not exist.
+    const r = run(AMPERSAND);
+    expect(r.stdout).toContain(`OUT=refused /nar_inbox/${AMPERSAND}: a reason`);
+    // The specific wrong answer, named so it cannot come back quietly.
+    expect(r.stdout).not.toContain('/nar_inbox/R/nar_extensions');
+    expect(r.stdout).not.toContain('.part');
+  }, 180_000);
+
+  test('B6-35 and a name containing \\& keeps its backslash', () => {
+    // The quieter half: `\&` is the escape for a literal `&`, so the shipped
+    // line dropped the backslash and named a file that does not exist either.
+    const r = run(BACKSLASH);
+    expect(r.stdout).toContain(`OUT=refused /nar_inbox/${BACKSLASH}: a reason`);
+  }, 180_000);
+
+  test('B6-35 and no unquoted replacement is left in the shipped file', () => {
+    // What text is good for, and only that. The behaviour is held by the
+    // extraction above; this guards the defect's spelling rather than the fix's,
+    // because pinning the fix is what let N5 through: the old assertion was
+    // green **on** the defect.
+    expect(code(WATCH_SH)).not.toContain('/$1}"');
+    expect(code(WATCH_SH)).toContain('"$1"}"');
   });
 });
 

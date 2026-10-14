@@ -106,7 +106,21 @@ judge() {  # judge <file>
   # writable by the agents, so this leg needs no builder at all. C1 of the
   # 2026-10-13 re-review. Dropping the quotes around "$part" would reopen it as a
   # glob, which is why they are there.
-  REFUSAL="${REFUSAL//"$part"/$1}"
+  #
+  # **And the replacement is quoted too, which is not symmetry.** Bash 5.2 turns
+  # on `patsub_replacement` by default -- it is on in this image, bash 5.2.15 --
+  # and with it an **unquoted** `&` in the replacement stands for the matched
+  # text. The matched text here is `$part`, the internal dot-copy path this
+  # substitution exists to remove, so `R&D-tools.nar` produced
+  # `.../nar_inbox/R` + the whole dot-copy path + `D-tools.nar`: an operator
+  # pointed at a path that does not exist. A name like `back\&slash.nar` lost its
+  # backslash instead, `\&` being the escape for a literal `&`. Measured in this
+  # image; `ordinary|name.nar` was unaffected, which is why C1's fix looked
+  # complete. N5 of the 2026-10-14 re-review. Nothing executes either way.
+  #
+  # `build.sh`'s `literal_replace` needs no equivalent: it is POSIX expansion
+  # under dash, which has no `&` rule.
+  REFUSAL="${REFUSAL//"$part"/"$1"}"
   case "$REFUSAL" in
     *"could not be opened as an archive"*)
       say "${base} cannot be opened as an archive, so it was not judged and is not"
