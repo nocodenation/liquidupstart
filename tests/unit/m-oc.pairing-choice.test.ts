@@ -220,3 +220,79 @@ describe('OC-65 a JSON answer is read as JSON, not as its first line', () => {
     expect(cliMessage('[]')).toBe('[]');
   });
 });
+
+describe('OC-48 the branches of chooseRequest nothing had exercised', () => {
+  // B5 of the 2026-10-01 review: "an explicit eligible `requestId` is never shown
+  // to be accepted, and the `'latest'` branch is never exercised. OC-48 holds only
+  // the refusal." A guard shown only to refuse is not shown to permit, and this
+  // one decides which browser a press of Approve means.
+  const alpha = req({
+    requestId: '09cc464f-690a-4a51-9ac9-c97b7011eb34',
+    deviceId: 'dev-alpha-aaaaaaaaaaaa',
+    requestedAt: 945
+  });
+  const beta = req({
+    requestId: '1b2c3d4e-5f60-4712-8899-aabbccddeeff',
+    deviceId: 'dev-bravo-bbbbbbbbbbbb',
+    requestedAt: 1000
+  });
+
+  test('OC-48 an explicit eligible requestId is accepted, and it is the one asked for', () => {
+    // Not the newest: the whole point of the explicit path is that the operator's
+    // choice wins over recency.
+    const c = chooseRequest([alpha, beta], { requestId: alpha.requestId });
+    expect(c.kind).toBe('request');
+    expect(c.kind === 'request' && c.requestId).toBe(alpha.requestId);
+  });
+
+  test('OC-48 and the literal "latest" takes the newest request of the one device', () => {
+    // The branch exists because the card once posted that literal, and the route
+    // still accepts it. Unexercised, it could have resolved to the oldest.
+    //
+    // **One device, because my first version of this was wrong about the design.**
+    // With two different devices pending, `latest` refuses — "2 different browsers
+    // are waiting. Choose the one you mean." — which is OC-50's property and
+    // deliberate. So the branch that resolves is the one-device case, and the
+    // scenario below is its counterpart rather than a duplicate of OC-50.
+    const retry = req({
+      requestId: 'cccc3333-dddd-4eee-8fff-000011112222',
+      deviceId: alpha.deviceId,
+      requestedAt: 3000
+    });
+    const c = chooseRequest([alpha, retry], { requestId: 'latest' });
+    expect(c.kind).toBe('request');
+    expect(c.kind === 'request' && c.requestId).toBe(retry.requestId);
+  });
+
+  test('OC-48 and "latest" with two browsers waiting is a question, not a guess', () => {
+    const c = chooseRequest([alpha, beta], { requestId: 'latest' });
+    expect(c.kind).toBe('refuse');
+    expect(c.kind === 'refuse' && c.status).toBe(409);
+    expect(c.kind === 'refuse' && c.message).toContain('different browsers');
+  });
+
+  test('OC-48 and an explicit id that is not eligible is refused with 409', () => {
+    // The counterpart to the first scenario: explicit does not mean unchecked.
+    const nodeHost = req({
+      requestId: '7777aaaa-bbbb-4ccc-8ddd-eeeeffff0000',
+      deviceId: 'dev-node-cccccccccccc',
+      clientId: 'node-host',
+      role: 'node'
+    });
+    const c = chooseRequest([nodeHost], { requestId: nodeHost.requestId });
+    expect(c.kind).toBe('refuse');
+    expect(c.kind === 'refuse' && c.status).toBe(409);
+  });
+
+  test('OC-48 and a device with two requests resolves to that device newest', () => {
+    // The `deviceId` path, which is what the card actually posts.
+    const retry = req({
+      requestId: 'aaaa1111-bbbb-4ccc-8ddd-eeeeffff2222',
+      deviceId: alpha.deviceId,
+      requestedAt: 2000
+    });
+    const c = chooseRequest([alpha, retry, beta], { deviceId: alpha.deviceId });
+    expect(c.kind).toBe('request');
+    expect(c.kind === 'request' && c.requestId).toBe(retry.requestId);
+  });
+});

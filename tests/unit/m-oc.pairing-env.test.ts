@@ -53,6 +53,20 @@ function derivedWithProxy(envBody: string, inspectAnswer: string) {
   return r.output;
 }
 
+/** Like `derived`, but the exit status is what the case is about. */
+function runVerb(args: string[]) {
+  const root = mkdtempSync(join(tmpdir(), 'lu-oc-pair-guard-'));
+  writeFileSync(join(root, '.env'), 'SYSTEM_HTTP_PORT=8888\nSYSTEM_PROXY_IP=10.99.0.2\n');
+  const bin = join(root, 'bin');
+  sh(['mkdir', '-p', bin]);
+  // Echoes, so a call that got through is visible in the output.
+  writeFileSync(join(bin, 'docker'), '#!/bin/sh\nprintf "RAN %s\\n" "$*"\nexit 0\n');
+  chmodSync(join(bin, 'docker'), 0o755);
+  const r = sh(['bash', SCRIPT, root, ...args], root, { PATH: `${bin}:${process.env.PATH}` });
+  rmSync(root, { recursive: true, force: true });
+  return r;
+}
+
 function derived(envBody: string) {
   const root = mkdtempSync(join(tmpdir(), 'lu-oc-pair-'));
   writeFileSync(join(root, '.env'), envBody);
@@ -123,5 +137,53 @@ describe('OC-69 the running stack is the authority, and .env is the fallback', (
     const out = derivedWithProxy(STALE, '');
     expect(out).toContain('--network nocodenation_liquid_upstart_network_9999');
     expect(out).toContain('ws://openclaw.localhost:9999');
+  });
+});
+
+describe('OC-45 the request id is guarded at the last point before a command line', () => {
+  // B5 of the 2026-10-01 review: with the script's `exit 2` replaced by `true`,
+  // `m-oc.pairing-card` and `m-oc.pairing-env` stayed 21 / 21. The guard was
+  // untested, and the reviewer named this harness as the place to hold it.
+  //
+  // It is guarded here as well as in the route because this is the last point
+  // before the value reaches a command line, and the route is not the only thing
+  // that will ever call the script.
+  const UUID = '09cc464f-690a-4a51-9ac9-c97b7011eb34';
+
+  test('OC-45 a value that is not a request id is refused with exit 2', () => {
+    const r = runVerb(['approve', 'abc']);
+    expect(r.code).toBe(2);
+    expect(r.output).toContain('not a request id: abc');
+    // And nothing reached docker.
+    expect(r.output).not.toContain('RAN');
+  });
+
+  test('OC-45 and a missing id is refused the same way', () => {
+    const r = runVerb(['approve']);
+    expect(r.code).toBe(2);
+    expect(r.output).toContain('needs a request id');
+    expect(r.output).not.toContain('RAN');
+  });
+
+  test('OC-45 and something shaped like a shell is refused, not run', () => {
+    // The shape that makes the guard worth having rather than tidy.
+    const r = runVerb(['approve', '$(id>/tmp/oc45);#']);
+    expect(r.code).toBe(2);
+    expect(r.output).not.toContain('RAN');
+  });
+
+  test('OC-45 the counterpart: a real request id gets through to the CLI', () => {
+    // Without this the guard could be met by refusing everything, which is the
+    // same defect with the other sign.
+    const r = runVerb(['approve', UUID]);
+    expect(r.code).toBe(0);
+    expect(r.output).toContain(`RAN`);
+    expect(r.output).toContain(`devices approve ${UUID}`);
+  });
+
+  test('OC-45 and an unknown verb is refused', () => {
+    const r = runVerb(['frobnicate']);
+    expect(r.code).toBe(2);
+    expect(r.output).toContain('unknown verb: frobnicate');
   });
 });
