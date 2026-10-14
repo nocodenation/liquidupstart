@@ -257,9 +257,27 @@
         {/each}
       </ul>
 
+      <!-- **What approving actually grants, B3 of the 2026-10-01 review.** This said
+           "gives that browser back what it had", and it does not: before revocation the
+           device held five scopes without admin, and after approval through this card its
+           record and token held six, with `operator.admin` and `approvedVia: owner`. That
+           is not R3's "stored with five scopes and no admin".
+      
+           **Measured 2026-10-14 before choosing the weaker remedy.** The reviewer offered
+           two: correct the sentence, or approve with a scope list without admin if the CLI
+           allows one. It does not. `openclaw devices approve --help` in 2026.9.1 takes
+           `--json`, `--latest`, `--password`, `--timeout`, `--token` and `--url`, and no
+           command in the `devices` group -- approve, clear, join-code, list, reject,
+           remove, rename, revoke, rotate -- accepts a scope set. The scopes come from
+           `gateway.auth.identityScopes`, which is per identity rather than per device, so
+           this card has nothing to narrow with. So the sentence is corrected and says what
+           it grants, in the strongest words the card has. -->
       <p class="gitrepo-instructions">
-        A returning browser is one this stack knew before and whose access was withdrawn. Approving
-        gives that browser back what it had; nothing else on the machine changes.
+        A returning browser is one this stack knew before and whose access was withdrawn.
+        <strong>Approving gives it full operator access, including administrative</strong>
+        <strong>rights</strong> — the scopes come from the identity this stack asserts for every
+        request, not from this request, so there is nothing here to narrow. Nothing else on
+        the machine changes.
       </p>
     {/if}
 

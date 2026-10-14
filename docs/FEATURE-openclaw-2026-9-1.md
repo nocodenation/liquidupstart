@@ -517,13 +517,22 @@ that was ever stuck.
 
 ### 9.4 The interface R2 needs
 
-The dashboard cannot call the gateway CLI directly: it has no Docker socket, and the CLI must arrive
-through nginx to be authenticated at all. The call therefore takes the shape the git integration
-already uses — a server route that runs one command and hands the script's own words back.
+The dashboard cannot reach the gateway directly, and the reason is nginx rather than the socket. In
+`trusted-proxy` mode the gateway takes the identity from a header nginx sets, so a connection that
+does not come through nginx sends no identity and is refused — the dead end of 2026-09-19. The call
+therefore takes the shape the git integration already uses: a server route that runs one command in a
+throwaway container **on the compose network** and hands the script's own words back.
+
+> **Corrected 2026-10-14.** This read *"it has no Docker socket, and the CLI must arrive through nginx
+> to be authenticated at all"*. The first half is false and it is the half that sounded like the
+> reason: `run.sh:151` mounts `${DOCKER_SOCK}:/var/run/docker.sock` and the dashboard image ships
+> `docker-cli`, which is exactly **how** this route works — it runs `docker run` of the OpenClaw image.
+> B4 of the 2026-10-01 review. Reading it the other way would make the throwaway container look like a
+> workaround for a missing socket, when it is there to join the network nginx is on.
 
 | | |
 |---|---|
-| **Route** | `POST /openclaw-pairing` with `{ "requestId": "<id>" }`; `GET` is the listing, shaped `{ "pending": [ { "requestId", "deviceId", "clientId", "isRepair", "requestedAt" } ] }` |
+| **Route** | `POST /openclaw-pairing` with `{ "deviceId": "<id>" }` — the card posts the **device**, so a request that arrives 55 ms after the operator opened the card cannot take their click; an explicit `{ "requestId": "<id>" }` is also accepted and is what `chooseRequest` resolves. `GET` is the listing, shaped `{ "ok", "pending": [ { "requestId", "deviceId", "clientId", "role", "scopes", "remoteAddress", "isRepair", "requestedAt" } ], "revoked": [ { "deviceId", "clientId", "revokedAtMs" } ], "message" }` |
 | **Guard** | `requestId` is matched against `/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/` before it reaches a shell, exactly as `start-skip` guards a step name |
 | **Transport** | `ws://openclaw.localhost:8888` with `--token unused`, from inside the compose network, with `OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1`. Each of those three is load-bearing and each is measured in §9.2 |
 | **Failure** | A non-zero exit becomes a 502 carrying the CLI's own message, never a message this project invented. An approval attempt against an id that is no longer pending must say so rather than succeeding quietly |

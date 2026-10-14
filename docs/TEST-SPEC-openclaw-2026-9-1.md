@@ -118,6 +118,8 @@ here; each is executed where its subject exists.
 | **OC-70** | **negative** | …and the old field name is not accepted, because accepting it kept a fixture alive that no gateway produces |
 | **OC-70** | **negative** | No retry count is shown: it could only ever be one |
 | **OC-70** | positive | …and the row says whose words the client and the role are, with the address ahead of them — *B2* |
+| **OC-71** | component | The card says approving grants full operator access **including administrative rights** — *B3 of 2026-10-01* |
+| **OC-71** | positive | …and says why nothing here can narrow it, because the CLI has no way to |
 | **OC-56** | component | **negative** | No identity named, nothing granted — and no key `"undefined"` — **minor** |
 | **OC-57** | component | positive | A hand-added identity survives a start — **minor** |
 | **OC-58** | unit | positive | A single-quoted port in `.env` is read like a double-quoted one — **minor** |
@@ -639,6 +641,19 @@ moved to.
 | **Covers** | OC-51, §9 R2. |
 | **Implemented by** | `tests/unit/m-oc.pairing-choice.test.ts`. |
 | **What it found** | Red: `firstLine()` used `.slice(-1)`, so the operator was handed `[openclaw] Help: openclaw --help` and `Reason: missing scope: operator.pairing` was lost. The same line fed `throw error(502, …)` in the route. |
+
+##### OC-71 — what approving actually grants
+
+| | |
+|---|---|
+| **Premise** | B3 of the 2026-10-01 review. The card said *"Approving gives that browser back what it had"*. Measured by the reviewer: before revocation the device held five scopes without admin; after approval through this card its record and token held six, with `operator.admin` and `approvedVia: owner`. That is not R3's *"the device is stored with five scopes and no admin"*. |
+| **Component** | The card's instruction paragraph. |
+| **The measurement that chose the remedy** | The reviewer offered two: correct the sentence, or approve with a scope list without admin **if the CLI allows one**. Measured 2026-10-14 against `liquidupstart/openclaw:latest` (OpenClaw 2026.9.1): `devices approve --help` takes `--json`, `--latest`, `--password`, `--timeout`, `--token`, `--url` and nothing else, and **no command in the `devices` group** — approve, clear, join-code, list, reject, remove, rename, revoke, rotate — accepts a scope set. The scopes come from `gateway.auth.identityScopes`, which is per identity rather than per device, so this card has nothing to narrow with. The stronger remedy is unavailable, and that was established before the weaker one was taken. |
+| **Expected** | The card names *full operator access* and *administrative* rights, no longer says *back what it had*, and says there is *nothing here to narrow*. |
+| **What it found** | Green, 2 scenarios. The second exists because a sentence that only said "it grants admin" would leave an operator hunting for the setting that narrows it — there is none, and saying so is the difference between a warning and a dead end. |
+| **Controls** | The old sentence restored → 2 red. |
+| **Implemented by** | `tests/component/m-oc.pairing-card.test.ts`. |
+| **Covers** | OC-71, §9 R3. |
 
 ##### OC-70 — the address is read, the claims are labelled, and the count that could not change is gone
 

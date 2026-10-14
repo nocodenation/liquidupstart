@@ -323,6 +323,35 @@ describe.skipIf(!DASHBOARD_DEPS)('OC-68 a browser that was refused and stopped a
   });
 });
 
+describe.skipIf(!DASHBOARD_DEPS)('OC-71 the card says what approving actually grants', () => {
+  test('OC-71 it names administrative rights, and no longer says "back what it had"', async () => {
+    // B3 of the 2026-10-01 review. The card said "Approving gives that browser
+    // back what it had". Measured by the reviewer: before revocation the device
+    // held five scopes without admin; after approval through this card its record
+    // and token held six, with `operator.admin` and `approvedVia: owner`. That is
+    // not R3's "stored with five scopes and no admin".
+    serve([{ ok: true, pending: [OPERATOR], revoked: [], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    const text = mounted.text();
+    expect(text).toContain('full operator access');
+    expect(text).toContain('administrative');
+    expect(text).not.toContain('back what it had');
+  });
+
+  test('OC-71 and it says why nothing here can narrow it', async () => {
+    // The reviewer offered two remedies and the stronger one is not available:
+    // measured 2026-10-14, no command in the `devices` group accepts a scope set.
+    // The scopes come from `gateway.auth.identityScopes`, which is per identity
+    // and not per device. A sentence that only said "it grants admin" would leave
+    // an operator looking for the setting that narrows it.
+    serve([{ ok: true, pending: [OPERATOR], revoked: [], message: '' }]);
+    mounted = await mountComponent(CARD, { running: true });
+    await mounted.settle();
+    expect(mounted.text()).toContain('nothing here to narrow');
+  });
+});
+
 describe.skipIf(!DASHBOARD_DEPS)('OC-70 the row claims nothing it cannot know', () => {
   test('OC-70 no retry count is shown, because it could only ever be one', async () => {
     // B1 of the 2026-10-01 review. The row read "asked N times", and N was always
