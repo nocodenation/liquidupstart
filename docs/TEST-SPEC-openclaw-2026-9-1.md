@@ -75,6 +75,29 @@ here; each is executed where its subject exists.
 | **N1b** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
+| **OC-63** | contract | **negative** | The embedded node programs survive the shell that carries them: a `-e` program reaches node as one argument and nothing inside it is re-split |
+| **OC-64** | contract | positive | The proxy address is one default, written the same in every place that carries it |
+
+*These two were documented on 2026-10-09, after the fact, and **renumbered from OC-40 and OC-42 on
+2026-10-12**.*
+
+> **Why they moved, and why it was these two rather than the other pair.** #15 specified `OC-39` to
+> `OC-59` on 2026-09-19 and has carried `OC-40` and `OC-42` ever since, with two signed detail blocks,
+> a traceability row, test headers and a comment in `config/scripts/start/openclaw.sh` naming them.
+> These two ids were assigned here on 2026-10-09 while back-filling rows for tests that had none, with
+> no knowledge of that branch — so the same two numbers came to mean four different cases, and
+> `OC-40` collided between two **automated** tests: `m-oc.identity-scopes` on #15 and
+> `m-oc.bound-arguments` here. A merge of either branch into the other would have produced a document
+> with one id and two meanings, which is the defect A1 on #17 was.
+>
+> The later and cheaper pair moves. Six places here against roughly twelve there, and renumbering
+> mid-review on a branch under eleven open findings costs the reviewer more than it costs this file.
+> **The new numbers were computed rather than chosen**: the highest `OC-` id anywhere in the stack is
+> `OC-62` (the renamed N1b on #17), which `mutate.sh --gaps` is what established — a check by hand had
+> twice reported `OC-60` to `OC-62` as free because `git grep <ref>` was silently returning nothing. Their tests carried ids that no row
+here declared, which `--gaps` cannot see and a reviewer cannot sign. `TR-1` in
+`docs/TEST-SPEC-case-id-traceability.md` is what stops this recurring; the same had happened to
+eleven cases in `TEST-SPEC-git-integration.md`.
 
 ### Suite 2 — compatibility
 

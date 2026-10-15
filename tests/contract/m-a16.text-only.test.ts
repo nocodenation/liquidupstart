@@ -23,11 +23,21 @@
  *           `m-a13.skip-step-names.test.ts`: the case that needed a NUL still
  *           refuses one, written as the escape `'a\0b'` rather than the byte,
  *           so this rule cannot be met by giving up the test data.
+ *
+ * Precondition: IN_GIT_REPO -- this checkout is a git repository. Skipped where it does not,
+ *           because a release installation at `~/.liquidupstart` is not one, and the
+ *           stack tier runs there. Measured 2026-10-08: the
+ *           whole default tier from a feature worktree gave 9 failures and 1
+ *           error, every one of them a case of this kind, and the release
+ *           installation gave the same count for the opposite reason. Neither
+ *           place satisfies the whole suite, so the precondition is a value
+ *           asked for rather than a directory prescribed. SP-1, SP-2.
  */
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
+import { IN_GIT_REPO } from '../lib/preconditions';
 
 // git's own rule: it looks for a NUL in the first 8000 bytes of the blob.
 const GIT_BINARY_WINDOW = 8000;
@@ -39,7 +49,7 @@ const tracked = Bun.spawnSync(['git', '-C', repoRoot, 'ls-files', '-z', 'tests']
   .split('\0')
   .filter(Boolean);
 
-test('A16-19 git tracks test files, so there is something to judge', () => {
+test.skipIf(!IN_GIT_REPO)('A16-19 git tracks test files, so there is something to judge', () => {
   // A count of zero is not a result. If `ls-files` came back empty the loop
   // below would pass over nothing at all.
   expect(tracked.length).toBeGreaterThan(50);
