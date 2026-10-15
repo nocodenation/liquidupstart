@@ -460,6 +460,20 @@ no path you can see reaches. Removal is one command plus a restart, both the ope
 procedure is in `docs/FEATURE-liquid-java-extensions.md` under FR30. Ask for it the way step 4
 asks for a restart, and do not report a bundle as removed because you deleted the inbox copy.
 
+**Two sizes the check refuses on, before it reads anything.** The check reads your bundle to judge
+it, and it will not read an unbounded amount:
+
+- a **single bundled jar** under `META-INF/bundled-dependencies/` whose own directory entry declares
+  more than **256 MiB** is refused, unopened;
+- the **sum** of the `.class` sizes an archive declares is refused past **512 MiB**.
+
+Both are refused *permanently* — the refusal is not about the API version, so rebuilding against
+another one changes nothing, and the message says so. If a dependency legitimately needs more (native
+libraries are the realistic case), split it so no single bundled jar passes the limit, or ask the
+operator: the two constants are `MAX_BUNDLED_JAR_BYTES` and `MAX_CLASS_BYTES` in
+`config/liquid/narcheck.py`, and raising one is their change to make, with a reason. Specified in
+`docs/FEATURE-liquid-java-extensions.md` under FR36.
+
 ### 6.5 NAR Dependencies & ClassLoading (CRITICAL)
 When a NAR requires parent dependencies (e.g., SSL Context Service API), ALL NARs in the dependency chain must be dropped into `nar_extensions/` together.
 

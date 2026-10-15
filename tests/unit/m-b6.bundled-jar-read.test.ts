@@ -16,13 +16,28 @@
  * Given:    `config/liquid/narcheck.py`, and a lib directory holding a
  *           `nifi-api-*.jar` so the check reaches the bundle at all
  * When:     `check` is run over a bundle whose bundled jar declares more than the
- *           read limit, and over an ordinary one
+ *           read limit, over one that **declares 1000 bytes and inflates to
+ *           800 MB**, and over an ordinary one
  * Then:     the first is refused on the limit without being unpacked, the second
- *           is not refused for that reason, and peak memory stays small
+ *           is refused on the disagreement between the directory and the entry,
+ *           the third is not refused for either reason, and peak memory stays
+ *           small in every case
  * Covers:   B6-37, FR36
- * Unhappy:  The bomb is the negative half. The ordinary bundled jar is the
- *           counterpart, and it is what keeps the fix from being "refuse every
- *           bundled jar", which would pass the first scenario perfectly.
+ * Unhappy:  The bomb and the liar are the negative halves. The ordinary bundled
+ *           jar is the counterpart, and it is what keeps the fix from being
+ *           "refuse every bundled jar", which would pass both perfectly.
+ *
+ * On the liar, added 2026-10-14 for N6: the first fixture was honest by
+ *           construction, so the limit it tested was the only limit there was.
+ *           `zf.read` decompresses with `max_length = 2 GiB` and truncates to the
+ *           declared size afterwards, so trusting that number cost the full
+ *           800 MB anyway -- 1610 MB from an 815,695-byte file.
+ *
+ * On measuring it: the fixture is built by one process and measured by another,
+ *           which is not tidiness. `fork` hands a child the parent's RSS, so
+ *           building the 800 MB blob in the measuring process reports ~1.6 GB for
+ *           every case including the ones that refuse immediately -- measured,
+ *           and it is how a first attempt at this nearly mis-cleared N3.
  *
  * On the fixture, because it took two attempts: the blob has to be **stored**
  * rather than deflated inside the jar. Deflated, the jar's own uncompressed size
@@ -53,6 +68,21 @@ def nar(path, stored_blob):
         n.writestr('META-INF/bundled-dependencies/j.jar', inner.getvalue())
 nar('/w/bomb.nar', True)
 nar('/w/ok.nar', False)
+
+# N6: the same bomb, with its outer entry patched to DECLARE 1000 bytes in both
+# the central directory and the local header. The read limit reads that number,
+# so it passes -- and zf.read inflated the member whole anyway. 1610 MB from a
+# 815,695-byte file, measured at the reviewed head.
+import struct
+nar('/w/liar.nar', True)
+with open('/w/liar.nar', 'r+b') as f:
+    d = bytearray(f.read())
+    for sig, off in ((b'PK\x01\x02', 24), (b'PK\x03\x04', 22)):
+        i = d.find(sig)
+        while i != -1:
+            struct.pack_into('<I', d, i + off, 1000)
+            i = d.find(sig, i + 1)
+    f.seek(0); f.write(d); f.truncate()
 with zipfile.ZipFile('/w/lib/nifi-api-2.10.0.jar', 'w') as z:
     z.writestr('org/apache/nifi/processor/Processor.class', b'\\xca\\xfe\\xba\\xbe')
 `;
@@ -92,6 +122,33 @@ describe('B6-37 a bundled jar is refused on its declared size, before it is read
     expect(r.stdout).toMatch(/past the \d+-byte read limit/);
     expect(r.stdout).toContain('it is not unpacked');
     // Peak well under the 800 MB the jar declares. Before the repair: 1.57 GB.
+    const peak = Number(r.stdout.match(/^PEAK_MB=(\d+)$/m)?.[1]);
+    expect(peak).toBeGreaterThan(0);
+    expect(peak).toBeLessThan(400);
+  }, 900_000);
+
+  test('B6-37 and a jar that lies about its size is bounded by the read, not by the claim', () => {
+    // **N6 of the 2026-10-14 re-review**, and the same exhaustion N3 was about,
+    // reached by lying instead of by asking. `zf.read` decompresses with
+    // `max_length = 2 GiB` and only cuts the result to the declared size
+    // afterwards, so an entry declaring 1000 bytes while its stream inflates to
+    // 800 MB passed this limit and was inflated whole. The watcher runs `check`
+    // inside the Liquid container and the inbox is agent-writable, so a sub-1 MB
+    // file made Liquid spend 1.6 GB.
+    //
+    // Measured at the reviewed head: 1610 MB. With the read bounded: 13 MB.
+    const r = run('/w/liar.nar');
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('RC=1');
+    // **Refused as a CRC mismatch, and that is the honest reading.** `ZipExtFile`
+    // takes the declared size as the member's length, so asking for
+    // `declared + 1` returns 1000 bytes, sets EOF and compares their CRC against
+    // the directory's -- which belongs to the real 800 MB. So the sentence the
+    // operator reads does not change; what changes is that it arrives after about
+    // a kilobyte instead of after 800 MB. The first draft of this case asserted a
+    // new size-disagreement message and was wrong about its own fix.
+    expect(r.stdout).toMatch(/Bad CRC-32/);
+    expect(r.stdout).toContain('could not be read out of the archive');
     const peak = Number(r.stdout.match(/^PEAK_MB=(\d+)$/m)?.[1]);
     expect(peak).toBeGreaterThan(0);
     expect(peak).toBeLessThan(400);

@@ -112,6 +112,60 @@ describe('B6-36 the build user and the cache it is handed', () => {
     900_000
   );
 
+  test('B6-38 content already in the cache is handed over too, not just the mount point', () => {
+    // **N7 of the 2026-10-14 re-review.** The chown was the leaf only, so a cache
+    // with anything already in it stayed root-owned below the top and the build
+    // user was denied writing through it. That is not a contrived state: a cache
+    // filled before Maven moved to the build user is exactly it, and
+    // FEATURE-liquid-java-extensions.md records 85 MB of one on the author's
+    // machine. Reproduced before the fix: `/m2` became builder-owned while
+    // `/m2/org` stayed `0:0`, and `touch /m2/org/apache/maven/probe` as builder
+    // was denied -- which a real Maven reports as
+    // `AccessDeniedException: /m2/org/apache/maven`.
+    const r = inBuilder(`
+      rm -rf /m2 && mkdir -p /m2/org/apache/maven && chown -R 0:0 /m2 && chmod -R 755 /m2
+      printf 'DEEP_BEFORE=%s\\n' "$(stat -c '%U' /m2/org/apache/maven)"
+      printf 'WRITE_BEFORE=%s\\n' "$(su builder -s /bin/sh -c 'touch /m2/org/apache/maven/p 2>/dev/null' && echo writable || echo refused)"
+      timeout 60 env PATH=/stub:$PATH /entrypoint.sh
+      printf 'LEAF_AFTER=%s\\n' "$(stat -c '%U' /m2)"
+      printf 'DEEP_AFTER=%s\\n' "$(stat -c '%U' /m2/org/apache/maven)"
+      printf 'WRITE_AFTER=%s\\n' "$(su builder -s /bin/sh -c 'touch /m2/org/apache/maven/q 2>/dev/null' && echo writable || echo refused)"
+    `);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('DEEP_BEFORE=root');
+    expect(r.stdout).toContain('WRITE_BEFORE=refused');
+    expect(r.stdout).toContain('LEAF_AFTER=builder');
+    // The reading the leaf-only chown could not give: the tree, not the top.
+    expect(r.stdout).toContain('DEEP_AFTER=builder');
+    expect(r.stdout).toContain('WRITE_AFTER=writable');
+  }, 900_000);
+
+  test('B6-38 and a symlink planted in the cache is not chowned through', () => {
+    // The counterpart, and it is the reason the flags are `-R -h` rather than
+    // `-R` alone. Recursing into a cache the build user can write means
+    // following whatever it put there, so the guard has to be shown to hold:
+    // `-h` chowns the link itself and coreutils' default `-P` does not descend
+    // into a symlinked directory. Without them this would hand `/opt/builder`
+    // -- the server's own code -- to the build user on the next start.
+    const r = inBuilder(`
+      rm -rf /m2 && mkdir -p /m2 && chown builder /m2
+      su builder -s /bin/sh -c 'ln -s /opt/builder /m2/escape'
+      printf 'TARGET_BEFORE=%s\\n' "$(stat -c '%U' /opt/builder/build.sh)"
+      timeout 60 env PATH=/stub:$PATH /entrypoint.sh
+      printf 'TARGET_AFTER=%s\\n' "$(stat -c '%U' /opt/builder/build.sh)"
+      printf 'LINK_AFTER=%s\\n' "$(stat -c '%U' /m2/escape)"
+      printf 'DIR_AFTER=%s\\n' "$(stat -c '%U' /opt/builder)"
+    `);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('TARGET_BEFORE=root');
+    // What must NOT have happened: the link's target handed over.
+    expect(r.stdout).toContain('TARGET_AFTER=root');
+    expect(r.stdout).toContain('DIR_AFTER=root');
+    // The link itself is the build user's own, which is harmless and is what
+    // `-h` means.
+    expect(r.stdout).toContain('LINK_AFTER=builder');
+  }, 900_000);
+
   test.skipIf(centralReachable())(
     'B6-36 Maven Central is unreachable here, so the real-build half is skipped',
     () => {

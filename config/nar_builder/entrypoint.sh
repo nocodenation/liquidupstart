@@ -24,9 +24,23 @@ chmod 700 /deploy
 # builds. That gap is the author's own open item #5 -- no automated case runs a real
 # Maven as the build user -- and B6-35 now closes it against a root-owned mount.
 #
-# This runs as root, which the entrypoint already is, and it is the leaf only:
-# `/deploy` stays root-only above, so handing `/m2` over does not widen what the
-# build user can reach beyond the cache it has to write.
-chown "${NAR_BUILDER_BUILD_USER:-builder}" /m2
+# This runs as root, which the entrypoint already is. `/deploy` stays root-only
+# above, so handing `/m2` over does not widen what the build user can reach
+# beyond the cache it has to write.
+#
+# **Recursive, which the first form of this was not.** The leaf-only `chown`
+# left anything already inside the cache root-owned, and a cache filled before
+# Maven moved to the build user is exactly that: `FEATURE-liquid-java-extensions.md`
+# records 85 MB of it on the author's machine. Reproduced in the builder image --
+# after the leaf-only chown, `/m2` was `builder:root` while `/m2/org` stayed
+# `0:0`, and the build user was denied writing through it; the reviewer got
+# `AccessDeniedException: /m2/org/apache/maven` and `BUILD FAILURE` from a real
+# Maven. N7 of the 2026-10-14 re-review.
+#
+# `-h` and coreutils' default `-P` together mean symlinks are neither followed
+# nor chowned through, so a link the build user planted in the cache cannot aim
+# this at anything outside it. The mount point itself the build user cannot
+# replace.
+chown -R -h "${NAR_BUILDER_BUILD_USER:-builder}" /m2
 
 exec java /opt/builder/BuildServer.java
