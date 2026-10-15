@@ -1,4 +1,4 @@
-# Handover — 2026-10-13
+# Handover — 2026-10-15
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one: #19 still carries an older
@@ -9,13 +9,93 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-13* has the live picture. Read that and the review bodies it points to; the rest of this file
+2026-10-15* has the live picture. Read that and the review bodies it points to; the rest of this file
 is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; there are nine of ours open now, and two have merged since. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-15
+
+**`main` is `f13c4ea`.** #27 merged as `0c7f0bf` — **the first thing here merged without a review**,
+see below — and `f13c4ea` is the disk guard on top of it. `./tests/run.sh` on `main`: 590 pass /
+2 skip / 0 fail, plus the dashboard suite 32 pass.
+
+**Four review rounds were answered in a day**, and every finding across them is handed back. Nothing
+a reviewer has asked for is open on our side; what remains is review latency.
+
+| PR | Round answered | Head | Suite |
+|---|---|---|---|
+| #10 | re-review 3: N5 to N8, plus the image leak | `8befc13` | 755 / 5 skip / 0 fail |
+| #15 | B5, B6 and all five minors C1–C5 | `9de173f` | 691 / 7 skip / 0 fail |
+| #16 | C1 and the four non-blocking N1–N5 | `dbca74e` | 602 / 4 skip / 1 fail, the one being `A8-26` on `main` at the time |
+| #18 | N1–N3, then N4–N9 | `61f9597` | 672 / 4 skip / 1 fail, same cause |
+| #25 | base merged twice, entrypoint note | `8db3ded` | 761 / 5 skip / 0 fail |
+
+**#27 was merged without a review, deliberately, and the note is on the pull request.** `A8-26` was
+red on `main` — a failed apt install arriving as a product failure — and a red `main` is not local:
+every branch inherits it, and it cost two diagnoses, once on #16 where the file had to be run on both
+branches to establish the failure was not #16's. The change touched **no product code** (two files,
++75/−14: one test and its specification), the three renumbered ids were checked for collisions
+individually, and the branch tier was 571 / 4 skip / 0 fail. `main` went from 3 pass / 1 fail on that
+file to 5 pass / 0 fail. **It is not a review and the note says so**: if the reviewer disagrees with
+any of it, it changes on `main` by follow-up rather than standing because it landed.
+
+### The full Docker VM, twice, and what it looked like both times
+
+**This is the lesson of the day.** The VM reached 100% with **0 bytes** free and a real Maven inside
+the builder answered `java.nio.file.FileSystemException: /m2/org: No space left on device`. On
+2026-10-15 that surfaced as **34 failing cases** across M-B5 and M-B6 — refusals that did not refuse,
+builds exiting 2, `AFTER=0` where a build should have succeeded, `B6-36` failing where it had
+previously skipped — and most of an incompatibility analysis between #10's cache-dependent cases and
+#25's no-cache design had been written before anybody probed the build by hand. The morning before,
+the same condition was reported to the reviewer as a *"harness artifact"*.
+
+**`docker system df` is why nothing caught it.** It said *20% reclaimable* while the filesystem had
+nothing left: it measures what images and containers occupy, not what the VM has free. The space was
+in the **build cache** — 39.7 GB — which nothing in the suite accounts for, and `docker builder prune
+-af` returned 33.6 GB. On Docker Desktop the host's own `df` describes a different disk, so the only
+honest reading is `df` **inside** a container.
+
+`tests/run.sh` now asks once before any level runs, and refuses with the cause and the command
+(`SP-3`). It **fails rather than skips**, because a run that cannot measure must not look like a run
+that passed — which is the opposite choice from every other precondition here, and the reason is that
+a full disk is a property of the machine and fixable in one line. The floor is 2 GiB, from a
+measurement: one cold builder image build costs about 305 MB.
+
+**If a build fails for a reason that sounds like permissions, read the disk first.** Twice now the
+output has been `AccessDeniedException` or an exit 2 with no explanation, and twice the answer was
+space.
+
+### Five worktrees were eaten, and nothing was lost
+
+`wt-10`, `wt-17`, `wt-18`, `wt-pre` and `wt-tr` lost their `.git` to the `/tmp` cleaner — directory
+mtimes at `Oct 14 00:00`, which is when it runs. Every one was a copy of a branch that had been
+pushed, so **nothing was lost**, which is the rule in this file working. Checked rather than assumed:
+each directory was diffed against its branch's archive before anything was pruned. The replacements
+were recreated and `touch`ed to reset the three-day clock.
+
+### A habit of mine the reviewer caught twice in one day
+
+*"It is in `BACKLOG.md`"*, pointing at nothing. On #10 as N8 — two entries a reply claimed were
+deferred there and were not — and on #18 as N3, two more. Four entries written since, one claim
+withdrawn rather than back-filled, because the thing it described had been fixed on `main` and a
+back-filled entry would have been a second false pointer. `PROCEDURE-mutation-control.md` already
+said *"a pointer to a file the reader cannot open is worse than no pointer"*. **Before writing that a
+thing is recorded somewhere, open the file.**
+
+### Where the open work is
+
+All eleven of ours are `OPEN` with `iztiev` requested. #10, #15, #16 and #18 have replies awaiting a
+re-read; #17, #19, #20, #21, #24, #25 and #28 await a first or next review. #25 is stacked on #10 and
+current with it; #28 carries `TR-4`, which is the check that would have caught the two id collisions
+found on 2026-10-14, one of them mine.
+
+One thing is deferred by decision and not forgotten: **`B7-5` on #25 is specified and not measured.**
+It needs the builder image built from that branch and the stack started from its checkout. The entry
+says so in those words and claims no result.
 
 ## Where it stands, 2026-10-13
 
