@@ -21,7 +21,7 @@
  * Then:     below it refuses and the message names the cause and the remedy; at
  *           and above it proceeds; unavailable proceeds, because "cannot measure"
  *           and "no space" must not be the same answer
- * Covers:   SP-3
+ * Covers:   SP-4
  * Unhappy:  The refusal is the negative half. Two of the three positives exist to
  *           stop it being met by a guard that refuses whenever it is unsure — a
  *           machine without docker must not be told its disk is full, and a
@@ -39,8 +39,8 @@ import { spaceVerdict, requireSpaceForDockerBuild, vmFreeBytes, FLOOR_BYTES } fr
 
 const GiB = 1024 * 1024 * 1024;
 
-describe('SP-3 a reading below the floor refuses, and says why', () => {
-  test('SP-3 nothing left is refused, and the message names the cause', () => {
+describe('SP-4 a reading below the floor refuses, and says why', () => {
+  test('SP-4 nothing left is refused, and the message names the cause', () => {
     const v = spaceVerdict(0, 2 * GiB);
     expect(v.ok).toBe(false);
     // The sentence a reader would otherwise have had to infer from a Maven stack
@@ -53,24 +53,24 @@ describe('SP-3 a reading below the floor refuses, and says why', () => {
     expect(v.message).toContain('"reclaimable" while the filesystem has nothing left');
   });
 
-  test('SP-3 and so is a reading that is merely low', () => {
+  test('SP-4 and so is a reading that is merely low', () => {
     expect(spaceVerdict(1 * GiB, 2 * GiB).ok).toBe(false);
   });
 });
 
-describe('SP-3 and it proceeds whenever it should', () => {
-  test('SP-3 a reading at the floor is not below it', () => {
+describe('SP-4 and it proceeds whenever it should', () => {
+  test('SP-4 a reading at the floor is not below it', () => {
     // The boundary, which is where an off-by-one would live.
     expect(spaceVerdict(2 * GiB, 2 * GiB).ok).toBe(true);
   });
 
-  test('SP-3 plenty of room proceeds, and the message says how much', () => {
+  test('SP-4 plenty of room proceeds, and the message says how much', () => {
     const v = spaceVerdict(20 * GiB, 2 * GiB);
     expect(v.ok).toBe(true);
     expect(v.message).toMatch(/has \d+ MB free/);
   });
 
-  test('SP-3 and a reading that could not be taken proceeds', () => {
+  test('SP-4 and a reading that could not be taken proceeds', () => {
     // **A guard that stops a run because it could not measure is worse than the
     // thing it guards against.** A machine without docker is already reported by
     // every case that needs docker; being told its disk is full would be a
@@ -81,20 +81,20 @@ describe('SP-3 and it proceeds whenever it should', () => {
   });
 });
 
-describe('SP-3 the guard throws with that message, and only then', () => {
-  test('SP-3 an empty VM stops a build with the sentence', () => {
+describe('SP-4 the guard throws with that message, and only then', () => {
+  test('SP-4 an empty VM stops a build with the sentence', () => {
     expect(() => requireSpaceForDockerBuild('the builder image', () => 0, 2 * GiB)).toThrow(
       /the builder image: the Docker VM has 0 MB free/
     );
   });
 
-  test('SP-3 and a healthy one does not throw', () => {
+  test('SP-4 and a healthy one does not throw', () => {
     expect(() => requireSpaceForDockerBuild('the builder image', () => 20 * GiB, 2 * GiB)).not.toThrow();
   });
 });
 
-describe('SP-3 and the reading is of the VM, not of this machine', () => {
-  test('SP-3 the live reading is a number or an honest null, and the floor is set', () => {
+describe('SP-4 and the reading is of the VM, not of this machine', () => {
+  test('SP-4 the live reading is a number or an honest null, and the floor is set', () => {
     // Read rather than asserted against a figure: this runs on machines of
     // different sizes. What is asserted is that the reading is *of something* —
     // a `0` here would mean the parse broke, which is how a guard like this

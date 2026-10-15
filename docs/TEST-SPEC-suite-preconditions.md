@@ -57,14 +57,14 @@ like a suite that ran.
 | **SP-2** | positive | Each dependent file names the precondition it skips on, in its header, and uses it — and the DOM files are **computed**, not listed |
 | **SP-2** | positive | …the computation is over something: at least three DOM files, the card file among them |
 | **SP-2** | **negative** | …and each DOM file files its voiced skip under `SP-2`, not under a case id |
-| **SP-3** | **negative** | A Docker VM below the free-space floor stops the run, and the message names the cause and the remedy — *2026-10-15* |
-| **SP-3** | **negative** | …and a reading that is merely low stops it too |
-| **SP-3** | positive | …while a reading **at** the floor proceeds, which is where an off-by-one would live |
-| **SP-3** | positive | …and plenty of room proceeds, saying how much |
-| **SP-3** | positive | …and a reading that could not be taken proceeds, because "cannot measure" is not "no space" |
-| **SP-3** | **negative** | The guard throws with that message when the VM is empty |
-| **SP-3** | positive | …and does not throw when it is healthy |
-| **SP-3** | positive | The live reading is of the VM and is a number, or an honest `null` |
+| **SP-4** | **negative** | A Docker VM below the free-space floor stops the run, and the message names the cause and the remedy — *2026-10-15* |
+| **SP-4** | **negative** | …and a reading that is merely low stops it too |
+| **SP-4** | positive | …while a reading **at** the floor proceeds, which is where an off-by-one would live |
+| **SP-4** | positive | …and plenty of room proceeds, saying how much |
+| **SP-4** | positive | …and a reading that could not be taken proceeds, because "cannot measure" is not "no space" |
+| **SP-4** | **negative** | The guard throws with that message when the VM is empty |
+| **SP-4** | positive | …and does not throw when it is healthy |
+| **SP-4** | positive | The live reading is of the VM and is a number, or an honest `null` |
 
 ## Detail
 
@@ -141,7 +141,16 @@ else is running is what makes red stop meaning anything. Recorded in `BACKLOG.md
 here, because the two ways out — a larger budget, or a precondition of its own — are the operator's
 choice.
 
-### SP-3 — a full Docker VM says so, instead of looking like a defect
+### SP-4 — a full Docker VM says so, instead of looking like a defect
+
+> **Numbered `SP-3` first, which was already taken.** #24 has used `SP-3` since 2026-10-10 for the
+> network-reachability precondition, and this case took it on 2026-10-15 — two different cases under
+> one id, which is the defect `TR-4` on #28 exists for and which `TR-1` cannot see, so it merged
+> cleanly everywhere and surfaced only as a conflict when #24 was brought up to date. The later case
+> moves, as `OC-40`/`OC-42` moved to `OC-63`/`OC-64` and `M1-11` to `M1-12`. The irony is worth
+> keeping: #24's own commit is titled *"the fourth precondition, the last duplicated case id, and
+> three of my own mistakes"*.
+
 
 | | |
 |---|---|
@@ -156,12 +165,12 @@ choice.
 | **What it found** | Green, 8 scenarios. The failing path was run end to end: with the floor raised past the real reading, `./tests/run.sh m-tr` prints the sentence and exits **2** without running a case; with the floor as shipped it prints `disk: the Docker VM has 22497 MB free` and the run proceeds. |
 | **Controls** | Three, each reddening exactly one scenario. An unknown reading treated as empty → the `null` scenario. The boundary made exclusive (`>` for `>=`) → the at-the-floor scenario. The remedy dropped from the message → the message scenario, which is what keeps the sentence from decaying into "disk full". |
 | **Implemented by** | `tests/unit/m-sp.docker-space.test.ts`. |
-| **Covers** | SP-3, SP-FR1. |
+| **Covers** | SP-4, SP-FR1. |
 
 ## Traceability
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-4** |
 | SP-FR2 each discriminator is shown to answer both ways | SP-1 |
 | SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2 |
