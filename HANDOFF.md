@@ -69,6 +69,41 @@ measurement: one cold builder image build costs about 305 MB.
 output has been `AccessDeniedException` or an exit 2 with no explanation, and twice the answer was
 space.
 
+### The worktrees live under `~/repos/liquidupstart-worktrees/` since 2026-10-15
+
+**Not under the session scratchpad any more, because that is in `/tmp`.** Measured rather than
+remembered: `/usr/libexec/tmp_cleaner` deletes under **`/tmp` only** —
+`daily_clean_tmps_dirs="/tmp"`, files matched by `-atime +3 -mtime +3 -ctime +3` and empty
+directories by `-mtime +3`, with the three days coming from `CLEAN_FILES_OLDER_THAN_DAYS` in
+`/System/Library/LaunchDaemons/com.apple.bsd.dirhelper.plist`. Nothing outside `/tmp` is touched by
+it, so anywhere else will do and `~/repos/` is the obvious one: same filesystem as the checkout, next
+to it, visible, and backed up by whatever backs up the home directory.
+
+Eight were moved with `git worktree move`, which updates the administrative files — the directories
+were not copied by hand. Two were **retired** instead, `fix/toolbox-tools-precondition` and
+`fix/oc-id-collision`, because both are merged into `main`. Checked with
+`git merge-base --is-ancestor` before removing anything, and every worktree was clean and pushed
+first.
+
+| Worktree | Branch |
+|---|---|
+| `wt-10` | `feature/liquid-java-extensions` |
+| `wt-15b` | `feature/openclaw-pairing-recovery` |
+| `wt-16` | `feature/memory-midterm` |
+| `wt-18` | `feature/mutation-registry` |
+| `wt-19` | `fix/fixture-names-per-run` |
+| `wt-24` | `fix/fourth-precondition` |
+| `wt-seed` | `feature/builder-seeded-cache` |
+| `wt-uniq` | `fix/case-id-uniqueness` |
+
+**The three-day rule above still applies to anything left in the scratchpad**, which is where
+intermediate files belong and where they may be deleted under you. It is the *worktrees* that have
+moved, because a working copy of a branch is not a temporary file.
+
+**And this is also what makes the stack startable from a branch.** The reason `B7-5` on #25 was left
+unmeasured was partly that starting a stack from a scratchpad checkout would have put the whole of
+`volumes/` under that clock. From here it would not.
+
 ### Five worktrees were eaten, and nothing was lost
 
 `wt-10`, `wt-17`, `wt-18`, `wt-pre` and `wt-tr` lost their `.git` to the `/tmp` cleaner — directory
