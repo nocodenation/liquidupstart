@@ -138,6 +138,33 @@ if [[ $LIST -eq 1 ]]; then
   exit 0
 fi
 
+# --- Pre-flight: the Docker VM must have room -------------------------------
+# **A full VM looks exactly like a product defect, and has been read as one
+# twice.** On 2026-10-14 and again on 2026-10-15 the filesystem reached 0 bytes
+# free and a real Maven inside the builder answered `No space left on device`,
+# which surfaced as 34 failing cases across M-B5 and M-B6 -- refusals that did
+# not refuse, builds exiting 2, `AFTER=0` where a build should have succeeded.
+# Most of an incompatibility analysis between two branches was written before
+# anybody probed the build by hand. `docker system df` said "20% reclaimable"
+# throughout, because it measures what images occupy and not what the VM has
+# left; the space was in the build cache, 39.7 GB of it.
+#
+# Asked once, here, rather than in each case: one sentence before the run is
+# worth more than the same condition arriving as forty different failures. It
+# does not skip anything -- a run that cannot measure must not look like a run
+# that passed -- and it is a floor, not a law: LU_DISK_FLOOR_BYTES moves it.
+if command -v bun >/dev/null 2>&1; then
+  if ! bun -e '
+    const m = await import("./tests/lib/dockerspace.ts");
+    const v = m.spaceVerdict(m.vmFreeBytes());
+    console.log((v.ok ? "disk: " : "STOPPED, and not because of the product: ") + v.message);
+    if (!v.ok) process.exit(1);
+  ' 2>&1; then
+    echo "Nothing was run. Reclaim space and start again." >&2
+    exit 2
+  fi
+fi
+
 status=0
 bun test --timeout "$TEST_TIMEOUT_MS" "${SELECTED[@]}" || status=$?
 
