@@ -81,14 +81,25 @@ afterAll(() => {
   for (const f of produced) rmSync(join(DROP_HOST, f), { force: true });
 });
 
-test.skipIf(!SEEDED_IMAGE)('B7-5 the seed holds neither dependency, which is what makes this case mean anything', () => {
-  // Read, not assumed. If a later change seeded jackson for its own reasons,
-  // every assertion below would still pass and would be measuring the warm path
-  // again -- the case would quietly stop being about what it says it is about.
+test.skipIf(!SEEDED_IMAGE)('B7-5 the seed holds neither version, which is what makes this case mean anything', () => {
+  // Read, not assumed -- and the first reading corrected the case.
+  //
+  // **Both artifacts ARE in the seed, at other versions.** Measured 2026-10-15
+  // against the image built from this branch: `jackson-databind` at 2.13.2.2 and
+  // 2.16.1, `guava` at 14.0.1 and 32.1.0-jre. The seed is the closure of the
+  // synthesised build, and the nar plugin pulls both -- so the premise written
+  // here first, that neither is anywhere in the tree, was simply false.
+  //
+  // What is true is the thing that matters: **these versions** are not seeded,
+  // so resolving them is a real cold path. The check is therefore at the version
+  // and not at the artifact, which is also a stronger fixture -- a build that
+  // fetches 2.18.2 while 2.16.1 sits in the same repository cannot be passing by
+  // accident. If a later change seeds these exact versions, this reddens and
+  // says so, instead of the rest quietly measuring the warm path again.
   for (const d of UNSEEDED_DEPENDENCIES) {
-    const path = `/opt/builder/m2-seed/${d.groupId.replace(/\./g, '/')}/${d.artifactId}`;
-    const probe = sh(['docker', 'exec', 'nar_builder', 'test', '-e', path]);
-    expect(probe.code, `${d.groupId}:${d.artifactId} is in the seed`).not.toBe(0);
+    const at = `/opt/builder/m2-seed/${d.groupId.replace(/\./g, '/')}/${d.artifactId}/${d.version}`;
+    const probe = sh(['docker', 'exec', 'nar_builder', 'test', '-e', at]);
+    expect(probe.code, `${d.groupId}:${d.artifactId}:${d.version} is in the seed`).not.toBe(0);
   }
 });
 

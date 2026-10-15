@@ -1346,10 +1346,12 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 
 #### B7-5 — an author pom naming something the seed has never held
 
-> **Specified 2026-10-14 and not yet run.** It needs the builder image built from this branch and the
-> stack started from a checkout that carries it; the installation this machine runs today predates
-> the seed, so the file skips with a voice. The block is written now, with the expectation stated,
-> so that what it found can be added rather than invented. **Nothing in this entry claims a result.**
+> **Specified 2026-10-14. Partly measured 2026-10-15, and the measurement corrected the case.** The
+> five scenarios still need the stack started from a checkout that carries this branch, which would
+> replace a running installation with an empty one, so they remain skipped with a voice. What *was*
+> measured is the question the case exists for, taken against the image built from this branch without
+> the stack — and it both answered that question and found an error in the fixture. Read the two rows
+> below before the expectations: they are the only results claimed here.
 
 | | |
 |---|---|
@@ -1360,6 +1362,8 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 | **Test data, both sides, and why these two** | `volumes/repos/.b7-unseeded`: the `B1-5` fixture plus a pom with artifactId `probe-unseeded` declaring `com.fasterxml.jackson.core:jackson-databind:2.18.2` and `com.google.guava:guava:33.4.0-jre`. Neither is anywhere in the NiFi API's own tree, so neither can arrive by accident — and the first scenario **reads the seed** rather than taking that on trust. Both are large enough to be unambiguous in the `downloads` figure, and both are ordinary: this is what an author's pom looks like, not a fixture shaped to pass. What must be in the bundle: `jackson-databind-2.18.2.jar`, `jackson-core-2.18.2.jar`, `jackson-annotations-2.18.2.jar`, `guava-33.4.0-jre.jar`. The nifi-api version and compiler release come from `nar-build --target`, so the fixture bends to the running Liquid rather than pinning a literal. The pom is produced by `unseededPom()` from the same function `B1-6` uses, so the two cases cannot drift into testing different things. |
 | **Expected** | Scenario 1: neither path exists under `/opt/builder/m2-seed`. Scenario 2: exit 0 and `probe-unseeded-1.0.0.nar` in the drop directory, named from the author's pom. Scenario 3: `downloads` greater than 0 and all four jars inside the bundle. Scenario 4: the reported repository path is gone. Scenario 5: exit 0, `downloads` greater than 0 again, and a different repository path from the first build. |
 | **Precondition** | `docker exec nar_builder test -d /opt/builder/m2-seed`, computed rather than remembered — the same guard `B1-9` carries and for the same reason: against an older image every assertion here is false for a reason that has nothing to do with the code. The skip is a scenario that reads the absence, so a run in this state says why five cases are missing. |
+| **Measured 2026-10-15, without the stack: the seed is additive** | A per-build repository copied from the seed, a pom naming `jackson-databind 2.18.2` and `guava 33.4.0-jre`, `mvn package` inside the image built from this branch: **rc=0, `BUILD SUCCESS`, `downloads=70`**, and both versions present in that repository afterwards. So the seed is a starting point and not a whitelist, which is the half of this case that could have invalidated B1's fourth leg. It does **not** cover the four scenarios that go through `nar-build` — the bundle's contents, the repository not surviving the build, and the second build downloading again — because those need the drop directory and the running stack. |
+| **And the first reading corrected the fixture** | The case said the two dependencies are *"nowhere in the NiFi API's own tree"*. **Both artifacts are in the seed**, at other versions: `jackson-databind` 2.13.2.2 and 2.16.1, `guava` 14.0.1 and 32.1.0-jre — the seed is the closure of the synthesised build and the nar plugin pulls both. The premise as written was false, and the first scenario checked the **artifact** directory, so it would have reddened on a true premise. It now checks the **version**, which is what was actually meant and is a stronger fixture: a build that fetches 2.18.2 while 2.16.1 sits in the same repository cannot be resolving by accident. This is the scenario that exists to stop the rest quietly measuring the warm path, catching exactly that on its first contact with a real seed. |
 | **Implemented by** | `tests/integration/m-b7.unseeded-dependency.test.ts`. |
 | **Covers** | B7-5, B1-6, FR37, FR38. |
 

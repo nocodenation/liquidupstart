@@ -53,11 +53,18 @@ export const OWN_POM_DEPENDENCY = 'commons-lang3';
  * something else, which is the ordinary reason to write a pom at all: an SSL
  * context service API, a client library, a JSON mapper.
  *
- * Jackson and Guava, chosen for three reasons rather than at random. Neither is
- * anywhere in the NiFi API's own tree, so neither can arrive by accident --
- * checked, not assumed, by `B7-5`'s first scenario reading the seed. Both are
- * large enough that resolving them is unambiguous in the `downloads` figure.
- * And both are ordinary: this is what an author's pom looks like, not a fixture
+ * Jackson and Guava, and the *versions* are the point. **Both artifacts are in
+ * the seed at other versions** -- measured 2026-10-15: `jackson-databind` at
+ * 2.13.2.2 and 2.16.1, `guava` at 14.0.1 and 32.1.0-jre, because the seed is the
+ * closure of the synthesised build and the nar plugin pulls both. The first
+ * version of this comment claimed neither was anywhere in the tree, which was
+ * false; `B7-5`'s first scenario reads the seed at the **version** level and is
+ * what corrected it.
+ *
+ * That makes the fixture stronger rather than weaker: a build that fetches
+ * 2.18.2 while 2.16.1 sits in the same repository cannot be resolving by
+ * accident. Both are large enough to be unambiguous in the `downloads` figure,
+ * and both are ordinary -- this is what an author's pom looks like, not a fixture
  * shaped to pass.
  */
 export const UNSEEDED_ARTIFACT = 'probe-unseeded';
