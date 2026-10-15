@@ -257,7 +257,36 @@ RESTORE_FAILED=0
 # first, or bash waits for it before running the handler; then the subject goes
 # back and nothing is reported, because an interrupted run reached no verdict.
 interrupted() {  # interrupted <status> <name>
-  [[ -n "$CHILD_PID" ]] && kill -TERM "$CHILD_PID" 2>/dev/null
+  # **TERM, a moment, then KILL, and wait -- the same as the budget path.** This
+  # sent TERM and nothing more, so a spec that installs a SIGTERM handler
+  # survived it: the reviewer measured exit 143 with the subject restored and
+  # **bun still alive**, writing `lu-mutate-junit.XXXXXX` back into TMPDIR nine
+  # seconds after the runner had gone. That is finding 2 of the third re-review
+  # on the one path it had not reached. The record is unique per run so it cannot
+  # contaminate a later one, but a spec with graceful-shutdown handlers is not
+  # exotic, and a process left behind by a tool that said it stopped is the thing
+  # finding 2 was about. N6 of the 2026-10-14 fourth re-review.
+  #
+  # `wait` after the KILL so the file removals below cannot race the child: it
+  # held --reporter-outfile, and the point of this function is that nothing
+  # remains.
+  # **Every background child, not only $CHILD_PID.** `bun ... &` and
+  # `CHILD_PID=$!` are two statements, so a signal arriving between them found
+  # CHILD_PID empty or holding the previous entry: this function then signalled
+  # nothing, bun ran to completion, and the record was written after the runner
+  # had gone -- which is the very thing N6 is about, reached through a different
+  # door. Measured: the scenario for N6 failed about one run in five that way,
+  # with `left=[lu-mutate-junit.XXXXXX]` and the subject correctly restored.
+  #
+  # `jobs -p` covers the window because it lists what the shell has actually
+  # started, whatever has been assigned to a variable since. A process the spec
+  # itself started is still out of reach and is in BACKLOG.md.
+  local pids
+  pids="$(jobs -p 2>/dev/null) ${CHILD_PID}"
+  for p in $pids; do kill -TERM "$p" 2>/dev/null || true; done
+  sleep 1
+  for p in $pids; do kill -KILL "$p" 2>/dev/null || true; done
+  wait 2>/dev/null || true
   restore
   rm -f "$JUNIT" "$TIMED_OUT" "$RUN_OUT"
   echo "mutate: stopped by ${2}; no entry was judged past this point, and the subject is back." >&2
@@ -318,8 +347,25 @@ RUN_BUDGET_MS="${MUTATE_RUN_BUDGET_MS:-300000}"
 #
 # `exit 2` rather than a refusal: a setting the caller got wrong is not a verdict
 # about an entry, and the other bad-input paths in this script exit 2 as well.
+# `0?*` is the leading-zero case, and it is not pedantry. `08` and `09` are all
+# digits, so they passed this check -- and then `(( RUN_BUDGET_MS <= 0 ))` raised
+# `value too great for base`, because bash reads a leading zero as octal. A
+# failed `(( ))` returns 1, the `if` read that as false, and the budget was
+# accepted: **no bound at all**, with the same error on every poll. Measured, and
+# the reviewer measured it too: `08` against a spinning spec had to be killed
+# from outside after 246 arithmetic errors with no verdict, and `08` against a
+# healthy one printed VALIDATED with three errors on stderr. `010` got through as
+# octal 8, so a budget asked for as 10 ms was 8 ms -- visible, and still not what
+# was asked for. N4 of the 2026-10-14 fourth re-review, and finding 4 of the third
+# re-review one shape further on.
+#
+# Refused rather than normalised with `$((10#$RUN_BUDGET_MS))`: a leading zero
+# means two different things to two readers, so the honest answer is that it is
+# not a number this accepts. Plain `0` is deliberately left to the comparison
+# below, which keeps that branch live and keeps MU-50s zero scenario about what it
+# says it is about.
 case "$RUN_BUDGET_MS" in
-  ''|*[!0-9]*)
+  ''|*[!0-9]*|0?*)
     echo "mutate: MUTATE_RUN_BUDGET_MS is milliseconds, a whole number above zero -- got '${RUN_BUDGET_MS}'" >&2
     exit 2 ;;
 esac
@@ -711,9 +757,19 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
 
   # Restoration works by putting back what was there, so it cannot run over
   # somebody else's uncommitted work -- "restore" would mean "discard it".
+  #
+  # **Asked of `$rel`, where the subject leads, not of `$file` as written.** With
+  # `viaLink.sh -> src/real.sh` and an uncommitted edit in `src/real.sh`, git was
+  # asked about the link -- which has no changes -- so the entry ran. Nothing is
+  # lost on the ordinary path, because the backup is of the current content and
+  # the restore puts it back; what is lost is the backstop the procedure names
+  # for SIGKILL. A killed run leaves `src/real.sh` mutated, and the next run has
+  # to refuse on "uncommitted changes" rather than mutate on top. It did not.
+  # N7 of the 2026-10-14 fourth re-review. The same rule as everything above it:
+  # a subject is judged by where it leads.
   if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 \
-     && git -C "$ROOT" ls-files --error-unmatch -- "$file" >/dev/null 2>&1 \
-     && [[ -n "$(git -C "$ROOT" status --porcelain -- "$file")" ]]; then
+     && git -C "$ROOT" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 \
+     && [[ -n "$(git -C "$ROOT" status --porcelain -- "$rel")" ]]; then
     add "REFUSED   ${id}  ${file} has uncommitted changes"; refused=$((refused+1)); continue
   fi
 

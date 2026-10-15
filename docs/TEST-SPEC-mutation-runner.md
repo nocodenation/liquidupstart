@@ -26,7 +26,10 @@ throwaway directory holding one subject and a spec. A unit test of the loader wo
 a row, which is not what goes wrong; what goes wrong is what the whole tool answers.
 
 *Corrected 2026-10-09, because the sentence above described a fixture that does not exist.* It said
-"a two-git repository holding one subject and a two-test spec", and three things in that were wrong.
+"a throwaway git repository holding one subject and a two-test spec", and three things in that were
+wrong. *(The quotation itself was wrong until 2026-10-15 — it read "a two-git repository", which no
+version of this document ever said. N9 of the fourth re-review: a correction that misquotes what it
+corrects leaves a reader unable to check either.)*
 The shared spec holds **four** tests — `the policy is protected`, `the mode is 600`, `field A is
 carried` and `field B is carried` — which is what gives every case a survivor to point at. The
 directory becomes a **git repository only when MU-7 runs `git init`** in it, so cases before MU-7 and
@@ -53,7 +56,9 @@ difference ever reached a verdict, and it is gone.
 | **MU-5** | **negative** | A mutation that reddens every test is refused as a broken file, not credited as a control. **The missing-spec refusal in the same group is MU-58** |
 | **MU-6** | positive | The subject is byte-identical after the run, whatever the outcome. **The interrupt half is MU-39** |
 | **MU-7** | **negative** | It does not run over a subject with uncommitted changes |
+| **MU-7** | **negative** | …and not over one reached **through a link** whose target has them, which is the SIGKILL backstop — *N7 of 2026-10-14* |
 | **MU-8** | positive | `--gaps` counts specified cases against registered ones |
+| **MU-8** | positive | …and reports a row whose id is not of the registered shape instead of passing over it — *N8 of 2026-10-14; the one repair whose control stayed green* |
 | **MU-9** | **negative** | An entry whose `file` is a test is refused: the registry mutates subjects, never assertions |
 | **MU-11** | **negative** | A mutation that reddens nothing is **unresolved**, never a finding |
 | **MU-12** | positive | The named test red **and** a sibling green is the shape that validates |
@@ -90,7 +95,9 @@ difference ever reached a verdict, and it is gone.
 | **MU-47** | **negative** | A describe block whose name is also a test name is the same ambiguity, and naming it in full resolves it |
 | **MU-48** | **negative** | A run the budget stops takes bun with it, and leaves no record behind |
 | **MU-49** | **negative** | A signal while the subject is mutated takes bun with it, and nothing writes the record afterwards |
+| **MU-49** | **negative** | …including a spec that **handles** TERM, which survived the signal path — *N6 of 2026-10-14* |
 | **MU-50** | **negative** | `MUTATE_RUN_BUDGET_MS` is milliseconds: zero, a word and a unit are each refused with exit 2, while a whole number is accepted |
+| **MU-50** | **negative** | …and a leading zero with them: bash reads `08` as octal, the comparison then fails open, and the run was unbounded — *N4 of 2026-10-14* |
 | **MU-51** | **negative** | A signal during the baseline leaves neither the backup nor the record behind |
 | **MU-52** | **negative** | The counts come from the JUnit record, so a line the spec itself prints cannot change a verdict |
 | **MU-53** | **negative** | A subject is judged by where it leads: a link to a test file, a directory link into `tests/lib` and an upper-case test name are refused, and a link to an ordinary file is not |
@@ -112,11 +119,23 @@ One row per case above; one row per **scenario** here, because a case usually ho
 guard that only refuses is as useless as one that only permits. A reader cannot tell from a single
 line which half was tested.
 
-**This table is generated from the test file and `MU-59` keeps it that way**, in both directions: a
-scenario here that the file does not have fails, and a test the file has that is not here fails too.
-That is the answer to finding 9 of the 2026-10-01 re-review, which was eight drifts found by one
-human comparison that nothing repeated. Renaming a test is a two-file change now.
+**This table is generated from the test file**, by `tests/scenario-table.ts`, and `MU-59` keeps it
+that way: it runs the generator in `--check` mode, so a hand edit to the block below fails. It also
+holds the two things a derivation cannot — that every test in the file carries an id, and that the
+overview above names the same cases as the scenarios here.
 
+*Until 2026-10-15 this said "generated" and there was no generator.* The table was written by hand and
+`MU-59` compared it with the file in both directions, which is a check and not a derivation — N9 of
+the fourth re-review, which offered the choice of correcting the word or committing the generator.
+The generator is committed, because CLAUDE.md asks for a computed answer where there is one and the
+scenarios *are* the test titles. What stays hand-written is the overview, whose positive/negative
+label and reason are judgements, and the detail blocks. Renaming a test is now one file plus
+`bun tests/scenario-table.ts --write`.
+
+That is the answer to finding 9 of the 2026-10-01 re-review, which was eight drifts found by one
+human comparison that nothing repeated.
+
+<!-- scenario-table: generated by tests/scenario-table.ts; do not edit by hand -->
 | Case | Scenarios, named as the tests are named |
 |---|---|
 | **MU-1** | the named test goes red and a survivor remains |
@@ -125,8 +144,8 @@ human comparison that nothing repeated. Renaming a test is a two-file change now
 | **MU-4** | a red test that is not the named one is a failure, not a pass |
 | **MU-5** | a mutation that reddens every test is refused as a broken file |
 | **MU-6** | after a validated run, a failed run and an unresolved run alike<br>and the backup file is not left behind either |
-| **MU-7** | a tracked subject with local changes stops the entry |
-| **MU-8** | the report counts specified cases, registered ones and the difference<br>and it reads the real specifications of whatever branch it runs on<br>and an entry no specification mentions is reported as orphaned |
+| **MU-7** | a tracked subject with local changes stops the entry<br>an uncommitted edit behind a link stops the entry |
+| **MU-8** | the report counts specified cases, registered ones and the difference<br>and a row whose id is not of the registered shape is reported, not passed over<br>and it reads the real specifications of whatever branch it runs on<br>and an entry no specification mentions is reported as orphaned |
 | **MU-9** | an entry naming a test file is refused before anything runs |
 | **MU-11** | a mutation that changes nothing observable is unresolved<br>and it is neither validated nor failed, so nothing is concluded from it |
 | **MU-12** | and a mutation that also reddens a sibling is still validated |
@@ -162,8 +181,8 @@ human comparison that nothing repeated. Renaming a test is a two-file change now
 | **MU-46** | the same test name in two blocks is refused, and the remedy is named |
 | **MU-47** | a block whose name is also a test name is refused too<br>and naming it in full resolves the ambiguity rather than only reporting it |
 | **MU-48** | a run stopped by the budget leaves no bun behind, and no record either |
-| **MU-49** | a TERM while the subject is mutated takes bun with it, and nothing writes the record afterwards |
-| **MU-50** | a budget of zero is refused before anything runs<br>a budget that is not a number at all is refused before anything runs<br>a budget carrying a unit is refused before anything runs<br>and a whole number is still accepted, so the check refuses only what it should |
+| **MU-49** | a TERM while the subject is mutated takes bun with it, and nothing writes the record afterwards<br>and a spec that handles TERM is still taken with it |
+| **MU-50** | a budget of zero is refused before anything runs<br>a budget that is not a number at all is refused before anything runs<br>a budget carrying a unit is refused before anything runs<br>and a leading zero is refused, because it is read as octal<br>and so is one that would otherwise be read as a smaller number<br>and a whole number is still accepted, so the check refuses only what it should |
 | **MU-51** | TERM while the unmutated spec runs leaves no backup and no record |
 | **MU-52** | a spec printing a pass line does not get a survivor it has not got<br>and a spec printing an error line is still read as the control it is |
 | **MU-53** | a link to a test file is refused, and the refusal says where it led<br>a directory link into tests/lib is refused too<br>and an upper-case test name is refused, which was reasoned rather than run<br>the counterpart: a link to an ordinary file is still a subject |
@@ -172,13 +191,14 @@ human comparison that nothing repeated. Renaming a test is a two-file change now
 | **MU-56** | a from carrying a newline is applied, and the subject goes back<br>and a multi-line from that is not there is still refused |
 | **MU-57** | is refused as a run that did not happen, not as a test that passed |
 | **MU-58** | and a spec that does not exist is refused before anything is mutated |
-| **MU-59** | every scenario in this file has a row in the specification<br>and the specification lists no scenario this file does not have<br>and the comparison is over something, so an empty read fails |
+| **MU-59** | every scenario in this file has a row in the specification<br>and the specification lists no scenario this file does not have<br>and the table is what the generator produces, not a copy of it<br>and every test in this file carries an id<br>and the overview names the same cases as the scenarios<br>and the comparison is over something, so an empty read fails |
 | **MU-60** | an ordinary run ends with the gap line, and it agrees with --gaps<br>and the line does not change what the run concluded |
 | **MU-61** | two nested blocks with one name are refused, not credited to either<br>and the remedy resolves it, which is what makes the refusal useful |
 | **MU-62** | a top-level block whose name repeats deeper is that block, not an ambiguity<br>and the nested one is still reachable by its path |
+<!-- end scenario-table -->
 
 **What the blocks below do not carry, and that is a decision.** They are per group — the fixture and
-the reasoning are shared, and repeating them 89 times would bury the differences. They do not carry
+the reasoning are shared, and repeating them for each of the **103** scenarios would bury the differences. They do not carry
 per-scenario steps or dependencies, which the reviewer also asked for. The steps for every scenario
 here are the same three: write a registry, run `tests/mutate.sh` against the fixture, read the verdict
 and the subject; the dependency is bun and a POSIX shell, stated under *Runner and hosts*. Where a
@@ -233,6 +253,7 @@ in order to sign a case off or challenge it without opening the implementation.
 | **Test data** | Refused: `tests/lib/helper.ts`, `spec/__snapshots__/x.snap`, `spec/x.test.tsx`, `spec/y_test.ts`, `spec/z.spec.js`, `tests/mutations.json`, and `spec/../../outside.sh`. Accepted: `tests/run.sh`. A tracked subject with a local edit, for MU-7. |
 | **Expected** | Each refused entry named, exit non-zero, nothing run. `tests/run.sh` **not** refused. MU-7 refuses only the entry whose own subject is dirty. |
 | **Unhappy** | MU-28's second half is the counterpart, and the reason the rule is not a prefix: restoring a blanket `tests/` refusal would take A0-4 with it, since `tests/run.sh` is a subject in its own right and nothing asserts against its contents. |
+| **Widened 2026-10-15 for N7 of the fourth re-review** | The uncommitted-changes guard asked git about the path **as the registry wrote it**, not about where it leads. With `viaLink.sh -> src/real.sh` and an uncommitted edit in `src/real.sh`, the entry ran: the link has no changes. Nothing is lost on the ordinary path — the backup is of the current content and the restore puts it back — so what the defect costs is the **backstop the procedure names for SIGKILL**: a killed run leaves the target mutated and the next run must refuse rather than mutate on top of it, and it did not. One line, `$rel` for `$file`, which is the rule the rest of this group already applies. *Test data:* `viaLink.sh` → `src/real.sh`, committed, then an edit in the target only. The counterpart asserts the guard does **not** fire with the target clean, and asserts `UNRESOLVED` rather than `VALIDATED` — because the fixture spec reads `../subject.sh` while the entry mutates `src/real.sh`, so nothing it asserts changes. Expecting `VALIDATED` was this scenario's first reading and it was wrong about its own fixture. *Control:* the guard asked about `$file` again → 1 red. |
 | **Covers** | MU-FR6, MU-NFR3. |
 
 ### MU-8, MU-29, MU-36 — the coverage report
@@ -243,6 +264,7 @@ in order to sign a case off or challenge it without opening the implementation.
 | **Test data** | A fixture `docs/TEST-SPEC-fixture.md` holding rows for `FX-1`, `**FX-2**` (bolded, because the tables bold some ids) and `FX-3`, plus prose mentioning `FX-9` which must not count because it is not a row. A registry registering `FX-1` only; then one holding an exemption; then one whose case is in no specification. |
 | **Expected** | `specified=3 registered=1 missing=2 orphaned=0`, exit 0. An exemption printed as `exempt:   <id>  <reason>`. An orphan reported and exit non-zero. A malformed registry an error rather than a silence. |
 | **Unhappy** | Missing entries deliberately stay exit 0: a gap is the ordinary state of a registry being filled in. An orphan is not — it means a case was renamed or deleted and the entry outlived it, so the registry claims to cover something that is not there. |
+| **Widened 2026-10-15 for N8 of the fourth re-review** | The Minor of 2026-10-01 — a row whose id has no trailing number, like a manual `A16-M1`, is reported rather than silently skipped — **was fixed in code and held by nothing**. The reviewer replaced its `console.log` with `if (false)` and MU-8, MU-29, MU-36 and MU-60 were all green: the one repair in the round whose control stayed green. *Test data:* `docs/TEST-SPEC-manual.md` with `FX-1` (counted), `FX-M1` and a bolded `FX-M2` (neither counted). *Expected:* both named with their file in the `not counted, their ids are not of the registered shape` line, and **neither in the `missing:` list** — because a reader comparing the number against the registry would otherwise read them as missing. Asserted relationally rather than as an absolute `specified=`, since the scenario above writes its own specification into the same root; expecting `specified=1` was this scenario's first version and it was measuring the other fixture. |
 | **Covers** | MU-FR7, MU-NFR1. |
 | **What MU-36 found** | Exemptions were counted as covered and their reason never printed — the one thing a reader can disagree with was the one thing hidden. |
 
@@ -318,6 +340,8 @@ in order to sign a case off or challenge it without opening the implementation.
 | **What it still does not reach, and it is in the backlog** | A process the **spec itself** started. The subject is `exec`ed inside the subshell, so the signal reaches bun; a grandchild of bun needs a process group. Recorded in `BACKLOG.md` — which N3 of the fourth re-review found was not true when first claimed, and now is. |
 | **Controls** | The `exec` removed, restoring the subshell → the orphan scenarios red. Each budget check removed in turn → its own scenario red, and the whole-number counterpart stays green. |
 | **Implemented by** | `tests/integration/m-mu.runner.test.ts`. |
+| **Widened 2026-10-15 for N4 and N6 of the fourth re-review** | **N4:** `08` and `09` are all digits, so they passed the character check — and then `(( RUN_BUDGET_MS <= 0 ))` raised `value too great for base`, a failed `(( ))` returns 1, and the `if` read that as false. The budget was accepted and **nothing was bounded**: the reviewer killed a spinning entry from outside after 246 arithmetic errors with no verdict, and a healthy entry printed `VALIDATED` with three errors on stderr. `010` got through as octal 8 — a budget asked for as 10 ms was 8 ms. A leading zero is now refused rather than normalised with `10#`, because the string means two different things to two readers; plain `0` is left to the comparison so that branch stays live. **N6:** the signal path sent TERM and nothing more, while the budget path sends TERM, waits and sends KILL, so a spec with `process.on("SIGTERM", () => {})` survived it — exit 143, subject restored, bun alive, and the record written back nine seconds later. The fixture is `slow-when-mutated` with a handler added, so the handler is the only difference between the two scenarios. |
+| **And closing N6 exposed a race in the fix itself** | The first repair signalled `$CHILD_PID` only, and `bun … &` and `CHILD_PID=$!` are two statements: a signal arriving between them found the variable empty or holding the previous entry, so nothing was signalled and bun ran to completion — the same outcome through a different door. It failed about one run in five that way, with `left=[lu-mutate-junit.XXXXXX]` and the subject correctly restored. `interrupted` now signals every background job via `jobs -p`, which covers the window because it lists what the shell actually started. Five consecutive clean runs after. A process the **spec** itself started is still out of reach and is in `BACKLOG.md`. *Controls:* the KILL removed → the handler scenario red; the leading-zero refusal removed → its two scenarios red, with the whole-number counterpart green. |
 | **Covers** | MU-48 to MU-51, MU-FR5, MU-NFR2. |
 
 ### MU-52, MU-53, MU-54 — the numbers come from the record, and the subject is where it leads
@@ -346,6 +370,8 @@ in order to sign a case off or challenge it without opening the implementation.
 | **What MU-59 does not read, stated because the reviewer asked** | It compares **scenario titles**, in both directions. It cannot see a missing *traceability* row — which is how fifteen cases came to have no requirement mapping at all (N2) — nor a missing detail block, nor a row whose wording drifted from what the case asserts. Those are read by a person, and the blocks above are what that person reads. |
 | **Controls** | Each check removed in turn → its own scenario red. For MU-59, the comparison fed an empty document → its third scenario red, which is what keeps a green from meaning "nothing was compared". |
 | **Implemented by** | `tests/integration/m-mu.runner.test.ts`. |
+| **Widened 2026-10-15 for N5 and N9 of the fourth re-review** | **N9:** this document claimed three times that the scenario table is *generated* and there was no generator — it was hand-written and `MU-59` compared it, which is a check, not a derivation. `tests/scenario-table.ts` now writes that block and `MU-59` runs it in `--check`, so the claim is true and a hand edit still fails. **N5:** the reviewer measured what `MU-59` could and could not see — a reworded title or row, a deleted row and a duplicate id all caught; an unlabelled test, an `it(`, double quotes, backticks, `test.each` and a deleted **overview** row all invisible. Two scenarios close that: every test in the file must carry an id, and the overview must name the same cases as the scenarios. The first is how eleven scenarios lost their ids; the second is how N2's fifteen rows went through. |
+| **What writing the generator found about its own reader** | Twice. It read the `test('…')` lines **inside the fixture specs**, which are template literals holding real tests — `the policy is protected`, `in inner`, `quoted parents` — and reported them as unlabelled tests; they are test data, and one of them beginning with `MU-` would have landed in this table. Blanking template contents then broke the titles themselves, because a title quotes code in backticks (`a \`from\` that is not in the subject`) and the blanker read those as template openers, rewriting them to `a \`    \``. The scanner now skips comments and quoted strings before looking for templates. Both measured, neither reasoned. |
 | **Covers** | MU-55 to MU-60, MU-FR4, MU-FR5, MU-FR7, MU-NFR1. |
 
 ## Traceability

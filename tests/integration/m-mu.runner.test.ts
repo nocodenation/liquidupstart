@@ -67,6 +67,9 @@ import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 
 const RUNNER = join(repoRoot, 'tests/mutate.sh');
+// The generator's own reader, imported rather than copied: N2 of #16 is the
+// lesson -- a probe that re-implements what it measures measures itself.
+import { titles } from '../scenario-table';
 
 let root: string;
 const SUBJECT = 'subject.sh';
@@ -318,6 +321,54 @@ describe('MU-7 it does not run over uncommitted work', () => {
   });
 });
 
+describe('MU-7 and a subject reached through a link is judged where it leads', () => {
+  test('MU-7 an uncommitted edit behind a link stops the entry', () => {
+    // **N7 of the 2026-10-14 fourth re-review.** The guard asked git about
+    // `$file` as the registry wrote it, not about `$rel` where it leads, so with
+    // `viaLink.sh -> src/real.sh` and an uncommitted edit in `src/real.sh` the
+    // entry ran: the link itself has no changes.
+    //
+    // **Nothing is lost on the ordinary path**, which is why the severity is
+    // low: the backup is of the current content and the restore puts it back.
+    // What is lost is the backstop the procedure names for SIGKILL — a killed
+    // run leaves the target mutated, and the next run has to refuse rather than
+    // mutate on top of it. It did not. The same rule as MU-53: a subject is
+    // judged by where it leads.
+    const g = (...a: string[]) => sh(['git', '-C', root, ...a]);
+    mkdirSync(join(root, 'src'), { recursive: true });
+    const real = 'src/real.sh';
+    writeFileSync(join(root, real), subjectBody);
+    const link = 'viaLink.sh';
+    rmSync(join(root, link), { force: true });
+    symlinkSync(join(root, real), join(root, link));
+    g('add', '-A');
+    g('commit', '-qm', 'link fixture');
+
+    // The edit is in the target, which is what the registry does not name.
+    writeFileSync(join(root, real), subjectBody + '# local edit\n');
+    const r = run(registry([entry({ file: link })]));
+    expect(r.output).toContain('has uncommitted changes');
+    expect(r.code).not.toBe(0);
+
+    // The counterpart: with the target clean the guard does not fire, so it is
+    // not "refuse every link" — MU-53 already holds that a link to an ordinary
+    // file is a subject, and this keeps the two consistent.
+    //
+    // Asserted as *not refused* rather than as VALIDATED, and that is the
+    // precise property: the verdict here is **UNRESOLVED**, because the fixture
+    // spec reads `../subject.sh` while this entry mutates `src/real.sh`, so
+    // nothing it asserts changes. Expecting VALIDATED was this case's first
+    // reading and it was wrong about its own fixture — a reminder that a
+    // counterpart has to assert the thing under test and not the happiest
+    // outcome nearby.
+    writeFileSync(join(root, real), subjectBody);
+    const ok = run(registry([entry({ file: link })]));
+    expect(ok.output).not.toContain('has uncommitted changes');
+    expect(ok.output).toContain('UNRESOLVED FX-1');
+    rmSync(join(root, link), { force: true });
+  }, 300_000);
+});
+
 describe('MU-8 the gap is a number, not an impression', () => {
   test('MU-8 the report counts specified cases, registered ones and the difference', () => {
     // Against a specification with known contents rather than against whatever
@@ -343,6 +394,53 @@ describe('MU-8 the gap is a number, not an impression', () => {
     expect(r.code).toBe(0);
     expect(r.output).toContain('specified=3 registered=1 missing=2 orphaned=0');
     expect(r.output).toMatch(/missing:\s+FX-2 FX-3/);
+  });
+
+  test('MU-8 and a row whose id is not of the registered shape is reported, not passed over', () => {
+    // **N8 of the 2026-10-14 fourth re-review: the one repair whose control
+    // stayed green.** A manual case has no trailing number — `A16-M1` in
+    // TEST-SPEC-git-integration.md — so the counting pattern skipped it and
+    // nothing said so. A reader comparing the number against the registry had no
+    // way to know a row had been passed over. The repair reports those ids
+    // instead of counting them, and the reviewer showed that replacing its
+    // `console.log` with `if (false)` left MU-8, MU-29, MU-36 and MU-60 all
+    // green: the behaviour existed and nothing held it.
+    //
+    // `FX-M1` is that shape in miniature, beside an ordinary `FX-1` so the two
+    // readings are made in one run: the count and the list must disagree about
+    // it in exactly the right way.
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    writeFileSync(
+      join(root, 'docs/TEST-SPEC-manual.md'),
+      [
+        '| ID | Level | Sign | Case |',
+        '|---|---|---|---|',
+        '| FX-1 | unit | positive | counted, because the id ends in digits |',
+        '| FX-M1 | system, **manual** | positive | not counted: a manual check has nothing to register |',
+        '| **FX-M2** | system, **manual** | positive | bolded, and still not counted |'
+      ].join('\n')
+    );
+    const reg = registry([entry()]);
+    const r = sh(['bash', RUNNER, '--gaps', '--registry', reg, '--root', root]);
+    expect(r.code).toBe(0);
+
+    // **Asserted relationally, not as an absolute count**, because the scenario
+    // above writes its own specification into the same `root` and its three ids
+    // are in this reading too. Expecting `specified=1` was this case's first
+    // version and it was measuring the other fixture. What is this case's own is
+    // the relationship: the two manual ids are reported, and they are **not** in
+    // the counted set — so they cannot appear as missing, which is what a reader
+    // comparing the number against the registry would otherwise conclude.
+    expect(r.output).toContain('not counted, their ids are not of the registered shape');
+    expect(r.output).toContain('FX-M1 (TEST-SPEC-manual.md)');
+    expect(r.output).toContain('FX-M2 (TEST-SPEC-manual.md)');
+    const missing = /^missing:\s+(.*)$/m.exec(r.output)?.[1] ?? '';
+    expect(missing).not.toContain('FX-M1');
+    expect(missing).not.toContain('FX-M2');
+    // And the bolded one is read: the loose pattern has to be a superset of the
+    // counted one, or widening the report narrows the count.
+    expect(r.output).toContain('FX-M2');
+    rmSync(join(root, 'docs/TEST-SPEC-manual.md'), { force: true });
   });
 
   test('MU-8 and it reads the real specifications of whatever branch it runs on', () => {
@@ -1414,6 +1512,10 @@ describe('MU-48 and MU-49 the budget and a signal take bun with them', () => {
   // finishes first -- and the control showed it: MU-49 was green with the
   // repair reverted, because there was no live bun left to orphan.
   const slow = 'spec/slow-when-mutated.test.ts';
+  // N6: the same shape, with a SIGTERM handler. A spec that installs one is not
+  // exotic -- anything doing graceful shutdown does -- and the signal path sent
+  // TERM and nothing else, so this survived it.
+  const graceful = 'spec/graceful-when-mutated.test.ts';
 
   // A private TMPDIR per case, which is also how the assertion is made precise:
   // "no process is still running this run" is checked by looking for that
@@ -1434,6 +1536,17 @@ import { join } from 'node:path';
 const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
 test('the policy is protected', () => {
   if (!s.includes('POLICY="protected"')) { while (true) {} }
+  expect(1).toBe(1);
+});
+`);
+    writeFileSync(join(root, graceful), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+process.on('SIGTERM', () => {});
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', async () => {
+  if (!s.includes('POLICY="protected"')) { await new Promise((r) => setTimeout(r, 8000)); }
   expect(1).toBe(1);
 });
 `);
@@ -1510,6 +1623,44 @@ test('the policy is protected', async () => {
     expect(sha()).toBe(cleanSha);
     rmSync(dir, { recursive: true, force: true });
   }, 300_000);
+
+  test('MU-49 and a spec that handles TERM is still taken with it', () => {
+    // **N6 of the 2026-10-14 fourth re-review.** The signal path sent TERM and
+    // nothing more, while the budget path sends TERM, waits and sends KILL. A
+    // spec with `process.on("SIGTERM", () => {})` therefore survived the signal:
+    // the reviewer measured exit 143 with the subject restored and **bun still
+    // alive**, writing `lu-mutate-junit.XXXXXX` back into TMPDIR nine seconds
+    // later. That is finding 2 again on the one path it had not reached.
+    //
+    // The fixture is the same shape as `slow` with a handler added, so what
+    // differs between this scenario and MU-49 is exactly the handler.
+    const dir = tmp();
+    const reg = registry([entry({ spec: graceful })]);
+    const script = [
+      'set -u',
+      `bash "$1" --registry "$2" --root "$3" --timeout 30000 >/dev/null 2>&1 &`,
+      'p=$!',
+      'i=0',
+      `while [ $i -lt 600 ] && ! grep -q 'POLICY="public"' "$3/${SUBJECT}"; do sleep 0.05; i=$((i+1)); done`,
+      `if grep -q 'POLICY="public"' "$3/${SUBJECT}"; then found=yes; else found=no; fi`,
+      'if kill -0 "$p" 2>/dev/null; then alive=yes; else alive=no; fi',
+      'kill -TERM "$p" 2>/dev/null',
+      'wait "$p"; rc=$?',
+      'printf "rc=%s mutated_at_signal=%s alive_at_signal=%s\\n" "$rc" "$found" "$alive"',
+      // Longer than the handler holds the process, so a survivor has time to
+      // write the record back -- which is the whole reading.
+      'sleep 10',
+      'printf "left=[%s]\\n" "$(ls "$TMPDIR" | tr "\\n" " ")"'
+    ].join('\n');
+    const r = sh(['bash', '-c', script, 'x', RUNNER, reg, root], undefined as unknown as string, { TMPDIR: dir });
+    expect(r.output).toContain('mutated_at_signal=yes');
+    expect(r.output).toContain('alive_at_signal=yes');
+    // Nothing written after the handler ran, and no survivor.
+    expect(r.output).toContain('left=[]');
+    expect(stillRunning(dir)).toEqual([]);
+    expect(sha()).toBe(cleanSha);
+    rmSync(dir, { recursive: true, force: true });
+  }, 300_000);
 });
 
 describe('MU-50 the run budget is a setting, and a setting can be wrong', () => {
@@ -1548,6 +1699,25 @@ describe('MU-50 the run budget is a setting, and a setting can be wrong', () => 
 
   test('MU-50 a budget carrying a unit is refused before anything runs', () => {
     refusesBudget('5m');
+  }, 300_000);
+
+  test('MU-50 and a leading zero is refused, because it is read as octal', () => {
+    // **N4 of the fourth re-review**, and finding 4 one shape further on. `08` is
+    // all digits, so it passed the character check -- and then
+    // `(( RUN_BUDGET_MS <= 0 ))` raised `value too great for base`, a failed
+    // `(( ))` returns 1, and the `if` read that as false. The budget was
+    // accepted and **nothing was bounded**: the reviewer had to kill a spinning
+    // entry from outside after 246 arithmetic errors with no verdict, and a
+    // healthy entry printed VALIDATED with three errors on stderr.
+    refusesBudget('08');
+  }, 300_000);
+
+  test('MU-50 and so is one that would otherwise be read as a smaller number', () => {
+    // `010` got through as octal **8**, so a budget asked for as 10 ms was 8 ms.
+    // Visible, unlike `08`, and still not what was asked for -- which is why the
+    // repair refuses a leading zero rather than normalising it with `10#`: the
+    // string means two different things to two readers.
+    refusesBudget('010');
   }, 300_000);
 
   test('MU-50 and a whole number is still accepted, so the check refuses only what it should', () => {
@@ -1946,6 +2116,54 @@ describe('MU-59 the specification and this file say the same thing', () => {
   test('MU-59 and the specification lists no scenario this file does not have', () => {
     const extra = scenariosInSpec().filter((t) => !titlesInFile().includes(t));
     expect(extra).toEqual([]);
+  });
+
+  test('MU-59 and the table is what the generator produces, not a copy of it', () => {
+    // **N9 of the fourth re-review: the document said "generated" three times and
+    // there was no generator.** The table was hand-written and these two
+    // scenarios compared it, which is a check and not a derivation. CLAUDE.md
+    // asks for a computed answer where there is one, and the scenarios *are* the
+    // test titles — so `tests/scenario-table.ts` writes that block and this
+    // scenario runs it in `--check`. The guard does not go away; it guards a
+    // derivation instead of a copy, and a hand edit still fails.
+    const r = sh(['bun', join(repoRoot, 'tests/scenario-table.ts'), '--check'], undefined as unknown as string, {});
+    expect(r.output).toContain('up to date');
+    expect(r.code).toBe(0);
+  }, 120_000);
+
+  test('MU-59 and every test in this file carries an id', () => {
+    // **N5 of the fourth re-review**, first gap: the reader could not see an
+    // unlabelled test, which is how eleven scenarios had lost their ids in the
+    // first place — a title with no `MU-` simply was not compared with anything.
+    // The reviewer also showed `it(`, double quotes and backticks slipping past,
+    // so the generator matches all three quotings and both function names, as
+    // `m-tr.case-ids` on main does.
+    const unlabelled = titles(readFileSync(filePath, 'utf8')).filter((t) => !/^MU-\d+\s/.test(t));
+    expect(unlabelled).toEqual([]);
+  });
+
+  test('MU-59 and the overview names the same cases as the scenarios', () => {
+    // **N5, second gap**, and it is how N2 got through: fifteen cases had
+    // overview rows and scenario rows and nothing compared the two lists, so a
+    // case could be in one and missing from the other. Ids only — the overview
+    // carries a label and a reason per row, which are judgements and not
+    // derivable.
+    const doc = readFileSync(specPath, 'utf8');
+    const ids = (cells: number) => {
+      const out = new Set<string>();
+      for (const line of doc.split('\n')) {
+        if (!/^\|\s+~?~?\*\*MU-/.test(line)) continue;
+        const parts = line.split('|').slice(1, -1).map((c) => c.trim());
+        if (parts.length !== cells) continue;
+        out.add(parts[0].replace(/[*~]/g, ''));
+      }
+      return [...out].sort();
+    };
+    const overview = ids(3);
+    const scenarios = ids(2);
+    expect(overview.length).toBeGreaterThan(40);
+    expect(scenarios.filter((i) => !overview.includes(i))).toEqual([]);
+    expect(overview.filter((i) => !scenarios.includes(i))).toEqual([]);
   });
 
   test('MU-59 and the comparison is over something, so an empty read fails', () => {
