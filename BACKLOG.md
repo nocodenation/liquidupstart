@@ -243,7 +243,7 @@ Recorded 2026-10-08, measured and rewritten 2026-10-09.
 
 ---
 
-**S9's machine dependencies are half closed.** The builder image is no longer taken from whatever
+**~~S9's machine dependencies are half closed.~~ Closed 2026-10-16, by the trade the entry asked for.** The builder image is no longer taken from whatever
 `liquidupstart/nar-builder:latest` happens to be on the host: `tests/lib/builderimage.ts` builds it
 from the tree under test and tags it per run, eight files use it, and the specification records the
 change. What is still true of the default-tier M-B5 cases is the rest of the reviewer's sentence:
@@ -252,6 +252,20 @@ they pin `ghcr.io/nocodenation/liquid-nifi:latest`, which is a moving tag, and `
 B5-15 and B5-16 reach Maven Central. Pinning the image by digest is the obvious half of the repair
 and would need re-pinning on every upgrade, which is the trade the operator should make rather than
 a branch under review. Recorded 2026-10-08.
+
+**The operator made it on 2026-10-16, and chose neither half of that sentence.** A digest stops the
+surprise and buys a different cost: until a hand re-pins, the suite tests an image the stack no
+longer runs. Keeping the tag and letting the red arrive was the other option, and it is the shape
+three separate hours went into today — an environment reading as a product defect. So: **the tag
+stays moving, and an upgrade is made legible.** `tests/lib/liquidimage.ts` reads both versions out of
+the image, the nine files name the tag through one constant instead of nine copies, `tests/run.sh`
+says before every run which state the image is in, and the six version-pinning files **skip** rather
+than fail. Simulated: a moved tag takes the M-B5 tier to 27 pass / 17 skip / 0 fail with the cause
+printed above it, instead of red. `B5-33`, eight scenarios, each shown able to fail.
+
+What is deliberately *not* asserted is that the image agrees with the pinned pair: that agreement is
+the question, and asserting it would make an upstream release red — the defect being removed. And
+`B5-15` and `B5-16` still reach Maven Central, which this does not touch.
 
 ---
 

@@ -62,8 +62,11 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { LIQUID_IMAGE } from '../lib/liquidimage';
 
-const LIQUID = 'ghcr.io/nocodenation/liquid-nifi:latest';
+// Named in one place since S9: this file reads every version out of the image,
+// so an upstream release does not redden it and it needs no skip.
+const LIQUID = LIQUID_IMAGE;
 const WATCH = join(repoRoot, 'config/liquid/nar-watch.sh');
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 

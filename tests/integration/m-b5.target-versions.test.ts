@@ -43,9 +43,13 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { builderImage } from '../lib/builderimage';
+import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
 
 const BUILDER = builderImage();
-const LIQUID = 'ghcr.io/nocodenation/liquid-nifi:latest';
+// S9, second half: the image tag is named in one place now, and the cases that
+// pin what it contains skip with a voice when an upstream release moves it --
+// `tests/lib/liquidimage.ts`, B5-33.
+const LIQUID = LIQUID_IMAGE;
 const BUILD = join(repoRoot, 'config/nar_builder/build.sh');
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
@@ -109,7 +113,7 @@ const section = (name: string) => {
 };
 
 describe('B5-15 the record answers when no log does', () => {
-  test('B5-15 the versions are read with every nifi-app log gone', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-15 the versions are read with every nifi-app log gone', () => {
     const s = section('recordOnly');
     expect(s).toContain('nifi_version 2.11.0');
     expect(s).toContain('java_version 21.0.12+10-LTS');
@@ -117,7 +121,7 @@ describe('B5-15 the record answers when no log does', () => {
     expect(s).not.toContain('refused');
   });
 
-  test('B5-15 and it says which source it read', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-15 and it says which source it read', () => {
     // The operator has to be able to tell the durable source from the one that
     // expires, because only one of them explains a refusal.
     expect(section('recordOnly')).toContain('read_from liquid at 127.0.0.1:9443 (runtime)');
@@ -125,7 +129,7 @@ describe('B5-15 the record answers when no log does', () => {
 });
 
 describe('B5-16 while a Liquid that predates the record still builds', () => {
-  test('B5-16 the counterpart: the startup line is still read', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-16 the counterpart: the startup line is still read', () => {
     // Otherwise every installation would have to restart Liquid once to keep
     // building -- the exact demand item 7 is about.
     const s = section('logOnly');
@@ -136,7 +140,7 @@ describe('B5-16 while a Liquid that predates the record still builds', () => {
 });
 
 describe('B5-17 and nothing is guessed when neither is there', () => {
-  test('B5-17 the build refuses and names both sources', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-17 the build refuses and names both sources', () => {
     const s = section('neither');
     expect(s).toContain('nar-build refused');
     expect(s).toContain('/liquid/api/runtime');
@@ -167,7 +171,7 @@ describe('B5-18 the record is written from the distribution itself', () => {
     ]).output;
   }, 900_000);
 
-  test('B5-18 it names the versions the startup line carries', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-18 it names the versions the startup line carries', () => {
     // Tied to the line itself rather than to a constant: if the image is
     // upgraded, both move together and the case still says something.
     const logged = START_LINE.match(/Starting NiFi (\S+) using Java (\S+)/);
@@ -176,7 +180,7 @@ describe('B5-18 the record is written from the distribution itself', () => {
     expect(published).toContain(`java_version=${logged![2]}`);
   });
 
-  test('B5-18 and the start says so, so a missing record is visible', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-18 and the start says so, so a missing record is visible', () => {
     expect(published).toContain('Published the runtime versions for the NAR builder');
   });
 });

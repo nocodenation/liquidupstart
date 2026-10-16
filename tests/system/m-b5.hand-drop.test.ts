@@ -46,8 +46,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
 
-const IMAGE = 'ghcr.io/nocodenation/liquid-nifi:latest';
+// S9, second half: the image tag is named in one place now, and the cases that
+// pin what it contains skip with a voice when an upstream release moves it --
+// `tests/lib/liquidimage.ts`, B5-33.
+const IMAGE = LIQUID_IMAGE;
 const SOUND = 'probe-sound-1.0.0.nar';
 const REFUSED = 'probe-refused-1.0.0.nar';
 
@@ -148,7 +152,7 @@ afterAll(() => {
 });
 
 describe('B5-28 a refused bundle never reaches the catalogue by either route', () => {
-  test('B5-28 dropped by hand, it is quarantined and not loaded', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-28 dropped by hand, it is quarantined and not loaded', () => {
     expect(liveLog).toContain(`REFUSED ${REFUSED}`);
     expect(liveInbox).toContain(`refused=${REFUSED}`);
     expect(liveInbox).not.toContain(`load=${REFUSED}`);
@@ -156,20 +160,20 @@ describe('B5-28 a refused bundle never reaches the catalogue by either route', (
     expect(liveLog).not.toContain('Loaded extensions for org.nocodenation.review:probe-refused-nar');
   });
 
-  test('B5-28 and present at start, it is quarantined before NiFi runs', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-28 and present at start, it is quarantined before NiFi runs', () => {
     expect(bootDirs).toContain(`refused=${REFUSED}`);
     expect(bootLog).not.toContain('Loaded extensions for org.nocodenation.review:probe-refused-nar');
   });
 });
 
 describe('B5-29 while a sound bundle still loads within seconds', () => {
-  test('B5-29 the counterpart: the hand drop reaches the catalogue', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-29 the counterpart: the hand drop reaches the catalogue', () => {
     // Without this the split could be met by loading nothing at all.
     expect(liveLog).toContain('Loaded extensions for org.nocodenation.review:probe-sound-nar:1.0.0');
     expect(liveInbox).toContain(`load=${SOUND}`);
   });
 
-  test('B5-29 and the auto-loader was never offered a partial copy', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-29 and the auto-loader was never offered a partial copy', () => {
     // The promotion writes a dot-file and renames it, which is why the
     // auto-loader reports skipping one.
     expect(liveLog).toContain(`Skipping non-nar file .${SOUND}.part`);
@@ -177,7 +181,7 @@ describe('B5-29 while a sound bundle still loads within seconds', () => {
 });
 
 describe('B5-30 and the boot pass loads it too', () => {
-  test('B5-30 the counterpart for the other route', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-30 the counterpart for the other route', () => {
     expect(bootLog).toContain('Loaded extensions for org.nocodenation.review:probe-sound-nar:1.0.0');
     expect(bootDirs).toContain(`load=${SOUND}`);
   });

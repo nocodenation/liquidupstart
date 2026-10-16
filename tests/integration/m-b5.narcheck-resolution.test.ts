@@ -40,8 +40,12 @@ import { test, expect, describe, beforeAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
 
-const IMAGE = 'ghcr.io/nocodenation/liquid-nifi:latest';
+// S9, second half: the image tag is named in one place now, and the cases that
+// pin what it contains skip with a voice when an upstream release moves it --
+// `tests/lib/liquidimage.ts`, B5-33.
+const IMAGE = LIQUID_IMAGE;
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 const LIB = '/opt/nifi/nifi-current/lib';
 
@@ -66,7 +70,7 @@ describe('B5-4 the check accepts what Liquid already loads', () => {
     `).output;
   }, 900_000);
 
-  test('B5-4 every NAR the image ships passes', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-4 every NAR the image ships passes', () => {
     // A count of zero is not a result until something that must be there is
     // counted: the total says the loop actually ran over the shipped bundles.
     const total = Number(out.match(/total=(\d+)/)?.[1] ?? 0);
@@ -77,7 +81,7 @@ describe('B5-4 the check accepts what Liquid already loads', () => {
 });
 
 describe('B5-5 but only because the parent is declared', () => {
-  test('B5-5 the same classes with no parent declaration are refused', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-5 the same classes with no parent declaration are refused', () => {
     // The counterpart. Resolving against the parent chain must not become
     // resolving against everything: strip the declaration and the very same
     // bundle has to be refused again.
@@ -126,12 +130,12 @@ EOF
     `).output;
   }, 900_000);
 
-  test('B5-6 the parser reports it, as javap does', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-6 the parser reports it, as javap does', () => {
     expect(out).toContain('javapSees=1');
     expect(out).toContain('refsSees=1');
   });
 
-  test('B5-7 while a class name inside a string is still not a reference', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-7 while a class name inside a string is still not a reference', () => {
     // The counterpart, and the reason the walk parses the class structure
     // rather than scanning every UTF-8 constant.
     expect(out).toContain('literal=0');
