@@ -26,7 +26,7 @@
 import { test, expect, describe, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tempProject, seedKnownHosts, seedRepo, fakeSsh, gitScript } from '../lib/gitfixture';
+import { tempProject, seedKnownHosts, seedRepo, fakeSsh, gitScript, watchOutput } from '../lib/gitfixture';
 
 const work = tempProject('lu-a16-wait-');
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -92,22 +92,32 @@ describe('A16-27 the wait really waits, and then works', () => {
     const project = newProject();
     const { lockDir, clone, manifest } = paths(project);
     holdLock(lockDir);
-    const began = Date.now();
     const p = Bun.spawn(['bash', gitScript, project], {
       env: { ...env, GIT_LOCK_WAIT_SECONDS: '60' },
       stdout: 'pipe',
       stderr: 'pipe'
     });
-    await Bun.sleep(3000);
+    // The lock is released once the run has said it is waiting for it, and not
+    // 3000ms after it was spawned.
+    //
+    // **What stood here could pass over the defect it exists to catch.** It
+    // slept 3000ms, released, and asserted that more than 3000ms had gone by --
+    // which its own sleep guarantees. A run that had not reached the lock within
+    // those 3000ms met no lock at all, took it, cloned, and satisfied every
+    // assertion without waiting for anything. Measured 2026-10-02: with
+    // `lu_take_lock_waiting` taken out of `git.sh` altogether and the release
+    // brought forward, all four cases in this file passed. On an idle host the
+    // run arrives in about 250ms and the case does catch it; under load the
+    // holder takes 1047 to 1342ms, and the guard is a race rather than a rule.
+    const out = watchOutput(p);
+    await out.until('Waiting for another run to finish preparing');
     rmSync(lockDir, { recursive: true, force: true });
-    await new Response(p.stdout).text();
-    await new Response(p.stderr).text();
+    await out.finished();
     await p.exited;
 
-    // It waited rather than taking the lock: the run cannot have finished
-    // before the release. The "Waiting for…" line only prints every 30s, so
-    // the clock is what says this, not the log.
-    expect(Date.now() - began).toBeGreaterThan(3000);
+    // It waited rather than taking the lock, and the run said so itself -- which
+    // is the assertion the elapsed clock was standing in for.
+    expect(out.text).toContain(`Waiting for another run to finish preparing ${SLUG}`);
     expect(existsSync(join(clone, '.git'))).toBe(true);
     expect(JSON.parse(readFileSync(manifest, 'utf8')).repositories[0].cloned).toBe(true);
   }, 120_000);
