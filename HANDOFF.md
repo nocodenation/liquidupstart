@@ -36,6 +36,24 @@ manifest's temporary to `mktemp` would have blinded the litter check that guards
 filter matched `.tmp` and `mktemp`'s names carry none. A fix that silently disarms its own guard is
 the shape worth looking for twice.
 
+**#36 repairs the misreport that this morning's measurement produced**, which is the first thing
+today that was neither a review answer nor housekeeping. `build.sh` gated deployment on
+`[ -f "$NAR_CHECK" ]`, which stats; with the checker unreadable, python3's non-zero status was read as
+a refusal and the operator was told their bundle *"cannot link against the NiFi API the running
+Liquid loads"* — a verdict nothing had reached. `narcheck_available` now reads the file, and the
+headline no longer asserts one of narcheck's two reasons over the other: it returns 1 both for a
+bundle the index refuses and for anything it could not read, which the repair found by reproducing
+the second case. `B6-40`, seven scenarios, each shown able to fail. **One of the new assertions was
+weak and is written up as such**: it checked that the gate's old inline form was gone, which the
+extraction alone achieved, so it stayed green with the fix reverted — an assertion a refactor
+satisfies is not guarding anything.
+
+**Three backlog entries closed, none of them by that code.** The `M2` decision — *"the decision left
+is one the operator has to take"* — was taken and merged as `480455b` with #25, and was still being
+read as open today, by me, out loud. Two `/m2` entries describe a mount #25 removed. All three struck
+through rather than deleted, so the reasoning stays readable. The lesson is cheap and worth the line:
+**a merge closes code, and nothing closes the entry that asked for it.**
+
 **#15 was the only branch #20's merge collided with**, in `scripts/linux/start.sh`, and the collision
 was two `source` lines: #15 adds `proxy-identity.sh`, #20 added `bind-address.sh`, both after
 `wait-for-operator.sh`. Both kept, both verified present and called. The merge also made a tense true:
