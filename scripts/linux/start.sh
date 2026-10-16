@@ -256,6 +256,7 @@ fi
 "${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
 "${PROJECT_DIR}/config/scripts/start/nginx.sh"
 "${PROJECT_DIR}/config/scripts/start/liquid.sh"
+"${PROJECT_DIR}/config/scripts/start/nar-builder.sh"
 # hermes disabled: not started
 # "${PROJECT_DIR}/config/scripts/start/hermes.sh"
 # No network is created here any more. It existed only so openclaw.sh could read

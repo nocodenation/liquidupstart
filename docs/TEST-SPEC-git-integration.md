@@ -2433,6 +2433,13 @@ render, on a page that must answer while the stack is down — so it is recorded
 | A8-24 | Unit **unhappy** | A fixture-based test is handed a project, not the operator's `.env` | Bun loads the repository's `.env` into `process.env`, `sh()` forwarded it, and `git.sh` prefers the variable over the file. Five cases across M-A1 and M-A3 went red for a declaration none of them names |
 | A8-25 | Integration | The unreachable state survives a fresh request | A8-17 step 5 asks an operator to reload and see it still named. The card is rendered server-side from the manifest, so a second request with no prior exchange is the same claim — made without an installation to break |
 | A8-26 | Unit **unhappy** | The start says at the end what did not come up | A8-17 found the shape U11 names: the warning printed, then 250 lines, then a banner of URLs and passwords and the word *succeeded*. `.install-result` recorded `start_ok=1` |
+| **A8-28** | Integration **unhappy** | An image without the tools is refused while the stack is still up | The blocking finding of 2026-09-30, found from a live run. `start.sh` runs `down.sh` 123 lines before the git step, so the failure arrived *after* the teardown and repeated on every attempt |
+| **A8-28** | positive | …and it says which remedy applies where it is running | On a host, install them. In the dashboard's helper image, remove the image — the operator cannot install into it and has never heard of it |
+| **A8-29** | Integration **unhappy** | Which is what the refusal prevents: the git step dies at `ssh-keygen` with 127 | Measured rather than reasoned about; in the real sequence `down.sh` has already run by then |
+| **A8-30** | Integration | The counterpart: the same image **with** the tools still starts | Without it the check could be met by refusing every start on every host |
+| **A8-30** | **negative** | …and an install that failed is said out loud, not blamed on the product | Added 2026-10-13 — see the block |
+|  |  |  |  |
+| *A8-28 to A8-30 were `A8-24`, `A8-25` and `A8-26` until 2026-10-13* | | | Three ids that already belonged to three other cases — `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. The whole file was using them and **none of its own cases had a row**. `TR-1` passed throughout, because the ids *are* declared, by those other cases |
 
 #### Detail per case
 
@@ -2736,6 +2743,22 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Expected** | Status 200 both times, the block still says `unreachable`, and the two are **identical** — not merely both present, since a card that regenerated something per request would satisfy the weaker assertion. |
 | **What it replaces** | A manual reload that costs a destroyed and rebuilt repository to reach. A8-17 keeps the step, because an operator watching a browser sees things a fetch does not, but the property no longer depends on it being done. |
 | **Covers** | FR11, U11. |
+
+##### A8-28 / A8-29 / A8-30 — the tools the git step needs, and a setup that must not be mistaken for the product
+
+| | |
+|---|---|
+| **Premise** | `start.sh` runs `down.sh` 123 lines before the git step, and the git step generates the agent key before it reads the declaration, so declaring nothing does not avoid it. On every installation that already had a toolbox image, Start tore the stack down and then died with `ssh-keygen: command not found`, exit 127 — and repeated it on every attempt. The pre-flight has to judge the tools *before* the teardown. |
+| **Component** | `config/scripts/start/git.sh --check-declaration`, run in `debian:bookworm-slim` — the toolbox's own base, which carries neither `git` nor OpenSSH — with this checkout's `config/` mounted read-only. |
+| **Steps** | The pre-flight in the bare image; the same image presented as the dashboard's helper; the git step itself, to measure what the refusal prevents; and the pre-flight in an image where the tools have been installed. |
+| **Test data** | The declaration `git@github.com:nocodenation/agent-skills.git\|read\|protected`, so the pre-flight has work to do beyond the tool check. The four tools named individually: `git`, `ssh`, `ssh-keygen`, `ssh-keyscan`. |
+| **Expected** | Exit 1 naming all four and saying the installation is intact; the right remedy for the place; exit 127 at `ssh-keygen` for the step; and exit 0 where the tools are present. |
+| **What it found** | Green. And on 2026-10-13 the counterpart found something about **itself**: it was green in one run and red in the next with only documentation changed between them. Its setup installs the tools with `apt-get`, and both lines were `>/dev/null 2>&1` with nothing checking they arrived — so when the Debian mirror refused (`At least one invalid signature was encountered`, then `Unable to locate package git`) the pre-flight truthfully reported the tools missing and the counterpart read that as the product being wrong. The status such a line would report comes from `tail` in the pipe, not from apt, so even unredirected it said nothing. |
+| **The repair, and its shape** | The install is checked, its output kept, and the counterpart steps aside when the tools are absent while a sibling case says so and quotes apt. **A setup failure must not arrive as a product failure** — the same shape as `registryReachable()` on #24 and `DASHBOARD_DEPS` on #22. |
+| **Controls** | With the install pointed at a package that does not exist: 5 pass / 0 fail, and the output carries `A8-30 stepped aside: … apt said: E: Unable to locate package no-such-package-xyz`. Before the repair the same condition was a red `A8-30` against correct code. |
+| **And the ids moved** | These were `A8-24`, `A8-25` and `A8-26` — three ids already belonging to `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. Found by accident on 2026-10-13 while chasing the failure above: the specification's `A8-26` described a different case entirely, which is why the first attempt to reproduce it ran the wrong file. `TR-1` cannot see this: it compares tested ids against declared ids, and these *were* declared — by the cases they were taken from. |
+| **Implemented by** | `tests/integration/m-a8.toolbox-tools.test.ts`. |
+| **Covers** | A8-28, A8-29, A8-30, FR11, U1. |
 
 ##### A8-26 — the start says at the end what did not come up
 
@@ -3249,6 +3272,36 @@ reviews that followed, and each has its evidence in its own block.
 | A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
 | A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
 | A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
+
+#### Cases documented after the fact
+
+*Written 2026-10-09.* Eleven cases in this milestone's test files carried an id that no row here
+declared, which `--gaps` cannot see and a reviewer cannot sign. They are gathered rather than
+interleaved on purpose: interleaving them would imply they were signed off with the rows around
+them, and they were not — they were written after, during the rounds of review that followed.
+`TR-1` is what stops this recurring.
+
+| # | Level | Sign | Case | Implemented by |
+|---|---|---|---|---|
+| A8-27 | Unit | positive | An update replaces every locally built image, the toolbox included: `update.sh` names all five, while the dashboard asks for the four that must already exist | `tests/unit/m-a8.built-images.test.ts` |
+| A14-7 | Contract | positive | A finished run refreshes what the page shows, and the refresh is **not** inside the success branch — `invalidateAll()` runs either way, while the success-only callback still means success | `tests/contract/m-a14.skip-button-shape.test.ts` |
+| A14-8 | Contract | positive | Each repository keeps its own test result: the state is a map keyed by slug rather than one answer per card, and starting one test clears only that repository's answer | `tests/contract/m-a14.skip-button-shape.test.ts` |
+| A16-21 | Integration | positive | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-22 | Integration **unhappy** | positive + negative | An abandoned `mkdir` is not forever either — an empty pid file older than any hold is taken over, and a fresh one is still held | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-24 | Component **unhappy** | negative | A contradicted result line is dropped, not hidden: it does not come back when the clone state flips back | `tests/component/m-a16.result-line.test.ts` |
+| A16-25 | Integration | positive | A folder that appeared during the wait survives it, and the start says it left it alone | `tests/integration/m-a16.wait-cleanup.test.ts` |
+| A16-26 | Integration | positive | The counterpart: a partial clone **this run** made is still cleaned up | `tests/integration/m-a16.wait-cleanup.test.ts` |
+| A16-27 | Integration | positive | The wait really waits and then works: a lock released during the wait is picked up and the clone happens | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-28 | Integration **unhappy** | negative | A start that gives up waiting changes nothing: the budget ends without a clone, and the manifest still says what the last start found | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-29 | Integration **unhappy** | negative | And it says what it did instead of writing it down | `tests/integration/m-a16.lock-wait.test.ts` |
+
+**One collision is deliberately left standing and recorded instead.** `A16-19` names two unrelated
+cases: `describe('A16-19 skip-all says it too, with the space')` in
+`tests/component/m-a16.skip-panel.test.ts` and `test('A16-19 git tracks test files, so there is
+something to judge')` in `tests/contract/m-a16.text-only.test.ts`. The row above describes the
+second. Renumbering a signed-off id is the operator's decision, and `mutate.sh` refuses a `mustFail`
+that resolves to more than one test, so the collision surfaces as a refusal rather than a wrong
+answer. In `BACKLOG.md`.
 | A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Detail per case
