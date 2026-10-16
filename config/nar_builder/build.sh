@@ -478,6 +478,31 @@ target_command() {
   printf '%s\n' "$TARGET"
 }
 
+# Can the check actually run? Read, not stat.
+#
+# `[ -f ]` and `[ -r ]` both ask the kernel about the directory entry; neither
+# opens the file, and on 2026-10-16 that difference cost an hour. A single-file
+# bind mount of narcheck.py was stat-able and unreadable at the same time: `ls` of
+# the mounted directory omitted the entry, `stat` reported 29910 bytes, and
+# `open()` returned ENOENT to python3, to head and to cp alike -- Docker Desktop
+# had kept a /host_mnt placeholder for a path a moved worktree had invalidated.
+# The gate's `[ -f ]` passed, python3 failed, and the non-zero status was read as
+# a refusal, so the operator was told their bundle cannot link against the NiFi
+# API. Nothing had judged it.
+#
+# It is not about that one quirk. Measured again by hand the same day as the
+# ordinary permission case: the checker at mode 000 and a build user unable to
+# open it answers `[Errno 1] Operation not permitted`, and the old gate called
+# that a bundle that cannot link too.
+#
+# A function rather than a condition inline, so a case can put states through it:
+# the idiom B6-3 established, `eval` of the real thing out of the shipped script.
+narcheck_available() {
+  [ -f "$NAR_CHECK" ] \
+    && head -c 1 "$NAR_CHECK" >/dev/null 2>&1 \
+    && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]
+}
+
 build_command() {
   rel="$1"
   case "$rel" in
@@ -773,7 +798,20 @@ NOWRITE
   # means anything. The same check runs in
   # liquid's entrypoint for whatever was placed there by hand; this one is for
   # everything nar-build itself writes, which is the path agents actually take.
-  if [ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]; then
+  # Readable, not merely present. `[ -f ]` and `[ -r ]` both ask the kernel about
+  # the directory entry; neither opens the file, and on 2026-10-16 that difference
+  # cost an hour: a single-file bind mount of narcheck.py was stat-able and
+  # unreadable at the same time -- `ls` of the mounted directory omitted the entry,
+  # `stat` reported 29910 bytes, and `open()` returned ENOENT to python3, to head
+  # and to cp. Docker Desktop had kept a /host_mnt placeholder for a path a moved
+  # worktree had invalidated. The test below is a read, because only a read
+  # answers the question the branch under it assumes.
+  #
+  # It is not about that one quirk. Measured again by hand the same day, as the
+  # ordinary permission case: the checker mounted at mode 000 and the build user
+  # unable to open it gives `[Errno 1] Operation not permitted`, and the old gate
+  # called that a bundle that cannot link.
+  if narcheck_available; then
     if ! refusal="$(python3 "$NAR_CHECK" check-index "$part" "$LIQUID_INDEX" 2>&1)"; then
       # Only after the status is known: a `| sed` in the line above would hand the
       # `if` sed's status instead of the check's, and every bundle would pass.
@@ -789,11 +827,22 @@ NOWRITE
         rm -f "$part"
       fi
       part=""
+      # The headline says what happened; the reason below says why, and it is
+      # narcheck's to give. It used to assert *"it cannot link against the NiFi
+      # API the running Liquid loads"* over whatever followed -- and narcheck
+      # refuses for two different reasons with one exit status: a bundle whose
+      # references the index does not have, and anything it could not read. Its
+      # message distinguishes them ("Silence is not consent: it is not deployed");
+      # the headline flattened both into a verdict about the author's code.
+      # Measured 2026-10-16 with an index missing one file: narcheck said *"the
+      # index of what Liquid can load is not readable"*, and the operator was told
+      # their bundle cannot link.
       cat >&2 <<REFUSED
 
-nar-build refused: ${base} was built, but it cannot link against the NiFi API the
-running Liquid loads, so it was not deployed. Nothing was placed in ${DROP}, so
-Liquid never sees it, and whatever was there before is untouched.
+nar-build refused: ${base} was built and was not deployed. Nothing was placed in
+${DROP}, so Liquid never sees it, and whatever was there before is untouched.
+The reason is below, as the check gave it -- a bundle that cannot link against the
+API the running Liquid loads, or something the check could not read.
 
 ${refusal}
 REFUSED
@@ -825,10 +874,11 @@ REFUSED
     cat >&2 <<NOINDEX
 
 nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
-${NAR_CHECK} or ${LIQUID_INDEX}/lib-classes.txt is missing, and that index is what
-says which classes the running Liquid can load. Deploying without it would put a
-bundle in the load path that nothing has checked, and Liquid loads what is there
-within seconds.
+${NAR_CHECK} is missing or cannot be read, or ${LIQUID_INDEX}/lib-classes.txt is
+missing, and that index is what says which classes the running Liquid can load.
+Deploying without it would put a bundle in the load path that nothing has checked,
+and Liquid loads what is there within seconds.
+Nothing here has judged your bundle: this is about the check, not about the code.
 Liquid writes the index on every start. Ask the operator to look at whether it
 could: docker compose logs liquid | grep "load index", and whether
 volumes/liquid/api is writable by the nifi user.
