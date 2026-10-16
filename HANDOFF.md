@@ -26,14 +26,21 @@ this morning. So `B7-5`'s figures below reached `main` the same day they were ta
 opened with *"nothing merged today"* when it was written two hours earlier, which is why each claim
 here now carries its time.
 
-**Nine of ours are open**: #15, #16, #17, #18, #19, #20, #21, #24, #28. Five still read
+**Eight of ours are open**: #15, #16, #17, #19, #20, #21, #24, #28. Four still read
 `CHANGES_REQUESTED` from rounds that have been answered, so what they wait on is a re-read rather
-than work. Exactly two conflicted with the new `main`, both only in `BACKLOG.md` and both now
-merged and resolved: #18, where both sides had appended an item under *Open findings*, and #19,
-where `main` appended next to the `operator.admin` section that #19 **removes**, because #19 is what
-closes it — the section is identical in `main` and in the merge base, so honouring the removal
-discarded nothing of `main`'s. The commit messages carry the lead-set counts that show it, and
-`git merge-tree` reports every one of the nine clean against `9858651`.
+than work, and `git merge-tree` reports all eight clean against `9858651`.
+
+**#18 was closed by the operator at 09:58Z today**, 38 minutes after #10 went in, with no note on
+the pull request, and its branch is **not** in `main` — so the mutation registry's four answered
+review rounds are shelved rather than landed. `feature/mutation-registry` still exists and now
+carries `59272f5`, a merge of `main` resolving the one `BACKLOG.md` conflict, pushed before the
+closure was noticed. Whether that stays, reopens or goes is the operator's call and is not recorded
+here either way.
+
+**#19's conflict was the other one**, and it is merged and resolved: `main` had appended an item next
+to the `operator.admin` section that #19 **removes**, because #19 is what closes it. That section is
+identical in `main` and in the merge base, so honouring the removal discarded nothing of `main`'s;
+the commit message carries the lead-set counts that show it.
 
 **#25 also settled the stacking question before it merged.** Once #10 was in, #25's base read
 `main`, its surface was 16 files and +1146/−70, and it merged clean — the 13-to-101 file surface of
