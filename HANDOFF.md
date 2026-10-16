@@ -45,10 +45,23 @@ well as issues, attributing the act to whoever pushed. So prose about a pull req
 commit.
 
 Reopened with `gh pr reopen 18`; `CHANGES_REQUESTED` and the head `59272f5` survived the round trip.
-**The rule that follows is about writing, not about git:** in a commit message, name a pull request
-as *"the #18 conflict"* or *"on #18"*, and never let `closes`, `fixes` or `resolves` fall in front of
-a number. The same applies to pull request descriptions. Nothing computes this for us, which is why
-it is written here as conduct.
+**And it is computed now rather than remembered.** `.git/hooks/commit-msg` reads the message before
+the commit exists and refuses one that would close what it names — `close`, `fix` and `resolve` in
+any form, with or without a colon, in front of `#12`, `GH-12`, `owner/repo#12` or a full issue or
+pull URL. Git's comment lines and everything under the scissors are ignored. Verified against the
+message of `5aa5bc9` itself, which it refuses on line 10, and against this section's own prose
+(*"the #18 conflict, answered on #19, resolved in BACKLOG.md"*), which it passes. A commit that means
+to close an issue says so with `ALLOW_CLOSING_KEYWORD=1 git commit`, because that is a real workflow
+and a guard that forbids it would be worked around rather than used.
+
+The hook lives in `.git/hooks`, so it is **this machine only** and is not in the repository; it does
+reach every worktree, because hooks resolve through `GIT_COMMON_DIR` to this checkout's `.git/hooks`.
+Making it the team's would mean a tracked script plus `core.hooksPath`, which is a change to everyone's
+tooling and therefore the operator's to decide.
+
+What stays as conduct is the wording: in a commit message or a pull request description, name a pull
+request as *"the #18 conflict"* or *"on #18"*. The hook catches the slip; the habit avoids the
+argument with it.
 
 **#19's conflict was the other one**, and it is merged and resolved: `main` had appended an item next
 to the `operator.admin` section that #19 **removes**, because #19 is what closes it. That section is
