@@ -84,12 +84,32 @@ else
   PATTERN="*.test.ts"
 fi
 
+# What a file needs, not where it sits. Sixteen M-B files live under unit/ and
+# integration/ and drive the running stack anyway -- `docker compose exec
+# opencode nar-build` and friends -- so a plain ./tests/run.sh built probe NARs
+# into the operator's live volumes/nar_extensions, which Liquid autoloads and
+# keeps loaded after the case deletes the file. That is the thing the opt-in of
+# 2026-09-17 was introduced to stop. Item 12 of the 2026-09-28 review.
+# Calls, not mentions: a bare `nar-build` matches twenty-two files, most of
+# them only naming it in a header, and skipping those would be its own silent
+# check that never runs.
+#
+# `docker compose` is a marker and a bare `docker` is not: `docker run --rm
+# <image>` is a throwaway container that touches nothing of the operator's,
+# which is how the M-B5 cases reach the real images without a stack. `compose`
+# acts on the installation that is running here.
+STACK_MARKERS='stackGuard|requireStack|narBuild\(|narBuildAsync\(|observeBuilds\(|buildNar\(|composeExec\(|restartAndWait\(|.docker., *.compose.'
+
 needs_stack() {
   local level
   for level in $STACK_LEVELS; do
     [[ "$1" == "$level" ]] && return 0
   done
   return 1
+}
+
+file_needs_stack() {
+  grep -qE "$STACK_MARKERS" "$1" 2>/dev/null
 }
 
 SYSTEM_FILES=()
@@ -99,7 +119,7 @@ for level in $LEVELS; do
   [[ -d "$dir" ]] || continue
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
-    if needs_stack "$level"; then
+    if needs_stack "$level" || file_needs_stack "$f"; then
       SYSTEM_FILES+=("$f")
     else
       OTHER_FILES+=("$f")
