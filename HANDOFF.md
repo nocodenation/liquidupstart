@@ -48,6 +48,28 @@ weak and is written up as such**: it checked that the gate's old inline form was
 extraction alone achieved, so it stayed green with the fix reverted — an assertion a refactor
 satisfies is not guarding anything.
 
+**#37 closes `S9`'s second half, and the operator took the decision the entry had been holding
+since 2026-10-08.** Nine test files named `ghcr.io/nocodenation/liquid-nifi:latest` themselves, and
+six pinned what that tag happened to contain, so an upstream release reddened them over somebody
+else's work. A digest was the obvious repair; it buys a suite that tests an image the stack no longer
+runs until a hand re-pins. **The tag stays moving and an upgrade is made legible instead**: both
+versions are read out of the image, the nine files name the tag through one constant, `tests/run.sh`
+says before every run which state it is in — beside the disk line, because seventeen scattered skips
+are not a message — and the six version-pinning files skip rather than fail. Simulated, a moved tag
+takes the M-B5 tier to 27 pass / 17 skip / 0 fail with the cause printed above it. `B5-33`, eight
+scenarios, each shown able to fail.
+
+**What is deliberately not asserted there is the agreement itself** — that the image equals the
+pinned pair. That agreement is the question, and asserting it would make an upstream release red,
+which is the defect being removed. It is the same distinction the disk guard draws: *cannot measure*
+is not *empty*.
+
+**And a mistake of mine worth the line.** The import I inserted into nine files landed inside an
+embedded Python heredoc in one of them, because the last line beginning with `import` was
+`import http.server, ssl`. Running the file caught it; reading the diff had not. Fixed by matching the
+TypeScript form, and the heredoc verified byte-identical against `main` afterwards. **A mechanical
+edit across nine files needs a run, not a read.**
+
 **Three backlog entries closed, none of them by that code.** The `M2` decision — *"the decision left
 is one the operator has to take"* — was taken and merged as `480455b` with #25, and was still being
 read as open today, by me, out loud. Two `/m2` entries describe a mount #25 removed. All three struck
