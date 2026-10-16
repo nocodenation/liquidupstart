@@ -39,7 +39,8 @@ import {
   dashboardDepsIn,
   STARTED,
   IN_GIT_REPO,
-  preconditions
+  preconditions,
+  registryReachable
 } from '../lib/preconditions';
 
 const roots: string[] = [];
@@ -93,6 +94,42 @@ describe('SP-1 each discriminator answers for the state in front of it', () => {
     expect(STARTED).toBe(startedIn(repoRoot));
     expect(IN_GIT_REPO).toBe(inGitRepoAt(repoRoot));
     expect(preconditions()).toContain(repoRoot);
+  });
+});
+
+describe('SP-3 the fourth precondition: a registry answers', () => {
+  // Added 2026-10-10. `TEST-SPEC-suite-preconditions.md` first recorded this one as
+  // uncovered, and the two cases that need it -- OC-15 and OC-16, which run
+  // `npm install -g` inside a docker build -- were simply red on a machine without
+  // a registry.
+  //
+  // **It is not what the measured failures were, and the case says so.** Those two
+  // failed twice by timing out at the suite's 60s and passed twice on a quiet
+  // machine: the registry was reachable every time. So this precondition answers
+  // the offline machine, and their own 180s budget answers the load -- 14s is what
+  // the build takes quiet, measured.
+  test('SP-3 an unreachable host answers false', () => {
+    // The half that can be measured anywhere. `.invalid` is reserved by RFC 2606
+    // precisely so that it cannot resolve, which is why it is used rather than a
+    // name that might one day belong to somebody.
+    expect(registryReachable('https://not-a-registry.invalid/')).toBe(false);
+  });
+
+  test.skipIf(!registryReachable())('SP-3 and the real registry answers true', () => {
+    // The counterpart, and it can only be taken where the thing it asserts holds --
+    // which is the shape of every precondition in this file. Without it SP-3 would
+    // be met by a function that always says no, and that function would skip
+    // OC-15 and OC-16 for ever while looking green.
+    expect(registryReachable()).toBe(true);
+  });
+
+  test('SP-3 the answer is memoised, so two cases pay for one round trip', () => {
+    // Not a performance assertion: a network call per asking case would make the
+    // suite's duration depend on how many cases ask, which is the kind of quiet
+    // coupling this file exists against.
+    const first = registryReachable();
+    const second = registryReachable();
+    expect(second).toBe(first);
   });
 });
 

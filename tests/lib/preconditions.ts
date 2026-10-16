@@ -63,6 +63,36 @@ export function dashboardDepsIn(root: string): boolean {
   return existsSync(join(root, 'dashboard', 'node_modules'));
 }
 
+/**
+ * Is a package registry reachable? The fourth precondition, and the one
+ * `TEST-SPEC-suite-preconditions.md` first recorded as uncovered.
+ *
+ * **A function and not a constant, deliberately.** It costs a network round trip,
+ * and a constant would charge every file that imports this module for a question
+ * only two cases ask. Memoised per process, so the two pay once between them.
+ *
+ * **And it is not the whole answer to what was measured**, which is worth saying
+ * here rather than in a commit nobody re-reads. `OC-15` and `OC-16` failed twice
+ * by *timing out* at 60s and passed twice on a quiet machine: the registry was
+ * reachable both times and the machine was busy. So this skips them where there is
+ * no registry -- an offline machine, which is a real and common case -- while the
+ * load-dependence is answered by their own budget, measured at 14s quiet against
+ * the 60s that was not enough under load.
+ */
+// Memoised **per url**, which the first version was not: it cached one answer and
+// returned it whatever it was asked about. SP-3's own case caught that -- the
+// `skipIf` on its counterpart is evaluated at registration time, so the default
+// url's `true` was already cached when the test for an unreachable host ran, and
+// that test was green against a host that does not exist.
+const registrySeen = new Map<string, boolean>();
+export function registryReachable(url = 'https://registry.npmjs.org/'): boolean {
+  const seen = registrySeen.get(url);
+  if (seen !== undefined) return seen;
+  const ok = sh(['curl', '-fsS', '--max-time', '5', '-o', '/dev/null', '-I', url]).code === 0;
+  registrySeen.set(url, ok);
+  return ok;
+}
+
 export const STARTED = startedIn(repoRoot);
 export const IN_GIT_REPO = inGitRepoAt(repoRoot);
 export const DASHBOARD_DEPS = dashboardDepsIn(repoRoot);
