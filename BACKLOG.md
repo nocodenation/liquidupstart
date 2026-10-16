@@ -156,6 +156,16 @@ The row in `docs/TEST-SPEC-git-integration.md` describes the `text-only` one. Wh
 its id moves in a signed-off specification and in a test title at once, which is an operator decision.
 Recorded 2026-10-09, alongside the thirteen ids that *were* documented.
 
+
+**And `A16-20`, which was reported here as the same thing, was not — repaired 2026-10-16.**
+Only one case ever claimed it: three titles in `tests/integration/m-a16.lock-identity.test.ts`. The
+second claim was a **row in the test specification** describing the NUL counterpart that lives in
+`tests/unit/m-a13.skip-step-names.test.ts` and already has an id, `A13-6`. So the integration case
+that carries `A16-20` had no row of its own, and `m-a16.text-only.test.ts`'s header passed the wrong
+id to the next reader. Nothing was renumbered and no signed-off id moved, so this was never the
+operator's decision to take — it was a document being wrong about which case it described. Reported
+as an operator decision twice, including by me today, which is the part worth remembering: a
+collision and a mis-described row read the same from a distance.
 ---
 
 **The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
