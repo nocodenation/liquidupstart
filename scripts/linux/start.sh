@@ -16,6 +16,7 @@ fi
 # A skip is a decision about this run. Clearing the directory here is what keeps
 # it from becoming a permanent setting nobody remembers making.
 . "${PROJECT_DIR}/config/scripts/start/lib/wait-for-operator.sh"
+. "${PROJECT_DIR}/config/scripts/start/lib/bind-address.sh"
 lu_clear_skips
 
 "${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
@@ -127,6 +128,33 @@ if ! lu_ip_in_cidr "$LU_PROXY_IP" "$LU_SUBNET_CIDR"; then
   echo "  trusts exactly it; the two keys have to agree or nothing starts." >&2
   echo "  Change one of them in .env so the address falls inside the range -- for" >&2
   echo "  ${LU_SUBNET_CIDR}, the first address docker leaves free is the .2." >&2
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
+
+# SYSTEM_BIND_ADDRESS is judged by compose exactly as the ipv4_address above is:
+# at `up`, long after down.sh has emptied the stack. The value an operator
+# reaches for first is `localhost`, and compose refuses it -- `invalid IP
+# address: localhost` -- so the start reported "this machine only" and then left
+# the host with nothing running. Found by the reviewer on 2026-10-16, as F1 of
+# the review of this branch; the same shape as the subnet check above and now in
+# the same place.
+#
+# The verdict is compose's own, and both decisions live in
+# config/scripts/start/lib/bind-address.sh so a case can put values through them
+# without running a start -- which is why the `::1` misreport below went unseen.
+#
+# Normalising `localhost` to 127.0.0.1 was the alternative and is deliberately
+# not done: the dashboard renders this compose file too, and a rewrite that lived
+# only in this script would make the two paths disagree about what .env means.
+LU_BIND_ADDRESS="$(get_env SYSTEM_BIND_ADDRESS)"
+LU_BIND_ERROR="$(lu_bind_invalid_address "$PROJECT_DIR" || true)"
+if [[ -n "$LU_BIND_ERROR" ]]; then
+  echo "Error: SYSTEM_BIND_ADDRESS=${LU_BIND_ADDRESS:-<empty>} is not an address compose accepts." >&2
+  echo "  compose says: ${LU_BIND_ERROR}" >&2
+  echo "  It has to be a literal address, not a name: 127.0.0.1 for this machine" >&2
+  echo "  only, 0.0.0.0 for every interface, or one interface address. \`localhost\`" >&2
+  echo "  is the one that looks right and is not -- compose resolves no names here." >&2
   echo "  Nothing has been stopped; the stack is as it was." >&2
   exit 1
 fi
@@ -351,19 +379,26 @@ echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost
 echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
 echo ""
 
-# Both states, said out loud. The ports bind to this machine by default since
-# 2026-10-02, which the README had promised since July without compose.yml doing
-# it -- so an installation that was reaching the stack from a phone will stop, and
-# a silent stop is the worst way to learn about a default. The other direction is
-# worth a line too: reachable from the network is the surprising state, and the two
-# endpoints above are the only reason to want it.
+# Both states, said out loud. The ports bind to this machine by default from the
+# merge of PR #20 onward, which the README had promised since July without
+# compose.yml doing it -- so an installation that was reaching the stack from a
+# phone will stop, and a silent stop is the worst way to learn about a default.
+# The other direction is worth a line too: reachable from the network is the
+# surprising state, and the two endpoints above are the only reason to want it.
+#
+# Every loopback form, not just the one in .env.example: `::1` was reported as
+# "your network" until the reviewer read it (F1, 2026-10-16), and 127.0.0.2 would
+# have been too. `localhost` is no longer a case here -- the pre-flight refuses it
+# before anything stops, because compose does not resolve names.
 BIND_ADDRESS="$(get_env SYSTEM_BIND_ADDRESS)"; BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
-if [[ "$BIND_ADDRESS" == "127.0.0.1" || "$BIND_ADDRESS" == "localhost" ]]; then
+if lu_bind_is_loopback "$BIND_ADDRESS"; then
   echo "  ${DIM}Reachable from: this machine only (SYSTEM_BIND_ADDRESS=${BIND_ADDRESS}).${RST}"
   echo "  ${DIM}  Another device needs SYSTEM_BIND_ADDRESS=0.0.0.0, or an SSH tunnel.${RST}"
 else
   echo "  ${WARN}Reachable from: your network (SYSTEM_BIND_ADDRESS=${BIND_ADDRESS}).${RST}"
-  echo "  ${DIM}  Every service above is, including the ones with no password.${RST}"
+  echo "  ${DIM}  Every service above is, including the ones with no password, and the${RST}"
+  echo "  ${DIM}  OpenClaw gateway with admin rights: nginx asserts the operator identity${RST}"
+  echo "  ${DIM}  for whoever reaches it, so the network reaches it as the operator.${RST}"
 fi
 echo ""
 

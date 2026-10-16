@@ -67,12 +67,13 @@ Liquid Upstart is a prototyping sandbox. All services bind to `localhost` by def
 the stack is self-contained, and you can safely run agent tools inside it without
 exposing anything to your network. It is not meant to be a production system.
 
-> **This was not true until 2026-10-02.** The sentence above was written on 2026-07-17 and the proxy
-> published its two ports on every interface from that same day — so the stack was reachable from the
-> local network while this section said it was not. `SYSTEM_BIND_ADDRESS` in `.env` is the default now,
-> and a test asserts the published address, so the promise and the behaviour cannot part company again
-> without something going red. Set it to `0.0.0.0` if you need the OpenClaw node bridge or the Teams
-> endpoint; `.env.example` says what that costs. When a
+> **This was not true before PR #20.** The sentence above was written on 2026-07-17 and the proxy
+> published its two ports on every interface from that same day until that change merged — so for
+> everyone who installed in between, the stack was reachable from the local network while this section
+> said it was not. `SYSTEM_BIND_ADDRESS` in `.env` is the default now, and a test asserts the published
+> address, so the promise and the behaviour cannot part company again without something going red. Set
+> it to `0.0.0.0` if you need the OpenClaw node bridge or the Teams endpoint; `.env.example` says what
+> that costs, and the gateway's admin identity is part of it. When a
 prototype earns its keep, deploy it to [Liquid.PM](https://liquid.pm) — the managed
 platform that adds security, backups, and operations, in the cloud or on-premise.
 
@@ -208,7 +209,7 @@ edits it for you; you can also edit it by hand. It's organized into sections:
 
 | Section | What it controls |
 |---|---|
-| 1. Networking | `SYSTEM_HTTP_PORT` / `SYSTEM_HTTPS_PORT` and the `*.localhost` scheme |
+| 1. Networking | `SYSTEM_HTTP_PORT` / `SYSTEM_HTTPS_PORT`, the `*.localhost` scheme, and `SYSTEM_BIND_ADDRESS` — the host address those ports are published on, `127.0.0.1` by default |
 | 2. Auto-generated secrets | Internal passwords/tokens — generated automatically if left empty |
 | 3. User-settable credentials | Logins you may want to set before first start |
 | 4. Script-generated secrets | Managed by scripts; not shown in the UI |

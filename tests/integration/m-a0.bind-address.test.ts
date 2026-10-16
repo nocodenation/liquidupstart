@@ -22,12 +22,31 @@
  * When:     The `proxy` service's published ports are read out of each.
  * Then:     Loopback by default on both ports, `0.0.0.0` when it is asked for,
  *           and no service other than `proxy` publishing anything.
- * Covers:   A0-7, A0-8, NFR3
+ *
+ *           A0-9 and A0-10 were added for F1 of the 2026-10-16 review, which
+ *           found two faults in the value's handling rather than in the binding.
+ *           `SYSTEM_BIND_ADDRESS=localhost` is the value an operator reaches for
+ *           first; compose refuses it — `invalid IP address: localhost` — and it
+ *           did so at `up`, after `down.sh` had already emptied the stack, while
+ *           the start had just reported "this machine only". And `::1` was
+ *           reported as "Reachable from: your network", which is the opposite of
+ *           what it is. Both decisions now live in
+ *           `config/scripts/start/lib/bind-address.sh`, because neither could be
+ *           measured while it sat inline in a script that stops the stack — which
+ *           is why the wrong one stayed wrong.
+ * Covers:   A0-7, A0-8, A0-9, A0-10
  * Unhappy:  A0-8 is the counterpart, and it is the half that keeps this honest: a
  *           default nobody can change is not a default, and a switch nobody
  *           checked is a line that only looks like one. The README is asserted
  *           too — a reworded promise with the old behaviour, or the reverse, is
  *           the defect this case exists for and neither half catches it alone.
+ *
+ *           A0-9's and A0-10's counterparts carry the same weight. A guard that
+ *           refused every address would pass the `localhost` scenario perfectly,
+ *           so the four forms compose does accept are asserted beside it; and a
+ *           classifier that called everything loopback would keep the promise
+ *           silent, so `0.0.0.0` and a LAN address are asserted to be reported as
+ *           the network.
  */
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -94,5 +113,67 @@ describe('A0-8 while an operator who needs the network can have it', () => {
     const env = readFileSync(join(repoRoot, '.env.example'), 'utf8');
     expect(env).toContain('SYSTEM_BIND_ADDRESS=127.0.0.1');
     expect(env).toMatch(/no password/);
+    // F2 of the 2026-10-16 review: the cost list named OpenCode and the Swagger
+    // UI, and left out the gateway -- whose node bridge is the reason given for
+    // opening the port, and which trusts the identity nginx asserts for whoever
+    // arrives. The most expensive item was the missing one.
+    expect(env).toMatch(/OpenClaw gateway with admin rights/);
+  });
+});
+
+// The helper is sourced rather than start.sh run: a start stops the stack, which
+// is why neither of these decisions had ever been measured.
+function bindHelper(fn: string, arg: string) {
+  return sh(['bash', '-c', `. "${LIB}"; ${fn} "${arg}"`], repoRoot);
+}
+
+const LIB = join(repoRoot, 'config/scripts/start/lib/bind-address.sh');
+
+describe('A0-9 the value is judged by compose before anything is stopped', () => {
+  test('A0-9 the negative: compose refuses `localhost`, and says so in those words', () => {
+    // The value that reads as correct and is not. Before F1 the start called it
+    // "this machine only" and then `up` failed -- after down.sh had emptied the
+    // stack, so the operator was left with nothing running.
+    const r = sh(['bash', '-c', `. "${LIB}"; lu_bind_invalid_address "${repoRoot}"`], repoRoot, {
+      SYSTEM_BIND_ADDRESS: 'localhost'
+    });
+    expect(r.stdout).toMatch(/invalid IP address: localhost/);
+  });
+
+  test.each(['127.0.0.1', '127.0.0.2', '::1', '[::1]', '0.0.0.0'])(
+    'A0-9 the counterpart: %s is accepted, so the guard refuses one value and not a class',
+    (address) => {
+      const r = sh(['bash', '-c', `. "${LIB}"; lu_bind_invalid_address "${repoRoot}"`], repoRoot, {
+        SYSTEM_BIND_ADDRESS: address
+      });
+      expect(r.stdout.trim(), `${address} was refused`).toBe('');
+    }
+  );
+});
+
+describe('A0-10 and the line the operator reads names the right side', () => {
+  test.each(['', '127.0.0.1', '127.0.0.2', '::1', '[::1]'])(
+    'A0-10 %s is reported as this machine only',
+    (address) => {
+      expect(bindHelper('lu_bind_is_loopback', address).code, `${address} not loopback`).toBe(0);
+    }
+  );
+
+  test.each(['0.0.0.0', '192.168.1.5', '10.99.0.2'])(
+    'A0-10 the counterpart: %s is reported as the network',
+    (address) => {
+      expect(bindHelper('lu_bind_is_loopback', address).code, `${address} called loopback`).toBe(1);
+    }
+  );
+
+  test('A0-10 and `localhost` is not called loopback, because it cannot have started', () => {
+    // It is not a literal address and compose refuses it, so the honest answer is
+    // "not this machine only" rather than a promise about a stack that is not up.
+    expect(bindHelper('lu_bind_is_loopback', 'localhost').code).toBe(1);
+  });
+
+  test('A0-10 and the warning names the gateway, not only the passwordless services', () => {
+    const start = readFileSync(join(repoRoot, 'scripts/linux/start.sh'), 'utf8');
+    expect(start).toMatch(/OpenClaw gateway with admin rights/);
   });
 });
