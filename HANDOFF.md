@@ -19,16 +19,29 @@ believe the dated one.**
 
 ## Where it stands, 2026-10-16
 
-**The review latency broke today: `#10` and `#25` are both merged.** `b59d19c` took #10 in at
-09:20Z and `9858651` took #25 in within the hour, both by `iztiev` and both without a comment — the
-first of ours to go in after a review, and the second carrying `691dd2e`, the measurement written
-this morning. So `B7-5`'s figures below reached `main` the same day they were taken. This section
+**The review latency broke today: three of ours merged.** `b59d19c` took #10 in at 09:20Z,
+`9858651` took #25 within the hour, and `fb6d6ec` took **#20** at 13:02Z — all three by `iztiev`.
+The first two came without a comment; #20 came after a full round, answered in `a693411`, and is the
+first of ours to be approved rather than simply taken. #25 carried `691dd2e`, the measurement written
+this morning, so `B7-5`'s figures below reached `main` the same day they were taken. This section
 opened with *"nothing merged today"* when it was written two hours earlier, which is why each claim
 here now carries its time.
 
-**Ten of ours are open**: #15, #16, #17, #18, #19, #20, #21, #24, #28 and #35. Five still read
-`CHANGES_REQUESTED` from rounds that have been answered, so what they wait on is a re-read rather
-than work, and `git merge-tree` reports all of them clean against `9858651`.
+**Nine of ours are open**: #15, #16, #17, #18, #19, #21, #24, #28 and #35.
+
+**#21 was reviewed and answered today too**, in `fa23a3e`: one blocking item — the specification
+claimed `seed_known_hosts` was exercised by no case, which `m-a10` disproves — plus four follow-ups.
+Three things the review had not asked for went with it, and the one worth knowing is that moving the
+manifest's temporary to `mktemp` would have blinded the litter check that guards it, because the
+filter matched `.tmp` and `mktemp`'s names carry none. A fix that silently disarms its own guard is
+the shape worth looking for twice.
+
+**#15 was the only branch #20's merge collided with**, in `scripts/linux/start.sh`, and the collision
+was two `source` lines: #15 adds `proxy-identity.sh`, #20 added `bind-address.sh`, both after
+`wait-for-operator.sh`. Both kept, both verified present and called. The merge also made a tense true:
+`BACKLOG.md`'s `operator.admin` entry said *"#20 repairs it"* and now says *"repaired, merged as
+`fb6d6ec`"*, which was the one thing left open from that review's `F3`. Every other open branch
+reports clean against `fb6d6ec`.
 
 **#35 is the guard against what the next section describes**, opened today with the reviewer on it:
 `scripts/hooks/commit-msg`, `scripts/hooks/install.sh`, `tests/unit/m-cm.commit-message-guard.test.ts`
