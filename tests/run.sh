@@ -84,12 +84,32 @@ else
   PATTERN="*.test.ts"
 fi
 
+# What a file needs, not where it sits. Sixteen M-B files live under unit/ and
+# integration/ and drive the running stack anyway -- `docker compose exec
+# opencode nar-build` and friends -- so a plain ./tests/run.sh built probe NARs
+# into the operator's live volumes/nar_extensions, which Liquid autoloads and
+# keeps loaded after the case deletes the file. That is the thing the opt-in of
+# 2026-09-17 was introduced to stop. Item 12 of the 2026-09-28 review.
+# Calls, not mentions: a bare `nar-build` matches twenty-two files, most of
+# them only naming it in a header, and skipping those would be its own silent
+# check that never runs.
+#
+# `docker compose` is a marker and a bare `docker` is not: `docker run --rm
+# <image>` is a throwaway container that touches nothing of the operator's,
+# which is how the M-B5 cases reach the real images without a stack. `compose`
+# acts on the installation that is running here.
+STACK_MARKERS='stackGuard|requireStack|narBuild\(|narBuildAsync\(|observeBuilds\(|buildNar\(|composeExec\(|restartAndWait\(|.docker., *.compose.'
+
 needs_stack() {
   local level
   for level in $STACK_LEVELS; do
     [[ "$1" == "$level" ]] && return 0
   done
   return 1
+}
+
+file_needs_stack() {
+  grep -qE "$STACK_MARKERS" "$1" 2>/dev/null
 }
 
 SYSTEM_FILES=()
@@ -99,7 +119,7 @@ for level in $LEVELS; do
   [[ -d "$dir" ]] || continue
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
-    if needs_stack "$level"; then
+    if needs_stack "$level" || file_needs_stack "$f"; then
       SYSTEM_FILES+=("$f")
     else
       OTHER_FILES+=("$f")
@@ -136,6 +156,33 @@ fi
 if [[ $LIST -eq 1 ]]; then
   printf '%s\n' "${SELECTED[@]}"
   exit 0
+fi
+
+# --- Pre-flight: the Docker VM must have room -------------------------------
+# **A full VM looks exactly like a product defect, and has been read as one
+# twice.** On 2026-10-14 and again on 2026-10-15 the filesystem reached 0 bytes
+# free and a real Maven inside the builder answered `No space left on device`,
+# which surfaced as 34 failing cases across M-B5 and M-B6 -- refusals that did
+# not refuse, builds exiting 2, `AFTER=0` where a build should have succeeded.
+# Most of an incompatibility analysis between two branches was written before
+# anybody probed the build by hand. `docker system df` said "20% reclaimable"
+# throughout, because it measures what images occupy and not what the VM has
+# left; the space was in the build cache, 39.7 GB of it.
+#
+# Asked once, here, rather than in each case: one sentence before the run is
+# worth more than the same condition arriving as forty different failures. It
+# does not skip anything -- a run that cannot measure must not look like a run
+# that passed -- and it is a floor, not a law: LU_DISK_FLOOR_BYTES moves it.
+if command -v bun >/dev/null 2>&1; then
+  if ! bun -e '
+    const m = await import("./tests/lib/dockerspace.ts");
+    const v = m.spaceVerdict(m.vmFreeBytes());
+    console.log((v.ok ? "disk: " : "STOPPED, and not because of the product: ") + v.message);
+    if (!v.ok) process.exit(1);
+  ' 2>&1; then
+    echo "Nothing was run. Reclaim space and start again." >&2
+    exit 2
+  fi
 fi
 
 status=0

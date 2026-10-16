@@ -21,7 +21,14 @@ export const APP_PASSWORD_FILE = join(APP_PASSWORD_DIR, '.app_password');
 // Images produced by build.sh; all must exist for a start to succeed.
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
 export function builtImages(): string[] {
-  return ['opencode', 'bun-runner', 'liquid', 'openclaw'].map((n) => `liquidupstart/${n}:latest`);
+  // nar-builder is built locally like the other four. Leaving it out made
+  // stackState() answer needBuild: false on a checkout that has never built it,
+  // so `docker compose up -d` tried to *pull* a local-only image and failed --
+  // and since proxy depends on nar_builder, the whole stack failed to start.
+  // Blocker 2 of the 2026-09-28 review.
+  return ['opencode', 'bun-runner', 'liquid', 'openclaw', 'nar-builder'].map(
+    (n) => `liquidupstart/${n}:latest`
+  );
 }
 
 export function projectVersion(): string | null {
