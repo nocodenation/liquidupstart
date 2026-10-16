@@ -1028,3 +1028,32 @@ Not built with the blocking fix because the two changes there are enough to merg
 the dashboard's build path, which no case currently drives.
 
 Recorded 2026-09-30.
+
+---
+
+## A checker that cannot be opened is reported as a bundle that cannot link
+
+`config/nar_builder/build.sh:776` gates deployment on `[ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]`.
+Both tests stat. When `narcheck.py` is present but unreadable, the first test passes, `python3 "$NAR_CHECK"`
+fails to open it, the non-zero status is read as a refusal, and the operator is told the bundle *"cannot link
+against the NiFi API the running Liquid loads"* — a verdict about their code that nothing reached. The
+interpreter's own `can't open file` line is printed below it, which is the only clue that no check ran.
+
+The honest message already exists, in the `else` arm of the same test: it names `${NAR_CHECK}` or the index as
+missing and refuses without deploying. So the fix is to make the guard answer the question the branch below it
+assumes — that the checker can actually be run — rather than whether a directory entry exists. Reading the
+first bytes, or running it with no arguments and requiring the usage text, both do that; so does inverting the
+gate to treat any failure to *invoke* the checker as the missing-checker case, which keeps one honest message
+for every way it can be unavailable.
+
+Found 2026-10-16 while measuring `B7-5`'s four remaining scenarios on this branch, where it refused four builds
+that had in fact succeeded. The cause there was a Docker Desktop `/host_mnt` placeholder left by moving a
+worktree, which made a single-file bind mount stat-able but unreadable — a state no code of ours creates, and
+exactly the reason the message matters: the stack said "your bundle cannot link" when the truth was "I could
+not look".
+
+Not fixed with the measurement because the measurement is what #25 is in review for, and this changes the gate
+that decides what reaches Liquid's autoloader — the one place on this branch where a quick edit is the wrong
+shape. It needs its own case: a negative control that makes the checker unreadable and reads the message.
+
+Recorded 2026-10-16.
