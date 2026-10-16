@@ -26,9 +26,15 @@ this morning. So `B7-5`'s figures below reached `main` the same day they were ta
 opened with *"nothing merged today"* when it was written two hours earlier, which is why each claim
 here now carries its time.
 
-**Nine of ours are open**: #15, #16, #17, #18, #19, #20, #21, #24, #28. Five still read
+**Ten of ours are open**: #15, #16, #17, #18, #19, #20, #21, #24, #28 and #35. Five still read
 `CHANGES_REQUESTED` from rounds that have been answered, so what they wait on is a re-read rather
-than work, and `git merge-tree` reports all nine clean against `9858651`.
+than work, and `git merge-tree` reports all of them clean against `9858651`.
+
+**#35 is the guard against what the next section describes**, opened today with the reviewer on it:
+`scripts/hooks/commit-msg`, `scripts/hooks/install.sh`, `tests/unit/m-cm.commit-message-guard.test.ts`
+at 17 pass, a feature document, a test specification carrying a row per scenario, and the conduct half
+under `## GIT` in `CLAUDE.md`. Documents and tooling only, +510/−0 over six files, no product code.
+Suite on that branch: 787 pass / 5 skip / 0 fail, plus the dashboard 32 pass.
 
 ### A commit message closed #18, and a word in it is all it took
 
