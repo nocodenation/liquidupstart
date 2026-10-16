@@ -76,8 +76,17 @@ HOOKS_DIR="${SECRETS_DIR}/hooks"
 HOOKS_MOUNT="${SECRETS_MOUNT}/hooks"
 GITCONFIG="${SECRETS_DIR}/gitconfig"
 MANIFEST="${SECRETS_DIR}/repositories.json"
-# Per run, so two starts writing at once cannot share one temporary.
-MANIFEST_TMP="${MANIFEST}.$$.tmp"
+# Empty until lu_write_manifest makes one with mktemp, so release_locks' EXIT
+# trap stays valid under `set -u` on every path that writes no manifest.
+#
+# It was "${MANIFEST}.$$.tmp", which is unique only inside one PID namespace --
+# and A16-M1 documents git.sh running in different ones: toolbox container to
+# dashboard container, and host to dashboard, both with small PID ranges. Two
+# runs sharing a PID would share the temporary, and then one `mv` publishes an
+# inode the other is still writing, which is the torn read this whole case is
+# about. Improbable, never observed, and one line to remove: F3 of the
+# 2026-10-16 review.
+MANIFEST_TMP=""
 ENV_FILE="${PROJECT_DIR}/.env"
 
 mkdir -p "$HOOKS_DIR"
@@ -269,7 +278,11 @@ release_locks() {
   # never read -- readers read repositories.json -- but litter in a directory the
   # operator browses is worth not leaving. A SIGKILL skips this, which is the
   # limit of a trap rather than of this line.
-  rm -f "$MANIFEST_TMP"
+  # Guarded rather than bare: MANIFEST_TMP is empty on every path that writes no
+  # manifest, and a removal whose argument depends on an unset variable is the
+  # shape worth never leaving in a script. `||` and not `&&`, so the trap cannot
+  # end non-zero and change the exit status it was called with.
+  [[ -z "$MANIFEST_TMP" ]] || rm -f "$MANIFEST_TMP"
 }
 trap release_locks EXIT
 
@@ -538,6 +551,10 @@ done <<< "$PARSED"
 # ... Start the stack so it gets one", during that start. Neither was wrong; they
 # were two moments in one screen.
 lu_write_manifest() {
+  # Beside the target, so the rename below stays a rename. mktemp rather than a
+  # name of our own: the uniqueness has to hold across PID namespaces, which $$
+  # does not -- and seed_known_hosts in this same script already does it this way.
+  MANIFEST_TMP="$(mktemp "${MANIFEST}.XXXXXX")"
   ENTRIES=""
   local i name url host path access policy slug dir mount_key cloned error entry
   for (( i = 0; i < ${#R_SLUG[@]}; i++ )); do

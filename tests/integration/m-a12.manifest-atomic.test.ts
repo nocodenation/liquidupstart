@@ -34,10 +34,15 @@
  * Then:     Every read is either "the file is not there yet" or a complete
  *           document. Never empty, never a fragment.
  * Covers:   A12-3, A12-4, A12-5, A12-6, FR3, U11
- * Unhappy:  A12-4 is the counterpart that matters: the document each run leaves
- *           behind names all three repositories. Without it A12-3 is satisfied
- *           by a script that never writes a manifest at all, which is the
- *           failure mode of every "nothing bad was observed" case.
+ * Negative: A12-3 (no reader sees a torn document), A12-5 (nothing truncates the
+ *           manifest in place, and no temporary is left) and A12-6 (no temporary
+ *           in `$TMPDIR`, no `$$` in its name).
+ * Counterpart: A12-4 is the positive half, and it is the one that matters: the
+ *           document each run leaves behind names all three repositories.
+ *           Without it A12-3 is satisfied by a script that never writes a
+ *           manifest at all, which is the failure mode of every "nothing bad was
+ *           observed" case. Labelled `Unhappy:` until F1 of the 2026-10-16
+ *           review pointed out that it is the positive one.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -158,7 +163,14 @@ describe('A12-5 the write goes somewhere else first, and arrives by rename', () 
   });
 
   test('A12-5 and no temporary file is left in the secrets directory', () => {
-    const left = readdirSync(secrets).filter((f) => f.includes('.tmp'));
+    // Both shapes, because the filter outlived the name it was written for: it
+    // looked for `.tmp`, and F3 of the 2026-10-16 review replaced
+    // `${MANIFEST}.$$.tmp` with `mktemp "${MANIFEST}.XXXXXX"`, whose leftovers
+    // carry no `.tmp` at all. A litter check that cannot see the litter is worse
+    // than none, because it reads as covered.
+    const left = readdirSync(secrets).filter(
+      (f) => f.includes('.tmp') || /^repositories\.json\./.test(f) || /^known_hosts\./.test(f)
+    );
     expect(left).toEqual([]);
   });
 });
@@ -172,7 +184,7 @@ describe('A12-6 the temporary file sits beside its target, not in TMPDIR', () =>
     // `seed_known_hosts` has never been seen to fail; on a Linux host with /tmp
     // on tmpfs they do not share one.
     expect({
-      manifestTmpBesideTarget: /MANIFEST_TMP="\$\{MANIFEST\}/.test(script),
+      manifestTmpBesideTarget: /MANIFEST_TMP="\$\(mktemp\s+"\$\{MANIFEST\}\./.test(script),
       knownHostsTmpBesideTarget: /mktemp\s+"\$\{KNOWN_HOSTS\}/.test(script),
       knownHostsTmpInTmpdir: /scanned="\$\(mktemp\)"/.test(script)
     }).toEqual({
@@ -180,5 +192,33 @@ describe('A12-6 the temporary file sits beside its target, not in TMPDIR', () =>
       knownHostsTmpBesideTarget: true,
       knownHostsTmpInTmpdir: false
     });
+  });
+
+  test('A12-6 and the name is unique across PID namespaces, not only within one', () => {
+    // F3 of the 2026-10-16 review. `${MANIFEST}.$$.tmp` is unique inside one PID
+    // namespace, and the A16-M1 walk documents git.sh running in different ones —
+    // toolbox container to dashboard container, and host to dashboard, both with
+    // small PID ranges. Two runs sharing a PID would share the temporary, and
+    // then one `mv` publishes an inode the other is still writing: the torn read
+    // this whole case exists to close, reintroduced by the fix for it.
+    //
+    // Asserted as the absence of `$$` as well as the presence of mktemp, because
+    // a script could carry both and only the dead one would be read.
+    expect({
+      usesMktemp: /MANIFEST_TMP="\$\(mktemp/.test(script),
+      usesPidInTemporaryName: /MANIFEST_TMP="[^"]*\$\$/.test(script)
+    }).toEqual({ usesMktemp: true, usesPidInTemporaryName: false });
+  });
+
+  test('A12-6 and the trap survives a run that writes no manifest', () => {
+    // The name is made where it is used, so MANIFEST_TMP is empty on every path
+    // that writes nothing — and the EXIT trap removes it unconditionally. Under
+    // `set -u` an unset variable would abort the trap; bare, it would be a
+    // removal whose argument depends on an empty variable. Both are asserted:
+    // the declaration exists and is empty, and the removal is guarded.
+    expect({
+      initialisedEmpty: /^MANIFEST_TMP=""$/m.test(script),
+      removalGuarded: /\[\[\s+-z\s+"\$MANIFEST_TMP"\s+\]\]\s+\|\|\s+rm\s+-f\s+"\$MANIFEST_TMP"/.test(script)
+    }).toEqual({ initialisedEmpty: true, removalGuarded: true });
   });
 });
