@@ -39,6 +39,11 @@ discarded nothing of `main`'s. The commit messages carry the lead-set counts tha
 `main`, its surface was 16 files and +1146/−70, and it merged clean — the 13-to-101 file surface of
 2026-10-14, when `main` went into a branch stacked on #10, cannot recur.
 
+**`wt-10` and `wt-seed` are retired**, by the same rule as yesterday's two: `git merge-base
+--is-ancestor` against `origin/main` for each branch first, then clean and fully pushed, then
+`git worktree remove`. The table in the section below still lists them and is wrong about them from
+today on. Six remain, for #15, #16, #18, #19, #24 and #28; #17, #20 and #21 have never had one.
+
 **`B7-5`’s four remaining scenarios on #25 are measured, and so are `B1-9`’s four.** Both records
 rested on a measurement taken by hand for the same single reason — no stack had ever been started from
 a branch worktree — and that is what the section below made possible. Other hand measurements in the
