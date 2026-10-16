@@ -180,3 +180,13 @@ such tests are non-deterministic and a flaky suite trains everyone to ignore red
 
 Do not commit any code into project's git repository. You can suggest when to commit, and a commit
 message, but do not do it automatically
+
+**Name a pull request, never instruct the forge.** In a commit message or a pull request description,
+write *"the #18 conflict"*, *"on #18"*, *"answered on #18"*. GitHub reads `close`, `fix` and `resolve`
+— any inflection, any case, with or without a colon — as an instruction to close whatever reference
+follows, on pull requests as well as issues, and it names whoever pushed as the actor. On 2026-10-16
+the line *"both are merged and resolved: #18"* in a documentation commit closed a pull request
+carrying four answered review rounds, and the timeline accused the operator. `scripts/hooks/commit-msg`
+refuses such a message before the commit exists; `./scripts/hooks/install.sh` enables it for a clone,
+and `ALLOW_CLOSING_KEYWORD=1 git commit` is there for a commit that means it. The hook cannot see a
+pull request description, so that half stays conduct. See `docs/FEATURE-commit-message-guard.md`.

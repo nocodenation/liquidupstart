@@ -1,0 +1,60 @@
+#!/bin/sh
+# Refuse a commit message that would close the reference it only meant to name.
+#
+# Why this exists. On 2026-10-16 a documentation commit on `main` carried the
+# line "both are merged and resolved: #18, where both sides appended an item".
+# It was prose about a pull request. GitHub read `resolved: #18` as an
+# instruction, closed pull request #18 -- four answered review rounds -- and
+# attributed the act to whoever pushed, so the timeline accused a person while
+# the cause sat in a commit message nobody had reason to re-read. It took three
+# wrong readings to find, and the `closed` event had carried the commit id all
+# along.
+#
+# What GitHub actually does: `close`, `fix` and `resolve`, in every form, with
+# an optional colon, applied to the reference that follows -- `#12`, `GH-12`,
+# `owner/repo#12`, or a full issue or pull URL -- and it applies them to pull
+# requests as well as issues. Only commit messages on the default branch and
+# pull request descriptions trigger it; ordinary comments do not.
+#
+# A commit may of course mean to close an issue. That is what the override is
+# for: a guard that forbids a real workflow gets worked around rather than used.
+set -u
+
+msg_file="$1"
+
+# Git's own comment lines, and anything below the verbose-commit scissors, are
+# not part of the message the forge reads.
+body=$(sed -e '/^#/d' -e '/^------------------------ >8 /,$d' "$msg_file")
+
+keywords='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)'
+ref='(#|[Gg][Hh]-|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#)[0-9]+'
+url='https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(issues|pull)/[0-9]+'
+
+hits=$(printf '%s\n' "$body" | grep -niE "${keywords}[[:space:]]*:?[[:space:]]*(${ref}|${url})" || true)
+
+[ -n "$hits" ] || exit 0
+
+if [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ]; then
+  printf 'commit-msg: closing keyword allowed by ALLOW_CLOSING_KEYWORD=1:\n%s\n' "$hits" >&2
+  exit 0
+fi
+
+cat >&2 <<MSG
+
+commit-msg refused this message: it would close the reference it names.
+
+$hits
+
+GitHub reads close, fix and resolve -- in any form, with or without a colon --
+as an instruction to close whatever reference follows, on pull requests as well
+as issues, and it names whoever pushes as the actor rather than the commit. A
+sentence that merely talks about a pull request closes it.
+
+To describe one, put a word between the verb and the number: "the #18 conflict",
+"on #18", "answered on #18". To close an issue on purpose:
+
+    ALLOW_CLOSING_KEYWORD=1 git commit ...
+
+The message is kept in .git/COMMIT_EDITMSG; nothing was committed.
+MSG
+exit 1
