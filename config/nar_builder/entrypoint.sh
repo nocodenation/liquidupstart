@@ -41,6 +41,22 @@ chmod 700 /deploy
 # nor chowned through, so a link the build user planted in the cache cannot aim
 # this at anything outside it. The mount point itself the build user cannot
 # replace.
+# **On this branch there is no `/m2` mount, and this stays anyway.** The seeded
+# per-build repository removes the shared cache: `compose.yml` mounts nothing at
+# `/m2`, `repo_for` copies the seed into the build own work directory, and the
+# lines above therefore act on an empty directory inside the container. They are
+# kept rather than deleted for two reasons. `B6-36` and `B6-38` on #10 drive this
+# file against a root-owned `/m2` they create themselves, so deleting the handling
+# would redden two signed cases that are not this branch to retire; and until #10
+# and this branch have both landed, the file has to be correct for the arrangement
+# #10 ships.
+#
+# What that means for N7 of the 2026-10-14 re-review is worth stating here rather
+# than leaving to the BACKLOG entry: its second consequence -- on rootless Docker
+# the host user cannot delete `volumes/nar_builder/m2` after a build -- is closed
+# by this branch through deletion, because there is no such directory any more.
+# The first consequence, a pre-populated cache staying root-owned, is fixed on #10
+# by the recursive chown above and is inert here.
 chown -R -h "${NAR_BUILDER_BUILD_USER:-builder}" /m2
 
 exec java /opt/builder/BuildServer.java

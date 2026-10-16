@@ -45,6 +45,65 @@ export const BROKEN_SOURCE = probeSource(BROKEN_BODY);
 export const OWN_POM_ARTIFACT = 'probe-with-pom';
 export const OWN_POM_DEPENDENCY = 'commons-lang3';
 
+/**
+ * Two dependencies the seed has never seen, and their marker files inside a NAR.
+ *
+ * The seed is built from what the **synthesiser's** pom needs, so every case that
+ * exercises it so far resolves out of it. Nothing measured an author pom naming
+ * something else, which is the ordinary reason to write a pom at all: an SSL
+ * context service API, a client library, a JSON mapper.
+ *
+ * Jackson and Guava, and the *versions* are the point. **Both artifacts are in
+ * the seed at other versions** -- measured 2026-10-15: `jackson-databind` at
+ * 2.13.2.2 and 2.16.1, `guava` at 14.0.1 and 32.1.0-jre, because the seed is the
+ * closure of the synthesised build and the nar plugin pulls both. The first
+ * version of this comment claimed neither was anywhere in the tree, which was
+ * false; `B7-5`'s first scenario reads the seed at the **version** level and is
+ * what corrected it.
+ *
+ * That makes the fixture stronger rather than weaker: a build that fetches
+ * 2.18.2 while 2.16.1 sits in the same repository cannot be resolving by
+ * accident. Both are large enough to be unambiguous in the `downloads` figure,
+ * and both are ordinary -- this is what an author's pom looks like, not a fixture
+ * shaped to pass.
+ */
+export const UNSEEDED_ARTIFACT = 'probe-unseeded';
+export const UNSEEDED_DEPENDENCIES = [
+  { groupId: 'com.fasterxml.jackson.core', artifactId: 'jackson-databind', version: '2.18.2' },
+  { groupId: 'com.google.guava', artifactId: 'guava', version: '33.4.0-jre' }
+] as const;
+/** What must be inside the bundle if the two really resolved and were packaged. */
+export const UNSEEDED_JARS = [
+  'jackson-databind-2.18.2.jar',
+  'jackson-core-2.18.2.jar',
+  'jackson-annotations-2.18.2.jar',
+  'guava-33.4.0-jre.jar'
+];
+
+/**
+ * The same pom `ownPom` builds, with the two unseeded dependencies in place of
+ * `commons-lang3`. Written through one function so the two cases cannot drift
+ * into testing different things.
+ */
+export function unseededPom(nifiVersion: string, javaMajor: string): string {
+  const deps = UNSEEDED_DEPENDENCIES.map(
+    (d) => `    <dependency>
+      <groupId>${d.groupId}</groupId>
+      <artifactId>${d.artifactId}</artifactId>
+      <version>${d.version}</version>
+    </dependency>`
+  ).join('\n');
+  return ownPom(nifiVersion, javaMajor)
+    .replace(`<artifactId>${OWN_POM_ARTIFACT}</artifactId>`, `<artifactId>${UNSEEDED_ARTIFACT}</artifactId>`)
+    .replace(
+      new RegExp(
+        `    <dependency>\\s*<groupId>org\\.apache\\.commons</groupId>\\s*` +
+          `<artifactId>${OWN_POM_DEPENDENCY}</artifactId>\\s*<version>[^<]+</version>\\s*</dependency>`
+      ),
+      deps
+    );
+}
+
 export function ownPom(nifiVersion: string, javaMajor: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"

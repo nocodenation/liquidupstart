@@ -337,6 +337,19 @@ It survives here, which is the only copy that still has it. Recorded 2026-10-07,
 
 ---
 
+**~~The shared Maven cache stays writable by build-time code.~~** *Closed 2026-10-11 on
+`feature/builder-seeded-cache`: there is no shared cache. Each build resolves into its own local
+repository, copied from a seed the image build owns, and discarded with the build. FR26 is rewritten,
+FR37 to FR40 are new, M-B7 carries the cases and B1-9 is rewritten because its premise was the mount.
+**It is faster than what it replaces, which neither of the priced options predicted** — 7 s and 0
+downloads against 67 s and 665 downloads on a first build, and against 9 s warm. The two readings
+that inverted the plan are in the test specification: a `file://` seed loses 28.5 MB to
+`_remote.repositories` re-verification, and an unpinned lifecycle loses 6.9 MB to metadata. What stays
+open is a project with its own `pom.xml`, which cannot be given the pins — the security property holds
+for it, the speed is unmeasured.*
+
+The entry as it stood, because the priced options are what the measurement contradicted:
+
 **The shared Maven cache stays writable by build-time code.** `compose.yml` mounts
 `./volumes/nar_builder/m2:/m2` read-write, and Maven runs there as the unprivileged `builder` user,
 which can write it. So a pom, a plugin or a dependency can plant an artifact that **every later
@@ -1015,3 +1028,32 @@ Not built with the blocking fix because the two changes there are enough to merg
 the dashboard's build path, which no case currently drives.
 
 Recorded 2026-09-30.
+
+---
+
+## A checker that cannot be opened is reported as a bundle that cannot link
+
+`config/nar_builder/build.sh:776` gates deployment on `[ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]`.
+Both tests stat. When `narcheck.py` is present but unreadable, the first test passes, `python3 "$NAR_CHECK"`
+fails to open it, the non-zero status is read as a refusal, and the operator is told the bundle *"cannot link
+against the NiFi API the running Liquid loads"* — a verdict about their code that nothing reached. The
+interpreter's own `can't open file` line is printed below it, which is the only clue that no check ran.
+
+The honest message already exists, in the `else` arm of the same test: it names `${NAR_CHECK}` or the index as
+missing and refuses without deploying. So the fix is to make the guard answer the question the branch below it
+assumes — that the checker can actually be run — rather than whether a directory entry exists. Reading the
+first bytes, or running it with no arguments and requiring the usage text, both do that; so does inverting the
+gate to treat any failure to *invoke* the checker as the missing-checker case, which keeps one honest message
+for every way it can be unavailable.
+
+Found 2026-10-16 while measuring `B7-5`'s four remaining scenarios on this branch, where it refused four builds
+that had in fact succeeded. The cause there was a Docker Desktop `/host_mnt` placeholder left by moving a
+worktree, which made a single-file bind mount stat-able but unreadable — a state no code of ours creates, and
+exactly the reason the message matters: the stack said "your bundle cannot link" when the truth was "I could
+not look".
+
+Not fixed with the measurement because the measurement is what #25 is in review for, and this changes the gate
+that decides what reaches Liquid's autoloader — the one place on this branch where a quick edit is the wrong
+shape. It needs its own case: a negative control that makes the checker unreadable and reads the message.
+
+Recorded 2026-10-16.
