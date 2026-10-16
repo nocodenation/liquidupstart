@@ -26,16 +26,29 @@ this morning. So `B7-5`'s figures below reached `main` the same day they were ta
 opened with *"nothing merged today"* when it was written two hours earlier, which is why each claim
 here now carries its time.
 
-**Eight of ours are open**: #15, #16, #17, #19, #20, #21, #24, #28. Four still read
+**Nine of ours are open**: #15, #16, #17, #18, #19, #20, #21, #24, #28. Five still read
 `CHANGES_REQUESTED` from rounds that have been answered, so what they wait on is a re-read rather
-than work, and `git merge-tree` reports all eight clean against `9858651`.
+than work, and `git merge-tree` reports all nine clean against `9858651`.
 
-**#18 was closed by the operator at 09:58Z today**, 38 minutes after #10 went in, with no note on
-the pull request, and its branch is **not** in `main` — so the mutation registry's four answered
-review rounds are shelved rather than landed. `feature/mutation-registry` still exists and now
-carries `59272f5`, a merge of `main` resolving the one `BACKLOG.md` conflict, pushed before the
-closure was noticed. Whether that stays, reopens or goes is the operator's call and is not recorded
-here either way.
+### A commit message closed #18, and a word in it is all it took
+
+**Written down because it took three wrong readings to find.** #18 went to `CLOSED` at 09:58:04Z,
+38 minutes after #10 merged. The timeline named the operator as the actor, and this file said so for
+an hour. The operator had not touched it. The `closed` event carries a `commit_id`, and it is
+`5aa5bc9` — a documentation commit of this session's own, pushed to the default branch, whose message
+contained the line *"both are merged and resolved: #18, where both sides appended an item"*.
+
+**`resolved: #18` is a closing keyword.** GitHub applies `close`, `fix` and `resolve` in all their
+forms, with an optional colon, to the reference that follows, and it applies them to pull requests as
+well as issues, attributing the act to whoever pushed. So prose about a pull request, in a commit on
+`main`, closed that pull request — and the attribution then pointed at the operator rather than at the
+commit.
+
+Reopened with `gh pr reopen 18`; `CHANGES_REQUESTED` and the head `59272f5` survived the round trip.
+**The rule that follows is about writing, not about git:** in a commit message, name a pull request
+as *"the #18 conflict"* or *"on #18"*, and never let `closes`, `fixes` or `resolves` fall in front of
+a number. The same applies to pull request descriptions. Nothing computes this for us, which is why
+it is written here as conduct.
 
 **#19's conflict was the other one**, and it is merged and resolved: `main` had appended an item next
 to the `operator.admin` section that #19 **removes**, because #19 is what closes it. That section is
