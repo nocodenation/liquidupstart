@@ -9,6 +9,28 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The mutation runner's bound does not reach a process the spec itself started.** `tests/mutate.sh`
+spawns the spec with `exec` inside its subshell, so the run budget and the TERM handler reach `bun`
+itself — which is finding 2 of the third re-review, and `MU-48` to `MU-51` hold it. What they do not
+reach is a **grandchild**: a spec that starts a process of its own, say a container or a server,
+leaves it running when the budget fires, and if that process holds the `--reporter-outfile` it can
+write the record after the handler has removed it. That is the shape finding 2 was about, one level
+further down.
+
+The repair is to put the spec in its own process group — `setsid` or `set -m`, then signal `-$pid` —
+which is what `dashboard/src/lib/server/pairing.ts` does for the same reason (A2 of #15's
+2026-10-01 review, where an orphaned `docker run` held the pipes). It is deferred because no entry in
+either registry starts such a process today, so the exposure is reachable only by a case nobody has
+written, and because signalling a group from a script that is itself run under a test runner needs its
+own measurement — the runner must not take its own parent down.
+
+**Recorded 2026-10-14, after N3 of the fourth re-review found that two places pointed here and
+nothing was here.** `tests/mutate.sh:370` and `tests/integration/m-mu.runner.test.ts` both said it was
+in this file. `PROCEDURE-mutation-control.md`, corrected in that same round, says that *"a pointer to
+a file the reader cannot open is worse than no pointer"* — which is exactly what those two were.
+
+---
+
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
 2026-10-14 re-review closed the way past them — `zf.read` inflated a member whole before truncating
 it to a declared size, so an entry that *claimed* 1000 bytes cost 1610 MB from an 815,695-byte file,
