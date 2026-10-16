@@ -11,7 +11,14 @@
  *           and liquidupstart.policy=direct, the most permissive branch setting
  *           there is, so a refusal cannot be attributed to the branch.
  * When:     The ordinary commit on feature/probe is pushed.
- * Then:     Non-zero exit, the message says `read`, and it mentions neither the
+ * Then:     Non-zero exit; the message carries the phrase `declared with access
+ *           read`, and does not carry the git-publish gate's own sentence, so the
+ *           access rule is demonstrably the one that fired. Corrected 2026-10-09:
+ *           this read "the message says `read`", which is what the case asserted
+ *           until those four letters turned up inside the word "reads" -- a match
+ *           that could not fail. B4 of the 2026-10-01 re-review; the assertion was
+ *           strengthened then and this header was not.
+ *           It mentions neither the
  *           branch nor the branch policy.
  * Covers:   A4-10, U1, U4, §1.3
  * Unhappy:  The whole case. Its counterweight is A4-1, the same push in the same
@@ -31,6 +38,13 @@ test('A4-10 access read refuses the push before any branch rule is consulted', (
   const r = git(fx.clone, ['push', 'origin', 'feature/probe']);
   expect(r.code).not.toBe(0);
   expect(remoteHas(fx, 'refs/heads/feature/probe')).toBe(false);
-  expect(r.output).toContain('read');
+  // The whole refusal sentence, not the word `read`. Found on 2026-09-20 by the
+  // mutation runner: with the access rule disabled the push is still refused --
+  // by the git-publish gate, whose message says "it reads the declaration" --
+  // and `toContain('read')` matched those four letters inside "reads". The case
+  // passed over a hook that had lost the rule it exists to protect.
+  expect(r.output).toContain('declared with access read');
   expect(r.output).not.toMatch(/feature branch|protected|default branch/i);
+  // And it must be this rule that refused, not another one that happened to.
+  expect(r.output).not.toContain('did not come through git-publish');
 });

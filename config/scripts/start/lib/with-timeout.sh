@@ -6,9 +6,10 @@
 # ran the command with no bound at all, and nothing said so. macOS ships neither:
 # they are GNU coreutils. So on the operator's own machine every "bounded"
 # docker run in this stack was unbounded, which is the opposite of what the call
-# site reads as, and the property N1 was written to guarantee.
+# site reads as, and the property N1 -- OC-60 since the 2026-09-07 rename -- was
+# written to guarantee.
 #
-# Measured 2026-09-17 on this machine, three times in one afternoon: the N1 probe
+# Measured 2026-09-17 on this machine, three times in one afternoon: the N1 (OC-60) probe
 # container -- `docker run` on a node process that never exits, bounded at 8s
 # with a 10s grace -- stood for 13 minutes, for over a minute, and for over a
 # minute again, each time until something else removed it. The case could not
@@ -28,7 +29,7 @@
 #
 # A caller reads any non-zero status as "the bound expired" and force-removes the
 # container it named: a client killed with SIGKILL cleans nothing up, so --rm
-# never fires. That is what N4 asserts at every call site.
+# never fires. That is what N4 -- OC-61 since the rename -- asserts at every call site.
 
 LU_TIMEOUT_GRACE="${LU_TIMEOUT_GRACE:-10}"
 
