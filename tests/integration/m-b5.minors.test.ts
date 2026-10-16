@@ -52,8 +52,12 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { builderImage } from '../lib/builderimage';
+import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
 
-const LIQUID = 'ghcr.io/nocodenation/liquid-nifi:latest';
+// S9, second half: the image tag is named in one place now, and the cases that
+// pin what it contains skip with a voice when an upstream release moves it --
+// `tests/lib/liquidimage.ts`, B5-33.
+const LIQUID = LIQUID_IMAGE;
 const BUILDER = builderImage();
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
@@ -113,21 +117,21 @@ PY
     ]).output;
   }, 900_000);
 
-  test('B5-25 it says what could not be read, with no traceback', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-25 it says what could not be read, with no traceback', () => {
     expect(out).toContain('REFUSED');
     expect(out).toContain('could not be read out of the archive');
     expect(out).not.toContain('Traceback');
     expect(out).toContain('corruptExit=1');
   });
 
-  test('B5-25 the counterpart: the same bundle intact is still accepted', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-25 the counterpart: the same bundle intact is still accepted', () => {
     // Otherwise the repair could be met by refusing every archive.
     expect(out).toContain('soundExit=0');
   });
 });
 
 describe('B5-26 the count and the loop see the same files', () => {
-  test('B5-26 a dot-file is in neither', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-26 a dot-file is in neither', () => {
     const r = sh([
       'docker', 'run', '--rm',
       '-v', `${ENTRY}:/probe/entrypoint.sh:ro`,
@@ -163,7 +167,7 @@ PY
 });
 
 describe('B5-27 a build that stops early takes its work directory with it', () => {
-  test('B5-27 nothing is left in /tmp', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-27 nothing is left in /tmp', () => {
     const r = sh([
       'docker', 'run', '--rm',
       '-v', `${BUILD}:/probe/build.sh:ro`,

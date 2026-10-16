@@ -36,8 +36,12 @@ import { test, expect, describe } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
 
-const IMAGE = 'ghcr.io/nocodenation/liquid-nifi:latest';
+// S9, second half: the image tag is named in one place now, and the cases that
+// pin what it contains skip with a voice when an upstream release moves it --
+// `tests/lib/liquidimage.ts`, B5-33.
+const IMAGE = LIQUID_IMAGE;
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 
@@ -81,7 +85,7 @@ EOF
 describe('B5-8 a bundle that could not be quarantined is reported as still in the inbox', () => {
   const r = runDeployment('file');
 
-  test('B5-8 the summary names it, and does not say it was moved out', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-8 the summary names it, and does not say it was moved out', () => {
     // **Corrected 2026-09-29.** This asked for `auto-loader will load`, which
     // was the whole severity of the finding: the drop directory was the load
     // path, so a bundle that could not be quarantined was loaded anyway and the
@@ -94,7 +98,7 @@ describe('B5-8 a bundle that could not be quarantined is reported as still in th
     expect(r.output).toMatch(/they are not loaded/);
   }, 900_000);
 
-  test('B5-8 and it says why it usually happens', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-8 and it says why it usually happens', () => {
     // Matched across the line break the message wraps at.
     expect(r.output.replace(/\s+/g, ' ')).toContain(
       'the inbox being owned by root while Liquid runs as nifi'
@@ -103,7 +107,7 @@ describe('B5-8 a bundle that could not be quarantined is reported as still in th
 });
 
 describe('B5-9 while a quarantine it can write is used quietly', () => {
-  test('B5-9 the counterpart: the ordinary refusal message, and no warning', () => {
+  test.skipIf(LIQUID_MOVED !== null)('B5-9 the counterpart: the ordinary refusal message, and no warning', () => {
     const r = runDeployment('directory');
     expect(r.output).toMatch(/Moved to .*refused/);
     expect(r.output).not.toContain('STILL IN THE INBOX');

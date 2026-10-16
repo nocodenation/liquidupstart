@@ -185,6 +185,24 @@ if command -v bun >/dev/null 2>&1; then
   fi
 fi
 
+# And whether the Liquid image is still the one the M-B cases were written
+# against. S9's second half: nine files ran `ghcr.io/nocodenation/liquid-nifi:latest`
+# and six pinned what that tag happened to contain, so an upstream release turned
+# them red over somebody else's work. The operator chose to keep the moving tag and
+# make the upgrade legible rather than pin a digest nobody would re-pin.
+#
+# Said here, once, for the same reason as the disk: six files' worth of skips
+# scattered through a run is not a message. It never stops the run -- an upgrade is
+# not a failure -- and "cannot read the image" is not "moved", so an absent image
+# says nothing at all.
+if command -v bun >/dev/null 2>&1; then
+  bun -e '
+    const m = await import("./tests/lib/liquidimage.ts");
+    const moved = m.liquidImageMoved();
+    console.log(moved === null ? "liquid image: " + m.WRITTEN_AGAINST.nifi + "/" + m.WRITTEN_AGAINST.api + ", as the cases expect" : "liquid image MOVED, and the M-B5 cases that pin it will skip:\n" + moved);
+  ' 2>&1 || true
+fi
+
 status=0
 bun test --timeout "$TEST_TIMEOUT_MS" "${SELECTED[@]}" || status=$?
 

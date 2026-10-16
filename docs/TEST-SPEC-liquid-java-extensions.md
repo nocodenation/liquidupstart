@@ -1107,6 +1107,14 @@ ask for a build**, not what a build may do once asked for. The open question in 
 | B5-30 | **System** | The same bundle present in the inbox before the container starts | Loaded at boot. The counterpart for the other route |
 | B5-31 | Unit **negative** | `compose.yml`, every service | Nothing is mounted onto `/opt/nifi/nifi-current/nar_extensions`. B5-28 mounts the inbox itself, so it cannot hold this |
 | B5-32 | Unit | The same file and the image recipe | `./volumes/nar_extensions` arrives as `nar_inbox`, the image carries `nar-watch.sh`, and the entrypoint starts it. The counterpart: without it the drop directory would not reach Liquid at all |
+| B5-33 | Unit positive | The counterpart: the pair the cases were written against reports nothing | A function that always said "moved" would pass every negative below and skip the whole of M-B5 in silence |
+| B5-33 | Unit **negative** | A different NiFi version is a move | The upstream release the six version-pinning files cannot survive |
+| B5-33 | Unit **negative** | …and a different **API** version is a move too | The API ships a minor behind the distribution, which is what B5-15 to B5-18 are about; a check on the NiFi version alone misses an API-only release |
+| B5-33 | Unit positive | While an image that could not be read is **not** a move | "Cannot measure" is not "moved" — the rule SP-4 carries for the disk. Without it an image that cannot be pulled would read as an upgrade |
+| B5-33 | Unit positive | The message names both pairs, the cause and the one place to re-pin | The point of the whole change: the reader must not have to work out that it was somebody else's release |
+| B5-33 | Unit positive | Both versions are read out of the real image | The probe's own control. Whether they **equal** the pinned pair is deliberately not asserted |
+| B5-33 | Unit positive | `tests/run.sh` says which state the image is in, before the run | One sentence before the run beats seventeen scattered skips — the shape the disk guard established |
+| B5-33 | Unit **negative** | No test file names the moving tag itself any more | Nine did, which is how six came to pin its contents. A tenth copy would reintroduce it and nothing would notice until the next release |
 
 #### Detail per case
 
@@ -1283,6 +1291,22 @@ ask for a build**, not what a build may do once asked for. The open question in 
 | **Expected** | No mount anywhere ends in `:/opt/nifi/nifi-current/nar_extensions`; the `liquid` block holds `./volumes/nar_extensions:/opt/nifi/nifi-current/nar_inbox`; the Dockerfile copies `nar-watch.sh` and the entrypoint starts it in the background. |
 | **Failure** | Removing the inbox mount altogether, which passes B5-31 and deploys nothing — B5-32 is the counterpart. |
 | **Covers** | B5-31, B5-32, FR30, FR36. |
+
+#### B5-33 — an upstream release is not a defect in the code under test
+
+| | |
+|---|---|
+| **Premise** | `S9` of the 2026-10-01 review, second half, open since. Nine test files named `ghcr.io/nocodenation/liquid-nifi:latest` themselves — a moving tag — and six also pinned what that tag happened to contain, NiFi 2.11.0 and the API 2.10.0, in assertions and in fixture text. An upstream release turned those cases red over somebody else's work. |
+| **The decision, and whose it was** | Pinning by digest was the obvious repair. The operator weighed it on 2026-10-16 and chose the other trade: **keep the moving tag, so the suite goes on testing what the stack actually runs, and make an upgrade legible instead.** A digest stops the surprise and buys a different cost — until a hand re-pins, the suite tests an image the stack no longer runs — and the entry itself said the re-pinning was the operator's trade to make rather than a branch's. Recorded here because the alternative was real and the reasoning is the part that outlives the code. |
+| **Component** | `tests/lib/liquidimage.ts`; the pre-flight in `tests/run.sh`; the nine files that named the tag, six of which now skip on a move. |
+| **Test data, both sides, and why these** | `movedMessage` is a **pure function of two readings**, so both answers are measured without an image and without a network — the lesson of `B6-40` applied before it could repeat. Matching: `nifi 2.11.0, api 2.10.0`. Moved on NiFi: `2.12.0`. Moved on the API alone: `api 2.11.0`, which is the scenario a NiFi-only check would miss. Unreadable: `{ nifi: null, api: null }`. The live reading is asserted only to be **readable** — two dotted versions — because its agreement with the pinned pair *is* the question, and asserting it would make an upstream release red, which is the defect being removed. |
+| **Where the versions come from** | Both out of the image, neither derived from the other: `/opt/nifi/nifi-<version>` names the distribution, `lib/nifi-api-<version>.jar` the API it ships. Read on 2026-10-16: `2.11.0` and `2.10.0`, which is what `WRITTEN_AGAINST` now holds in one place instead of in six files. |
+| **Expected** | A message for each differing pair, naming both pairs, *"not a defect in the code under test"* and `tests/lib/liquidimage.ts`; nothing for the matching pair and nothing for the unreadable one. The runner prints `liquid image: <nifi>/<api>, as the cases expect`, or `liquid image MOVED, …` with the message. No test file carries the tag in a code line. |
+| **Measured, with an upgrade simulated** | `WRITTEN_AGAINST` moved to `2.12.0/2.11.0` and `./tests/run.sh m-b5` run: the pre-flight printed `liquid image MOVED, and the M-B5 cases that pin it will skip:` with both pairs and the re-pin instruction, and the tier went **27 pass / 17 skip / 0 fail** instead of red. Restored: `liquid image: 2.11.0/2.10.0, as the cases expect`, **44 pass / 0 fail**. |
+| **Shown able to fail** | `movedMessage` always reporting reddens **2**; never reporting **3**; the pre-flight removed from `tests/run.sh` **1**; a hard tag put back into one test file **1**. |
+| **One exception, named rather than hidden** | The file that searches for the tag has to contain it, so it excludes itself by name. A construction that split the string to dodge its own check would have passed quietly and told a reader nothing. |
+| **Implemented by** | `tests/unit/m-b5.moving-image-tag.test.ts`. |
+| **Covers** | B5-33, FR21, FR23. |
 | **Implemented by** | `tests/unit/m-b5.load-path-unreachable.test.ts`. |
 | **What it found** | Green on the first run, which is what a case written after its fix looks like. It is worth having for the control: putting the mount back reddens B5-31 twice and B5-32 once, while the booted B5-28 stays green — which is precisely the gap it was written to close. |
 
