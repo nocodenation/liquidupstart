@@ -1,4 +1,4 @@
-# Handover — 2026-10-15
+# Handover — 2026-10-16
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one: #19 still carries an older
@@ -9,13 +9,97 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-15* has the live picture. Read that and the review bodies it points to; the rest of this file
+2026-10-16* has the live picture. Read that and the review bodies it points to; the rest of this file
 is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; there are nine of ours open now, and two have merged since. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-16
+
+**`main` is `a76ca84`** — the worktree move, on top of the disk guard. Nothing merged today.
+
+**`B7-5`’s four remaining scenarios on #25 are measured, and so are `B1-9`’s four.** Both records
+rested on a measurement taken by hand for the same single reason — no stack had ever been started from
+a branch worktree — and that is what the section below made possible. Other hand measurements in the
+specification stand for reasons of their own and are untouched: `B6-36` skips with a voice when Maven
+Central is unreachable, and the row on a real Maven build says outright that the stack tier holds it. Against a stack
+built and started from `wt-seed`, with `m2-seed` present in the running builder:
+
+| Suite | Result |
+|---|---|
+| `./tests/run.sh m-b7 --system` | **12 pass / 1 skip / 0 fail** |
+| `./tests/run.sh m-b1 --system` | **55 pass / 1 skip / 0 fail** across 12 files |
+
+In both files the single skip is the deliberate reader of a seedless image, which only runs when the
+seed is absent. The figures are in `docs/TEST-SPEC-liquid-java-extensions.md`: two builds, `rc=0`,
+**`downloads 576` both times**, from **different** per-build repositories, the first one gone
+afterwards, and all four unseeded jars inside the bundle. Two identical counts from two different
+repositories is the reading the negative control exists for — nothing the first build fetched
+outlived it.
+
+**The measurement cost the installation’s containers for about an hour and nothing else.** The
+operator agreed to that in advance. `/Users/christof/.liquidupstart` is not a git checkout, so the
+branch cannot be measured in place; one stack runs per host, so the branch stack replaces it. What
+made the restore exact rather than a second hour of rebuilding: **the two `:latest` images the branch
+rebuilds were saved under `:pre-b7` first**, and the restore is `docker tag liquidupstart/liquid:pre-b7
+liquidupstart/liquid:latest`, the same for `nar-builder`, then the installation’s own `start.sh`. Its
+`volumes/` were never written — 1.4 GB before and after, and the builder is back on the image with no
+seed. In `zsh`, write `${i}:latest` and never `$i:latest`: the latter is the `:l` modifier and it
+silently created `liquidupstart/liquidatest`.
+
+### A single-file bind mount from a moved worktree can be stat-able and unreadable
+
+**This is the one to know before starting a stack from a worktree that has just been moved.** The
+first run of `B7-5` against the branch stack failed all four scenarios, and the refusal said the
+bundle *"cannot link against the NiFi API the running Liquid loads"*. The build had succeeded. What
+had failed was `python3 /opt/builder/narcheck.py`, which `compose.yml` supplies as a **single-file**
+bind mount from `config/liquid/narcheck.py`.
+
+In that state the file is there and is not readable: `[ -f ]` true, `stat` reporting 29910 bytes,
+`ls` of the mounted directory **omitting the entry**, and `open()` returning `ENOENT` — from `python3`,
+from `head`, from `cp`. A fresh `docker run` with the same source refused outright with
+`error while creating mount source path '/host_mnt/…/narcheck.py': mkdir …: file exists`. Docker
+Desktop had a `/host_mnt` placeholder for a path it could not resolve on the first mount, and the
+placeholder then shadowed the real file. The same mount from `/Users/christof/.liquidupstart` worked
+throughout, which is what proved it was the path and not the product.
+
+**`docker desktop restart` clears it**, and the run went green afterwards with no change to any code.
+It cost an hour of diagnosis, and it is a consequence of moving the worktrees yesterday — the price of
+that move, paid once, and worth knowing rather than re-deriving.
+
+**What the stack did wrong in that state is in `BACKLOG.md` on #25.** The gate is guarded by
+`[ -f "$NAR_CHECK" ]`, which stats; the honest message for an unavailable checker is in the `else` arm
+of the same test. So a checker that exists and cannot be opened is reported as a verdict on the
+author’s bundle. It is not fixed on the branch: it decides what reaches Liquid’s autoloader, and it
+needs its own negative control that makes the checker unreadable and reads the message.
+
+### Starting a stack from a worktree: the two things that are not obvious
+
+**The operator waits are skipped by a file, and it has to be written while the start is waiting.**
+`lu_clear_skips` does `rm -rf` on `volumes/.start-skip` once per run, so a marker written beforehand
+is deleted by the start itself — by design, because a skip is a decision about *this* run. The names
+are `git-key-all` (the group covering every deploy key) and `claude`, `copilot`, `codex`, `grok`. A
+fresh checkout has no deploy keys and no agent sign-ins, so without them a start sits for its full
+`SYSTEM_SIGNIN_WAIT_SECONDS=900`. With them it comes up in about two minutes and ends with a *Needs
+your attention* block naming each repository it could not clone, which is the correct outcome and not
+a failure.
+
+**A fresh checkout also needs a `.env`.** Copying the installation’s is right: identical ports and
+subnet, and it was checked first for absolute paths — there are none, so the branch stack writes only
+into its own `volumes/`, and the key sets of the two files match in both directions.
+
+`wt-seed/volumes/` now holds 1.1 GB of a once-started stack. It is disposable; deleting it costs only
+the next start’s first boot.
+
+### A test leaked a container, not just an image
+
+`festive_wescoff` was up for two days, holding `liquidupstart/nar-builder:run-47099-xoirn1` — a probe
+container from one of my own earlier runs, from before the content-hash tagging landed. The sweep
+built on #18 reclaims leaked **images**; a container that outlives its run pins one and is not swept.
+Removed by hand. Worth a case in the same shape as the image sweep.
 
 ## Where it stands, 2026-10-15
 
