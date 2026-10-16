@@ -19,7 +19,25 @@ believe the dated one.**
 
 ## Where it stands, 2026-10-16
 
-**`main` is `a76ca84`** — the worktree move, on top of the disk guard. Nothing merged today.
+**The review latency broke today: `#10` and `#25` are both merged.** `b59d19c` took #10 in at
+09:20Z and `9858651` took #25 in within the hour, both by `iztiev` and both without a comment — the
+first of ours to go in after a review, and the second carrying `691dd2e`, the measurement written
+this morning. So `B7-5`'s figures below reached `main` the same day they were taken. This section
+opened with *"nothing merged today"* when it was written two hours earlier, which is why each claim
+here now carries its time.
+
+**Nine of ours are open**: #15, #16, #17, #18, #19, #20, #21, #24, #28. Five still read
+`CHANGES_REQUESTED` from rounds that have been answered, so what they wait on is a re-read rather
+than work. Exactly two conflicted with the new `main`, both only in `BACKLOG.md` and both now
+merged and resolved: #18, where both sides had appended an item under *Open findings*, and #19,
+where `main` appended next to the `operator.admin` section that #19 **removes**, because #19 is what
+closes it — the section is identical in `main` and in the merge base, so honouring the removal
+discarded nothing of `main`'s. The commit messages carry the lead-set counts that show it, and
+`git merge-tree` reports every one of the nine clean against `9858651`.
+
+**#25 also settled the stacking question before it merged.** Once #10 was in, #25's base read
+`main`, its surface was 16 files and +1146/−70, and it merged clean — the 13-to-101 file surface of
+2026-10-14, when `main` went into a branch stacked on #10, cannot recur.
 
 **`B7-5`’s four remaining scenarios on #25 are measured, and so are `B1-9`’s four.** Both records
 rested on a measurement taken by hand for the same single reason — no stack had ever been started from
@@ -50,6 +68,23 @@ liquidupstart/liquid:latest`, the same for `nar-builder`, then the installation�
 seed. In `zsh`, write `${i}:latest` and never `$i:latest`: the latter is the `:l` modifier and it
 silently created `liquidupstart/liquidatest`.
 
+### Two suites at once on this host produce red that is not there
+
+Both merges above were checked by running the full suite on each branch **at the same time**: #18 came
+back 856 pass / 5 skip / **11 fail**, #19 762 pass / 5 skip / **2 fail**. Every one of the thirteen is
+an artefact of the parallel run. Run serially, the same files are **28 pass / 0 fail** on #18 and
+**3 pass / 0 fail** on #19, and the same file passes on `main`.
+
+The two clusters say why, and one of them is an argument for #19. `B6-37` asserts what judging a
+bundle **costs**, so a second suite competing for the machine breaks it — the identical case took
+6.3 s on one branch and 10.3 s on the other. `B6-21` to `B6-23` collide over fixtures: they create
+containers and nginx vhosts under fixed names, and two runs at once take each other’s. **#19 is the
+branch that gives fixtures per-run names**, and #18 does not have that fix yet, which is exactly why
+eight of the eleven were on #18.
+
+So: one suite at a time on this host. The cost of ignoring it is thirteen red cases that look like a
+product defect and are not, which is the same trap as the full disk and the stale mount.
+
 ### A single-file bind mount from a moved worktree can be stat-able and unreadable
 
 **This is the one to know before starting a stack from a worktree that has just been moved.** The
@@ -70,11 +105,12 @@ throughout, which is what proved it was the path and not the product.
 It cost an hour of diagnosis, and it is a consequence of moving the worktrees yesterday — the price of
 that move, paid once, and worth knowing rather than re-deriving.
 
-**What the stack did wrong in that state is in `BACKLOG.md` on #25.** The gate is guarded by
-`[ -f "$NAR_CHECK" ]`, which stats; the honest message for an unavailable checker is in the `else` arm
-of the same test. So a checker that exists and cannot be opened is reported as a verdict on the
-author’s bundle. It is not fixed on the branch: it decides what reaches Liquid’s autoloader, and it
-needs its own negative control that makes the checker unreadable and reads the message.
+**What the stack did wrong in that state is in `BACKLOG.md`, and since #25 merged it is on `main`.**
+The gate is guarded by `[ -f "$NAR_CHECK" ]`, which stats; the honest message for an unavailable
+checker is in the `else` arm of the same test. So a checker that exists and cannot be opened is
+reported as a verdict on the author’s bundle. It went in unfixed, by decision: it decides what
+reaches Liquid’s autoloader, and it needs its own negative control that makes the checker unreadable
+and reads the message. That control is now `main`'s to write rather than a branch's.
 
 ### Starting a stack from a worktree: the two things that are not obvious
 
