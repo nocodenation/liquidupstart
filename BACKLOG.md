@@ -42,7 +42,7 @@ entry above: the reply of 2026-10-13 said it was already here.
 
 ---
 
-**After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
+**~~After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
 `cleanup.sh` has no leg for it.** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
 host directory ends up owned by `101499` with every Maven-written subdirectory `101499:100998`, so
 `rm -rf volumes/nar_builder/m2` as the host user fails with `Permission denied` and the tree has to
@@ -50,7 +50,10 @@ be removed from a container. That contradicts CLAUDE.md's *"a reset is just dele
 is a consequence of B1's build user and only becomes reachable with C2's `chown`, because before it
 the build user could write nothing there.
 
-**Recorded against #25 rather than fixed here, by decision.** #25 removes `/m2` altogether — each
+**~~Recorded against #25 rather than fixed here, by decision.~~ #25 merged on 2026-10-16, so both
+entries above describe a mount that no longer exists** — `grep volumes/nar_builder/m2 compose.yml`
+on `main` finds nothing. Kept struck through rather than deleted, because the reasoning is the
+record of a decision that held: #25 removed `/m2` altogether — each
 build resolves into its own repository under its own work directory, discarded with the build — so
 there is no shared cache for the host to be locked out of. Adding a containerised `rm -rf` to
 `cleanup.sh`, which is a destructive script, for a directory the next branch deletes would be code
@@ -231,7 +234,13 @@ produces references the index does not have and is refused; one that is too **lo
 deploys, compiled against an older API than the instance runs. *Read out of `narcheck.py:396`, where
 a reference whose package is not in the judged set is skipped — reasoned from the code, not run.*
 
-**So the decision left is one the operator has to take, and it is not about the pom.** Carry
+**~~So the decision left is one the operator has to take, and it is not about the pom.~~ Taken, and
+merged.** `480455b`, *"M2 answered by moving the index out of the host’s reach, not by validating
+it"*, went in with #25 on 2026-10-16: `compose.yml` declares `liquid_api` as a volume shared between
+`liquid` and `nar_builder`, `volumes/liquid/api` is no longer a host bind, and `CLAUDE.md` carries
+the narrowed rule — *"all **state** lives in browsable `./volumes/` bind mounts; never use named
+Docker volumes **for it**"* — which is the argument the paragraph below records as the one for it.
+The host write path this entry is about is closed. What it said, and what was decided: carry
 `volumes/liquid/api` as a volume shared between `liquid` and `nar_builder` instead of a host bind,
 the way `nar_extensions` already is — which closes the host's write path completely and contradicts
 CLAUDE.md's *"all state lives in browsable ./volumes/ bind mounts; never use named Docker volumes"*.
@@ -1031,7 +1040,7 @@ Recorded 2026-09-30.
 
 ---
 
-## A checker that cannot be opened is reported as a bundle that cannot link
+## ~~A checker that cannot be opened is reported as a bundle that cannot link~~ — repaired
 
 `config/nar_builder/build.sh:776` gates deployment on `[ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]`.
 Both tests stat. When `narcheck.py` is present but unreadable, the first test passes, `python3 "$NAR_CHECK"`
@@ -1055,5 +1064,14 @@ not look".
 Not fixed with the measurement because the measurement is what #25 is in review for, and this changes the gate
 that decides what reaches Liquid's autoloader — the one place on this branch where a quick edit is the wrong
 shape. It needs its own case: a negative control that makes the checker unreadable and reads the message.
+
+**Repaired 2026-10-16**, same day, in `fix/narcheck-unavailable`. The gate now reads the checker
+rather than stating it — `narcheck_available` in `config/nar_builder/build.sh` — and a checker it
+cannot open takes the honest arm, which now says *"this is about the check, not about the code"*.
+The repair also found a second instance of the same class: `narcheck` returns 1 both for a bundle
+the index refuses and for anything it could not read, and the headline above it asserted the first
+over whatever followed — including over its own words *"the index of what Liquid can load is not
+readable"*. The headline now names both and lets the check give the reason. `B6-40`, seven
+scenarios, each shown able to fail.
 
 Recorded 2026-10-16.

@@ -783,6 +783,13 @@ carried.
 | **B6-39** | positive | …and a changed file, or a new one, changes the tag | Two scenarios because a digest over names alone catches the second and not the first |
 | **B6-39** | positive | Superseded images are swept, including the legacy `run-*` tags | Otherwise a changed builder config still leaves 1 GB behind each time |
 | **B6-39** | **negative** | …but never the image this run is using, however old it is | Content-addressed, so the right image can be weeks old. A sweep by age alone deletes it under the run that just chose it |
+| **B6-40** | Integration **negative** | A checker that is present and **unreadable** is not treated as available | The defect of 2026-10-16: `[ -f ]` passed, `python3` could not open the file, and the non-zero status was read as a refusal — so the operator was told their bundle cannot link against the NiFi API when nothing had judged it |
+| **B6-40** | **negative** | …and a checker that is not there is not available either | The state that was already handled, and has to stay handled |
+| **B6-40** | **negative** | …and a readable checker with no index is not available | The second half of the gate's condition, unchanged and asserted |
+| **B6-40** | positive | …while a readable checker with an index **is** available | Without it, "refuse everything" passes all three negatives perfectly |
+| **B6-40** | positive | The refusal headline names both of narcheck's reasons rather than asserting one | `narcheck` returns 1 for a bundle the index refuses **and** for anything it could not read; its message distinguishes them, the headline above it did not |
+| **B6-40** | positive | …and the unavailable message says the subject is the check | *"Nothing here has judged your bundle: this is about the check, not about the code"* |
+| **B6-40** | positive | …and the decision opens the file rather than stating it | On the function's body, because the first version of this assertion was satisfied by the extraction alone and stayed green with the fix reverted |
 | **B6-39** | **negative** | …never a recent one, because a concurrent run may hold it | The age floor, which is what keeps a disk fix from becoming a flaky suite |
 | **B6-39** | **negative** | …and never a tag that is not one of the two schemes this file has used | `:latest` is the stack's own build and is not this sweep's to take |
 
@@ -981,6 +988,24 @@ carried.
 | **Controls** | Four, each reddening exactly one scenario. The digest taken over names only → the changed-file case. The age floor removed → the recent-image case. The in-use exclusion removed → the in-use case. The prefix filter removed → the foreign-tag case. The name-only control reddens the changed-file case and **not** the added-file one, which is why both exist: one holds content, the other holds the name list. |
 | **Implemented by** | `tests/unit/m-b6.builder-image-tag.test.ts`. |
 | **Covers** | B6-39, and S9's half about the image under test. |
+
+
+#### B6-40 — a check that could not run must not read as a verdict
+
+| | |
+|---|---|
+| **Premise** | `build.sh` gated deployment on `[ -f "$NAR_CHECK" ]`. That stats a directory entry; it does not open a file. The honest message for an unavailable checker already sat in the `else` arm of the same test, so the two states were distinguished in the code and not by the test that chose between them. |
+| **How it was found** | By using the stack, on 2026-10-16, while measuring `B7-5` against a build from #25. Every build was refused with *"it cannot link against the NiFi API the running Liquid loads"*, with `python3: can't open file '/opt/builder/narcheck.py': [Errno 2]` printed underneath, and the builds had **succeeded**. `compose.yml` supplies the checker as a single-file bind mount; Docker Desktop had kept a `/host_mnt` placeholder for a path a moved worktree had invalidated, so the file was stat-able and unreadable at once — `ls` of the mounted directory omitted the entry, `stat` reported 29910 bytes, `open()` returned ENOENT to `python3`, `head` and `cp` alike. The same mount from the installation's own path worked throughout, which is what established the path and not the product. `docker desktop restart` cleared it. |
+| **Component** | `narcheck_available` in `config/nar_builder/build.sh`, and the two messages around the gate that calls it. |
+| **Test data, both sides, and why these** | Four states against the builder image **built from the tree under test** (`builderImage()`), run as the `builder` user because that is who has to open the file — as root, mode 000 is readable and the case would measure nothing. Present and unreadable: a file at **mode 000**. Absent: a path with nothing at it. No index: an empty directory in place of `/liquid/api`. Readable with an index: mode 644 beside a `lib-classes.txt` holding `java/lang/String`. The checker's **contents are irrelevant** and the fixtures say so by being one comment line long — readability is the whole question. |
+| **Why the permission case stands for the mount case** | A stat-able, unreadable file is a state of Docker Desktop's file sharing and not one this suite can create. Mode 000 produces `[Errno 1] Operation not permitted` where the field instance produced `[Errno 2] No such file or directory`, and both are the same answer to the same question: the gate cannot read the checker. Measured by hand on 2026-10-16 in both states. The field observation is the record for ENOENT; the suite carries the class. |
+| **The decision is evaluated out of the shipped script** | `eval "$(sed -n '/^narcheck_available() {/,/^}/p' /opt/builder/build.sh)"`, the idiom `B6-3` established, so the case cannot pass against a reimplementation of the decision it is about. |
+| **Expected** | `unavailable` for the unreadable, absent and index-less states; `available` for the readable one. `build.sh` no longer asserts a link failure in its headline, names both of narcheck's reasons, says *"this is about the check, not about the code"* in the unavailable message, and reads the file in `narcheck_available`. |
+| **What it found** | Green on first run after the repair, 7 scenarios. Before it, the reproduction: the shipped gate with the checker at mode 000 answered *"PFAD: refused — 'it cannot link against the NiFi API the running Liquid loads'"*. And the counterpart reproduced a **second instance of the same class**: with a readable checker and an index missing one file, `narcheck` says *"the index of what Liquid can load is not readable"* and the old headline called that a bundle that cannot link. |
+| **And an assertion of its own that was weak** | The first version checked that the gate's old inline `[ -f ] && [ -f ]` form was gone from the script. It was — the extraction removed it — so the assertion stayed green with the read probe deleted. Measured, found, and replaced by one on the function's **body**. An assertion a refactor satisfies is not guarding the fix. |
+| **Shown able to fail** | Reverting the read probe reddens **2**; restoring the old headline **1**; deleting the *"not about the code"* line **1**. |
+| **Implemented by** | `tests/integration/m-b6.narcheck-unavailable.test.ts`. |
+| **Covers** | B6-40, FR36. |
 
 #### B6-38 — the cache is handed over whole, and not through a symlink
 
