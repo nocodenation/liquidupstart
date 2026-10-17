@@ -110,6 +110,35 @@ export function builderImage(): string {
   return tag;
 }
 
+/**
+ * Containers left behind by a run that was killed, and which pin the images the
+ * sweep below is trying to remove.
+ *
+ * Found 2026-10-16: `festive_wescoff` had been up for two days holding
+ * `liquidupstart/nar-builder:run-47099-xoirn1` -- a probe container from a run
+ * that was killed mid-flight. `--rm` does not help there, because it removes a
+ * container when it **exits** and this one never did; and the image sweep cannot
+ * touch an image a container holds, so one killed run can keep a gigabyte alive
+ * indefinitely with nothing saying so.
+ *
+ * A pure function of what `docker ps -a` reports, for the same reason
+ * `sweepable` is one: the rule is then testable without docker.
+ *
+ * Never a container of this run. The image tag is the discriminator rather than
+ * the name, because the names are docker's own when a case does not pass one --
+ * which is how the leak was invisible: nothing about `festive_wescoff` says it
+ * belongs to this suite.
+ */
+export function sweepableContainers(
+  containers: Array<{ id: string; image: string }>,
+  keep: string
+): string[] {
+  return containers
+    .filter((c) => c.image !== keep)
+    .filter((c) => c.image.startsWith(`${TAG_PREFIX}:tree-`) || c.image.startsWith(`${TAG_PREFIX}:run-`))
+    .map((c) => c.id);
+}
+
 /** Remove superseded builder images, best effort and never the one in use. */
 function sweepOldBuilderImages(keep: string): void {
   const r = sh(['docker', 'images', TAG_PREFIX, '--format', '{{.Repository}}:{{.Tag}}\t{{.CreatedAt}}']);
@@ -123,6 +152,24 @@ function sweepOldBuilderImages(keep: string): void {
       const ms = Date.parse((created ?? '').replace(/ [A-Z]{3,4}$/, ''));
       return { tag, createdAtMs: Number.isNaN(ms) ? Date.now() : ms };
     });
+  // Containers first: an image a container holds cannot be removed, so sweeping
+  // images alone leaves exactly the gigabyte this is for. No age floor here --
+  // a container on one of these tags is this suite's own litter whatever its age,
+  // and the tag of the run in flight is excluded by name.
+  const ps = sh(['docker', 'ps', '-a', '--format', '{{.ID}}\t{{.Image}}']);
+  if (ps.code === 0) {
+    const containers = ps.stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [id, image] = l.split('\t');
+        return { id, image };
+      });
+    const stale = sweepableContainers(containers, keep);
+    if (stale.length) sh(['docker', 'rm', '-f', ...stale]);
+  }
+
   const drop = sweepable(images, keep, Date.now());
   // One call, and failures are ignored: another run may be holding one, which is
   // exactly the case the age floor makes unlikely and docker refuses anyway.

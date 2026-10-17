@@ -81,6 +81,16 @@ the rest (8 fail across three files). It is to **mint fewer** — the tag is now
 context, so two runs over one tree share an image, and a bounded sweep takes superseded ones but
 never the image in use, never one built in the last two hours, and never a tag outside the two
 schemes this file has used. Three separate processes now share one image, measured.
+
+**And the other half, found 2026-10-16 and repaired 2026-10-17: a killed run leaks a**
+**container.** `festive_wescoff` had been up for two days holding
+`liquidupstart/nar-builder:run-47099-xoirn1`. `--rm` removes a container when it *exits*, and that
+one never did; `docker rmi` refuses an image a container holds, so the image sweep above ran,
+failed on that tag and said nothing — by design, since a concurrent run may hold one. About a
+gigabyte stayed alive with nothing reporting it, and the docker-chosen name said nothing about
+which suite it belonged to. `sweepableContainers` now takes containers on the suite's own tags
+before the images, never the run in flight and never anything else; `B6-41`, four scenarios,
+verified against real docker with the operator's stack running beside it.
 ---
 
 **Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
