@@ -852,7 +852,7 @@ at all, and that without `-k` the start then hangs forever. The lesson is not ab
 **"I cannot reproduce it" is a statement about the attempt, not about the system**, and it is a weak
 reason to defer something whose cost was one flag.
 
-**`HANDOFF.md` mixes two kinds of content, and only one of them ages.**
+**`HANDOFF.md` mixes two kinds of content, and only one of them ages. HALF DONE 2026-10-17.**
 It carries durable project knowledge — the lessons, which four other documents already cite as rules
 (*"`HANDOFF.md` records the general rule"*) — alongside the state of one machine at one moment. The
 second kind goes stale, and because both live in one file, all of it reads as stale. Splitting the
@@ -863,6 +863,18 @@ Deferred on 2026-09-15 rather than done: it touches four cross-references while 
 review, and moving files under a reviewer mid-review is how a review gets read twice. The cheap half
 was done instead — the file and `CLAUDE.md` now say what the handover is, what it is not, and which
 copy is current.
+
+**2026-10-17: the half that actually ages is gone, and the split is still deferred.** The kind of
+content that goes stale is the *state* — which pull requests are open, which were reviewed — and it
+was wrong twice in two days: the tables said #21 was "never reviewed" while a review of it was being
+answered, which the reviewer raised as `F4`, and the current section said nine were open when twelve
+were, hours after being written. That half is a command now, `scripts/state.sh`, held by `A17-1`, and
+the document points at it. What stays in the file is the map and the lessons, which do not age.
+
+The split itself remains deferred, for the original reason and a sharper one: four documents cite the
+handover as the place a rule lives, **twelve** pull requests are open, and #19 carries an older copy
+of this very file on its branch. Moving files under a reviewer mid-review is how a review gets read
+twice.
 
 **~~The repositories card contradicts the key panel while the start is waiting.~~** *Done
 2026-09-17, as M-A12 -- the manifest is written after pass 1 as well, and again at the end.* Kept for
