@@ -783,6 +783,10 @@ carried.
 | **B6-39** | positive | …and a changed file, or a new one, changes the tag | Two scenarios because a digest over names alone catches the second and not the first |
 | **B6-39** | positive | Superseded images are swept, including the legacy `run-*` tags | Otherwise a changed builder config still leaves 1 GB behind each time |
 | **B6-39** | **negative** | …but never the image this run is using, however old it is | Content-addressed, so the right image can be weeks old. A sweep by age alone deletes it under the run that just chose it |
+| **B6-41** | Unit **negative** | A container left behind by a killed run is swept, by id | `--rm` removes a container when it **exits**; one that never exits pins its image, and `docker rmi` refuses an image a container holds — so the image sweep was quietly powerless |
+| **B6-41** | positive | …but never a container of the run in flight | Removing the container the triggering case is using would be a worse failure than the leak |
+| **B6-41** | **negative** | …and nothing that is not a builder image, whatever its name | The operator's twenty stack containers must survive a suite run. The tag is the discriminator, because the names are docker's own |
+| **B6-41** | positive | …and no age floor, unlike the image sweep | Two runs can share an image tag; they cannot share a container |
 | **B6-39** | **negative** | …never a recent one, because a concurrent run may hold it | The age floor, which is what keeps a disk fix from becoming a flaky suite |
 | **B6-39** | **negative** | …and never a tag that is not one of the two schemes this file has used | `:latest` is the stack's own build and is not this sweep's to take |
 
@@ -981,6 +985,21 @@ carried.
 | **Controls** | Four, each reddening exactly one scenario. The digest taken over names only → the changed-file case. The age floor removed → the recent-image case. The in-use exclusion removed → the in-use case. The prefix filter removed → the foreign-tag case. The name-only control reddens the changed-file case and **not** the added-file one, which is why both exist: one holds content, the other holds the name list. |
 | **Implemented by** | `tests/unit/m-b6.builder-image-tag.test.ts`. |
 | **Covers** | B6-39, and S9's half about the image under test. |
+
+#### B6-41 — the image sweep could not reach what a killed run left running
+
+| | |
+|---|---|
+| **Premise** | `B6-39` reclaims superseded builder images, and `--rm` is on every `docker run` the suite makes but three deliberate detached ones. Neither covers the state that actually occurred. |
+| **How it was found** | By looking, on 2026-10-16, while recording what was running before the stack was replaced for `B7-5`'s measurement. `festive_wescoff` — a name docker chose — had been **up for two days** holding `liquidupstart/nar-builder:run-47099-xoirn1`, a probe container from a run killed mid-flight. Nothing about that name says it belongs to this suite, which is why two days passed. |
+| **Why neither guard reached it** | `--rm` removes a container when it **exits**, and this one never did: the run that would have ended it was killed. `docker rmi` refuses an image a container holds, so the image sweep ran, failed on that tag, and said nothing — failures there are ignored by design, because a concurrent run may hold one. About a gigabyte stayed alive with nothing reporting it. |
+| **Component** | `sweepableContainers` in `tests/lib/builderimage.ts`, called from the same sweep as `sweepable`, containers first because an image a container holds cannot be removed. |
+| **Test data, both sides** | Swept: a container on `…:run-47099-xoirn1`, the real leak's tag, and one on a superseded `tree-` tag. Not swept: a container on the tag of the run in flight; and four that are not builder images — `liquidupstart/nar-builder:latest`, `ghcr.io/nocodenation/liquid-nifi:latest`, `postgres:17`, `liquidupstart/liquid:latest`, which are the operator's own stack. That last group is the one that matters: a sweep keyed on anything looser than the tag would take the running installation apart. |
+| **Expected** | The ids of the stale containers and nothing else. No age floor: the run in flight is excluded by tag and a concurrent run carries a different tree tag, so a container on one of these tags is this suite's litter whatever its age. |
+| **Measured against real docker, 2026-10-17** | A container from `liquidupstart/nar-builder:run-probe-leak` with no `--name`, running `sleep 3600`; docker called it `practical_chandrasekhar`, which is the shape of the original. One call to `builderImage()`: the container was **gone**, and the operator's **twenty** stack containers were still running. The probe image went with it, which is the image sweep doing what it could not do before. |
+| **Shown able to fail** | Removing the `keep` exception reddens 1; removing the tag filter reddens 1. |
+| **Implemented by** | `tests/unit/m-b6.builder-image-tag.test.ts`. |
+| **Covers** | B6-41, FR36. |
 
 #### B6-38 — the cache is handed over whole, and not through a symlink
 
