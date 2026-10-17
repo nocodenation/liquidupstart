@@ -2,6 +2,26 @@ import { repoRoot, runnerPath } from './paths';
 
 export type Result = { code: number; stdout: string; stderr: string; output: string };
 
+/**
+ * Was this child cut off rather than finished?
+ *
+ * 130 is SIGINT: the suite's per-test budget fired and took the child with it.
+ * Docker also says so in words when a build is cancelled mid-layer, and the
+ * wording differs between versions, so both are read.
+ *
+ * It exists because a cut-off run says nothing about the code under test, and two
+ * cases read it as if it did: `OC-15` expects exit 0, so an interrupted build
+ * reads as *"expected 0, received 130"* -- a statement about the machine presented
+ * as a verdict on `--allow-scripts`. `OC-16` expects a non-zero exit, so an
+ * interrupted build satisfies its first assertion **by accident**. Measured twice
+ * on 2026-10-09, with both cases passing on a quiet machine afterwards, which is
+ * what makes a load-dependent case the worse of the two findings: it is how red
+ * stops meaning anything.
+ */
+export function wasInterrupted(r: Pick<Result, 'code' | 'output'>): boolean {
+  return r.code === 130 || /context canceled|signal: interrupt/i.test(r.output);
+}
+
 // Bun loads the repository's own .env into process.env, and this helper used to
 // forward all of it. git.sh prefers $GIT_REPOSITORIES over the file in the
 // project it is given, so every fixture-based test was silently running against

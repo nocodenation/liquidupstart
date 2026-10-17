@@ -35,7 +35,7 @@ import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { sh } from '../lib/shell';
+import { sh, wasInterrupted } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 
 let workRoot: string;
@@ -70,6 +70,37 @@ function build(tag: string, run: string): { code: number; output: string } {
   return sh(['docker', 'build', '--no-cache', '--progress=plain', '-t', tag, dir]);
 }
 
+/**
+ * A build that was cut off says nothing about the flag, and must not be read as
+ * if it did.
+ *
+ * Both cases below run `docker build --no-cache` with an `npm install` inside, so
+ * they reach the network. Under load or on a slow link the build outlives the
+ * suite's per-test budget and docker returns **130** -- SIGINT. `OC-15` then reads
+ * *"expected 0, received 130"*, which is a statement about this machine presented
+ * as a verdict on `--allow-scripts`. Measured twice on 2026-10-09 (`Received: 130`
+ * and `this test timed out after 60000ms`), and both cases **passed in two later
+ * runs on a quiet machine** -- which is what makes it the worse of the two
+ * findings: a case whose colour depends on the load is how red stops meaning
+ * anything.
+ *
+ * `OC-16` is worse still and in the other direction: it expects a **non-zero**
+ * exit, so an interrupted build satisfies its first assertion by accident. Only
+ * the second one -- that npm named the script it refused to run -- keeps it
+ * honest. This guard makes the accident impossible rather than survivable.
+ */
+function refuseInterrupted(r: { code: number; output: string }, what: string): void {
+  if (!wasInterrupted(r)) return;
+  throw new Error(
+    [
+      `${what}: the docker build was interrupted (exit ${r.code}), so this run measured nothing.`,
+      '  It reaches the network -- `docker build --no-cache` with an npm install inside -- and a',
+      '  build that is cut off says nothing about --allow-scripts either way.',
+      '  This is a statement about the machine, not about the code under test.'
+    ].join('\n')
+  );
+}
+
 describe('OC-15/OC-16 the install script flag', () => {
   test('the build script really does pass --allow-scripts and end in a version check', () => {
     // Read, not assumed: this is what the other two cases are built from.
@@ -78,18 +109,28 @@ describe('OC-15/OC-16 the install script flag', () => {
     expect(line).toContain('claude --version');
   });
 
+  // The budget: a docker build with an npm install in it does not belong in the
+  // suite's 60-second default, which is a figure for tests that do not reach the
+  // network. `m-b7`'s maven build carries 1_200_000 for the same reason. Ten
+  // minutes here turns a slow link into a slow suite rather than a red one, which
+  // is the first of the two ways out the backlog recorded -- and the guard above
+  // is what keeps the other way, a wrong verdict, from being possible at all.
   test('OC-15 with the flag, the image is built and the CLI reports a version', () => {
     const r = build('lu-oc15-with', installLine());
+    refuseInterrupted(r, 'OC-15');
     expect(r.code).toBe(0);
     expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
-  });
+  }, 600_000);
 
   test('OC-16 without the flag, the build fails instead of shipping an empty launcher', () => {
     const without = installLine().replace('--allow-scripts=@anthropic-ai/claude-code ', '');
     expect(without).not.toContain('--allow-scripts');
     const r = build('lu-oc16-without', without);
+    // Before the assertion, not after: this case expects a non-zero exit, so an
+    // interrupted build would satisfy it by accident.
+    refuseInterrupted(r, 'OC-16');
     expect(r.code).not.toBe(0);
     // npm names the script it refused to run; the build then dies on the version check.
     expect(r.output).toContain('install.cjs');
-  });
+  }, 600_000);
 });

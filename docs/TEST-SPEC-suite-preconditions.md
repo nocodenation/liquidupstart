@@ -62,6 +62,14 @@ like a suite that ran.
 | **SP-4** | **negative** | The guard throws with that message when the VM is empty |
 | **SP-4** | positive | …and does not throw when it is healthy |
 | **SP-4** | positive | The live reading is of the VM and is a number, or an honest `null` |
+| **SP-5** | **negative** | A child that was cut off is told apart from one that failed — exit 130, and docker's two wordings for a cancelled build | A cut-off run says nothing about the code, and two cases read it as if it did |
+| **SP-5** | positive | …while an ordinary failure is **not** called an interruption | The counterpart that carries the weight: `OC-16` exists to see a build fail, so a guard that called every failure an interruption would swallow the case it protects |
+| **SP-5** | positive | …and neither is success | |
+| **SP-5** | positive | A published port is read out of `docker port`'s answer, including two-line answers | `startDashboard` asked once, got nothing, and reported that the container had published nothing |
+| **SP-5** | **negative** | …and the empty answer, a zero port and anything else are no port | The empty answer is the measured one: the mapping was not visible yet |
+| **SP-5** | positive | `OC-15` and `OC-16` carry a budget of their own, at least ten minutes | Without it the repair is one quiet machine away from coming back |
+| **SP-5** | positive | …and the interruption guard runs **before** each verdict | Order is the point for `OC-16`: its first assertion is satisfied by an interrupted build |
+| **SP-5** | positive | …and the dashboard waits for the mapping rather than asking once | |
 
 ## Detail
 
@@ -92,6 +100,21 @@ like a suite that ran.
 | **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
 | **Covers** | SP-FR3. |
 
+### SP-5 — a run that was cut off is not a verdict on the code
+
+| | |
+|---|---|
+| **Premise** | Two cases build an image inside the suite's 60-second budget and reach the network doing it. They failed twice on 2026-10-09 — `Received: 130` and `this test timed out after 60000ms` — and passed in two later runs on a quiet machine. A case whose colour depends on the load is the worse of the two findings, because it is how red stops meaning anything. |
+| **And they read the interruption in opposite directions, both wrong** | `OC-15` expects exit 0, so a cut-off build reads as a verdict on `--allow-scripts`. `OC-16` expects a **non-zero** exit, so a cut-off build satisfies its first assertion by accident — only its second, that npm named the script it refused to run, keeps it honest. One defect, two opposite false readings. |
+| **Component** | `wasInterrupted` in `tests/lib/shell.ts`; `parsePublishedPort` and `awaitPublishedPort` in `tests/lib/dashboardserver.ts`; the budgets and the guard in `tests/component/m-oc.allow-scripts.test.ts`. |
+| **Test data, both sides, and why these** | Interruptions: exit **130** (SIGINT, the budget firing), and docker's two wordings for a cancelled build — `failed to solve: context canceled` and `signal: interrupt` — because they differ between versions and the exit code is not always 130 when the daemon gives up. Not interruptions: **exit 1 with `install.cjs` in the output**, which is `OC-16`'s real failure and the counterpart that matters, and exit 0 with a version string. Ports: `127.0.0.1:55047`, and `0.0.0.0:32768\n[::]:32768` for the two-line answer; **the empty answer**, which is the measured one, plus `127.0.0.1:0` and `nonsense`. |
+| **Expected** | Only interruptions are called interruptions; only a real mapping parses as a port; both build cases carry at least a ten-minute budget; the guard appears **before** each `expect(r.code…)`; and the dashboard helper no longer asks once. |
+| **Measured** | 2026-10-09 for the two load failures and the two quiet-machine passes, recorded in `BACKLOG.md`. 2026-10-17 for the third instance: `no published port for lu-a8-unprepared` with an empty answer while a second suite was running, and the container publishing `127.0.0.1:55047->3000` seconds afterwards. |
+| **Shown able to fail** | `wasInterrupted` always true reddens **2** — both counterparts, which is the proof that the guard cannot swallow `OC-16`; always false reddens **3**; the budgets removed, **1**; the dashboard asking once again, **1**. |
+| **Why no new precondition** | A skip would remove the coverage on a slow link, which is where the flag matters most. The paragraph below used to offer only a budget or a precondition; the third option — make the cut-off say so — is the one that removes the false reading rather than the red. |
+| **Implemented by** | `tests/unit/m-sp.load-dependent.test.ts`. |
+| **Covers** | SP-5, SP-FR1. |
+
 ## What is deliberately not here
 
 **No case asserts that a skipped case would have passed.** That is what running it in a place where
@@ -100,13 +123,24 @@ the precondition holds does, and it is how the counterpart was measured rather t
 cases absent to **9 pass / 2 skip / 0 fail**. A machine can check that a case asked about its
 environment; only a run in that environment can check the case.
 
-**No case covers the fourth precondition, the machine's load.** `OC-15` and `OC-16` build an image
-inside a 60-second budget. They failed in two measurements and **passed in both runs of the pair
-above**, which were taken on a quiet machine — so they are not a budget that is simply too small,
-they are load-dependent, and that is the worse finding of the two: a case whose colour depends on what
-else is running is what makes red stop meaning anything. Recorded in `BACKLOG.md` rather than answered
-here, because the two ways out — a larger budget, or a precondition of its own — are the operator's
-choice.
+**The fourth precondition, the machine's load, is answered since 2026-10-17 — and by neither of the
+two ways this paragraph used to offer.** It said the choice was between a larger budget and a
+precondition of its own, and both leave the real defect standing: an interrupted run **reported a
+verdict on the code**. `OC-15` expects exit 0, so a cut-off build read as *"expected 0, received
+130"*; `OC-16` expects a non-zero exit, so a cut-off build satisfied its first assertion by accident.
+
+So: a budget of ten minutes each, because a `docker build --no-cache` with an `npm install` in it does
+not belong in a figure meant for cases that never reach the network — **and** `wasInterrupted`, which
+makes a cut-off run say so instead of returning a judgement. A precondition was deliberately *not*
+added: skipping these two on a slow link would remove the coverage exactly where the flag matters
+most. `SP-5` holds all of it, including the order of the guard and the budget, so the 60-second
+default cannot creep back.
+
+A third instance of the same class came with it, found by walking into it on 2026-10-17:
+`startDashboard` asked `docker port` **once**, immediately after `docker run -d`, and threw *"no
+published port"*. The container was up and publishing `127.0.0.1:55047->3000` seconds later. It waits
+now — forty attempts at 50 ms where there was one — and the parse is a pure function so both answers
+can be measured without docker.
 
 ### SP-4 — a full Docker VM says so, instead of looking like a defect
 
@@ -138,6 +172,7 @@ choice.
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-4** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-4**, **SP-5** |
+| SP-FR4 a condition of the machine is never reported as a verdict on the code | **SP-5** |
 | SP-FR2 each discriminator is shown to answer both ways | SP-1 |
 | SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2 |
