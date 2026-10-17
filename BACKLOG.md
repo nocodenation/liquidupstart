@@ -17,6 +17,11 @@ may still cost up to 256 MiB of bundled jar **plus** up to 512 MiB of held class
 measured **764 MB from a 1.7 KB `.nar` carrying two 250 MB "classes"**, and the check runs inside the
 Liquid container against an inbox the agents can write.
 
+**SETTLED 2026-10-17 against the finishing list's cut line**, which admits only a false claim or
+something touching what is not its own — and §3 of the feature document already states this residual
+with its 764 MB measurement and calls streaming the open question, so nothing reads as settled that
+is not. The deferral reason below still holds and is the stronger one.
+
 The fix is to stream the class parse instead of holding each class's bytes — `class_references`
 already walks the constant pool linearly, so it does not need the whole array in memory, and
 `MAX_CLASS_BYTES` would then bound nothing that matters. It is deferred because it changes the one
@@ -111,7 +116,8 @@ Recorded 2026-10-12.
 
 ---
 
-**OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
+**~~OC-15 and OC-16 depend on what else the machine is doing.~~ Repaired 2026-10-17, by neither of
+the two ways below.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
 and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.
 *Corrected 2026-10-09: this entry first said "on this machine it is not enough", which was a
@@ -124,6 +130,27 @@ network a slow suite rather than a red one. Or give them a precondition of their
 registry -- and skip them where it is absent, which is what `SP-1` would extend to. Measured
 2026-10-09 on bun 1.3.13, macOS; `docs/TEST-SPEC-suite-preconditions.md` records it as the fourth
 precondition it deliberately does not cover. Recorded 2026-10-09.
+
+**Repaired 2026-10-17, and both of those ways leave the actual defect standing.** The defect is not
+the budget: it is that an interrupted run **returned a verdict on the code**. `OC-15` expects exit 0,
+so a cut-off build read as *"expected 0, received 130"* -- the machine, presented as a judgement on
+`--allow-scripts`. `OC-16` expects a non-zero exit, so a cut-off build satisfied its first assertion
+**by accident**, and only its second one kept it honest. One defect, two opposite false readings.
+
+So: a ten-minute budget each, because a `docker build --no-cache` with an `npm install` inside does
+not belong in a figure meant for cases that never touch the network -- **and** `wasInterrupted` in
+`tests/lib/shell.ts`, which makes a cut-off run say so instead of judging. No precondition was added:
+skipping these two on a slow link removes the coverage exactly where the flag matters most. `SP-5`
+holds the budget, the guard **and its order**, because for `OC-16` a guard that runs after the first
+assertion guards nothing.
+
+**A third instance of the same class came with it, walked into rather than looked for.** On
+2026-10-17 `startDashboard` threw `no published port for lu-a8-unprepared` with an empty answer while
+a second suite was running -- and the container was up and publishing `127.0.0.1:55047->3000` seconds
+later. It asked `docker port` once, immediately after `docker run -d`. It waits now, forty attempts at
+50 ms, and the parse is a pure function so both answers are measured without docker. The lesson is the
+one this repository keeps relearning: **the message named the wrong cause, and the wrong cause was the
+machine.**
 
 ---
 
