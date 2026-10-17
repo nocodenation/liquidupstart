@@ -3060,6 +3060,10 @@ capture taken after another file had written held the changed state as the thing
 | A11-8 | Contract | `--no-system` still means what it said | Documents, the handover and everyone's fingers name it; it now describes the default instead of changing it |
 | A11-9 | Contract **unhappy** | No case at those levels restores by hand | Two restores for one file is how they disagree |
 | A11-10 | Contract **unhappy** | A restart is waited out, never merely asked for | Found by the first deliberate run of the repaired tier: a restore returned while the gateway was starting, and the next file read `502` |
+| A11-11 | Contract positive | Teardown asks compose to remove orphans | `down.sh` said *"Stopping existing containers"* and ran a bare `docker compose down`, which acts on the services the **current** file declares — so another branch's container survived it |
+| A11-11 | Contract **negative** | …and no longer asks for a bare teardown | "The flag is there" is also true of a script carrying both forms, and the one that runs is the one written last |
+| A11-11 | Contract positive | …and it is still one docker call | A teardown that grew a second call is a different change, and this case would otherwise pass it silently |
+| A11-11 | Contract positive + **negative** | Both teardown paths in the repository carry the flag | `scripts/install/update.sh` already did and `down.sh` did not, so the two had **already** drifted — which is the reason the entry sat open for five weeks |
 
 #### Detail per case
 
@@ -3126,6 +3130,24 @@ with their numbers, because "it reproduced" is worth more than "it looked wrong"
 | A13-9 | Contract **unhappy** | The repository card is keyed by slug | Two declared repositories sharing a name shared their "Testing…", "Copied" and result line |
 
 #### Detail per case
+
+
+##### A11-11 — teardown stops what is running, not what this branch declares
+
+| | |
+|---|---|
+| **Premise** | `down.sh` printed *"Stopping existing containers…"* and ran `docker compose down`, which acts on the services the **current** `compose.yml` declares. A container from another branch's stack is not in that list. The message claimed more than the command did. |
+| **How it was met** | On 2026-09-08, switching from `feature/liquid-java-extensions`: `nar_builder` outlived the teardown and kept running beside a stack that has no such service. It had to be removed by hand. |
+| **It announced itself, which is the part worth keeping** | Compose printed `WARN Found orphan containers (nar_builder) for this project … you can run this command with the --remove-orphans flag` on **every** invocation afterwards. Nothing had to be diagnosed — and a warning on every call that nobody acts on is how a project learns to read past warnings. |
+| **Why it sat open for five weeks** | `down.sh` was byte-identical on four branches, and the same repair arriving separately in several places is how one file becomes two that differ. Measured 2026-10-17 across every branch: identical (`08fa75a66f`) on **17 of 18**, the exception being `feature/privacy-gateway`, which is not one of ours. So one change on `main` reaches all of them by merge. And `scripts/install/update.sh:181` **already** passed the flag, so the two paths had drifted apart regardless — which is why the fourth scenario holds both of them to it rather than only this file. |
+| **Component** | `scripts/linux/down.sh`, which is also what the dashboard's Stop button runs (`dashboard/src/routes/run/+server.ts:21`), so both paths are this one script. |
+| **Test data, and why there is no compose in it** | The real script, run from a copy in a `mkdtemp` directory, with a **stub `docker` on PATH** that appends its arguments to a file and exits 0 — the idiom `B6-3` uses for `mvn`. A behavioural case against real compose would act on the installation running on this machine, which is what the stack tier exists to keep opt-in. The stub answers the same question: what does the script ask docker to do. |
+| **Expected** | One recorded invocation, `compose down --remove-orphans`; no bare `compose down`; and both `down.sh` and `update.sh` carrying the flag on every teardown line. |
+| **Measured against the unfixed script** | 3 of 5 red, and the recording is the evidence: the stub captured `compose down`, with nothing after it. `update.sh`'s scenario passed, which is the drift. |
+| **And measured against real compose, 2026-10-17** | In a throwaway project (`COMPOSE_PROJECT_NAME=lu-a11-probe`, two services, then one removed from the file so its container became an orphan): the repaired script reported `Container lu-a11-probe-gone-1 Removing / Removed` and left **0** containers of that project, while the operator's **20** stack containers kept running — `--remove-orphans` is scoped to the compose project, so it cannot reach another. |
+| **What it means, stated rather than implied** | Teardown now removes whatever this project has running that the current file does not declare. Every stack's state is in `./volumes/` on the host, so nothing of the operator's is lost, and this stack runs one instance per host by design. |
+| **Implemented by** | `tests/contract/m-a11.teardown-orphans.test.ts`. |
+| **Covers** | A11-11. |
 
 ##### A13-1 to A13-4 — a Test is not a start
 

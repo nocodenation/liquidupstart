@@ -753,7 +753,8 @@ not later read as an observation.
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
 their origin stays readable.*
 
-**`down.sh` leaves behind every container the current branch does not declare.**
+**~~`down.sh` leaves behind every container the current branch does not declare.~~ Repaired
+2026-10-17.**
 Met on 2026-09-08 while switching from `feature/liquid-java-extensions` to this branch: `nar_builder`
 survived the teardown and kept running alongside a stack that has no such service, because
 `docker compose down` acts on the services in the **current** `compose.yml` and that branch's service
@@ -767,12 +768,23 @@ reconsidered.
 also the risk: a warning on every call that nobody acts on is how a project learns to read past
 warnings, which is the failure `HANDOFF.md` records as *a check that cries wolf*.
 
-**Not fixed here on purpose.** `scripts/linux/down.sh` is **byte-identical on `main`, #9, #10 and
+**Not fixed then, on purpose, and the reason is why it took five weeks.** `scripts/linux/down.sh` was **byte-identical on `main`, #9, #10 and
 #13** — one `docker compose down`, ten lines. Adding `--remove-orphans` on this branch alone leaves
 the other three, and the same repair arriving separately in several places is how one file becomes
 two that differ. It also changes what teardown means for every stack: `--remove-orphans` removes
 whatever the current file does not declare, which is right here and worth a deliberate decision
 rather than a drive-by. The orphan itself was removed by hand with `docker rm -f nar_builder`.
+
+**Repaired 2026-10-17, and the waiting had stopped paying.** Measured across every branch:
+`down.sh` is identical (`08fa75a66f`) on **17 of 18**, the exception being `feature/privacy-gateway`,
+which is not one of ours — so one change on `main` reaches all of them by merge. And
+`scripts/install/update.sh:181` **already** passed `--remove-orphans`, so the two teardown paths had
+drifted apart anyway, which is the state the caution was meant to prevent. `A11-11` now holds both of
+them to the flag, so they cannot drift again, and the deliberate decision the entry asked for is
+written at the line: teardown removes whatever this project has running that the current file does not
+declare; every stack's state is in `./volumes/` on the host, so nothing is lost, and one stack runs
+per host by design. Measured against real compose in a throwaway project: the orphan was removed, the
+operator's twenty containers kept running, because the flag is scoped to the compose project.
 
 **The Claude login expires, and the one idea that might remove the expiry is unmeasured.**
 The login lives only in `volumes/_openclaw-claude` and does not survive a reset; the migration cost
@@ -832,11 +844,24 @@ and the whole class of problem disappears. That is the right shape regardless of
 why establishing the cause is worth little — recorded so that the next person to meet it does not
 spend an hour on it as this run did.
 
-**Two `:latest` fallbacks remain in the `ingest-pdf` plugin build scripts.**
+**Two `:latest` fallbacks remain in the `ingest-pdf` plugin build scripts. SETTLED 2026-10-17.**
 `${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}`, in scripts neither `build.sh` nor `start.sh`
 invokes. The plugin's bundle is checked in, so rebuilding it to remove a papercut carries more risk
 than the papercut warrants. Every fallback on a path the stack actually walks was removed during the
 migration; these two are what is left.
+
+**Measured 2026-10-17, and it is sharper than "papercut" — and still settled.** Nothing in the
+repository invokes either script: the only references to `ingest-pdf` outside its own two directories
+are this entry, `FINISH.md`, and the plugin's own manifest and README. And the fallback does not
+merely float: the stack's gateway is built `FROM ghcr.io/openclaw/openclaw:2026.9.1`, pinned, so a
+hand-run build with `OPENCLAW_IMAGE` unset would build the bundle inside **a different OpenClaw than
+the stack runs** — not a newer one by accident, a different one by default.
+
+It stays settled against the finishing list's cut line of 2026-10-17: nothing here claims anything
+false and nothing touches what is not its own. The remedy for whoever next edits those two scripts is
+one line each — `${OPENCLAW_IMAGE:?set it to the image this stack runs}` in place of the default, so a
+hand-run refuses instead of guessing. Written down rather than done, because doing it means rebuilding
+a checked-in bundle to change a script nothing calls.
 
 **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
 Suggested in the third review of #11 as an optional improvement to N1, and deferred here on the
