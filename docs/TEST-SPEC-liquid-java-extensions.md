@@ -783,6 +783,11 @@ carried.
 | **B6-39** | positive | …and a changed file, or a new one, changes the tag | Two scenarios because a digest over names alone catches the second and not the first |
 | **B6-39** | positive | Superseded images are swept, including the legacy `run-*` tags | Otherwise a changed builder config still leaves 1 GB behind each time |
 | **B6-39** | **negative** | …but never the image this run is using, however old it is | Content-addressed, so the right image can be weeks old. A sweep by age alone deletes it under the run that just chose it |
+| **A0-11** | Contract positive | The README's Java section is backed by a declared builder service | The README promised *"all services bind to localhost"* for two and a half months while `compose.yml` did the opposite; a new promise gets held to its configuration from the start |
+| **A0-11** | positive | …and `nar-build` is mounted read-only into the agent containers it tells the reader to use | At least three services carry it, so the instruction holds for whichever one is opened |
+| **A0-11** | positive | …and the refusal directory the section names exists in the configuration | |
+| **A0-11** | positive | …and the two limits it quotes are the two constants `narcheck.py` enforces | Figures quoted in prose are the kind that drift |
+| **A0-11** | Contract **negative** | The count of locally built images is the number the build script builds | Red when written: the README said *"Four"* and omitted `nar-builder`, while `build.sh` builds five and `CLAUDE.md` had already been corrected |
 | **B6-39** | **negative** | …never a recent one, because a concurrent run may hold it | The age floor, which is what keeps a disk fix from becoming a flaky suite |
 | **B6-39** | **negative** | …and never a tag that is not one of the two schemes this file has used | `:latest` is the stack's own build and is not this sweep's to take |
 
@@ -1383,6 +1388,21 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 | **What it found** | 2 pass / 4 skip / 0 fail in a checkout whose installed image predates the change, which is the honest reading there. The four were measured by hand against a purpose-built image on 2026-10-11 and are the `7 s / 0 downloads / 0 B` row above. **Measured automatically 2026-10-16**, against the same stack: `./tests/run.sh m-b1 --system` → **55 pass / 1 skip / 0 fail** across 12 files, the skip being this case’s own reader of a seedless image. The four scenarios no longer rest on a measurement taken by hand. |
 | **Implemented by** | `tests/integration/m-b1.dependency-cache.test.ts`. |
 | **Covers** | B1-9, FR26, FR37, FR38, FR40. |
+
+
+#### A0-11 — what the README promises, the configuration has to do
+
+| | |
+|---|---|
+| **Premise** | This pairing exists because it failed once, expensively: `README.md` said *"All services bind to `localhost`"* from 2026-07-17 while `compose.yml` published the proxy on every interface, and the two disagreed for two and a half months with nothing noticing — not three reviews, not a 560-case suite. `A0-7` and `A0-8` hold that promise to its configuration. The README gained a section on building Java extensions on 2026-10-17, and it is held to the same rule. |
+| **And the reading that produced it found a claim already false** | *"Four images are built locally"*, listing four and omitting `nar-builder`, while `scripts/linux/build.sh` builds **five**. `CLAUDE.md` had already been corrected to five and the README had not — the two-copies defect in its usual shape, and the operator had just said he had lost track of which features are finished. |
+| **Component** | `README.md`, against `compose.yml`, `scripts/linux/build.sh` and `config/liquid/narcheck.py`. |
+| **Test data, both sides** | Each promise in the new section paired with the configuration that would have to carry it: the `nar_builder` service declaration; every mount of `/usr/local/bin/nar-build`, which must be read-only and present in at least three services; the `./volumes/nar_extensions` bind; and the two constants `MAX_BUNDLED_JAR_BYTES = 256 << 20` and `MAX_CLASS_BYTES = 512 << 20`, which are the figures the prose quotes. The count is read from the build script's own invocations rather than from a number in a test, and each built image's name must appear in the README, so the list cannot drift from the count. |
+| **Expected** | All five scenarios green on the repaired README. |
+| **Measured** | The count scenario was **red** when written, which is the point of it. Shown able to fail: restoring `main`'s line reddens **1**; removing the section reddens **4**; removing two of the three `nar-build` mounts reddens **1**. |
+| **What it does not assert** | That a build works. That is `B1-5` and the M-B milestones, which drive the real builder. This asks only whether the document and the configuration agree, which is the thing that went wrong before. |
+| **Implemented by** | `tests/contract/m-a0.readme-promises.test.ts`. |
+| **Covers** | A0-11. |
 
 ## 4. Independent verification
 

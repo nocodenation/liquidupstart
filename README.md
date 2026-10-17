@@ -40,6 +40,9 @@ sandbox they can spin up, throw away, and spin up again.
   Nextcloud + Collabora, Liquid (data flows), and AI agents.
 - 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
 - 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro.
+- ☕ **Java extensions for Liquid** — write a NiFi processor or controller service in the workspace,
+  run one command, and the running instance loads it. Compiled against the version it actually runs,
+  and checked against it before anything is deployed.
 - 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
 
 ## Architecture
@@ -197,9 +200,10 @@ Default HTTP port is `8888` (`SYSTEM_HTTP_PORT`); Liquid is served over HTTPS on
 | **App runner** | `http://app.localhost:PORT` | SSR React app host (`bun_runner`) |
 | **OpenCode** | `http://opencode.localhost:PORT` | OpenCode AI agent web interface |
 | **Liquid** | `https://liquid.localhost:HTTPS_PORT` | Data-flow automation (Apache NiFi-based); HTTP ingress on `https://{port}.liquid.localhost` (ports 8900–8999) |
+| **NAR builder** | `http://nar-builder.localhost:PORT` (agents only) | Compiles Java extensions for Liquid. Reachable from the agent containers, not from a browser on the host or the LAN — see below |
 | **Postgres** | `postgres:5432` (internal) | Postgres 17 with pgvector — user `api_user`, db `postgres` |
 
-Four images are built locally — `liquidupstart/{opencode,bun-runner,liquid,openclaw}` —
+Five images are built locally — `liquidupstart/{opencode,bun-runner,nar-builder,liquid,openclaw}` —
 the rest are pulled. (`hermes` exists in config but is disabled.)
 
 ## Configuration
@@ -247,6 +251,48 @@ Both ship with **skills** that encode how to use this environment:
 | `bun-app` | Hand files to / run apps in the app runner |
 
 Add at least one LLM provider key (section 5) to enable the agents.
+
+## Java extensions for Liquid
+
+Liquid is Apache NiFi, so what it cannot already do you can add as a **NAR** — a processor, a
+controller service, or both. The stack builds them for you, from a source directory in the agents'
+workspace, inside a container that holds a Maven toolchain so you need no Java on the host.
+
+```bash
+# in an agent container (OpenClaw or OpenCode)
+cd /repos/<repository>/<your-processor>
+nar-build --target      # which NiFi and Java the build will target, and where that was read from
+nar-build               # compile, judge, deploy
+```
+
+**The version is read, never declared.** `nar-build --target` asks the running Liquid what it is —
+NiFi's own version, the `nifi-api` version it ships, and the Java major — so a bundle is compiled
+against the instance that will load it rather than against a number somebody typed. The two differ by
+design: NiFi 2.11.0 ships `nifi-api` 2.10.0.
+
+**The Maven project is synthesised** from what the directory holds: a processors module and a NAR
+module, with NiFi's API as `provided` so your bundle does not carry a second copy of the framework.
+If the directory has its own `pom.xml`, **that one is used unchanged** — a processor with real
+dependencies is not capped by the synthesiser.
+
+**Nothing is deployed unjudged.** Before a built bundle reaches the load path, its class references
+are checked against the classes the running Liquid actually loads. A bundle that cannot link is moved
+to `volumes/nar_extensions/refused/` — outside the directory Liquid watches — and the refusal says
+which reference failed. What passes lands in `./volumes/nar_extensions`, and Liquid loads it within
+seconds, without a restart.
+
+**Two limits, and they are deliberate.** A single bundled dependency over **256 MiB**, or a declared
+class total over **512 MiB**, is refused rather than unpacked. Native machine-learning libraries are
+the realistic way to meet them — one artefact can ship binaries for four platforms — and the refusal
+names both limits and the two ways out. Neither is configurable from `.env`: raising one is a change
+with a reason, made in the file.
+
+**For light logic, prefer Python.** Liquid 2.x runs native Python processors: drop a module into
+`./volumes/python_extensions` and restart the container. Reserve the NAR path for what needs Java
+libraries, a controller service, or the SPI descriptor.
+
+The design, the limits and what they refuse are in `docs/FEATURE-liquid-java-extensions.md`; the
+agent-side workflow is §6.3–6.5 of the `liquid` skill.
 
 ### Subscription login (OAuth) or API keys?
 
