@@ -38,8 +38,8 @@ That is the whole rule. A new item joins this list only if it meets it.
 | 2 | Strike what open branches already closed, so `main`'s copy stops reading as open | `BACKLOG.md` | with 1, same reason |
 | 3 | `m-a5.nested-clone` writes into `volumes/repos` from the **default tier** — `git init` into the checkout it was started from, which `tests/run.sh:18-23` calls the stack tier's privilege | `tests/contract/m-a5.nested-clone.test.ts:44-51` | **next** |
 | 4 | A test run leaked a **container**, not only an image: `festive_wescoff` held `nar-builder:run-47099-xoirn1` for two days. The sweep built on #18 reclaims images; a container that outlives its run pins one and is not swept | `tests/lib/builderimage.ts` | open |
-| 5 | `down.sh` leaves behind every container the current branch does not declare — verify it still holds on `main`, then repair or record it as settled | `scripts/linux/down.sh` | open, verify first |
-| 6 | Two `:latest` fallbacks in the `ingest-pdf` plugin build scripts: the same moving-tag class as `S9`, and the pattern for it now exists | `config/agents/.../ingest-pdf` | open |
+| 5 | ~~`down.sh` leaves behind every container the current branch does not declare~~ | `scripts/linux/down.sh` | **done 2026-10-17**, `A11-11`. It still held: identical on 17 of 18 branches, and `update.sh` had already drifted to the flag. Measured against real compose |
+| 6 | ~~Two `:latest` fallbacks in the `ingest-pdf` plugin build scripts~~ | — | **settled 2026-10-17**, moved to the table below. It does not meet the cut line: nothing invokes those scripts and nothing claims anything false. Measured, and the finding is sharper than the entry said — see there |
 | 7 | `OC-15` and `OC-16` depend on what else the machine is doing — the class that produced thirteen phantom failures on 2026-10-16 | the two cases | open |
 | 8 | N6's residual: `narcheck.py` holds each class's bytes, so judging a bundle can still cost 256 MiB of jar plus 512 MiB of classes. Stream the parse instead | `config/liquid/narcheck.py` | open, the one real product item |
 | 9 | Split `HANDOFF.md` into the map and the log. It is itself a backlog entry, and it is why that file grows every day | `HANDOFF.md` | open |
@@ -62,6 +62,7 @@ defect `A1` on #17 was.
 | A run killed mid-clone leaves a clone the next run adopts | Narrow window, never observed, and the record says so |
 | The toolbox image not following its own Dockerfile | Raised by the reviewer as *"not asked for"*; the durable form is a label and it touches the dashboard's build path |
 | `A16-19` naming two cases | #24 renumbers it to `A16-30`. Already someone's work |
+| Two `:latest` fallbacks in the `ingest-pdf` build scripts | **Added to this table on 2026-10-17, from the work list.** Measured: nothing in the repository invokes either script, the bundles are checked in, and the fallback does not meet the cut line — it claims nothing and touches nothing of anyone else's. The measurement did sharpen the finding, and it is in `BACKLOG.md`: the stack's gateway is built `FROM …openclaw:2026.9.1`, pinned, so a hand-run build with the variable unset builds against **a different OpenClaw than the stack runs**. The remedy is one line per script — `${OPENCLAW_IMAGE:?…}` instead of a default — for whoever next edits them |
 
 ## What finishing means
 
