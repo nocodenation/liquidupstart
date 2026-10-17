@@ -40,23 +40,49 @@ import { repoRoot } from '../lib/paths';
 import { IN_GIT_REPO } from '../lib/preconditions';
 import { sh } from '../lib/shell';
 import { git, commit } from '../lib/gitfixture';
+import { mkdtempSync, copyFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
+// The first two cases read the operator's checkout and write nothing, which is
+// what a contract-tier case may do. The third needs a **nested repository** under
+// `volumes/repos` to exist, and until 2026-10-17 it made one by running
+// `git init` inside whichever checkout the run was started from.
+//
+// That is the stack tier's privilege, and `tests/run.sh:18-23` says so in as many
+// words: those levels "write into volumes/ and restart containers on this
+// machine", which is why they are opt-in. This case is in the default tier. It was
+// green throughout, because it created everything it asserted against -- so it
+// never appeared in a failure set and nothing drew attention to it.
+//
+// It now builds its own repository in a temporary directory and takes the subject
+// of the test with it: the project's **real `.gitignore`**, read from the
+// checkout. So a change to that file still reddens the case, which is the whole
+// point of it, and the checkout is only ever read.
 const reposDir = join(repoRoot, 'volumes', 'repos');
-const probe = join(reposDir, '.a5-nested-probe');
-const rel = (p: string) => p.slice(repoRoot.length + 1);
+let host = '';
+let probe = '';
+const rel = (p: string) => p.slice(host.length + 1);
 
 beforeAll(() => {
-  rmSync(probe, { recursive: true, force: true });
+  host = mkdtempSync(join(tmpdir(), 'lu-a5-nested-'));
+  // The subject, copied rather than invented: `volumes/` is ignored by this line
+  // and the case is about what git then does with a repository underneath it.
+  copyFileSync(join(repoRoot, '.gitignore'), join(host, '.gitignore'));
+  sh(['git', 'init', '-q', '-b', 'main', host]);
+  commit(host, { 'README.md': 'host\n' }, 'host');
+  probe = join(host, 'volumes', 'repos', '.a5-nested-probe');
   mkdirSync(probe, { recursive: true });
-  sh(['git', 'init', '-q', '-b', 'main', probe], reposDir);
+  sh(['git', 'init', '-q', '-b', 'main', probe], host);
   commit(probe, { 'README.md': 'probe\n' }, 'probe');
 });
-afterAll(() => rmSync(probe, { recursive: true, force: true }));
+afterAll(() => rmSync(host, { recursive: true, force: true }));
 
-const nested = () =>
-  readdirSync(reposDir)
-    .filter((name) => existsSync(join(reposDir, name, '.git')))
-    .map((name) => rel(join(reposDir, name)));
+const nested = () => {
+  const dir = join(host, 'volumes', 'repos');
+  return readdirSync(dir)
+    .filter((name) => existsSync(join(dir, name, '.git')))
+    .map((name) => rel(join(dir, name)));
+};
 
 test.skipIf(!IN_GIT_REPO)('A5-8 volumes/repos is ignored, by the volumes/ rule in .gitignore', () => {
   const r = sh(['git', 'check-ignore', '-v', 'volumes/repos'], repoRoot);
@@ -70,8 +96,12 @@ test.skipIf(!IN_GIT_REPO)('A5-8 nothing under volumes/ shows in the operator\'s 
   expect(r.stdout).toBe('');
 });
 
-test.skipIf(!IN_GIT_REPO)('A5-8 a dry-run clean skips every nested repository rather than offering to remove it', () => {
-  const r = sh(['git', 'clean', '-ndx', 'volumes/repos'], repoRoot);
+test('A5-8 a dry-run clean skips every nested repository rather than offering to remove it', () => {
+  // No precondition any more: the repository this reads is one the case made, so
+  // it no longer depends on the checkout being a git repository at all. That
+  // dependency was the other half of the same defect -- the case needed the
+  // operator's checkout to be something.
+  const r = sh(['git', 'clean', '-ndx', 'volumes/repos'], host);
   expect(r.code).toBe(0);
   const repos = nested();
   expect(repos).toContain(rel(probe));
@@ -80,4 +110,7 @@ test.skipIf(!IN_GIT_REPO)('A5-8 a dry-run clean skips every nested repository ra
     expect(r.stdout).not.toContain(`Would remove ${path}`);
   }
   expect(git(probe, ['log', '-1', '--format=%s']).stdout.trim()).toBe('probe');
+  // And the checkout the run was started from is untouched: nothing was written
+  // into its volumes/repos, which is the property this repair exists for.
+  expect(existsSync(join(reposDir, '.a5-nested-probe'))).toBe(false);
 });

@@ -36,7 +36,7 @@ That is the whole rule. A new item joins this list only if it meets it.
 |---|---|---|---|
 | 1 | Mark every `BACKLOG.md` entry `OPEN` / `SETTLED` / `RECORD` / `DONE-ON-#N`, so the file becomes the queue it is read as | `BACKLOG.md` | **deferred to last**: nine open pull requests touch that file, and marking every entry now buys nine conflicts. Done when the queue has drained. |
 | 2 | Strike what open branches already closed, so `main`'s copy stops reading as open | `BACKLOG.md` | with 1, same reason |
-| 3 | `m-a5.nested-clone` writes into `volumes/repos` from the **default tier** — `git init` into the checkout it was started from, which `tests/run.sh:18-23` calls the stack tier's privilege | `tests/contract/m-a5.nested-clone.test.ts:44-51` | **next** |
+| 3 | ~~`m-a5.nested-clone` writes into `volumes/repos` from the **default tier**~~ | `tests/contract/m-a5.nested-clone.test.ts` | **done 2026-10-17**, measured both ways with a watcher on the path during the run: seen against the old file, never against the new one |
 | 4 | A test run leaked a **container**, not only an image: `festive_wescoff` held `nar-builder:run-47099-xoirn1` for two days. The sweep built on #18 reclaims images; a container that outlives its run pins one and is not swept | `tests/lib/builderimage.ts` | open |
 | 5 | `down.sh` leaves behind every container the current branch does not declare — verify it still holds on `main`, then repair or record it as settled | `scripts/linux/down.sh` | open, verify first |
 | 6 | Two `:latest` fallbacks in the `ingest-pdf` plugin build scripts: the same moving-tag class as `S9`, and the pattern for it now exists | `config/agents/.../ingest-pdf` | open |
