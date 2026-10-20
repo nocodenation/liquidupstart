@@ -31,6 +31,13 @@
  *           mapping parses as a port; and the two cases that reach the network
  *           carry a budget of their own rather than the suite's default
  * Covers:   SP-5
+ *
+ * Beside SP-3, not instead of it: `SP-3` (PR #24) skips these two where **no**
+ *           registry answers, and `SP-5` refuses to turn a run that was cut off
+ *           **although** one answered into a verdict. The two were written ten
+ *           days apart as competing answers to one backlog line, and the
+ *           division between them was settled on 2026-10-20 -- see the
+ *           specification, which carries the account.
  * Negative: The interrupted result and the unparsable answers. Their counterparts
  *           carry the weight here: a guard that called **every** failure an
  *           interruption would swallow `OC-16`, which is a case whose whole point

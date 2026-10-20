@@ -143,7 +143,7 @@ like a suite that ran.
 | **Expected** | Only interruptions are called interruptions; only a real mapping parses as a port; both build cases carry at least a ten-minute budget; the guard appears **before** each `expect(r.code…)`; and the dashboard helper no longer asks once. |
 | **Measured** | 2026-10-09 for the two load failures and the two quiet-machine passes, recorded in `BACKLOG.md`. 2026-10-17 for the third instance: `no published port for lu-a8-unprepared` with an empty answer while a second suite was running, and the container publishing `127.0.0.1:55047->3000` seconds afterwards. |
 | **Shown able to fail** | `wasInterrupted` always true reddens **2** — both counterparts, which is the proof that the guard cannot swallow `OC-16`; always false reddens **3**; the budgets removed, **1**; the dashboard asking once again, **1**. |
-| **Why no new precondition** | A skip would remove the coverage on a slow link, which is where the flag matters most. The paragraph below used to offer only a budget or a precondition; the third option — make the cut-off say so — is the one that removes the false reading rather than the red. |
+| **How this stands beside `SP-3`, and the duplication that had to be unpicked** | `SP-3` (PR #24, opened 2026-10-10) and this (PR #42, opened 2026-10-17) are two answers to one backlog line, written ten days apart without either seeing the other. The line said the choice was the operator's; #24 had already made it, and this document was then written claiming the choice had been made *"by neither of the two ways"* that line offered — while one of them sat open in review. **The division now:** `SP-3` is the owner of the machine with no registry, and it skips. `SP-5` is the owner of a run that was cut off **although** a registry answered, and it refuses to turn that into a verdict. Neither answers the other's case: a skip cannot help a build that started and was killed, and an honest interruption message cannot test a flag against a registry that is not there. |
 | **Implemented by** | `tests/unit/m-sp.load-dependent.test.ts`. |
 | **Covers** | SP-5, SP-FR1. |
 
@@ -155,18 +155,36 @@ the precondition holds does, and it is how the counterpart was measured rather t
 cases absent to **9 pass / 2 skip / 0 fail**. A machine can check that a case asked about its
 environment; only a run in that environment can check the case.
 
-**The fourth precondition, the machine's load, is answered since 2026-10-17 — and by neither of the
-two ways this paragraph used to offer.** It said the choice was between a larger budget and a
-precondition of its own, and both leave the real defect standing: an interrupted run **reported a
-verdict on the code**. `OC-15` expects exit 0, so a cut-off build read as *"expected 0, received
-130"*; `OC-16` expects a non-zero exit, so a cut-off build satisfied its first assertion by accident.
+**The machine's load is answered since 2026-10-17, and the registry since 2026-10-10 — two answers,
+by two pull requests, to one line of the backlog.** That line offered a larger budget or a
+precondition and left the choice open. `SP-3` took the precondition (#24). This took the third thing
+neither offered: **make a cut-off run say so**, because a budget and a skip both leave the real defect
+standing — an interrupted run **reporting a verdict on the code**. `OC-15` expects exit 0, so a
+cut-off build read as *"expected 0, received 130"*; `OC-16` expects a non-zero exit, so a cut-off
+build satisfied its first assertion by accident.
 
-So: a budget of ten minutes each, because a `docker build --no-cache` with an `npm install` in it does
-not belong in a figure meant for cases that never reach the network — **and** `wasInterrupted`, which
-makes a cut-off run say so instead of returning a judgement. A precondition was deliberately *not*
-added: skipping these two on a slow link would remove the coverage exactly where the flag matters
-most. `SP-5` holds all of it, including the order of the guard and the budget, so the 60-second
+What this document said until 2026-10-20 was that a precondition had been *deliberately not* added,
+on the grounds that skipping these two on a slow link removes the coverage where the flag matters
+most. **The reasoning is sound and the claim was false**, because #24 had added one ten days earlier
+and was in review as it was written. The argument survives as a limit on what `SP-3` may skip for —
+no registry at all, not a slow one — and the sentence that read as a decision against a precondition
+is withdrawn.
+
+So, together: `SP-3` skips the two cases where nothing answers; a budget of ten minutes each, because
+a `docker build --no-cache` with an `npm install` in it does not belong in a figure meant for cases
+that never reach the network; and `wasInterrupted`, which makes a cut-off run say so instead of
+returning a judgement. `SP-5` holds the last two, including the order of the guard, so the 60-second
 default cannot creep back.
+
+**On the figure, where the two pull requests disagree and this one raises it.** #24 set 180 s, and the
+reviewer verified that it is enough on two unloaded machines — a 14 s build here, 45 s there. This
+sets **600 s**, and the reason is in the history rather than in a preference: the budget that failed
+was 60 s against a 14 s build, which is **4x** the quiet duration, and 180 s is 4x the slower
+measurement of the two. The ratio that proved insufficient is the ratio being proposed again. 600 s is
+13x the slower one, and its only cost is that a genuinely hung build takes ten minutes to say so —
+paid once, by a case that already builds a container image. The reviewer set the smaller figure and
+may prefer to keep it; what must not stand is two numbers for one budget, which is why this says
+which one it is and why.
 
 A third instance of the same class came with it, found by walking into it on 2026-10-17:
 `startDashboard` asked `docker port` **once**, immediately after `docker run -d`, and threw *"no
