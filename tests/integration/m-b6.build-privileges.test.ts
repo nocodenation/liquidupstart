@@ -51,6 +51,7 @@ import { join } from 'node:path';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
+import { builderLabels } from '../lib/builderimage';
 import { repoRoot } from '../lib/paths';
 
 const RUN = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
@@ -143,7 +144,15 @@ writeFileSync(probe, PROBE, { mode: 0o755 });
 
 let out = '';
 beforeAll(() => {
-  const built = sh(['docker', 'build', '-q', '-t', IMAGE, join(repoRoot, 'config/nar_builder')]);
+  // Labelled, so the sweep in `builderimage.ts` can reclaim this image and any
+  // container from it when a run is killed before `afterAll`. Measured
+  // 2026-10-20: this file's tag scheme was one of four the sweep could not see,
+  // and a 1.02 GB image from it had been on the host five days.
+  const built = sh([
+    'docker', 'build', '-q', '-t', IMAGE,
+    ...builderLabels(),
+    join(repoRoot, 'config/nar_builder')
+  ]);
   if (built.code !== 0) throw new Error(`the builder image did not build:\n${built.output}`);
   const r = sh([
     'docker', 'run', '--rm',

@@ -106,35 +106,14 @@ export function parseDockerTime(stamp: string): number | null {
   if (!m) return null;
   const zone = m[3] === 'Z' ? 'Z' : m[3].length === 5 ? `${m[3].slice(0, 3)}:${m[3].slice(3)}` : m[3];
   const ms = Date.parse(`${m[1]}T${m[2]}${zone}`);
-  return Number.isFinite(ms) ? ms : null;
-}
-
-/**
- * Which of the images already on the host this run may remove.
- *
- * A pure function of what `docker images` reports, so the rule is testable
- * without a daemon. Two things it must not do: remove the image this run is
- * about to use, and remove one a **concurrent** run built. The age floor is what
- * covers the second -- a run that is using an image built it seconds or minutes
- * ago, not hours -- and it is why this sweeps rather than deleting everything
- * that is not `keep`.
- *
- * An age of `null` -- docker would not say, or said something unreadable -- keeps
- * the image. *"Cannot measure" is not "stale"*, the rule `SP-4` carries for the
- * disk, and here it is also the only direction that cannot take an image out from
- * under a concurrent run.
- */
-export function sweepable(
-  images: Array<{ tag: string; createdAtMs: number | null }>,
-  keep: string,
-  nowMs: number,
-  olderThanMs: number = 2 * 60 * 60 * 1000
-): string[] {
-  return images
-    .filter((i) => i.tag !== keep)
-    .filter((i) => i.tag.startsWith(`${TAG_PREFIX}:tree-`) || i.tag.startsWith(`${TAG_PREFIX}:run-`))
-    .filter((i) => i.createdAtMs !== null && nowMs - i.createdAtMs > olderThanMs)
-    .map((i) => i.tag);
+  if (!Number.isFinite(ms)) return null;
+  // **A sentinel is not an age.** `1970-01-01` parses to 0 and Go's zero time to
+  // -62135596800000; both are finite, both read as maximally stale, and both are
+  // reachable -- BuildKit stamps an image from `SOURCE_DATE_EPOCH`, which
+  // `tests/lib/shell.ts` forwards wholesale. A concurrent run's object would then
+  // be removed the moment it appeared. Anything before this project existed is
+  // treated as unreadable, which keeps it.
+  return ms < Date.parse('2020-01-01T00:00:00Z') ? null : ms;
 }
 
 let built: string | null = null;
@@ -142,12 +121,17 @@ let built: string | null = null;
 export function builderImage(): string {
   if (built) return built;
   const tag = `${TAG_PREFIX}:tree-${builderContextDigest()}`;
-  const r = sh(['docker', 'build', '-q', '-t', tag, BUILD_CONTEXT]);
+  // **Before the build, not after it.** It ran after, so the one state it exists
+  // to relieve -- the Docker VM full, which this file's own header records at 57
+  // of 59 GB with 34 phantom failures -- is the state in which the build throws
+  // and the sweep is never reached. It needs nothing the build produces: it is a
+  // function of what docker reports about labelled objects.
+  sweepAbandonedBuilderObjects();
+  const r = sh(['docker', 'build', '-q', '-t', tag, ...builderLabels(), BUILD_CONTEXT]);
   if (r.code !== 0) {
     throw new Error(`the builder image could not be built from ${BUILD_CONTEXT}:\n${r.output}`);
   }
   built = tag;
-  sweepOldBuilderImages(tag);
   return tag;
 }
 
@@ -162,71 +146,175 @@ export function builderImage(): string {
  * touch an image a container holds, so one killed run can keep a gigabyte alive
  * indefinitely with nothing saying so.
  *
- * A pure function of what `docker ps -a` reports, for the same reason
- * `sweepable` is one: the rule is then testable without docker.
+ * **Ownership is a label, and the first two answers here guessed it from the
+ * image name.** That cost three things, each measured on 2026-10-20:
  *
- * Never a container of this run. The image tag is the discriminator rather than
- * the name, because the names are docker's own when a case does not pass one --
- * which is how the leak was invisible: nothing about `festive_wescoff` says it
- * belongs to this suite.
+ *   - **The leak that recurs was exempt.** `c.image !== keep` protects the run in
+ *     flight -- and `B6-39` made the tag content-addressed, so `keep` is the
+ *     *same string* on every run over an unchanged `config/nar_builder`. A
+ *     container left by a killed run therefore sits on exactly `keep` and was
+ *     never swept, at any age. Measured: a 48h leftover on `keep` gave `[]`,
+ *     while the legacy `run-47099-xoirn1` tag gave `['old_leak']` -- and nothing
+ *     has minted the `run-` scheme since `B6-39`. The sweep reached only the
+ *     shape that no longer happens.
+ *   - **Four more tag schemes were invisible.** `m-b6.build-privileges`,
+ *     `m-b6.budget-stops-the-build`, `m-b6.ordinary-projects` and
+ *     `m-b6.concurrent-and-strays` each mint `b6-`, `b6s2-`, `b6s7-` and `b6c-`.
+ *     `liquidupstart/nar-builder:b6c-10699-o4032x`, 1.02 GB, was five days old on
+ *     this host and unswept.
+ *   - **`docker ps -a` enumerated the operator's installation.** This runs in the
+ *     *default* tier -- two unit files call `builderImage()` at module load --
+ *     against `tests/run.sh`'s stated contract that a bare `docker` touches
+ *     nothing of the operator's. 21 live stack containers were listed and the
+ *     only thing between them and removal was a `startsWith`.
  *
- * **And never a container of a concurrent run, which is what the age floor is
- * for.** What stood here had none, on the argument that the run in flight is
- * excluded by tag and a concurrent run holds a different tree tag -- true, and
- * beside the point: a *different* tag is exactly what this then removed. The
- * reviewer measured that shape on #19, where the same reasoning had been written
- * into the suite's other sweep: one sweep from a second clone, while a run's
- * first container was up, and that run failed with `never answered on port
- * 32780: … No such container`. The two sweeps answer the same question and now
- * answer it the same way. An unreadable age keeps the container.
+ * So the suite labels what it creates, and the daemon does the narrowing. The
+ * label answers *whose*; the age still answers *abandoned or in flight*, because
+ * a concurrent run's objects are not ours either and must survive. `{{.Image}}`
+ * stops being load-bearing, which also closes the case where docker renders a
+ * bare image id once the tag stops resolving.
  */
-export function sweepableContainers(
-  containers: Array<{ id: string; image: string; createdAtMs: number | null }>,
-  keep: string,
+export const BUILDER_LABEL = 'lu-builder';
+export const BUILDER_RUN_LABEL = 'lu-builder-run';
+const BUILDER_MADE_LABEL = 'lu-builder-made';
+
+/**
+ * This run's id for builder objects.
+ *
+ * Deliberately **not** imported from `dashboardserver.ts`: that module is this
+ * suite's dashboard fixture and pulling it in here would make every builder file
+ * depend on it. When both branches are on `main` the two should become one
+ * helper -- `BACKLOG.md` carries that as an entry rather than leaving it to be
+ * noticed.
+ */
+export const BUILDER_RUN_ID = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** The labels every builder image and container this suite creates must carry. */
+export function builderLabels(): string[] {
+  return [
+    '--label', `${BUILDER_LABEL}=1`,
+    '--label', `${BUILDER_RUN_LABEL}=${BUILDER_RUN_ID}`,
+    '--label', `${BUILDER_MADE_LABEL}=${new Date().toISOString()}`
+  ];
+}
+
+/**
+ * Which of these labelled objects this run may remove.
+ *
+ * A pure function of what docker reported, so the rule is testable without a
+ * daemon. Two things it must not do: remove anything of this run's, and remove
+ * anything a **concurrent** run is using. The first is identity now; the second
+ * is the age floor, and it is the only thing the floor is still for.
+ *
+ * An unreadable age keeps the object: *"cannot measure" is not "abandoned"*.
+ */
+export function sweepableObjects(
+  objects: Array<{ ref: string; runId: string | null; madeAtMs: number | null }>,
+  ownRunId: string,
   nowMs: number,
   olderThanMs: number = 2 * 60 * 60 * 1000
 ): string[] {
-  return containers
-    .filter((c) => c.image !== keep)
-    .filter((c) => c.image.startsWith(`${TAG_PREFIX}:tree-`) || c.image.startsWith(`${TAG_PREFIX}:run-`))
-    .filter((c) => c.createdAtMs !== null && nowMs - c.createdAtMs > olderThanMs)
-    .map((c) => c.id);
+  return objects
+    .filter((o) => o.ref && o.runId !== ownRunId)
+    .filter((o) => o.madeAtMs !== null && nowMs - o.madeAtMs > olderThanMs)
+    .map((o) => o.ref);
 }
 
-/** Remove superseded builder images, best effort and never the one in use. */
-function sweepOldBuilderImages(keep: string): void {
-  const r = sh(['docker', 'images', TAG_PREFIX, '--format', '{{.Repository}}:{{.Tag}}\t{{.CreatedAt}}']);
-  if (r.code !== 0) return;
-  const images = r.stdout
+type Listed = { ref: string; runId: string | null; madeAtMs: number | null };
+
+/**
+ * `<ref> <run id> <made at>` for every labelled object of one kind.
+ *
+ * The **label** carries the time, not `{{.Created}}`: an image's `.Created` is
+ * its config's timestamp and a cache hit copies it, so two images built three
+ * seconds apart reported the same instant and a content-addressed image in use
+ * today read as five days old. Measured 2026-10-20, which is also what the
+ * image half of the old floor rested on without saying so.
+ */
+function listLabelled(kind: 'ps' | 'images'): { rows: Listed[]; ok: boolean } {
+  const fmt = kind === 'ps' ? '{{.ID}}' : '{{.Repository}}:{{.Tag}}';
+  // **A container's own creation time, an image's label.**
+  //
+  // Labelling the five builds is enough to reach every container, because a
+  // container **inherits its image's labels** -- measured 2026-10-20: a
+  // container started with no label of its own from an image built with
+  // `--label lu-builder=1` is returned by
+  // `docker ps -aq --filter label=lu-builder=1`. That is why this change is five
+  // lines rather than one per `docker run` site.
+  //
+  // The inherited *time*, though, is the **build's**, not the container's. A
+  // container started a minute ago from a three-hour-old image would read as
+  // three hours old and be swept while live. A container's `{{.CreatedAt}}` is a
+  // true creation time, so that is what is read for a container; an image's is
+  // its config's and a cache hit copies it, so there the label is the only
+  // honest answer. One asymmetry, for one measured reason each.
+  const made = kind === 'ps' ? '{{.CreatedAt}}' : `{{.Label "${BUILDER_MADE_LABEL}"}}`;
+  const r = sh([
+    ...(kind === 'ps' ? ['docker', 'ps', '-a'] : ['docker', 'images']),
+    '--filter', `label=${BUILDER_LABEL}=1`,
+    '--format', `${fmt}\t{{.Label "${BUILDER_RUN_LABEL}"}}\t${made}`
+  ]);
+  if (r.code !== 0) return { rows: [], ok: false };
+  const rows = r.stdout
     .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim() !== '')
     .map((l) => {
-      const [tag, created] = l.split('\t');
-      return { tag, createdAtMs: parseDockerTime(created ?? '') };
+      const parts = l.split('\t');
+      return {
+        ref: (parts[0] ?? '').trim(),
+        runId: parts[1] ? parts[1].trim() || null : null,
+        madeAtMs: parseDockerTime(parts[2] ?? '')
+      };
     });
-  // Containers first: an image a container holds cannot be removed, so sweeping
-  // images alone leaves exactly the gigabyte this is for. Same age floor as the
-  // images, because a concurrent run's container is not this run's litter.
+  return { rows, ok: true };
+}
+
+/**
+ * Remove builder objects a run abandoned, and say so when docker refuses.
+ *
+ * Containers first: an image a container holds cannot be removed, so sweeping
+ * images alone leaves exactly the gigabyte this is for. **Asserted by a case**,
+ * because swapping the two kept all 24 green before.
+ *
+ * `docker rm` without `-f`. The daemon refuses to remove a running container,
+ * and that refusal is the second guard the image half has always had -- `-f`
+ * removed it, so a mistake here went from a no-op to a SIGKILL of somebody
+ * else's build. And the result is **read**: the defect this whole file exists
+ * against is a gigabyte staying alive with nothing saying so, and ignoring the
+ * status of the call that reclaims it reproduces exactly that.
+ */
+function sweepAbandonedBuilderObjects(): void {
   const now = Date.now();
-  const ps = sh(['docker', 'ps', '-a', '--format', '{{.ID}}\t{{.Image}}\t{{.CreatedAt}}']);
-  if (ps.code === 0) {
-    const containers = ps.stdout
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .map((l) => {
-        const [id, image, created] = l.split('\t');
-        return { id, image, createdAtMs: parseDockerTime(created ?? '') };
-      });
-    const stale = sweepableContainers(containers, keep, now);
-    if (stale.length) sh(['docker', 'rm', '-f', ...stale]);
+  const refusals: string[] = [];
+
+  const containers = listLabelled('ps');
+  if (containers.ok) {
+    for (const id of sweepableObjects(containers.rows, BUILDER_RUN_ID, now)) {
+      const r = sh(['docker', 'rm', id]);
+      if (r.code !== 0) refusals.push(`container ${id}: ${r.output.trim().split('\n')[0]}`);
+    }
+  } else {
+    refusals.push('docker ps could not be read, so no container was swept');
   }
 
-  const drop = sweepable(images, keep, now);
-  // One call, and failures are ignored: another run may be holding one, which is
-  // exactly the case the age floor makes unlikely and docker refuses anyway.
-  if (drop.length) sh(['docker', 'rmi', ...drop]);
+  const images = listLabelled('images');
+  if (images.ok) {
+    for (const tag of sweepableObjects(images.rows, BUILDER_RUN_ID, now)) {
+      const r = sh(['docker', 'rmi', tag]);
+      // An image a concurrent run holds is refused by the daemon, which is the
+      // expected and harmless case -- it is reported at the end, not thrown.
+      if (r.code !== 0) refusals.push(`image ${tag}: ${r.output.trim().split('\n')[0]}`);
+    }
+  } else {
+    refusals.push('docker images could not be read, so no image was swept');
+  }
+
+  if (refusals.length > 0) {
+    process.stderr.write(
+      `builder sweep left ${refusals.length} object(s) behind:\n  ${refusals.join('\n  ')}\n`
+    );
+  }
 }
 
 /**

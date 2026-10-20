@@ -36,7 +36,16 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
-import { builderContextDigest, sweepable, sweepableContainers, parseDockerTime } from '../lib/builderimage';
+import {
+  builderContextDigest,
+  sweepableObjects,
+  parseDockerTime,
+  builderLabels,
+  BUILDER_LABEL,
+  BUILDER_RUN_LABEL,
+  BUILDER_RUN_ID
+} from '../lib/builderimage';
+import { readFileSync } from 'node:fs';
 
 const dirs: string[] = [];
 const copyOfContext = () => {
@@ -79,91 +88,130 @@ describe('B6-39 the tag follows the content of the build context', () => {
   });
 });
 
-describe('B6-41 and a container left behind by a killed run is swept too', () => {
-  // Found 2026-10-16: `festive_wescoff` had been up for two days holding
-  // `liquidupstart/nar-builder:run-47099-xoirn1`, a probe container from a run
-  // that was killed mid-flight. `--rm` does not help -- it removes a container
-  // when it exits, and this one never did -- and an image a container holds
-  // cannot be removed, so the image sweep above was quietly powerless. One
-  // killed run kept about a gigabyte alive with nothing saying so.
-  const keep = 'liquidupstart/nar-builder:tree-abc123abc123';
-  const ctr = (id: string, image: string, ageHours: number) => ({
-    id,
-    image,
-    createdAtMs: NOW - ageHours * HOUR
+describe('B6-41 ownership is a label, so the leak that recurs is reachable', () => {
+  // **The two previous answers guessed ownership from the image name**, and each
+  // guess cost something measured on 2026-10-20:
+  //
+  //   - `c.image !== keep` protects the run in flight, and B6-39 made the tag
+  //     content-addressed -- so `keep` is the same string on every run over an
+  //     unchanged context, and a container a killed run left behind sits on
+  //     exactly `keep`. A 48h leftover there gave `[]` at any age, while the
+  //     legacy `run-47099-xoirn1` tag gave `['old_leak']`. Nothing has minted
+  //     the `run-` scheme since B6-39, so the sweep reached only the shape that
+  //     no longer happens.
+  //   - Four sibling files mint `b6-`, `b6s2-`, `b6s7-` and `b6c-`, none of them
+  //     in the allow-list. `…:b6c-10699-o4032x`, 1.02 GB, was five days old on
+  //     this host.
+  //   - `docker ps -a` enumerated the operator's 21 live stack containers, in
+  //     the default tier, against what tests/run.sh promises.
+  //
+  // The label answers *whose*. The age still answers *abandoned or in flight*,
+  // because a concurrent run's objects are not ours either.
+  const OURS = BUILDER_RUN_ID;
+  const THEIRS = '999-zzzzzz';
+  const obj = (ref: string, runId: string | null, ageHours: number | null) => ({
+    ref,
+    runId,
+    madeAtMs: ageHours === null ? null : NOW - ageHours * HOUR
   });
 
-  test('B6-41 a container on a superseded builder tag is swept, by id', () => {
-    const drop = sweepableContainers(
-      [
-        ctr('aaa1', 'liquidupstart/nar-builder:run-47099-xoirn1', 48),
-        ctr('bbb2', 'liquidupstart/nar-builder:tree-older0000000', 5)
-      ],
-      keep,
-      NOW
+  test('B6-41 the leak that used to be exempt: an abandoned container on THIS tree tag', () => {
+    // The whole point. Same tag as the run in flight, 48 hours old, another run's
+    // label -- which is what a killed run over an unchanged context leaves.
+    expect(sweepableObjects([obj('festive_wescoff', THEIRS, 48)], OURS, NOW)).toEqual([
+      'festive_wescoff'
+    ]);
+  });
+
+  test('B6-41 the counterpart: nothing of this run, whatever its age', () => {
+    // Without this the sweep would remove the container the case that triggered
+    // it is using, which is worse than the leak.
+    expect(sweepableObjects([obj('mine_old', OURS, 48), obj('mine_new', OURS, 0)], OURS, NOW)).toEqual(
+      []
     );
-    expect(drop.sort()).toEqual(['aaa1', 'bbb2']);
   });
 
-  test('B6-41 the counterpart: a container of the run in flight is never swept', () => {
-    // Without this, the sweep would remove the container the case that triggered
-    // it is using, which is a worse failure than the leak.
-    expect(sweepableContainers([ctr('ccc3', keep, 48)], keep, NOW)).toEqual([]);
-  });
-
-  test('B6-41 and nothing that is not a builder image, whatever its name', () => {
-    // The tag is the discriminator rather than the name, because the names are
-    // docker's own when a case passes none -- which is exactly why the leak was
-    // invisible: nothing about `festive_wescoff` says it belongs to this suite.
-    // The operator's own stack must survive a suite run.
-    expect(
-      sweepableContainers(
-        [
-          ctr('ddd4', 'liquidupstart/nar-builder:latest', 48),
-          ctr('eee5', 'ghcr.io/nocodenation/liquid-nifi:latest', 48),
-          ctr('fff6', 'postgres:17', 48),
-          ctr('ggg7', 'liquidupstart/liquid:latest', 48)
-        ],
-        keep,
-        NOW
-      )
-    ).toEqual([]);
-  });
-
-  test('B6-41 the negative: a concurrent run\'s container is not this run\'s litter', () => {
-    // **What stood here asserted the opposite**, on the argument that the run in
-    // flight is excluded by tag and a concurrent run holds a different tree tag.
-    // True, and beside the point: a different tag is exactly what was then
-    // removed. The reviewer measured that shape on #19 -- one sweep from a second
-    // clone, while a run's first container was up, and that run died with
-    // `never answered on port 32780: … No such container`. Half an hour old here,
-    // which is what a run in progress looks like.
-    expect(
-      sweepableContainers([ctr('hhh8', 'liquidupstart/nar-builder:tree-fresh0000000', 0.5)], keep, NOW)
-    ).toEqual([]);
+  test('B6-41 the negative: nothing of a concurrent run, which is what the age is still for', () => {
+    // Half an hour old and somebody else's: a run in progress. This is #19's
+    // measured defect, which is why the floor survives the redesign.
+    expect(sweepableObjects([obj('live_elsewhere', THEIRS, 0.5)], OURS, NOW)).toEqual([]);
   });
 
   test('B6-41 and the boundary: just past the floor it is taken', () => {
-    // So the floor is a boundary and not a veto -- without this, the sweep could
-    // be met by never taking anything, which is the leak it exists against.
-    expect(
-      sweepableContainers([ctr('iii9', 'liquidupstart/nar-builder:tree-fresh0000000', 2.1)], keep, NOW)
-    ).toEqual(['iii9']);
-    expect(
-      sweepableContainers([ctr('jj10', 'liquidupstart/nar-builder:tree-fresh0000000', 1.9)], keep, NOW)
-    ).toEqual([]);
+    expect(sweepableObjects([obj('aged', THEIRS, 2.1)], OURS, NOW)).toEqual(['aged']);
+    expect(sweepableObjects([obj('fresh', THEIRS, 1.9)], OURS, NOW)).toEqual([]);
   });
 
-  test('B6-41 and a container whose age docker would not give is kept', () => {
-    // "Cannot measure" is not "stale", and here it is also the only direction
-    // that cannot remove a live run's container.
-    expect(
-      sweepableContainers(
-        [{ id: 'kk11', image: 'liquidupstart/nar-builder:tree-fresh0000000', createdAtMs: null }],
-        keep,
-        NOW
-      )
-    ).toEqual([]);
+  test('B6-41 and an object whose age cannot be read is kept', () => {
+    // "Cannot measure" is not "abandoned", and it is the only direction that
+    // cannot take a live run's image away.
+    expect(sweepableObjects([obj('unstamped', THEIRS, null)], OURS, NOW)).toEqual([]);
+  });
+
+  test('B6-41 and an object with no run label at all is somebody else\'s, not ours', () => {
+    // `null` is not `OURS`, so it is eligible -- and only once it is past the
+    // floor, which is what keeps a hand-built labelled image from vanishing.
+    expect(sweepableObjects([obj('nolabel', null, 48)], OURS, NOW)).toEqual(['nolabel']);
+    expect(sweepableObjects([obj('nolabel', null, 0.5)], OURS, NOW)).toEqual([]);
+  });
+
+  test('B6-41 images and containers are one decision, not two', () => {
+    // There were two: a 2h floor with a strict `>` for images and, on the sibling
+    // branch, a 3h floor with `>=`. One function answers both kinds here, so a
+    // 2.5h object cannot be litter to one half and live to the other.
+    const mixed = [obj('liquidupstart/nar-builder:tree-older', THEIRS, 48), obj('ctr1', THEIRS, 48)];
+    expect(sweepableObjects(mixed, OURS, NOW).sort()).toEqual(
+      ['ctr1', 'liquidupstart/nar-builder:tree-older'].sort()
+    );
+  });
+});
+
+describe('B6-41 the daemon does the narrowing, so the operator\'s stack is never listed', () => {
+  // The scope violation, as a contract assertion: this runs in the DEFAULT tier,
+  // where tests/run.sh promises a bare `docker` touches nothing of the
+  // operator's. A machine-wide `docker ps -a` broke that promise -- 21 live stack
+  // containers were enumerated and only a `startsWith` stood between them and
+  // removal. The label filter is passed to docker, so the answer never contains
+  // them in the first place.
+  const body = readFileSync(join(repoRoot, 'tests/lib/builderimage.ts'), 'utf8');
+
+  test('B6-41 every listing is filtered by the label, at the daemon', () => {
+    const listings = body.match(/'docker', 'ps', '-a'|'docker', 'images'/g) ?? [];
+    expect(listings.length).toBeGreaterThan(0);
+    // No listing without the filter: the filter is in the shared helper, so the
+    // count of label filters is at least the count of listings.
+    const filters = body.match(/label=\$\{BUILDER_LABEL\}=1/g) ?? [];
+    expect(filters.length).toBeGreaterThanOrEqual(1);
+    expect(body).not.toMatch(/'docker', 'ps', '-a', '--format'/);
+  });
+
+  test('B6-41 the negative: nothing removes with -f any more', () => {
+    // `docker rm -f` removed the daemon's own refusal, which is the second guard
+    // the image half always had: a mistake went from a no-op to a SIGKILL of
+    // somebody else's build. The comment two lines below still claimed docker
+    // would refuse.
+    expect(body).not.toContain("'docker', 'rm', '-f'");
+    expect(body).toContain("'docker', 'rm', id");
+  });
+
+  test('B6-41 and the three labels every created object carries', () => {
+    const args = builderLabels();
+    expect(args.filter((a) => a === '--label').length).toBe(3);
+    expect(args.join(' ')).toContain(`${BUILDER_LABEL}=1`);
+    expect(args.join(' ')).toContain(`${BUILDER_RUN_LABEL}=${BUILDER_RUN_ID}`);
+    // The time is a label because an image's own {{.Created}} is its config's,
+    // which a cache hit copies -- measured, two images three seconds apart with
+    // one timestamp.
+    expect(args.join(' ')).toMatch(/lu-builder-made=\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test('B6-41 and the sweep runs before the build, not after it', () => {
+    // It ran after, so the disk-full state it relieves is the state in which the
+    // build throws and the sweep is never reached.
+    const sweepAt = body.indexOf('sweepAbandonedBuilderObjects();');
+    const buildAt = body.indexOf("sh(['docker', 'build', '-q', '-t', tag");
+    expect(sweepAt).toBeGreaterThan(0);
+    expect(buildAt).toBeGreaterThan(sweepAt);
   });
 });
 
@@ -207,58 +255,11 @@ describe('B6-41 and the clock both sweeps read is docker\'s own wording', () => 
   });
 });
 
-describe('B6-39 the sweep takes predecessors and nothing else', () => {
-  const keep = 'liquidupstart/nar-builder:tree-abc123abc123';
-  const img = (tag: string, ageHours: number) => ({ tag, createdAtMs: NOW - ageHours * HOUR });
-
-  test('B6-39 an old superseded image is swept, and the legacy run-* tags with it', () => {
-    const drop = sweepable(
-      [img(keep, 0), img('liquidupstart/nar-builder:tree-older0000000', 5), img('liquidupstart/nar-builder:run-123-abcdef', 30)],
-      keep,
-      NOW
-    );
-    expect(drop.sort()).toEqual(
-      ['liquidupstart/nar-builder:run-123-abcdef', 'liquidupstart/nar-builder:tree-older0000000'].sort()
-    );
-  });
-
-  test('B6-39 the image this run is using is never swept, however old it is', () => {
-    // It is content-addressed, so an unchanged builder config means the image can
-    // be weeks old and still be the right one. A sweep by age alone would delete
-    // it out from under the run that just decided to use it.
-    expect(sweepable([img(keep, 24 * 90)], keep, NOW)).toEqual([]);
-  });
-
-  test('B6-39 a recent image is never swept, because another run may be holding it', () => {
-    // The concurrency guard. A run using an image built it seconds or minutes
-    // ago, not hours, so the floor is what keeps this from turning a disk problem
-    // into a flaky suite.
-    expect(sweepable([img('liquidupstart/nar-builder:tree-fresh0000000', 0.5)], keep, NOW)).toEqual([]);
-    expect(sweepable([img('liquidupstart/nar-builder:tree-fresh0000000', 1.9)], keep, NOW)).toEqual([]);
-    // And just past the floor it is taken, so the floor is a boundary and not a veto.
-    expect(sweepable([img('liquidupstart/nar-builder:tree-fresh0000000', 2.1)], keep, NOW)).toEqual([
-      'liquidupstart/nar-builder:tree-fresh0000000'
-    ]);
-  });
-
-  test('B6-39 and an image whose age docker would not give is kept', () => {
-    // The same rule as the containers, and the same reason: an unreadable stamp
-    // used to be read as `Date.now()`, which kept the image by arriving at the
-    // right answer sideways. Now it is the rule, and a case puts it to it.
-    expect(sweepable([{ tag: 'liquidupstart/nar-builder:tree-older0000000', createdAtMs: null }], keep, NOW))
-      .toEqual([]);
-  });
-
-  test('B6-39 and something that is not ours is never swept', () => {
-    // `docker images <repo>` is asked for one repository, but the rule must not
-    // depend on that: a tag outside the two schemes this file has ever used --
-    // `latest`, which the stack's own build writes -- is not this sweep's to take.
-    expect(
-      sweepable(
-        [img('liquidupstart/nar-builder:latest', 999), img('someone/else:tree-abc123abc123', 999)],
-        keep,
-        NOW
-      )
-    ).toEqual([]);
-  });
-});
+// `B6-39`'s sweep scenarios are gone, and that is a decision rather than a loss.
+// They tested `sweepable()`, which decided ownership from the tag and is replaced
+// by `sweepableObjects()` above: keeping it would have left two age floors with
+// opposite boundaries in one file, which is the defect the review named. What
+// those scenarios asserted -- never the image in use, never a recent one, never a
+// foreign tag -- is now either identity (the run label) or the daemon's filter,
+// and each has a scenario above. The digest cases that make `B6-39` what it is
+// are untouched at the top of this file.
