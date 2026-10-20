@@ -30,9 +30,9 @@
  * Then:     The pre-flight refuses with exit 1 naming all four tools, the git
  *           step is what would have died with 127, and the image that has the
  *           tools still passes.
- * Covers:   A8-24, A8-25, A8-26, FR11, U1
- * Unhappy:  A8-24 is the refusal and A8-25 is the measurement of what it
- *           prevents. A8-26 is the counterpart — an installation with the tools
+ * Covers:   A8-28, A8-29, A8-30, FR11, U1
+ * Unhappy:  A8-28 is the refusal and A8-29 is the measurement of what it
+ *           prevents. A8-30 is the counterpart — an installation with the tools
  *           must still start, and a check that refused everything would stop
  *           every stack on the fleet.
  */
@@ -57,6 +57,8 @@ function inImage(script: string, extra: string[] = []) {
 let bare = '';
 let asToolbox = '';
 let withTools = '';
+/** Did the tools actually get installed? Read after the setup, not assumed. */
+let toolsInstalled = false;
 
 beforeAll(() => {
   bare = inImage(`
@@ -83,14 +85,27 @@ beforeAll(() => {
     echo "preflightExit=$?"
   `).output;
 
+  // **The install is checked now, and its output kept.** Both lines were
+  // `>/dev/null 2>&1` with nothing asserting the tools arrived -- and the status
+  // such a line would report comes from `tail` in the pipe, not from apt. So when
+  // the Debian mirror refused (measured 2026-10-13: `At least one invalid
+  // signature was encountered`, then `Unable to locate package git`) the
+  // pre-flight truthfully said the tools were missing and this counterpart read
+  // that as the product being wrong. A setup failure must not arrive as a product
+  // failure.
   withTools = inImage(`
-    apt-get update -qq >/dev/null 2>&1
-    apt-get install -y -qq git openssh-client >/dev/null 2>&1
+    echo "== apt =="
+    apt-get update -qq 2>&1 | tail -3
+    apt-get install -y -qq git openssh-client 2>&1 | tail -3
+    echo "== tools =="
+    command -v git ssh ssh-keygen ssh-keyscan >/dev/null 2>&1 && echo "TOOLS=yes" || echo "TOOLS=no"
+    echo "== preflight =="
     cd /probe
     export GIT_REPOSITORIES='${DECL}'
     bash config/scripts/start/git.sh /probe --check-declaration 2>&1
     echo "preflightExit=$?"
   `).output;
+  toolsInstalled = /^TOOLS=yes$/m.test(withTools);
 }, 900_000);
 
 const section = (out: string, name: string) => {
@@ -99,8 +114,8 @@ const section = (out: string, name: string) => {
   return at === -1 ? '' : parts[at + 1];
 };
 
-describe('A8-24 an image without the tools is refused while the stack is still up', () => {
-  test('A8-24 the pre-flight exits 1 and names every tool it needs', () => {
+describe('A8-28 an image without the tools is refused while the stack is still up', () => {
+  test('A8-28 the pre-flight exits 1 and names every tool it needs', () => {
     const s = section(bare, 'preflight');
     expect(s).toContain('preflightExit=1');
     for (const tool of ['git', 'ssh', 'ssh-keygen', 'ssh-keyscan']) expect(s).toContain(tool);
@@ -108,7 +123,7 @@ describe('A8-24 an image without the tools is refused while the stack is still u
     expect(s).toContain('Nothing was stopped.');
   });
 
-  test('A8-24 and it says which remedy applies where it is running', () => {
+  test('A8-28 and it says which remedy applies where it is running', () => {
     // On a host: install the tools. In the dashboard's helper image: remove the
     // image, because the operator cannot install anything into it and has never
     // heard of it.
@@ -118,8 +133,8 @@ describe('A8-24 an image without the tools is refused while the stack is still u
   });
 });
 
-describe('A8-25 which is what the refusal prevents', () => {
-  test('A8-25 the git step itself dies at ssh-keygen with 127', () => {
+describe('A8-29 which is what the refusal prevents', () => {
+  test('A8-29 the git step itself dies at ssh-keygen with 127', () => {
     // Measured rather than asserted about: this is the failure the operator met,
     // and in the real sequence down.sh has already run by the time it happens.
     const s = section(bare, 'step');
@@ -128,10 +143,33 @@ describe('A8-25 which is what the refusal prevents', () => {
   });
 });
 
-describe('A8-26 while an installation that has the tools still starts', () => {
-  test('A8-26 the counterpart: the same image with git and OpenSSH passes', () => {
+describe('A8-30 while an installation that has the tools still starts', () => {
+  test('A8-30 the counterpart: the same image with git and OpenSSH passes', () => {
     // Without this the check could be met by refusing every start on every host.
-    expect(withTools).toContain('preflightExit=0');
-    expect(withTools).not.toContain('cannot run here');
+    // Guarded from inside rather than with `skipIf`, because whether it can run is
+    // only known after `beforeAll` has done the install.
+    if (!toolsInstalled) return;
+    expect(section(withTools, 'preflight')).toContain('preflightExit=0');
+    expect(section(withTools, 'preflight')).not.toContain('cannot run here');
+  });
+
+  test('A8-30 and an install that failed is said out loud, not blamed on the product', () => {
+    // Not a label: it reads the state, and when the install failed it carries
+    // apt's own words into the output, so a run says why the counterpart is
+    // missing. That is exactly what was needed on 2026-10-13, when the mirror's
+    // signatures were refused and this case went red against correct code -- green
+    // in one run and red in the next with only documentation changed between them.
+    if (toolsInstalled) {
+      expect(withTools).toMatch(/^TOOLS=yes$/m);
+      return;
+    }
+    expect(withTools).toMatch(/^TOOLS=no$/m);
+    const apt = section(withTools, 'apt').trim();
+    expect(apt.length).toBeGreaterThan(0);
+    console.error(
+      '  A8-26 stepped aside: git and OpenSSH could not be installed into ' +
+        BASE + '. apt said:\n' +
+        apt.split('\n').map((l) => '    ' + l).join('\n')
+    );
   });
 });
