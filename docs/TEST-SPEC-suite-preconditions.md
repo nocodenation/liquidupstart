@@ -58,8 +58,8 @@ like a suite that ran.
 | **SP-2** | positive | …the computation is over something: at least three DOM files, the card file among them |
 | **SP-2** | **negative** | …and each DOM file files its voiced skip under `SP-2`, not under a case id |
 | **SP-3** | **negative** | An unreachable host answers false — against `.invalid`, which RFC 2606 reserves so it cannot resolve |
-| **SP-3** | positive | And the real registry answers true, taken only where it does |
-| **SP-3** | positive | The answer is memoised per url, so two asking cases pay for one round trip |
+| **SP-3** | positive | And the real registry answers true — gated by an **independent** probe, so an implementation that always says no fails here instead of skipping itself |
+| **SP-3** | positive | The answer is memoised per url: a second ask of the same url leaves the process **no second time**, counted rather than compared |
 | **SP-4** | **negative** | A Docker VM below the free-space floor stops the run, and the message names the cause and the remedy — *2026-10-15* |
 | **SP-4** | **negative** | …and a reading that is merely low stops it too |
 | **SP-4** | positive | …while a reading **at** the floor proceeds, which is where an off-by-one would live |
@@ -162,7 +162,10 @@ reachability check cannot reach.
 | **A function, not a constant** | It costs a network round trip, and a constant would charge every file importing that module for a question two cases ask. Memoised, so the two pay once between them. |
 | **Test data** | `https://not-a-registry.invalid/` for the false half — **RFC 2606 reserves `.invalid` precisely so it cannot resolve**, which is why it is used rather than a name that might one day belong to somebody — and the real registry for the true half, which can only be taken where it answers. |
 | **What writing it found, in my own function** | The first version memoised **one** answer regardless of the url. `skipIf` is evaluated at registration time, so the default url's `true` was already cached when the test for an unreachable host ran — and that test was **green against a host that does not exist**. It is a `Map` keyed by url now. The case caught its own helper, which is the argument for writing the false half first. |
-| **What it does not fix** | The measured failures. Both cases timed out at 60s twice and passed twice on a quiet machine, with the registry reachable every time. The build takes 14s quiet, so 60 was four times it and not enough under load; they carry 180s now, thirteen times measured. The precondition answers an offline machine; the budget answers the load. Neither answers the other, and the specification says so rather than letting the precondition look like a repair. |
+| **What the review found, and it is the same mistake one turn later** | The positive half was gated on `registryReachable()` — the function it tests. An implementation that always answers false therefore **skipped its own counterpart**: the reviewer ran that mutant on 2026-10-20 and the file read *2 pass / 1 skip / 0 fail*, which is what an offline machine prints too. A precondition whose permitting half is gated on the precondition cannot refuse anything. It is gated on an independent module-level probe now — `fetch(…, {method: 'HEAD'})` against the registry, a **different mechanism** from the `curl` under test, so a curl-specific regression shows up as the two disagreeing. Re-measured here: against the always-false mutant the case **fails**, 15 pass / 1 fail, and the file is 16 / 0 against the real code. |
+| **And the memoisation row claimed a property nothing held** | It compared two answers, which agree whether or not anything is cached: with the `Map` lookup removed the case stayed green (*3 pass / 0 fail*, the reviewer's M2). The answer is not the observable — the **cost** is. `registryProbeCount()` is the seam, and the case asks about `https://memo-probe.invalid/`, a url no earlier run can have answered, so the counter is unambiguous: first ask 1, second ask 0. Against the cache-removed mutant it now fails. |
+| **What it does not fix** | The measured failures. Both cases timed out at 60s twice and passed twice on a quiet machine, with the registry reachable every time. The quiet build takes **14s on the author's machine and 45s on the reviewer's** — two figures, because one machine's duration is not a budget, and the spread is why 60s held in one place and not the other. They carry 180s now, which clears the slower of the two by 4x. The precondition answers an offline machine; the budget answers the load. Neither answers the other, and the specification says so rather than letting the precondition look like a repair. |
+| **What is still not answered, and it is not this change's job** | A run that is cut off anyway — by the budget firing, or by docker cancelling the build — still reports *"expected 0, received 130"*, a statement about the machine in the shape of a verdict on `--allow-scripts`. That is `SP-5` on `fix/load-dependent-cases`, which narrowed to it once this PR was established as the owner of the offline case. |
 | **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`, with `tests/component/m-oc.allow-scripts.test.ts` as the pair that asks. |
 | **Covers** | SP-FR1, SP-FR2, SP-FR3. |
 
@@ -196,6 +199,10 @@ reachability check cannot reach.
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-4** |
-| SP-FR2 each discriminator is shown to answer both ways | SP-1 |
-| SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2 |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4** |
+| SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3** |
+| SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2, **SP-3** |
+
+*`SP-3` added to all three rows 2026-10-20.* Its detail block claimed them and the table listed it
+against none, so the document disagreed with itself one screen apart — the drift this PR fixed in
+`m-a16.skip-panel`'s header, in the PR that fixed it. Raised as item 3 of the first review.

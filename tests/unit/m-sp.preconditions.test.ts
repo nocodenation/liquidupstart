@@ -22,7 +22,18 @@
  * When     each discriminator is asked about each
  * Then     it answers for the state in front of it, and the headers of the cases
  *          that depend on it say which precondition they need
- * Covers:  SP-1, SP-2
+ * Covers:  SP-1, SP-2, SP-3
+ *
+ * SP-3 is the fourth precondition -- whether a package registry answers -- which
+ *          `OC-15` and `OC-16` need because they run `npm install -g` inside a
+ *          docker build. Its two halves are measured in different ways on
+ *          purpose: the refusal against a name RFC 2606 reserves so that it
+ *          cannot resolve, and the permission against the real registry, gated
+ *          by a probe that does **not** go through the function under test. The
+ *          first version gated it on `registryReachable()` itself, so an
+ *          implementation that always said no skipped its own counterpart and
+ *          the file stayed green -- measured by the reviewer as M3 of his round
+ *          on #24, 2 pass / 1 skip / 0 fail against exactly that mutant.
  * Unhappy: SP-1's false answers are the half that matters. The true ones are
  *          their counterparts -- a discriminator that always says "no" skips
  *          everything and is indistinguishable from a suite that does not run.
@@ -40,8 +51,22 @@ import {
   STARTED,
   IN_GIT_REPO,
   preconditions,
-  registryReachable
+  registryReachable,
+  registryProbeCount
 } from '../lib/preconditions';
+
+// Independent of the function under test, and that is the whole point: gated on
+// `registryReachable()` itself, an implementation that always answers false skips
+// the case that would have caught it. A different mechanism rather than a second
+// `curl` line, so a curl-specific regression shows up as a disagreement between
+// the two. Module level, because a top-level await cannot sit inside `describe`.
+const ONLINE = await fetch('https://registry.npmjs.org/', {
+  method: 'HEAD',
+  signal: AbortSignal.timeout(5000)
+}).then(
+  (r) => r.ok,
+  () => false
+);
 
 const roots: string[] = [];
 const root = (make?: (p: string) => void) => {
@@ -123,8 +148,8 @@ describe('SP-3 the fourth precondition: a registry answers', () => {
   // **It is not what the measured failures were, and the case says so.** Those two
   // failed twice by timing out at the suite's 60s and passed twice on a quiet
   // machine: the registry was reachable every time. So this precondition answers
-  // the offline machine, and their own 180s budget answers the load -- 14s is what
-  // the build takes quiet, measured.
+  // the offline machine, and their own 180s budget answers the load -- the quiet
+  // build is 14s on one machine and 45s on another, both measured.
   test('SP-3 an unreachable host answers false', () => {
     // The half that can be measured anywhere. `.invalid` is reserved by RFC 2606
     // precisely so that it cannot resolve, which is why it is used rather than a
@@ -132,11 +157,17 @@ describe('SP-3 the fourth precondition: a registry answers', () => {
     expect(registryReachable('https://not-a-registry.invalid/')).toBe(false);
   });
 
-  test.skipIf(!registryReachable())('SP-3 and the real registry answers true', () => {
+  test.skipIf(!ONLINE)('SP-3 and the real registry answers true', () => {
     // The counterpart, and it can only be taken where the thing it asserts holds --
     // which is the shape of every precondition in this file. Without it SP-3 would
     // be met by a function that always says no, and that function would skip
     // OC-15 and OC-16 for ever while looking green.
+    //
+    // **It is gated on ONLINE and not on registryReachable().** Gated on the
+    // function under test, the always-false implementation skipped this case and
+    // the file read 2 pass / 1 skip / 0 fail -- the offline run and the broken
+    // one printing the same thing, which is the defect described one line up
+    // standing in its own counterpart. Found by the reviewer, 2026-10-20.
     expect(registryReachable()).toBe(true);
   });
 
@@ -144,9 +175,22 @@ describe('SP-3 the fourth precondition: a registry answers', () => {
     // Not a performance assertion: a network call per asking case would make the
     // suite's duration depend on how many cases ask, which is the kind of quiet
     // coupling this file exists against.
-    const first = registryReachable();
-    const second = registryReachable();
-    expect(second).toBe(first);
+    //
+    // **What is asserted is the cost, not the answer.** Comparing two answers was
+    // green with the cache removed -- two calls agree whether or not anything is
+    // remembered, measured by the reviewer as M2. So the probe counter is the
+    // seam, and a url no run can have answered before is the subject: a second
+    // ask must leave the process no second time.
+    const url = 'https://memo-probe.invalid/';
+    const before = registryProbeCount();
+    const first = registryReachable(url);
+    const afterFirst = registryProbeCount();
+    const second = registryReachable(url);
+    expect({
+      agree: second === first,
+      firstAsk: afterFirst - before,
+      secondAsk: registryProbeCount() - afterFirst
+    }).toEqual({ agree: true, firstAsk: 1, secondAsk: 0 });
   });
 });
 
@@ -199,7 +243,12 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     ['tests/contract/m-a5.nested-clone.test.ts', 'IN_GIT_REPO'],
     ['tests/component/m-a6.operator-repository.test.ts', 'IN_GIT_REPO'],
     ['tests/contract/m-a16.text-only.test.ts', 'IN_GIT_REPO'],
-    ...domFiles.map((f) => [f, 'DASHBOARD_DEPS'] as [string, string])
+    ...domFiles.map((f) => [f, 'DASHBOARD_DEPS'] as [string, string]),
+    // Added 2026-10-20: this PR made it a file that depends on a precondition,
+    // and the rule SP-2 holds everything else to was not applied to it. Listed
+    // rather than computed, because `registryReachable()` is a call and not an
+    // exported constant, so there is nothing for a grep to enumerate it by.
+    ['tests/component/m-oc.allow-scripts.test.ts', 'registryReachable()']
   ];
 
   test('SP-2 and each DOM file files its voiced skip under SP-2, not under a case id', () => {

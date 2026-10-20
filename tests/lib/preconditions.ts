@@ -101,9 +101,22 @@ export function dashboardDepsIn(root: string): boolean {
 // url's `true` was already cached when the test for an unreachable host ran, and
 // that test was green against a host that does not exist.
 const registrySeen = new Map<string, boolean>();
+
+// The seam the memoisation claim needs. Two calls return the same answer whether
+// or not anything is cached, so a case comparing them asserts nothing -- removing
+// the cache left it 3 pass / 0 fail, which the reviewer measured as M2 of his
+// round on #24. What is observable is the **cost**, so the probe is counted and
+// the count is readable. It is not a performance figure and no case asserts a
+// duration: it is how many times the question left this process.
+let registryProbes = 0;
+export function registryProbeCount(): number {
+  return registryProbes;
+}
+
 export function registryReachable(url = 'https://registry.npmjs.org/'): boolean {
   const seen = registrySeen.get(url);
   if (seen !== undefined) return seen;
+  registryProbes += 1;
   const ok = sh(['curl', '-fsS', '--max-time', '5', '-o', '/dev/null', '-I', url]).code === 0;
   registrySeen.set(url, ok);
   return ok;

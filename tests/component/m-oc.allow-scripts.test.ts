@@ -38,10 +38,13 @@
  *           **And a budget of its own, because the precondition is not what the
  *           failures were.** These two failed twice by timing out at the suite's
  *           60s and passed twice on a quiet machine -- the registry was reachable
- *           every time and the machine was busy. Measured 2026-10-10: the build
- *           takes **14s** quiet, so 60s was already four times it and still not
- *           enough under load. 180s is thirteen times the measured duration; the
- *           cost is that a genuinely broken build takes that long to say so.
+ *           every time and the machine was busy. Two measurements, because one
+ *           machine's figure is not a budget: **14s** on the author's machine
+ *           (2026-10-10) and **45s** on the reviewer's, both unloaded and both
+ *           against the same image. So 60s was between one and four times the
+ *           quiet duration depending on where it ran, which is why it held on one
+ *           machine and not the other. 180s clears the slower of the two by 4x;
+ *           the cost is that a genuinely broken build takes that long to say so.
  *           SP-3, and the second finding of #22.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
