@@ -123,6 +123,35 @@ returning.
 
 Recorded 2026-10-20.
 
+---
+
+**`B6-37` is killed for memory on this host while the stack runs, with no second suite.** Found on
+2026-10-20 running the suite for `fix/moving-image-tag` (#37), whose diff does not touch
+`tests/unit/m-b6.bundled-jar-read.test.ts` or `config/liquid/narcheck.py` — both are byte-identical to
+`main` there. `./tests/run.sh` on the committed head: 904 pass / 25 skip / **1 fail**, the one being
+*"B6-37 the bomb is refused on the read limit and costs little to refuse"*, with `docker run` exiting
+**137**. The same tree run again straight away: 905 pass / 25 skip / 0 fail.
+
+Run alone three times with `docker events --filter event=oom --filter event=die` recording: runs 1
+and 2 each failed a B6-37 case (*"…a jar that lies about its size…"* both times), and each failure
+was an `oom` event on the `python:3.12-slim` container followed by `die exit=137`; run 3 passed 3 / 0
+with no `oom`. The container has no `--memory` limit, so what runs out is the Docker VM: 8214 MB, of
+which the operator's stack held 5645 MB in 20 containers (`docker stats`, same afternoon).
+
+The fixture is the expensive part, not the check. The setup builds the 800 MiB blob in memory three
+times over — `b'\0' * (800 << 20)`, the `BytesIO` holding the inner jar, and `inner.getvalue()` —
+and that alone peaked at **1611 MB** (`ru_maxrss`, the bomb only, measured in the same image). The
+case asserts the *measuring* process stays under 400 MB, which is untouched by this; it is the
+fixture's builder that needs a quarter of a loaded VM.
+
+HANDOFF's note of 2026-10-16 puts B6-37's red down to a second suite competing for the machine. That
+is one way to get here, and a running stack is another. Building the inner jar on disk and copying it
+into the outer archive through `ZipFile.open(name, 'w')` in chunks should take the setup's peak far
+below that without touching what the case measures — not measured. Not done on #37: a different file
+and a different milestone.
+
+Recorded 2026-10-20.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
