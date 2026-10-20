@@ -320,26 +320,24 @@ Found while answering D2 and M6 of the 2026-10-01 review. Recorded 2026-10-07.
 ---
 
 **~~A fifth file writes into the operator's `volumes/repos` from the default tier.~~ Repaired
-2026-10-17.** `tests/contract/m-a5.nested-clone.test.ts` builds its nested repository in a
-`mkdtemp` host now, carrying the project's real `.gitignore` into it so the subject of the test
-travels with the fixture. Measured both ways with a watcher on the path during the run: seen
-against the old file, never against the new one. The case also asserts the absence of that path in
-the checkout, so the regression has a guard. The third scenario dropped `IN_GIT_REPO` with it — it
-needed the checkout to *be* something, which was the other half of the same defect. What the entry
-said when it was open: `tests/contract/m-a5.nested-clone.test.ts` builds `reposDir` from
-`repoRoot` and writes a git repository into it — `git init -q -b main <reposDir>/.a5-nested-probe`,
-read out of the file on 2026-10-12. It is green, because it creates everything it asserts against, so
-it was never in the failure set above — but a default-tier run leaves state in whichever checkout it
-was started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
-tier's.
+2026-10-17, corrected 2026-10-20.** `tests/contract/m-a5.nested-clone.test.ts` makes its nested
+repositories in `mkdtemp` hosts of its own, and asserts that the checkout's `volumes/repos` lists the
+same entries after the case as before. Measured both ways with a watcher on the path during the run:
+seen against the old file, never against the new one.
 
-**#22 does not close it, and it is worth saying why rather than assuming the merge did.** That branch
-*did* change this file — it gave it `IN_GIT_REPO` — but a precondition decides whether a case **runs**,
-not whether it **writes**. The `git init` is unchanged. And when #22 rewrote `BACKLOG.md` this
-paragraph went with the rest of the entry, so on `main` the concern is recorded nowhere: checked
-2026-10-12, `grep -c "fifth file writes into the operator"` against `origin/main:BACKLOG.md` is **0**.
-It survives here, which is the only copy that still has it. Recorded 2026-10-07, confirmed open
-2026-10-12.
+A local review on 2026-10-20 found the first repair claimed more than it did, and three things it
+lost. The project's `.gitignore` was copied into the host "so a change to that file still reddens the
+case", and it cannot: `git clean -x` does not read ignore rules — measured, `Would skip repository`
+with the file and without. The read-only dry run over the checkout's real clones had gone with the
+probe, and is back. The guard asserted one name was absent, so a probe left behind by the old file
+made it red for good with nothing to clear it — reproduced, 2 pass / 1 fail — and is a before/after
+listing now. And the forced clean the header had to leave out is run, in a second host. A sixth file,
+`m-a10.fixture-ceiling`, still writes into the checkout from the default tier; that one is on #45.
+
+*What this entry said while it was open, 2026-10-07 to 2026-10-12:* the file built `reposDir` from
+`repoRoot` and ran `git init -q -b main <reposDir>/.a5-nested-probe`; it was green because it created
+everything it asserted against; #22 gave it `IN_GIT_REPO`, which decides whether a case runs and not
+whether it writes; and #22's rewrite of this file had dropped the entry from `main`.
 
 ---
 
