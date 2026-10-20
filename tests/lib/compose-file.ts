@@ -22,6 +22,13 @@ export function serviceBlock(service: string, text: string = composeText()): str
   return lines.slice(start, end).join('\n');
 }
 
+// Whether a block mounts `entry` on a line compose acts on. A YAML comment that
+// still holds the mount reads as the mount to a substring check, while compose
+// mounts nothing.
+export function mountsLive(block: string, entry: string): boolean {
+  return block.split(/\r?\n/).some((l) => !/^\s*#/.test(l) && l.includes(entry));
+}
+
 export function envExampleText(): string {
   return readFileSync(join(repoRoot, '.env.example'), 'utf8');
 }

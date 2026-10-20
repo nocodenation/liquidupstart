@@ -51,6 +51,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | NFR1 The stack is reachable only where it should be | B5-10, B5-11, B5-12, B5-13, B5-14 |
 | U9 A checkout that has never run the stack can start it | B5-1, B5-2, B5-3, B5-19, B5-20, B5-21 |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
+| The README's account of the feature is held to its configuration — a documentation contract, with no FR of its own | A0-11 |
 
 ---
 
@@ -783,11 +784,6 @@ carried.
 | **B6-39** | positive | …and a changed file, or a new one, changes the tag | Two scenarios because a digest over names alone catches the second and not the first |
 | **B6-39** | positive | Superseded images are swept, including the legacy `run-*` tags | Otherwise a changed builder config still leaves 1 GB behind each time |
 | **B6-39** | **negative** | …but never the image this run is using, however old it is | Content-addressed, so the right image can be weeks old. A sweep by age alone deletes it under the run that just chose it |
-| **A0-11** | Contract positive | The README's Java section is backed by a declared builder service | The README promised *"all services bind to localhost"* for two and a half months while `compose.yml` did the opposite; a new promise gets held to its configuration from the start |
-| **A0-11** | positive | …and `nar-build` is mounted read-only into the agent containers it tells the reader to use | At least three services carry it, so the instruction holds for whichever one is opened |
-| **A0-11** | positive | …and the refusal directory the section names exists in the configuration | |
-| **A0-11** | positive | …and the two limits it quotes are the two constants `narcheck.py` enforces | Figures quoted in prose are the kind that drift |
-| **A0-11** | Contract **negative** | The count of locally built images is the number the build script builds | Red when written: the README said *"Four"* and omitted `nar-builder`, while `build.sh` builds five and `CLAUDE.md` had already been corrected |
 | **B6-39** | **negative** | …never a recent one, because a concurrent run may hold it | The age floor, which is what keeps a disk fix from becoming a flaky suite |
 | **B6-39** | **negative** | …and never a tag that is not one of the two schemes this file has used | `:latest` is the stack's own build and is not this sweep's to take |
 
@@ -1389,17 +1385,39 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 | **Implemented by** | `tests/integration/m-b1.dependency-cache.test.ts`. |
 | **Covers** | B1-9, FR26, FR37, FR38, FR40. |
 
+### M-A0 — the README's account of the feature, held to its configuration
+
+`README.md` gained a section on this feature on 2026-10-17. A promise in prose that no case reads is
+the shape of the defect `A0-7` and `A0-8` exist against, so the section is paired with the
+configuration that has to carry it. The id is in the `A0` series because that is where the README's
+promises are held; the scenarios are about this feature, so they are specified here.
+
+| Case | Kind | Scenario | Why it is a separate scenario |
+|---|---|---|---|
+| **A0-11** | Contract positive | The README's Java section exists, and the builder is a declared service | The section names a service; a section about a service that is not declared is the first thing to drift |
+| **A0-11** | positive | …and every agent service mounts `nar-build` read-only, on a line that is not a comment | The README tells the reader to run it in OpenClaw or OpenCode, so it has to hold for each of them |
+| **A0-11** | **negative** | …and a mount that exists only as a YAML comment does not count | A substring check reads `# - …nar-build…:ro` as a mount while compose mounts nothing |
+| **A0-11** | positive | …and the refusal directory it names is the one both judging scripts write | `./volumes/nar_extensions` is the inbox, mounted at `nar_inbox`; `entrypoint.sh` judges it at start and `nar-watch.sh` while running, each with its own copy of the paths |
+| **A0-11** | positive | …and its removal procedure deletes from the load directory **and** clears the inbox copy | The procedure is the only way to take a bundle out. The entrypoint promotes every inbox bundle that passes at each start, so a procedure that leaves the inbox copy removes nothing past the next restart, and says nothing |
+| **A0-11** | positive | …and the two limits it quotes are the two constants `narcheck.py` enforces | Figures quoted in prose are the kind that drift |
+| **A0-11** | positive | …and that file is mounted into the builder but copied into the `liquid` image | The README says raising a limit means rebuilding that image and recreating the container; this is what makes that true |
+| **A0-11** | positive | The count **and** the list of locally built images are what `build.sh` builds | Red when written: the README said *"Four"* and omitted `nar-builder`, while `build.sh` builds five and `CLAUDE.md` had already been corrected |
+| **A0-11** | **negative** | …and the four-image line `main` carried is refused by the same predicate | The real defect, verbatim from `main`, judged by the predicate the positive uses — so a loosened comparison shows here rather than passing both |
 
 #### A0-11 — what the README promises, the configuration has to do
 
 | | |
 |---|---|
 | **Premise** | This pairing exists because it failed once, expensively: `README.md` said *"All services bind to `localhost`"* from 2026-07-17 while `compose.yml` published the proxy on every interface, and the two disagreed for two and a half months with nothing noticing — not three reviews, not a 560-case suite. `A0-7` and `A0-8` hold that promise to its configuration. The README gained a section on building Java extensions on 2026-10-17, and it is held to the same rule. |
-| **And the reading that produced it found a claim already false** | *"Four images are built locally"*, listing four and omitting `nar-builder`, while `scripts/linux/build.sh` builds **five**. `CLAUDE.md` had already been corrected to five and the README had not — the two-copies defect in its usual shape, and the operator had just said he had lost track of which features are finished. |
-| **Component** | `README.md`, against `compose.yml`, `scripts/linux/build.sh` and `config/liquid/narcheck.py`. |
-| **Test data, both sides** | Each promise in the new section paired with the configuration that would have to carry it: the `nar_builder` service declaration; every mount of `/usr/local/bin/nar-build`, which must be read-only and present in at least three services; the `./volumes/nar_extensions` bind; and the two constants `MAX_BUNDLED_JAR_BYTES = 256 << 20` and `MAX_CLASS_BYTES = 512 << 20`, which are the figures the prose quotes. The count is read from the build script's own invocations rather than from a number in a test, and each built image's name must appear in the README, so the list cannot drift from the count. |
-| **Expected** | All five scenarios green on the repaired README. |
-| **Measured** | The count scenario was **red** when written, which is the point of it. Shown able to fail: restoring `main`'s line reddens **1**; removing the section reddens **4**; removing two of the three `nar-build` mounts reddens **1**. |
+| **And the reading that produced it found a claim already false** | *"Four images are built locally"*, listing four and omitting `nar-builder`, while `scripts/linux/build.sh` builds **five**. `CLAUDE.md` had already been corrected to five and the README had not — the two-copies defect in its usual shape. |
+| **Component** | `README.md`, against `compose.yml`, `scripts/linux/build.sh`, `config/liquid/narcheck.py`, `config/liquid/entrypoint.sh`, `config/liquid/nar-watch.sh` and `config/liquid/templates/Dockerfile`. |
+| **Steps** | Read each file as text. Take each promise the section makes and find the line of configuration that would have to carry it: compose service blocks through `serviceBlock`, the agent services from `AGENT_SERVICES`, the mount target from `NAR_MOUNT`, and a mount counted only on a line that is not a YAML comment, through `mountsLive` in `tests/lib/compose-file.ts`. For the image sentence, extract its number word and its brace list, and judge both with one predicate against the build steps `build.sh` invokes. |
+| **Test data, positive** | The section heading `## Java extensions for Liquid` and the comment line `# in an agent container (OpenClaw or OpenCode)`. The mount `./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro` in `openclaw-gateway`, `openclaw-cli` and `opencode`. In `liquid`: `./volumes/nar_extensions:/opt/nifi/nifi-current/nar_inbox`. In `nar-watch.sh`: `NIFI_HOME="${NIFI_HOME:-/opt/nifi/nifi-current}"`, `INBOX_DIR="${NIFI_HOME}/nar_inbox"`, `REFUSED_DIR="${INBOX_DIR}/refused"`, `LOAD_DIR="${NIFI_HOME}/nar_extensions"`. In `entrypoint.sh`: `NIFI_BASE_DIR="${NIFI_BASE_DIR:-/opt/nifi}"`, `NIFI_HOME="${NIFI_HOME:-${NIFI_BASE_DIR}/nifi-current}"`, `DROP_DIR="${NIFI_HOME}/nar_inbox"`, `REFUSED_DIR="${DROP_DIR}/refused"`, `LOAD_DIR="${NIFI_HOME}/nar_extensions"`, and the start-time promotion `for NAR in "$DROP_DIR"/*.nar; do` … `cp -v "$NAR" "${LOAD_DIR}/"`. Against them, the README's `./volumes/nar_extensions/refused/`, `rm ./volumes/nar_extensions/<bundle>.nar` and `docker compose exec liquid rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar`. `MAX_BUNDLED_JAR_BYTES = 256 << 20` and `MAX_CLASS_BYTES = 512 << 20`, against **256 MiB** and **512 MiB**. `./config/liquid/narcheck.py:/opt/builder/narcheck.py:ro` in `nar_builder`, a `COPY … ./narcheck.py` in the Dockerfile, no `narcheck.py` in `liquid`'s block, and the README's `` `./config/scripts/build/liquid.sh`, then `docker compose up -d liquid` `` against that build step in `build.sh`. The build steps `opencode`, `bun-runner`, `nar-builder`, `liquid`, `openclaw` — `hermes` is commented out in `build.sh` and is not counted. |
+| **Test data, negative** | The real `opencode` block with its `nar-build` line turned into `# - ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro`. And `main`'s line until 2026-10-17, verbatim: ``Four images are built locally — `liquidupstart/{opencode,bun-runner,liquid,openclaw}` —``. |
+| **Expected** | Nine scenarios green: the README's figures and paths equal the configuration's, the commented mount is not counted, and the four-image line yields a count of 4 and a list missing exactly `nar-builder`. |
+| **Dependencies** | None beyond the checkout: no stack, no network, no docker. |
+| **Measured** (2026-10-21, each reverted alone; thirteen reversals, each **1** red) | The README's list without `nar-builder` with the count still *"Five"*, and *"Four"*: the count-and-list case. `refused` renamed in `nar-watch.sh`, and in `entrypoint.sh`: the refusal case. The load directory moved in `nar-watch.sh`, and in `entrypoint.sh`, and the README procedure without its inbox line: the removal case. `openclaw-cli`'s mount commented out: the mount case. The comment filter removed from `mountsLive`: the comment negative. The shared predicate loosened to a subset: the four-image negative. `narcheck.py` bind-mounted into `liquid` too, and the README's rebuild without its recreate: the copied-file case. A limit raised in `narcheck.py` alone: the limits case. |
+| **What it found** | The first version was green against three of those reversals and should not have been. Its list check asked only whether each image's name appeared *somewhere* in the README, which `opencode`, `openclaw`, `liquid` and `nar-builder` all do in other sections, so dropping `nar-builder` from the list again stayed green. Its refusal-directory check read the README and `compose.yml` and never a script, so renaming `refused/` stayed green. And it counted mounts by line across the whole file, a YAML comment included — commenting out `openclaw-cli`'s mount stayed green, here and in `B1-2`. A second review of the repair found that the removal procedure the README had taken from FR30 leaves the inbox copy, which `entrypoint.sh` promotes again at the next start: FR30's own measurement used a bundle with no inbox copy. Found by `/code-review` on 2026-10-21, each one checked before it was changed. |
 | **What it does not assert** | That a build works. That is `B1-5` and the M-B milestones, which drive the real builder. This asks only whether the document and the configuration agree, which is the thing that went wrong before. |
 | **Implemented by** | `tests/contract/m-a0.readme-promises.test.ts`. |
 | **Covers** | A0-11. |
