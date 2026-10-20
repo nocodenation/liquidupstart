@@ -44,13 +44,31 @@ reads it. So the answer is computed.
   content, and `scripts/hooks/install.sh` sets `core.hooksPath` for a clone. That setting is local by
   nature and cannot be committed; one run per clone covers every worktree of it.
 
-- **The path is written absolute, against the main working tree.** Two alternatives were rejected for
-  reasons that are states this repository is actually in. A path into a *worktree* dies with that
-  worktree, and `core.hooksPath` pointing at a directory that no longer exists **does not fail** —
-  git finds no hooks and proceeds, so the guard would be off and nothing would say so. A *relative*
-  `scripts/hooks` makes each worktree use its own copy, and the nine branches open when this was
-  written carry none, so committing on any of them would be unguarded. The installer refuses, with
-  the reason, when the main tree does not carry the script yet.
+- **The hook is copied into the shared hooks directory, not pointed at.** *Corrected 2026-10-20; the
+  first answer here was wrong in the way it ruled out.* It said the path should be written absolute
+  against the main working tree, on the grounds that a path into a *worktree* dies with that worktree
+  and `core.hooksPath` pointing at a directory that no longer exists **does not fail** — git finds no
+  hooks and proceeds, so the guard is off and nothing says so. That reasoning is right, and it
+  condemns the main working tree too: `<main tree>/scripts/hooks` is **content of a checkout**, so the
+  moment the main tree checks out a branch that predates the guard the directory is empty and the same
+  silent-off state is reached from every worktree at once. The reviewer reproduced it on 2026-10-20 —
+  install, add a worktree, `git checkout e3a391a` in the main tree, and the worktree committed `both
+  are merged and resolved: #18` with rc 0. Every other open branch of this repository predates
+  `scripts/hooks`, so `gh pr checkout <n>` in the main clone was enough to disarm it.
+
+  `$(git rev-parse --git-common-dir)/hooks` is shared by every worktree and belongs to no checkout, so
+  nothing a branch does can empty it. `install.sh` copies the hook there, and `core.hooksPath` is then
+  not needed at all; an earlier setting that points into a checkout is migrated away and said out loud,
+  and a foreign one is still refused. The price of a copy is that it can fall behind its source, and
+  that price is **computed rather than remembered**: the installer writes the source blob id beside the
+  copy, and the hook compares it with `origin/main:scripts/hooks/commit-msg` on every run, printing one
+  line on stderr when they differ. A clone with no such ref — an agent clone in the stack — says
+  nothing.
+
+- **Whether the guard is on is a question, not a memory.** `scripts/hooks/install.sh --check` exits 0
+  only when the hook git will actually run for this clone refuses the self-test message. This exists
+  because the author's own comment on #35 reported the guard as off on their machine, which at the time
+  could only be recalled rather than asked. `CLAUDE.md` names the command.
 
 - **An override, and a loud one.** A commit may legitimately close an issue; that is what the keywords
   are for. `ALLOW_CLOSING_KEYWORD=1 git commit` passes, and says on stderr which line it let through.
@@ -61,16 +79,48 @@ reads it. So the answer is computed.
   the word belongs. The message is the author's; the hook's job is to say that this one would do
   something it probably does not intend, and to name the line.
 
-- **Comment lines and the scissors are not message.** `git` strips `#`-comments and everything under
-  `------------------------ >8 ` before it stores the message, so the forge never sees them, and
-  neither does the hook. Without that, `git commit --verbose` would be refused for the diff it shows.
+- **The scissors are not message; comment lines are.** *Corrected 2026-10-20.* This said that git
+  strips `#`-comments as well, so neither the forge nor the hook sees them. **Git strips them only
+  under `--cleanup=strip`, which is the default when the message comes from an editor.** With `-m` or
+  `-F` the default is `whitespace` and the lines are stored verbatim — and `-m`/`-F` is how an agent
+  commits. Measured by the reviewer: `git commit -m 'docs: x' -m '#18 is merged, and this closes #20'`
+  committed with rc 0 and the line intact, as did the same text through `-F`. A paragraph wrapped at 72
+  columns starts a line with `#NN` often enough for that to matter, and `core.commentChar` can be
+  something else again.
+
+  So the hook reads every line and cuts only below `------------------------ >8 `, which keeps
+  `git commit --verbose` committable. Editor mode is unaffected: git's template carries no keyword in
+  front of a reference. Verified across all **510** non-merge messages on `main` — the verdicts are
+  unchanged and the single refusal is still `5aa5bc9`, now reported at its real line `10:` rather than
+  shifted by however many `#` lines had been dropped above it.
+
+- **A keyword is a word, and a wrapped line is still one sentence.** Two further repairs of the
+  pattern, both from the same round. The alternation had no left boundary, so any word *ending* in a
+  keyword counted: `prefix #12`, `hotfix #12`, `bugfix #12`, `the unresolved #12 thread`,
+  `disclosed: #12`, `enclosed #12` and `suffixed #12` were all refused, and "unresolved" beside a
+  reference is ordinary prose in this repository's reviews. And `grep` reads one line at a time, so the
+  incident's own sentence wrapped two words earlier — `resolved:` ending one line, `#18, where both
+  sides` opening the next — went straight through. A second pass over adjacent pairs runs only when the
+  first finds nothing, and reports the **first** line of the pair, which is where the keyword is.
+  Whether GitHub honours a keyword split across a line break is **not verified**: measuring it needs a
+  commit pushed to a default branch. The costs decide it — a false refusal costs a rephrase, a false
+  pass costs a pull request with its review rounds.
 
 ## 3. What this does not cover, deliberately
 
-- **Pull request descriptions.** The same keywords close the same references from a description, and
-  no local hook can see one. It stays conduct: write *"the #18 conflict"* or *"on #18"*. Recorded
-  here rather than left implicit, because a reader who assumes the guard covers both has a false
-  sense of the gap.
+- **Pull request descriptions, and titles.** The same keywords close the same references from a
+  description, and no local hook can see one. It stays conduct: write *"the #18 conflict"* or
+  *"on #18"*. **Titles belong here too, and were missing until 2026-10-20** — A4 of the first review.
+  This repository's `merge_commit_message` is `PR_TITLE`, so the merge button writes the pull request
+  **title** into a commit on `main`, which `3a2ef0f` shows: a title carrying `Fixes #12` closes #12 at
+  merge, and the hook never sees it because no commit is made locally. A squash merge uses
+  `COMMIT_MESSAGES`, which the hook has already read; a rebase merge carries the branch's own commits,
+  likewise read. Recorded here rather than left implicit, because a reader who assumes the guard covers
+  all three has a false sense of the gap.
+- **Agents in the stack are covered since 2026-10-20**, and were neither covered nor named here before
+  — A3 of the same review. They push to declared GitHub repositories and write the same prose, so
+  `config/scripts/start/git.sh` installs this hook beside `pre-push` in `/git-secrets/hooks`, where
+  `core.hooksPath` already points every agent clone. `CM-6` holds it, through the real start script.
 - **Comments.** Keywords in an issue or pull request comment do not close anything; nothing is needed
   there.
 - **The forge's own behaviour.** Nothing here changes what GitHub does, nor can it recover a
@@ -95,17 +145,24 @@ reads it. So the answer is computed.
   reported on stderr when it is used.
 - **CM-FR5 — Enabling it is computed, not claimed.** The installer verifies its own effect by running
   the hook against a message that must be refused and one that must pass, and fails if either answers
-  wrongly. It also reports which hooks under `.git/hooks` the setting switches off.
+  wrongly. `--check` asks the same question of an installation that already exists, so whether the
+  guard is on is never a memory.
+- **CM-FR6 — The guard git runs cannot be emptied by a checkout.** It lives in the directory every
+  worktree of a clone shares, and its staleness against `main` is computed on every run rather than
+  assumed.
 
 ## 5. Enabling it
 
 ```bash
-./scripts/hooks/install.sh      # once per clone, from the main working tree
-git config --get core.hooksPath  # /…/liquidupstart/scripts/hooks
+./scripts/hooks/install.sh          # once per clone, from any worktree of it
+./scripts/hooks/install.sh --check  # is the guard on? exit 0 only if it refuses
 ```
 
-The run prints the path it set and the result of its own self-test. Where `core.hooksPath` already
-points somewhere else, it refuses rather than overwrite, and prints the command that would.
+The run prints where it installed the hook, the source blob id it recorded, and the result of its own
+self-test. Where `core.hooksPath` already points somewhere else it refuses rather than overwrite, and
+prints the command that would; where it points into a checkout — this script's own earlier answer — it
+migrates and says so. Agents in the stack need no step: the start script installs the same hook into
+`/git-secrets/hooks`.
 
 ## 6. Process log
 

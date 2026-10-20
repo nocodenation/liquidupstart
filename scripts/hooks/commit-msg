@@ -22,15 +22,66 @@ set -u
 
 msg_file="$1"
 
-# Git's own comment lines, and anything below the verbose-commit scissors, are
-# not part of the message the forge reads.
-body=$(sed -e '/^#/d' -e '/^------------------------ >8 /,$d' "$msg_file")
+# **Comment lines are read, and that is a correction.** This dropped every line
+# beginning with `#`, on the premise that git strips them. Git strips them only
+# under `--cleanup=strip`, which is the default **when the message comes from an
+# editor**. With `-m` or `-F` -- which is how an agent commits -- the default is
+# `whitespace` and those lines are stored verbatim. Measured 2026-10-20:
+# `git commit -m 'docs: x' -m '#18 is merged, and this closes #20'` committed
+# with rc 0 and the line intact. A 72-column paragraph wraps onto a `#NN` often
+# enough for that to matter, and `core.commentChar` can be something else again.
+#
+# So the hook reads what might be stored. Editor mode still passes, because
+# git's template carries no keyword in front of a reference, and the
+# `--verbose` diff sits below the scissors, which is still cut. Verified across
+# all 510 non-merge messages on `main`: the verdicts are unchanged, and the one
+# refusal is still 5aa5bc9.
+#
+# The line numbers now match the file, which they did not while lines were
+# being dropped.
+body=$(sed -e '/^------------------------ >8 /,$d' "$msg_file")
 
-keywords='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)'
+# `(^|[^[:alnum:]_])` because the alternation had no left anchor, so any word
+# **ending** in one of these counted: `prefix #12`, `hotfix #12`, `bugfix #12`,
+# `the unresolved #12 thread`, `disclosed: #12`, `enclosed #12` were all
+# refused. GitHub's keywords are words, and "unresolved" beside a reference is
+# ordinary prose in this repository's own reviews.
+keywords='(^|[^[:alnum:]_])(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)'
 ref='(#|[Gg][Hh]-|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#)[0-9]+'
 url='https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(issues|pull)/[0-9]+'
+pattern="${keywords}[[:space:]]*:?[[:space:]]*(${ref}|${url})"
 
-hits=$(printf '%s\n' "$body" | grep -niE "${keywords}[[:space:]]*:?[[:space:]]*(${ref}|${url})" || true)
+hits=$(printf '%s\n' "$body" | grep -niE "$pattern" || true)
+
+# **A second pass over adjacent pairs**, used only when the first finds nothing.
+# `grep` reads one line at a time, so the incident's own sentence wrapped two
+# words earlier -- `resolved:` ending a line and `#18, where both sides` opening
+# the next -- went straight through. Whether GitHub closes across a line break
+# is **not verified**: measuring it needs a commit pushed to a default branch.
+# The costs are lopsided, which is what decides it. A false refusal costs a
+# rephrase; a false pass costs a closed pull request with its review rounds.
+#
+# The reported line number is the **first** of the pair, which is where the
+# keyword is and so where the edit goes.
+if [ -z "$hits" ]; then
+  hits=$(printf '%s\n' "$body" \
+    | awk 'NR > 1 { print NR - 1 ":" prev " " $0 } { prev = $0 }' \
+    | grep -iE "$pattern" || true)
+fi
+
+# Is this copy still the one `main` carries? Computed, not assumed -- the whole
+# point of installing a copy into the shared hooks directory is that no checkout
+# can switch it off, and the price of a copy is that it can fall behind. The
+# installer writes the source blob id beside it; a missing file, a missing
+# `origin/main` or an agent clone that has neither simply says nothing.
+guard_dir=$(dirname "$0")
+if [ -f "${guard_dir}/commit-msg.blob" ]; then
+  installed=$(cat "${guard_dir}/commit-msg.blob" 2>/dev/null || true)
+  current=$(git rev-parse --verify -q 'origin/main:scripts/hooks/commit-msg' 2>/dev/null || true)
+  if [ -n "$installed" ] && [ -n "$current" ] && [ "$installed" != "$current" ]; then
+    echo "commit-msg: this guard is older than main's -- re-run scripts/hooks/install.sh" >&2
+  fi
+fi
 
 [ -n "$hits" ] || exit 0
 
@@ -55,6 +106,6 @@ To describe one, put a word between the verb and the number: "the #18 conflict",
 
     ALLOW_CLOSING_KEYWORD=1 git commit ...
 
-The message is kept in .git/COMMIT_EDITMSG; nothing was committed.
+The message is kept in ${msg_file}; nothing was committed.
 MSG
 exit 1

@@ -13,9 +13,20 @@
  *
  *           `scripts/hooks/commit-msg` reads the message while it can still be
  *           changed. These cases are the ones that were run by hand before the
- *           hook was written, with the real message of `5aa5bc9` among them, so
- *           the guard is measured against the defect it exists for rather than
- *           against an invention.
+ *           hook was written, with the real message of `5aa5bc9` among them --
+ *           **whole**, which it was not until 2026-10-20 -- so the guard is
+ *           measured against the defect it exists for rather than against an
+ *           invention.
+ *
+ *           **What this file cannot see, and where that is covered.** It hands
+ *           the hook a file, so it cannot see which lines git will *store* nor
+ *           whether git will run the hook at all. Both were wrong, and both
+ *           ended with the guard silently off: `-m` and `-F` store `#` lines,
+ *           and the installed path lived in a checkout. `CM-4` and `CM-5` in
+ *           `tests/integration/m-cm.guard-installed.test.ts` run the installer
+ *           and `git commit` in a throwaway clone; `CM-6` in
+ *           `tests/contract/m-a4.hooks-path.test.ts` holds the copy the stack's
+ *           agents get.
  * Given:    `scripts/hooks/commit-msg`, invoked as git invokes it -- one
  *           argument, the path to a file holding the message
  * When:     it is handed the message that closed #18, the correction that
@@ -27,12 +38,22 @@
  *           and `ALLOW_CLOSING_KEYWORD=1` passes the refused message while
  *           saying on stderr that it did
  * Covers:   CM-1, CM-2, CM-3
- * Unhappy:  The refusals are the negative halves. Their counterparts are the
- *           ones that matter most here: a guard that refused every `#12` would
- *           pass all six negatives and make the repository's own prose
- *           uncommittable -- which is why CM-2 holds four shapes of text that
- *           name a number and must go through, including the word `resolved`
- *           used as ordinary English about a file.
+ * Unhappy:  The refusals are the negative halves -- **thirteen** of them in CM-1
+ *           as of 2026-10-20, counted rather than recalled: the header said
+ *           "six" while there were eight, and then more arrived. Their
+ *           counterparts are the ones that matter most here: a guard that
+ *           refused every `#12` would pass every negative and make the
+ *           repository's own prose uncommittable -- which is why CM-2 holds
+ *           **ten** shapes that name a number and must go through, including the
+ *           word `resolved` used as ordinary English about a file, `hotfix #12`,
+ *           `the unresolved #12 thread`, and git's own editor template.
+ *
+ *           The two counts are what `exit 0` and `exit 1` redden, and they are
+ *           asymmetric on purpose: `exit 0` reddens 15 (CM-1's thirteen and two
+ *           of CM-3), `exit 1` reddens 14 (CM-2's ten, CM-3's positive, and
+ *           three of CM-1 -- the ones that assert on the *output*, which a bare
+ *           `exit 1` does not produce). A refusal and a useful refusal are
+ *           different properties.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -44,16 +65,42 @@ import { sh } from '../lib/shell';
 
 const HOOK = join(repoRoot, 'scripts/hooks/commit-msg');
 
-// The message that did the damage, kept verbatim as test data rather than
-// paraphrased: the point of the case is that this exact sentence is prose.
+// The message that did the damage, **whole**, as `git log -1 --format=%B 5aa5bc9`
+// prints it. It used to be a splice that dropped the first body paragraph and
+// re-ended the last line, while three documents called it "the real one, kept
+// verbatim" -- so the case asserted line `4:` for a line that is `10:` in the
+// message that was actually committed. Found by the reviewer, 2026-10-20. The
+// line number is part of what the hook promises, so the fixture has to be the
+// thing itself.
 const THE_REAL_ONE = [
-  'docs: #10 and #25 merged, and two suites at once invent red',
-  '',
-  'Nine of ours are open. Exactly two conflicted with the new main, both only in',
-  'BACKLOG.md, and both are merged and resolved: #18, where both sides appended an',
-  'item under Open findings, and #19, where main appended next to the',
-  'operator.admin section that #19 removes because it closes it.'
+  "docs: #10 and #25 merged, and two suites at once invent red",
+  "",
+  "The review latency broke today. iztiev took #10 in at 09:20Z as b59d19c and #25",
+  "within the hour as 9858651, both without a comment -- the first of ours to go in",
+  "after a review, and the second carrying 691dd2e, so B7-5's figures reached main",
+  "the same day they were taken. This section had opened with \"nothing merged",
+  "today\", true two hours earlier, which is why each claim now carries its time.",
+  "",
+  "Nine of ours are open. Exactly two conflicted with the new main, both only in",
+  "BACKLOG.md, and both are merged and resolved: #18, where both sides appended an",
+  "item under Open findings, and #19, where main appended next to the",
+  "operator.admin section that #19 removes because it closes it -- that section is",
+  "identical in main and in the merge base, so honouring the removal discarded",
+  "nothing. git merge-tree now reports all nine clean.",
+  "",
+  "Also recorded, because it cost an hour of reading failures that were not there:",
+  "the full suite run on two branches at the same time on this host produced 13 red",
+  "cases, all artefacts. B6-37 asserts what judging a bundle costs, and a competing",
+  "suite breaks that -- the same case took 6.3 s on one branch and 10.3 s on the",
+  "other. B6-21 to B6-23 take each other's fixed-name fixtures, which is what #19",
+  "fixes, so eight of the eleven landed on #18, the branch without that fix.",
+  "Serially the same files are green on both.",
+  "",
+  "Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ].join('\n');
+
+// The line of it that GitHub acted on, and its number in the message above.
+const OFFENDING_LINE = 10;
 
 function runHook(message: string, env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'lu-commit-msg-'));
@@ -73,7 +120,7 @@ describe('CM-1 a message that would close a reference is refused', () => {
     // Named, not merely counted: the author has to see which line to change,
     // and this is the line.
     expect(r.output).toContain('resolved: #18');
-    expect(r.output).toMatch(/^4:/m);
+    expect(r.output).toMatch(new RegExp(`^${OFFENDING_LINE}:`, 'm'));
   });
 
   test.each([
@@ -83,9 +130,52 @@ describe('CM-1 a message that would close a reference is refused', () => {
     ['GH- form', 'fix: something\n\nClosed GH-7 with this\n'],
     ['owner/repo form', 'fix: something\n\nfixed nocodenation/liquidupstart#12\n'],
     ['issue URL', 'fix: something\n\ncloses https://github.com/nocodenation/liquidupstart/issues/7\n'],
-    ['pull URL', 'fix: something\n\nresolve https://github.com/nocodenation/liquidupstart/pull/18\n']
+    ['pull URL', 'fix: something\n\nresolve https://github.com/nocodenation/liquidupstart/pull/18\n'],
+    // **A1 of the first review.** `grep` reads one line at a time, so the
+    // incident's own sentence wrapped two words earlier went straight through:
+    // `resolved:` ends line 3 and `#18, where both sides` opens line 4. Whether
+    // GitHub closes across a line break is not verified -- measuring it needs a
+    // commit pushed to a default branch -- and the costs decide it: a false
+    // refusal costs a rephrase, a false pass costs a pull request.
+    [
+      'a keyword at the end of a line and its reference at the start of the next',
+      'docs: something\n\nboth are merged and resolved:\n#18, where both sides appended an item\n'
+    ],
+    // **A2's counterpart.** The left boundary must not swallow punctuation: a
+    // keyword in brackets is still a keyword.
+    ['a keyword inside brackets', 'fix: something\n\n(fixes #12)\n'],
+    // **Blocking item 1.** A `#` line is stored by `-m` and `-F`, so it is read.
+    [
+      'a body line beginning with a reference, as -m stores it',
+      'docs: x\n\n#18 is merged, and this closes #20\n'
+    ]
   ])('CM-1 %s is refused', (_name, message) => {
     expect(runHook(message).code).toBe(1);
+  });
+
+  test('CM-1 and the line it names is the line in the file, not a shifted one', () => {
+    // While `#` lines were being dropped before the search, every reported number
+    // was short by however many had been dropped above it. The `#` line here is
+    // line 3 and the offending line is 5.
+    const r = runHook('docs: x\n\n# a comment line\n\nthis closes #20\n');
+    expect(r.code).toBe(1);
+    expect(r.output).toMatch(/^5:/m);
+  });
+
+  test('CM-1 and the refusal names the file git actually used', () => {
+    // It said `.git/COMMIT_EDITMSG` from a template. In a worktree `.git` is a
+    // file and the message lives elsewhere, so the sentence pointed at nothing.
+    const dir = mkdtempSync(join(tmpdir(), 'lu-commit-msg-path-'));
+    try {
+      const file = join(dir, 'MSG_SOMEWHERE_ELSE');
+      writeFileSync(file, 'docs: x\n\nthis closes #20\n');
+      const r = sh([HOOK, file], repoRoot);
+      expect(r.code).toBe(1);
+      expect(r.output).toContain(file);
+      expect(r.output).not.toContain('.git/COMMIT_EDITMSG');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -112,8 +202,41 @@ describe('CM-2 text that names a reference without instructing anything passes',
     expect(r.code, r.output).toBe(0);
   });
 
-  test('CM-2 a comment line carrying the pattern passes, because git strips it', () => {
-    const r = runHook('docs: something\n\n# resolved: #18 -- git removes this line\n');
+  test('CM-2 git\'s own editor template passes, which is what the # rule was for', () => {
+    // The premise that replaced *"a comment line is stripped, so it passes"*.
+    // What matters is not that `#` lines are ignored -- they are not, under `-m`
+    // and `-F` -- but that git's template carries no keyword in front of a
+    // reference, so reading it costs nothing.
+    const r = runHook(
+      [
+        'docs: something',
+        '',
+        '# Please enter the commit message for your changes. Lines starting',
+        "# with '#' will be ignored, and an empty message aborts the commit.",
+        '#',
+        '# On branch feature/commit-message-guard',
+        '# Changes to be committed:',
+        '#\tmodified:   scripts/hooks/commit-msg',
+        ''
+      ].join('\n')
+    );
+    expect(r.code, r.output).toBe(0);
+  });
+
+  test.each([
+    // A1's counterpart: the pair pass must not refuse prose that merely spans a
+    // line break. `this closes` / `the gap #18 left open` is the same sentence
+    // CM-2 already holds on one line, wrapped.
+    [
+      'a keyword and a reference on adjacent lines with a word between them',
+      'docs: something\n\nthis closes\nthe gap #18 left open\n'
+    ],
+    // A2's counterparts, each measured as refused before the boundary was added.
+    ['a word ending in fix', 'docs: something\n\nhotfix #12 landed this morning\n'],
+    ['a word ending in resolved', 'docs: something\n\nthe unresolved #12 thread stays open\n'],
+    ['disclosed, enclosed, suffixed', 'docs: something\n\ndisclosed: #12, enclosed #13, suffixed #14\n']
+  ])('CM-2 %s passes', (_name, message) => {
+    const r = runHook(message);
     expect(r.code, r.output).toBe(0);
   });
 

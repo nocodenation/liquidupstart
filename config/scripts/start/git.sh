@@ -82,6 +82,14 @@ mkdir -p "$HOOKS_DIR"
 chmod 755 "$HOOKS_DIR"
 install -m 755 "${SCRIPT_DIR}/../../agents/hooks/pre-push" "${HOOKS_DIR}/pre-push"
 
+# The commit-message guard, beside pre-push and for the same reason: the agents
+# in this stack push to declared GitHub repositories and write the same prose
+# about pull requests that closed one from a `main` commit on 2026-10-16. They
+# were neither covered nor named as uncovered, which is A3 of the first review
+# of #35. One line, because `core.hooksPath` below already points every agent
+# clone at this directory.
+install -m 755 "${SCRIPT_DIR}/../../../scripts/hooks/commit-msg" "${HOOKS_DIR}/commit-msg"
+
 cat > "$GITCONFIG" <<EOF
 [core]
 	hooksPath = ${HOOKS_MOUNT}
