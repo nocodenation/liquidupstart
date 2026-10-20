@@ -177,6 +177,30 @@ branch it was found from.
 
 Recorded 2026-10-20.
 
+---
+
+**A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.**
+Found by a local review of `fix/default-tier-writes` (#39) on 2026-10-20, which repairs the fifth.
+`tests/unit/m-a10.fixture-ceiling.test.ts:53` runs `mkdirSync(<repoRoot>/volumes/repos/.a10-ceiling-probe)`
+in a `describe` body — at collection, before any hook — and removes it in `afterAll`. Measured with
+a watcher polling the path every 50 ms during a run of the file in a worktree: **seen**, then removed
+after, 4 pass / 0 fail. So an interrupted default-tier run leaves it in the operator's
+`volumes/repos`, and since #39 a leftover there is harmless to `m-a5.nested-clone`, whose guard is
+a before/after listing, but it is still a write from the tier that promises none.
+
+Unlike m-a5's probe, this one is the premise: A10-23 asks whether git in a directory **inside the
+working copy** that is not a repository falls through to the working copy. A host repository of the
+case's own, made in `mkdtemp`, would ask git the same question without touching the checkout — the
+shape #39 took — but the case's second half reads the operator's `HEAD` and branch before and after,
+and moving it changes what "here" means. That is the decision to make, not a mechanical repair.
+
+The class keeps recurring one file at a time, each green because it creates what it asserts against.
+`tests/run.sh` is the chokepoint every default-tier run passes: a listing of `volumes/` before and
+after the `bun test` call, failing on a difference, would catch this file, the fifth, and the next —
+provided nothing else in the tier writes there, which no one has measured over a full run yet.
+
+Recorded 2026-10-20.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
