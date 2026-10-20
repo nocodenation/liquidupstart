@@ -6,7 +6,21 @@ REPOS=/repos
 # host directory this is mounted from is `chmod 777` by liquid.sh and its own mode
 # therefore closes nothing. See the Dockerfile for the measurement.
 DROP=/deploy/nar_extensions
-CACHE=/m2
+# No shared dependency cache. Each build resolves into its own local repository,
+# created under its work directory and discarded with it, so an artifact planted
+# by one build's code cannot be resolved by the next -- the last of B1's four
+# legs, 2026-10-01 review.
+#
+# What keeps that affordable is SEED, a closure baked into the image by
+# `seed.sh` and **copied into** each build's repository. `repo_for` says why a
+# copy rather than a `file://` remote, and what the difference measured.
+SEED=/opt/builder/m2-seed
+SEED_RECORD=/opt/builder/m2-seed.record
+# The lifecycle pins, spliced into the generated pom. The file says why they are
+# required: a local repository never writes the `maven-metadata.xml` a `file://`
+# remote is looked up for, so the seed can serve a pinned version and cannot
+# serve one that has to be resolved.
+PINS=/opt/builder/lifecycle-pins.xml
 LIQUID_LOGS=/liquid/logs
 # What a bundle is judged against, and what does the judging. Both are mounted:
 # the index of everything the running Liquid can load, written by its entrypoint
@@ -103,6 +117,67 @@ work_dir_for_build() {
   printf '%s' "$d"
 }
 
+# A Maven local repository for one build, inside the directory that build is
+# already working in, so it goes when that goes. Handed to BUILD_USER because
+# Maven writes it as that user.
+#
+# **It starts as a copy of the seed, and the copy is the design.** Offering the
+# seed as a `file://` repository was measured first and does not work. Maven
+# records which repository each artifact came from in `_remote.repositories`,
+# and the nar plugin's documentation step re-resolves the tree in a context
+# where the id `liquid-seed` is unknown. Maven says so -- *"present in the local
+# repository, but cached from a remote repository ID that is unavailable in
+# current build context, verifying that is downloadable"* -- and re-fetches
+# every artifact from central to check.
+#
+# Copied in, the artifacts carry the seed's own `_remote.repositories`, which
+# say `central=` because that is where the image build fetched them, so every
+# context accepts them. Measured 2026-10-11, the same end-to-end build:
+#
+#   seed as a file:// remote    20-26 s   438 downloads   28.5 MB   86 warnings
+#   seed copied in                 7 s      0 downloads      0 B     0 warnings
+#
+# A copy rather than a hardlink farm on purpose: `cp -al` would share inodes
+# with the seed, and a build writing through one of those links would alter the
+# seed itself -- the write path this whole change exists to close.
+repo_for() {
+  d="${1}/m2"
+  if [ -d "$SEED" ]; then
+    cp -a "$SEED" "$d"
+  else
+    mkdir -p "$d"
+  fi
+  chown -R "$BUILD_USER" "$d" 2>/dev/null || true
+  printf '%s' "$d"
+}
+
+# What the seed holds against what this build wants, read rather than assumed.
+#
+# A stale seed costs time and never correctness: `build.sh` reads the running
+# Liquid's version for the pom it generates, so a dependency the seed lacks is
+# simply fetched. The failure mode is a build that is mysteriously slow, which
+# is the kind that gets diagnosed three times. One line removes the mystery, and
+# it is computed from the record `seed.sh` wrote rather than from a version
+# somebody remembered to keep in step.
+#
+# It earned itself on its first real run: the seeding step took the nifi-api
+# version as an argument then, defaulted to the NiFi version, and NiFi 2.11.0
+# ships nifi-api 2.10.0. The build deployed a bundle while the seed served
+# almost none of it, and this line is what said so.
+seed_notice() {
+  [ -f "$SEED_RECORD" ] || return 0
+  seeded="$(sed -n 's/^nifi_version=//p' "$SEED_RECORD" | head -1)"
+  seeded_api="$(sed -n 's/^nifi_api_version=//p' "$SEED_RECORD" | head -1)"
+  [ -n "$seeded" ] || return 0
+  if [ "$seeded" != "${1:-}" ] || [ "$seeded_api" != "${2:-}" ]; then
+    out "seed ${seeded}/${seeded_api}, this build ${1:-?}/${2:-?} -- the"
+    out "  difference is fetched from the network on every build until the"
+    out "  builder image is rebuilt with SEED_NIFI_VERSION=${1:-?}."
+  else
+    out "seed ${seeded}/${seeded_api}, matching this build"
+  fi
+}
+
 run_maven() {
   if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
     su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
@@ -144,7 +219,7 @@ resolve_api_version() {
 </project>
 POM
 
-  if ! run_maven -f "${probe}/pom.xml" -Dmaven.repo.local="$CACHE" dependency:list \
+  if ! run_maven -f "${probe}/pom.xml" -Dmaven.repo.local="$(repo_for "$probe")" dependency:list \
        > "${probe}/resolve.log" 2>&1; then
     API_ERROR="$(grep '^\[ERROR\]' "${probe}/resolve.log" | head -4 | sed 's/^/  /')"
     rm -rf "$probe"
@@ -284,6 +359,14 @@ synthesise() {
   mkdir -p "${proj}/processors" "${proj}/nar"
   cp -a "${src}/src" "${proj}/processors/src"
 
+  # The lifecycle pins, from the same file the image build's seeding step read,
+  # so the seed is the closure of this build rather than of a different one.
+  # Empty when the file is absent, which is the case outside the container where
+  # the suite drives this against a stub mvn -- the pom is then unpinned and no
+  # fixture depends on the block.
+  pins=""
+  [ -f "$PINS" ] && pins="$(sed '/<!--/,/-->/d' "$PINS")"
+
   cat > "${proj}/pom.xml" <<POM
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -320,6 +403,7 @@ synthesise() {
     <module>processors</module>
     <module>nar</module>
   </modules>
+${pins}
 </project>
 POM
 
@@ -579,10 +663,11 @@ NOTCLOSED
   # author's: the pom, its plugins and its dependencies. The tree is handed over
   # again here, because `cp -a` above has just put root-owned files into it.
   chown -R "$BUILD_USER" "$work" 2>/dev/null || true
+  build_repo="$(repo_for "$work")"
   if [ -n "$module" ]; then
-    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" -pl "$module" -am package
+    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$build_repo" -pl "$module" -am package
   else
-    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$CACHE" package
+    set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$build_repo" package
   fi
   if ! run_maven "$@" > "$log" 2>&1; then
     cat "$log" >&2
@@ -757,14 +842,22 @@ NOINDEX
   mv "$part" "${DROP}/${base}"
   part=""
 
+  # `downloads` means what it says: artifacts this build pulled over the network.
+  # With the seed copied into the local repository there is no second source to
+  # separate out, and a build whose seed matches reports 0 -- measured. The
+  # version of this change that offered the seed as a `file://` remote needed
+  # this count to subtract the seed's own lines, or it read 329 on a build that
+  # touched nothing remote.
   downloads="$(grep -c 'Downloading from ' "$log" || true)"
+  : "${downloads:=0}"
   printf '%s\n' "$TARGET"
   out "built ${base}"
   out "wrote ${DROP}/${base}"
   out "source /repos/${rel}"
   out "pom ${pom_mode}"
   out "downloads ${downloads}"
-  out "cache ${CACHE}"
+  out "repository ${build_repo}, seeded from ${SEED}"
+  seed_notice "$nifi" "$api"
   out ""
   out "Liquid watches ${DROP}, judges what arrives there, and loads what passes:"
   out "the processor is in the catalogue within seconds. No restart, and none"
