@@ -201,6 +201,81 @@ provided nothing else in the tier writes there, which no one has measured over a
 
 Recorded 2026-10-20.
 
+---
+
+**The README still says there are no named volumes, and the Java feature runs on two.** Found by
+`/code-review` of `docs/readme-java-extensions` (#44) on 2026-10-21. `README.md` says *"no hidden
+named volumes"* in Features, *"there are no hidden named Docker volumes"* above its reset
+instructions, and *"no named volumes"* in Contributing. Measured on the running stack with
+`docker inspect liquid`: `liquidupstart_liquid_api` is mounted at `/opt/nifi/nifi-current/api`, and
+an anonymous volume at `/opt/nifi/nifi-current/nar_extensions`, the load path. Both are argued where
+they are taken — `compose.yml`'s note on `liquid_api`, and FR30 for the load path — and `CLAUDE.md`
+sharpened its rule to *state* on 2026-10-09. The README did not follow.
+
+It matters for the reset: deleting `./volumes/liquid/` clears neither, and a bundle in the load path
+survives it. `CLAUDE.md` asks that a reader resetting by deleting `volumes/` can see what that will
+and will not clear. #44's section says where the loaded copy lives and how to take one out; the three
+sentences are outside its diff and are left here.
+
+Recorded 2026-10-21.
+
+---
+
+**`nar-build`'s advice for an unresolvable `nifi-api` cannot get past the refusal it is printed
+in.** Same review. When `org.apache.nifi:nifi-utils:<nifi>` resolves no `nifi-api`, `build.sh`
+refuses with *"Add a pom.xml to the source directory naming the nifi-api version you mean —
+nar-build uses it unchanged"*. But `build_command` calls `resolve_target` (`build.sh:553`) before
+it decides between a synthesised and an author pom (`:574`), so the same refusal stops a directory
+that has one.
+
+Measured in the running `nar_builder`, on a copy of `build.sh` in `/tmp` with `REPOS` pointed at a
+probe directory holding a `pom.xml`, and `NAR_BUILD_API_PROBE_VERSION=0.0.0-lu-probe` so the
+resolution fails: the refusal came back with the advice, `Could not find artifact
+org.apache.nifi:nifi-utils:jar:0.0.0-lu-probe`, and `/deploy/nar_extensions` held two files before
+and two after. The probe's `pom.xml` was deliberately not valid XML, so that a wrong reading would
+have failed in Maven rather than deployed into the running Liquid.
+
+Two ways out, and the choice is a design one: resolve the target only for a synthesised project,
+since an author pom declares its own versions and `narcheck` judges the result against the running
+instance either way — or keep the resolution for both and drop the advice.
+
+Recorded 2026-10-21.
+
+---
+
+**FR30's removal procedure leaves the inbox copy, and the next start loads it again.** Found by the
+second review of #44's repair, on 2026-10-21. FR30 documents taking a bundle out as
+`rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar` inside the container and a restart.
+`config/liquid/entrypoint.sh` judges every `"$DROP_DIR"/*.nar` at each start and runs
+`cp -v "$NAR" "${LOAD_DIR}/"` for each that passes, and `nar-watch.sh` starts with an empty `seen`,
+so a bundle still in `./volumes/nar_extensions` is promoted again by the restart that was meant to
+unload it.
+
+FR30's own measurement could not show this: it removed `pr10probe-nar-1.0.0.nar`, and the inbox held
+only `b1-noversion-nar-1.0.0.nar` at the time — the bundle taken out had no inbox copy. The reading
+rests on the code; it was not run, because running it means restarting the operator's Liquid. #44's
+README now removes both copies and `A0-11` holds that. `docs/FEATURE-liquid-java-extensions.md`'s
+FR30, and the `M6` block's *Measured* row in its test specification, still show the three-line
+version.
+
+Recorded 2026-10-21.
+
+---
+
+**Whether a compose line is live is decided three ways, and `B1-2` does not decide it at all.**
+Same review. `tests/contract/m-b1.command-mounted.test.ts` holds that every agent service mounts
+`nar-build` with `serviceBlock(s).includes(MOUNT)`, and a YAML comment holding the mount contains it.
+Measured: with `openclaw-cli`'s mount turned into `# - ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro`,
+`m-b1.command-mounted` stays **3 pass / 0 fail** while compose would mount nothing there.
+
+Two other files filter comments with their own copy of the rule — `code()` in
+`tests/contract/m-b7.seeded-cache.test.ts` and an inline filter in
+`tests/contract/m-oc.bound-arguments.test.ts` — and #44 adds `mountsLive` to
+`tests/lib/compose-file.ts` for its own case. Once #44 is on `main`, `B1-2` and the two copies take
+the helper; until then it would mean editing three files outside that branch's diff.
+
+Recorded 2026-10-21.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
