@@ -868,13 +868,13 @@ copy is current.
 content that goes stale is the *state* — which pull requests are open, which were reviewed — and it
 was wrong twice in two days: the tables said #21 was "never reviewed" while a review of it was being
 answered, which the reviewer raised as `F4`, and the current section said nine were open when twelve
-were, hours after being written. That half is a command now, `scripts/state.sh`, held by `A17-1`, and
-the document points at it. What stays in the file is the map and the lessons, which do not age.
+were, hours after being written. That half is a command now, `scripts/state.sh`, held by `A17-1` and
+`A17-2`, and the document points at it. What stays in the file is the map and the lessons, which do
+not age.
 
 The split itself remains deferred, for the original reason and a sharper one: four documents cite the
-handover as the place a rule lives, **twelve** pull requests are open, and #19 carries an older copy
-of this very file on its branch. Moving files under a reviewer mid-review is how a review gets read
-twice.
+handover as the place a rule lives, and #19 carries an older copy of this very file on its branch.
+Moving files under a reviewer mid-review is how a review gets read twice.
 
 **~~The repositories card contradicts the key panel while the start is waiting.~~** *Done
 2026-09-17, as M-A12 -- the manifest is written after pass 1 as well, and again at the end.* Kept for

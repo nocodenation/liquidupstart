@@ -42,7 +42,7 @@ That is the whole rule. A new item joins this list only if it meets it.
 | 6 | Two `:latest` fallbacks in the `ingest-pdf` plugin build scripts: the same moving-tag class as `S9`, and the pattern for it now exists | `config/agents/.../ingest-pdf` | open |
 | 7 | `OC-15` and `OC-16` depend on what else the machine is doing — the class that produced thirteen phantom failures on 2026-10-16 | the two cases | open |
 | 8 | N6's residual: `narcheck.py` holds each class's bytes, so judging a bundle can still cost 256 MiB of jar plus 512 MiB of classes. Stream the parse instead | `config/liquid/narcheck.py` | open, the one real product item |
-| 9 | ~~Split `HANDOFF.md` into the map and the log~~ — **the half that ages is gone** | `scripts/state.sh`, `HANDOFF.md` | **done 2026-10-17**, `A17-1`. The state is a command now, because the narrated copy was wrong twice in two days — once raised by the reviewer as `F4`. The file split stays deferred: four documents cite the handover, twelve pull requests are open, and #19 carries an older copy |
+| 9 | Split `HANDOFF.md` into the map and the log — **the half that ages is gone** | `scripts/state.sh`, `HANDOFF.md` | **half done 2026-10-17**, `A17-1`, `A17-2`. The state is a command now, because the narrated copy was wrong twice in two days — once raised by the reviewer as `F4`. The file split stays deferred, as `BACKLOG.md` says: four documents cite the handover, and #19 carries an older copy |
 | 10 | Closing sweep: every pull request carries a message newer than its head, every branch merges clean, no entry left unmarked | — | last |
 
 ## Settled, with the reason, and not raised again

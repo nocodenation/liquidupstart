@@ -14,7 +14,8 @@
 #
 # It needs `gh` and refuses without it rather than printing an empty picture:
 # "cannot measure" is not "nothing open", which is the same rule the disk guard
-# and the image check carry.
+# and the image check carry. The same holds for a forge that does not answer, a
+# branch that cannot be fetched, and a git too old to judge a merge.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,20 +30,6 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 2
 fi
 
-echo "=== main ==="
-git fetch -q origin main 2>/dev/null || echo "  (could not fetch; the line below may be behind)"
-git log --oneline -1 origin/main
-
-echo
-echo "=== open pull requests ==="
-# The review state as the forge has it, not as a document remembers it. An empty
-# reviewDecision means no review has been submitted, which jq's `//` cannot catch
-# because the field is an empty string rather than null.
-gh pr list --state open --limit 50 \
-  --json number,title,reviewDecision,headRefName,updatedAt \
-  --jq '.[] | "#\(.number)\t\(if (.reviewDecision // "") == "" then "first review open" else (.reviewDecision | ascii_downcase | gsub("_"; " ")) end)\t\(.updatedAt[0:10])\t\(.headRefName)"' \
-  | sort -t'#' -k2 -n
-
 # Does one branch still merge into another, and say so when it cannot tell.
 #
 # `git merge-tree` is the authority rather than the forge's `mergeable` field,
@@ -50,46 +37,102 @@ gh pr list --state open --limit 50 \
 # measured repeatedly on 2026-10-16, where every branch read UNKNOWN while this
 # answered at once.
 #
-# Its **exit status** is the answer: 0 clean, 1 conflicts, anything else a failure
-# to judge. The first version of this grepped the output inside a pipeline, and
-# under `set -o pipefail` that reported every conflicting branch as **clean** --
-# merge-tree exits 1 on conflict, pipefail hands the pipeline that 1, and the `if`
-# took the else arm. Found on 2026-10-20 by using it: it called #16 clean while
-# the forge called it CONFLICTING, which is the one thing a tool written to
-# replace a stale narrative must never do. A17-2 holds it now.
+# Its **exit status** says whether: 0 clean, 1 conflicts, anything else a
+# failure to judge. A ref this host does not have **also** exits 1, so the
+# status alone would report a missing branch as a conflict; the first line
+# settles it, because only a merge that ran prints a tree id there.
+#
+# The conflicted paths are read from the list `--name-only` prints between the
+# tree id and the first blank line, never from the CONFLICT messages after it.
+# Those are translated -- `KONFLIKT (Inhalt)` under de_DE, measured 2026-10-20 --
+# and worded differently per kind, so the earlier
+# `grep '^CONFLICT' | sed 's/.*in //'` reported every conflict on a German-locale
+# machine as CANNOT TELL, and a modify/delete as a conflict in a file called
+# `tree.`.
 #
 # A function so a case can put branches through it -- the idiom B6-3 established.
 lu_merge_state() {  # lu_merge_state <base-ref> <branch-ref>
-  local out rc
+  local out rc first named
+  local oid='^[0-9a-f]{40}([0-9a-f]{24})?$'
   out="$(git merge-tree --write-tree --name-only "$1" "$2" 2>&1)" && rc=0 || rc=$?
-  # The status alone is not enough, which the case for this found immediately
-  # after the pipefail repair: a ref this host does not have **also** exits 1 --
-  # `merge-tree: <ref> - not something we can merge` -- so a missing branch would
-  # have been reported as a conflict in a file called nothing. Status first, then
-  # the output decides which kind of non-zero it was.
-  # `|| true` on the grep, and it is the third repair to this function in two
-  # days -- each one shell error semantics meeting another. grep exits 1 when it
-  # finds nothing, pipefail hands that to the assignment, and `set -e` then aborts
-  # the function **before** it prints "clean": a clean merge produced an empty
-  # answer, which the case for this caught at once.
-  local named
-  named="$(printf '%s\n' "$out" | grep -i '^CONFLICT' | sed 's/.*in //' | tr '\n' ' ' || true)"
+  first="${out%%$'\n'*}"
+  named="$(printf '%s\n' "$out" | awk 'NR == 1 { next } /^$/ { exit } { printf "%s ", $0 }')"
   if [ "$rc" -eq 0 ]; then
     printf 'clean\n'
-  elif [ -n "${named// /}" ]; then
-    printf 'CONFLICT: %s\n' "$named"
+  elif [ "$rc" -eq 1 ] && [[ "$first" =~ $oid ]]; then
+    printf 'CONFLICT: %s\n' "${named% }"
   else
     # Not "clean" and not a conflict: say which, and say it loudly.
-    printf 'CANNOT TELL (git exited %s): %s\n' "$rc" "$(printf '%s' "$out" | head -n1)"
+    printf 'CANNOT TELL (git exited %s): %s\n' "$rc" "$first"
   fi
 }
 
+echo "=== main ==="
+git fetch -q origin main 2>/dev/null || echo "  (could not fetch; the line below may be behind)"
+git log --oneline -1 origin/main
+
+# One question to the forge, and its status is checked: the table and the merge
+# walk are both read from this answer. The walk used to ask again in
+# `for b in $(gh ...)`, whose status not even `set -e` sees, so a rate limit or
+# an expired token printed the merge heading over nothing -- which reads as
+# "nothing to check".
+#
+# An empty reviewDecision means no decision, not no review: a review that only
+# comments never sets it (measured 2026-10-20 on cli/cli and oven-sh/bun, where
+# such pull requests still read REVIEW_REQUIRED). And `//` cannot catch the
+# empty string, because the field is "" rather than null.
+LIMIT=100
+if ! prs="$(gh pr list --state open --limit "${LIMIT}" \
+    --json number,author,reviewDecision,reviews,headRefName,baseRefName,updatedAt \
+    --jq '.[] | ["#\(.number)",
+                 (if (.reviewDecision // "") != "" then (.reviewDecision | ascii_downcase | gsub("_"; " "))
+                  elif ((.reviews // []) | length) > 0 then "reviewed, no decision"
+                  else "first review open" end),
+                 .updatedAt[0:10], (.author.login // "unknown"), .headRefName, .baseRefName] | join("\t")')"; then
+  echo "state.sh could not read the open pull requests from the forge (gh's own message is above)." >&2
+  echo "  \"cannot measure\" is not \"nothing is open\"." >&2
+  exit 3
+fi
+
 echo
-echo "=== does each open branch still merge into main? ==="
-for b in $(gh pr list --state open --limit 50 --json headRefName --jq '.[].headRefName'); do
-  git fetch -q origin "$b" 2>/dev/null || true
-  printf '  %-42s %s\n' "$b" "$(lu_merge_state "origin/main" "origin/${b}")"
-done
+echo "=== open pull requests ==="
+if [ -z "${prs}" ]; then
+  echo "  none"
+else
+  printf '%s\n' "${prs}" | cut -f1-5 | sort -t'#' -k2 -n
+fi
+if [ "$(printf '%s\n' "${prs}" | grep -c . || true)" -ge "${LIMIT}" ]; then
+  echo "  (the forge was asked for at most ${LIMIT}; there may be more)"
+fi
+
+echo
+echo "=== does each open branch still merge into its base? ==="
+# Into its own base, which for a stacked pull request is not main: #17 targets
+# feature/mutation-registry, and an answer about main does not apply to it.
+probe="$(lu_merge_state origin/main origin/main)"
+if [ "${probe}" != "clean" ]; then
+  # merge-tree learned --write-tree in git 2.38. Ubuntu 22.04 ships 2.34.1, which
+  # answers `fatal: unknown rev --write-tree` with 128 -- measured 2026-10-20 --
+  # and would otherwise put that line under every branch.
+  printf '  CANNOT TELL for any branch: git merge-tree --write-tree does not work here (%s).\n' "${probe}"
+  printf '  It needs git 2.38 or newer, and this is %s.\n' "$(git --version)"
+elif [ -n "${prs}" ]; then
+  while IFS=$'\t' read -r _ _ _ _ head base; do
+    # A branch that cannot be fetched would be judged on whatever ref is lying
+    # here, which may be days old, so it is not judged at all.
+    if ! git fetch -q origin "${head}" 2>/dev/null; then
+      printf '  %-42s %s\n' "${head}" "CANNOT TELL: could not fetch it, and what is here may be stale"
+      continue
+    fi
+    if [ "${base}" != "main" ] && ! git fetch -q origin "${base}" 2>/dev/null; then
+      printf '  %-42s %s\n' "${head}" "CANNOT TELL: could not fetch its base ${base}"
+      continue
+    fi
+    into=""
+    [ "${base}" = "main" ] || into="  (into ${base})"
+    printf '  %-42s %s%s\n' "${head}" "$(lu_merge_state "origin/${base}" "origin/${head}")" "${into}"
+  done <<< "${prs}"
+fi
 
 echo
 echo "=== worktrees ==="
