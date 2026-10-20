@@ -29,14 +29,30 @@ import { sh } from './shell';
 /**
  * Has a start run in this checkout?
  *
- * `config/scripts/start/git.sh` is the only thing that creates
- * `volumes/_git-secrets` -- `mkdir -p "$SECRETS_DIR"` with `chmod 700` -- so its
- * presence *is* the question. `volumes/repos` is not the discriminator: three
- * other places create that, `m-a5.nested-clone`, `m-a10.fixture-ceiling` and
- * `gitfixture` itself, so it is there after any run of the suite.
+ * **The deployed key, not the directory it lives in.** Until 2026-10-14 this
+ * asked for `volumes/_git-secrets` itself, on the grounds that
+ * `config/scripts/start/git.sh` is the only thing that creates it. The directory
+ * turned out to exist in a worktree where no start had ever run -- empty --
+ * and the four cases that trust this answer then read state that was not there:
+ * `A3-3` twice on `known_hosts`, `A4-16` on the shared hook, `A1-4` on the mode
+ * of `volumes/repos`. Four red cases reporting a defect that did not exist, in
+ * every worktree, which is the failure mode this whole module was written
+ * against.
+ *
+ * `id_ed25519` is the artefact a start cannot finish without -- `git.sh:55`
+ * generates it on every run -- and nothing in the suite writes one under
+ * `repoRoot`; the fixtures that make key pairs all make them in throwaway
+ * project directories. It is also not what any of those four cases assert, so
+ * the discriminator and the things it gates stay independent: `known_hosts`, the
+ * hooks directory and `volumes/repos` are each a separate artefact of the same
+ * start.
+ *
+ * `volumes/repos` was already ruled out as the discriminator and still is: three
+ * other places create it -- `m-a5.nested-clone`, `m-a10.fixture-ceiling` and
+ * `gitfixture` itself -- so it is there after any run of the suite.
  */
 export function startedIn(root: string): boolean {
-  return existsSync(join(root, 'volumes', '_git-secrets'));
+  return existsSync(join(root, 'volumes', '_git-secrets', 'id_ed25519'));
 }
 
 /** Is this checkout a git repository at all? A release installation is not. */
