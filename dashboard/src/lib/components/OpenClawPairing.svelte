@@ -1,0 +1,306 @@
+<script>
+  // A browser the Control UI has refused, and the one control that lets it back
+  // in. R2 of §9 in docs/FEATURE-openclaw-2026-9-1.md.
+  //
+  // The card is silent while nothing is waiting and nothing failed: it is only
+  // ever right to show it when there is something to do. A card that says "no
+  // pending requests" on every load teaches the operator to stop reading this
+  // part of the page.
+  // **The stack's state and the page's, because this card must not poll blind.**
+  // A3 of the 2026-10-01 review: it ran a `docker run` every 15 s in every open
+  // tab, stack up or down -- and the card sits *outside* the page's
+  // `{#if data.running}` block, so "stack down" was the dashboard's ordinary
+  // first state. With the gateway stopped one GET took 19.2 s, longer than the
+  // interval, so requests piled up; and every poll wrote three lines into the
+  // gateway log, among them a scope-grant audit line. Nothing a pairing request
+  // can mean exists while the stack is down, or while a start or teardown runs.
+  let { running = false, busy = false } = $props();
+
+  let pending = $state([]);
+  let others = $state([]);
+  // Control UI browsers whose token was revoked and which no longer ask.
+  // A4 of the 2026-10-01 review: a refused browser tries once and stops, and the
+  // gateway drops the pending request after five minutes -- so an operator who
+  // arrives later than that saw an empty page while OpenClaw still said "Role
+  // upgrade pending".
+  let revoked = $state([]);
+
+  // **A refusal the operator can act on, A5 of the 2026-10-01 review.**
+  //
+  // `./run.sh` rebuilds the dashboard without restarting the stack, and
+  // `config/scripts/start/openclaw.sh` writes `gateway.auth.identityScopes` only
+  // at start. So a gateway still running on the configuration `main` wrote has no
+  // grant, every listing comes back `missing scope: operator.pairing`, and the
+  // card said only that -- a sentence that names a scope nobody can grant by hand
+  // here, because the CLI that would do it is the one being refused. The remedy is
+  // one start, and it was nowhere on the page.
+  //
+  // Derived from the message rather than from a flag, because the message is what
+  // the gateway actually said and the server passes it through verbatim.
+  let remedy = $derived(
+    /missing scope: operator\.pairing/.test(problem)
+      ? 'The stack has not been started since the dashboard was updated. OpenClaw only learns this permission when the stack starts, so start it once from this page and the card will work.'
+      : ''
+  );
+  let problem = $state('');
+  let loaded = $state(false);
+  let working = $state('');
+  let result = $state(null);
+  let timer;
+
+  // What this card can approve: a Control UI browser asking for operator access.
+  // The same rule the server applies, so the button is not offered for something
+  // the server will refuse.
+  const recoverable = (r) => r.clientId === 'openclaw-control-ui' && r.role === 'operator';
+
+  // One row per device, newest request first: a refused browser mints a new id on
+  // every retry, and four rows for one browser is not four browsers.
+  //
+  // **The retry count is gone, B1 of the 2026-10-01 review.** It read "asked N
+  // times", and it could never say anything: the gateway keeps **one** pending
+  // request per device and the request id stayed the same across retries, so the
+  // listing never carried two entries for one device and N was always 1. A number
+  // that cannot change is worse than no number, because it reads as information.
+  function byDevice(list) {
+    const seen = new Map();
+    for (const r of [...list].sort((a, b) => (b.requestedAt ?? 0) - (a.requestedAt ?? 0))) {
+      if (!seen.has(r.deviceId)) seen.set(r.deviceId, { ...r });
+      // Nothing to count: see the note above byDevice.
+    }
+    return [...seen.values()];
+  }
+
+  // One at a time. Returning to a tab fires `visibilitychange` **and** `focus`,
+  // so `again()` ran twice and the later answer won -- which may be the older
+  // one. A3's third leg. Not `$state`, because nothing renders from it.
+  let inFlight = false;
+
+  async function load() {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const res = await fetch('/openclaw-pairing');
+      const body = await res.json();
+      const all = Array.isArray(body?.pending) ? body.pending : [];
+      // A failure is not an empty list. The server returns ok:false with the
+      // CLI's own words precisely so this can say them; ignoring them left the
+      // operator locked out with a silent page, which is the dead end this card
+      // exists to remove. Finding 4 of the 2026-09-29 review.
+      problem = body?.ok === false ? (body.message ?? 'The gateway did not answer.') : '';
+      revoked = Array.isArray(body?.revoked) ? body.revoked : [];
+      pending = byDevice(all.filter(recoverable));
+      others = byDevice(all.filter((r) => !recoverable(r)));
+    } catch (e) {
+      pending = [];
+      others = [];
+      revoked = [];
+      problem = `The dashboard could not ask OpenClaw: ${e.message}`;
+    } finally {
+      inFlight = false;
+      loaded = true;
+    }
+  }
+
+  async function approve(deviceId) {
+    if (working) return;
+    working = deviceId;
+    clearTimeout(timer);
+    try {
+      // The device, never a request id read out of this page: a refused browser
+      // mints a new id on every retry, so what was rendered is stale. The server
+      // reads that device's current request at the moment this is pressed.
+      const res = await fetch('/openclaw-pairing', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId })
+      });
+      const body = await res.json().catch(() => ({}));
+      result = {
+        ok: body.ok === true,
+        message: body.message ?? `The approval could not be run (${res.status}).`
+      };
+      await load();
+    } catch (e) {
+      result = { ok: false, message: `The approval could not be run: ${e.message}` };
+    } finally {
+      working = '';
+      // Held rather than flashed: a confirmation that leaves with the thing it
+      // confirms was never read — the operator's finding of 2026-09-18, in the
+      // deploy-key panel.
+      timer = setTimeout(() => (result = null), 8000);
+    }
+  }
+
+  // Read again while the page is open. The operator starts the stack here, is
+  // refused in OpenClaw, and comes back to this tab: with one read at mount there
+  // was no card until they reloaded by hand, which is the same dead end one step
+  // along. Finding 5 of the 2026-09-29 review.
+  const POLL_MS = 15000;
+
+  $effect(() => {
+    // Nothing to ask while the stack is down or the page is busy with a start, a
+    // teardown or a rebuild. The card stays silent rather than explaining itself:
+    // it is only ever right to show it when there is something to do, and a
+    // request that cannot exist is not something to do.
+    if (!running || busy) {
+      pending = [];
+      others = [];
+      revoked = [];
+      problem = '';
+      return;
+    }
+
+    load();
+    const again = () => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') load();
+    };
+    const poll = setInterval(again, POLL_MS);
+    // focus as well as visibilitychange: switching tabs fires the second, and
+    // returning from another window only the first.
+    window.addEventListener('focus', again);
+    document.addEventListener('visibilitychange', again);
+    return () => {
+      clearInterval(poll);
+      clearTimeout(timer);
+      window.removeEventListener('focus', again);
+      document.removeEventListener('visibilitychange', again);
+    };
+  });
+</script>
+
+<!-- Held open while a result is showing, even once nothing is pending any more.
+     Approving empties the list, so a confirmation living inside the card leaves
+     with the card and is never read. That is the operator's finding of
+     2026-09-18 about the skip panel, met again here the first time this card was
+     used for real, on 2026-09-19. -->
+{#if loaded && (pending.length > 0 || others.length > 0 || revoked.length > 0 || problem || result)}
+  <section class="card">
+    <h2>
+      {pending.length > 0 || others.length > 0
+        ? 'A browser is waiting to be let in'
+        : 'A browser was refused and has stopped asking'}
+    </h2>
+
+    {#if problem}
+      <p class="gitmessage warn">
+        OpenClaw could not be asked what is waiting: {problem}
+      </p>
+      {#if remedy}
+        <p class="sectdesc">{remedy}</p>
+      {/if}
+    {/if}
+
+    <!-- Nothing pending and a Control UI token revoked: the browser asked once,
+         was refused, and stopped, and the gateway dropped the request after five
+         minutes. Without this the page was empty while OpenClaw still said "Role
+         upgrade pending", so the operator had no way to know this card was the
+         place to look. A4 of the 2026-10-01 review. -->
+    {#if pending.length === 0 && others.length === 0 && revoked.length > 0}
+      <p class="gitmessage warn">
+        {revoked.length === 1 ? 'A browser' : `${revoked.length} browsers`} here
+        {revoked.length === 1 ? 'was' : 'were'} refused by OpenClaw and
+        {revoked.length === 1 ? 'is' : 'are'} no longer asking: a refused browser tries once,
+        and OpenClaw forgets the request after five minutes. It still shows “Role upgrade
+        pending”.
+      </p>
+      <p class="sectdesc">
+        Open OpenClaw in that browser and reload it once. It asks again, and the request
+        appears here for you to approve.
+      </p>
+    {/if}
+
+    {#if pending.length > 0}
+      <p class="gitmessage warn">
+        {pending.length === 1 ? 'One browser has' : `${pending.length} browsers have`} asked for
+        access to OpenClaw and {pending.length === 1 ? 'is' : 'are'} waiting for you. Until you
+        approve, {pending.length === 1 ? 'it shows' : 'they show'} “Role upgrade pending” and cannot
+        connect.
+      </p>
+
+      <ul class="gitlist">
+        {#each pending as req (req.deviceId)}
+          <li class="gitrepo">
+            <div class="gitrepo-head">
+              <span class="gitrepo-label">{req.clientId}</span>
+              <span class="gitrepo-state">{req.isRepair ? 'returning' : 'new'}</span>
+              <span class="sectdesc">{req.deviceId.slice(0, 12)}</span>
+            </div>
+            <!-- Role, address and scopes, because "which browser is this" is the
+                 question the operator is actually being asked, and a client id
+                 plus twelve characters of device id does not answer it. -->
+            <p class="sectdesc">
+              {req.remoteAddress ? `from ${req.remoteAddress}` : 'from an address the gateway did not report'}
+              </p>
+              <!-- Client and role are connect parameters the requester chooses: `client.id =
+                   opts.clientName` and `role = opts.role` in the client bundle. Anything that
+                   can open a gateway connection can file a request declaring them, and it then
+                   appears here next to the operator's own browser. The address above is the
+                   one thing on this card the requester does not declare about itself, so it
+                   leads -- and these two say whose words they are. B2 of the 2026-10-01
+                   review. -->
+              <p class="sectdesc dim">
+                calls itself {req.clientId || 'an unnamed client'}, asking for the role
+                {req.role || 'it did not state'} — both its own words
+            </p>
+            {#if req.scopes?.length}
+              <p class="sectdesc">asking for {req.scopes.join(', ')}</p>
+            {/if}
+            <button
+              type="button"
+              class="save"
+              disabled={!!working}
+              onclick={() => approve(req.deviceId)}
+            >
+              {working === req.deviceId ? 'Approving…' : 'Approve this browser'}
+            </button>
+          </li>
+        {/each}
+      </ul>
+
+      <!-- **What approving actually grants, B3 of the 2026-10-01 review.** This said
+           "gives that browser back what it had", and it does not: before revocation the
+           device held five scopes without admin, and after approval through this card its
+           record and token held six, with `operator.admin` and `approvedVia: owner`. That
+           is not R3's "stored with five scopes and no admin".
+      
+           **Measured 2026-10-14 before choosing the weaker remedy.** The reviewer offered
+           two: correct the sentence, or approve with a scope list without admin if the CLI
+           allows one. It does not. `openclaw devices approve --help` in 2026.9.1 takes
+           `--json`, `--latest`, `--password`, `--timeout`, `--token` and `--url`, and no
+           command in the `devices` group -- approve, clear, join-code, list, reject,
+           remove, rename, revoke, rotate -- accepts a scope set. The scopes come from
+           `gateway.auth.identityScopes`, which is per identity rather than per device, so
+           this card has nothing to narrow with. So the sentence is corrected and says what
+           it grants, in the strongest words the card has. -->
+      <p class="gitrepo-instructions">
+        A returning browser is one this stack knew before and whose access was withdrawn.
+        <strong>Approving gives it full operator access, including administrative</strong>
+        <strong>rights</strong> — the scopes come from the identity this stack asserts for every
+        request, not from this request, so there is nothing here to narrow. Nothing else on
+        the machine changes.
+      </p>
+    {/if}
+
+    {#if others.length > 0}
+      <!-- Named and not approvable here. Anything on the stack's network can put
+           a request in this queue -- `openclaw node run` from a container leaves a
+           role: node one -- and an Approve button that took whatever asked last
+           would let it in while the operator's own browser stayed locked out. -->
+      <p class="gitrepo-instructions">
+        {others.length === 1 ? 'One other request is' : `${others.length} other requests are`}
+        pending that this card does not approve, because {others.length === 1 ? 'it is' : 'they are'}
+        not a Control UI browser asking for operator access: {others
+          .map((r) => `${r.clientId} (role ${r.role || 'unstated'})`)
+          .join(', ')}. Approve {others.length === 1 ? 'it' : 'them'} with the OpenClaw CLI if you
+        meant to.
+      </p>
+    {/if}
+
+    {#if result}
+      <p class="gitresult" class:warn={!result.ok}>{result.message}</p>
+      {#if result.ok && pending.length === 0}
+        <p class="gitrepo-instructions">Reload that browser and it is in.</p>
+      {/if}
+    {/if}
+  </section>
+{/if}
