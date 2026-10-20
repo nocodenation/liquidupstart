@@ -74,6 +74,42 @@ export function builderContextDigest(dir: string = BUILD_CONTEXT): string {
 }
 
 /**
+ * When docker says a thing was made, in milliseconds, or `null` if it will not say.
+ *
+ * The parse was inline and it worked: `docker images --format '{{.CreatedAt}}'`
+ * prints `2026-06-16 02:01:20 +0200 CEST`, whose `Date.parse` is **NaN** on bun
+ * 1.4.3, and the caller stripped the trailing zone **name** -- not the offset --
+ * before parsing, which measures correctly on this host (docker 29.8.1,
+ * 2026-10-20). It is a function now for three reasons, none of them a defect in
+ * what it replaces:
+ *
+ *   - **two sweeps need it.** The containers get the same age floor as the images
+ *     below, so the same reading happens twice, and a second copy is how two
+ *     readers come to disagree.
+ *   - **an unreadable stamp is a decision, not a fallback.** It read
+ *     `Number.isNaN(ms) ? Date.now() : ms` -- dating the object *now*, so it was
+ *     kept, which is the right answer arrived at sideways. `null` says it, and a
+ *     case can then put it to the rule instead of to the clock.
+ *   - **the zone pattern was `[A-Z]{3,4}`**, and `Date.parse` is then handed
+ *     whatever a five-letter abbreviation leaves behind. Anchoring on the date,
+ *     the time and the **offset** instead means nothing after the offset can
+ *     reach the parser, and the same function also takes the RFC 3339 that
+ *     `docker inspect` prints.
+ *
+ * What was actually wrong here is below, and it is not the parse: the container
+ * sweep had no age floor at all.
+ */
+export function parseDockerTime(stamp: string): number | null {
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s*(Z|[+-]\d{2}:?\d{2})/.exec(
+    stamp.trim()
+  );
+  if (!m) return null;
+  const zone = m[3] === 'Z' ? 'Z' : m[3].length === 5 ? `${m[3].slice(0, 3)}:${m[3].slice(3)}` : m[3];
+  const ms = Date.parse(`${m[1]}T${m[2]}${zone}`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
  * Which of the images already on the host this run may remove.
  *
  * A pure function of what `docker images` reports, so the rule is testable
@@ -82,9 +118,14 @@ export function builderContextDigest(dir: string = BUILD_CONTEXT): string {
  * covers the second -- a run that is using an image built it seconds or minutes
  * ago, not hours -- and it is why this sweeps rather than deleting everything
  * that is not `keep`.
+ *
+ * An age of `null` -- docker would not say, or said something unreadable -- keeps
+ * the image. *"Cannot measure" is not "stale"*, the rule `SP-4` carries for the
+ * disk, and here it is also the only direction that cannot take an image out from
+ * under a concurrent run.
  */
 export function sweepable(
-  images: Array<{ tag: string; createdAtMs: number }>,
+  images: Array<{ tag: string; createdAtMs: number | null }>,
   keep: string,
   nowMs: number,
   olderThanMs: number = 2 * 60 * 60 * 1000
@@ -92,7 +133,7 @@ export function sweepable(
   return images
     .filter((i) => i.tag !== keep)
     .filter((i) => i.tag.startsWith(`${TAG_PREFIX}:tree-`) || i.tag.startsWith(`${TAG_PREFIX}:run-`))
-    .filter((i) => nowMs - i.createdAtMs > olderThanMs)
+    .filter((i) => i.createdAtMs !== null && nowMs - i.createdAtMs > olderThanMs)
     .map((i) => i.tag);
 }
 
@@ -128,14 +169,27 @@ export function builderImage(): string {
  * the name, because the names are docker's own when a case does not pass one --
  * which is how the leak was invisible: nothing about `festive_wescoff` says it
  * belongs to this suite.
+ *
+ * **And never a container of a concurrent run, which is what the age floor is
+ * for.** What stood here had none, on the argument that the run in flight is
+ * excluded by tag and a concurrent run holds a different tree tag -- true, and
+ * beside the point: a *different* tag is exactly what this then removed. The
+ * reviewer measured that shape on #19, where the same reasoning had been written
+ * into the suite's other sweep: one sweep from a second clone, while a run's
+ * first container was up, and that run failed with `never answered on port
+ * 32780: … No such container`. The two sweeps answer the same question and now
+ * answer it the same way. An unreadable age keeps the container.
  */
 export function sweepableContainers(
-  containers: Array<{ id: string; image: string }>,
-  keep: string
+  containers: Array<{ id: string; image: string; createdAtMs: number | null }>,
+  keep: string,
+  nowMs: number,
+  olderThanMs: number = 2 * 60 * 60 * 1000
 ): string[] {
   return containers
     .filter((c) => c.image !== keep)
     .filter((c) => c.image.startsWith(`${TAG_PREFIX}:tree-`) || c.image.startsWith(`${TAG_PREFIX}:run-`))
+    .filter((c) => c.createdAtMs !== null && nowMs - c.createdAtMs > olderThanMs)
     .map((c) => c.id);
 }
 
@@ -149,28 +203,27 @@ function sweepOldBuilderImages(keep: string): void {
     .filter(Boolean)
     .map((l) => {
       const [tag, created] = l.split('\t');
-      const ms = Date.parse((created ?? '').replace(/ [A-Z]{3,4}$/, ''));
-      return { tag, createdAtMs: Number.isNaN(ms) ? Date.now() : ms };
+      return { tag, createdAtMs: parseDockerTime(created ?? '') };
     });
   // Containers first: an image a container holds cannot be removed, so sweeping
-  // images alone leaves exactly the gigabyte this is for. No age floor here --
-  // a container on one of these tags is this suite's own litter whatever its age,
-  // and the tag of the run in flight is excluded by name.
-  const ps = sh(['docker', 'ps', '-a', '--format', '{{.ID}}\t{{.Image}}']);
+  // images alone leaves exactly the gigabyte this is for. Same age floor as the
+  // images, because a concurrent run's container is not this run's litter.
+  const now = Date.now();
+  const ps = sh(['docker', 'ps', '-a', '--format', '{{.ID}}\t{{.Image}}\t{{.CreatedAt}}']);
   if (ps.code === 0) {
     const containers = ps.stdout
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean)
       .map((l) => {
-        const [id, image] = l.split('\t');
-        return { id, image };
+        const [id, image, created] = l.split('\t');
+        return { id, image, createdAtMs: parseDockerTime(created ?? '') };
       });
-    const stale = sweepableContainers(containers, keep);
+    const stale = sweepableContainers(containers, keep, now);
     if (stale.length) sh(['docker', 'rm', '-f', ...stale]);
   }
 
-  const drop = sweepable(images, keep, Date.now());
+  const drop = sweepable(images, keep, now);
   // One call, and failures are ignored: another run may be holding one, which is
   // exactly the case the age floor makes unlikely and docker refuses anyway.
   if (drop.length) sh(['docker', 'rmi', ...drop]);
