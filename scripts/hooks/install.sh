@@ -80,6 +80,15 @@ self_test() {
   return 0
 }
 
+# An unknown argument must not install. `--check` is presented as the way to
+# *ask*, and `check`, `-c` or `--status` all fell through to the install path:
+# they rewrote the stamp from the current checkout, which defeats the staleness
+# comparison the stamp exists for, and could unset core.hooksPath.
+if [[ $# -gt 0 && "${1}" != "--check" ]]; then
+  echo "usage: install.sh [--check]" >&2
+  exit 2
+fi
+
 if [[ "${1:-}" == "--check" ]]; then
   hook="$(effective_hook)"
   if self_test "$hook"; then

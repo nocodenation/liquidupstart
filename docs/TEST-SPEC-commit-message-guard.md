@@ -68,6 +68,11 @@ nothing to mock.
 | **CM-5** | **negative** | …and a local `git merge -m` message is read too, with its own positive counterpart |
 | **CM-6** | positive | The agents' shared hooks directory carries the guard, executable |
 | **CM-6** | positive + **negative** | …and it refuses there what it refuses here, and passes what it passes |
+| **CM-7** | **negative** | A byte `sed` cannot read in the current locale does **not** let the message through — in three locales | *The guard failed open. The suite pins `LC_ALL=C`, so no case could see it* |
+| **CM-7** | positive | …while the same byte in harmless prose still commits, in the same three | A guard nobody can use is the other failure |
+| **CM-7** | positive + **negative** | …and a valid multi-byte character is ordinary text in either direction | So the repair is not "refuse anything unusual" |
+| **CM-7** | positive | …and the refusal says it could not **read**, not that it judged | Two different facts; an author must not edit a sentence that was never the problem |
+| **CM-7** | positive | …and the hook pins the locale itself, so a caller cannot change the verdict | Plus: no step's status is discarded |
 
 ## 3. Detail
 
@@ -136,7 +141,7 @@ nothing to mock.
 | **Premise** | Everything above hands the hook a file. **Two defects lived precisely where that cannot look**, and both ended with the guard silently off: the hook dropped lines that `-m` and `-F` actually store, and the installed path lived in a checkout, so moving the main tree to an older branch disarmed every worktree at once. A hook is a guard only if git runs it on the message git stores. |
 | **Component** | `git commit` itself, in the clone `CM-4` built, with the hook installed by `install.sh`. |
 | **Steps** | Commit with `-m` subject and body; with `-F` from a file; the counterpart with prose; then `git checkout e3a391a` in the main tree and commit **from the worktree**, with its own counterpart in that same state; then a real `git merge --no-ff -m`, refused and then accepted. |
-| **Test data, both sides, and why these** | Refused: `both are merged and resolved: #18` as a `-m` body — the incident's own sentence; `#18 is merged, and this closes #20`, a body line **beginning** with a reference, which is the shape `-m` stores and the hook used to drop, measured by the reviewer at rc 0 with the line committed intact; and `Merge cm-side, fixes #21` as a merge message. Must commit: `the #18 conflict, answered on #19`, and `Merge cm-side, the #21 round`. The commit the main tree moves to is **`e3a391a`**, this branch's merge base — chosen because it is the newest commit in this repository's history carrying no `scripts/hooks`, so the scenario is the repository's real state rather than a constructed one. |
+| **Test data, both sides, and why these** | Refused: `both are merged and resolved: #18` as a `-m` body — the incident's own sentence; `#18 is merged, and this closes #20`, a body line **beginning** with a reference, which is the shape `-m` stores and the hook used to drop, measured by the reviewer at rc 0 with the line committed intact; and `Merge cm-side, fixes #21` as a merge message. Must commit: `the #18 conflict, answered on #19`, and `Merge cm-side, the #21 round`. The commit the main tree moves to is **`e3a391a`**, this branch's merge base. *The reason given for it was false and is corrected:* it said "the newest commit in this repository's history carrying no `scripts/hooks`", and in fact **no commit on `main` carries it** — `main:scripts/` is `install linux uninstall.sh`, and the directory exists only on this branch. So any commit of `main` would serve, `main`'s own tip included; `e3a391a` is simply the merge base, which is a stable thing to name. The scenario is still the repository's real state — more so than the claim suggested. |
 | **Expected** | Non-zero and `commit-msg refused this message` for each refused message; `rc=0` for each counterpart; and the refusal holding while the main tree carries no `scripts/hooks` at all. |
 | **What it found** | Green, six scenarios, 2026-10-20 — and the merge scenario was **green for the wrong reason** when first written: `cm-side` was branched at `HEAD`, so `git merge` answered *"Already up to date"*, made no commit and ran no hook. It is a real divergence now, with a side commit, which is the difference between measuring the merge and measuring nothing. |
 | **Shown able to fail** | `sed -e '/^#/d'` restored → the `#`-line scenarios redden, both `-m` and `-F`. The installer pointed back at `${MAIN_ROOT}/scripts/hooks` → the checkout scenario reddens, which is the reviewer's reproduction turned into a case. |
@@ -156,6 +161,23 @@ nothing to mock.
 | **Why this is one `install` line and not a second mechanism** | The alternative on the table was to declare agents out of scope in §3. They are the population the incident came from: an agent wrote the message that closed #18. Declaring them uncovered would have been honest and useless. |
 | **Implemented by** | `tests/contract/m-a4.hooks-path.test.ts`. |
 | **Covers** | CM-FR1, CM-FR3. |
+
+### CM-7 — a guard that cannot read the message refuses it
+
+| | |
+|---|---|
+| **Premise** | **This guard failed open, and it is the most serious defect the feature has had.** Under a UTF-8 locale — the operator's normal state in Terminal.app — one byte that is invalid in that locale makes BSD `sed` exit with `RE error: illegal byte sequence`. `body` was then empty, the pattern matched nothing, and the hook **permitted** the message. |
+| **What was measured, 2026-10-20, git 2.48.1** | A message carrying one Latin-1 `ö` (`0xf6`) in its subject and the incident's own sentence — `both are merged and resolved: #18`, pure ASCII — in its body: **rc 0** under `LC_ALL=en_US.UTF-8`, **rc 1** under `LC_ALL=C`. End to end with the hook installed, the same message commits. GNU sed 4.9 in `debian:stable-slim` handles the file correctly, so the stack's agents were unaffected and the hole belonged to the machine the guard was written and reviewed on. |
+| **Why no case could see it, which is the part worth keeping** | `tests/lib/shell.ts` pins `LC_ALL=C`, `LANG=C` and `LANGUAGE=C` for every case in the suite, for its own good reasons. So the one environment variable that decided this verdict was held constant at the value where the bug does not appear — in **both** directions, which is why neither the author's runs nor the reviewer's could have found it. These scenarios therefore **set the locale themselves**, and that is the point of them: a verdict that depends on the environment has to be measured across the environments it will meet. |
+| **Component** | `config/agents/hooks/commit-msg`, invoked as git invokes it, with `LC_ALL`, `LANG` and `LANGUAGE` set per scenario. |
+| **The repair is two things, because the locale is one cause and not the class** | The hook exports `LC_ALL=C`, so `sed` and `grep` work on bytes — which is what a pattern of ASCII keywords wants, and which no caller can override. And **every step's status is read**: `sed`, the match and the line-pair pass each report failure, and a failure to look is not a finding of nothing. The `\|\| true` on the match was what made those two the same answer. |
+| **Test data, both sides, stated as bytes** | `docs: M<0xf6>ller` + blank + `both are merged and resolved: #18` — must be refused. `docs: M<0xf6>ller reviewed it` + blank + `the #18 conflict, answered on #19` — must commit. The same two in valid UTF-8 (`Möller`) — refused and permitted respectively, so the repair is not "refuse anything unusual". Each run under `C`, `en_US.UTF-8` and `de_DE.UTF-8`. |
+| **Expected** | `rc=1` for every refusal and `rc=0` for every counterpart, **identically in all three locales**; and the refusal text distinguishes *could not read* from *would close*. |
+| **What it found** | Green, 11 scenarios. Written after the defect was reproduced, so the first run of the first three was against the broken hook: `rc=0` under both UTF-8 locales. |
+| **Shown able to fail** | `export LC_ALL=C` removed → the three negatives redden under both UTF-8 locales and stay green under `C`, which is the measurement that identified the cause. The `sed` status check removed → the same three redden. `\|\| true` restored on the match → the message is permitted again whenever `grep` cannot run. |
+| **What it does not cover** | A locale in which a *valid* byte sequence means something different to `grep -i` — Turkish dotless `i` is the usual example. The pattern is ASCII keywords and `LC_ALL=C` is now pinned, so case folding is byte folding; naming it because the class is wider than the instance. |
+| **Implemented by** | `tests/unit/m-cm.commit-message-guard.test.ts`. |
+| **Covers** | CM-FR1, **CM-FR7**. |
 
 ## 4. What is deliberately not here
 
@@ -190,3 +212,4 @@ nothing to mock.
 | CM-FR5 enabling it is computed, not claimed | **CM-4**, and `install.sh --check` for a real clone |
 | **CM-FR6 the guard git runs cannot be emptied by a checkout** | **CM-4**, **CM-5** |
 | CM-FR1 in the stack's agent clones as well | **CM-6** |
+| **CM-FR7 a guard that cannot read the message refuses it, whatever the locale** | **CM-7** |

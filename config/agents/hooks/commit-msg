@@ -20,6 +20,27 @@
 # for: a guard that forbids a real workflow gets worked around rather than used.
 set -u
 
+# **Byte semantics, and a refusal when the tools cannot answer.**
+#
+# This guard failed **open**. Under a UTF-8 locale -- the operator's normal state
+# in Terminal.app -- one byte that is invalid in that locale makes BSD `sed` exit
+# with `RE error: illegal byte sequence`; `body` was then empty, nothing matched,
+# and the hook permitted the message. Measured 2026-10-20 on git 2.48.1 with BSD
+# sed: a message carrying one Latin-1 byte in its subject and the incident's own
+# sentence, pure ASCII, in its body commits with **rc 0** under
+# `LC_ALL=en_US.UTF-8` and is refused under `LC_ALL=C`. GNU sed handles the same
+# file, so the hole is specific to the machine the guard was written and reviewed
+# on -- and `tests/lib/shell.ts` pins `LC_ALL=C` for every case, so no test in
+# the suite could see it in either direction.
+#
+# Two answers, because the locale is one cause and not the class. `LC_ALL=C`
+# makes both tools work on bytes, which is what a pattern of ASCII keywords
+# wants. And every step's status is now read: **a guard that cannot read the
+# message refuses it.** A commit refused for an unreadable message costs a
+# rephrase; a commit permitted because the guard broke costs what this hook
+# exists to prevent.
+export LC_ALL=C
+
 msg_file="$1"
 
 # **Comment lines are read, and that is a correction.** This dropped every line
@@ -52,7 +73,26 @@ msg_file="$1"
 #
 # The character is `core.commentChar`, which may be any of git's documented
 # alternatives, so the class covers them rather than assuming `#`.
-body=$(sed -e '/^[#;@!$%^&|:]\{0,1\} *-\{3,\} >8 -\{3,\}/,$d' "$msg_file")
+if ! body=$(sed -e '/^[#;@!$%^&|:]\{0,1\} *-\{3,\} >8 -\{3,\}/,$d' "$msg_file" 2>/dev/null); then
+  cat >&2 <<CANNOT
+
+commit-msg refused this message: the guard could not read it.
+
+sed failed on ${msg_file}, so this hook cannot say whether the message would
+close a reference. It refuses rather than permit, because a guard that fails
+open is worse than no guard: a rephrase costs a minute, a closed pull request
+costs its review rounds.
+
+The usual cause is a byte that is not valid text. Check the message for one,
+or commit deliberately with:
+
+    ALLOW_CLOSING_KEYWORD=1 git commit ...
+
+The message is kept in ${msg_file}; nothing was committed.
+CANNOT
+  [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ] || exit 1
+  body=""
+fi
 
 # `(^|[^[:alnum:]_])` because the alternation had no left anchor, so any word
 # **ending** in one of these counted: `prefix #12`, `hotfix #12`, `bugfix #12`,
@@ -64,7 +104,14 @@ ref='(#|[Gg][Hh]-|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#)[0-9]+'
 url='https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(issues|pull)/[0-9]+'
 pattern="${keywords}[[:space:]]*:?[[:space:]]*(${ref}|${url})"
 
-hits=$(printf '%s\n' "$body" | grep -niE "$pattern" || true)
+# `|| true` on grep, because exit 1 means "found nothing" -- but a *failure* to
+# run is not "found nothing", so the status is separated from the no-match case.
+hits=$(printf '%s\n' "$body" | grep -niE "$pattern")
+rc=$?
+if [ "$rc" -gt 1 ]; then
+  printf 'commit-msg refused this message: grep failed (%s), so nothing judged it.\n' "$rc" >&2
+  [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ] || exit 1
+fi
 
 # **A second pass over adjacent pairs**, used only when the first finds nothing.
 # `grep` reads one line at a time, so the incident's own sentence wrapped two
@@ -79,7 +126,12 @@ hits=$(printf '%s\n' "$body" | grep -niE "$pattern" || true)
 if [ -z "$hits" ]; then
   hits=$(printf '%s\n' "$body" \
     | awk 'NR > 1 { print NR - 1 ":" prev " " $0 } { prev = $0 }' \
-    | grep -iE "$pattern" || true)
+    | grep -iE "$pattern")
+  rc=$?
+  if [ "$rc" -gt 1 ]; then
+    printf 'commit-msg refused this message: the line-pair pass failed (%s).\n' "$rc" >&2
+    [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ] || exit 1
+  fi
 fi
 
 # Is this copy still the one `main` carries? Computed, not assumed -- the whole

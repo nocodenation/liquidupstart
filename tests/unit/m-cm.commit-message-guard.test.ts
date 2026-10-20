@@ -37,7 +37,7 @@
  *           the offending line is named; everything else passes with `rc=0`;
  *           and `ALLOW_CLOSING_KEYWORD=1` passes the refused message while
  *           saying on stderr that it did
- * Covers:   CM-1, CM-2, CM-3
+ * Covers:   CM-1, CM-2, CM-3, CM-7
  * Unhappy:  The refusals are the negative halves -- **thirteen** of them in CM-1
  *           as of 2026-10-20, counted rather than recalled: the header said
  *           "six" while there were eight, and then more arrived. Their
@@ -57,7 +57,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, statSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
@@ -275,5 +275,85 @@ describe('CM-3 closing an issue on purpose is possible, and is not silent', () =
 
   test('CM-3 the tracked hook is executable, so a fresh clone can run it', () => {
     expect(statSync(HOOK).mode & 0o111).toBeGreaterThan(0);
+  });
+});
+
+describe('CM-7 the guard fails closed, and the locale cannot change its answer', () => {
+  // **It failed OPEN, and the suite could not see it in either direction.**
+  // Under a UTF-8 locale -- the operator's normal state in Terminal.app -- one
+  // byte that is invalid in that locale makes BSD `sed` exit with `RE error:
+  // illegal byte sequence`. `body` was then empty, nothing matched, and the hook
+  // permitted the message. Measured 2026-10-20, git 2.48.1: a message carrying
+  // one Latin-1 byte in its subject and the incident's own sentence, pure ASCII,
+  // in its body committed with **rc 0** under `LC_ALL=en_US.UTF-8` and was
+  // refused under `LC_ALL=C`. GNU sed handles the same file, so the hole belonged
+  // to the machine the guard was written and reviewed on.
+  //
+  // `tests/lib/shell.ts` pins `LC_ALL=C`, `LANG=C` and `LANGUAGE=C` for every
+  // case, for its own good reasons -- which is exactly why no case here could see
+  // this. **So these scenarios set the locale themselves**, and that is the point
+  // of them: a guard whose verdict depends on the environment has to be measured
+  // across the environments it will meet.
+  //
+  // The repair is two things, because the locale is one cause and not the class.
+  // The hook exports `LC_ALL=C` so both tools work on bytes, and every step's
+  // status is read: a guard that cannot read the message refuses it.
+  const LOCALES = ['C', 'en_US.UTF-8', 'de_DE.UTF-8'];
+
+  // One Latin-1 'ö' (0xF6) in the subject; everything else is ASCII, and the
+  // offending line is the sentence that closed #18.
+  const LATIN1_SUBJECT = Buffer.from([
+    ...Buffer.from('docs: M', 'ascii'), 0xf6, ...Buffer.from('ller\n\n', 'ascii'),
+    ...Buffer.from('both are merged and resolved: #18\n', 'ascii')
+  ]);
+  const LATIN1_PROSE = Buffer.from([
+    ...Buffer.from('docs: M', 'ascii'), 0xf6, ...Buffer.from('ller reviewed it\n\n', 'ascii'),
+    ...Buffer.from('the #18 conflict, answered on #19\n', 'ascii')
+  ]);
+
+  function runWithLocale(bytes: Buffer, locale: string) {
+    const dir = mkdtempSync(join(tmpdir(), 'lu-cm-locale-'));
+    try {
+      const file = join(dir, 'COMMIT_EDITMSG');
+      writeFileSync(file, bytes);
+      return sh([HOOK, file], repoRoot, { LC_ALL: locale, LANG: locale, LANGUAGE: locale });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test.each(LOCALES)('CM-7 the negative: a byte sed cannot read does not let the message through (%s)', (locale) => {
+    expect(runWithLocale(LATIN1_SUBJECT, locale as string).code).toBe(1);
+  });
+
+  test.each(LOCALES)('CM-7 the counterpart: the same byte in harmless prose still commits (%s)', (locale) => {
+    // Without this, "refuse whenever a byte looks odd" would pass the three
+    // above and make a message with one mis-encoded character uncommittable --
+    // which is a guard nobody can use.
+    const r = runWithLocale(LATIN1_PROSE, locale as string);
+    expect(r.code, r.output).toBe(0);
+  });
+
+  test('CM-7 and a valid multi-byte character is ordinary text in either direction', () => {
+    const utf8Prose = Buffer.from('docs: Möller reviewed it\n\nthe #18 conflict, answered on #19\n', 'utf8');
+    const utf8Hit = Buffer.from('docs: Möller\n\nboth are merged and resolved: #18\n', 'utf8');
+    expect(runWithLocale(utf8Prose, 'en_US.UTF-8').code).toBe(0);
+    expect(runWithLocale(utf8Hit, 'en_US.UTF-8').code).toBe(1);
+  });
+
+  test('CM-7 and the hook says it refuses because it could not read, not because it judged', () => {
+    // The two refusals are different facts and the message has to tell them
+    // apart, or an author edits a sentence that was never the problem.
+    const r = runWithLocale(LATIN1_SUBJECT, 'en_US.UTF-8');
+    expect(r.code).toBe(1);
+    expect(r.output).toMatch(/could not read it|would close the reference/);
+  });
+
+  test('CM-7 and the hook pins the locale itself, so a caller cannot change the verdict', () => {
+    const body = readFileSync(HOOK, 'utf8');
+    expect(body).toContain('export LC_ALL=C');
+    // And no step's status is thrown away: `|| true` on the match was what made
+    // "found nothing" and "could not look" the same answer.
+    expect(body).not.toMatch(/grep -niE "\$pattern" \|\| true/);
   });
 });

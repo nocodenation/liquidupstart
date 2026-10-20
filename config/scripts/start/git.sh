@@ -94,7 +94,17 @@ install -m 755 "${SCRIPT_DIR}/../../agents/hooks/pre-push" "${HOOKS_DIR}/pre-pus
 # carries only parts of `config/` -- so the install failed, `set -euo pipefail`
 # aborted two lines above the gitconfig, and 11 unrelated cases went red while
 # the agents lost the pre-push scanner too.
-install -m 755 "${SCRIPT_DIR}/../../agents/hooks/commit-msg" "${HOOKS_DIR}/commit-msg"
+# Warned about rather than fatal. This runs 118 lines after down.sh, so an
+# install that aborts here leaves the stack torn down and nothing started -- and
+# a missing guard is a far smaller harm than a stack that will not come up. The
+# operator's own clone has it either way.
+if [[ -f "${SCRIPT_DIR}/../../agents/hooks/commit-msg" ]]; then
+  install -m 755 "${SCRIPT_DIR}/../../agents/hooks/commit-msg" "${HOOKS_DIR}/commit-msg"
+else
+  echo "warning: no commit-message guard at ${SCRIPT_DIR}/../../agents/hooks/commit-msg;" >&2
+  echo "         the agents can commit prose that closes a pull request. See" >&2
+  echo "         docs/FEATURE-commit-message-guard.md." >&2
+fi
 
 cat > "$GITCONFIG" <<EOF
 [core]
