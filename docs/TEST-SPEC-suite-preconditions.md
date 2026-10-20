@@ -47,8 +47,8 @@ like a suite that ran.
 
 ## Overview
 
-| # | Sign | Scenario |
-|---|---|---|
+| # | Sign | Scenario | Why it is a separate scenario |
+|---|---|---|---|
 | **SP-1** | positive + **negative** | A started checkout is told apart from one where nothing has run — and `volumes/repos`, which the obvious discriminator would have used, is present in the one that has not |
 | **SP-1** | **negative** | …and an **empty** `volumes/_git-secrets` is not a start either, which is what it used to be — *2026-10-14* |
 | **SP-1** | positive + **negative** | A directory that is no git repository is told apart from one that is |
@@ -65,14 +65,22 @@ like a suite that ran.
 | **SP-4** | **negative** | The guard throws with that message when the VM is empty |
 | **SP-4** | positive | …and does not throw when it is healthy |
 | **SP-4** | positive | The live reading is of the VM and is a number, or an honest `null` |
-| **SP-5** | **negative** | A child that was cut off is told apart from one that failed — exit 130, and docker's two wordings for a cancelled build | A cut-off run says nothing about the code, and two cases read it as if it did |
-| **SP-5** | positive | …while an ordinary failure is **not** called an interruption | The counterpart that carries the weight: `OC-16` exists to see a build fail, so a guard that called every failure an interruption would swallow the case it protects |
-| **SP-5** | positive | …and neither is success | |
-| **SP-5** | positive | A published port is read out of `docker port`'s answer, including two-line answers | `startDashboard` asked once, got nothing, and reported that the container had published nothing |
-| **SP-5** | **negative** | …and the empty answer, a zero port and anything else are no port | The empty answer is the measured one: the mapping was not visible yet |
-| **SP-5** | positive | `OC-15` and `OC-16` carry a budget of their own, at least ten minutes | Without it the repair is one quiet machine away from coming back |
-| **SP-5** | positive | …and the interruption guard runs **before** each verdict | Order is the point for `OC-16`: its first assertion is satisfied by an interrupted build |
-| **SP-5** | positive | …and the dashboard waits for the mapping rather than asking once | |
+| **SP-5** | **negative** | A build stopped by its own timeout is an interruption, whatever it exits with | bun 1.4.3's budget kills with SIGTERM and docker then exits 255 and says nothing, so only a timeout the helper set is known to have fired |
+| **SP-5** | **negative** | …and `sh()` reports that timeout from a real child | The flag is only as good as the helper that sets it |
+| **SP-5** | **negative** | A child a signal ended is an interruption, from a real child | The OOM killer leaves no exit code, which `sh()` reports as -1 — and -1 satisfies `OC-16`'s first assertion |
+| **SP-5** | **negative** | SIGINT is an interruption: 130, and the words docker prints for it | What an operator's Ctrl-C produces, and what bun 1.3.13's budget produced on 2026-10-09 |
+| **SP-5** | positive | …while an ordinary failure is **not** called an interruption, on given data and on a real child | The counterpart that carries the weight: `OC-16` exists to see a build fail, so a guard that called every failure an interruption would swallow the case it protects |
+| **SP-5** | positive | …and neither is success, not even one whose log mentions a cancellation | The words are read only for a non-zero exit |
+| **SP-5** | positive | A published port is read out of `docker port`'s answer: one mapping, two lines, IPv6, IPv4-mapped IPv6, and the bare `:::` form | A parser stricter than docker is the same defect from the other side |
+| **SP-5** | **negative** | …and the empty answer, the two error answers docker gives, a zero port, a fraction, hex, a port past 65535 and prose ending in a number are no port | `Number()` of the last colon's tail read `127.0.0.1:1.5` as 1.5 |
+| **SP-5** | positive | The wait returns a mapping that appears on the third ask, having asked by the id it was given | |
+| **SP-5** | **negative** | …and one that never appears stops at the deadline, with the last answer | |
+| **SP-5** | **negative** | …and a slow `docker` cannot multiply the wait, because the bound is the clock | Forty attempts at a 60 s timeout each was forty minutes |
+| **SP-5** | positive | …and a deadline used up before the second ask still gets three asks | Three dashboards started side by side run their synchronous `docker` calls between each other's asks |
+| **SP-5** | positive | `startDashboard` goes by the id `docker run` returned, for the port, the logs and the stop | The fixtures have fixed names, and a second run's `rm -f` and `run` would hand this one the other run's container — to read, or to remove |
+| **SP-5** | positive | `OC-15` and `OC-16` each carry a budget of at least ten minutes, read from the case itself | Read per case, so either layout — `test(title, fn, N)` or `#24`'s `test.skipIf(…)(title, fn, N)` — is understood |
+| **SP-5** | positive | …and their build stops on its own timeout inside that budget | |
+| **SP-5** | positive | …and in each, the guard runs **before** the verdict | Order is the point for `OC-16`: its first assertion is satisfied by an interrupted build |
 
 ## Detail
 
@@ -138,14 +146,17 @@ like a suite that ran.
 |---|---|
 | **Premise** | Two cases build an image inside the suite's 60-second budget and reach the network doing it. They failed twice on 2026-10-09 — `Received: 130` and `this test timed out after 60000ms` — and passed in two later runs on a quiet machine. A case whose colour depends on the load is the worse of the two findings, because it is how red stops meaning anything. |
 | **And they read the interruption in opposite directions, both wrong** | `OC-15` expects exit 0, so a cut-off build reads as a verdict on `--allow-scripts`. `OC-16` expects a **non-zero** exit, so a cut-off build satisfies its first assertion by accident — only its second, that npm named the script it refused to run, keeps it honest. One defect, two opposite false readings. |
-| **Component** | `wasInterrupted` in `tests/lib/shell.ts`; `parsePublishedPort` and `awaitPublishedPort` in `tests/lib/dashboardserver.ts`; the budgets and the guard in `tests/component/m-oc.allow-scripts.test.ts`. |
-| **Test data, both sides, and why these** | Interruptions: exit **130** (SIGINT, the budget firing), and docker's two wordings for a cancelled build — `failed to solve: context canceled` and `signal: interrupt` — because they differ between versions and the exit code is not always 130 when the daemon gives up. Not interruptions: **exit 1 with `install.cjs` in the output**, which is `OC-16`'s real failure and the counterpart that matters, and exit 0 with a version string. Ports: `127.0.0.1:55047`, and `0.0.0.0:32768\n[::]:32768` for the two-line answer; **the empty answer**, which is the measured one, plus `127.0.0.1:0` and `nonsense`. |
-| **Expected** | Only interruptions are called interruptions; only a real mapping parses as a port; both build cases carry at least a ten-minute budget; the guard appears **before** each `expect(r.code…)`; and the dashboard helper no longer asks once. |
-| **Measured** | 2026-10-09 for the two load failures and the two quiet-machine passes, recorded in `BACKLOG.md`. 2026-10-17 for the third instance: `no published port for lu-a8-unprepared` with an empty answer while a second suite was running, and the container publishing `127.0.0.1:55047->3000` seconds afterwards. |
-| **Shown able to fail** | `wasInterrupted` always true reddens **2** — both counterparts, which is the proof that the guard cannot swallow `OC-16`; always false reddens **3**; the budgets removed, **1**; the dashboard asking once again, **1**. |
+| **Component** | `wasInterrupted` and `sh()`'s timeout in `tests/lib/shell.ts`; `parsePublishedPort` and `awaitPublishedPort` in `tests/lib/dashboardserver.ts`; the budget, the build timeout and the guard in `tests/component/m-oc.allow-scripts.test.ts`. |
+| **Steps** | Hand `wasInterrupted` the measured results below, and run `sh()` against `sleep 5` with a 200 ms timeout, against `sh -c 'kill -9 $$'`, and against a command that fails at once. Hand `parsePublishedPort` each answer. Drive `awaitPublishedPort` with an injected probe: one that maps on its third ask and records the id it was asked for, one that never maps against a 300 ms deadline, one that takes 100 ms per ask against 250 ms, and one that takes 120 ms against 100 ms. No case bounds elapsed time from above: one written against load-dependent results must not depend on the load itself, and that the call returns is what shows it stops. Then read `m-oc.allow-scripts.test.ts` one case at a time — from each case's title to the next case — for its budget, resolving a named constant, and for the guard's position relative to its first `expect(r.code`; and read `dashboardserver.ts` for the wait by id. |
+| **Test data, both sides, and where it comes from** | Measured 2026-10-21, docker 29.8.1, bun 1.4.3, against a `FROM alpine:3` / `RUN echo start && sleep 40 && echo end` build: **cut off by bun's 6 s budget** — exit **255**, no word about it in the output, which is why the case cannot rely on any sign but its own; **cut off by `spawnSync`'s own 4 s `timeout`** — exit 255 and `exitedDueToTimeout: true`; **sent SIGINT** — exit **130** and `ERROR: failed to build: failed to solve: Canceled: context canceled`. Not interruptions: exit 1 with `install.cjs`, which is `OC-16`'s real failure, and exit 0 with a version string, also with the SIGINT text pasted in front of it. A real child killed by `kill -9 $$`: exit code none, which `sh()` reports as -1, signal `SIGKILL`. Ports: `127.0.0.1:59685` (a real mapping that day), `0.0.0.0:32768\n[::]:32768`, `[::]:32768`, `[::ffff:127.0.0.1]:32768` and `:::32768`; and as no port, the empty answer, `no public port '3000' published for lu-f1-probe` (a container created and not started, measured) and `Error response from daemon: No such container: lu-f1-probe` (one removed, measured), plus `127.0.0.1:0`, `127.0.0.1:1.5`, `x:0x10`, `127.0.0.1:99999` and `nonsense:1`. `signal: interrupt`, which an earlier version listed as a docker wording, was never seen docker print and is gone. |
+| **Expected** | Only interruptions are called interruptions; only a real mapping parses as a port; the wait returns the mapping or the last answer, on the clock, and asks by id; each build case carries at least ten minutes and a build timeout inside it; the guard precedes the verdict in each case; and `startDashboard` asks by id. |
+| **Dependencies** | `sleep` and `sh` on the test host, for the three `sh()` scenarios. No docker, no network. |
+| **Measured** | 2026-10-09 for the two load failures and the two quiet-machine passes, recorded in `BACKLOG.md`. 2026-10-17 for the third instance: `no published port for lu-a8-unprepared` with an empty answer while a second suite was running. **What makes that answer empty is not established**: on 2026-10-21, under the stack's load, `docker port` answered at the first ask after `docker run -d` in 40 runs of 40, and the not-started and removed cases each answer with text. The one empty answer measured is a `docker` call that ran out of its timeout. So the wait stays, the message now says how the last attempt ended, and the wait asks by id so that a second run reusing the fixed name cannot hand this one its port. |
+| **Shown able to fail** (2026-10-21, sixteen reversals, each alone) | `wasInterrupted` ignoring its own timeout: **1** red. Ignoring a signal: **1**. The words read on a success too: **1**. Always true: **2** — both counterparts. Always false: **4**. `sh()` never reporting its timeout: **1**; never reporting a signal: **1**. The old `Number()` parse: **4**. The parser without the two IPv6 forms: **2**. The wait bounded by attempts instead of the clock: **2**. The wait without its minimum of asks: **1**. `startDashboard` asking by name: **1**; its logs and stop by name: **1**. The build without its own timeout: **1**. `OC-15`'s guard moved after its verdict: **1** — the earlier version stayed green here, because its check sliced from the guard to the end of the file and found `OC-16`'s verdict. `OC-16`'s budget removed: **1**. Two repairs no case holds, and they are messages rather than decisions: `docker()` now keeps the spawn error in its output, and each ask keeps its 60 s. |
+| **What it found** | Reviewed on 2026-10-20 before this round was committed, and the repair reviewed again. The guard as first written recognised 130 and two phrases, and under bun 1.4.3 a build cut off by the budget gives **255** and neither phrase — measured — so it would not have fired once. A suggestion to end the build with SIGINT for a clean cancel was measured and dropped: with `spawnSync`'s own timeout, SIGINT and SIGTERM both give 255 and no text, and neither left an image behind. |
 | **How this stands beside `SP-3`, and the duplication that had to be unpicked** | `SP-3` (PR #24, opened 2026-10-10) and this (PR #42, opened 2026-10-17) are two answers to one backlog line, written ten days apart without either seeing the other. The line said the choice was the operator's; #24 had already made it, and this document was then written claiming the choice had been made *"by neither of the two ways"* that line offered — while one of them sat open in review. **The division now:** `SP-3` is the owner of the machine with no registry, and it skips. `SP-5` is the owner of a run that was cut off **although** a registry answered, and it refuses to turn that into a verdict. Neither answers the other's case: a skip cannot help a build that started and was killed, and an honest interruption message cannot test a flag against a registry that is not there. |
 | **Implemented by** | `tests/unit/m-sp.load-dependent.test.ts`. |
-| **Covers** | SP-5, SP-FR1. |
+| **Covers** | SP-5, SP-FR4. |
 
 ## What is deliberately not here
 
@@ -182,15 +193,17 @@ sets **600 s**, and the reason is in the history rather than in a preference: th
 was 60 s against a 14 s build, which is **4x** the quiet duration, and 180 s is 4x the slower
 measurement of the two. The ratio that proved insufficient is the ratio being proposed again. 600 s is
 13x the slower one, and its only cost is that a genuinely hung build takes ten minutes to say so —
-paid once, by a case that already builds a container image. The reviewer set the smaller figure and
+paid once, by a case that already builds a container image. It does say so: the build's own timeout
+sits 30 s inside the budget, so a hung build ends as *"ran past its 570s timeout"* rather than as
+bun's kill. The reviewer set the smaller figure and
 may prefer to keep it; what must not stand is two numbers for one budget, which is why this says
 which one it is and why.
 
 A third instance of the same class came with it, found by walking into it on 2026-10-17:
 `startDashboard` asked `docker port` **once**, immediately after `docker run -d`, and threw *"no
-published port"*. The container was up and publishing `127.0.0.1:55047->3000` seconds later. It waits
-now — forty attempts at 50 ms where there was one — and the parse is a pure function so both answers
-can be measured without docker.
+published port"* with an empty answer. It waits now, by the container's id and against a clock, and
+says how the last attempt ended — because what made that answer empty was never established, and
+the detail block says what was measured instead.
 
 ### SP-4 — a full Docker VM says so, instead of looking like a defect
 
@@ -222,7 +235,7 @@ can be measured without docker.
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-4**, **SP-5** |
-| SP-FR4 a condition of the machine is never reported as a verdict on the code | **SP-5** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-4** |
 | SP-FR2 each discriminator is shown to answer both ways | SP-1 |
 | SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2 |
+| SP-FR4 a condition of the machine is never reported as a verdict on the code | **SP-5** |

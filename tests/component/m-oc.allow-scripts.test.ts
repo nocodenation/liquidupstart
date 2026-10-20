@@ -12,7 +12,10 @@
  * Given  the 2026.9.1 base image, and the install line as build/openclaw.sh renders it
  * When   the image is built with the flag, and again without it
  * Then   the first ends in a version string and the second fails at the version
- *        check instead of shipping.
+ *        check instead of shipping -- or, when the build was cut off before it
+ *        could do either, the case fails with "this run measured nothing" rather
+ *        than with a verdict on the flag. Each build carries a timeout of its own
+ *        below the case's budget, so a cut-off build is known as one (SP-5).
  *
  * OC-16, the negative, is the one that matters. With only OC-15 we would know the
  * flag is present, not that it is load-bearing — and a flag that turned out to be
@@ -29,7 +32,8 @@
  * is that same line with `--allow-scripts=@anthropic-ai/claude-code ` removed and
  * nothing else changed.
  *
- * Requirements covered: OC-G4, FEATURE-openclaw-2026-9-1.md §5.5.
+ * Requirements covered: OC-G4, FEATURE-openclaw-2026-9-1.md §5.5; the budget and
+ * the guard are held by SP-5.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
@@ -64,10 +68,19 @@ function baseImage(): string {
   return m[1];
 }
 
-function build(tag: string, run: string): { code: number; output: string } {
+// The case's budget, and the build's own timeout inside it. The build has to be
+// stopped by its own timeout rather than by bun's: bun 1.4.3 kills a spawnSync
+// child with SIGTERM when the budget fires, and docker then exits 255 and says
+// nothing about why -- measured 2026-10-21 -- so only a timeout the helper set
+// itself is known to have fired. Thirty seconds is the margin for the case to
+// read that and say so before bun's budget ends it.
+const BUILD_BUDGET_MS = 600_000;
+const BUILD_TIMEOUT_MS = BUILD_BUDGET_MS - 30_000;
+
+function build(tag: string, run: string): { code: number; output: string; timedOut: boolean } {
   const dir = mkdtempSync(join(workRoot, 'ctx-'));
   writeFileSync(join(dir, 'Dockerfile'), `FROM ${baseImage()}\nUSER root\n${run}\n`);
-  return sh(['docker', 'build', '--no-cache', '--progress=plain', '-t', tag, dir]);
+  return sh(['docker', 'build', '--no-cache', '--progress=plain', '-t', tag, dir], repoRoot, {}, BUILD_TIMEOUT_MS);
 }
 
 /**
@@ -75,10 +88,11 @@ function build(tag: string, run: string): { code: number; output: string } {
  * if it did.
  *
  * Both cases below run `docker build --no-cache` with an `npm install` inside, so
- * they reach the network. Under load or on a slow link the build outlives the
- * suite's per-test budget and docker returns **130** -- SIGINT. `OC-15` then reads
- * *"expected 0, received 130"*, which is a statement about this machine presented
- * as a verdict on `--allow-scripts`. Measured twice on 2026-10-09 (`Received: 130`
+ * they reach the network. Under load or on a slow link the build outlives its
+ * budget: under bun 1.3.13 docker returned **130** and `OC-15` read *"expected 0,
+ * received 130"*, a statement about this machine presented as a verdict on
+ * `--allow-scripts`; under bun 1.4.3 it returns 255 and says nothing, which is
+ * why the build carries a timeout of its own. Measured twice on 2026-10-09 (`Received: 130`
  * and `this test timed out after 60000ms`), and both cases **passed in two later
  * runs on a quiet machine** -- which is what makes it the worse of the two
  * findings: a case whose colour depends on the load is how red stops meaning
@@ -89,11 +103,12 @@ function build(tag: string, run: string): { code: number; output: string } {
  * the second one -- that npm named the script it refused to run -- keeps it
  * honest. This guard makes the accident impossible rather than survivable.
  */
-function refuseInterrupted(r: { code: number; output: string }, what: string): void {
+function refuseInterrupted(r: { code: number; output: string; timedOut: boolean }, what: string): void {
   if (!wasInterrupted(r)) return;
+  const how = r.timedOut ? `ran past its ${BUILD_TIMEOUT_MS / 1000}s timeout` : `was interrupted (exit ${r.code})`;
   throw new Error(
     [
-      `${what}: the docker build was interrupted (exit ${r.code}), so this run measured nothing.`,
+      `${what}: the docker build ${how}, so this run measured nothing.`,
       '  It reaches the network -- `docker build --no-cache` with an npm install inside -- and a',
       '  build that is cut off says nothing about --allow-scripts either way.',
       '  This is a statement about the machine, not about the code under test.'
@@ -114,13 +129,13 @@ describe('OC-15/OC-16 the install script flag', () => {
   // network. `m-b7`'s maven build carries 1_200_000 for the same reason. Ten
   // minutes here turns a slow link into a slow suite rather than a red one, which
   // is the first of the two ways out the backlog recorded -- and the guard above
-  // is what keeps the other way, a wrong verdict, from being possible at all.
+  // is what keeps a cut-off build from reading as a verdict either way.
   test('OC-15 with the flag, the image is built and the CLI reports a version', () => {
     const r = build('lu-oc15-with', installLine());
     refuseInterrupted(r, 'OC-15');
     expect(r.code).toBe(0);
     expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
-  }, 600_000);
+  }, BUILD_BUDGET_MS);
 
   test('OC-16 without the flag, the build fails instead of shipping an empty launcher', () => {
     const without = installLine().replace('--allow-scripts=@anthropic-ai/claude-code ', '');
@@ -132,5 +147,5 @@ describe('OC-15/OC-16 the install script flag', () => {
     expect(r.code).not.toBe(0);
     // npm names the script it refused to run; the build then dies on the version check.
     expect(r.output).toContain('install.cjs');
-  }, 600_000);
+  }, BUILD_BUDGET_MS);
 });

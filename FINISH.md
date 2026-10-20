@@ -40,7 +40,7 @@ That is the whole rule. A new item joins this list only if it meets it.
 | 4 | A test run leaked a **container**, not only an image: `festive_wescoff` held `nar-builder:run-47099-xoirn1` for two days. The sweep built on #18 reclaims images; a container that outlives its run pins one and is not swept | `tests/lib/builderimage.ts` | open |
 | 5 | `down.sh` leaves behind every container the current branch does not declare — verify it still holds on `main`, then repair or record it as settled | `scripts/linux/down.sh` | open, verify first |
 | 6 | Two `:latest` fallbacks in the `ingest-pdf` plugin build scripts: the same moving-tag class as `S9`, and the pattern for it now exists | `config/agents/.../ingest-pdf` | open |
-| 7 | ~~`OC-15`/`OC-16` load-dependent, and `startDashboard` asking `docker port` once~~ | `tests/lib/shell.ts`, `tests/lib/dashboardserver.ts`, the two cases | **done 2026-10-17**, `SP-5`. Three instances of one class, repaired by neither of the two ways the backlog offered: a budget **and** a cut-off run that says so, instead of a precondition that would remove the coverage |
+| 7 | ~~`OC-15`/`OC-16` load-dependent, and `startDashboard` asking `docker port` once~~ | `tests/lib/shell.ts`, `tests/lib/dashboardserver.ts`, the two cases | **done 2026-10-17**, `SP-5`, beside #24's `SP-3`: a budget, a build timeout inside it, and a cut-off run that says so. `SP-3` is the precondition for a machine with no registry. The figure, 600 s here and 180 s there, is the reviewer's |
 | 8 | ~~N6's residual: stream the class parse in `narcheck.py`~~ | — | **settled 2026-10-17**, see the table below. Measured against the cut line, not against appetite: nothing claims anything false |
 | 9 | Split `HANDOFF.md` into the map and the log. It is itself a backlog entry, and it is why that file grows every day | `HANDOFF.md` | open |
 | 10 | Closing sweep: every pull request carries a message newer than its head, every branch merges clean, no entry left unmarked | — | last |
@@ -62,7 +62,7 @@ defect `A1` on #17 was.
 | A run killed mid-clone leaves a clone the next run adopts | Narrow window, never observed, and the record says so |
 | The toolbox image not following its own Dockerfile | Raised by the reviewer as *"not asked for"*; the durable form is a label and it touches the dashboard's build path |
 | `A16-19` naming two cases | #24 renumbers it to `A16-30`. Already someone's work |
-| N6's residual: 764 MB from a 1.7 KB bundle | **Added to this table on 2026-10-17, from the work list, and it was the largest item on it.** `docs/FEATURE-liquid-java-extensions.md` §3 already says *"What the limits do not bound, stated because it would otherwise read as settled… Bounded, but not small"*, carries the 764 MB measurement and names streaming as the open question. So no document claims anything false, the memory stays inside the service's own container, and two documented constants bound it. The backlog's reason for deferring is also better than mine was for building it: *"it changes the one function every refusal depends on"* — `class_references` is what every refusal runs through. Streaming it is hardening, which this list is not for. Raise it by asking, not by finding it |
+| N6's residual: 764 MB from a 1.7 KB bundle | Moved here from the work list on 2026-10-17, against the cut line: `docs/FEATURE-liquid-java-extensions.md` §3 already states it, so nothing claims anything false. The reasoning is in `BACKLOG.md`. Raise it by asking |
 
 ## What finishing means
 

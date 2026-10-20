@@ -305,6 +305,7 @@ eleven cases in `TEST-SPEC-git-integration.md`.
 | **Test data** | OC-15: the rendered line as it stands — `RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code && claude --version`. OC-16: the same line with `--allow-scripts=@anthropic-ai/claude-code` removed, built against the same base. |
 | **Expected** | OC-15: the build ends with a version string (`2.1.x (Claude Code)`) and exits 0. OC-16: the build **fails** at `claude --version`, non-zero, no image produced. |
 | **Failure** | OC-16 succeeding would mean npm 12 does not block the postinstall in this image and the flag can go — a smaller footprint, and worth knowing rather than assuming. |
+| **A build that was cut off, added 2026-10-21** | Neither case is judged on it. Each build carries a timeout of its own, `BUILD_TIMEOUT_MS`, 30 s inside the case's budget `BUILD_BUDGET_MS`, and a build stopped by it, or by SIGINT, fails the case with *"this run measured nothing"* before either assertion runs — so `OC-15` cannot read it as a verdict on the flag and `OC-16` cannot pass on it. Its own timeout and not bun's, because bun 1.4.3 ends a case's spawn with SIGTERM and docker then exits 255 without saying why. The budget is **600 s** on #42 and **180 s** on #24 for these same two cases; which stands is the reviewer's decision, and the other branch then changes one constant. Held by `SP-5` in [TEST-SPEC-suite-preconditions.md](TEST-SPEC-suite-preconditions.md). |
 | **Covers** | §5.5 |
 
 ### OC-17 / OC-18 / OC-19 — the version probe

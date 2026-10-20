@@ -116,8 +116,8 @@ Recorded 2026-10-12.
 
 ---
 
-**~~OC-15 and OC-16 depend on what else the machine is doing.~~ Repaired 2026-10-17, by neither of
-the two ways below.** Both build an image inside a 60-second
+**~~OC-15 and OC-16 depend on what else the machine is doing.~~ Repaired 2026-10-17 on #42, by the
+first of the two ways below and a guard; #24 takes the second.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
 and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.
 *Corrected 2026-10-09: this entry first said "on this machine it is not enough", which was a
@@ -139,18 +139,28 @@ so a cut-off build read as *"expected 0, received 130"* -- the machine, presente
 
 So: a ten-minute budget each, because a `docker build --no-cache` with an `npm install` inside does
 not belong in a figure meant for cases that never touch the network -- **and** `wasInterrupted` in
-`tests/lib/shell.ts`, which makes a cut-off run say so instead of judging. No precondition was added:
-skipping these two on a slow link removes the coverage exactly where the flag matters most. `SP-5`
-holds the budget, the guard **and its order**, because for `OC-16` a guard that runs after the first
-assertion guards nothing.
+`tests/lib/shell.ts`, which makes a cut-off run say so instead of judging. #42 adds no precondition;
+#24's `SP-3` is one, for a machine where no registry answers at all, and the two stand side by side
+as `docs/TEST-SPEC-suite-preconditions.md` divides them. `SP-5` holds the budget, the guard **and its
+order**, because for `OC-16` a guard that runs after the first assertion guards nothing.
+
+**2026-10-21: the guard as first written would not have fired.** It recognised exit 130 and two
+phrases. Under bun 1.4.3 a case's budget ends its `spawnSync` child with SIGTERM, and a
+`docker build` cut off that way exits **255** and says nothing — measured with docker 29.8.1 — so the
+one interruption the guard was written for went past it. Each build now carries a timeout of its own
+inside the budget, and the guard reads that. 130 and `context canceled` are what SIGINT gives, also
+measured, and the second phrase, `signal: interrupt`, was never seen and is gone.
 
 **A third instance of the same class came with it, walked into rather than looked for.** On
 2026-10-17 `startDashboard` threw `no published port for lu-a8-unprepared` with an empty answer while
 a second suite was running -- and the container was up and publishing `127.0.0.1:55047->3000` seconds
-later. It asked `docker port` once, immediately after `docker run -d`. It waits now, forty attempts at
-50 ms, and the parse is a pure function so both answers are measured without docker. The lesson is the
-one this repository keeps relearning: **the message named the wrong cause, and the wrong cause was the
-machine.**
+later. It asked `docker port` once, immediately after `docker run -d`. *Corrected 2026-10-21*: this said
+the cause was that nobody had waited, and that was never shown. Under the stack's load `docker port`
+answered at the first ask in 40 runs of 40, and a container not yet started, or already removed,
+answers with text rather than nothing; the one empty answer measured is a `docker` call that ran out
+of its timeout. The helper now waits by the container's **id** against a clock — the fixtures have
+fixed names, and a second run reusing one would otherwise hand this one its port — and says how the
+last attempt ended.
 
 ---
 

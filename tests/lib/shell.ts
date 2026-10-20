@@ -5,21 +5,38 @@ export type Result = { code: number; stdout: string; stderr: string; output: str
 /**
  * Was this child cut off rather than finished?
  *
- * 130 is SIGINT: the suite's per-test budget fired and took the child with it.
- * Docker also says so in words when a build is cancelled mid-layer, and the
- * wording differs between versions, so both are read.
+ * Four signs, each measured, and read in this order:
+ *
+ * - **Its own timeout fired** (`timedOut`, from `sh(..., timeoutMs)`). The one a
+ *   case can rely on. Under bun 1.4.3 the per-test budget kills a `spawnSync`
+ *   child with SIGTERM, and `docker build` then exits **255** and prints nothing
+ *   about it -- measured 2026-10-21 with docker 29.8.1 -- so none of the signs
+ *   below sees it. A case gives its build a timeout under its budget and reads
+ *   that instead. With that timeout the build exits 255 whichever signal ends it:
+ *   SIGINT and SIGTERM measured the same.
+ * - **A signal ended it** (`signal`): the OOM killer, or anyone's `kill`. Its exit
+ *   code is then no exit code at all, which `sh()` reports as -1.
+ * - **130**: SIGINT, an operator's Ctrl-C. What the budget produced under bun
+ *   1.3.13 on 2026-10-09, when `OC-15` read *"expected 0, received 130"*.
+ * - **`context canceled`**, which docker prints on SIGINT --
+ *   `ERROR: failed to build: failed to solve: Canceled: context canceled`,
+ *   measured 2026-10-21. Read only for a non-zero exit, so a build that passed is
+ *   never called interrupted for a word in its log.
  *
  * It exists because a cut-off run says nothing about the code under test, and two
- * cases read it as if it did: `OC-15` expects exit 0, so an interrupted build
- * reads as *"expected 0, received 130"* -- a statement about the machine presented
- * as a verdict on `--allow-scripts`. `OC-16` expects a non-zero exit, so an
- * interrupted build satisfies its first assertion **by accident**. Measured twice
- * on 2026-10-09, with both cases passing on a quiet machine afterwards, which is
- * what makes a load-dependent case the worse of the two findings: it is how red
- * stops meaning anything.
+ * cases read it as if it did: `OC-15` expects exit 0, so an interrupted build read
+ * as a verdict on `--allow-scripts`, and `OC-16` expects a non-zero exit, so an
+ * interrupted build satisfied its first assertion **by accident**.
  */
-export function wasInterrupted(r: Pick<Result, 'code' | 'output'>): boolean {
-  return r.code === 130 || /context canceled|signal: interrupt/i.test(r.output);
+export function wasInterrupted(
+  r: Pick<Result, 'code' | 'output'> & { timedOut?: boolean; signal?: string | null }
+): boolean {
+  return (
+    r.timedOut === true ||
+    (r.signal ?? null) !== null ||
+    r.code === 130 ||
+    (r.code !== 0 && /context canceled/i.test(r.output))
+  );
 }
 
 // Bun loads the repository's own .env into process.env, and this helper used to
@@ -45,12 +62,26 @@ function childEnv(extraEnv: Record<string, string>): Record<string, string | und
 export function sh(
   argv: string[],
   cwd: string = repoRoot,
-  extraEnv: Record<string, string> = {}
-): Result {
-  const p = Bun.spawnSync(argv, { cwd, env: childEnv(extraEnv), stdout: 'pipe', stderr: 'pipe' });
+  extraEnv: Record<string, string> = {},
+  timeoutMs?: number
+): Result & { timedOut: boolean; signal: string | null } {
+  const p = Bun.spawnSync(argv, {
+    cwd,
+    env: childEnv(extraEnv),
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs })
+  });
   const stdout = p.stdout ? p.stdout.toString() : '';
   const stderr = p.stderr ? p.stderr.toString() : '';
-  return { code: p.exitCode ?? -1, stdout, stderr, output: stdout + stderr };
+  return {
+    code: p.exitCode ?? -1,
+    stdout,
+    stderr,
+    output: stdout + stderr,
+    timedOut: p.exitedDueToTimeout === true,
+    signal: p.signalCode ?? null
+  };
 }
 
 // The concurrent counterpart of sh(). It waits for the child's exit status as

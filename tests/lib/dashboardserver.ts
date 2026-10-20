@@ -8,7 +8,9 @@ export const dashboardDir = join(repoRoot, 'dashboard');
 function docker(args: string[], timeout = 600_000): Result {
   const p = spawnSync('docker', args, { encoding: 'utf8', timeout });
   const stdout = p.stdout ?? '';
-  const stderr = p.stderr ?? '';
+  // A spawn that failed, or ran out of its timeout, has no status and often no
+  // output; the error is the only account of why, so it is kept.
+  const stderr = (p.stderr ?? '') + (p.error ? `${p.error.message}\n` : '');
   return { code: p.status ?? -1, stdout, stderr, output: stdout + stderr };
 }
 
@@ -34,40 +36,62 @@ export type Dashboard = {
 /**
  * The published port, read out of `docker port`'s answer.
  *
- * A pure function of the text, so both answers can be measured without docker:
- * `127.0.0.1:55047` -> 55047, and anything else -> null. Separated from the wait
- * below for the same reason `sweepable` is separate from the sweep.
+ * A pure function of the text, so both answers can be measured without docker.
+ * The first line has to be what docker prints for a mapping -- an IPv4 address, a
+ * bracketed IPv6 one (an IPv4-mapped one included), or the bare `::` older daemons
+ * print, then a colon and a port from 1 to 65535 -- and anything else
+ * is null rather than whatever `Number()` makes of the last colon's tail, which
+ * read `127.0.0.1:1.5` as 1.5 and `nonsense:1` as 1.
  */
 export function parsePublishedPort(stdout: string): number | null {
-  const first = stdout.trim().split('\n')[0];
-  if (!first) return null;
-  const port = Number(first.split(':').pop());
-  return Number.isFinite(port) && port > 0 ? port : null;
+  const m = stdout.trim().split('\n')[0].match(/^(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:.]*\]|::):(\d{1,5})$/);
+  const port = m ? Number(m[1]) : 0;
+  return port >= 1 && port <= 65535 ? port : null;
 }
 
+export type PortProbe = (id: string) => Result;
+
 /**
- * Waited for, not asked once.
+ * Waited for, against a clock, and asked of the container's id.
  *
- * `docker run -d` returns when the container is created; the port mapping is
- * visible a moment later, and under load that moment is longer than the gap
- * between the two calls. Asking once produced
- * `no published port for lu-a8-unprepared:` with an empty answer -- measured
- * 2026-10-17 while a second suite was running, and the container was up and
- * publishing `127.0.0.1:55047->3000` seconds afterwards. So the message named the
- * wrong cause: it says the container published nothing, when the truth was that
- * nobody had waited.
+ * `startDashboard` asked `docker port` once, and on 2026-10-17, while a second
+ * suite was running, the answer was empty. What makes it empty is not
+ * established. Measured 2026-10-21 under the stack's load: the mapping was there
+ * at the first ask in 40 runs of 40; a container created and not yet started
+ * answers `no public port '3000' published`, a removed one `No such container`, and
+ * neither is empty. The one empty answer measured is a `docker` call that ran out
+ * of its timeout, which `docker()` returns as exit -1 with no output -- so the
+ * message below says how the last attempt ended rather than guessing.
  *
- * Polled rather than slept: a fixed sleep is either too short on a loaded machine
- * or a tax on every run of every case that starts a dashboard. Two seconds of
- * attempts at 50 ms, which is 40 tries where there used to be one.
+ * The wait stays, because a mapping that is not visible yet costs a retry and not
+ * a red. It ends when it has both asked `minAttempts` times and passed its
+ * deadline: the clock, so a slow `docker` cannot turn it into forty slow calls,
+ * and the count, because the other dashboards a case starts beside this one block
+ * the same event loop with their own synchronous `docker` calls and can use up
+ * the clock between two asks. Each ask keeps the 60 s it had, since a call that
+ * runs out of its timeout is the one empty answer anyone has measured. And it
+ * asks by **id**, as does everything after the start: the fixtures have fixed
+ * names, and a second run's `docker rm -f` and `docker run` on the same name
+ * would otherwise hand this one the other run's container -- per-run names are
+ * #19's.
  */
-export function awaitPublishedPort(name: string, attempts = 40, waitMs = 50): Result {
-  let last = docker(['port', name, '3000'], 60_000);
-  for (let i = 1; i < attempts && parsePublishedPort(last.stdout) === null; i++) {
-    Bun.sleepSync(waitMs);
-    last = docker(['port', name, '3000'], 60_000);
+export async function awaitPublishedPort(
+  id: string,
+  probe: PortProbe = (c) => docker(['port', c, '3000'], 60_000),
+  deadlineMs = 15_000,
+  waitMs = 50,
+  minAttempts = 3
+): Promise<{ last: Result; attempts: number }> {
+  const until = Date.now() + deadlineMs;
+  let attempts = 0;
+  let last: Result;
+  for (;;) {
+    last = probe(id);
+    attempts++;
+    if (parsePublishedPort(last.stdout) !== null) return { last, attempts };
+    if (attempts >= minAttempts && Date.now() >= until) return { last, attempts };
+    await Bun.sleep(waitMs);
   }
-  return last;
 }
 
 export async function startDashboard(
@@ -89,20 +113,25 @@ export async function startDashboard(
   // running, and the caller never got a handle to clean up: on 2026-09-07 one
   // throw inside a Promise.all left three containers and an image behind, and
   // the next run started from that state.
-  const mapped = awaitPublishedPort(name);
+  const id = started.stdout.trim();
+  const { last: mapped, attempts } = await awaitPublishedPort(id);
   const port = parsePublishedPort(mapped.stdout);
   if (port === null) {
-    const logs = docker(['logs', name], 60_000).output;
-    docker(['rm', '-f', name], 60_000);
-    throw new Error(`no published port for ${name}: ${mapped.output}\n${logs}`);
+    const logs = docker(['logs', id], 60_000).output;
+    docker(['rm', '-f', id], 60_000);
+    const how =
+      mapped.code === -1 ? 'no exit status -- it timed out, was killed, or could not be started' : `exit ${mapped.code}`;
+    throw new Error(
+      `no published port for ${name} after ${attempts} attempts; the last \`docker port\` ended with ${how}: ${mapped.output}\n${logs}`
+    );
   }
 
   const dashboard: Dashboard = {
     port,
     url: (path: string) => `http://127.0.0.1:${port}${path}`,
-    logs: () => docker(['logs', name], 60_000).output,
+    logs: () => docker(['logs', id], 60_000).output,
     stop: () => {
-      docker(['rm', '-f', name], 60_000);
+      docker(['rm', '-f', id], 60_000);
     }
   };
 
