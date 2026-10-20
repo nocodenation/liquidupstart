@@ -2438,6 +2438,10 @@ render, on a page that must answer while the stack is down — so it is recorded
 | **A8-29** | Integration **unhappy** | Which is what the refusal prevents: the git step dies at `ssh-keygen` with 127 | Measured rather than reasoned about; in the real sequence `down.sh` has already run by then |
 | **A8-30** | Integration | The counterpart: the same image **with** the tools still starts | Without it the check could be met by refusing every start on every host |
 | **A8-30** | **negative** | …and an install that failed is said out loud, not blamed on the product | Added 2026-10-13 — see the block |
+| **A8-31** | Unit | The start-of-run sweep removes what a run abandoned | Added 2026-10-20. The decision had no case while it was wrong in both directions a fortnight apart |
+| **A8-31** | **negative** | …and not a live run's fixtures, which is the defect this PR exists against, arriving back through its own repair | Measured by the reviewer: one sweep from a second clone killed a running case |
+| **A8-31** | **negative** | …and a timestamp it cannot read keeps the object, because *"cannot measure" is not "stale"* | The only direction that cannot destroy a live run |
+| **A8-31** | positive | …while the boundary sits **at** the floor, and a second inside it is not stale | Where an off-by-one would live |
 |  |  |  |  |
 | *A8-28 to A8-30 were `A8-24`, `A8-25` and `A8-26` until 2026-10-13* | | | Three ids that already belonged to three other cases — `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. The whole file was using them and **none of its own cases had a row**. `TR-1` passed throughout, because the ids *are* declared, by those other cases |
 
@@ -2745,6 +2749,23 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Expected** | Status 200 both times, the block still says `unreachable`, and the two are **identical** — not merely both present, since a card that regenerated something per request would satisfy the weaker assertion. |
 | **What it replaces** | A manual reload that costs a destroyed and rebuilt repository to reach. A8-17 keeps the step, because an operator watching a browser sees things a fetch does not, but the property no longer depends on it being done. |
 | **Covers** | FR11, U11. |
+
+##### A8-31 — the sweep removes what is abandoned, not what is running
+
+| | |
+|---|---|
+| **Premise** | Fixed container names and image tags meant a second checkout destroyed the first one's fixtures — `A2` of the 2026-10-01 review, measured with two runs of `m-a8.served-card` at once. Per-run names fixed that and broke the reclaim: with unique names nothing ever names an interrupted run's litter again, so a run killed after its containers start leaks three dashboards and a tag for good. A start-of-run sweep is the answer to the second half, and **the first sweep reintroduced the first half**: it removed every `lu-test=1` object that was not *this* run's, and "not this run" is not "stale". |
+| **What was measured, in both directions** | 2026-09-30, fixed names: `could not start lu-a8-unprepared: … No such container`, and before that a page served from the *other* run's project directory, which read as `A8-20` failing. 2026-10-20, the sweep: the reviewer ran one `sweepStaleFixtures()` from a second clone as soon as a run's first container appeared, and that run failed `0 pass / 1 fail (unnamed)` with `lu-a8-ready-1-vyc8xo never answered on port 32780: … No such container: lu-a8-ready-1-vyc8xo` — leaving its two siblings running, which is the `Promise.all` half of `A2` in the same measurement. |
+| **Component** | `staleIds` in `tests/lib/dashboardserver.ts`, the decision alone. It is exported and separate on purpose: inside the `docker rm` loop, the only way to test it is to destroy something, and the only way to see it being wrong is to lose a run. |
+| **Why an age and not a heartbeat** | A heartbeat has to be written by a run that may be killed at any moment, which is the state this is trying to clean up after, and it needs a place to live that two checkouts share. An age is already in docker's own record. The pid is no good across containers, which the earlier round established. |
+| **Test data, both sides** | A fixed clock of `2026-10-20T12:00:00Z` and `STALE_AFTER_MS` = 3 h, so the boundary is `09:00:00Z`. What must be swept: `old-1` at `06:00:00Z` and `edge-1` exactly at `09:00:00Z`, neither of them this run's. What must **not**: `live-1` at `11:58:00Z` (another run, two minutes old — the measured defect), `just-under` at `09:00:01Z` (a second inside the floor), `unreadable` carrying the string `not a date`, `empty` carrying `""`, and both of this run's own — `mine-1` at `11:59:00Z` and `mine-stale` at `06:00:00Z`, which is six hours old and still kept. No docker, no network, no clock of its own. |
+| **Why this run's own fixtures are exempt whatever their age** | A run longer than the floor would otherwise begin deleting its own containers out from under itself. The floor is a **distance** from a run rather than an estimate of one — the longest measured full run on this host is 17 minutes against 3 h — so the exemption costs nothing real, and without it the floor would have to be guessed upward for ever. |
+| **Why three hours** | An order of magnitude above the longest measured run. Anything closer turns the sweep into a race it can lose on a slow machine, which is the race it was written to remove. The cost is that litter from a run killed half an hour ago survives until a sweep after it ages, and that is the cheap direction to be wrong in: litter, rather than a false red in somebody else's run. |
+| **Expected** | `staleIds` names exactly `edge-1` and `old-1` over the whole record, and nothing at all for each of the five that must survive. |
+| **Shown able to fail** | The age filter removed — the defect as it was measured — reddens **4 of 6** scenarios, the live sibling and the boundary pair among them. An unreadable timestamp read as stale instead of kept reddens **2**. Both restored and the file is byte-identical afterwards. |
+| **What it does not cover** | That `docker <kind> inspect` prints what this reads. That is asserted once, in the helper's own comment, against docker 29.8.1 — `{{.Created}}` is RFC 3339 (`2026-10-20T12:22:29.90022963Z`) for containers, images and networks, while `{{.CreatedAt}}` prints `2026-10-20 14:03:11 +0200 CEST`, whose parse is engine-dependent. A row `inspect` does not answer for is simply absent from the record, and an absent row is never swept. |
+| **Implemented by** | `tests/unit/m-a8.stale-sweep.test.ts`. |
+| **Covers** | A8-31. |
 
 ##### A8-28 / A8-29 / A8-30 — the tools the git step needs, and a setup that must not be mistaken for the product
 
@@ -3345,7 +3366,7 @@ reviews that followed, and each has its evidence in its own block.
 | A16-2 | Integration | A run that gets the lock still writes its result | Otherwise A16-1 passes because nothing is ever written |
 | A16-3 | Component **unhappy** | The operator is told the repository is busy, not unreachable | 409, and neither "still unreachable" nor "Register the deploy key below" |
 | A16-4 | Component **unhappy** | An agent is not sent after a deploy key either | `git-repo-info` still describes the clone it has, rather than `clone (missing)` |
-| A16-5 | Integration **unhappy** | A start waits for a lock rather than recording an error | Bounded, and the bound is settable. A Test does not wait — an operator is in front of it | It says it is waiting at the first refusal, not only once 30s have gone: that is what the operator reads, and what A16-27 reads to know a wait happened.
+| A16-5 | Integration **unhappy** | A start waits for a lock rather than recording an error | Bounded, and the bound is settable. A Test does not wait — an operator is in front of it. **It says it is waiting at the first refusal**, not only once 30s have gone: that is what the operator reads, and what A16-27 reads — within 20s, so the old 30s line cannot satisfy it — to know a wait happened |
 | A16-6 | Integration | A start holds only what it is still waiting for | Locks of repositories settled in pass 1 are released before pass 2 waits |
 | A16-7 | Integration **unhappy** | A live process on this identity is honoured | The lock holds while its process lives |
 | A16-8 | Integration | A dead process on this identity still lets go | A15-4's promise, which the fix must not withdraw |

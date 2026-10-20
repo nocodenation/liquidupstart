@@ -81,48 +81,123 @@ function docker(args: string[], timeout = 600_000): Result {
 }
 
 /**
- * Remove containers and images this suite left behind, from any run but this one.
+ * How old a fixture has to be before this suite treats it as abandoned.
  *
- * This is what the fixed names used to do by accident. Called at the start of a
- * run rather than at the end of one, because the run that leaks is by definition
- * the run that did not reach its own cleanup.
+ * **Three hours is not an estimate of a run, it is a distance from one.** The
+ * longest measured full run on this host is 17 minutes, so the floor is an order
+ * of magnitude above it; anything closer turns the sweep into a race it can lose
+ * on a slow machine. The cost of the distance is only that litter from a run
+ * killed half an hour ago survives until the next sweep after it ages, which is
+ * the cheap direction to be wrong in.
  */
-export function sweepStaleFixtures(): void {
-  const mine = `${RUN_LABEL}=${RUN_ID}`;
-  const ids = (kind: 'ps' | 'images') =>
-    docker([kind, '-aq', '--filter', `label=${LU_LABEL}=1`], 60_000)
-      .stdout.split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
+export const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
 
-  const ours = new Set(
-    docker(['ps', '-aq', '--filter', `label=${mine}`], 60_000)
-      .stdout.split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-  );
-  for (const id of ids('ps')) if (!ours.has(id)) docker(['rm', '-f', id], 60_000);
+/**
+ * Which of these fixtures are stale, decided over what docker said.
+ *
+ * **"Not this run" is not "stale", and reading it that way reintroduced the
+ * defect this file exists against.** The first sweep removed every `lu-test=1`
+ * object whose RUN_ID was not its own, which is precisely a second run
+ * destroying a live first one -- the headline of #19, arriving back through the
+ * repair for A2. The reviewer measured it on 2026-10-20: one `sweepStaleFixtures()`
+ * from a second clone, while a run's first container was up, and that run failed
+ * with `lu-a8-ready-1-vyc8xo never answered on port 32780: … No such container`.
+ *
+ * A separate exported function because the decision is the part that was wrong,
+ * and a decision that only exists inside a docker call can only be tested by
+ * destroying something. Given rows and a clock it is a pure function.
+ *
+ * **An unreadable timestamp keeps the object.** "Cannot measure" is not "stale",
+ * which is the rule `SP-4` carries for the disk and `B5-33` for the image, and
+ * here it is also the only direction that cannot destroy a live run.
+ */
+export function staleIds(
+  rows: Array<{ id: string; created: string }>,
+  mine: Set<string>,
+  now: number,
+  after = STALE_AFTER_MS
+): string[] {
+  return rows
+    .filter((r) => r.id && !mine.has(r.id))
+    .filter((r) => {
+      const at = Date.parse(r.created);
+      return Number.isFinite(at) && now - at >= after;
+    })
+    .map((r) => r.id);
+}
 
-  const ourNetworks = new Set(
-    docker(['network', 'ls', '-q', '--filter', `label=${mine}`], 60_000)
-      .stdout.split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
-  );
-  for (const id of docker(['network', 'ls', '-q', '--filter', `label=${LU_LABEL}=1`], 60_000)
-    .stdout.split('\n')
+const lines = (out: string): string[] =>
+  out
+    .split('\n')
     .map((l) => l.trim())
-    .filter(Boolean)) {
-    if (!ourNetworks.has(id)) docker(['network', 'rm', '-f', id], 60_000);
-  }
+    .filter(Boolean);
 
-  const ourImages = new Set(
-    docker(['images', '-q', '--filter', `label=${mine}`], 60_000)
-      .stdout.split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)
+/**
+ * `<id> <created>` for the ids given, from docker's own record.
+ *
+ * `inspect` rather than `ps --format`, because `{{.CreatedAt}}` prints
+ * `2026-10-20 14:03:11 +0200 CEST`, whose parse is engine-dependent, while
+ * `{{.Created}}` is RFC 3339 -- `2026-10-20T12:22:29.90022963Z`, measured on
+ * docker 29.8.1 for all three object kinds. A row that inspect does not answer
+ * for is simply absent, and an absent row is not swept.
+ */
+function createdAt(kind: 'container' | 'image' | 'network', ids: string[]): Array<{ id: string; created: string }> {
+  if (ids.length === 0) return [];
+  const field = kind === 'network' ? '.ID' : '.Id';
+  const r = docker([kind, 'inspect', '-f', `{{${field}}} {{.Created}}`, ...ids], 120_000);
+  return lines(r.stdout).map((l) => {
+    const [id, created] = l.split(' ');
+    return { id: id ?? '', created: created ?? '' };
+  });
+}
+
+/**
+ * Remove containers, networks and images this suite abandoned -- from a run that
+ * is over, never from one that is going on.
+ *
+ * Called at the start of a run rather than at the end of one, because the run
+ * that leaks is by definition the run that did not reach its own cleanup. What it
+ * may *not* do is make that true of somebody else's run, which is why the age
+ * floor is the whole subject of `staleIds` above.
+ */
+export function sweepStaleFixtures(now = Date.now()): void {
+  const mine = `${RUN_LABEL}=${RUN_ID}`;
+  const theirs = (listing: string[]) => lines(docker(listing, 60_000).stdout);
+
+  const sweep = (
+    kind: 'container' | 'image' | 'network',
+    all: string[],
+    own: string[],
+    remove: (id: string) => string[]
+  ) => {
+    const candidates = theirs(all);
+    if (candidates.length === 0) return;
+    const ours = new Set(theirs(own));
+    // Inspect only what is not ours: this run's own fixtures are never swept,
+    // whatever their age, and a run longer than the floor would otherwise start
+    // deleting its own containers out from under itself.
+    const rows = createdAt(kind, candidates.filter((id) => !ours.has(id)));
+    for (const id of staleIds(rows, ours, now)) docker(remove(id), 60_000);
+  };
+
+  sweep(
+    'container',
+    ['ps', '-aq', '--filter', `label=${LU_LABEL}=1`],
+    ['ps', '-aq', '--filter', `label=${mine}`],
+    (id) => ['rm', '-f', id]
   );
-  for (const id of ids('images')) if (!ourImages.has(id)) docker(['rmi', '-f', id], 60_000);
+  sweep(
+    'network',
+    ['network', 'ls', '-q', '--filter', `label=${LU_LABEL}=1`],
+    ['network', 'ls', '-q', '--filter', `label=${mine}`],
+    (id) => ['network', 'rm', '-f', id]
+  );
+  sweep(
+    'image',
+    ['images', '-q', '--filter', `label=${LU_LABEL}=1`],
+    ['images', '-q', '--filter', `label=${mine}`],
+    (id) => ['rmi', '-f', id]
+  );
 }
 
 export function buildDashboardImage(tag: string): Result {

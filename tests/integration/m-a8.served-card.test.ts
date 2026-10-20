@@ -120,12 +120,23 @@ beforeAll(async () => {
   generateKeyPair(unknown, FLOWS.slug);
   generateKeyPair(unknown, SKILLS.slug);
 
-  const [a, b, c] = await Promise.all([
+  // **allSettled, and everything that started is pushed before anything throws.**
+  // `Promise.all` rejects on the first failure and abandons the other two, so a
+  // single container that never published a port left two running dashboards and
+  // an image behind -- with per-run names, nothing ever names them again, so the
+  // leak is permanent. A2 of the 2026-10-01 review; the reply said this was done
+  // and it was not, which the reviewer found by grepping for `allSettled` in
+  // `tests/` and finding none, 2026-10-20.
+  const outcomes = await Promise.allSettled([
     startDashboard(ready, 'lu-a8-ready', TAG),
     startDashboard(unprepared, 'lu-a8-unprepared', TAG),
     startDashboard(unknown, 'lu-a8-unknown', TAG)
   ]);
-  started.push(a, b, c);
+  for (const o of outcomes) if (o.status === 'fulfilled') started.push(o.value);
+  const failed = outcomes.flatMap((o) => (o.status === 'rejected' ? [String(o.reason)] : []));
+  // The failure is still a failure -- afterAll now has the survivors to stop.
+  if (failed.length > 0) throw new Error(failed.join('; '));
+  const [a, b, c] = started;
 
   readyPage = await get(a, '/');
   unpreparedPage = await get(b, '/');

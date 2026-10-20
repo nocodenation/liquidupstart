@@ -110,7 +110,14 @@ describe('A16-27 the wait really waits, and then works', () => {
     // run arrives in about 250ms and the case does catch it; under load the
     // holder takes 1047 to 1342ms, and the guard is a race rather than a rule.
     const out = watchOutput(p);
-    await out.until('Waiting for another run to finish preparing');
+    // **20 seconds, and the figure is the assertion.** The line this waits for is
+    // announced at the *first* refusal; before that change it arrived after 30s,
+    // from the `waited % 30` branch below it. With `until`'s 60s default the case
+    // was green either way -- the reviewer reverted those eight lines of `git.sh`
+    // and this file stayed 4/0, A16-27 passing after 30.4s. A budget between the
+    // two timings is what makes the promise `A16-5` and the feature document now
+    // carry -- that a waiting start says so immediately -- a tested one.
+    await out.until('Waiting for another run to finish preparing', 20);
     rmSync(lockDir, { recursive: true, force: true });
     await out.finished();
     await p.exited;
