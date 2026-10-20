@@ -34,6 +34,9 @@ judgement.
 | A17-1 | `main`'s head | Positive | Read from `git`, so a forge that answers nothing still leaves that line standing |
 | A17-1 | No `gh` on PATH | **Negative** | Non-zero exit, a message naming the tool, and **no** pull request section — *"cannot measure" is not "nothing is open"* |
 | A17-1 | An unset review decision | Positive | Tested for the empty string, not left to `//` |
+| A17-2 | Two branches editing one line | **Negative** | Reported as conflicting, with the file named |
+| A17-2 | A branch touching another file | Positive | Reported clean — without this, "always conflict" passes the row above |
+| A17-2 | A ref this host does not have | **Negative** | Neither clean nor a conflict: it says it cannot tell |
 
 ## Detail
 
@@ -53,6 +56,21 @@ judgement.
 | **Implemented by** | `tests/contract/m-a17.computed-state.test.ts`. |
 | **Covers** | A17-1. |
 
+### A17-2 — a conflict is reported as a conflict
+
+| | |
+|---|---|
+| **Premise** | The merge check is the half of this tool that replaces a judgement, so it has to be right in both directions. It was not, three times, and each one was shell error semantics meeting another. |
+| **Repair 1, found by using it on 2026-10-20** | The check grepped `merge-tree`'s output inside a pipeline. `git merge-tree` **exits 1 on conflict**, `set -o pipefail` hands the pipeline that 1, and the `if` took the else arm — so **every conflicting branch was reported clean**. It called #16 clean while the forge called it `CONFLICTING`, three days after this tool was written to replace a stale narrative with a computed one. The status is the authority now. |
+| **Repair 2, found by the case below within minutes** | A ref this host does not have **also** exits 1 — `merge-tree: <ref> - not something we can merge` — so a missing branch was reported as a conflict in a file called nothing. The status says *that* it failed; only the output says *which kind*. |
+| **Repair 3, found by the same case** | `named="$(… | grep -i '^CONFLICT' | …)"` — grep exits 1 when it finds nothing, pipefail hands that to the assignment, and `set -e` aborted the function **before** it printed `clean`. A clean merge produced an empty answer. `|| true` on the grep. |
+| **Component** | `lu_merge_state` in `scripts/state.sh`, evaluated out of the script by the case — the idiom `B6-3` established, so the case cannot pass against a reimplementation. |
+| **Test data, both sides** | A `mkdtemp` git repository built by the case: a base commit with `shared.txt` and `other.txt`; a branch that rewrites `shared.txt`'s only line while `main` rewrites it differently; a branch that changes `other.txt` instead; and `origin/nothing-like-this`, which does not exist. Three answers, three distinct states. |
+| **Expected** | `CONFLICT` naming `shared.txt`; `clean`; and `CANNOT TELL` that is not `clean`. |
+| **What this case is worth** | It caught repairs 2 and 3 immediately, which is the argument for writing it rather than fixing repair 1 and moving on. A function whose three bugs all hid in error handling is not one to trust by reading. |
+| **Implemented by** | `tests/contract/m-a17.computed-state.test.ts`. |
+| **Covers** | A17-2. |
+
 ## What is deliberately not here
 
 - **Splitting `HANDOFF.md`'s lessons into their own document.** The backlog entry asks for it, and it
@@ -68,5 +86,6 @@ judgement.
 | Requirement | Covered by |
 |---|---|
 | The state of the work is computed from the forge and from git, never narrated | A17-1 |
+| A conflict is reported as a conflict, and an unanswerable question as unanswerable | **A17-2** |
 | A tool that cannot measure says so and prints nothing | **A17-1** negative |
 | An unset review decision is not read as a decision | A17-1 |

@@ -138,3 +138,73 @@ describe('A17-1 and the empty review decision is read as what it is', () => {
     expect(body).not.toMatch(/\.reviewDecision \/\/ "first/);
   });
 });
+
+describe('A17-2 a conflict is reported as a conflict', () => {
+  // The case that would have caught it. The first version of the merge check
+  // grepped merge-tree's output inside a pipeline, and under `set -o pipefail`
+  // that reported every conflicting branch as **clean**: merge-tree exits 1 on
+  // conflict, pipefail hands the pipeline that 1, and the `if` took the else
+  // arm. Found on 2026-10-20 by using the tool -- it called #16 clean while the
+  // forge called it CONFLICTING, hours after being written to replace a stale
+  // narrative with a computed one.
+  //
+  // The decision is evaluated out of the script, not reimplemented: the idiom
+  // B6-3 established, so the case cannot pass against a copy.
+  const mergeState = (base: string, branch: string, cwd: string) =>
+    sh(
+      [
+        'bash',
+        '-c',
+        `set -euo pipefail; eval "$(sed -n '/^lu_merge_state() {/,/^}/p' ${JSON.stringify(STATE)})"; lu_merge_state ${JSON.stringify(base)} ${JSON.stringify(branch)}`
+      ],
+      cwd
+    ).stdout.trim();
+
+  function repoWithBranches(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'lu-a17-2-'));
+    const g = (...args: string[]) => sh(['git', ...args], dir);
+    g('init', '-q', '-b', 'main');
+    g('config', 'user.email', 'probe@example.invalid');
+    g('config', 'user.name', 'probe');
+    writeFileSync(join(dir, 'shared.txt'), 'original\n');
+    writeFileSync(join(dir, 'other.txt'), 'untouched\n');
+    g('add', '-A');
+    g('commit', '-q', '-m', 'base');
+    // one branch changes the shared line, the other changes it differently
+    g('checkout', '-q', '-b', 'collides');
+    writeFileSync(join(dir, 'shared.txt'), 'theirs\n');
+    g('commit', '-qam', 'theirs');
+    g('checkout', '-q', 'main');
+    writeFileSync(join(dir, 'shared.txt'), 'ours\n');
+    g('commit', '-qam', 'ours');
+    // and one that touches a different file entirely
+    g('checkout', '-q', '-b', 'agrees', 'main');
+    writeFileSync(join(dir, 'other.txt'), 'changed elsewhere\n');
+    g('commit', '-qam', 'elsewhere');
+    g('checkout', '-q', 'main');
+    return dir;
+  }
+
+  const dir = repoWithBranches();
+
+  test('A17-2 two branches editing one line are reported as conflicting, and the file is named', () => {
+    const answer = mergeState('main', 'collides', dir);
+    expect(answer).toContain('CONFLICT');
+    expect(answer).toContain('shared.txt');
+  });
+
+  test('A17-2 the counterpart: a branch touching another file is clean', () => {
+    // Without this, "always CONFLICT" passes the scenario above and makes the
+    // whole report useless in the other direction.
+    expect(mergeState('main', 'agrees', dir)).toBe('clean');
+  });
+
+  test('A17-2 and a ref this host does not have is neither', () => {
+    // "Cannot measure" is not "clean" -- the rule SP-4 carries for the disk and
+    // SP-5 for an interrupted build. A missing ref used to fall into the same
+    // else arm as a successful merge.
+    const answer = mergeState('main', 'origin/nothing-like-this', dir);
+    expect(answer).toContain('CANNOT TELL');
+    expect(answer).not.toContain('clean');
+  });
+});
