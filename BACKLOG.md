@@ -7,6 +7,110 @@ Until 2026-09-14 each feature branch carried its own file and none repeated anot
 `main` on that day, so the entries the OpenClaw 2026.9.1 migration deferred arrived here with it and
 are kept under their own heading below rather than mixed in.
 
+---
+
+**The suite's fixture reclaim is built per file, and two tiers still use fixed names.** Found by a
+local multi-angle review of `fix/fixture-names-per-run` on 2026-10-20, after that branch had already
+been pushed and reported as done. The three defects in the branch's own new code were fixed there;
+these are wider than it and are left here rather than widened into it.
+
+- **`tests/system/m-b5.hand-drop.test.ts:121` and `:134`** are `docker rm -f lu-b5-live` followed
+  immediately by `docker run -d --name lu-b5-live`, and the same for `lu-b5-boot`: fixed names, no
+  labels, inside a `beforeAll` of 1 800 000 ms with a NiFi boot of up to 400 s. Two checkouts running
+  the system tier therefore still destroy each other, half an hour in, and the failure reads as a NAR
+  loader timeout rather than as a name collision. `tests/component/m-oc.allow-scripts.test.ts:46` is
+  the image counterpart, with the fixed tags `lu-oc15-with` and `lu-oc16-without` and an `afterAll`
+  that `docker rmi -f`s both.
+- **The sweep's only entry point is `buildDashboardImage()`**, reached by two integration files. A
+  milestone-scoped run — `./tests/run.sh m-oc` — never sweeps at all, and
+  `tests/integration/m-oc.subnet-preflight.test.ts` is the only file that creates labelled *networks*
+  and never builds an image, so an interrupted `m-oc` run leaks two /24s that only an `m-a8`
+  selection will ever reclaim. The chokepoint every run passes is `tests/run.sh`, whose own comment
+  states the principle (*"Asked once, here, rather than in each case"*).
+- **The repair is three exported string helpers a caller has to pair with `fixtureLabels()` by
+  hand**, and both call sites that had to remember it forgot — `m-oc.claude-shadow` and
+  `m-oc.bounded-runs`, fixed on the branch. That is `CLAUDE.md`'s own rule read against itself: a
+  helper that hands back a named **and** labelled object (`fixture.container`, `fixture.image`,
+  `fixture.network`) is the computed answer; a rule to remember is what produced two misses.
+
+**Why not here.** The branch is in review on its third round and these touch the system tier, the
+component tier and the runner. Widening it now is how a review gets read twice. The branch's own
+defects — the network stamp, the image stamp, the id spelling — were in its new code and are fixed
+in it.
+
+Recorded 2026-10-20.
+
+---
+
+**Two helpers report a harness fault as the product going silent.** Same review.
+`watchOutput`'s drain in `tests/lib/gitfixture.ts:538` is
+`Promise.all(...).catch(() => undefined).then(() => ended = true)`, so one rejected reader marks the
+whole output ended while the other stream is still delivering, and the swallowed error leaves nothing
+to report it by: `until()` then throws *"the run never said … and has ended. It said:"* with nothing
+after the colon. The awaited line is on **stderr**, so a stdout reader failure truncates the stream
+that matters. Both pumps also share one stateful `TextDecoder` with `{ stream: true }` and there is
+no final flush. `allSettled`, `ended` only after both pumps return, one decoder each plus a flush.
+
+And `awaitFile` at `:495` reads `existsSync(file) ? readFileSync(file) : ''`, so a file removed
+between the two calls throws `ENOENT` out of the helper instead of the diagnosis it exists to
+produce — git.sh's EXIT trap removes the lock directory wholesale, which is exactly that window.
+
+Left out of `fix/fixture-names-per-run` because neither is in its diff and both widen it into a
+third file under review.
+
+Recorded 2026-10-20.
+
+---
+
+**`startDashboard`'s readiness loop has no timeout on its `fetch`.** Same review.
+`tests/lib/dashboardserver.ts` gained `AbortSignal.timeout` on `get()` for `B1a` of the 2026-10-01
+round, and the identical unbounded `fetch` in the readiness loop fourteen lines above was left
+without one — so the 150-attempt budget is not a time budget. Docker's port proxy accepts the TCP
+connection before SvelteKit answers, which is this fixture's ordinary startup state, and one hung
+attempt parks the call: it never reaches `${name} never answered on port ${port}`, the `beforeAll`
+budget expires instead, bun prints one `(unnamed)` failure and none of the file's ten tests runs —
+the diagnosis loss that change was made to prevent. `Bun.sleep(200)` also sits only in the `catch`,
+so a resolving-but-untruthy attempt spins through all 150 with no delay.
+
+Recorded 2026-10-20.
+
+---
+
+**`runSubnets` hands out adjacent /24s, so one run's `free` is another's `taken`.** Same review. The
+docstring concedes the exact clash and claims *"the failure is a loud `docker network create` error
+rather than a wrong verdict"* — true for `taken`, which the run creates, and **false for `free`**,
+which it only probes: the probe create fails on "Pool overlaps" and
+`m-oc.subnet-preflight.test.ts:77` reads that as the preflight refusing a free range. Simulated over
+300 000 pairs: exact clash 0.0030%, neighbour clash 0.0063%, so the case the comment denies is the
+more likely of the two. Stride the ranges apart, or correct the claim. The comment's "100 x 256
+starting points" is also 100 x 255.
+
+In the same file, `expect(networks().filter((n) => n.startsWith('lu-subnet-probe-'))).toEqual([])` is
+a host-global assertion over every docker network, and the probe name is composed by the **product**
+(`scripts/linux/start.sh:67`), so the test cannot suffix it: a concurrent run, or one overlapping a
+real `start.sh`, reports a probe the other process is about to remove.
+
+Recorded 2026-10-20.
+
+---
+
+**Two age-floor sweeps answer one question in one directory, differently.** Same review.
+`tests/lib/builderimage.ts` has `sweepable()` with a 2 h floor and a strict `>`;
+`tests/lib/dashboardserver.ts` now has `staleIds()` with 3 h and `>=`. So a 2.5 h-old labelled
+fixture is litter to one and live to the other, and the boundary `A8-31` pins (exactly at the floor is
+swept) is the opposite of `B6-39`'s. *"Cannot measure is not stale"* is implemented twice and
+differently too. Each is specified in its own document and neither mentions the other, so raising a
+floor or fixing a parse is a two-file, two-spec change and whichever copy is missed keeps deleting
+another run's objects.
+
+`throwawayTag` also reinstates the per-run image-tag scheme `builderimage.ts` abandoned after a
+measured disk failure — 21 images at about 1 GB filling the Docker VM on 2026-10-14, repaired by
+content addressing rather than by deleting more reliably. Nothing in the branch cites or refutes that
+measurement, and `sweepable` still carries a `run-*` branch to clean up after the scheme now
+returning.
+
+Recorded 2026-10-20.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
