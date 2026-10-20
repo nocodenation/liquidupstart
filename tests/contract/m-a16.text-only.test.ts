@@ -19,18 +19,12 @@
  * Then:     None contains a NUL byte in the window git judges by — the first
  *           8000 bytes — so none is binary, and every one shows up as a diff.
  * Covers:   A16-19, and the header rule in CLAUDE.md § Writing into files
- * Unhappy:  The negative is the whole case. Its counterpart is **A13-6** in
- *           `m-a13.skip-step-names.test.ts`: the case that needed a NUL still
- *           refuses one, written as the escape `'a\0b'` rather than the byte,
- *           so this rule cannot be met by giving up the test data.
- *
- *           This line said `A16-20` until 2026-10-16, and that id belongs to a
- *           stale-lock case in `m-a16.lock-identity.test.ts`. The specification
- *           had a row under it describing *this* counterpart, so one id named two
- *           cases and the integration case that carries it had no row at all.
- *           `TR-1` cannot see that -- it asks whether an id in a title has a row,
- *           not whether the row is about that case -- and neither can `TR-4` on
- *           #28, which asks whether an id spans two files.
+ * Unhappy:  The negative is the whole case. Its counterpart, specified as A16-20,
+ *           runs inside A13-6's `describe` in `m-a13.skip-step-names.test.ts`:
+ *           the case that needed a NUL still refuses one, written as the escape
+ *           `'a\0b'` rather than the byte, so this rule cannot be met by giving
+ *           up the test data. `m-a16.lock-identity.test.ts` carries A16-20 on a
+ *           different case; the collision is recorded in the specification.
  *
  * Precondition: IN_GIT_REPO -- this checkout is a git repository. Skipped where it does not,
  *           because a release installation at `~/.liquidupstart` is not one, and the

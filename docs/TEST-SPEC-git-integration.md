@@ -3208,7 +3208,6 @@ with their numbers, because "it reproduced" is worth more than "it looked wrong"
 | A13-4 | Integration | A full start still waits | The counterpart: the difference between the two runs is one environment variable, not the removal of M-A9 |
 | A13-5 | Unit **unhappy** | Every step name the stack can produce is accepted | `git-key-github.com_NoCodeNation_agent-skills` was refused with 400 and the error swallowed, so the button did nothing |
 | A13-6 | Unit **unhappy** | And anything that is not one path element is still refused | Widening the character class must not widen what the rule is for |
-| A13-6 | Unit **negative** | …including the NUL byte, written as the escape `'a\0b'` | Stated rather than described, and it is the counterpart `A16-19` leans on: the no-binary-files rule cannot be met by giving up this test datum. The datum used to be recorded under a second id of its own |
 | A13-7 | Contract + integration **unhappy** | The Claude panel opens for Claude, not for any banner | A missing deploy key opened the Claude sign-in panel with `ENABLE_ANTHROPIC_CLAUDE_CODE=0` |
 | A13-8 | Contract | And the marker sits where a Claude sign-in is waited for | A marker printed nowhere would satisfy A13-7 and leave the panel unreachable |
 | A13-9 | Contract **unhappy** | The repository card is keyed by slug | Two declared repositories sharing a name shared their "Testing…", "Copied" and result line |
@@ -3359,8 +3358,8 @@ reviews that followed, and each has its evidence in its own block.
 | A16-17 | Component | A line the card still agrees with stays | Clearing on any change is M-A14's defect again: a confirmation swept away before it is read |
 | A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
 | A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
-| A16-20 | Integration **negative** | A foreign lock nobody can ask about is not forever | Three titles in `m-a16.lock-identity.test.ts` carry this id and had no row: the row here described a different case. See the note under A16-22 |
-| A16-20 | Integration positive | …and the run says it took the lock over | A takeover nobody is told about is indistinguishable from a lock that was never there |
+| A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
+| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Cases documented after the fact
 
@@ -3375,6 +3374,8 @@ them, and they were not — they were written after, during the rounds of review
 | A8-27 | Unit | positive | An update replaces every locally built image, the toolbox included: `update.sh` names all five, while the dashboard asks for the four that must already exist | `tests/unit/m-a8.built-images.test.ts` |
 | A14-7 | Contract | positive | A finished run refreshes what the page shows, and the refresh is **not** inside the success branch — `invalidateAll()` runs either way, while the success-only callback still means success | `tests/contract/m-a14.skip-button-shape.test.ts` |
 | A14-8 | Contract | positive | Each repository keeps its own test result: the state is a map keyed by slug rather than one answer per card, and starting one test clears only that repository's answer | `tests/contract/m-a14.skip-button-shape.test.ts` |
+| A16-20 | Integration **unhappy** | positive | † A foreign lock older than any legitimate hold is taken over: the start exits 0 and clones | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-20 | Integration | positive | † …and the run says it took the lock over. A takeover nobody is told about reads as a lock that was never there | `tests/integration/m-a16.lock-identity.test.ts` |
 | A16-21 | Integration | positive | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
 | A16-22 | Integration **unhappy** | positive + negative | An abandoned `mkdir` is not forever either — an empty pid file older than any hold is taken over, and a fresh one is still held | `tests/integration/m-a16.lock-identity.test.ts` |
 | A16-24 | Component **unhappy** | negative | A contradicted result line is dropped, not hidden: it does not come back when the clone state flips back | `tests/component/m-a16.result-line.test.ts` |
@@ -3392,25 +3393,16 @@ second. Renumbering a signed-off id is the operator's decision, and `mutate.sh` 
 that resolves to more than one test, so the collision surfaces as a refusal rather than a wrong
 answer. In `BACKLOG.md`.
 
-**`A16-20` looked like the same collision and was not, repaired 2026-10-16.** It was reported that
-way — one id, two cases, the operator's decision to renumber — and the reading was wrong. Only one
-case ever claimed it: the three titles in `tests/integration/m-a16.lock-identity.test.ts`. The other
-claim was **this specification**, which carried a row under `A16-20` describing the NUL counterpart
-that lives in `tests/unit/m-a13.skip-step-names.test.ts` — a case that already has an id, `A13-6`.
-So one id named two cases, the integration case that carries it had no row of its own, and
-`m-a16.text-only.test.ts`'s header passed the wrong id on to the next reader.
-
-Nothing was renumbered, because nothing needed to be: the row is now about the case that carries the
-id, the NUL datum sits with `A13-6` where it belongs, and the header names `A13-6`. **No signed-off
-id moved, so this was never the operator's decision to take** — it was a document being wrong about
-which case it described.
-
-**What saw it, and what did not.** `TR-1` asks whether an id in a test title has *a* row; this id had
-one. `TR-4` on #28 asks whether an id spans two test *files*; this one does not. The class neither
-covers — a row that describes a different case than the test carrying its id — is recorded on #28
-and needs a convention before it can be checked, because telling whether a row's words are about the
-same thing as a test's words is either a judgement or a rule that makes it mechanical.
-| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
+**`A16-20` is a second collision of the same kind, and it is left standing too.** The A16-20 row in the milestone's
+table, signed off on 2026-09-22 in `2115193`, is the NUL counterpart A16-19 leans on: the datum `'a\0b'`, whose case
+is `"a\u0000b" is refused` inside A13-6's `describe` in `tests/unit/m-a13.skip-step-names.test.ts`.
+On 2026-09-28, `3118ca8` gave the same id to three titles of the stale-foreign-lock case in
+`tests/integration/m-a16.lock-identity.test.ts` — the two rows marked † in the table above, added
+2026-10-20; it was not among the eleven because its id had a row. `TR-1` cannot see a collision of this
+shape: the id in the titles is declared, only not for that case. Renumbering is the reviewer's
+decision, as for A16-19. The precedent is `OC-40` and `OC-42` in
+`docs/TEST-SPEC-case-id-traceability.md`: specified first, reused later, and the later tests were the
+ones renumbered.
 
 #### Detail per case
 
@@ -3494,6 +3486,18 @@ model a world that does not exist.
 `…without this repository.Closing in 1…` — no space. Svelte trims the whitespace at the start of the
 `{#if holdingSkip}` block, and the markup puts that block immediately after the full stop. Present
 before M-A16; visible now because the sentence it belongs to is the one finding 4 corrected.
+
+#### A16-20 (†) — a foreign lock nobody can ask about is not forever, documented after the fact
+
+| | |
+|---|---|
+| **Premise** | The blocker of the 2026-09-28 review. A foreign holder was honoured with no liveness check and no age limit, and the holder's identity is a container hostname that no later run can match, so a holder killed before its EXIT trap left the repository locked for good: every later start waited and recorded *another run is preparing*, every Test answered 409. |
+| **Component** | `lu_take_lock` in `config/scripts/start/git.sh`, driven by `runAgainst` in `tests/integration/m-a16.lock-identity.test.ts`. |
+| **Test data** | A lock directory under the fixture project's `volumes/_git-secrets/locks/<slug>/` holding `pid` = `some-other-container:7` — an identity no run on this machine has. For A16-20, the directory and the `pid` file have their mtime set **36 hours** back, past the longest legitimate hold (the deploy-key wait plus the clone timeout). For the counterpart A16-21, the same holder with the mtime left at now. |
+| **Expected** | A16-20: the start exits `0`, the clone exists, and the output matches `/stale\|took over\|abandoned/i`. A16-21: exit `4` and no clone — without it, A16-20 could be met by ignoring foreign locks entirely, which is the concurrency M-A15 exists to prevent. |
+| **The id** | Shared with the signed-off A16-20 row above; see the note under *Cases documented after the fact*. |
+| **Implemented by** | `tests/integration/m-a16.lock-identity.test.ts`: `describe('A16-20 a foreign lock nobody can ask about is not forever')` and its two tests, and the counterpart under `describe('A16-21 but a fresh foreign lock is still honoured')`. |
+| **Covers** | The blocker of the 2026-09-28 review, and the guarantee M-A15 introduced the lock for: two runs do not clone one repository at once. |
 
 ---
 
