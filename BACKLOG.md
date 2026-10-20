@@ -83,9 +83,28 @@ never the image in use, never one built in the last two hours, and never a tag o
 schemes this file has used. Three separate processes now share one image, measured.
 ---
 
-**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
+**Answered in part 2026-10-20 by #28, and the two halves it does not cover are stated below rather
+than closed.** `TR-4` is built for the third of the three checks sketched here — *across test files,
+no id on two different titles* — and that is the one this entry called the one that mattered. It was
+written against #27's parent, where the `A8-24`/`A8-25`/`A8-26` collision still existed, so it has
+been seen to fail against a real one: it reports those three ids there and is green on the repair.
+Its detail block is `TR-4` in [`docs/TEST-SPEC-case-id-traceability.md`](docs/TEST-SPEC-case-id-traceability.md),
+and the shape is **two routes rather than one**: an id carried by several test files is accepted when
+its own detail block's *Implemented by* names every one of them, which is the computed answer the
+house rule asks for, and otherwise only through a reviewed entry naming that exact file set. Of 15
+such ids on the tree of 2026-10-20, the computed route takes 4 and the list carries 11, and an entry
+whose block has come to claim its files is reported as redundant — so the list can only shrink.
+
+**The other two checks are still open, with what they would find today measured** in that document's
+*No id is carried by two test files unless that is on record* section: the per-document duplicate
+check is **not buildable as stated**, because one row per scenario means 50 of 459 id/document pairs
+legitimately carry several rows; the cross-document check **finds exactly one id, `SP-2`**, which is
+by design and would need an exemption on its first run. A third class neither check reaches is
+`A16-20`: one file, one id, and a specification row that is not its case.
+
+~~**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
 ids in `TEST-SPEC-*.md` rows, in both directions, and has nothing to say about two different cases
-sharing one id.
+sharing one id.~~
 
 That is not hypothetical. `OC-40` and `OC-42` were specified on #15 on 2026-09-19 — two signed detail
 blocks, a traceability row, test headers and a comment in `config/scripts/start/openclaw.sh` — and the

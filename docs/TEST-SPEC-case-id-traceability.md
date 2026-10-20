@@ -17,8 +17,10 @@ along.
 > and `OC-42` on 2026-09-19 for two entirely different cases, so these two were renumbered — see the
 > note under their rows in `TEST-SPEC-openclaw-2026-9-1.md`. **And it is worth noting what this check
 > did and did not catch.** `TR-1` compares tested ids against declared ids; it has nothing to say about
-> two cases sharing one id, which is why the collision survived until a merge surfaced it. A uniqueness
-> check is the obvious next case and is not written. The thirteen are documented now, gathered in sections of their own rather than interleaved,
+> two cases sharing one id, which is why the collision survived until a merge surfaced it. *A
+> uniqueness check was the obvious next case and was not written when this was recorded on
+> 2026-10-09;* `TR-4` is that check for the test-file half of the question since 2026-10-13, and
+> **What this check still does not do** carries what is still open. The thirteen are documented now, gathered in sections of their own rather than interleaved,
 because interleaving them would imply they were signed off with their neighbours.
 
 **Level.** Contract. The two artefacts are read as text, which is the only level at which "the
@@ -41,9 +43,10 @@ every milestone at once.
 | **TR-2** | positive | The comparison is over something: both sets are read and both are large, so two empty reads cannot satisfy TR-1 |
 | **TR-1** | positive | A declared id with no test is reported and not failed, and the case asserts that such ids exist |
 | **TR-3** | positive + **negative** | The reader sees a case wherever the file puts it: a top-level `describe` after a blank line **and** one after `});`, because the first passing is what hid the second |
-| **TR-4** | **negative** | No id is carried by two different cases without that being on record: an id spanning files must be one somebody judged, with a reason |
-| **TR-4** | positive | …and every reason is a reason rather than a placeholder, because a list whose entries say nothing is a list nobody reviewed |
-| **TR-4** | **negative** | …and the list does not outlive what it exempts: an entry for an id that no longer spans files is stale |
+| **TR-4** | **negative** | No id is carried by two test files without that being on record: its detail block names **every** file carrying it, or a reviewed entry names that **exact** file set |
+| **TR-4** | positive | …and a real level split on record is **accepted**, by either route — `OC-17` through the list, `OC-68` through its own block | 
+| **TR-4** | **negative** | …and every reason is a reason rather than a placeholder, because a list whose entries say nothing is a list nobody reviewed |
+| **TR-4** | **negative** | …and the list does not outlive what it exempts: an entry is stale when its id no longer spans files, **and redundant when its block has come to claim every file** |
 
 ## Detail
 
@@ -90,24 +93,41 @@ every milestone at once.
 | | |
 |---|---|
 | **Premise** | `TR-1` compares tested ids against declared ids in both directions and says nothing about **two cases sharing one id**. That is not hypothetical: it has happened twice, and both times a green suite on each branch. `OC-40` and `OC-42` were specified on #15 on 2026-09-19 and assigned again on `main` on 2026-10-09 for different cases, surfacing as a merge conflict rather than a test failure (renumbered on #26). And `m-a8.toolbox-tools` was using `A8-24`, `A8-25` and `A8-26`, all three belonging to other cases, with no row of its own — found by accident while chasing an unrelated red (renumbered on #27). A stolen id *is* declared, by the case it was taken from, so `TR-1` passes throughout. |
-| **Component** | `idsInTests()` in `tests/contract/m-tr.case-ids.test.ts`, and a reviewed list beside it. |
-| **Steps** | Compute every id carried by more than one test file; compare that set with the list; then check the list's entries carry real reasons and that none of them is stale. |
-| **Why it is a list and not a rule, measured rather than argued** | Two shapes look identical from outside: one case tested at two levels, which this project asks for, and two unrelated cases wearing one id. **Measured 2026-10-13: 11 ids span files and nine are the first shape**, so "one id, one file" would fail nine correct things — `OC-17`, `OC-18` and `OC-19` are each a unit and an integration case, `SP-2` spans three files by design. The next rule tried was *the specification must name every file that implements an id*, using the existing *Implemented by* convention: **it failed 12 of 14**, because the older blocks predate that convention. So the judgement is made once, written down with its reason, and reviewed like any other data — the shape `mutations.json` uses for exemptions, and for the same argument: an exception with a reason is reviewable, one without is invisible. |
-| **Test data, both sides** | What must be accepted: the nine level splits and `SP-2`, each with the subject that makes it one case. What must not: a twelfth id appearing without a line, which fails until somebody repairs it or judges it. And one entry is a **collision rather than an exception** — `A16-19`, where `m-a16.text-only` is about git tracking test files and `m-a16.skip-panel` about the skip-all wording. Its reason says so and says it goes when #24 merges, so the list records a known defect instead of blessing it. |
-| **Expected** | No unjudged id, every reason over 40 characters and not a placeholder, no stale entry. |
-| **What it found** | Green, 3 scenarios — after `TR-1` immediately failed on `TR-4` itself for having no row, which is the second time that has happened while adding a case to this file. The third scenario exists so the list shrinks rather than grows for ever: when #24 merges and `A16-19` stops spanning files, its entry becomes stale and this case says so. |
+| **Component** | `idsInTests()` and `namedByBlock()` in `tests/contract/m-tr.case-ids.test.ts`, and the reviewed `SPANS_FILES` beside them. |
+| **Steps** | Compute every id carried by more than one test file, with those files. For each, read the *Implemented by* rows of every detail block whose heading names that id, and accept the id if those rows name **every** carrying file by full path. Failing that, accept it if `SPANS_FILES` holds an entry whose `files` **equal** the carrying set. Then: the counterpart, that two known level splits are in fact accepted, one by each route; that every entry's reason is a reason; and that no entry is stale or redundant. |
+| **Two routes, and why the computed one comes first** | `CLAUDE.md`: *prefer a computed answer to a rule an agent has to remember.* The *Implemented by* convention already records which files implement a case, in the place a reviewer reads, so for a block that follows it the question is **determinable** and no list entry is needed. The list is what is left: blocks that predate the convention. It can therefore only shrink, and the fourth scenario makes that true rather than hoped for — an entry whose block has come to claim every file is reported as redundant, so bringing a block up to the convention forces the entry out with it. |
+| **Why a list is still needed at all, measured rather than argued** | Two shapes look identical from outside: one case tested at two levels, which this project asks for, and two unrelated cases wearing one id. **Measured 2026-10-13: 11 ids span files and nine are the first shape**, so "one id, one file" would fail nine correct things. **Re-measured 2026-10-20 on the tree with `main` merged: 15 ids span files, and the computed rule accepts 3** — `OC-68`, `OC-69`, `OC-70`, which came in with #15 and whose blocks name both of their files each. A fourth, `OC-45`, had a block with **no *Implemented by* row at all**, so one row was added there rather than an entry here; that is the shape of how this list is meant to drain. The remaining 11 are listed. |
+| **A path, not a basename** | `m-oc.pairing-card` exists twice — `tests/contract/` reads the card as text, `tests/component/` mounts it — so a basename match would accept the wrong file silently. The computed rule matches `tests/…/x.test.ts` in full. |
+| **What the computed rule cannot distinguish, stated because it is its one weakness** | A block whose heading names several ids — `OC-43 / OC-44 / OC-45` — claims its files for all of them together, so **within such a block the rule cannot say which id a file belongs to**. What it still catches is a file that no block mentioning the id claims, which is the shape a stolen id takes. A tighter rule would need per-id *Implemented by* rows, which the house style does not have. |
+| **Test data, both sides, stated** | **Accepted by the computed rule:** `OC-68` (`tests/component/m-oc.pairing-card.test.ts` + `tests/integration/m-oc.pairing-budget.test.ts`), `OC-69` (component card + `tests/unit/m-oc.pairing-env.test.ts`), `OC-70` (integration budget + component card), and `OC-45` since its row was added (`tests/contract/m-oc.pairing-card.test.ts` + `tests/unit/m-oc.pairing-env.test.ts`). **Accepted by the list,** each with its exact pair: `A3c-8` (contract `m-a3c.ssh-isolation` + system `m-a3c.clone-identity`), `A6-12` (contract `m-a6.command-mounted` + system `m-a6.publish-in-container`), `A8-20` (component `m-a8.declaration-drift` + integration `m-a8.served-card`), `A8-21` (unit `m-a8.declaration-preflight` + contract `m-a8.preflight-order`), `OC-12` (component `m-oc.config-shape` + system `m-oc.device-scopes`), `OC-17`/`OC-18`/`OC-19` (unit `m-oc.version-probe` + integration `m-oc.version-probe-images`), `OC-31` (component `m-oc.config-shape` + system `m-oc.codex-plugin`), and `SP-2` with **four** files — unit `m-sp.preconditions` plus component `m-a16.result-line`, `m-a16.skip-panel` and `m-oc.pairing-card`. **What must not be accepted:** a sixteenth id appearing with no block row and no entry; a **third** file carrying a listed id, measured below; a reason failing `length > 40` or matching `/^(todo|tbd|see above|n\/a)/i`; an id failing `/^[A-Z][A-Za-z0-9]*-[A-Za-z0-9]+$/`; an entry naming fewer than two files or a path failing `/^tests\/[A-Za-z0-9._/-]+\.test\.ts$/`. And one entry is a **collision rather than an exception** — `A16-19`, where `m-a16.text-only` is about git tracking test files and `m-a16.skip-panel` about the skip-all wording. Its reason says so and says it goes when #24 merges, so the list records a known defect instead of blessing it. |
+| **Expected** | No unjudged id, both counterpart splits accepted, every reason a reason, no stale or redundant entry. |
+| **What it found** | Green, 3 scenarios on the branch — after `TR-1` immediately failed on `TR-4` itself for having no row, which is the second time that has happened while adding a case to this file. **And then two things on review, 2026-10-20, both of which it had to be rebuilt for.** First, it was **red on the merged tree**: #15's four ids span files by design and nothing claimed them, which is the semantic half of a merge that `git merge-tree` calls clean. Second, and worse, **the exemption could be stolen**: the check asked only whether a spanning id was *in* the list, so once `OC-17` was listed, a third file could carry `OC-17` for an unrelated case and the suite stayed green — the reviewer measured 7 pass / 0 fail against exactly that. It had already happened harmlessly on `main`, where `SP-2` grew from three carrying files to four with #15 and the reason in the list quietly became false. Entries name their file set now, and the match is equality. |
+| **Controls** | Seven, each reddening the scenario it names. *Of the original three:* a legitimate entry removed (`OC-17`) → the first scenario; an entry added for an id that spans one file (`TR-1`) → the stale scenario; `TODO: ` prefixed to a reason → the reason scenario, on the regex rather than the length. *Of 2026-10-20:* an unrelated `OC-17` case appended to `tests/contract/m-a6.command-mounted.test.ts` → the first scenario **and** the counterpart, where before the rebuild it was 7 pass / 0 fail; `OC-45`'s new *Implemented by* row removed → the first scenario, reporting `OC-45` by its two files; `SP-2`'s entry cut back to its old three files → the first scenario, naming the surplus file; and the four `OC` ids left unclaimed on the merged tree → the first scenario, which is the state the review found. |
 | **Implemented by** | `tests/contract/m-tr.case-ids.test.ts`. |
-| **Covers** | TR-4, TR-FR1. |
+| **Covers** | TR-4, **TR-FR3**. |
 
-## What this check still does not do
+## No id is carried by two test files unless that is on record — and what is still unchecked
 
-**It does check that an id is used once, since 2026-10-13 — see `TR-4` above.** What `TR-1` itself
-still cannot see is a stolen id: it compares tested ids against declared ids, and a stolen one is
-declared by the case it was taken from. That is not hypothetical:
-`OC-40` and `OC-42` were specified on #15 on 2026-09-19 and assigned again here on 2026-10-09 for
-different cases, and the collision survived both branches' suites until a merge surfaced it — which is
-why those two were renumbered to `OC-63` and `OC-64` on 2026-10-12. A uniqueness check is the obvious
-next case and is **not written**; it is recorded in `BACKLOG.md` rather than left implied.
+That sentence is what `TR-4` does, and saying it exactly matters, because this section used to claim
+both that an id *is* checked for being used once and that such a check was *not written*. Both
+cannot be true, and neither was: `TR-4` covers **one** of the three halves the backlog entry
+sketched, and the other two are open. What `TR-1` on its own still cannot see is the stolen id —
+it compares tested ids against declared ids, and a stolen one is declared by the case it was taken
+from. That is not hypothetical: `OC-40` and `OC-42` were specified on #15 on 2026-09-19 and assigned
+again here on 2026-10-09 for different cases, surviving both branches' suites until a merge surfaced
+it, which is why they were renumbered to `OC-63` and `OC-64` on 2026-10-12.
+
+**Still unchecked, each with what it would find today (measured 2026-10-20, on this tree with `main`
+merged).**
+
+| What | Where it would bite | Measured |
+|---|---|---|
+| **One file, one id, a row that is not its case.** `A16-20` is the instance: row `docs/TEST-SPEC-git-integration.md:3274` is a **unit** check on a NUL byte, while `tests/integration/m-a16.lock-identity.test.ts:177` is a stale-foreign-lock case. Both `TR-1` and `TR-4` pass — the id is declared, and it is carried by one file | The whole class `TR-4` cannot reach, because it compares *files* | Found while working #28 on 2026-10-16 and recorded here rather than left in a pull request thread. One option, noted rather than taken: several spec tables carry a level column, and comparing it with the test's directory would flag this one mechanically — row `Unit`, file under `tests/integration/` |
+| **One id declared twice inside one document** | A duplicate row, as against a second scenario row | **Not buildable as stated.** The project's own rule is one row per *scenario*, so an id legitimately carries several rows: of **459** id/document pairs, **50** carry more than one row. A plain duplicate check would report all 50. It needs a notion of which rows belong to one case, which the documents do not currently carry |
+| **One id declared by two documents** | A case specified in two places, where only one of them is read | **Finds exactly one: `SP-2`**, in `TEST-SPEC-suite-preconditions.md` and `TEST-SPEC-openclaw-2026-9-1.md` — and that one is by design, because `SP-2` is the rule that every file needing a precondition says so, and the OpenClaw document declares the instance its own card file carries. So the check is cheap to build and would need this exemption on its first run |
+
+All three remain in `BACKLOG.md`, with the entry now recording which one was built and what the other
+two would cost.
 
 ## Traceability
 
@@ -115,3 +135,4 @@ next case and is **not written**; it is recorded in `BACKLOG.md` rather than lef
 |---|---|
 | TR-FR1 a case id in a test title is declared by a specification row | TR-1 |
 | TR-FR2 the comparison is shown to be over a non-empty reading of both artefacts | TR-2 |
+| **TR-FR3 an id carried by more than one test file is one case, judged on record** | **TR-4** |
