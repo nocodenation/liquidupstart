@@ -503,6 +503,183 @@ narcheck_available() {
     && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]
 }
 
+# **Which condition failed, and the remedy for that one.**
+#
+# The refusal named all three conditions at once and then offered only the
+# index's remedy -- which also pointed at `volumes/liquid/api`, a host path that
+# has not existed since #25 made it a named volume. So an operator in the state
+# that started this branch, a checker that cannot be opened, was sent to Liquid's
+# logs and to a directory that is not there. Blocking item 2 of the first review.
+#
+# The script knows which one it was, so the operator should not have to work it
+# out. Three conditions, three answers, one printed.
+narcheck_unavailable_reason() {
+  if [ ! -f "$NAR_CHECK" ]; then
+    printf 'absent\n'
+  elif ! head -c 1 "$NAR_CHECK" >/dev/null 2>&1; then
+    printf 'unreadable\n'
+  elif [ ! -f "${LIQUID_INDEX}/lib-classes.txt" ]; then
+    printf 'noindex\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+# The remedy for one cause, on stderr. Each is a command the operator can run
+# where they are, against a path that exists.
+narcheck_remedy() {  # narcheck_remedy <reason>
+  case "$1" in
+    absent|unreadable)
+      cat >&2 <<CHECKER
+The checker itself is what is missing or unreadable, not the index. It is mounted
+read-only from config/liquid/narcheck.py. Ask the operator to look at it:
+    docker compose exec nar_builder head -c 1 ${NAR_CHECK}
+On Docker Desktop a stale file-sharing mount answers ENOENT for a file that
+\`stat\` still reports -- measured 2026-10-16, and restarting Docker Desktop
+cleared it.
+CHECKER
+      ;;
+    noindex)
+      cat >&2 <<INDEX
+The index is what is missing, and Liquid writes it on every start. Ask the
+operator to look at whether it could:
+    docker compose logs liquid | grep "load index"
+    docker compose exec liquid ls -l /opt/nifi/nifi-current/api
+That directory is the \`liquid_api\` volume since #25, so there is no
+volumes/liquid/api on the host to look at -- which is what this message used to
+send people to.
+INDEX
+      ;;
+  esac
+}
+
+# **The judging step, as its own function, because the decision is what was
+# wrong and a decision inside a 300-line build cannot be put to a case.**
+#
+# It was inline in `build_command`, after the Maven run, so the only way to reach
+# it was to build something -- and the review asked for a row per exit status,
+# which no case could have written. Extracted 2026-10-20, the idiom `B6-3`
+# established for `mvn` and `A11-11` for `docker`: a case evals it out of the
+# script and drives every status against a throwaway drop directory, with no
+# Maven and no image.
+#
+# It places the bundle or it does not, and it returns 0 only when the check said
+# 0. The caller removes the work directory either way. `part` is cleared by the
+# caller, since only the caller's trap reads it.
+judge_and_place() {  # judge_and_place <part> <base>
+  local part="$1" base="$2"
+  local rc refusal kept reason what
+  if narcheck_available; then
+    # **The status decides, not only the pre-check.** Any non-zero landed in the
+    # refused arm, so three unrelated states were filed as "your bundle was
+    # refused": python3 unable to open the checker after the probe passed (2),
+    # python3 absent or not executable (127, 126), and narcheck unable to read
+    # the index (1, now 3). The probe narrowed that and could not close it --
+    # the field state was a Docker Desktop placeholder, which is exactly the kind
+    # of state that can change between `head` and `python3`.
+    #
+    # So: 0 deploys, 1 is refused on merit and gets its specific headline back,
+    # and anything else takes the same arm as an unavailable checker -- not
+    # deployed, not filed under `refused/`, and "nothing here has judged your
+    # bundle". Still fail-closed, because only 0 deploys. The contract is written
+    # beside FR36 in docs/FEATURE-liquid-java-extensions.md.
+    refusal="$(python3 "$NAR_CHECK" check-index "$part" "$LIQUID_INDEX" 2>&1)" && rc=0 || rc=$?
+    if [ "$rc" -gt 1 ]; then
+      cat >&2 <<CANNOTJUDGE
+
+nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
+The check itself did not complete -- it exited ${rc}, which is not a verdict on
+your bundle. Nothing here has judged it: this is about the check, not the code.
+
+${refusal}
+CANNOTJUDGE
+      rm -f "$part"
+      part=""
+      return 2
+    fi
+    if [ "$rc" -ne 0 ]; then
+      # Only after the status is known: a `| sed` in the line above would hand the
+      # `if` sed's status instead of the check's, and every bundle would pass.
+      refusal="$(literal_replace "$refusal" "$part" "${DROP}/${base}")"
+      # Kept rather than deleted, in the subdirectory the auto-loader skips: the
+      # bundle is the author's work and the only thing they can inspect to see
+      # what the refusal is about. It is out of the load path, which is the part
+      # that matters.
+      kept=""
+      if mkdir -p "${DROP}/refused" && mv "$part" "${DROP}/refused/${base}"; then
+        kept="${DROP}/refused/${base}"
+      else
+        rm -f "$part"
+      fi
+      part=""
+      # The headline says what happened; the reason below says why, and it is
+      # narcheck's to give. It used to assert *"it cannot link against the NiFi
+      # API the running Liquid loads"* over whatever followed -- and narcheck
+      # refuses for two different reasons with one exit status: a bundle whose
+      # references the index does not have, and anything it could not read. Its
+      # message distinguishes them ("Silence is not consent: it is not deployed");
+      # the headline flattened both into a verdict about the author's code.
+      # Measured 2026-10-16 with an index missing one file: narcheck said *"the
+      # index of what Liquid can load is not readable"*, and the operator was told
+      # their bundle cannot link.
+      cat >&2 <<REFUSED
+
+nar-build refused: ${base} was built and was not deployed, because it cannot link
+against the NiFi API the running Liquid loads. Nothing was placed in ${DROP}, so
+Liquid never sees it, and whatever was there before is untouched.
+
+${refusal}
+REFUSED
+      if [ -n "$kept" ]; then
+        echo "The bundle itself is at ${kept}, outside the load path." >&2
+      fi
+      return 2
+    fi
+  else
+    # Refused, not deployed with a warning.
+    #
+    # The warning that stood here said the bundle "is deployed unchecked", and it
+    # was honest about what it did -- but everything downstream reads a file in
+    # the load path as proof that it was judged, and NiFi loads it within seconds
+    # either way. A check that does not run must not end in a deployment; that is
+    # the shape S4 removed from narcheck two days ago, where an unjudgeable
+    # library produced a pass.
+    #
+    # `config/liquid/entrypoint.sh` already told the operator this is what
+    # happens -- "The NAR builder cannot judge bundles and will refuse them all"
+    # -- and it was the one sentence of the two that was wrong. D2 of the
+    # 2026-10-01 review: one of them had to change, and the entrypoint had the
+    # right intent.
+    #
+    # When this is reached: Liquid is up, because the probe above answered, and
+    # yet the index is not there -- so Liquid could not write it. S8's condition,
+    # and the operator's remedy is the same one.
+    reason="$(narcheck_unavailable_reason)"
+    case "$reason" in
+      absent) what="${NAR_CHECK} is not there" ;;
+      unreadable) what="${NAR_CHECK} is there and cannot be read" ;;
+      noindex) what="${LIQUID_INDEX}/lib-classes.txt is missing, and that index is what says which classes the running Liquid can load" ;;
+      *) what="the check could not be run" ;;
+    esac
+    cat >&2 <<NOINDEX
+
+nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
+${what}.
+Deploying without it would put a bundle in the load path that nothing has checked,
+and Liquid loads what is there within seconds.
+Nothing here has judged your bundle: this is about the check, not about the code.
+NOINDEX
+    narcheck_remedy "$reason"
+    rm -f "$part"
+    part=""
+    return 2
+  fi
+
+  mv "$part" "${DROP}/${base}"
+  return 0
+}
+
+
 build_command() {
   rel="$1"
   case "$rel" in
@@ -798,96 +975,16 @@ NOWRITE
   # means anything. The same check runs in
   # liquid's entrypoint for whatever was placed there by hand; this one is for
   # everything nar-build itself writes, which is the path agents actually take.
-  # Readable, not merely present. `[ -f ]` and `[ -r ]` both ask the kernel about
-  # the directory entry; neither opens the file, and on 2026-10-16 that difference
-  # cost an hour: a single-file bind mount of narcheck.py was stat-able and
-  # unreadable at the same time -- `ls` of the mounted directory omitted the entry,
-  # `stat` reported 29910 bytes, and `open()` returned ENOENT to python3, to head
-  # and to cp. Docker Desktop had kept a /host_mnt placeholder for a path a moved
-  # worktree had invalidated. The test below is a read, because only a read
-  # answers the question the branch under it assumes.
-  #
-  # It is not about that one quirk. Measured again by hand the same day, as the
-  # ordinary permission case: the checker mounted at mode 000 and the build user
-  # unable to open it gives `[Errno 1] Operation not permitted`, and the old gate
-  # called that a bundle that cannot link.
-  if narcheck_available; then
-    if ! refusal="$(python3 "$NAR_CHECK" check-index "$part" "$LIQUID_INDEX" 2>&1)"; then
-      # Only after the status is known: a `| sed` in the line above would hand the
-      # `if` sed's status instead of the check's, and every bundle would pass.
-      refusal="$(literal_replace "$refusal" "$part" "${DROP}/${base}")"
-      # Kept rather than deleted, in the subdirectory the auto-loader skips: the
-      # bundle is the author's work and the only thing they can inspect to see
-      # what the refusal is about. It is out of the load path, which is the part
-      # that matters.
-      kept=""
-      if mkdir -p "${DROP}/refused" && mv "$part" "${DROP}/refused/${base}"; then
-        kept="${DROP}/refused/${base}"
-      else
-        rm -f "$part"
-      fi
-      part=""
-      # The headline says what happened; the reason below says why, and it is
-      # narcheck's to give. It used to assert *"it cannot link against the NiFi
-      # API the running Liquid loads"* over whatever followed -- and narcheck
-      # refuses for two different reasons with one exit status: a bundle whose
-      # references the index does not have, and anything it could not read. Its
-      # message distinguishes them ("Silence is not consent: it is not deployed");
-      # the headline flattened both into a verdict about the author's code.
-      # Measured 2026-10-16 with an index missing one file: narcheck said *"the
-      # index of what Liquid can load is not readable"*, and the operator was told
-      # their bundle cannot link.
-      cat >&2 <<REFUSED
-
-nar-build refused: ${base} was built and was not deployed. Nothing was placed in
-${DROP}, so Liquid never sees it, and whatever was there before is untouched.
-The reason is below, as the check gave it -- a bundle that cannot link against the
-API the running Liquid loads, or something the check could not read.
-
-${refusal}
-REFUSED
-      if [ -n "$kept" ]; then
-        echo "The bundle itself is at ${kept}, outside the load path." >&2
-      fi
-      rm -rf "$work"
-      return 2
-    fi
-  else
-    # Refused, not deployed with a warning.
-    #
-    # The warning that stood here said the bundle "is deployed unchecked", and it
-    # was honest about what it did -- but everything downstream reads a file in
-    # the load path as proof that it was judged, and NiFi loads it within seconds
-    # either way. A check that does not run must not end in a deployment; that is
-    # the shape S4 removed from narcheck two days ago, where an unjudgeable
-    # library produced a pass.
-    #
-    # `config/liquid/entrypoint.sh` already told the operator this is what
-    # happens -- "The NAR builder cannot judge bundles and will refuse them all"
-    # -- and it was the one sentence of the two that was wrong. D2 of the
-    # 2026-10-01 review: one of them had to change, and the entrypoint had the
-    # right intent.
-    #
-    # When this is reached: Liquid is up, because the probe above answered, and
-    # yet the index is not there -- so Liquid could not write it. S8's condition,
-    # and the operator's remedy is the same one.
-    cat >&2 <<NOINDEX
-
-nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
-${NAR_CHECK} is missing or cannot be read, or ${LIQUID_INDEX}/lib-classes.txt is
-missing, and that index is what says which classes the running Liquid can load.
-Deploying without it would put a bundle in the load path that nothing has checked,
-and Liquid loads what is there within seconds.
-Nothing here has judged your bundle: this is about the check, not about the code.
-Liquid writes the index on every start. Ask the operator to look at whether it
-could: docker compose logs liquid | grep "load index", and whether
-volumes/liquid/api is writable by the nifi user.
-NOINDEX
-    rm -f "$part"
+  # Readable, not merely present: see `narcheck_available`, which carries the
+  # 2026-10-16 measurement and why a read and not a stat.
+  # Readable, not merely present, and then the status decides: see
+  # `judge_and_place`, which carries both and is driven per status by a case.
+  if ! judge_and_place "$part" "$base"; then
     part=""
     rm -rf "$work"
     return 2
   fi
+  part=""
 
   mv "$part" "${DROP}/${base}"
   part=""

@@ -641,13 +641,25 @@ def main(argv):
                     if base and aid:
                         parent_of[base] = aid
         except OSError as exc:
-            sys.stdout.write("REFUSED %s\n" % nar)
+            # **Status 3, and only this branch.** `check-index` refuses for two
+            # unrelated reasons and returned 1 for both: a bundle whose
+            # references the index does not have, which is about the author's
+            # code, and an index it could not read, which is about this
+            # installation. The caller could not tell them apart, so it filed an
+            # unjudged bundle under `refused/` and printed a headline hedged
+            # enough to be true either way -- which cost the common case its
+            # precise message. Blocking item 1 of the first review of #36.
+            #
+            # 1 stays "refused on merit" everywhere else, including `Unreadable`
+            # from `check_against`, because that one *is* about the bundle. The
+            # `check` and `index` modes are untouched.
+            sys.stdout.write("CANNOT JUDGE %s\n" % nar)
             sys.stdout.write("  the index of what Liquid can load is not readable: %s\n" % exc)
             sys.stdout.write(
                 "  Without it nothing here can tell a sound bundle from a broken one.\n"
                 "  Silence is not consent: it is not deployed.\n"
             )
-            return 1
+            return 3
         # The same matching rule as parent_chain_classes: the parent is named by
         # artifact id, and a NAR whose basename starts with `<aid>-` is it. Walked
         # rather than followed once, because a parent may declare a parent, and

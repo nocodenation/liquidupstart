@@ -197,6 +197,22 @@ mistake is available here and is cheaper to avoid than to repeat.
 - **FR35 — Concurrent builds do not corrupt each other.** One builder, one dependency cache, one
   `/repos`. Two builds at once is the ordinary case the moment two agents work, and nothing has ever
   run it.
+- **FR36a — The check's exit status says which of three things happened, and only 0 deploys.**
+  *Added 2026-10-20, blocking item 1 of the first review of #36.* `nar-build` had two outcomes where
+  it needs three, so a bundle nothing had judged was filed under `refused/` and the operator was told
+  it could not link.
+
+  | Status | Meaning | What `nar-build` does |
+  |---|---|---|
+  | **0** | the bundle links against the index | deploys it into the drop directory |
+  | **1** | **refused on merit** — a reference the index does not have, or a bundle part that could not be read | not deployed; the bundle is kept under `refused/`, out of the load path; the headline says *it cannot link against the NiFi API the running Liquid loads* |
+  | **3** | `check-index` **could not read the index** — about this installation, not the code | not deployed, **not** filed as refused, and the message says nothing here has judged the bundle |
+  | anything else (2, 126, 127, …) | the check did not complete — python3 could not open the checker, is absent, is not executable | the same arm as 3, naming the status |
+
+  `narcheck.py`'s `check` and `index` modes keep their own codes; only `check-index` gained 3. The
+  property that matters is that **only 0 deploys**, which `B6-42` holds over the whole range rather
+  than per row.
+
 - **FR36 — A bundle that cannot link against the API Liquid loads is refused at deployment.** The
   entrypoint already walks every `*.nar` in the drop directory on its way into `lib/`; before it
   copies one, it reads the classes the bundle carries and refuses any whose `org.apache.nifi`
