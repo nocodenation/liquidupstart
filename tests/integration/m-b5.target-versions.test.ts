@@ -113,7 +113,7 @@ const section = (name: string) => {
 };
 
 describe('B5-15 the record answers when no log does', () => {
-  test.skipIf(LIQUID_MOVED !== null)('B5-15 the versions are read with every nifi-app log gone', () => {
+  test('B5-15 the versions are read with every nifi-app log gone', () => {
     const s = section('recordOnly');
     expect(s).toContain('nifi_version 2.11.0');
     expect(s).toContain('java_version 21.0.12+10-LTS');
@@ -121,7 +121,7 @@ describe('B5-15 the record answers when no log does', () => {
     expect(s).not.toContain('refused');
   });
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-15 and it says which source it read', () => {
+  test('B5-15 and it says which source it read', () => {
     // The operator has to be able to tell the durable source from the one that
     // expires, because only one of them explains a refusal.
     expect(section('recordOnly')).toContain('read_from liquid at 127.0.0.1:9443 (runtime)');
@@ -129,7 +129,7 @@ describe('B5-15 the record answers when no log does', () => {
 });
 
 describe('B5-16 while a Liquid that predates the record still builds', () => {
-  test.skipIf(LIQUID_MOVED !== null)('B5-16 the counterpart: the startup line is still read', () => {
+  test('B5-16 the counterpart: the startup line is still read', () => {
     // Otherwise every installation would have to restart Liquid once to keep
     // building -- the exact demand item 7 is about.
     const s = section('logOnly');
@@ -140,7 +140,7 @@ describe('B5-16 while a Liquid that predates the record still builds', () => {
 });
 
 describe('B5-17 and nothing is guessed when neither is there', () => {
-  test.skipIf(LIQUID_MOVED !== null)('B5-17 the build refuses and names both sources', () => {
+  test('B5-17 the build refuses and names both sources', () => {
     const s = section('neither');
     expect(s).toContain('nar-build refused');
     expect(s).toContain('/liquid/api/runtime');
@@ -172,15 +172,17 @@ describe('B5-18 the record is written from the distribution itself', () => {
   }, 900_000);
 
   test.skipIf(LIQUID_MOVED !== null)('B5-18 it names the versions the startup line carries', () => {
-    // Tied to the line itself rather than to a constant: if the image is
-    // upgraded, both move together and the case still says something.
+    // START_LINE is the line as logged on 2026-09-28, so it pins both the NiFi
+    // and the Java of that image, and the record is written by the image under
+    // test. That is why this one skips on a move and B5-15 to B5-17, which read
+    // records written by hand, do not.
     const logged = START_LINE.match(/Starting NiFi (\S+) using Java (\S+)/);
     expect(logged).not.toBeNull();
     expect(published).toContain(`nifi_version=${logged![1]}`);
     expect(published).toContain(`java_version=${logged![2]}`);
   });
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-18 and the start says so, so a missing record is visible', () => {
+  test('B5-18 and the start says so, so a missing record is visible', () => {
     expect(published).toContain('Published the runtime versions for the NAR builder');
   });
 });

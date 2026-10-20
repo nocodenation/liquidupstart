@@ -32,7 +32,7 @@
  *           quarantine the move happens and the message is the ordinary one, so
  *           the fix cannot be met by always warning.
  */
-import { test, expect, describe } from 'bun:test';
+import { test, expect, describe, beforeAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
@@ -82,10 +82,15 @@ EOF
   ]);
 }
 
-describe('B5-8 a bundle that could not be quarantined is reported as still in the inbox', () => {
-  const r = runDeployment('file');
+describe.skipIf(LIQUID_MOVED !== null)('B5-8 a bundle that could not be quarantined is reported as still in the inbox', () => {
+  // In a hook rather than the describe body: bun runs the body of a skipped
+  // describe while collecting, and only its hooks are skipped with it.
+  let r = { output: '' };
+  beforeAll(() => {
+    r = runDeployment('file');
+  }, 900_000);
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-8 the summary names it, and does not say it was moved out', () => {
+  test('B5-8 the summary names it, and does not say it was moved out', () => {
     // **Corrected 2026-09-29.** This asked for `auto-loader will load`, which
     // was the whole severity of the finding: the drop directory was the load
     // path, so a bundle that could not be quarantined was loaded anyway and the
@@ -98,7 +103,7 @@ describe('B5-8 a bundle that could not be quarantined is reported as still in th
     expect(r.output).toMatch(/they are not loaded/);
   }, 900_000);
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-8 and it says why it usually happens', () => {
+  test('B5-8 and it says why it usually happens', () => {
     // Matched across the line break the message wraps at.
     expect(r.output.replace(/\s+/g, ' ')).toContain(
       'the inbox being owned by root while Liquid runs as nifi'

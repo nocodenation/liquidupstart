@@ -243,7 +243,7 @@ Recorded 2026-10-08, measured and rewritten 2026-10-09.
 
 ---
 
-**~~S9's machine dependencies are half closed.~~ Closed 2026-10-16, by the trade the entry asked for.** The builder image is no longer taken from whatever
+**S9's machine dependencies: the moving tag is answered, and B5-15 and B5-16 still reach Maven Central.** The builder image is no longer taken from whatever
 `liquidupstart/nar-builder:latest` happens to be on the host: `tests/lib/builderimage.ts` builds it
 from the tree under test and tags it per run, eight files use it, and the specification records the
 change. What is still true of the default-tier M-B5 cases is the rest of the reviewer's sentence:
@@ -257,15 +257,25 @@ a branch under review. Recorded 2026-10-08.
 surprise and buys a different cost: until a hand re-pins, the suite tests an image the stack no
 longer runs. Keeping the tag and letting the red arrive was the other option, and it is the shape
 three separate hours went into today — an environment reading as a product defect. So: **the tag
-stays moving, and an upgrade is made legible.** `tests/lib/liquidimage.ts` reads both versions out of
+stays moving, and an upgrade is made legible.** `tests/lib/liquidimage.ts` reads the versions out of
 the image, the nine files name the tag through one constant instead of nine copies, `tests/run.sh`
-says before every run which state the image is in, and the six version-pinning files **skip** rather
-than fail. Simulated: a moved tag takes the M-B5 tier to 27 pass / 17 skip / 0 fail with the cause
-printed above it, instead of red. `B5-33`, eight scenarios, each shown able to fail.
+says before every run which state the image is in, and the cases that pin the image **skip** rather
+than fail. `B5-33`.
+
+**Reviewed 2026-10-20, and the first shape did not survive a real move.** It had been simulated by
+moving `WRITTEN_AGAINST` with the image unchanged, so every bundle the cases name was still there.
+Against an image with those bundles renamed — `B5-34`, which runs the nine files in a child process
+against one — `m-b5.hand-drop`'s file-level `beforeAll` still ran, found no bundle to rewrite and threw
+`ENOENT`: 0 pass / 1 fail, the red this exists to remove. The skips were also too wide: thirteen cases
+that pin nothing of the image, among them B5-4 over every shipped bundle and B6-26's contract check,
+skipped on any move, so a release that broke them would have shipped green. And the detector read no
+Java, which B5-18's startup line pins; the runner printed the pinned pair as a match with the daemon
+down; and nothing tied `WRITTEN_AGAINST` to the literals. All repaired on the branch, each with a case
+that reddens when the repair is taken back; `B5-34` is 5 pass / 0 fail against the moved image.
 
 What is deliberately *not* asserted is that the image agrees with the pinned pair: that agreement is
 the question, and asserting it would make an upstream release red — the defect being removed. And
-`B5-15` and `B5-16` still reach Maven Central, which this does not touch.
+`B5-15` and `B5-16` still reach Maven Central, which this does not touch: that half of S9 is open.
 
 ---
 

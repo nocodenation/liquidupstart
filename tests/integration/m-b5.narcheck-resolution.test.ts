@@ -70,7 +70,7 @@ describe('B5-4 the check accepts what Liquid already loads', () => {
     `).output;
   }, 900_000);
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-4 every NAR the image ships passes', () => {
+  test('B5-4 every NAR the image ships passes', () => {
     // A count of zero is not a result until something that must be there is
     // counted: the total says the loop actually ran over the shipped bundles.
     const total = Number(out.match(/total=(\d+)/)?.[1] ?? 0);
@@ -106,7 +106,7 @@ EOF
   }, 900_000);
 });
 
-describe('B5-6 a type named only in a signature is seen', () => {
+describe.skipIf(LIQUID_MOVED !== null)('B5-6 a type named only in a signature is seen', () => {
   let out = '';
   beforeAll(() => {
     out = inImage(`
@@ -130,12 +130,12 @@ EOF
     `).output;
   }, 900_000);
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-6 the parser reports it, as javap does', () => {
+  test('B5-6 the parser reports it, as javap does', () => {
     expect(out).toContain('javapSees=1');
     expect(out).toContain('refsSees=1');
   });
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-7 while a class name inside a string is still not a reference', () => {
+  test('B5-7 while a class name inside a string is still not a reference', () => {
     // The counterpart, and the reason the walk parses the class structure
     // rather than scanning every UTF-8 constant.
     expect(out).toContain('literal=0');

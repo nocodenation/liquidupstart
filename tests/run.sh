@@ -193,13 +193,13 @@ fi
 #
 # Said here, once, for the same reason as the disk: six files' worth of skips
 # scattered through a run is not a message. It never stops the run -- an upgrade is
-# not a failure -- and "cannot read the image" is not "moved", so an absent image
-# says nothing at all.
-if command -v bun >/dev/null 2>&1; then
+# not a failure -- and "cannot read the image" is not "moved", so it says that in
+# words of its own. Asked only when a selected file reads the image: `m-oc` on a
+# fresh machine has no reason to pull several GB of Liquid first.
+if command -v bun >/dev/null 2>&1 && grep -qs 'lib/liquidimage' "${SELECTED[@]}"; then
   bun -e '
     const m = await import("./tests/lib/liquidimage.ts");
-    const moved = m.liquidImageMoved();
-    console.log(moved === null ? "liquid image: " + m.WRITTEN_AGAINST.nifi + "/" + m.WRITTEN_AGAINST.api + ", as the cases expect" : "liquid image MOVED, and the M-B5 cases that pin it will skip:\n" + moved);
+    console.log(m.preflightLine(m.WRITTEN_AGAINST, m.liquidImageVersions()));
   ' 2>&1 || true
 fi
 

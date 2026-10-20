@@ -118,6 +118,10 @@ let bootLog = '';
 let bootDirs = '';
 
 beforeAll(() => {
+  // A file-level hook runs even when every case below is skipped, and a throw in
+  // it is a failure: on a moved image MAKE finds no bundle to rewrite, the copy
+  // below throws ENOENT, and the release this file skips for turns it red anyway.
+  if (LIQUID_MOVED !== null) return;
   sh(['docker', 'run', '--rm', '-v', `${bundles}:/out`, '--entrypoint', 'sh', IMAGE, '-c',
     `python3 - <<'PY'\n${MAKE}\nPY`]);
 

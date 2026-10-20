@@ -96,7 +96,7 @@ open(dst, "wb").write(bytes(raw))
 print("corrupted " + target)
 `;
 
-describe('B5-25 a bundle that cannot be read is refused in a sentence', () => {
+describe.skipIf(LIQUID_MOVED !== null)('B5-25 a bundle that cannot be read is refused in a sentence', () => {
   let out = '';
   beforeAll(() => {
     out = sh([
@@ -117,14 +117,14 @@ PY
     ]).output;
   }, 900_000);
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-25 it says what could not be read, with no traceback', () => {
+  test('B5-25 it says what could not be read, with no traceback', () => {
     expect(out).toContain('REFUSED');
     expect(out).toContain('could not be read out of the archive');
     expect(out).not.toContain('Traceback');
     expect(out).toContain('corruptExit=1');
   });
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-25 the counterpart: the same bundle intact is still accepted', () => {
+  test('B5-25 the counterpart: the same bundle intact is still accepted', () => {
     // Otherwise the repair could be met by refusing every archive.
     expect(out).toContain('soundExit=0');
   });
@@ -167,7 +167,7 @@ PY
 });
 
 describe('B5-27 a build that stops early takes its work directory with it', () => {
-  test.skipIf(LIQUID_MOVED !== null)('B5-27 nothing is left in /tmp', () => {
+  test('B5-27 nothing is left in /tmp', () => {
     const r = sh([
       'docker', 'run', '--rm',
       '-v', `${BUILD}:/probe/build.sh:ro`,
