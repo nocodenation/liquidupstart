@@ -779,12 +779,19 @@ rather than a drive-by. The orphan itself was removed by hand with `docker rm -f
 `down.sh` is identical (`08fa75a66f`) on **17 of 18**, the exception being `feature/privacy-gateway`,
 which is not one of ours — so one change on `main` reaches all of them by merge. And
 `scripts/install/update.sh:181` **already** passed `--remove-orphans`, so the two teardown paths had
-drifted apart anyway, which is the state the caution was meant to prevent. `A11-11` now holds both of
-them to the flag, so they cannot drift again, and the deliberate decision the entry asked for is
-written at the line: teardown removes whatever this project has running that the current file does not
-declare; every stack's state is in `./volumes/` on the host, so nothing is lost, and one stack runs
-per host by design. Measured against real compose in a throwaway project: the orphan was removed, the
-operator's twenty containers kept running, because the flag is scoped to the compose project.
+drifted apart anyway, which is the state the caution was meant to prevent. The deliberate decision the
+entry asked for is written at the line: teardown removes this project's containers for services the
+current file does not declare; every stack's state is in `./volumes/` on the host, so nothing is lost,
+and one stack runs per host by design. Measured against real compose in a throwaway project: the orphan
+was removed, the operator's twenty containers kept running, because the flag is scoped to the compose
+project.
+
+**Corrected 2026-10-20, after a local review.** There were three teardown paths, not two: `cleanup.sh:18`
+was outside the list `A11-11` held, and the list was line text that a flag named in a warning after
+`||` satisfied. `A11-11` now finds every compose `down` call in the checkout's shell scripts and reads
+only the command. And one thing the flag does not do, measured: a one-off `docker compose run`
+container of an undeclared service that is still running survives `down --remove-orphans` and keeps
+the network in use.
 
 **The Claude login expires, and the one idea that might remove the expiry is unmeasured.**
 The login lives only in `volumes/_openclaw-claude` and does not survive a reset; the migration cost
@@ -851,8 +858,10 @@ than the papercut warrants. Every fallback on a path the stack actually walks wa
 migration; these two are what is left.
 
 **Measured 2026-10-17, and it is sharper than "papercut" — and still settled.** Nothing in the
-repository invokes either script: the only references to `ingest-pdf` outside its own two directories
-are this entry, `FINISH.md`, and the plugin's own manifest and README. And the fallback does not
+repository invokes either script: neither `build.sh` is called from anywhere outside its own
+directory. *(Corrected 2026-10-20: this said the only references to `ingest-pdf` were this entry,
+`FINISH.md` and the plugin's own files. `config/scripts/start/openclaw.sh` names the plugin path and the
+Claude tool four times, and five documents mention it; none of them runs a build script.)* And the fallback does not
 merely float: the stack's gateway is built `FROM ghcr.io/openclaw/openclaw:2026.9.1`, pinned, so a
 hand-run build with `OPENCLAW_IMAGE` unset would build the bundle inside **a different OpenClaw than
 the stack runs** — not a newer one by accident, a different one by default.
