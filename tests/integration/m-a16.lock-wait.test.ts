@@ -117,10 +117,28 @@ describe('A16-27 the wait really waits, and then works', () => {
     // and this file stayed 4/0, A16-27 passing after 30.4s. A budget between the
     // two timings is what makes the promise `A16-5` and the feature document now
     // carry -- that a waiting start says so immediately -- a tested one.
-    await out.until('Waiting for another run to finish preparing', 20);
-    rmSync(lockDir, { recursive: true, force: true });
-    await out.finished();
-    await p.exited;
+    // **try/finally, because the wait can now throw and the sleep could not.**
+    // The 20s budget above is the whole point of this round, and on the one path
+    // it exists to catch -- the announcement arriving at 30s again -- `until`
+    // rejects, control leaves the body, and the release, the drain and the reap
+    // below never run. The `bash git.sh` child then waits out its full
+    // GIT_LOCK_WAIT_SECONDS=60 and clones, while afterAll has already deleted the
+    // work tree underneath it and this file's other three cases run beside a live
+    // process writing into it. A16-11 kills its child; this did not.
+    let announced = false;
+    try {
+      await out.until('Waiting for another run to finish preparing', 20);
+      announced = true;
+    } finally {
+      rmSync(lockDir, { recursive: true, force: true });
+      // Killed only on the path that threw. On the ordinary path the run must go
+      // on to take the released lock and clone, which is what the assertions
+      // below read -- so an unconditional kill would trade an orphan for a case
+      // that can no longer pass.
+      if (!announced) p.kill();
+      await out.finished();
+      await p.exited;
+    }
 
     // It waited rather than taking the lock, and the run said so itself -- which
     // is the assertion the elapsed clock was standing in for.

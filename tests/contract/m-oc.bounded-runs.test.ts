@@ -41,7 +41,7 @@
  * Requirements covered: OC-G4, N1 and N4 of the #11 second review, and the
  * 2026-09-14 correction to N1 above.
  */
-import { containerName } from '../lib/dashboardserver';
+import { containerName, fixtureLabels } from '../lib/dashboardserver';
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -84,10 +84,15 @@ describe('N1 every bounded docker run can actually be bounded', () => {
       return;
     }
     const name = containerName('lu-bound-probe');
+    // Labelled too. This case's own premise is that `--rm` does not fire when the
+    // client is SIGKILLed, so an interrupted run leaves this container running --
+    // and with a per-run name and no label, nothing names it and the sweep cannot
+    // find it. The label is what makes it reclaimable.
+    const LABELS = fixtureLabels().join(' ');
     const snippet = `
       set -uo pipefail
 . ${LIB}
-      with_timeout 8 docker run --rm --init --name ${name} --entrypoint node ${image} \
+      with_timeout 8 docker run --rm --init --name ${name} ${LABELS} --entrypoint node ${image} \
         -e 'setInterval(()=>{},1000)'
       echo "rc=$?"
     `;

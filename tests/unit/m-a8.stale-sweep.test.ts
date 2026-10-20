@@ -57,7 +57,7 @@
  */
 
 import { test, expect, describe } from 'bun:test';
-import { staleIds, STALE_AFTER_MS } from '../lib/dashboardserver';
+import { staleIds, isOwn, parseDockerTime, STALE_AFTER_MS } from '../lib/dashboardserver';
 
 const NOW = Date.parse('2026-10-20T12:00:00Z');
 const at = (iso: string) => `2026-10-20T${iso}Z`;
@@ -115,5 +115,96 @@ describe('A8-31 only an abandoned fixture is swept', () => {
     const inside = new Date(NOW - STALE_AFTER_MS + 1000).toISOString();
     expect(staleIds([{ id: 'edge', created: floor }], MINE, NOW)).toEqual(['edge']);
     expect(staleIds([{ id: 'inside', created: inside }], MINE, NOW)).toEqual([]);
+  });
+});
+
+describe('A8-32 the stamp is read, and docker spells it three ways', () => {
+  // **The decision above is a pure function of a number, and every scenario in
+  // it hands over a number it computed itself.** That left the reading untested,
+  // and the reading was wrong: a network's `{{.Created}}` is a Go `time.Time`
+  // with spaces, so taking the second field kept the bare date -- midnight UTC
+  // -- and after 03:00 UTC every foreign lu-test=1 network read as older than
+  // the floor. Found by a review of this branch on 2026-10-20 and reproduced
+  // end to end: a network four seconds old was removed by one sweep.
+  //
+  // The strings here are what this host's daemon printed on 2026-10-20, docker
+  // 29.8.1, copied rather than composed. The belief that all three kinds answer
+  // RFC 3339 came from a measurement taken through `cut -c1-70`, which hid the
+  // rest of the network's line.
+  test.each([
+    ['a container, RFC 3339', '2026-10-20T15:04:44.737820000Z', '2026-10-20T15:04:44.737Z'],
+    ['an image label, written by the build', '2026-10-20T15:05:21.259Z', '2026-10-20T15:05:21.259Z'],
+    ['a network, a Go time.Time with spaces', '2026-10-20 15:04:44.637957344 +0000 UTC', '2026-10-20T15:04:44.637Z'],
+    ['a non-UTC offset', '2026-06-16 02:01:20 +0200 CEST', '2026-06-16T00:01:20.000Z']
+  ])('A8-32 %s is read', (_name, stamp, expected) => {
+    const ms = parseDockerTime(stamp as string);
+    expect(ms).not.toBeNull();
+    expect(new Date(ms as number).toISOString()).toBe(expected);
+  });
+
+  test.each([
+    ['the empty answer, which an unlabelled image gives', ''],
+    ['a date with no time', '2026-10-20'],
+    ['a time with no offset', '2026-10-20 15:04:44'],
+    ['prose', 'two days ago']
+  ])('A8-32 the negative: %s is no time at all', (_name, stamp) => {
+    // `null`, not a guess. A guess is what makes an age floor look like it works.
+    expect(parseDockerTime(stamp as string)).toBeNull();
+  });
+
+  test('A8-32 the negative that was the defect: the bare date is not a time', () => {
+    // What `split(' ')[1]` produced from a network line. It parses, to midnight,
+    // which is why the defect was silent: the answer was a number and the number
+    // was hours old.
+    expect(parseDockerTime('2026-10-20')).toBeNull();
+    // And the whole line does parse, so nothing is lost by keeping it.
+    expect(parseDockerTime('2026-10-20 15:04:44.637957344 +0000 UTC')).not.toBeNull();
+  });
+});
+
+describe('A8-33 an id is ours whichever way docker spells it', () => {
+  // **`mine.has(r.id)` could never fire in production.** The listings are
+  // `docker ps -aq` and `docker images -q`, which print the short form, while
+  // `inspect -f '{{.Id}}'` prints the long one -- and `sha256:` in front of it
+  // for an image. Measured on docker 29.8.1, 2026-10-20. The scenarios that
+  // certified the exemption passed because synthetic ids spell the same on both
+  // sides, so the data was what made the case useless.
+  const SHORT_CONTAINER = 'b7bcf6f51023';
+  const LONG_CONTAINER = 'b7bcf6f510238f74e62846eb2ad2a937f5b59b52dd251d62a5f80e3892a11b2f';
+  const SHORT_IMAGE = '28bd5fe8b56d';
+  const LONG_IMAGE = 'sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b';
+
+  test('A8-33 a long container id is ours when the short one is listed', () => {
+    expect(isOwn(LONG_CONTAINER, new Set([SHORT_CONTAINER]))).toBe(true);
+  });
+
+  test('A8-33 and an image id is ours across the sha256 prefix', () => {
+    expect(isOwn(LONG_IMAGE, new Set([SHORT_IMAGE]))).toBe(true);
+  });
+
+  test('A8-33 the negative: another run\'s id is not ours', () => {
+    // The counterpart that carries the weight. A prefix match that answered true
+    // for everything would exempt every object and make the sweep do nothing,
+    // which is the leak this branch exists against.
+    expect(isOwn(LONG_CONTAINER, new Set(['a1b2c3d4e5f6']))).toBe(false);
+    expect(isOwn(LONG_IMAGE, new Set(['ffffffffffff']))).toBe(false);
+  });
+
+  test('A8-33 and an empty ownership set exempts nothing', () => {
+    // Which is why the sweep now refuses to run at all when the ownership
+    // listing fails: this function cannot tell "nothing is ours" from "we could
+    // not ask", so the caller has to.
+    expect(isOwn(LONG_CONTAINER, new Set())).toBe(false);
+  });
+
+  test('A8-33 and the real pair is exercised through staleIds', () => {
+    // The defect in place: the row carries the long id, the ownership set the
+    // short one, and the object is six hours old. Before this it was swept.
+    const rows = [{ id: LONG_CONTAINER, created: '2026-10-20T06:00:00.000Z' }];
+    expect(staleIds(rows, new Set([SHORT_CONTAINER]), Date.parse('2026-10-20T12:00:00Z'))).toEqual([]);
+    // And the counterpart, so this is not an exemption that swallows everything.
+    expect(staleIds(rows, new Set(['a1b2c3d4e5f6']), Date.parse('2026-10-20T12:00:00Z'))).toEqual([
+      LONG_CONTAINER
+    ]);
   });
 });

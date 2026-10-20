@@ -36,7 +36,19 @@ export const RUN_ID = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`
 // the litter alone.
 const LU_LABEL = 'lu-test';
 const RUN_LABEL = 'lu-test-run';
-const labels = () => ['--label', `${LU_LABEL}=1`, '--label', `${RUN_LABEL}=${RUN_ID}`];
+// When this run made the object, written by whoever creates it. Only images need
+// it -- their `{{.Created}}` is a cache-inherited config timestamp -- but it is
+// written on everything the suite builds, so one reader covers all three kinds
+// if docker's own field ever moves again.
+const MADE_LABEL = 'lu-test-made';
+const labels = () => [
+  '--label',
+  `${LU_LABEL}=1`,
+  '--label',
+  `${RUN_LABEL}=${RUN_ID}`,
+  '--label',
+  `${MADE_LABEL}=${new Date().toISOString()}`
+];
 
 /** A docker tag no other run will touch. `<repo>:<label>` in, suffixed out. */
 export function throwawayTag(base: string): string {
@@ -118,12 +130,69 @@ export function staleIds(
   after = STALE_AFTER_MS
 ): string[] {
   return rows
-    .filter((r) => r.id && !mine.has(r.id))
+    .filter((r) => r.id && !isOwn(r.id, mine))
     .filter((r) => {
-      const at = Date.parse(r.created);
-      return Number.isFinite(at) && now - at >= after;
+      const at = parseDockerTime(r.created);
+      return at !== null && now - at >= after;
     })
     .map((r) => r.id);
+}
+
+/**
+ * Is this id one of ours, when the two sides spell ids differently?
+ *
+ * **It was `mine.has(r.id)`, and with real docker output that is never true.**
+ * The listings are `docker ps -aq` and `docker images -q`, which print the short
+ * form -- `b7bcf6f51023`, `28bd5fe8b56d` -- while `inspect -f '{{.Id}}'` prints
+ * `b7bcf6f510238f74…` for a container and `sha256:28bd5fe8b56d…` for an image.
+ * Measured on docker 29.8.1, 2026-10-20. So the own-run exemption inside
+ * `staleIds` could not fire in production, and the unit scenarios that certified
+ * it passed because synthetic ids spell the same on both sides.
+ *
+ * The pre-filter in `sweepStaleFixtures` compares two `-q` listings and does
+ * protect this run, which is why nothing was lost. But a guard whose only
+ * working copy is somewhere else, framed as an optimisation, is one refactor
+ * from being removed -- so the decision holds here too, on whichever spelling
+ * it is handed.
+ */
+export function isOwn(id: string, mine: Set<string>): boolean {
+  const bare = (x: string) => x.replace(/^sha256:/, '');
+  const a = bare(id);
+  if (mine.has(id) || mine.has(a)) return true;
+  for (const m of mine) {
+    const b = bare(m);
+    if (b.length === 0) continue;
+    if (a.startsWith(b) || b.startsWith(a)) return true;
+  }
+  return false;
+}
+
+/**
+ * When docker says a thing was made, in milliseconds, or `null` if it will not say.
+ *
+ * **`Date.parse` on what `{{.Created}}` prints is not enough, and the shape
+ * differs by kind.** A container and an image answer RFC 3339
+ * (`2026-10-20T15:04:44.737Z`); a **network** answers a Go `time.Time`,
+ * `2026-10-20 15:04:44.637957344 +0000 UTC`, with spaces in it. The first reader
+ * here took `l.split(' ')[1]`, which on a network keeps `2026-10-20` alone --
+ * midnight UTC -- so after 03:00 UTC every foreign `lu-test=1` network read as
+ * older than the floor and was swept. That is the defect this whole branch
+ * exists against, reintroduced for networks by the repair for it, and it was
+ * found by a review of this branch on 2026-10-20 and reproduced end to end: a
+ * network four seconds old was removed by one `sweepStaleFixtures()`.
+ *
+ * It was believed to be RFC 3339 for all three kinds because the measurement was
+ * taken through `cut -c1-70`, which hid the rest of the network's line. The
+ * reading is a function now, with all three real strings as cases.
+ */
+export function parseDockerTime(stamp: string): number | null {
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s*(Z|[+-]\d{2}:?\d{2})/.exec(
+    stamp.trim()
+  );
+  if (!m) return null;
+  const zone = m[3] === 'Z' ? 'Z' : m[3].length === 5 ? `${m[3].slice(0, 3)}:${m[3].slice(3)}` : m[3];
+  const ms = Date.parse(`${m[1]}T${m[2]}${zone}`);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 const lines = (out: string): string[] =>
@@ -144,10 +213,29 @@ const lines = (out: string): string[] =>
 function createdAt(kind: 'container' | 'image' | 'network', ids: string[]): Array<{ id: string; created: string }> {
   if (ids.length === 0) return [];
   const field = kind === 'network' ? '.ID' : '.Id';
-  const r = docker([kind, 'inspect', '-f', `{{${field}}} {{.Created}}`, ...ids], 120_000);
+  // **An image's `{{.Created}}` is not when this host made it.** It is the image
+  // config's timestamp, and a cache hit copies it: measured 2026-10-20, two
+  // distinct image ids built three seconds apart both reported
+  // `2026-10-20T15:05:21.259048666Z`, and a label-only build over an unchanged
+  // context reports the base image's date -- months. `dashboard/Dockerfile` has
+  // no cache-busting step, so a second run over an unchanged `dashboard/` tree
+  // is a full cache hit, and reading `.Created` would have let one run sweep
+  // another run's **live** image as if it were months old.
+  //
+  // So the build writes the time itself, as a label, and that is what is read.
+  // A label is part of the config a build writes, and a build passing different
+  // labels writes a new config, so the value cannot be inherited from a cache
+  // hit. An image without the label answers nothing and is therefore kept.
+  const stamp = kind === 'image' ? `{{index .Config.Labels "${MADE_LABEL}"}}` : '{{.Created}}';
+  const r = docker([kind, 'inspect', '-f', `{{${field}}} ${stamp}`, ...ids], 120_000);
+  // **The remainder of the line, not `split(' ')[1]`.** A network's `.Created`
+  // is a Go `time.Time` with spaces in it, so the second field alone is the bare
+  // date -- see `parseDockerTime`, where that defect is recorded.
   return lines(r.stdout).map((l) => {
-    const [id, created] = l.split(' ');
-    return { id: id ?? '', created: created ?? '' };
+    const at = l.indexOf(' ');
+    return at === -1
+      ? { id: l, created: '' }
+      : { id: l.slice(0, at), created: l.slice(at + 1).trim() };
   });
 }
 
@@ -172,11 +260,21 @@ export function sweepStaleFixtures(now = Date.now()): void {
   ) => {
     const candidates = theirs(all);
     if (candidates.length === 0) return;
-    const ours = new Set(theirs(own));
-    // Inspect only what is not ours: this run's own fixtures are never swept,
-    // whatever their age, and a run longer than the floor would otherwise start
-    // deleting its own containers out from under itself.
-    const rows = createdAt(kind, candidates.filter((id) => !ours.has(id)));
+    // **The ownership listing's status is read, and a failure stops the sweep.**
+    // It took `.stdout` alone, so one non-zero `docker ps -aq --filter
+    // label=lu-test-run=<RUN_ID>` left `ours` empty and this run's own objects
+    // went to the age floor as if they were somebody else's. "Cannot measure"
+    // is not "not ours", and the only safe answer to an unanswerable question
+    // here is to sweep nothing.
+    const ownListing = docker(own, 60_000);
+    if (ownListing.code !== 0) return;
+    const ours = new Set(lines(ownListing.stdout));
+    // This run's own fixtures are never swept, whatever their age: a run longer
+    // than the floor would otherwise start deleting its own containers out from
+    // under itself. Filtering here keeps the inspect small; `staleIds` decides
+    // it again on whichever id spelling it is handed, because this filter being
+    // read as an optimisation is one refactor away from the guard being gone.
+    const rows = createdAt(kind, candidates.filter((id) => !isOwn(id, ours)));
     for (const id of staleIds(rows, ours, now)) docker(remove(id), 60_000);
   };
 
@@ -204,7 +302,9 @@ export function buildDashboardImage(tag: string): Result {
   sweepStaleFixtures();
   return docker([
     'build', '-q', '-t', tag,
-    '--label', `${LU_LABEL}=1`, '--label', `${RUN_LABEL}=${RUN_ID}`,
+    // Through `labels()`, so the build cannot drift from what the sweep reads --
+    // the third label is the one that makes an image's age knowable at all.
+    ...labels(),
     dashboardDir
   ]);
 }
