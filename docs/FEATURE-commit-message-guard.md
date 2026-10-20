@@ -61,7 +61,7 @@ reads it. So the answer is computed.
   not needed at all; an earlier setting that points into a checkout is migrated away and said out loud,
   and a foreign one is still refused. The price of a copy is that it can fall behind its source, and
   that price is **computed rather than remembered**: the installer writes the source blob id beside the
-  copy, and the hook compares it with `origin/main:scripts/hooks/commit-msg` on every run, printing one
+  copy, and the hook compares it with `origin/main:config/agents/hooks/commit-msg` on every run, printing one
   line on stderr when they differ. A clone with no such ref — an agent clone in the stack — says
   nothing.
 

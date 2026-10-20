@@ -11,7 +11,7 @@
  *           readings to find; the `closed` event had carried the commit id from
  *           the start.
  *
- *           `scripts/hooks/commit-msg` reads the message while it can still be
+ *           `config/agents/hooks/commit-msg` reads the message while it can still be
  *           changed. These cases are the ones that were run by hand before the
  *           hook was written, with the real message of `5aa5bc9` among them --
  *           **whole**, which it was not until 2026-10-20 -- so the guard is
@@ -27,7 +27,7 @@
  *           and `git commit` in a throwaway clone; `CM-6` in
  *           `tests/contract/m-a4.hooks-path.test.ts` holds the copy the stack's
  *           agents get.
- * Given:    `scripts/hooks/commit-msg`, invoked as git invokes it -- one
+ * Given:    `config/agents/hooks/commit-msg`, invoked as git invokes it -- one
  *           argument, the path to a file holding the message
  * When:     it is handed the message that closed #18, the correction that
  *           followed it, each keyword and reference form GitHub honours, prose
@@ -63,7 +63,10 @@ import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
 
-const HOOK = join(repoRoot, 'scripts/hooks/commit-msg');
+// Beside `pre-push`, since 2026-10-20: one file serves the operator's clone and
+// the stack's agents, and `config/agents/hooks` is a directory the fixture
+// projects already copy. See `install.sh` for what the old location cost.
+const HOOK = join(repoRoot, 'config/agents/hooks/commit-msg');
 
 // The message that did the damage, **whole**, as `git log -1 --format=%B 5aa5bc9`
 // prints it. It used to be a splice that dropped the first body paragraph and
@@ -216,7 +219,7 @@ describe('CM-2 text that names a reference without instructing anything passes',
         '#',
         '# On branch feature/commit-message-guard',
         '# Changes to be committed:',
-        '#\tmodified:   scripts/hooks/commit-msg',
+        '#\tmodified:   config/agents/hooks/commit-msg',
         ''
       ].join('\n')
     );

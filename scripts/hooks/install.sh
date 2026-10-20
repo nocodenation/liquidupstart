@@ -28,7 +28,18 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 COMMON_DIR="$(cd "$(git rev-parse --git-common-dir)" && pwd -P)"
 MAIN_ROOT="$(dirname "$COMMON_DIR")"
 SHARED_HOOKS="${COMMON_DIR}/hooks"
-SRC="$(pwd -P)/scripts/hooks/commit-msg"
+# **One file, and it lives under `config/agents/hooks/`.** It was in
+# `scripts/hooks/` and `config/scripts/start/git.sh` installed it from there for
+# the agents -- a path that reaches outside `config/`, which every other path in
+# that script stays inside. `tests/lib/gitproject.ts` copies only
+# `config/scripts/start` and `config/agents/hooks` into a fixture project, so in
+# every such project the install failed and `set -euo pipefail` aborted the git
+# step two lines before it writes the gitconfig: 11 cases that had nothing to do
+# with this feature went red, and the agents lost the pre-push secret scanner as
+# well. Measured 2026-10-20, 787 pass / 12 fail against 24 / 0 with main's
+# git.sh. Beside `pre-push`, which is the same kind of thing, one file serves the
+# operator and the agents and the fixture carries it without being told to.
+SRC="$(pwd -P)/config/agents/hooks/commit-msg"
 INSTALLED="${SHARED_HOOKS}/commit-msg"
 STAMP="${SHARED_HOOKS}/commit-msg.blob"
 
@@ -58,8 +69,14 @@ self_test() {
   trap 'rm -rf "$tmp"' RETURN
   printf 'test: this resolves #9999\n' > "${tmp}/bad"
   printf 'test: the #9999 conflict, answered on #9998\n' > "${tmp}/good"
-  "$hook" "${tmp}/bad" >/dev/null 2>&1 && { echo "a closing keyword was accepted" >&2; return 1; }
-  "$hook" "${tmp}/good" >/dev/null 2>&1 || { echo "ordinary prose was refused" >&2; return 1; }
+  # **`env -u`, because the override is ambient.** With ALLOW_CLOSING_KEYWORD=1
+  # exported -- which CLAUDE.md and the hook's own refusal both teach -- the
+  # guard legitimately accepts the bad fixture and this read it as broken, so
+  # `--check` answered OFF for a hook that was on. The shell in which somebody
+  # has just made a deliberate closing commit is exactly the shell in which the
+  # question gets asked.
+  env -u ALLOW_CLOSING_KEYWORD "$hook" "${tmp}/bad" >/dev/null 2>&1 && { echo "a closing keyword was accepted" >&2; return 1; }
+  env -u ALLOW_CLOSING_KEYWORD "$hook" "${tmp}/good" >/dev/null 2>&1 || { echo "ordinary prose was refused" >&2; return 1; }
   return 0
 }
 

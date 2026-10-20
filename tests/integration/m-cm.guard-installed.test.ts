@@ -54,16 +54,16 @@
  * Why a clone and not a fixture repository: the installer reads
  *           `git rev-parse --git-common-dir` and the checkout's own
  *           `scripts/hooks`, and the staleness check reads
- *           `origin/main:scripts/hooks/commit-msg`. A hand-built repository would
+ *           `origin/main:config/agents/hooks/commit-msg`. A hand-built repository would
  *           have to simulate all three, and simulating the thing under test is
  *           how the first version of this guard came to be tested against its own
  *           assumptions.
  */
 
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { mkdtempSync, rmSync, existsSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, chmodSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
 
@@ -87,20 +87,35 @@ beforeAll(() => {
   // The branch under test, by its content rather than by its name: the clone's
   // HEAD is whatever the source checkout had, so the hooks are copied in from
   // this working tree to make the case independent of what is committed here.
-  for (const name of ['commit-msg', 'install.sh']) {
-    writeFileSync(
-      join(clone, 'scripts', 'hooks', name),
-      readFileSync(join(repoRoot, 'scripts/hooks', name), 'utf8')
-    );
-    chmodSync(join(clone, 'scripts', 'hooks', name), 0o755);
+  // The two files under test, copied in from this working tree so the case
+  // measures the code under review rather than whatever the clone's HEAD holds.
+  // `mkdirSync` because a source checkout on another branch has neither
+  // directory, and a bare ENOENT names nothing.
+  for (const [from, to] of [
+    ['config/agents/hooks/commit-msg', ['config', 'agents', 'hooks', 'commit-msg']],
+    ['scripts/hooks/install.sh', ['scripts', 'hooks', 'install.sh']]
+  ] as Array<[string, string[]]>) {
+    const target = join(clone, ...to);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, readFileSync(join(repoRoot, from), 'utf8'));
+    chmodSync(target, 0o755);
   }
   git(clone, 'config', 'user.email', 'probe@example.invalid');
   git(clone, 'config', 'user.name', 'probe');
   // Committed so that a later checkout of BEFORE_THE_GUARD is not refused for
   // local modifications -- the override is what it is for.
+  //
+  // **`--allow-empty`, and this file never ran green without it.** The clone is
+  // of this same branch, so when the working tree is clean the two files copied
+  // above are byte-identical to the index and `git add -A` stages nothing: the
+  // commit exits 1 with `nothing to commit`, the assertion fails, and all twelve
+  // cases go with it. It passed only for somebody holding uncommitted edits to
+  // those two files, which is the author's state while iterating -- so the
+  // "12 / 0" first recorded for this file was measured against a dirty tree and
+  // was never true of what was committed. Found by a review on 2026-10-20.
   git(clone, 'add', '-A');
   expect(
-    sh(['git', 'commit', '-q', '-m', 'probe: the hooks under test'], clone, {
+    sh(['git', 'commit', '-q', '--allow-empty', '-m', 'probe: the hooks under test'], clone, {
       ALLOW_CLOSING_KEYWORD: '1'
     }).code
   ).toBe(0);
@@ -128,7 +143,7 @@ describe('CM-4 the installer puts the guard where no checkout can empty it', () 
     // The shared directory, which every worktree of the clone uses and no branch
     // carries. The old answer was a path inside the checkout.
     expect(existsSync(join(clone, '.git', 'hooks', 'commit-msg'))).toBe(true);
-    expect(r.output).not.toContain(join(clone, 'scripts/hooks'));
+    expect(r.output).not.toContain(join(clone, 'config/agents/hooks'));
   });
 
   test('CM-4 and it writes the source blob id beside the copy, so staleness is computable', () => {
@@ -138,7 +153,7 @@ describe('CM-4 the installer puts the guard where no checkout can empty it', () 
     expect(blob).toMatch(/^[0-9a-f]{40}$/);
     // And it is the id of what was installed, not of something else.
     expect(blob).toBe(
-      git(clone, 'hash-object', join(clone, 'scripts/hooks/commit-msg')).stdout.trim()
+      git(clone, 'hash-object', join(clone, 'config/agents/hooks/commit-msg')).stdout.trim()
     );
   });
 
@@ -214,11 +229,11 @@ describe('CM-5 git itself refuses the message, from a worktree and with the main
   });
 
   test('CM-5 the negative that was the blocking finding: the main tree moves, the worktree still refuses', () => {
-    // install, add a worktree, check out a commit with no scripts/hooks in the
+    // install, add a worktree, check out a commit with no guard in the
     // main tree, commit from the worktree. This was rc 0 and committed.
     expect(git(clone, 'checkout', '--quiet', BEFORE_THE_GUARD).code, 'checkout failed').toBe(0);
     try {
-      expect(existsSync(join(clone, 'scripts', 'hooks'))).toBe(false);
+      expect(existsSync(join(clone, 'config', 'agents', 'hooks', 'commit-msg'))).toBe(false);
       const r = commit(tree, 'docs: x', REFUSED);
       expect(r.code, r.output).not.toBe(0);
       expect(r.output).toContain('commit-msg refused this message');

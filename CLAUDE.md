@@ -188,7 +188,7 @@ close whatever reference follows, on pull requests as well as issues, and it nam
 the actor. On 2026-10-16 the line *"both are merged and resolved: #18"* in a documentation commit
 closed a pull request carrying four answered review rounds, and the timeline accused the operator.
 
-`scripts/hooks/commit-msg` refuses such a message before the commit exists; `./scripts/hooks/install.sh`
+`config/agents/hooks/commit-msg` refuses such a message before the commit exists; `./scripts/hooks/install.sh`
 enables it for a clone and `./scripts/hooks/install.sh --check` answers whether it is on, so that is a
 question rather than a memory. `ALLOW_CLOSING_KEYWORD=1 git commit` is there for a commit that means
 it. Agents in the stack get the same hook from the start script.

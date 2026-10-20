@@ -88,7 +88,13 @@ install -m 755 "${SCRIPT_DIR}/../../agents/hooks/pre-push" "${HOOKS_DIR}/pre-pus
 # were neither covered nor named as uncovered, which is A3 of the first review
 # of #35. One line, because `core.hooksPath` below already points every agent
 # clone at this directory.
-install -m 755 "${SCRIPT_DIR}/../../../scripts/hooks/commit-msg" "${HOOKS_DIR}/commit-msg"
+#
+# **From inside `config/`, like every other path here.** It read
+# `../../../scripts/hooks/commit-msg` for one commit, and a fixture project
+# carries only parts of `config/` -- so the install failed, `set -euo pipefail`
+# aborted two lines above the gitconfig, and 11 unrelated cases went red while
+# the agents lost the pre-push scanner too.
+install -m 755 "${SCRIPT_DIR}/../../agents/hooks/commit-msg" "${HOOKS_DIR}/commit-msg"
 
 cat > "$GITCONFIG" <<EOF
 [core]
