@@ -55,8 +55,20 @@ And `awaitFile` at `:495` reads `existsSync(file) ? readFileSync(file) : ''`, so
 between the two calls throws `ENOENT` out of the helper instead of the diagnosis it exists to
 produce — git.sh's EXIT trap removes the lock directory wholesale, which is exactly that window.
 
-Left out of `fix/fixture-names-per-run` because neither is in its diff and both widen it into a
-third file under review.
+**And both new helpers accept the wrong spawn form at the type level.**
+`type WatchedRun = { exitCode: number | null }` is satisfied structurally by a `Bun.spawnSync`
+result, whose `exitCode` is `number` and never null, and `watchOutput(run: { stdout?: unknown })`
+types its streams as `unknown`, so the duck-test is the only check and a sync result's `Buffer`
+`stdout` makes `pump` return at once. Both spawn forms already live in one file:
+`tests/integration/m-a16.lock-wait.test.ts` uses `Bun.spawn` for `A16-27` and `Bun.spawnSync` for
+`A16-28`. Hand a sync result to `watchOutput` and `text` stays empty, so `until()` burns its budget
+and blames the product; hand one to `awaitFile` and the first poll throws *"the run ended with 0
+before it wrote …"* about a run that had already written it. Typing the parameters as
+`Bun.Subprocess` makes the compiler refuse both. There is also no root `tsconfig.json` — only
+`dashboard/` — so nothing type-checks `tests/` at all, which is why this is invisible today.
+
+Left out of `fix/fixture-names-per-run` because none of them is in its diff and all of them widen it
+into files under review.
 
 Recorded 2026-10-20.
 
