@@ -1,4 +1,4 @@
-# Handover — 2026-10-16
+# Handover — 2026-10-20
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one: #19 still carries an older
@@ -9,13 +9,88 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-16* has the live picture. Read that and the review bodies it points to; the rest of this file
+2026-10-20* has the live picture. Read that and the review bodies it points to; the rest of this file
 is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; there are nine of ours open now, and two have merged since. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-20
+
+**Do not read the counts in older sections.** `./scripts/state.sh` on `feature/computed-state` prints
+`main`'s head, every open pull request with the forge's own review state, whether each branch still
+merges, and the worktrees. That exists because this file's prose kept going stale within hours. Run
+it first; what follows is only what a command cannot tell you.
+
+### What changed today
+
+Timur reviewed six rounds in one day — #18, #19, #24, #28, #35, #36 — and all six were answered and
+pushed. Then he made one recommendation that changed how the rest of the day went:
+
+> *"I'd recommend you to run /code-review in your claude before sending PRs for a review."*
+
+**Take it. It is not optional advice.** Run `/code-review <branch>` **before** committing and
+pushing, not after. On its first three runs it found serious defects in three branches that had
+already been pushed and reported to him as finished:
+
+| Branch | What it found | Where that left things |
+|---|---|---|
+| `fix/fixture-names-per-run` (#19) | A network's `{{.Created}}` is a Go `time.Time` **with spaces**, so `split(' ')[1]` kept the bare date: a network **four seconds** old read as **15.14 hours** and was swept. An image's `{{.Created}}` is its config's and a cache hit copies it. `docker ps -aq` prints short ids and `inspect '{{.Id}}'` long ones, so the own-run exemption could never fire | `fe85e1b`, 71 / 0 |
+| `fix/leaked-containers` (#40) | **The branch did not do its job.** `c.image !== keep` exempts the content-addressed tag, which is identical on every run — so every killed run's leftover was exempt at any age, and the only shape the sweep reached was a scheme nothing has minted since `B6-39`. Four more tag schemes were invisible; a 1.02 GB leak had sat five days. And `docker ps -a` enumerated the operator's 21 stack containers **in the default tier** | redesigned around a label, `76f8824`, 54 / 0 |
+| `feature/commit-message-guard` (#35) | Broke **11** unrelated cases (an install path reaching outside `config/`, which fixture projects do not copy). The scissors cut never matched, because git writes the line with the comment character. My new integration file **had never run green as committed**. And the guard **failed open**: under a UTF-8 locale one invalid byte makes BSD `sed` exit, the body goes empty, and the incident's own sentence commits with rc 0 | `7358c82`, 47 / 0 + 40 / 0 |
+
+### Three lessons from that, and they are the ones to carry
+
+**A figure is only true of the committed state.** Twice today I reported a test result measured
+against a dirty working tree — once for a file that could not run at all without my uncommitted
+edits. Run it from a clean tree before quoting a number, and check `git status` first.
+
+**A pinned environment hides what depends on it.** `tests/lib/shell.ts` pins `LC_ALL=C`, for its own
+good reasons, so no case in the suite could see a guard whose verdict depended on the locale — in
+*either* direction. When a decision reads the environment, a case has to set the environment itself.
+
+**Test data decides what a case is worth, and synthetic data can make it worth nothing.** The
+own-run exemption passed its scenarios because synthetic ids spell the same on both sides, while real
+docker spells them two ways. The age floors passed because every scenario handed them a number it had
+computed itself, so no real timestamp ever reached the decision. Both were green and both held
+nothing.
+
+### What is open
+
+- **#45 is new** — `docs/suite-fixture-findings`, six `BACKLOG.md` entries for findings wider than
+  one branch: fixed container names still in `m-b5.hand-drop` and `m-oc.allow-scripts`; the fixture
+  sweep hanging off `buildDashboardImage` instead of the start of a run; `watchOutput` reporting a
+  harness fault as the product going silent; `startDashboard`'s readiness `fetch` with no timeout;
+  `runSubnets` handing out adjacent /24s while its docstring denies the likelier clash; and two
+  age-floor sweeps in `tests/lib/` with different floors and **opposite** boundaries. That last one
+  is the one to act on when #19 and #40 are both on `main`: there will be two `parseDockerTime`s, two
+  run-id models and two floors answering one question.
+- **Five `/code-review` runs are still owed**: #18, #24, #28, #42, #16, #43. On the rate of the first
+  three, expect them to find things. Each run is about ten agents and a few minutes.
+- **Two questions for Timur are on #35**, asked and not yet answered: whether `install.sh --check`
+  should live outside a checkout (it is content of one, so on `main` the command `CLAUDE.md` names
+  cannot be run), and whether the staleness line should simply go — it reports a direction it does
+  not test and stamps the source rather than the installed file.
+- **#42 raises #24's 180 s budget to 600 s**, with the reasoning stated, and that is Timur's call.
+  Whichever figure he keeps, the other branch takes it in one line. Two numbers for one budget must
+  not stand.
+- **#24 and #28 interact**: #24 renumbers `A16-19`, and #28 lists that id. Whichever lands second
+  needs that one-line entry deleted — measured, and #28's stale scenario says so itself.
+
+### Housekeeping worth knowing
+
+- The commit-message guard is installed in this clone, from `config/agents/hooks/commit-msg` (it
+  moved there today, so that one file serves the operator and the agents and the fixture projects
+  carry it). Ask with `./scripts/hooks/install.sh --check`.
+- **It refused three of my own commit messages today**, each time for quoting its own test data. The
+  right answer is to point at the fixture, never to reach for `ALLOW_CLOSING_KEYWORD=1` — that would
+  have closed #18 and #20 for real.
+- `wt-15b` and `wt-21` are retired; `wt-bl` is new for #45. Local `main` is behind `origin/main` and
+  has only ever been read, not pushed from.
+- A review subagent briefly committed `0cf2f45 "probe"` to local `main` and reverted it itself.
+  Verified: `main` is at `9637008`, nothing was pushed, the commit lives only in the reflog.
 
 ## Where it stands, 2026-10-16
 
