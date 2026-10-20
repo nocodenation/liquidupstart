@@ -152,6 +152,31 @@ and a different milestone.
 
 Recorded 2026-10-20.
 
+---
+
+**"A row about a different case than the test that carries its id" can be checked where a row names
+its file, and that is a third of the detail blocks.** Found by a local review of `fix/a16-20-row`
+(#38) on 2026-10-20. That branch and #28 both say the class needs a convention before it can be
+checked, because whether a row's words are about a test's case is a judgement. The reviewer's point
+is narrower and holds: where the specification already names the implementing file, the mechanical
+half — *the id appears in a `describe`/`test` title in that file* — needs no convention.
+
+Measured on #38's committed head, `767931f`, over every `docs/TEST-SPEC-*.md`. Tables with an `Implemented by` column: **one**
+(M-A16's *Cases documented after the fact*), 13 rows, 13 whose id is in a title of the named file.
+Detail blocks: **254** headings carry ids, **81** of them have an `| **Implemented by** |` row naming a
+test file, and **80** of those have every heading id in a title there. The one that does not is
+`##### OC-56 / OC-57 / OC-58 / OC-59` in `TEST-SPEC-openclaw-2026-9-1.md`: OC-59 was retired into OC-72
+on 2026-10-14 and its row struck through, while the block heading still lists it against three files
+that no longer carry it. So the check would need to read retirement — a struck-through row — as an
+answer, and it would have caught one real stale heading on its first run.
+
+It would not have caught `A16-20` itself, which is the honest limit: the signed-off row had no
+`Implemented by` at all. The check covers rows that name their file; the 173 that do not stay a
+reviewer's reading. Its home is `tests/contract/m-tr.case-ids.test.ts` beside #28's `TR-4`, not either
+branch it was found from.
+
+Recorded 2026-10-20.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
