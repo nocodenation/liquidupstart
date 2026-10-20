@@ -530,9 +530,22 @@ named_state() {  # named_state <name>
       // those two are two things and the caller refuses. A describe standing for
       // twenty generated tests is still one thing, which is the case this
       // predicate was widened for -- MU-42 is that counterpart.
+      //
+      // **Only a full name is exact on the leaf side.** `exact = true` here
+      // meant that a nested test whose own name matched outranked a nested
+      // block of that name, and the filter below then discarded the block the
+      // entry was about. Measured at 59272f5 with a spec holding
+      // policy > checks > p and a test mode > checks, an entry meaning the
+      // policy block and mutating MODE: VALIDATED FX-nl  checks  (1 red, 2
+      // green) while policy > checks stayed green. b8b608b had refused that
+      // same entry correctly, so the precedence taken for f1t opened it. B1 of
+      // the 2026-10-16 fifth re-review. The precedence f1t needs is the one a
+      // *full* name earns -- `checks` as a whole name -- and a bare leaf name
+      // earns nothing, so it competes as a segment match does and the
+      // ambiguity refusal fires. MU-62 carries both halves of it.
       let identity = "";
       let exact = false;
-      if (name === want || full === want) { identity = "test@" + path; exact = true; }
+      if (name === want || full === want) { identity = "test@" + path; exact = full === want; }
       else if (path === want) {
         exact = true;
         // **An exact path wins over a segment match**, and without that rule a

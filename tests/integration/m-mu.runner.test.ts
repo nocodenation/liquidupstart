@@ -1,5 +1,5 @@
 /**
- * MU-1 to MU-59 — the mutation runner, proved against its own failure modes.
+ * MU-1 to MU-62 — the mutation runner, proved against its own failure modes.
  *
  * Purpose: `tests/mutate.sh` exists to show that a case can fail. Its own
  * failure — silently skipping, or calling a green run a discovery — would be the
@@ -56,6 +56,11 @@
  * its stated subject data left the two `TWICE` lines out -- so a reader checking
  * the fixture against the description would have found a file with two lines in
  * it that the description did not mention. Finding 9 of the 2026-10-01 re-review.
+ *
+ * *Range corrected again 2026-10-20.* It still said MU-59 after MU-60, MU-61 and
+ * MU-62 were added to it, which is the same defect in the same line twice. The
+ * range is now the one `scenario-table.ts` generates from, so a reader can check
+ * it against the table below rather than against recollection.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, symlinkSync } from 'node:fs';
@@ -1380,6 +1385,10 @@ describe('MU-46 and MU-47 a name that resolves to more than one test is refused'
   // side. The reviewer's two shapes, by his names.
   const twoNested = 'spec/f1n.test.ts';
   const topAndNested = 'spec/f1t.test.ts';
+  // B1 of the fifth re-review: the precedence f1t needed, read on the leaf side.
+  // The reviewer's two shapes again, by his names.
+  const nestedLeaf = 'spec/nl.test.ts';
+  const topLeaf = 'spec/tl.test.ts';
 
   beforeAll(() => {
     const head = `
@@ -1416,6 +1425,24 @@ test('other', () => { expect(1).toBe(1); });
     writeFileSync(join(root, topAndNested), `${head}
 describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); });
 describe('mode', () => { describe('checks', () => { test('m', () => { expect(s).toContain('MODE=600'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // The shape the precedence opened: a nested **test** named `checks` beside a
+    // nested **block** of that name. `checks` names neither in particular, and
+    // the mutation reddens only the test. Note the difference from `f1n`: there
+    // the two things are both blocks; here one is a leaf, which is what made it
+    // count as exact and outrank the other.
+    writeFileSync(join(root, nestedLeaf), `${head}
+describe('policy', () => { describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); }); });
+describe('mode', () => { test('checks', () => { expect(s).toContain('MODE=600'); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // And the counterpart to the repair itself: a **top-level** test named
+    // `checks`, whose own full name is `checks`, beside a nested block of that
+    // name. Here the precedence is the one f1t was given, so it still applies.
+    writeFileSync(join(root, topLeaf), `${head}
+test('checks', () => { expect(s).toContain('MODE=600'); });
+describe('policy', () => { describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); }); });
 test('other', () => { expect(1).toBe(1); });
 `);
   });
@@ -1471,6 +1498,39 @@ test('other', () => { expect(1).toBe(1); });
     // The counterpart: precedence must not make the deeper block unnameable,
     // which would trade a false VALIDATED for a case nobody can write.
     const r = run(registry([entry({ spec: topAndNested, mustFail: 'mode > checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 a bare leaf name does not outrank a nested block of that name', () => {
+    // **B1 of the 2026-10-16 fifth re-review**, and the defect the round before
+    // introduced. `exact` was set whenever the leaf's own name matched, so the
+    // nested test `mode > checks` was exact for `checks` and the filter threw
+    // away every segment match -- including `policy > checks`, the block the
+    // entry was about. Reproduced by the reviewer at 59272f5:
+    // `VALIDATED FX-nl  checks  (1 red, 2 green)` with the policy test green
+    // throughout, where b8b608b had refused the same entry correctly.
+    const r = run(registry([entry({ spec: nestedLeaf, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('resolves to more than one test');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-62 and the remedy resolves the leaf shape too', () => {
+    // The refusal above is only worth printing if what it asks for works. The
+    // mutation reddens `mode > checks`, so naming it is a true control.
+    const r = run(registry([entry({ spec: nestedLeaf, mustFail: 'mode > checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 and a full name is still exact, which is the rule f1t was given', () => {
+    // The counterpart to the repair rather than to the defect: narrowing `exact`
+    // must not take the precedence away where it was wanted. A top-level
+    // `test('checks')` beside `policy > checks` has `checks` as its **whole**
+    // name, so it keeps winning -- and without this scenario, `exact = false`
+    // for every leaf would pass the three above.
+    const r = run(registry([entry({ spec: topLeaf, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
     expect(r.output).toContain('VALIDATED');
     expect(r.code).toBe(0);
   }, 300_000);
