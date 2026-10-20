@@ -54,7 +54,21 @@ afterAll(() => dropWorkRoot(workRoot));
 
 // The subnet this suite was written against, before the default moved to
 // 10.99.0.0/24 -- its cases are about the shape, not the range.
-const OC_ENV: Env = { LU_NETWORK_SUBNET: '172.18.0.0/16' };
+//
+// `LU_PROXY_IDENTITY` is the identity nginx asserts, and it belongs here rather
+// than in the shared `BASE_ENV`: it is this file's subject, and `m-m1` has no use
+// for it. It was never passed at all once, and the grant then landed under the
+// literal key `"undefined"` while the assertion -- which read
+// `Object.values(...)[0]` -- found it anyway, so a grant to nobody read as a
+// grant. Minor of the 2026-09-29 review. The merge of 2026-10-20 dropped it a
+// second time, because this file's own env map went to the shared helper and the
+// shared map does not carry it: `OC-75` and `OC-57` went red with
+// `undefined is not an object`, which is the same defect saying so loudly
+// instead of passing. One case overrides it with `''` on purpose.
+const OC_ENV: Env = {
+  LU_NETWORK_SUBNET: '172.18.0.0/16',
+  LU_PROXY_IDENTITY: 'user@nocodenation.org'
+};
 
 function writeConfig(env: Env): any {
   return runWriter({ workRoot, program, env: { ...OC_ENV, ...env } });
