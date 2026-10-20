@@ -326,6 +326,24 @@ the helper; until then it would mean editing three files outside that branch's d
 
 Recorded 2026-10-21.
 
+---
+
+**Four calls hand `sh()` a timeout it never had, as its environment.** Found while repairing #42 on
+2026-10-21. `sh(argv, cwd, extraEnv)` takes no timeout, and these pass a number in the third place:
+`tests/unit/m-b6.bundled-jar-read.test.ts:107` (`600_000`),
+`tests/integration/m-b6.refusal-injection.test.ts:106` and `:157` (`120_000` each), and
+`tests/integration/m-b6.build-user-cache.test.ts:70` (`600_000`). `childEnv` merges it with
+`Object.assign(env, extraEnv)`, and `Object.assign` of a number copies nothing — measured in bun,
+`Object.assign({ A: "1" }, 600000)` is `{"A":"1"}`. So each of those `docker run`s runs unbounded, and
+the figure reads as a bound to anyone who opens the file. `B6-37`'s container is one of them, and it
+is the one killed for memory above.
+
+#42 gives `sh()` a fourth parameter, `timeoutMs`, and once that is on `main` the four move their
+figure there. Until then the only honest edit is to delete the number, which is these files' own
+change to make, not #42's.
+
+Recorded 2026-10-21.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
