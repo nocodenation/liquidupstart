@@ -1,4 +1,4 @@
-# Handover — 2026-10-15
+# Handover — 2026-10-16
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one: #19 still carries an older
@@ -9,13 +9,230 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-15* has the live picture. Read that and the review bodies it points to; the rest of this file
+2026-10-16* has the live picture. Read that and the review bodies it points to; the rest of this file
 is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; there are nine of ours open now, and two have merged since. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-16
+
+**The review latency broke today: three of ours merged.** `b59d19c` took #10 in at 09:20Z,
+`9858651` took #25 within the hour, and `fb6d6ec` took **#20** at 13:02Z — all three by `iztiev`.
+The first two came without a comment; #20 came after a full round, answered in `a693411`, and is the
+first of ours to be approved rather than simply taken. #25 carried `691dd2e`, the measurement written
+this morning, so `B7-5`'s figures below reached `main` the same day they were taken. This section
+opened with *"nothing merged today"* when it was written two hours earlier, which is why each claim
+here now carries its time.
+
+**Nine of ours are open**: #15, #16, #17, #18, #19, #21, #24, #28 and #35.
+
+**#21 was reviewed and answered today too**, in `fa23a3e`: one blocking item — the specification
+claimed `seed_known_hosts` was exercised by no case, which `m-a10` disproves — plus four follow-ups.
+Three things the review had not asked for went with it, and the one worth knowing is that moving the
+manifest's temporary to `mktemp` would have blinded the litter check that guards it, because the
+filter matched `.tmp` and `mktemp`'s names carry none. A fix that silently disarms its own guard is
+the shape worth looking for twice.
+
+**#36 repairs the misreport that this morning's measurement produced**, which is the first thing
+today that was neither a review answer nor housekeeping. `build.sh` gated deployment on
+`[ -f "$NAR_CHECK" ]`, which stats; with the checker unreadable, python3's non-zero status was read as
+a refusal and the operator was told their bundle *"cannot link against the NiFi API the running
+Liquid loads"* — a verdict nothing had reached. `narcheck_available` now reads the file, and the
+headline no longer asserts one of narcheck's two reasons over the other: it returns 1 both for a
+bundle the index refuses and for anything it could not read, which the repair found by reproducing
+the second case. `B6-40`, seven scenarios, each shown able to fail. **One of the new assertions was
+weak and is written up as such**: it checked that the gate's old inline form was gone, which the
+extraction alone achieved, so it stayed green with the fix reverted — an assertion a refactor
+satisfies is not guarding anything.
+
+**#37 closes `S9`'s second half, and the operator took the decision the entry had been holding
+since 2026-10-08.** Nine test files named `ghcr.io/nocodenation/liquid-nifi:latest` themselves, and
+six pinned what that tag happened to contain, so an upstream release reddened them over somebody
+else's work. A digest was the obvious repair; it buys a suite that tests an image the stack no longer
+runs until a hand re-pins. **The tag stays moving and an upgrade is made legible instead**: both
+versions are read out of the image, the nine files name the tag through one constant, `tests/run.sh`
+says before every run which state it is in — beside the disk line, because seventeen scattered skips
+are not a message — and the six version-pinning files skip rather than fail. Simulated, a moved tag
+takes the M-B5 tier to 27 pass / 17 skip / 0 fail with the cause printed above it. `B5-33`, eight
+scenarios, each shown able to fail.
+
+**What is deliberately not asserted there is the agreement itself** — that the image equals the
+pinned pair. That agreement is the question, and asserting it would make an upstream release red,
+which is the defect being removed. It is the same distinction the disk guard draws: *cannot measure*
+is not *empty*.
+
+**And a mistake of mine worth the line.** The import I inserted into nine files landed inside an
+embedded Python heredoc in one of them, because the last line beginning with `import` was
+`import http.server, ssl`. Running the file caught it; reading the diff had not. Fixed by matching the
+TypeScript form, and the heredoc verified byte-identical against `main` afterwards. **A mechanical
+edit across nine files needs a run, not a read.**
+
+**Three backlog entries closed, none of them by that code.** The `M2` decision — *"the decision left
+is one the operator has to take"* — was taken and merged as `480455b` with #25, and was still being
+read as open today, by me, out loud. Two `/m2` entries describe a mount #25 removed. All three struck
+through rather than deleted, so the reasoning stays readable. The lesson is cheap and worth the line:
+**a merge closes code, and nothing closes the entry that asked for it.**
+
+**#15 was the only branch #20's merge collided with**, in `scripts/linux/start.sh`, and the collision
+was two `source` lines: #15 adds `proxy-identity.sh`, #20 added `bind-address.sh`, both after
+`wait-for-operator.sh`. Both kept, both verified present and called. The merge also made a tense true:
+`BACKLOG.md`'s `operator.admin` entry said *"#20 repairs it"* and now says *"repaired, merged as
+`fb6d6ec`"*, which was the one thing left open from that review's `F3`. Every other open branch
+reports clean against `fb6d6ec`.
+
+**#35 is the guard against what the next section describes**, opened today with the reviewer on it:
+`scripts/hooks/commit-msg`, `scripts/hooks/install.sh`, `tests/unit/m-cm.commit-message-guard.test.ts`
+at 17 pass, a feature document, a test specification carrying a row per scenario, and the conduct half
+under `## GIT` in `CLAUDE.md`. Documents and tooling only, +510/−0 over six files, no product code.
+Suite on that branch: 787 pass / 5 skip / 0 fail, plus the dashboard 32 pass.
+
+### A commit message closed #18, and a word in it is all it took
+
+**Written down because it took three wrong readings to find.** #18 went to `CLOSED` at 09:58:04Z,
+38 minutes after #10 merged. The timeline named the operator as the actor, and this file said so for
+an hour. The operator had not touched it. The `closed` event carries a `commit_id`, and it is
+`5aa5bc9` — a documentation commit of this session's own, pushed to the default branch, whose message
+contained the line *"both are merged and resolved: #18, where both sides appended an item"*.
+
+**`resolved: #18` is a closing keyword.** GitHub applies `close`, `fix` and `resolve` in all their
+forms, with an optional colon, to the reference that follows, and it applies them to pull requests as
+well as issues, attributing the act to whoever pushed. So prose about a pull request, in a commit on
+`main`, closed that pull request — and the attribution then pointed at the operator rather than at the
+commit.
+
+Reopened with `gh pr reopen 18`; `CHANGES_REQUESTED` and the head `59272f5` survived the round trip.
+**And it is computed now rather than remembered.** `.git/hooks/commit-msg` reads the message before
+the commit exists and refuses one that would close what it names — `close`, `fix` and `resolve` in
+any form, with or without a colon, in front of `#12`, `GH-12`, `owner/repo#12` or a full issue or
+pull URL. Git's comment lines and everything under the scissors are ignored. Verified against the
+message of `5aa5bc9` itself, which it refuses on line 10, and against this section's own prose
+(*"the #18 conflict, answered on #19, resolved in BACKLOG.md"*), which it passes. A commit that means
+to close an issue says so with `ALLOW_CLOSING_KEYWORD=1 git commit`, because that is a real workflow
+and a guard that forbids it would be worked around rather than used.
+
+The hook lives in `.git/hooks`, so it is **this machine only** and is not in the repository; it does
+reach every worktree, because hooks resolve through `GIT_COMMON_DIR` to this checkout's `.git/hooks`.
+Making it the team's would mean a tracked script plus `core.hooksPath`, which is a change to everyone's
+tooling and therefore the operator's to decide.
+
+What stays as conduct is the wording: in a commit message or a pull request description, name a pull
+request as *"the #18 conflict"* or *"on #18"*. The hook catches the slip; the habit avoids the
+argument with it.
+
+**#19's conflict was the other one**, and it is merged and resolved: `main` had appended an item next
+to the `operator.admin` section that #19 **removes**, because #19 is what closes it. That section is
+identical in `main` and in the merge base, so honouring the removal discarded nothing of `main`'s;
+the commit message carries the lead-set counts that show it.
+
+**#25 also settled the stacking question before it merged.** Once #10 was in, #25's base read
+`main`, its surface was 16 files and +1146/−70, and it merged clean — the 13-to-101 file surface of
+2026-10-14, when `main` went into a branch stacked on #10, cannot recur.
+
+**`wt-10` and `wt-seed` are retired**, by the same rule as yesterday's two: `git merge-base
+--is-ancestor` against `origin/main` for each branch first, then clean and fully pushed, then
+`git worktree remove`. The table in the section below still lists them and is wrong about them from
+today on. Six remain, for #15, #16, #18, #19, #24 and #28; #17, #20 and #21 have never had one.
+
+**`B7-5`’s four remaining scenarios on #25 are measured, and so are `B1-9`’s four.** Both records
+rested on a measurement taken by hand for the same single reason — no stack had ever been started from
+a branch worktree — and that is what the section below made possible. Other hand measurements in the
+specification stand for reasons of their own and are untouched: `B6-36` skips with a voice when Maven
+Central is unreachable, and the row on a real Maven build says outright that the stack tier holds it. Against a stack
+built and started from `wt-seed`, with `m2-seed` present in the running builder:
+
+| Suite | Result |
+|---|---|
+| `./tests/run.sh m-b7 --system` | **12 pass / 1 skip / 0 fail** |
+| `./tests/run.sh m-b1 --system` | **55 pass / 1 skip / 0 fail** across 12 files |
+
+In both files the single skip is the deliberate reader of a seedless image, which only runs when the
+seed is absent. The figures are in `docs/TEST-SPEC-liquid-java-extensions.md`: two builds, `rc=0`,
+**`downloads 576` both times**, from **different** per-build repositories, the first one gone
+afterwards, and all four unseeded jars inside the bundle. Two identical counts from two different
+repositories is the reading the negative control exists for — nothing the first build fetched
+outlived it.
+
+**The measurement cost the installation’s containers for about an hour and nothing else.** The
+operator agreed to that in advance. `/Users/christof/.liquidupstart` is not a git checkout, so the
+branch cannot be measured in place; one stack runs per host, so the branch stack replaces it. What
+made the restore exact rather than a second hour of rebuilding: **the two `:latest` images the branch
+rebuilds were saved under `:pre-b7` first**, and the restore is `docker tag liquidupstart/liquid:pre-b7
+liquidupstart/liquid:latest`, the same for `nar-builder`, then the installation’s own `start.sh`. Its
+`volumes/` were never written — 1.4 GB before and after, and the builder is back on the image with no
+seed. In `zsh`, write `${i}:latest` and never `$i:latest`: the latter is the `:l` modifier and it
+silently created `liquidupstart/liquidatest`.
+
+### Two suites at once on this host produce red that is not there
+
+Both merges above were checked by running the full suite on each branch **at the same time**: #18 came
+back 856 pass / 5 skip / **11 fail**, #19 762 pass / 5 skip / **2 fail**. Every one of the thirteen is
+an artefact of the parallel run. Run serially, the same files are **28 pass / 0 fail** on #18 and
+**3 pass / 0 fail** on #19, and the same file passes on `main`.
+
+The two clusters say why, and one of them is an argument for #19. `B6-37` asserts what judging a
+bundle **costs**, so a second suite competing for the machine breaks it — the identical case took
+6.3 s on one branch and 10.3 s on the other. `B6-21` to `B6-23` collide over fixtures: they create
+containers and nginx vhosts under fixed names, and two runs at once take each other’s. **#19 is the
+branch that gives fixtures per-run names**, and #18 does not have that fix yet, which is exactly why
+eight of the eleven were on #18.
+
+So: one suite at a time on this host. The cost of ignoring it is thirteen red cases that look like a
+product defect and are not, which is the same trap as the full disk and the stale mount.
+
+### A single-file bind mount from a moved worktree can be stat-able and unreadable
+
+**This is the one to know before starting a stack from a worktree that has just been moved.** The
+first run of `B7-5` against the branch stack failed all four scenarios, and the refusal said the
+bundle *"cannot link against the NiFi API the running Liquid loads"*. The build had succeeded. What
+had failed was `python3 /opt/builder/narcheck.py`, which `compose.yml` supplies as a **single-file**
+bind mount from `config/liquid/narcheck.py`.
+
+In that state the file is there and is not readable: `[ -f ]` true, `stat` reporting 29910 bytes,
+`ls` of the mounted directory **omitting the entry**, and `open()` returning `ENOENT` — from `python3`,
+from `head`, from `cp`. A fresh `docker run` with the same source refused outright with
+`error while creating mount source path '/host_mnt/…/narcheck.py': mkdir …: file exists`. Docker
+Desktop had a `/host_mnt` placeholder for a path it could not resolve on the first mount, and the
+placeholder then shadowed the real file. The same mount from `/Users/christof/.liquidupstart` worked
+throughout, which is what proved it was the path and not the product.
+
+**`docker desktop restart` clears it**, and the run went green afterwards with no change to any code.
+It cost an hour of diagnosis, and it is a consequence of moving the worktrees yesterday — the price of
+that move, paid once, and worth knowing rather than re-deriving.
+
+**What the stack did wrong in that state is in `BACKLOG.md`, and since #25 merged it is on `main`.**
+The gate is guarded by `[ -f "$NAR_CHECK" ]`, which stats; the honest message for an unavailable
+checker is in the `else` arm of the same test. So a checker that exists and cannot be opened is
+reported as a verdict on the author’s bundle. It went in unfixed, by decision: it decides what
+reaches Liquid’s autoloader, and it needs its own negative control that makes the checker unreadable
+and reads the message. That control is now `main`'s to write rather than a branch's.
+
+### Starting a stack from a worktree: the two things that are not obvious
+
+**The operator waits are skipped by a file, and it has to be written while the start is waiting.**
+`lu_clear_skips` does `rm -rf` on `volumes/.start-skip` once per run, so a marker written beforehand
+is deleted by the start itself — by design, because a skip is a decision about *this* run. The names
+are `git-key-all` (the group covering every deploy key) and `claude`, `copilot`, `codex`, `grok`. A
+fresh checkout has no deploy keys and no agent sign-ins, so without them a start sits for its full
+`SYSTEM_SIGNIN_WAIT_SECONDS=900`. With them it comes up in about two minutes and ends with a *Needs
+your attention* block naming each repository it could not clone, which is the correct outcome and not
+a failure.
+
+**A fresh checkout also needs a `.env`.** Copying the installation’s is right: identical ports and
+subnet, and it was checked first for absolute paths — there are none, so the branch stack writes only
+into its own `volumes/`, and the key sets of the two files match in both directions.
+
+`wt-seed/volumes/` now holds 1.1 GB of a once-started stack. It is disposable; deleting it costs only
+the next start’s first boot.
+
+### A test leaked a container, not just an image
+
+`festive_wescoff` was up for two days, holding `liquidupstart/nar-builder:run-47099-xoirn1` — a probe
+container from one of my own earlier runs, from before the content-hash tagging landed. The sweep
+built on #18 reclaims leaked **images**; a container that outlives its run pins one and is not swept.
+Removed by hand. Worth a case in the same shape as the image sweep.
 
 ## Where it stands, 2026-10-15
 
@@ -68,6 +285,41 @@ measurement: one cold builder image build costs about 305 MB.
 **If a build fails for a reason that sounds like permissions, read the disk first.** Twice now the
 output has been `AccessDeniedException` or an exit 2 with no explanation, and twice the answer was
 space.
+
+### The worktrees live under `~/repos/liquidupstart-worktrees/` since 2026-10-15
+
+**Not under the session scratchpad any more, because that is in `/tmp`.** Measured rather than
+remembered: `/usr/libexec/tmp_cleaner` deletes under **`/tmp` only** —
+`daily_clean_tmps_dirs="/tmp"`, files matched by `-atime +3 -mtime +3 -ctime +3` and empty
+directories by `-mtime +3`, with the three days coming from `CLEAN_FILES_OLDER_THAN_DAYS` in
+`/System/Library/LaunchDaemons/com.apple.bsd.dirhelper.plist`. Nothing outside `/tmp` is touched by
+it, so anywhere else will do and `~/repos/` is the obvious one: same filesystem as the checkout, next
+to it, visible, and backed up by whatever backs up the home directory.
+
+Eight were moved with `git worktree move`, which updates the administrative files — the directories
+were not copied by hand. Two were **retired** instead, `fix/toolbox-tools-precondition` and
+`fix/oc-id-collision`, because both are merged into `main`. Checked with
+`git merge-base --is-ancestor` before removing anything, and every worktree was clean and pushed
+first.
+
+| Worktree | Branch |
+|---|---|
+| `wt-10` | `feature/liquid-java-extensions` |
+| `wt-15b` | `feature/openclaw-pairing-recovery` |
+| `wt-16` | `feature/memory-midterm` |
+| `wt-18` | `feature/mutation-registry` |
+| `wt-19` | `fix/fixture-names-per-run` |
+| `wt-24` | `fix/fourth-precondition` |
+| `wt-seed` | `feature/builder-seeded-cache` |
+| `wt-uniq` | `fix/case-id-uniqueness` |
+
+**The three-day rule above still applies to anything left in the scratchpad**, which is where
+intermediate files belong and where they may be deleted under you. It is the *worktrees* that have
+moved, because a working copy of a branch is not a temporary file.
+
+**And this is also what makes the stack startable from a branch.** The reason `B7-5` on #25 was left
+unmeasured was partly that starting a stack from a scratchpad checkout would have put the whole of
+`volumes/` under that clock. From here it would not.
 
 ### Five worktrees were eaten, and nothing was lost
 
@@ -158,7 +410,8 @@ not mean nothing is pending on our side.** Two substantive debts are:
 Smaller: #25 records that a project bringing its own `pom.xml` cannot be given the lifecycle pins, so
 its closure is re-fetched per build — the security property holds, the speed is **unmeasured**.
 
-Waiting on Timur and never reviewed by him: **#20, #21, #24, #25**.
+Waiting on Timur and never reviewed by him: **#24**. #20 and #21 were reviewed on 2026-10-16 and
+both rounds are answered; #25 merged that day.
 
 ## Where it stands, 2026-10-10
 
@@ -180,7 +433,7 @@ reply**, and it is deliberately outside this cycle.
 | #18 | `feature/mutation-registry` | `b8b608b` | answered; verdict was *merge after fixes* |
 | #19 | `fix/fixture-names-per-run` | — | answered 10-02. Carries an **older `HANDOFF.md`** — see the note at the top |
 | #20 | `fix/bind-address` | — | never reviewed. **A precondition of #15's identity rule**, not a smaller thing beside it |
-| #21 | `fix/manifest-atomic-write` | — | never reviewed |
+| #21 | `fix/manifest-atomic-write` | — | **reviewed 2026-10-16**: one blocking item and four follow-ups, answered the same day |
 | #24 | `fix/fourth-precondition` | `c40606a` | opened 10-10 off `main`: `registryReachable()`, `A16-30`, and three of my own mistakes. `572 pass / 4 skip / 0 fail` |
 
 ### What is open, and whose it is
@@ -231,7 +484,7 @@ findings in all.
 | #18 | `feature/mutation-registry` | **10** (2 before merge) | third re-review of 10-01 **unanswered**; verdict *merge after fixes* |
 | #19 | `fix/fixture-names-per-run` | **7** | A1, A2, B1–B4 built in `2dbb523`; **no reply posted yet** |
 | #20 | `fix/bind-address` | — | opened 10-02, awaiting first review |
-| #21 | `fix/manifest-atomic-write` | — | opened 10-03, off `main`, awaiting first review |
+| #21 | `fix/manifest-atomic-write` | — | opened 10-03, off `main`; **reviewed 2026-10-16**, changes requested and answered, awaiting the re-read |
 
 **#17 must not merge before #18.** #17 carried its own older copy of the mutation runner; both branches
 add the same four files, so `git merge-tree` gives add/add conflicts on all of them and a resolution
@@ -264,11 +517,15 @@ Decided with the operator on 2026-10-02. Everything else waits.
 1. ~~**A16-11, and a sweep for the same shape**~~ — **done 2026-10-02**, and the sweep found three
    more: A15-1's `Bun.sleep(700)`, A16-27 passing over a `git.sh` with no wait at all, and five cases
    running the start script in bun's default 5s budget. The six of them are the *"Waiting on the clock"*
-   entry below. One further thing came out of it and is **not** repaired: eight case ids used in the
-   A16 tests — A16-21, 22, 24, 25, 26, 27, 28, 29 — appear in no row of the test specification, and
-   `A16-20` names two different cases, a NUL unit check and a stale-foreign-lock integration case. The
-   cases are on `main`; renumbering one of them is a decision for the reviewer, so it is reported on
-   #19 and belongs with the `git.sh` manifest repair rather than inside a harness fix.
+   entry below. One further thing came out of it, and **half of it is now repaired.** Eight case ids
+   used in the A16 tests — A16-21, 22, 24, 25, 26, 27, 28, 29 — appeared in no row of the test
+   specification; #23 gave them rows, and `TR-1` passes 4 of 4, so that half is closed.
+   **`A16-20` still names two different cases**: the test specification's row for it describes a NUL
+   unit check, while `m-a16.lock-identity.test.ts:177` carries it on a stale-foreign-lock integration
+   case. `TR-1` cannot see this — it asks whether an id in a test title has *a* row, not whether the
+   row describes that case — so nothing will go red over it. The review of #21 suggested closing this
+   note entirely on the strength of #23; checked on 2026-10-16, and the collision is still there, so
+   the note stays narrowed to it. Renumbering one of the two is a decision for the reviewer.
    What it was: `m-a16.lock-identity.test.ts:142` did `await Bun.sleep(900)` and then read
    `volumes/_git-secrets/locks/<slug>/pid`, which is empty under load — the case passed 5 of 5 alone
    and failed 8 of 8 with eight starts at once. It waits on the holder landing now, and the fourth
