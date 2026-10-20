@@ -61,8 +61,13 @@ result, whose `exitCode` is `number` and never null, and `watchOutput(run: { std
 types its streams as `unknown`, so the duck-test is the only check and a sync result's `Buffer`
 `stdout` makes `pump` return at once. Both spawn forms already live in one file:
 `tests/integration/m-a16.lock-wait.test.ts` uses `Bun.spawn` for `A16-27` and `Bun.spawnSync` for
-`A16-28`. Hand a sync result to `watchOutput` and `text` stays empty, so `until()` burns its budget
-and blames the product; hand one to `awaitFile` and the first poll throws *"the run ended with 0
+`A16-28`. Hand a sync result to `watchOutput` and `text` stays empty, and `until()` throws at once
+that the run *"has ended. It said:"* with nothing after the colon — a harness fault reported as the
+product going silent. *Corrected 2026-10-21*: this said `until()` burns its budget. Measured on
+#19's head `fe85e1b` with a `Bun.spawnSync` of a command printing one line to each stream: `text` is
+`""`, and the message reads *"has ended"*, not *"within …s"*, because the pumps return at once and
+`ended` is set before the first poll. Handed a `Bun.spawn` of the same command, it resolves with
+both lines. Hand one to `awaitFile` and the first poll throws *"the run ended with 0
 before it wrote …"* about a run that had already written it. Typing the parameters as
 `Bun.Subprocess` makes the compiler refuse both. There is also no root `tsconfig.json` — only
 `dashboard/` — so nothing type-checks `tests/` at all, which is why this is invisible today.
@@ -76,13 +81,20 @@ Recorded 2026-10-20.
 
 **`startDashboard`'s readiness loop has no timeout on its `fetch`.** Same review.
 `tests/lib/dashboardserver.ts` gained `AbortSignal.timeout` on `get()` for `B1a` of the 2026-10-01
-round, and the identical unbounded `fetch` in the readiness loop fourteen lines above was left
-without one — so the 150-attempt budget is not a time budget. Docker's port proxy accepts the TCP
-connection before SvelteKit answers, which is this fixture's ordinary startup state, and one hung
+round, and the identical unbounded `fetch` in the readiness loop twenty lines above was left
+without one — so the 150-attempt budget is not a time budget against a server that accepts a
+connection and never answers, which is the case `get()`'s own comment was written for. One such
 attempt parks the call: it never reaches `${name} never answered on port ${port}`, the `beforeAll`
-budget expires instead, bun prints one `(unnamed)` failure and none of the file's ten tests runs —
-the diagnosis loss that change was made to prevent. `Bun.sleep(200)` also sits only in the `catch`,
-so a resolving-but-untruthy attempt spins through all 150 with no delay.
+budget expires instead, and bun prints one `(unnamed)` failure.
+
+*Narrowed 2026-10-21.* Two claims this entry made did not hold when measured. It said Docker's port
+proxy accepts the TCP connection before SvelteKit answers, *"which is this fixture's ordinary
+startup state"*: an `alpine` container publishing `127.0.0.1::3000` with nothing listening for
+25 s answered three `fetch`es with `ECONNRESET` in 0–1 ms each, so the ordinary startup state is a
+fast rejection, which the `catch` already handles. And it said a resolving-but-untruthy attempt
+spins through all 150 with no delay: Bun's `fetch` with `redirect: 'manual'` against a 302 returns
+status 302, and a `Response` from `fetch` cannot carry 0, so `res.status > 0` is always true when the
+call resolves. What is left is the hung server, which is rarer than this said and still unbounded.
 
 Recorded 2026-10-20.
 
@@ -94,7 +106,12 @@ rather than a wrong verdict"* — true for `taken`, which the run creates, and *
 which it only probes: the probe create fails on "Pool overlaps" and
 `m-oc.subnet-preflight.test.ts:77` reads that as the preflight refusing a free range. Simulated over
 300 000 pairs: exact clash 0.0030%, neighbour clash 0.0063%, so the case the comment denies is the
-more likely of the two. Stride the ranges apart, or correct the claim. The comment's "100 x 256
+more likely of the two. *Recomputed 2026-10-21*: exactly, over the hash's range with every value
+equally likely, 0.0039% and 0.0079%; two fresh 300 000-pair simulations with `RUN_ID`'s real shape
+(`<pid>-<six base-36 characters>`) gave 0.0040% and 0.0037% exact, 0.0060% neighbour both times.
+The first figures were within one simulation's noise, and the conclusion holds in every count.
+
+Stride the ranges apart, or correct the claim. The comment's "100 x 256
 starting points" is also 100 x 255.
 
 In the same file, `expect(networks().filter((n) => n.startsWith('lu-subnet-probe-'))).toEqual([])` is
@@ -109,8 +126,17 @@ Recorded 2026-10-20.
 **Two age-floor sweeps answer one question in one directory, differently.** Same review.
 `tests/lib/builderimage.ts` has `sweepable()` with a 2 h floor and a strict `>`;
 `tests/lib/dashboardserver.ts` now has `staleIds()` with 3 h and `>=`. So a 2.5 h-old labelled
-fixture is litter to one and live to the other, and the boundary `A8-31` pins (exactly at the floor is
-swept) is the opposite of `B6-39`'s. *"Cannot measure is not stale"* is implemented twice and
+fixture is litter to one and live to the other, and at exactly the floor `staleIds` sweeps — `A8-31`
+pins that — while `sweepable` keeps.
+
+*Checked 2026-10-21 against #40's head `76f8824`, which redesigns the builder's sweep.* It becomes
+`sweepableObjects()`, still 2 h and still a strict `>`, decided by a run label rather than a tag, and
+it brings its own `parseDockerTime` in `builderimage.ts` beside #19's in `dashboardserver.ts` — so
+the question this entry raises gets sharper when both land, not smaller. Also corrected: the
+builder's boundary is the code's, not a case's. `B6-39` on `main` tests 1.9 h and 2.1 h, and `B6-41`
+on #40, which replaces its sweep scenarios, tests 0.5 h and 2.1 h; neither pins exactly 2 h.
+
+*"Cannot measure is not stale"* is implemented twice and
 differently too. Each is specified in its own document and neither mentions the other, so raising a
 floor or fixing a parse is a two-file, two-spec change and whichever copy is missed keeps deleting
 another run's objects.
@@ -119,7 +145,9 @@ another run's objects.
 measured disk failure — 21 images at about 1 GB filling the Docker VM on 2026-10-14, repaired by
 content addressing rather than by deleting more reliably. Nothing in the branch cites or refutes that
 measurement, and `sweepable` still carries a `run-*` branch to clean up after the scheme now
-returning.
+returning. On #40 that branch is gone with the tag-based sweep; #19's per-run dashboard tag is
+reclaimed by its label, through `sweepStaleFixtures`, once it is past the 3 h floor. Whether that
+keeps the disk bounded is not measured.
 
 Recorded 2026-10-20.
 
@@ -150,6 +178,15 @@ into the outer archive through `ZipFile.open(name, 'w')` in chunks should take t
 below that without touching what the case measures — not measured. Not done on #37: a different file
 and a different milestone.
 
+*Re-measured 2026-10-21, and it is worse.* The file alone, three times, with `docker events` on the
+`python:3.12-slim` containers: **three of three red**, one case each in runs 1 and 2 and two in run 3,
+every one an `oom` followed by `die exit=137` — four kills. The VM is 7834 MiB (the 8214 above is the
+same figure in decimal megabytes); the stack held 5420 MiB in 20 containers before the runs and 6683
+MiB after. The bomb's setup alone, run once in the same image, peaked at **1611 MB** again and was
+not killed. Two full default-tier runs that evening, for #43 and #44, were green on this file — so
+whether it is red depends on what the stack holds at that minute: the class `FINISH.md`'s item 7
+names for `OC-15` and `OC-16`.
+
 Recorded 2026-10-20.
 
 ---
@@ -164,15 +201,24 @@ half — *the id appears in a `describe`/`test` title in that file* — needs no
 Measured on #38's committed head, `767931f`, over every `docs/TEST-SPEC-*.md`. Tables with an `Implemented by` column: **one**
 (M-A16's *Cases documented after the fact*), 13 rows, 13 whose id is in a title of the named file.
 Detail blocks: **254** headings carry ids, **81** of them have an `| **Implemented by** |` row naming a
-test file, and **80** of those have every heading id in a title there. The one that does not is
+test file, and **80** of those have every heading id in a title there.
+
+*Re-measured 2026-10-21 on the same commit, with the method written down since the first one was
+not.* A heading counts when the part before its first dash or colon holds an id
+(`[A-Z]{1,3}[0-9]*-[0-9]+`); its block runs to the next heading; a file counts when that block's
+`| **Implemented by** |` row names `tests/….test.ts`; an id is found when it stands whole in a
+`describe`/`test` title there. Six specification files: the table is the same — one, 13 of 13. The
+blocks are **293**, **89** and **88**, and the one miss is the same `OC-59`. The first counts cannot
+be reproduced without their method; the finding does not depend on them. The one that does not is
 `##### OC-56 / OC-57 / OC-58 / OC-59` in `TEST-SPEC-openclaw-2026-9-1.md`: OC-59 was retired into OC-72
 on 2026-10-14 and its row struck through, while the block heading still lists it against three files
 that no longer carry it. So the check would need to read retirement — a struck-through row — as an
 answer, and it would have caught one real stale heading on its first run.
 
 It would not have caught `A16-20` itself, which is the honest limit: the signed-off row had no
-`Implemented by` at all. The check covers rows that name their file; the 173 that do not stay a
-reviewer's reading. Its home is `tests/contract/m-tr.case-ids.test.ts` beside #28's `TR-4`, not either
+`Implemented by` at all. The check covers rows that name their file; the 173 that do not (204 by the
+re-measured count) stay a reviewer's reading. Its home is `tests/contract/m-tr.case-ids.test.ts`
+beside #28's `TR-4`, not either
 branch it was found from.
 
 Recorded 2026-10-20.
@@ -184,9 +230,13 @@ Found by a local review of `fix/default-tier-writes` (#39) on 2026-10-20, which 
 `tests/unit/m-a10.fixture-ceiling.test.ts:53` runs `mkdirSync(<repoRoot>/volumes/repos/.a10-ceiling-probe)`
 in a `describe` body — at collection, before any hook — and removes it in `afterAll`. Measured with
 a watcher polling the path every 50 ms during a run of the file in a worktree: **seen**, then removed
-after, 4 pass / 0 fail. So an interrupted default-tier run leaves it in the operator's
-`volumes/repos`, and since #39 a leftover there is harmless to `m-a5.nested-clone`, whose guard is
-a before/after listing, but it is still a write from the tier that promises none.
+after, 4 pass / 0 fail. *Re-measured 2026-10-21* in the `docs/suite-fixture-findings` worktree, the
+same way: seen on four polls, gone after, 4 / 0 — and one write more than recorded here. That
+worktree had no `volumes/`, and `mkdirSync(…, { recursive: true })` created `volumes/` and
+`volumes/repos/`, which `afterAll` does not remove: both were left behind, empty. So an interrupted
+default-tier run leaves it in the operator's `volumes/repos`, and since #39 a leftover there is
+harmless to `m-a5.nested-clone`, whose guard is a before/after listing, but it is still a write from
+the tier that promises none.
 
 Unlike m-a5's probe, this one is the premise: A10-23 asks whether git in a directory **inside the
 working copy** that is not a repository falls through to the working copy. A host repository of the
