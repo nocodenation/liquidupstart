@@ -92,8 +92,12 @@ export function dashboardDepsIn(root: string): boolean {
  * by *timing out* at 60s and passed twice on a quiet machine: the registry was
  * reachable both times and the machine was busy. So this skips them where there is
  * no registry -- an offline machine, which is a real and common case -- while the
- * load-dependence is answered by their own budget, measured at 14s quiet against
- * the 60s that was not enough under load.
+ * load-dependence is answered by their own budget: the quiet build took 14s on one
+ * machine and 45s on another, against the 60s that was not enough under load.
+ *
+ * It asks from the host, with the host's curl. A daemon behind a different proxy
+ * or resolver can disagree with it, and so can a base image that has not been
+ * pulled yet; what it settles is the offline machine.
  */
 // Memoised **per url**, which the first version was not: it cached one answer and
 // returned it whatever it was asked about. SP-3's own case caught that -- the
@@ -117,7 +121,24 @@ export function registryReachable(url = 'https://registry.npmjs.org/'): boolean 
   const seen = registrySeen.get(url);
   if (seen !== undefined) return seen;
   registryProbes += 1;
-  const ok = sh(['curl', '-fsS', '--max-time', '5', '-o', '/dev/null', '-I', url]).code === 0;
+  // A machine without curl cannot ask, and that is an answer, not a crash:
+  // Bun.spawnSync throws `Executable not found in $PATH`, and since skipIf runs at
+  // registration that took the whole of m-oc.allow-scripts down at collection,
+  // installLine() included. Measured 2026-10-21 with a PATH holding git and no
+  // curl. SP-3 holds it.
+  //
+  // Only ENOENT, which is what bun throws for a missing curl, a non-executable
+  // one and one whose interpreter is gone -- all three measured. Anything else
+  // (EMFILE under a loaded run, say) is a fault of the machine and is thrown,
+  // because read as "no registry" it would skip two cases with the offline
+  // explanation. No scenario reaches that branch: nothing found on a PATH throws
+  // anything but ENOENT.
+  let ok = false;
+  try {
+    ok = sh(['curl', '-fsS', '--max-time', '5', '-o', '/dev/null', '-I', url]).code === 0;
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'ENOENT') throw e;
+  }
   registrySeen.set(url, ok);
   return ok;
 }

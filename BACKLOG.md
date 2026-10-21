@@ -114,9 +114,11 @@ Recorded 2026-10-12.
 two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
 precondition could not reach the thing that failed: the registry was reachable in both failing runs
 and the machine was busy. `SP-3` asks whether a registry answers and skips them on an offline machine;
-their own **180-second** budget answers the load, against a build measured at **14 seconds** quiet —
-so the 60 they had was already four times it and still not enough. The cost is stated at the test: a
-genuinely broken build now takes three minutes to say so. The original entry follows.*
+their own **180-second** budget answers the load, against a quiet build measured at **14 seconds** on
+one machine and **45** on another. The 60 they had failed twice under load on the first and held,
+unloaded, on the second. The cost is stated at the test: a genuinely broken build now takes three
+minutes to say so. The original entry follows. (Corrected 2026-10-21: this gave 14 seconds alone and
+"four times".)*
 
 **OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --

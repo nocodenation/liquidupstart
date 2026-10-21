@@ -33,7 +33,9 @@
  *
  * Precondition: registryReachable() -- a package registry answers, because the
  *           build does `npm install -g`. Skipped where it does not, which is an
- *           offline machine.
+ *           offline machine -- or one with no `curl` to ask with, which then
+ *           shows as SP-3's permitting half failing in m-sp.preconditions, not
+ *           as two quiet skips here.
  *
  *           **And a budget of its own, because the precondition is not what the
  *           failures were.** These two failed twice by timing out at the suite's
@@ -41,9 +43,9 @@
  *           every time and the machine was busy. Two measurements, because one
  *           machine's figure is not a budget: **14s** on the author's machine
  *           (2026-10-10) and **45s** on the reviewer's, both unloaded and both
- *           against the same image. So 60s was between one and four times the
- *           quiet duration depending on where it ran, which is why it held on one
- *           machine and not the other. 180s clears the slower of the two by 4x;
+ *           against the same image. 60s failed twice under load on the first and
+ *           held on the second, which was not loaded; the second's figure is why
+ *           one machine's duration is not a budget. 180s clears the slower by 4x;
  *           the cost is that a genuinely broken build takes that long to say so.
  *           SP-3, and the second finding of #22.
  */

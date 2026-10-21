@@ -18,7 +18,9 @@
  *          discriminator nobody has seen say "no" is a discriminator nobody has
  *          tested. Each is a function of a root, so both answers are put to it.
  * Given    three throwaway roots: one empty, one carrying `volumes/_git-secrets`,
- *          one carrying `dashboard/node_modules`, plus this checkout
+ *          one carrying `dashboard/node_modules`, plus this checkout; for SP-3, the
+ *          registry and two `.invalid` hosts, and a child bun whose whole PATH is
+ *          a directory linking `git` and no `curl`
  * When     each discriminator is asked about each
  * Then     it answers for the state in front of it, and the headers of the cases
  *          that depend on it say which precondition they need
@@ -33,13 +35,19 @@
  *          first version gated it on `registryReachable()` itself, so an
  *          implementation that always said no skipped its own counterpart and
  *          the file stayed green -- measured by the reviewer as M3 of his round
- *          on #24, 2 pass / 1 skip / 0 fail against exactly that mutant.
+ *          on #24, 2 pass / 1 skip / 0 fail against exactly that mutant. And a
+ *          machine without curl answers false instead of throwing while bun
+ *          collects the files that ask (2026-10-21).
+ *
+ * SP-2 holds two computed lists: the files importing `lib/mount`, and every test
+ *          file naming `registryReachable` but this one. Each must name its
+ *          precondition in its header and gate on it.
  * Unhappy: SP-1's false answers are the half that matters. The true ones are
  *          their counterparts -- a discriminator that always says "no" skips
  *          everything and is indistinguishable from a suite that does not run.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
@@ -192,6 +200,37 @@ describe('SP-3 the fourth precondition: a registry answers', () => {
       secondAsk: registryProbeCount() - afterFirst
     }).toEqual({ agree: true, firstAsk: 1, secondAsk: 0 });
   });
+
+  test('SP-3 and a machine without curl answers false, rather than throwing at collection', () => {
+    // **Finding 5 of the local review of 2026-10-21.** `Bun.spawnSync` throws
+    // `Executable not found in $PATH` where there is no curl, and the helper let
+    // it through. `skipIf` runs at registration, so that took the whole of
+    // m-oc.allow-scripts down while bun was still collecting it -- the offline-safe
+    // `installLine()` case with it -- in place of skipping two cases. Reproduced
+    // before the repair with exactly the PATH below.
+    //
+    // A child bun, because PATH is the input and this process has to keep its
+    // own. `git` is linked in because the module asks git about the checkout as
+    // it loads, which is a different precondition and not the one under test.
+    // The url is `.invalid`, so the answer cannot come from a network either way.
+    const bin = root();
+    const git = Bun.which('git');
+    expect(git).not.toBeNull();
+    symlinkSync(git as string, join(bin, 'git'));
+    const probe = [
+      `import { registryReachable } from ${JSON.stringify(join(repoRoot, 'tests/lib/preconditions.ts'))};`,
+      `console.log('answer=' + registryReachable('https://not-a-registry.invalid/'));`
+    ].join('\n');
+    const p = Bun.spawnSync([process.execPath, '-e', probe], {
+      env: { PATH: bin, HOME: process.env.HOME ?? '' },
+      stdout: 'pipe',
+      stderr: 'pipe'
+    });
+    const out = p.stdout.toString() + p.stderr.toString();
+    expect(out).toContain('answer=false');
+    expect(out).not.toContain('Executable not found');
+    expect(p.exitCode).toBe(0);
+  });
 });
 
 describe('SP-2 a case that needs a precondition says so in its header', () => {
@@ -233,6 +272,24 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     .filter((l) => l.endsWith('.test.ts'))
     .sort();
 
+  // The files gated on a registry, computed rather than listed. Added 2026-10-20
+  // as a hand-listed entry, with the note that a call leaves nothing for a grep to
+  // enumerate -- the identifier does. Finding 6 of the local review of 2026-10-21.
+  //
+  // **The identifier, not an import line**, unlike the DOM computation above: an
+  // anchored `^import .*registryReachable` misses an import written over several
+  // lines -- this file's own is one -- and a file importing it that way would
+  // never be held. Every test file that so much as names the function is asked
+  // to say so in its header and to gate on it; a file that only mentions it in
+  // prose is then reported, which is the better failure. This file is excluded by
+  // name because it asks the function in order to test it, and gates on ONLINE.
+  const registryNamers = sh(['git', 'grep', '-l', '-F', 'registryReachable', '--', 'tests'], repoRoot)
+    .stdout.split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.endsWith('.test.ts'))
+    .sort();
+  const registryFiles = registryNamers.filter((l) => l !== 'tests/unit/m-sp.preconditions.test.ts');
+
   const dependent: Array<[string, string]> = [
     // These two have no single grep that finds them: `STARTED` is read through a
     // helper and `IN_GIT_REPO` through another, so they stay enumerated and the
@@ -244,11 +301,7 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     ['tests/component/m-a6.operator-repository.test.ts', 'IN_GIT_REPO'],
     ['tests/contract/m-a16.text-only.test.ts', 'IN_GIT_REPO'],
     ...domFiles.map((f) => [f, 'DASHBOARD_DEPS'] as [string, string]),
-    // Added 2026-10-20: this PR made it a file that depends on a precondition,
-    // and the rule SP-2 holds everything else to was not applied to it. Listed
-    // rather than computed, because `registryReachable()` is a call and not an
-    // exported constant, so there is nothing for a grep to enumerate it by.
-    ['tests/component/m-oc.allow-scripts.test.ts', 'registryReachable()']
+    ...registryFiles.map((f) => [f, 'registryReachable()'] as [string, string])
   ];
 
   test('SP-2 and each DOM file files its voiced skip under SP-2, not under a case id', () => {
@@ -279,6 +332,27 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     // a different place.
     expect(domFiles.length).toBeGreaterThanOrEqual(3);
     expect(domFiles).toContain('tests/component/m-oc.pairing-card.test.ts');
+  });
+
+  test('SP-2 and the registry-dependent files are found, not remembered', () => {
+    // The same guard for the second computation: an empty grep would drop
+    // m-oc.allow-scripts from the scenarios below without a word.
+    expect(registryFiles).toContain('tests/component/m-oc.allow-scripts.test.ts');
+  });
+
+  test('SP-2 and the file that tests the function is not counted as one that needs it', () => {
+    // The negative half. This file names `registryReachable` on every other page
+    // and gates on ONLINE instead, so counted as a dependent it would fail the
+    // header-and-skipIf scenario below for a dependency it does not have. The
+    // exclusion is what keeps the computation about the files that ask.
+    //
+    // **And the search does see it**, which is the other thing this file is good
+    // for: its import of the function spans several lines, and the first version
+    // of this computation -- an anchored import line -- never found such a file.
+    // Seeing it here is what shows a multi-line importer elsewhere would be held.
+    expect(registryNamers).toContain('tests/unit/m-sp.preconditions.test.ts');
+    expect(registryFiles).not.toContain('tests/unit/m-sp.preconditions.test.ts');
+    expect(registryFiles.every((f) => f.endsWith('.test.ts'))).toBe(true);
   });
 
   for (const [file, which] of dependent) {

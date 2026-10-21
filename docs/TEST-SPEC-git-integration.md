@@ -3359,6 +3359,7 @@ reviews that followed, and each has its evidence in its own block.
 | A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
 | A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
 | A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
+| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Cases documented after the fact
 
@@ -3397,7 +3398,6 @@ The real collision was with `tests/component/m-a16.skip-panel.test.ts`, which ha
 either. **That side moved**, to `A16-30`, because there was nothing here to move in a document
 somebody had approved — and its own header had never listed the id at all. Deciding *which* side
 moves looked arbitrary and was not: one of them had a signed-off row and the other had none.
-| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Detail per case
 
