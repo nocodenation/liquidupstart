@@ -189,6 +189,8 @@ names for `OC-15` and `OC-16`.
 
 Recorded 2026-10-20.
 
+**Answered on #46, open, 2026-10-21, and the cause was not the one this entry gives.** The container killed was the fixture's: `setup.py` held 800 MB of zeros, then the jar in a `BytesIO`, then its copy, and was killed before narcheck ran. It streams to disk now and peaks at 16 MB; the suite on #46 had no `oom` event.
+
 ---
 
 **"A row about a different case than the test that carries its id" can be checked where a row names
@@ -291,6 +293,8 @@ instance either way — or keep the resolution for both and drop the advice.
 
 Recorded 2026-10-21.
 
+**Answered on #46, open, 2026-10-21**, by the first of the two ways: an author pom is not stopped by an unresolvable API, and the refusal stays for a synthesised project. `B2-11`.
+
 ---
 
 **FR30's removal procedure leaves the inbox copy, and the next start loads it again.** Found by the
@@ -309,6 +313,8 @@ FR30, and the `M6` block's *Measured* row in its test specification, still show 
 version.
 
 Recorded 2026-10-21.
+
+**Answered on #46, open, 2026-10-21.** FR30 removes the inbox copy first, and the promotion at start is measured in a throwaway Liquid container: two seconds from start to the load path.
 
 ---
 
@@ -343,6 +349,8 @@ figure there. Until then the only honest edit is to delete the number, which is 
 change to make, not #42's.
 
 Recorded 2026-10-21.
+
+**Answered on #46, open, 2026-10-21**, the honest way this entry names: the numbers are deleted. Moving them into a real timeout waits for #42's `timeoutMs`.
 
 ---
 
@@ -446,6 +454,8 @@ too.
 
 Recorded 2026-10-21.
 
+**Answered in part on #46, open, 2026-10-21**: `inGitRepoAt` answers false on ENOENT, so the module loads without `git` (`SP-6`). `sh()` returning 127 for every caller is still open here, and waits for #42, which changes `sh()`.
+
 ---
 
 **An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.** Found
@@ -462,6 +472,8 @@ it, which is why it is not #36's. Until then the probe could at least require on
 
 Recorded 2026-10-21.
 
+**Answered on #46, open, 2026-10-21.** `check-index` ends a 0 with `JUDGED <bundle>`, the gate takes a 0 as judged only with that line and a 1 as refused only with `REFUSED <bundle>` — a truncated checker is a 1 — and the three fixtures state their verdict. `B6-44`.
+
 ---
 
 **A check that could not run still reaches the client as a refusal.** Found by the same review of #36.
@@ -474,6 +486,8 @@ past the boundary. It changes `BuildServer.java` and what `nar-build.sh` reports
 touches.
 
 Recorded 2026-10-21.
+
+**Answered on #46, open, 2026-10-21.** Both cannot-judge arms return 5, which the server answers with **500** through its default — not 503, which is already *"two builds are already running"*. `B6-45`. Two installation faults still return 2; see the entry below.
 
 ---
 
@@ -539,6 +553,8 @@ local review of #17 on 2026-10-21, and recorded in #17's new OC-60 detail block 
 
 Recorded 2026-10-21.
 
+**Answered on #46, open, 2026-10-21.** `test.skipIf`, and the load-time probe answers *absent* where there is no `docker` instead of throwing.
+
 ---
 
 **OC-62 is red on a Linux host, and its watchdog branch has never run there.** The case is `N1b` on
@@ -553,6 +569,8 @@ for. The reviewer ran the six files #17 changes in that image on 2026-10-21 and 
 it builds must hold only what the case runs, so that no host can supply a `timeout` by accident.
 
 Recorded 2026-10-21.
+
+**Answered on #46, open, 2026-10-21.** Its `PATH` is built from the five tools it needs; in `liquidupstart/dashboard:latest` `main`'s file is 4 pass / 3 fail and #46's 7 / 0.
 
 ---
 
@@ -589,6 +607,24 @@ MU-FR4 and its waiver; MU-11, *a mutation that reddens nothing is unresolved*, a
 MU-59, *this document and the test file name the same scenarios*, as MU-NFR1. Left here rather than
 added on #17 because the table's mapping is the reviewer's, made case by case in N2 of the fourth
 re-review of #18, and these four belong in the same hands.
+
+Recorded 2026-10-21.
+
+---
+
+**Two faults of the installation still answer with a refusal's status.** Found by the local review of
+#46 on 2026-10-21, which moved "cannot be judged" off status 2. Two more arms of
+`config/nar_builder/build.sh` return 2, which the server answers with 422, *"your bundle is
+unprocessable"*, though neither is about the bundle: the refusal of a builder whose drop directory the
+build user could write (the `NOTCLOSED` message, `return 2` after it), and a bundle that was built and
+could not be written into the drop directory (the `NOWRITE` message, `return 2` after it). Both are
+faults of this installation, and the one beside them in `judge_and_place` — a judged bundle that could
+not be placed — already returns 1, the server's 500. Read from the code, not run: no case drives
+either arm. The first sits **before** the Maven run (`build.sh:945` on #46, the run at `:971`), so
+`B2-3`'s container — stub `curl`, a `runtime` record, and on #46 an author pom that gets past the API
+— reaches it once the drop directory is one the build user can write; the second sits after the run
+and needs a build that succeeds. FR36a's table on #46 says so rather than claiming that 2 means only
+the bundle's own refusal.
 
 Recorded 2026-10-21.
 
