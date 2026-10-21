@@ -475,6 +475,28 @@ touches.
 
 Recorded 2026-10-21.
 
+---
+
+**The case-id reader reads fixture source as cases, and only `TR-4` has a way to say so.** Found on
+2026-10-21 when #18 reached `main` and #28 was merged with it: `TR-4` went red on `A10-14`, carried
+by `tests/unit/m-a10.scan-paths.test.ts` and `tests/integration/m-mu.runner.test.ts`. The second is
+MU-42's fixture spec — source held in a template literal whose column-0 line is
+`describe('A10-14 a checked-in template is not a credential', …)` — and `idsInTests` in
+`tests/contract/m-tr.case-ids.test.ts` has read column-0 lines since 2026-10-12. #28 lists `A10-14`
+with that reason, because the alternative of blanking template contents first was measured and is
+worse: with `withoutTemplates` from `tests/scenario-table.ts` the tree's 1267 ids became 1233, and 33
+of the 34 lost were real titles, `TR-1` to `TR-4` among them.
+
+Two things are left. **The fixture can stop looking like a title**: written as ``describe(\`A10-14 …\`)``
+inside the template, or with the id split across a `+`, bun still prints the same block name MU-42
+asserts on, the reader no longer matches it, and #28's entry is then reported as no longer spanning
+files and leaves. That edit is to `m-mu.runner`, which is `main`'s. **And `TR-1` has no route at all**:
+a fixture spec whose column-0 title carries an *undeclared* id makes `TR-1` red, and nothing like the
+list exists there. Today none does; the next fixture that copies a real case's shape with a new id
+will.
+
+Recorded 2026-10-21.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
