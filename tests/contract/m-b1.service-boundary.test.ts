@@ -11,10 +11,11 @@
  * When:     The nar_builder service block is read out of compose.yml, and the
  *           credential-bearing keys are read out of .env.example rather than
  *           listed here, so a key added later cannot escape the case.
- * Then:     ./volumes/repos and ./volumes/nar_extensions are mounted, the
- *           dependency cache is ./volumes/nar_builder/m2 (FR26, NFR3), and
- *           neither ./volumes/_git-secrets nor any credential key appears.
- * Covers:   B1-1, FR25, FR26, NFR7
+ * Then:     ./volumes/repos and ./volumes/nar_extensions are mounted, **no
+ *           dependency cache is mounted at all** (FR26 as rewritten on
+ *           2026-10-11, FR37), and neither ./volumes/_git-secrets nor any
+ *           credential key appears.
+ * Covers:   B1-1, FR25, FR26, FR37, NFR7
  * Unhappy:  The negative half is the whole point: a block that gained
  *           _git-secrets, a deploy key or a secret from .env fails by name.
  */
@@ -35,8 +36,16 @@ test('B1-1 the working mounts are declared', () => {
   expect(block).toContain('./volumes/nar_extensions:/deploy/nar_extensions');
 });
 
-test('B1-1 the dependency cache lives under volumes/', () => {
-  expect(block).toContain('./volumes/nar_builder/m2:/m2');
+test('B1-1 no dependency cache is shared between builds', () => {
+  // **Inverted 2026-10-11, and it used to assert the opposite.** This case read
+  // `expect(block).toContain('./volumes/nar_builder/m2:/m2')`, because FR26 put
+  // the cache under `volumes/` like all state. That mount was B1's fourth leg:
+  // build-time code could plant an artifact there that every later build
+  // resolved. FR26 is rewritten, the closure lives in the builder image, and
+  // each build resolves into its own repository (FR37) -- so the assertion that
+  // signed this off is now the defect, and the honest form of it is the
+  // absence. B7-1 holds the same property against the image and the script.
+  expect(block).not.toMatch(/:\/m2(:|\s*$)/m);
 });
 
 test('B1-1 the git secrets are not mounted', () => {

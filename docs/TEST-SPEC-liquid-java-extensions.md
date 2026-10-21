@@ -47,7 +47,7 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR31 A deployment step that fails says so | B2-6 |
 | FR34 What is built is proven loadable | B3-1, B3-2 — both §4 checks, written out in full and not yet run |
 | FR35 Concurrent builds do not corrupt each other | B3-3, B3-4, B5-14 |
-| FR36 A bundle that cannot link is refused at deployment | B4-1, B4-2, B4-3, B4-4, B4-5, B4-6, B4-7 in the suite; B4-8 in §4, run by the operator because it restarts Liquid; B5-4 to B5-9, B5-25 to B5-32 |
+| FR36 A bundle that cannot link is refused at deployment | B4-1, B4-2, B4-3, B4-4, B4-5, B4-6, B4-7, **B4-9, B4-10, B4-11** in the suite; B4-8 in §4, run by the operator because it restarts Liquid; B5-4 to B5-9, B5-25 to B5-32 |
 | NFR1 The stack is reachable only where it should be | B5-10, B5-11, B5-12, B5-13, B5-14 |
 | U9 A checkout that has never run the stack can start it | B5-1, B5-2, B5-3, B5-19, B5-20, B5-21 |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
@@ -692,6 +692,38 @@ is that it lets through a correct NAR whose source merely mentions a class name,
 whose references it cannot resolve. Both were written before the code, and both are expected to be the
 ones that fail first.
 
+##### B4-9 / B4-10 / B4-11 — the check moved to where deployment happens
+
+> **The rows are #10's, from 2026-10-12; this block is what they were still missing.** `B4-1` to
+> `B4-8` each carry one and these three stopped at the table, which the standard this document is
+> held to does not allow — an overview row and a detail block per case, so a reviewer can sign a case
+> off or challenge it without reading the implementation. Written against the test file, with the
+> scenario names read out of it rather than recalled, because an earlier pass of this kind described
+> one case per id and missed seven of thirteen.
+>
+> **And it was written twice, which is the part worth recording.** This branch declared the same
+> three ids on 2026-10-14 in its own words, not knowing `feature/liquid-java-extensions` had already
+> done it two days earlier — because this branch was behind its own base. Both passes were prompted
+> by `TR-1`, independently, and both found the same gap; the earlier rows won and the duplicate was
+> dropped on merge. A stacked branch that is not current with its base will do work that already
+> exists, and no test can catch that.
+
+| | |
+|---|---|
+| **Premise** | FR36 defined *"refused"* as **not copied into `lib/`**, and that was never a refusal. `nifi.nar.library.autoload.directory` points at the drop directory, so Liquid loads whatever sits there at runtime — no restart, no `lib/`. Measured twice, and the second time in `nifi-app.log` on 2026-09-14: `Found …/probe-good-…nar in auto-load directory` at 20:07:48,634 and `Loaded NAR file: …-unpacked` at 20:07:53,648. **Five seconds.** So the entrypoint's check, which runs at container start, sat on a path nothing takes, while the path agents do take — `nar-build` writing into the drop directory — was unchecked. B4-1 to B4-8 are all about the path that was not the exposure. |
+| **Component** | `config/nar_builder/build.sh`'s placement step, which now checks between the copy and the rename while the artifact is still a dot-file the auto-loader skips; and `narcheck.py` in both containers. |
+| **What it judges against, and why not the jar** | An index of the running Liquid's `lib/`, written by `narcheck.py` itself on every start: 1512 class names and 49 API packages, 75 KB. Handing the builder the `nifi-api` jar alone was tried first and is wrong — `check` resolves against every jar in `lib/` while judging only the API's packages, and **85 classes live in an API package without being in the API jar**, so a builder holding only that jar would refuse bundles this Liquid loads. That is the asymmetry B4-11 exists for: a builder stricter than Liquid refuses work that would have run, which is worse than not checking at all. |
+| **Steps** | Build both fixtures through `nar-build`, as an agent does. Read the builder's own message and the drop directory for each. Then compare the builder's index against `lib_index()` computed live inside `liquid`, and run `narcheck.py check` inside `liquid` on the bundle the builder refused. |
+| **Test data, both sides** | What must be refused: `probe-placement-bad-1.0.0.nar`, from a source importing `org.apache.nifi.controller.NodeConnectionState` — a real NiFi class that this Liquid's `lib/` does not provide, with the pom naming `2.11.0`, so the mismatch is the genuine article rather than an invented symbol. The assertion looks for its dotted form, `org.apache.nifi.controller.NodeConnectionState`. What must be accepted: `b4-place-good-nar-1.0.0.nar` from `PROBE_SOURCE`, which links against what Liquid loads — and its name comes from the directory, because `nar-build` synthesises the pom there, which is the detail that tells a synthesised build from an authored one. |
+| **Expected** | B4-9: non-zero exit; `nar-build refused`, the bundle's name and the dotted class in the message; `refused/` and `outside the load path` said; `Nothing was placed in`; and the bundle absent from the drop directory. B4-10: exit 0, the drop path `/deploy/nar_extensions` named, `No restart, and none should be asked for`, and **no** `restart it` or `docker compose restart liquid`. B4-11: the builder's class and package indexes equal to `lib_index()` computed in `liquid`, and `REFUSED` plus the same dotted class from `narcheck.py check` inside `liquid`. |
+| **Why B4-9 asserts the message *and* the directory** | Reading the directory alone proves nothing here: the fixture collects the artifact from wherever it lands, so the file is gone by the time the assertion runs even in the version that deployed it. What discriminates is `nar-build` saying it placed nothing — run against the pre-fix `build.sh` on 2026-09-14, the directory assertion passed and that one did not. |
+| **A phrasing this case stopped asserting** | B4-10 read `toContain('autoloads')` and had stopped being satisfiable: the paragraph was reworded when the inbox and the load directory were split, and now says Liquid *watches* the drop directory and judges what arrives there — which is what happens. Asserting a verb held the message to a phrasing rather than to a claim. What FR29 requires is the pair that replaced it: the agent is told where the bundle landed and that no restart is needed, and is **not** told to restart. |
+| **What it found, and when — not re-run for this entry** | **Green on 2026-09-14**, when the three were built, and that is the only run this block can speak for. What it caught then is the defect it was written against: against the pre-fix `build.sh`, `B4-9`'s directory assertion **passed** while `Nothing was placed in` did **not** — the bundle had been deployed and the fixture had already collected it, so the directory was empty by the time anything looked. `B4-10` found a second thing by going red on correct code: it asserted the word `autoloads`, and the paragraph had been reworded when the inbox and the load directory were split, so the assertion had quietly stopped being satisfiable. The declaration of 2026-10-14 adds no run. Written from the dated record in the test file and from its code, which is what is available; a figure for a run nobody made would be worse than this sentence. |
+| **And they are not in the default tier** | The file carries `stackGuard(['liquid', 'nar_builder'])` and calls `buildNar`, so `tests/run.sh` classifies it as needing the running stack and leaves it out unless `--system` is passed. The suite reading that accompanies this entry — 738 pass / 4 skip / 0 fail on 2026-10-14 — therefore **does not include these three**, and saying so is the point: a green total is about the paths it walks. |
+| **The rows are per id, and the scenarios are not** | Seven scenarios sit under three rows, where this project's rule is one row per scenario labelled positive or negative. They are enumerated in **Expected** above instead, which is where a reader can still check them off. Left as the earlier declaration wrote them rather than rewritten from here: `B4` is `#10`'s work and `#10` is under review, so splitting its signed rows is a change that belongs on that branch. |
+| **Implemented by** | `tests/integration/m-b4.placement-check.test.ts`. |
+| **Covers** | B4-9, B4-10, B4-11, FR29, FR30, FR36. |
+
 ### M-B6 — the third review of this branch
 
 The 2026-10-01 re-review of #10 at `52b707c`: three blocking findings, nine "should fix", nine minors
@@ -1253,6 +1285,104 @@ ask for a build**, not what a build may do once asked for. The open question in 
 | **Covers** | B5-31, B5-32, FR30, FR36. |
 | **Implemented by** | `tests/unit/m-b5.load-path-unreachable.test.ts`. |
 | **What it found** | Green on the first run, which is what a case written after its fix looks like. It is worth having for the control: putting the mount back reddens B5-31 twice and B5-32 once, while the booted B5-28 stays green — which is precisely the gap it was written to close. |
+
+### M-B7 — B1's fourth leg, and the measurement that inverted the plan
+
+The last of B1's four legs, 2026-10-01 review: `volumes/nar_builder/m2` was mounted read-write, so
+build-time code could plant an artifact that every later build resolved. The operator decided on
+2026-10-09 that the image build owns a seeding step, and the work was done on 2026-10-11.
+
+**Two things here were decided by measurement against a plan that said otherwise, and both are
+recorded because a reader cannot otherwise tell why the code looks as it does.** The backlog entry
+described the seed as a read-only `file://` repository. That does not work: Maven records each
+artifact's origin in `_remote.repositories`, and the nar plugin's documentation step re-resolves the
+tree in a context where the id `liquid-seed` is unknown — *"present in the local repository, but
+cached from a remote repository ID that is unavailable in current build context, verifying that is
+downloadable"* — and re-fetches from central to check. Copying the seed **into** each build's local
+repository instead carries the seed's own `_remote.repositories`, which say `central=`.
+
+| | wall | downloads | from central |
+|---|---|---|---|
+| shared cache, first build (replaced) | 67 s | 665 | 82 MB |
+| shared cache, warm (replaced) | 9 s | 0 | — |
+| seed as a `file://` remote (abandoned) | 20–26 s | 438 | 28.5 MB, 86 warnings |
+| **seed copied in (built)** | **7 s** | **0** | **0 B** |
+
+And the lifecycle has to be pinned: without the pins the same build makes **84 downloads and pulls
+6.9 MB**, because a local repository never writes the unqualified `maven-metadata.xml` a remote is
+looked up for, so plugin *version* resolution is the one thing a seed cannot serve.
+
+| # | Sign | Level | Case | Expectation |
+|---|---|---|---|---|
+| **B7-1** | **negative** | Contract | No shared Maven cache is mounted into any service, by any spelling | Matched on the container side of the mount, so moving the host directory cannot let it back in unnoticed. The image does not create `/m2` either |
+| **B7-1** | positive | Contract | Each build resolves into its own repository, copied from the seed | The three things that make it per-build: under the build's own work directory, started as a copy, and `cp -al` refused — a hardlink farm would share inodes with the seed and reopen the write path |
+| **B7-2** | positive | Contract | The image build owns the seeding step, with the api version **resolved** rather than passed | One version argument. Two was a defect: NiFi 2.11.0 ships `nifi-api` 2.10.0 (FR27), the Dockerfile defaulted the api version to the NiFi version, and the build deployed while the seed served almost none of it |
+| **B7-2** | **negative** | Contract | The seed is not chowned to the build user | Root-owned, so the build user can read it and not write it |
+| **B7-3** | positive | Contract | The pins file parses, by a real parser, and names every plugin the default lifecycle binds | Including the goals `package` never executes — with resources, compiler, jar and surefire pinned, a build still refused on `maven-install-plugin` |
+| **B7-3** | **negative** | Contract | A `--` inside an XML comment is refused | Not rhetorical: `settings.xml` was rejected by Maven with *Non-parseable settings* for exactly this, and only a parse would have caught it |
+| **B7-3** | positive | Contract | Both readers take the pins from the one file | If the seeding step and the build could pin differently, the seed would be the closure of a build that never runs |
+| **B7-4** | positive | Contract | The stale host directory is named once | An installation that ran before the move still holds tens of megabytes that nothing reads |
+| **B7-4** | **negative** | Contract | …and not deleted, and `start.sh` invokes the notice | Removing a directory the operator may have copied into is not a start script's call — the same shape and reason as `liquid.sh`'s notice about `volumes/liquid/api` |
+| **B7-5** | positive | Integration | The seed holds neither dependency, read rather than assumed | A later change seeding jackson would leave every assertion below passing while the case silently stopped being about the cold path |
+| **B7-5** | positive | Integration | An author pom naming something unseeded **builds** | A seed used as a whitelist would make the fourth leg a ceiling on the feature `B1-6` exists to protect |
+| **B7-5** | positive | Integration | …and `downloads` is greater than zero, with both jars inside the bundle | The opposite reading to `B1-9`'s `downloads 0`, and it has to be, or they came from somewhere they should not have |
+| **B7-5** | positive | Integration | …and the repository it downloaded into does not survive the build | |
+| **B7-5** | **negative** | Integration | A second build downloads them **again** rather than finding them | If this read 0, what the first build fetched outlived it — the shared cache the fourth leg removed, back as a side effect of the seed |
+| **B7-5** | positive | Integration | With no seed in the installed image the file says so, out loud | Five skipped cases are otherwise a silent gap |
+| **B1-9** | positive + **negative** | Integration | *Rewritten here.* No cache is shared between builds, and the seed is why that is affordable | See its own block below |
+
+#### B7-1 to B7-4 — the declarations
+
+| | |
+|---|---|
+| **Premise** | The behaviour was measured end-to-end and the numbers are in the table above. What a case can hold cheaply and for ever is that the mount has not come back, that the pins are where both readers look, and that the files parse. |
+| **Component** | `compose.yml`, `config/nar_builder/{Dockerfile,build.sh,seed.sh,lifecycle-pins.xml}`, `config/scripts/start/nar-builder.sh`, `scripts/linux/start.sh`, read as text — and the pins file parsed by `python3 -c "…ET.parse…"`. |
+| **Steps** | Read each file; strip comment lines before any assertion that something is **absent**; parse the pins file; compare the plugin list against the default lifecycle. |
+| **Test data, and why the comments are stripped** | `cp -al` is the case in point. `repo_for`'s comment says *why* a hardlink farm is not used, so a naive `not.toContain('cp -al')` matched the explanation and the case failed against correct code. The same shape as the `refused:` reader in `m-b1.refusal-next-step`, and the reason `code()` exists in this file. The pins are checked against the eight plugins by name — `maven-resources-plugin`, `maven-compiler-plugin`, `maven-jar-plugin`, `maven-surefire-plugin`, `maven-install-plugin`, `maven-deploy-plugin`, `maven-clean-plugin`, `maven-site-plugin` — rather than by counting, so dropping one is caught by name. |
+| **Expected** | Six passes. |
+| **What it found** | Green, 6 scenarios, 39 assertions. Writing it found two defects of my own: the `--` in `settings.xml` that Maven refused outright, and the comment-matching above. **Controls, each reverting the one thing a case guards: 7 run, each reddening exactly one case and nothing else** — the mount restored, the copy removed, the seeding step disabled, `maven-install-plugin` dropped, a `--` returned to the comment, the notice turned into an `rm -rf`, and `start.sh` stopping invoking it. |
+| **Implemented by** | `tests/contract/m-b7.seeded-cache.test.ts`. |
+| **Covers** | B7-1, B7-2, B7-3, B7-4, FR26, FR37, FR38, FR39. |
+
+#### B7-5 — an author pom naming something the seed has never held
+
+> **Specified 2026-10-14. Measured in full 2026-10-16 against the stack, and the measurement caught a
+> defect.** All six scenarios now run: five against a stack built and started from this branch, and the
+> sixth is the one that reads the absence of a seed, so it skips and says why. The first run of the five
+> **refused every build** — and not for the reason the refusal gave, which is the finding. The rows at
+> the foot of this block carry the figures and that defect; read them before the expectations, because
+> they are the results claimed here. What the earlier, stackless reading corrected is kept below it:
+> the case exists to stop the rest quietly measuring the warm path, and that is where it did so.
+
+| | |
+|---|---|
+| **Premise** | The seed is built from what the **synthesiser's** pom needs, so every case that exercises it resolves out of it and reads `downloads 0`. That is the warm path and it is the only one measured. The ordinary reason to write a pom at all is to name something the synthesiser would never add — an SSL context service API, a client library, a JSON mapper — and nothing says what happens then. |
+| **Two ways it could be wrong, and they fail in opposite directions** | A seed treated as a **whitelist** refuses the build, which turns B1's fourth leg into a ceiling on the feature `B1-6` exists to protect. A seed that quietly **persists** what a build downloaded puts the fourth leg back where it started: an artifact one build fetched, there for the next one to resolve. One case cannot be written against both without saying which reading distinguishes them, which is why the second build is a scenario of its own. |
+| **Component** | The installed stack's `nar_builder`, driven through `nar-build` inside `opencode`, as `B1-9` and `B1-6` are. |
+| **Steps** | Read the seed for the two dependencies; build; read `downloads` and the bundle's entries; probe the reported repository path; build again and compare both the figure and the path. |
+| **Test data, both sides, and why these two** | `volumes/repos/.b7-unseeded`: the `B1-5` fixture plus a pom with artifactId `probe-unseeded` declaring `com.fasterxml.jackson.core:jackson-databind:2.18.2` and `com.google.guava:guava:33.4.0-jre`. Neither is anywhere in the NiFi API's own tree, so neither can arrive by accident — and the first scenario **reads the seed** rather than taking that on trust. Both are large enough to be unambiguous in the `downloads` figure, and both are ordinary: this is what an author's pom looks like, not a fixture shaped to pass. What must be in the bundle: `jackson-databind-2.18.2.jar`, `jackson-core-2.18.2.jar`, `jackson-annotations-2.18.2.jar`, `guava-33.4.0-jre.jar`. The nifi-api version and compiler release come from `nar-build --target`, so the fixture bends to the running Liquid rather than pinning a literal. The pom is produced by `unseededPom()` from the same function `B1-6` uses, so the two cases cannot drift into testing different things. |
+| **Expected** | Scenario 1: neither path exists under `/opt/builder/m2-seed`. Scenario 2: exit 0 and `probe-unseeded-1.0.0.nar` in the drop directory, named from the author's pom. Scenario 3: `downloads` greater than 0 and all four jars inside the bundle. Scenario 4: the reported repository path is gone. Scenario 5: exit 0, `downloads` greater than 0 again, and a different repository path from the first build. |
+| **Precondition** | `docker exec nar_builder test -d /opt/builder/m2-seed`, computed rather than remembered — the same guard `B1-9` carries and for the same reason: against an older image every assertion here is false for a reason that has nothing to do with the code. The skip is a scenario that reads the absence, so a run in this state says why five cases are missing. |
+| **Measured 2026-10-15, without the stack: the seed is additive** | A per-build repository copied from the seed, a pom naming `jackson-databind 2.18.2` and `guava 33.4.0-jre`, `mvn package` inside the image built from this branch: **rc=0, `BUILD SUCCESS`, `downloads=70`**, and both versions present in that repository afterwards. So the seed is a starting point and not a whitelist, which is the half of this case that could have invalidated B1's fourth leg. It does **not** cover the four scenarios that go through `nar-build` — the bundle's contents, the repository not surviving the build, and the second build downloading again — because those need the drop directory and the running stack. |
+| **And the first reading corrected the fixture** | The case said the two dependencies are *"nowhere in the NiFi API's own tree"*. **Both artifacts are in the seed**, at other versions: `jackson-databind` 2.13.2.2 and 2.16.1, `guava` 14.0.1 and 32.1.0-jre — the seed is the closure of the synthesised build and the nar plugin pulls both. The premise as written was false, and the first scenario checked the **artifact** directory, so it would have reddened on a true premise. It now checks the **version**, which is what was actually meant and is a stronger fixture: a build that fetches 2.18.2 while 2.16.1 sits in the same repository cannot be resolving by accident. This is the scenario that exists to stop the rest quietly measuring the warm path, catching exactly that on its first contact with a real seed. |
+| **Measured 2026-10-16, against the stack: the four remaining scenarios are green** | A stack built and started from this branch, with `m2-seed` present in the running builder: `./tests/run.sh m-b7 --system` → **12 pass / 1 skip / 0 fail**, the skip being the seedless-image reader. The figures behind the assertions, taken by hand from the same fixture and the same two builds: build 1 `rc=0`, **`downloads 576`**, repository `/tmp/tmp.Slx8K4S84g/m2`, producing `probe-unseeded-1.0.0.nar` — named from the author’s pom, which is `B1-6`’s property reaching this far; that repository **gone** afterwards; the bundle holding `jackson-databind-2.18.2.jar`, `jackson-core-2.18.2.jar`, `jackson-annotations-2.18.2.jar` and `guava-33.4.0-jre.jar`; build 2 `rc=0`, **`downloads 576` again**, from a **different** repository `/tmp/tmp.eNXddkVQ3R/m2`; and `seed 2.11.0/2.10.0, matching this build`. Two identical counts from two different repositories is the negative control’s reading: nothing the first build fetched outlived it, so the seed has not quietly restored the shared cache B1’s fourth leg removed. |
+| **And it caught a refusal that names the wrong cause** | The first run against the stack failed all four `nar-build` scenarios with `rc=1`. The refusal read *"it cannot link against the NiFi API the running Liquid loads"*, with `python3: can’t open file '/opt/builder/narcheck.py'` printed underneath. The build had **succeeded**; the gate never ran. `build.sh:776` guards it with `[ -f "$NAR_CHECK" ]`, which stats — and the honest message for an unavailable checker sits in the `else` arm of that very test, so a checker that exists but cannot be opened takes the refused arm instead and is reported as a verdict on the author’s code. Here the cause was environmental: a Docker Desktop `/host_mnt` placeholder, left from this worktree being moved on 2026-10-15, made the single-file bind mount of `narcheck.py` stat-able but unreadable — `ls` omitted it, `stat` reported 29910 bytes, `open()` returned `ENOENT`. Restarting Docker Desktop cleared it and the run went green with no code change. The misreporting is not environmental: an operator in that state is told their bundle cannot link, when the truth is that nothing judged it. Carried in `BACKLOG.md`. |
+| **Implemented by** | `tests/integration/m-b7.unseeded-dependency.test.ts`. |
+| **Covers** | B7-5, B1-6, FR37, FR38. |
+
+#### B1-9 — rewritten, and the case it replaces asserted the opposite
+
+| | |
+|---|---|
+| **Premise** | It was *"The dependency cache is state, and lives where state lives"*, and it asserted that `volumes/nar_builder/m2` existed on the host, that it held `org/apache/nifi/nifi-api`, and that the build reported `cache /m2`. **That mount is the fourth leg**, so the assertion that signed it off became the defect. What survives is the half worth having: a build still has to download nothing. |
+| **Component** | The installed stack's `nar_builder`, driven through `nar-build` as before. |
+| **Steps** | Build the same source twice. Read the repository path out of the build's own output; ask the container whether it still exists; read the download count and the seed line. |
+| **Test data** | `volumes/repos/.b1-cache` holding the B1-5 fixture. The repository path is taken from the output rather than guessed, so the case cannot pass against a path nobody used. |
+| **Expected** | Both builds exit 0; each repository is `/tmp/<work>/m2`; no `cache` line; the first build's repository is **gone** afterwards; the second build reports `downloads 0` from a **different** repository; and the build names the seed it matched. |
+| **Its precondition, computed** | `docker exec nar_builder test -d /opt/builder/m2-seed`. This case drives the running stack, and against an image built before 2026-10-11 every assertion is false for a reason that has nothing to do with the code — the failure mode #22 exists against. It skips, and the skip has a voice: one case runs only in that state, asserts the absence, and says to rebuild. |
+| **What it found** | 2 pass / 4 skip / 0 fail in a checkout whose installed image predates the change, which is the honest reading there. The four were measured by hand against a purpose-built image on 2026-10-11 and are the `7 s / 0 downloads / 0 B` row above. **Measured automatically 2026-10-16**, against the same stack: `./tests/run.sh m-b1 --system` → **55 pass / 1 skip / 0 fail** across 12 files, the skip being this case’s own reader of a seedless image. The four scenarios no longer rest on a measurement taken by hand. |
+| **Implemented by** | `tests/integration/m-b1.dependency-cache.test.ts`. |
+| **Covers** | B1-9, FR26, FR37, FR38, FR40. |
 
 ## 4. Independent verification
 
