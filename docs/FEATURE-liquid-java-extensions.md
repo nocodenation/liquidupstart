@@ -206,12 +206,22 @@ mistake is available here and is cheaper to avoid than to repeat.
   |---|---|---|
   | **0** | the bundle links against the index | deploys it into the drop directory |
   | **1** | **refused on merit** — a reference the index does not have, or a bundle part that could not be read | not deployed; the bundle is kept under `refused/`, out of the load path; the headline says *it cannot link against the NiFi API the running Liquid loads* |
-  | **3** | `check-index` **could not read the index** — about this installation, not the code | not deployed, **not** filed as refused, and the message says nothing here has judged the bundle |
+  | **3** | `check-index` **could not judge**: the index could not be read, holds bytes that are not text, or names no API package; or the check stopped before a verdict — about this installation or the check, not the code | not deployed, **not** filed as refused, and the message says nothing here has judged the bundle |
   | anything else (2, 126, 127, …) | the check did not complete — python3 could not open the checker, is absent, is not executable | the same arm as 3, naming the status |
 
   `narcheck.py`'s `check` and `index` modes keep their own codes; only `check-index` gained 3. The
   property that matters is that **only 0 deploys**, which `B6-42` holds over the whole range rather
   than per row.
+
+  *Widened 2026-10-21, after a local review.* Three paths read as a verdict that were not one: an index
+  with a byte that is not UTF-8 crashed with Python's own exit 1; an empty `api-packages.txt` judged
+  nothing and answered 0; and a crash while judging — the bundle's copy unopenable — exited 1. All
+  three are 3 now. And a 0 is not yet a deployment: if the bundle then **cannot be placed** in the drop
+  directory, `nar-build` exits 1 — the server's 500, a fault of the installation — and does not report
+  it as deployed.
+
+  *Open:* status 1 also covers a class narcheck cannot parse, which is about the bundle and is not a
+  link failure, under the link headline. Whether that gets its own status is not settled here.
 
 - **FR36 — A bundle that cannot link against the API Liquid loads is refused at deployment.** The
   entrypoint already walks every `*.nar` in the drop directory on its way into `lib/`; before it

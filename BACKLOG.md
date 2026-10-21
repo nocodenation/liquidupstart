@@ -43,7 +43,7 @@ entry above: the reply of 2026-10-13 said it was already here.
 ---
 
 **~~After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
-`cleanup.sh` has no leg for it.** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
+`cleanup.sh` has no leg for it.~~** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
 host directory ends up owned by `101499` with every Maven-written subdirectory `101499:100998`, so
 `rm -rf volumes/nar_builder/m2` as the host user fails with `Permission denied` and the tree has to
 be removed from a container. That contradicts CLAUDE.md's *"a reset is just deleting `volumes/`"*. It
@@ -1231,6 +1231,7 @@ The repair also found a second instance of the same class: `narcheck` returns 1 
 the index refuses and for anything it could not read, and the headline above it asserted the first
 over whatever followed — including over its own words *"the index of what Liquid can load is not
 readable"*. The headline now names both and lets the check give the reason. `B6-40`, seven
-scenarios, each shown able to fail.
+scenarios, each shown able to fail. *(Superseded on 2026-10-20: `check-index` answers 3 for an index
+it cannot read, and the headline for status 1 is the specific one again — FR36a.)*
 
 Recorded 2026-10-16.

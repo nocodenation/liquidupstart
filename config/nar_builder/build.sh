@@ -497,11 +497,8 @@ target_command() {
 #
 # A function rather than a condition inline, so a case can put states through it:
 # the idiom B6-3 established, `eval` of the real thing out of the shipped script.
-narcheck_available() {
-  [ -f "$NAR_CHECK" ] \
-    && head -c 1 "$NAR_CHECK" >/dev/null 2>&1 \
-    && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]
-}
+# The read is in `narcheck_unavailable_reason` below, and the gate is that
+# function answering `none`.
 
 # **Which condition failed, and the remedy for that one.**
 #
@@ -513,6 +510,13 @@ narcheck_available() {
 #
 # The script knows which one it was, so the operator should not have to work it
 # out. Three conditions, three answers, one printed.
+#
+# **And the gate is this function answering `none`**, not a second copy of the
+# three conditions in a `narcheck_available`. Two copies could drift, and between
+# two calls a state could change -- the index written in the meantime -- so the
+# gate failed and the reason then said `none`: a generic message and no remedy.
+# `judge_and_place` asks once and uses the answer for both. Found by a local
+# review, 2026-10-21.
 narcheck_unavailable_reason() {
   if [ ! -f "$NAR_CHECK" ]; then
     printf 'absent\n'
@@ -569,7 +573,8 @@ INDEX
 judge_and_place() {  # judge_and_place <part> <base>
   local part="$1" base="$2"
   local rc refusal kept reason what
-  if narcheck_available; then
+  reason="$(narcheck_unavailable_reason)"
+  if [ "$reason" = none ]; then
     # **The status decides, not only the pre-check.** Any non-zero landed in the
     # refused arm, so three unrelated states were filed as "your bundle was
     # refused": python3 unable to open the checker after the probe passed (2),
@@ -585,6 +590,11 @@ judge_and_place() {  # judge_and_place <part> <base>
     # beside FR36 in docs/FEATURE-liquid-java-extensions.md.
     refusal="$(python3 "$NAR_CHECK" check-index "$part" "$LIQUID_INDEX" 2>&1)" && rc=0 || rc=$?
     if [ "$rc" -gt 1 ]; then
+      # The name the operator dropped, not the dot-copy -- as the refused arm
+      # below has always done. This arm printed narcheck's output raw, so it
+      # named a `.part` file deleted two lines later. Found by a local review,
+      # 2026-10-21.
+      refusal="$(literal_replace "$refusal" "$part" "${DROP}/${base}")"
       cat >&2 <<CANNOTJUDGE
 
 nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
@@ -593,6 +603,11 @@ your bundle. Nothing here has judged it: this is about the check, not the code.
 
 ${refusal}
 CANNOTJUDGE
+      # 3 is narcheck saying the index is what it could not use -- unreadable,
+      # not text, or naming no API package -- and Liquid writes that index, so
+      # the remedy is the missing index's. Any other status is the check itself
+      # not completing, which narcheck's own output, above, is about.
+      [ "$rc" -eq 3 ] && narcheck_remedy noindex
       rm -f "$part"
       part=""
       return 2
@@ -612,16 +627,15 @@ CANNOTJUDGE
         rm -f "$part"
       fi
       part=""
-      # The headline says what happened; the reason below says why, and it is
-      # narcheck's to give. It used to assert *"it cannot link against the NiFi
-      # API the running Liquid loads"* over whatever followed -- and narcheck
-      # refuses for two different reasons with one exit status: a bundle whose
-      # references the index does not have, and anything it could not read. Its
-      # message distinguishes them ("Silence is not consent: it is not deployed");
-      # the headline flattened both into a verdict about the author's code.
-      # Measured 2026-10-16 with an index missing one file: narcheck said *"the
-      # index of what Liquid can load is not readable"*, and the operator was told
-      # their bundle cannot link.
+      # Status 1 is a refusal on merit, and its headline is the specific one
+      # again -- the first review's blocking item 1, once an index narcheck
+      # cannot read had its own status, 3. *Corrected 2026-10-21*: this comment
+      # still argued for the hedged headline that change had removed.
+      #
+      # **Open, and not this branch's to settle alone:** narcheck also exits 1
+      # for a class it cannot parse, which is about the bundle but is not a link
+      # failure -- measured, `constant 1 carries unknown tag 99` under this very
+      # headline. Whether that gets a status of its own is for the reviewer.
       cat >&2 <<REFUSED
 
 nar-build refused: ${base} was built and was not deployed, because it cannot link
@@ -651,10 +665,9 @@ REFUSED
     # 2026-10-01 review: one of them had to change, and the entrypoint had the
     # right intent.
     #
-    # When this is reached: Liquid is up, because the probe above answered, and
-    # yet the index is not there -- so Liquid could not write it. S8's condition,
-    # and the operator's remedy is the same one.
-    reason="$(narcheck_unavailable_reason)"
+    # Reached for any of three reasons -- the checker absent, unreadable, or the
+    # index missing -- and `reason` says which, so the message and the remedy are
+    # that one's.
     case "$reason" in
       absent) what="${NAR_CHECK} is not there" ;;
       unreadable) what="${NAR_CHECK} is there and cannot be read" ;;
@@ -675,7 +688,20 @@ NOINDEX
     return 2
   fi
 
-  mv "$part" "${DROP}/${base}"
+  # **Checked, because `set -e` does not reach here.** The caller runs this as a
+  # condition -- `judge_and_place … || rc=$?`, and `if ! judge_and_place` before
+  # that -- and a function called as one runs with `set -e` off, so a failing
+  # `mv` fell through to `return 0`: measured, the
+  # caller reported success, nothing was placed and the dot-file stayed behind.
+  # Before this function existed the `mv` sat in the caller, where `set -e`
+  # stopped the script and the trap removed the copy; 1 keeps that status, a
+  # fault of this installation rather than a verdict. Found by a local review,
+  # 2026-10-21; `B6-42` holds it.
+  if ! mv "$part" "${DROP}/${base}"; then
+    rm -f "$part"
+    printf '\nnar-build: %s was judged and could not be placed in %s, so it is not deployed.\n' "$base" "$DROP" >&2
+    return 1
+  fi
   return 0
 }
 
@@ -975,19 +1001,24 @@ NOWRITE
   # means anything. The same check runs in
   # liquid's entrypoint for whatever was placed there by hand; this one is for
   # everything nar-build itself writes, which is the path agents actually take.
-  # Readable, not merely present: see `narcheck_available`, which carries the
-  # 2026-10-16 measurement and why a read and not a stat.
   # Readable, not merely present, and then the status decides: see
   # `judge_and_place`, which carries both and is driven per status by a case.
-  if ! judge_and_place "$part" "$base"; then
-    part=""
+  # The status is the function's: 2 for a bundle not deployed by the gate, 1 for
+  # a bundle that could not be placed.
+  #
+  # **The bundle is placed by `judge_and_place`**, so nothing is moved here. The
+  # `mv` that used to follow stayed behind when that function was extracted, and
+  # with `part` already cleared it ran as `mv '' …`: under `set -eu` every
+  # successful build -- bundle already live -- ended with status 1, which the
+  # server answers as a 500. Measured on 2026-10-21 against `B6-18` and `B6-19`,
+  # 4 / 2 where `main` is 6 / 0. Found by a local review.
+  rc=0
+  judge_and_place "$part" "$base" || rc=$?
+  part=""
+  if [ "$rc" -ne 0 ]; then
     rm -rf "$work"
-    return 2
+    return "$rc"
   fi
-  part=""
-
-  mv "$part" "${DROP}/${base}"
-  part=""
 
   # `downloads` means what it says: artifacts this build pulled over the network.
   # With the seed copied into the local repository there is no second source to

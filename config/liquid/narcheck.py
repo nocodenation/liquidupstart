@@ -550,6 +550,109 @@ SIZE_NEXT_STEP = (
 )
 
 
+def check_index(nar, index_dir):
+    """`check-index`: 0 judged and linkable, 1 refused on merit, 3 could not judge."""
+    try:
+        with open(os.path.join(index_dir, CLASSES_FILE)) as fh:
+            resolvable = set(fh.read().split())
+        with open(os.path.join(index_dir, PACKAGES_FILE)) as fh:
+            judged = set(fh.read().split())
+        # The parent chain, read from the same index. A chain that cannot be
+        # read must not quietly become empty -- that is how this mode came to
+        # refuse 11 stock NARs while `check` refused none -- so a missing or
+        # unreadable file takes the same refusal as a missing class index.
+        chain_of = {}
+        parent_of = {}
+        with open(os.path.join(index_dir, NAR_CLASSES_FILE)) as fh:
+            for line in fh:
+                base, _, name = line.strip().partition(" ")
+                if base and name:
+                    chain_of.setdefault(base, set()).add(name)
+        with open(os.path.join(index_dir, NAR_PARENTS_FILE)) as fh:
+            for line in fh:
+                base, _, aid = line.strip().partition(" ")
+                if base and aid:
+                    parent_of[base] = aid
+    # ValueError as well: a byte that is not UTF-8 raised UnicodeDecodeError
+    # here, which escaped as a traceback and exited 1 -- the caller's "refused
+    # on merit". Measured 2026-10-21 with one 0xff byte in lib-classes.txt.
+    except (OSError, ValueError) as exc:
+        # **Status 3, and only this branch.** `check-index` refuses for two
+        # unrelated reasons and returned 1 for both: a bundle whose
+        # references the index does not have, which is about the author's
+        # code, and an index it could not read, which is about this
+        # installation. The caller could not tell them apart, so it filed an
+        # unjudged bundle under `refused/` and printed a headline hedged
+        # enough to be true either way -- which cost the common case its
+        # precise message. Blocking item 1 of the first review of #36.
+        #
+        # 1 stays "refused on merit" everywhere else, including `Unreadable`
+        # from `check_against`, because that one *is* about the bundle. The
+        # `check` and `index` modes are untouched.
+        sys.stdout.write("CANNOT JUDGE %s\n" % nar)
+        sys.stdout.write("  the index of what Liquid can load is not readable: %s\n" % exc)
+        sys.stdout.write(
+            "  Without it nothing here can tell a sound bundle from a broken one.\n"
+            "  Silence is not consent: it is not deployed.\n"
+        )
+        return 3
+    # An index that names no API package judges nothing: every reference is
+    # skipped and the bundle passes for having been judged against nothing.
+    # `check` has refused that since S4 of the 2026-10-01 review; this mode did
+    # not -- measured 2026-10-21, a bundle referencing a NiFi class the index
+    # lacks is refused with the package listed and passes with the file empty.
+    # Judged by content, not emptiness: a real index lists packages under
+    # NIFI_PREFIX only, so a list holding none of them -- `java.lang`, say --
+    # judges nothing either.
+    if not any(p.startswith(NIFI_PREFIX) for p in judged):
+        sys.stdout.write("CANNOT JUDGE %s\n" % nar)
+        sys.stdout.write(
+            "  the index names no API package: %s holds nothing under %s,\n"
+            "  so no reference can be judged against it. Silence is not consent: it is not deployed.\n"
+            % (PACKAGES_FILE, NIFI_PREFIX.rstrip("/"))
+        )
+        return 3
+    # The same matching rule as parent_chain_classes: the parent is named by
+    # artifact id, and a NAR whose basename starts with `<aid>-` is it. Walked
+    # rather than followed once, because a parent may declare a parent, and
+    # guarded against a cycle by the set of names already taken.
+    parent_classes = set()
+    aid = None
+    try:
+        parent = nar_parent(nar)
+        aid = parent[1] if parent else None
+    except Unreadable:
+        aid = None
+    taken = set()
+    while aid:
+        nxt = None
+        for base in sorted(chain_of):
+            if base in taken or not base.startswith(aid + "-"):
+                continue
+            taken.add(base)
+            parent_classes |= chain_of[base]
+            nxt = parent_of.get(base)
+        for base in sorted(parent_of):
+            if base.startswith(aid + "-") and base not in taken:
+                taken.add(base)
+                nxt = nxt or parent_of.get(base)
+        aid = nxt
+    try:
+        lines = check_against(nar, resolvable, judged, "the running Liquid", parent_classes)
+    except Unreadable as exc:
+        sys.stdout.write("REFUSED %s\n" % nar)
+        sys.stdout.write("  %s\n" % exc)
+        sys.stdout.write("  %s\n" % (getattr(exc, "next_step", None) or NEXT_STEP))
+        return 1
+    if lines:
+        sys.stdout.write("REFUSED %s\n" % nar)
+        for line in lines:
+            sys.stdout.write(line + "\n")
+        sys.stdout.write("  %s\n" % NEXT_STEP)
+        return 1
+    return 0
+
+
 def main(argv):
     if len(argv) < 2:
         sys.stderr.write(
@@ -619,86 +722,20 @@ def main(argv):
             sys.stderr.write("usage: narcheck.py check-index <nar> <index-dir>\n")
             return 2
         nar, index_dir = argv[1], argv[2]
+        # **Every exit of this mode is one of the three**, whatever goes wrong
+        # inside it. Python exits 1 for an uncaught exception, and 1 is
+        # "refused on merit" to the caller, so a crash -- the bundle's copy
+        # unopenable, memory exhausted, a malformed parent chain -- was filed
+        # under refused/ with the link headline. One handler around the whole
+        # mode rather than one per call: the first repair wrapped only the
+        # judging, and the second pass over it found the index reads and the
+        # chain walk still outside. Found by a local review, 2026-10-21.
         try:
-            with open(os.path.join(index_dir, CLASSES_FILE)) as fh:
-                resolvable = set(fh.read().split())
-            with open(os.path.join(index_dir, PACKAGES_FILE)) as fh:
-                judged = set(fh.read().split())
-            # The parent chain, read from the same index. A chain that cannot be
-            # read must not quietly become empty -- that is how this mode came to
-            # refuse 11 stock NARs while `check` refused none -- so a missing or
-            # unreadable file takes the same refusal as a missing class index.
-            chain_of = {}
-            parent_of = {}
-            with open(os.path.join(index_dir, NAR_CLASSES_FILE)) as fh:
-                for line in fh:
-                    base, _, name = line.strip().partition(" ")
-                    if base and name:
-                        chain_of.setdefault(base, set()).add(name)
-            with open(os.path.join(index_dir, NAR_PARENTS_FILE)) as fh:
-                for line in fh:
-                    base, _, aid = line.strip().partition(" ")
-                    if base and aid:
-                        parent_of[base] = aid
-        except OSError as exc:
-            # **Status 3, and only this branch.** `check-index` refuses for two
-            # unrelated reasons and returned 1 for both: a bundle whose
-            # references the index does not have, which is about the author's
-            # code, and an index it could not read, which is about this
-            # installation. The caller could not tell them apart, so it filed an
-            # unjudged bundle under `refused/` and printed a headline hedged
-            # enough to be true either way -- which cost the common case its
-            # precise message. Blocking item 1 of the first review of #36.
-            #
-            # 1 stays "refused on merit" everywhere else, including `Unreadable`
-            # from `check_against`, because that one *is* about the bundle. The
-            # `check` and `index` modes are untouched.
+            return check_index(nar, index_dir)
+        except Exception as exc:  # noqa: BLE001 -- anything but a verdict is not one
             sys.stdout.write("CANNOT JUDGE %s\n" % nar)
-            sys.stdout.write("  the index of what Liquid can load is not readable: %s\n" % exc)
-            sys.stdout.write(
-                "  Without it nothing here can tell a sound bundle from a broken one.\n"
-                "  Silence is not consent: it is not deployed.\n"
-            )
+            sys.stdout.write("  the check stopped before it reached a verdict: %s: %s\n" % (type(exc).__name__, exc))
             return 3
-        # The same matching rule as parent_chain_classes: the parent is named by
-        # artifact id, and a NAR whose basename starts with `<aid>-` is it. Walked
-        # rather than followed once, because a parent may declare a parent, and
-        # guarded against a cycle by the set of names already taken.
-        parent_classes = set()
-        aid = None
-        try:
-            parent = nar_parent(nar)
-            aid = parent[1] if parent else None
-        except Unreadable:
-            aid = None
-        taken = set()
-        while aid:
-            nxt = None
-            for base in sorted(chain_of):
-                if base in taken or not base.startswith(aid + "-"):
-                    continue
-                taken.add(base)
-                parent_classes |= chain_of[base]
-                nxt = parent_of.get(base)
-            for base in sorted(parent_of):
-                if base.startswith(aid + "-") and base not in taken:
-                    taken.add(base)
-                    nxt = nxt or parent_of.get(base)
-            aid = nxt
-        try:
-            lines = check_against(nar, resolvable, judged, "the running Liquid", parent_classes)
-        except Unreadable as exc:
-            sys.stdout.write("REFUSED %s\n" % nar)
-            sys.stdout.write("  %s\n" % exc)
-            sys.stdout.write("  %s\n" % (getattr(exc, "next_step", None) or NEXT_STEP))
-            return 1
-        if lines:
-            sys.stdout.write("REFUSED %s\n" % nar)
-            for line in lines:
-                sys.stdout.write(line + "\n")
-            sys.stdout.write("  %s\n" % NEXT_STEP)
-            return 1
-        return 0
     if mode == "check":
         if len(argv) != 3:
             sys.stderr.write("usage: narcheck.py check <nar> <lib-dir>\n")

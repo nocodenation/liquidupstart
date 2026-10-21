@@ -17,21 +17,26 @@
  *           message for an unavailable checker already existed, in the `else` arm
  *           of that very test.
  *
- *           Two states, one exit status, and that is the whole of it: `narcheck`
- *           returns 1 both for a bundle whose references the index does not have
- *           **and** for anything it could not read. Its own message distinguishes
- *           them; the headline above it did not.
+ *           Two states, one exit status: `narcheck` returned 1 both for a bundle
+ *           whose references the index does not have **and** for an index it
+ *           could not read. It answers 3 for the second now, and the gate sends
+ *           every status but 0 and 1 to *cannot be judged* (FR36a).
  * Given:    The builder image built from the tree under test, `builderImage()`, and
  *           `narcheck_available` **evaluated out of the shipped `/opt/builder/build.sh`**
  *           rather than reimplemented — the idiom `B6-3` established, so the case
  *           cannot pass against a copy of the decision
- * When:     It is asked about a readable checker with an index, a checker present
- *           at mode 000 that the build user cannot open, a checker that is not
- *           there, and a readable checker with no index
- * Then:     Only the first is available; and the two messages in `build.sh` say
- *           what they established — the refusal headline no longer asserts a link
- *           failure, and the unavailable message says the check is the subject
- * Covers:   B6-40, FR36
+ * When:     B6-40: it is asked about a readable checker with an index, a checker
+ *           at mode 000, a checker that is not there, a readable checker with no
+ *           index, and `/proc/self/mem` -- as `builder`, and the last as root too,
+ *           because root is who runs the gate. B6-42: `judge_and_place`, also
+ *           evaluated out of the script, is driven once per exit status of a stub
+ *           checker, and once with a drop directory it cannot place the bundle in
+ * Then:     Only a readable checker with an index is available, for either user;
+ *           status 0 deploys, 1 is refused on merit under the link headline and
+ *           kept under `refused/`, anything else is *cannot be judged* and names
+ *           the bundle the operator dropped; a bundle that cannot be placed is not
+ *           reported as deployed; and the messages say what they established
+ * Covers:   B6-40, B6-42, FR36, FR36a
  * Negative: The unreadable checker is the case the defect was. The absent checker
  *           and the missing index are the two states that were already handled and
  *           must stay handled.
@@ -42,14 +47,16 @@
  *
  * Not here: the ENOENT instance itself. A stat-able, unreadable file is a state of
  *           Docker Desktop's file sharing, not one this suite can create, so the
- *           field observation stands in the specification and the permission case
- *           carries the class in the suite. Both are the same question to the
+ *           field observation stands in the specification. Mode 000 carries the
+ *           class for a non-root user only -- root reads it, and `build.sh` runs
+ *           the check as root -- so `/proc/self/mem`, which no user can read at
+ *           offset 0, is the state that holds for both (2026-10-21). Both are the same question to the
  *           gate — can it read the checker — and the function answers it with a
  *           read either way.
  */
 
 import { test, expect, describe } from 'bun:test';
-import { readFileSync, mkdtempSync, writeFileSync, chmodSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, chmodSync, mkdirSync, rmSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
@@ -64,8 +71,11 @@ const script = readFileSync(BUILD_SH, 'utf8');
 // the image ships, then overrides the two paths per state.
 const PROBE = [
   '#!/bin/sh',
-  'eval "$(sed -n \'/^LIQUID_INDEX=/p;/^NAR_CHECK=/p;/^narcheck_available() {/,/^}/p\' /opt/builder/build.sh)"',
-  'say() { narcheck_available && echo "$1 available" || echo "$1 unavailable"; }',
+  'eval "$(sed -n \'/^LIQUID_INDEX=/p;/^NAR_CHECK=/p;/^narcheck_unavailable_reason() {/,/^}/p\' /opt/builder/build.sh)"',
+  // The gate is `narcheck_unavailable_reason` answering `none`, as
+  // `judge_and_place` asks it -- there is no `narcheck_available` since
+  // 2026-10-21, because production had stopped calling it.
+  'say() { [ "$(narcheck_unavailable_reason)" = none ] && echo "$1 available" || echo "$1 unavailable"; }',
   'LIQUID_INDEX=/idx; NAR_CHECK=/mnt/readable.py   ; say readable',
   'LIQUID_INDEX=/idx; NAR_CHECK=/mnt/unreadable.py ; say unreadable',
   'LIQUID_INDEX=/idx; NAR_CHECK=/mnt/absent.py     ; say absent',
@@ -89,7 +99,13 @@ const PROBE = [
   'fgate /mnt/unreadable.py unreadableF'
 ].join('\n');
 
-function states(): Record<string, string> {
+// Once per user and file, not once per describe: it is a `docker run`, and two
+// describes asking at collection paid for two. Found by a local review,
+// 2026-10-21.
+const seenAs = new Map<string, Record<string, string>>();
+function states(user: 'builder' | 'root' = 'builder'): Record<string, string> {
+  const known = seenAs.get(user);
+  if (known) return known;
   const dir = mkdtempSync(join(tmpdir(), 'lu-b6-40-'));
   try {
     const mnt = join(dir, 'mnt');
@@ -109,10 +125,11 @@ function states(): Record<string, string> {
 
     const r = sh([
       'docker', 'run', '--rm',
-      // As the build user, because that is who the build runs as and who has to
-      // be able to open the file. As root, mode 000 would be readable and the
-      // case would measure nothing.
-      '--user', 'builder',
+      // As `builder` by default, because mode 000 is unreadable only to a user
+      // who is not root. *Corrected 2026-10-21*: this said the build runs as
+      // `builder`. Maven does; `build.sh` itself runs as root and runs the check,
+      // which is why `/proc/self/mem` is asked as root as well.
+      '--user', user,
       '--entrypoint', '/bin/sh',
       '-v', `${BUILD_SH}:/opt/builder/build.sh:ro`,
       '-v', `${mnt}:/mnt:ro`,
@@ -128,6 +145,7 @@ function states(): Record<string, string> {
       const [name, verdict] = line.trim().split(/\s+/);
       out[name] = verdict;
     }
+    seenAs.set(user, out);
     return out;
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -169,6 +187,18 @@ describe('B6-40 and a read is what the gate is, which only one state can show', 
     expect({ unopenable: seen.unopenable, unreadable: seen.unreadable }).toEqual({
       unopenable: 'unavailable',
       unreadable: 'unavailable'
+    });
+  });
+
+  test('B6-40 and as root, who runs the gate, a checker that cannot be read is still not available', () => {
+    // The states above are asked as `builder`, and `build.sh` runs the check as
+    // root -- for whom mode 000 is readable, measured in this image. So the
+    // property that matters in the field is asked of root too, on the state no
+    // user can read, with the readable checker as its counterpart.
+    const asRoot = states('root');
+    expect({ unopenable: asRoot.unopenable, readable: asRoot.readable }).toEqual({
+      unopenable: 'unavailable',
+      readable: 'available'
     });
   });
 });
@@ -246,13 +276,19 @@ describe('B6-40 and each message says only what it established', () => {
     // the extraction removed on its own — so it would have passed with the read
     // probe deleted. Measured: reverting the probe left it green. An assertion
     // satisfied by a refactor is not guarding the fix.
-    const body = script.match(/^narcheck_available\(\) \{\n([\s\S]*?)^\}/m)?.[1] ?? '';
-    expect(body.length, 'narcheck_available not found').toBeGreaterThan(0);
+    //
+    // *Since 2026-10-21 the conditions live in `narcheck_unavailable_reason`*, and
+    // `judge_and_place` asks it once and compares with `none`, so there is one
+    // copy to read and it is the one production runs.
+    const body = script.match(/^narcheck_unavailable_reason\(\) \{\n([\s\S]*?)^\}/m)?.[1] ?? '';
+    const gate = script.match(/^judge_and_place\(\) \{.*\n([\s\S]*?)^\}/m)?.[1] ?? '';
+    expect(body.length, 'narcheck_unavailable_reason not found').toBeGreaterThan(0);
     expect({
       readsIt: /head -c 1 "\$NAR_CHECK"/.test(body),
-      alsoTestsExistence: /\[ -f "\$NAR_CHECK" \]/.test(body),
-      testsTheIndex: /\[ -f "\$\{LIQUID_INDEX\}\/lib-classes\.txt" \]/.test(body)
-    }).toEqual({ readsIt: true, alsoTestsExistence: true, testsTheIndex: true });
+      alsoTestsExistence: /\[ ! -f "\$NAR_CHECK" \]/.test(body),
+      testsTheIndex: /\[ ! -f "\$\{LIQUID_INDEX\}\/lib-classes\.txt" \]/.test(body),
+      theGateAsksTheReason: /reason="\$\(narcheck_unavailable_reason\)"\n\s*if \[ "\$reason" = none \]/.test(gate)
+    }).toEqual({ readsIt: true, alsoTestsExistence: true, testsTheIndex: true, theGateAsksTheReason: true });
   });
 });
 
@@ -277,11 +313,14 @@ describe('B6-42 what each exit status of the check means, one row per status', (
   // status under test, so there is a row per status and no Maven run. It is
   // `eval`-ed out of the real script -- `B6-3`'s idiom -- so no reimplementation
   // can satisfy these.
-  function judge(status: number, says = 'stub says so'): {
+  function judge(status: number, says = 'stub says so', opts: { echoArg?: boolean; blockPlace?: boolean } = {}): {
     code: number;
     output: string;
     deployed: boolean;
     refused: boolean;
+    partLeft: boolean;
+    drop: string;
+    listing: string[];
   } {
     const dir = mkdtempSync(join(tmpdir(), 'lu-b6-42-'));
     try {
@@ -299,17 +338,25 @@ describe('B6-42 what each exit status of the check means, one row per status', (
       // text raw and a newline in it made an unterminated Python literal -- the
       // stub then exited 1 from a SyntaxError, which is the status under test by
       // accident. A stub that fails for its own reasons measures nothing.
+      // `echoArg` makes the stub print the path it was handed, the way narcheck
+      // names the bundle, so a case can see which name reaches the operator.
       writeFileSync(
         stub,
-        `import sys\nsys.stdout.write(${JSON.stringify(says + '\n')})\nsys.exit(${status})\n`
+        opts.echoArg
+          ? `import sys\nsys.stdout.write("CANNOT JUDGE " + sys.argv[2] + "\\n")\nsys.exit(${status})\n`
+          : `import sys\nsys.stdout.write(${JSON.stringify(says + '\n')})\nsys.exit(${status})\n`
       );
+      // `blockPlace` puts a directory where the bundle goes, holding a non-empty
+      // directory of the dot-copy's name, so the final rename fails for root as
+      // for anyone else.
+      if (opts.blockPlace) mkdirSync(join(drop, 'probe.nar', 'probe.nar.part', 'keep'), { recursive: true });
       chmodSync(stub, 0o755);
       const r = sh([
         'bash',
         '-c',
         [
           'set -u',
-          `eval "$(sed -n '/^literal_replace() {/,/^}/p;/^narcheck_available() {/,/^}/p;/^narcheck_unavailable_reason() {/,/^}/p;/^narcheck_remedy() {/,/^}/p;/^judge_and_place() {/,/^}/p' ${JSON.stringify(BUILD_SH)})"`,
+          `eval "$(sed -n '/^literal_replace() {/,/^}/p;/^narcheck_unavailable_reason() {/,/^}/p;/^narcheck_remedy() {/,/^}/p;/^judge_and_place() {/,/^}/p' ${JSON.stringify(BUILD_SH)})"`,
           `DROP=${JSON.stringify(drop)}`,
           `LIQUID_INDEX=${JSON.stringify(idx)}`,
           `NAR_CHECK=${JSON.stringify(stub)}`,
@@ -317,11 +364,25 @@ describe('B6-42 what each exit status of the check means, one row per status', (
           `judge_and_place ${JSON.stringify(part)} probe.nar`
         ].join('\n')
       ]);
+      // Everything under the drop directory, so a case can say what reached the
+      // place the loader reads rather than whether one name exists there.
+      const listing: string[] = [];
+      const walk = (d: string, rel: string) => {
+        for (const n of readdirSync(d).sort()) {
+          const p = join(d, n);
+          listing.push(rel + n);
+          if (statSync(p).isDirectory()) walk(p, `${rel}${n}/`);
+        }
+      };
+      walk(drop, '');
       return {
         code: r.code,
         output: r.output,
-        deployed: existsSync(join(drop, 'probe.nar')),
-        refused: existsSync(join(drop, 'refused', 'probe.nar'))
+        listing,
+        deployed: !opts.blockPlace && existsSync(join(drop, 'probe.nar')),
+        refused: existsSync(join(drop, 'refused', 'probe.nar')),
+        partLeft: existsSync(part),
+        drop
       };
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -364,6 +425,44 @@ describe('B6-42 what each exit status of the check means, one row per status', (
     expect(r.output).toContain('not a verdict on');
     // And it must not claim the bundle cannot link, which is what it used to.
     expect(r.output).not.toContain('because it cannot link');
+  });
+
+  test('B6-42 and the cannot-judge arm names the bundle the operator dropped, not its dot-copy', () => {
+    // The refused arm has always put the dropped name back with literal_replace;
+    // this arm printed narcheck's output raw, so it named a `.part` file deleted
+    // two lines later. Found by a local review, 2026-10-21.
+    const r = judge(3, '', { echoArg: true });
+    expect({
+      dropped: r.output.includes(`CANNOT JUDGE ${r.drop}/probe.nar\n`),
+      dotCopy: r.output.includes('probe.nar.part')
+    }).toEqual({ dropped: true, dotCopy: false });
+  });
+
+  test('B6-42 and a bundle that cannot be placed is not reported as deployed', () => {
+    // **The caller runs it as a condition** -- `|| rc=$?` now, `if !` before --
+    // **and a function called as one runs with `set -e` off**, so a failing final
+    // `mv` fell through to `return 0`: measured 2026-10-21, the caller reported
+    // success, nothing was placed, and the dot-copy stayed behind. Status 0 from
+    // the check, then a rename that cannot succeed.
+    const r = judge(0, 'stub says so', { blockPlace: true });
+    expect({ code: r.code, partLeft: r.partLeft, says: r.output.includes('could not be placed') }).toEqual({
+      code: 1,
+      partLeft: false,
+      says: true
+    });
+    // And what the loader can see is what was there before: the blocking
+    // directory and nothing else -- no bundle, no copy beside or inside it.
+    expect(r.listing).toEqual(['probe.nar', 'probe.nar/probe.nar.part', 'probe.nar/probe.nar.part/keep']);
+  });
+
+  test('B6-42 and exit 3 points at the index, where the fix for it is', () => {
+    // 3 is narcheck saying it could not use the index -- unreadable, not text, or
+    // naming no API package -- and Liquid writes the index, so the remedy is the
+    // missing index's. It printed none. The counterpart is exit 2, the check
+    // itself not completing, which does not send the operator to Liquid.
+    // Found by the second pass of a local review, 2026-10-21.
+    expect(judge(3).output).toContain('docker compose logs liquid | grep "load index"');
+    expect(judge(2).output).not.toContain('docker compose logs liquid');
   });
 
   test('B6-42 and every status that is not 0 leaves the drop directory empty of it', () => {
