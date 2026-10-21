@@ -56,16 +56,25 @@ let dir = '';
 
 /** Python that builds the fixtures and a peak-RSS harness, all in the container. */
 const SETUP = `
-import io, zipfile, sys
+import os, zipfile, sys
+# On disk, a mebibyte at a time. This held 800 MB of zeros, then the 800 MB jar
+# in a BytesIO, then its getvalue() copy, and with the stack up the container
+# was killed for memory before narcheck ran: every red of B6-37 on 2026-10-20 and
+# 2026-10-21 was the fixture, not the checker. Same zip structure as before --
+# the blob stored in the jar, the jar deflated in the bundle.
 def nar(path, stored_blob):
-    inner = io.BytesIO()
+    inner = path + '.inner.jar'
     mode = zipfile.ZIP_STORED if stored_blob else zipfile.ZIP_DEFLATED
     with zipfile.ZipFile(inner, 'w', mode) as z:
         z.writestr('org/apache/nifi/processor/Processor.class', b'\\xca\\xfe\\xba\\xbe')
         if stored_blob:
-            z.writestr('blob.bin', b'\\0' * (800 * 1024 * 1024))
+            chunk = b'\\0' * (1024 * 1024)
+            with z.open('blob.bin', 'w') as blob:
+                for _ in range(800):
+                    blob.write(chunk)
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as n:
-        n.writestr('META-INF/bundled-dependencies/j.jar', inner.getvalue())
+        n.write(inner, 'META-INF/bundled-dependencies/j.jar')
+    os.remove(inner)
 nar('/w/bomb.nar', True)
 nar('/w/ok.nar', False)
 
@@ -104,7 +113,9 @@ const run = (which: string) =>
     '-v', `${dir}:/w`,
     '--entrypoint', 'sh', 'python:3.12-slim', '-c',
     `mkdir -p /w/lib && python3 /w/setup.py && python3 /w/measure.py ${which}`
-  ], undefined, 600_000);
+  ]);
+  // No bound but the test's own: sh() takes no timeout, and the 600_000 that stood
+  // here was its extraEnv, which copies nothing from a number. B6-37's block.
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'm-b6-n3-'));

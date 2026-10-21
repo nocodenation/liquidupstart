@@ -27,21 +27,34 @@
  *
  * Test data: the never-ending command `sh -c 'while :; do sleep 1; done'`; the
  * quick command `sh -c 'echo alive; exit 3'` asserted on the literal `alive` and
- * the literal 3; `LU_TIMEOUT_GRACE=2` to keep the case short; and a PATH built
- * from a scratch directory plus `/usr/bin:/bin`, which on this host holds no
- * coreutils `timeout` — verified by the first case rather than assumed.
+ * the literal 3; `LU_TIMEOUT_GRACE=2` to keep the case short; and a PATH that is
+ * a scratch directory holding links to `sh`, `sleep`, `cat`, `mktemp` and `rm`
+ * and nothing else -- what the helper and these commands run -- so no host can
+ * supply a coreutils `timeout`, verified by the first case rather than assumed.
+ * It was the scratch directory plus `/usr/bin:/bin` until 2026-10-21, and on
+ * Linux `/usr/bin/timeout` exists, so the case was red there and its watchdog
+ * branch never ran.
  *
  * Requirements covered: OC-G4, OC-60 (N1 of the #11 second review), and the 2026-09-17
  * finding that its fallback removed the bound.
  */
 import { test, expect, describe } from 'bun:test';
-import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
 
 const LIB = join(repoRoot, 'config/scripts/start/lib/with-timeout.sh');
+
+// What the helper runs -- mktemp and rm for its stamp, sleep for its clock --
+// and what the commands below run, sh and cat; nothing else. The PATH was
+// `<scratch>:/usr/bin:/bin`, and on Linux `/usr/bin/timeout` is there -- busybox's
+// in liquidupstart/dashboard:latest -- so the first case was red and the others
+// tested coreutils instead of the watchdog. A PATH of the case's own making means
+// no host can supply a `timeout` by accident. Resolved here, before any PATH is
+// narrowed.
+const TOOLS = ['sh', 'sleep', 'cat', 'mktemp', 'rm'].map((t) => [t, Bun.which(t)] as const);
 
 /** Runs the helper with a PATH the case controls, so the branch is chosen by the case. */
 function run(command: string, opts: { withTimeoutStub?: boolean } = {}): {
@@ -50,6 +63,12 @@ function run(command: string, opts: { withTimeoutStub?: boolean } = {}): {
   elapsedMs: number;
 } {
   const dir = mkdtempSync(join(tmpdir(), 'lu-bound-'));
+  for (const [tool, at] of TOOLS) {
+    // Thrown rather than skipped, so a missing tool is named instead of read as the
+    // watchdog's behaviour.
+    if (!at) throw new Error(`${tool} is not on this host's PATH, and the case's PATH needs it`);
+    symlinkSync(at, join(dir, tool));
+  }
   if (opts.withTimeoutStub) {
     // A stand-in for coreutils, so the case can tell which branch ran without
     // depending on what the host happens to have installed.
@@ -60,7 +79,7 @@ function run(command: string, opts: { withTimeoutStub?: boolean } = {}): {
   const script = `
     set -uo pipefail
     export LU_TIMEOUT_GRACE=2
-    export PATH=${JSON.stringify(dir)}:/usr/bin:/bin
+    export PATH=${JSON.stringify(dir)}
     . ${JSON.stringify(LIB)}
     ${command}
     echo "rc=$?"
@@ -75,6 +94,9 @@ describe('OC-62 a host without coreutils still has a bound', () => {
     // Otherwise every assertion below would be about coreutils, and the branch
     // under test would never run. Asserted rather than assumed: the whole defect
     // was a branch nobody had ever executed.
+    // Every tool the PATH is built from was found, or the helper would fail for
+    // its own reasons and this case would read that as the watchdog's.
+    expect(TOOLS.filter(([, at]) => !at).map(([t]) => t)).toEqual([]);
     const r = run('command -v timeout gtimeout && echo FOUND || echo none');
     expect(r.out).toContain('none');
     expect(r.out).not.toContain('FOUND');

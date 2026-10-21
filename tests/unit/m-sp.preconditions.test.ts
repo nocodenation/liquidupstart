@@ -20,11 +20,13 @@
  * Given    three throwaway roots: one empty, one carrying `volumes/_git-secrets`,
  *          one carrying `dashboard/node_modules`, plus this checkout; for SP-3, the
  *          registry and two `.invalid` hosts, and a child bun whose whole PATH is
- *          a directory linking `git` and no `curl`
+ *          a directory linking `git` and no `curl`; for SP-6, a child bun whose
+ *          PATH is an empty directory, so there is no `git` at all
  * When     each discriminator is asked about each
  * Then     it answers for the state in front of it, and the headers of the cases
- *          that depend on it say which precondition they need
- * Covers:  SP-1, SP-2, SP-3
+ *          that depend on it say which precondition they need; and where `git` is
+ *          missing the module still loads and says `IN_GIT_REPO=false`
+ * Covers:  SP-1, SP-2, SP-3, SP-6
  *
  * SP-3 is the fourth precondition -- whether a package registry answers -- which
  *          `OC-15` and `OC-16` need because they run `npm install -g` inside a
@@ -230,6 +232,38 @@ describe('SP-3 the fourth precondition: a registry answers', () => {
     expect(out).toContain('answer=false');
     expect(out).not.toContain('Executable not found');
     expect(p.exitCode).toBe(0);
+  });
+});
+
+describe('SP-6 a precondition that cannot be asked answers no', () => {
+  test('SP-6 where git is not installed, the module still loads and IN_GIT_REPO is false', () => {
+    // Measured on main at a3ef20f, before the repair: importing this module with
+    // no git on PATH threw `Executable not found in $PATH: "git"` from
+    // inGitRepoAt, which runs as the module loads -- so every file importing it
+    // errored at collection instead of skipping. The child bun is started by its
+    // absolute path and its PATH is an empty directory.
+    const bin = root();
+    const probe = [
+      `import { IN_GIT_REPO } from ${JSON.stringify(join(repoRoot, 'tests/lib/preconditions.ts'))};`,
+      `console.log('IN_GIT_REPO=' + IN_GIT_REPO);`
+    ].join('\n');
+    const p = Bun.spawnSync([process.execPath, '-e', probe], {
+      env: { PATH: bin, HOME: process.env.HOME ?? '' },
+      stdout: 'pipe',
+      stderr: 'pipe'
+    });
+    const out = p.stdout.toString() + p.stderr.toString();
+    expect(out).toContain('IN_GIT_REPO=false');
+    expect(out).not.toContain('Executable not found');
+    expect(p.exitCode).toBe(0);
+  });
+
+  test('SP-6 while a real repository, with git present, answers true', () => {
+    // The counterpart: a catch that answered false for everything would pass the
+    // case above and make every checkout look like a release installation.
+    const dir = root();
+    expect(sh(['git', 'init', '-q'], dir).code).toBe(0);
+    expect(inGitRepoAt(dir)).toBe(true);
   });
 });
 
