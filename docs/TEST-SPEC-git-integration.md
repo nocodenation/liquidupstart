@@ -1537,10 +1537,10 @@ difference in outcome is attributable to the one setting the case names.
 | **Premise** | Deletion destroys work no local copy may hold, and no use case asks an agent to do it. |
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; push a branch; then `git push origin --delete` it. |
-| **Expected** | Non-zero exit; `feature/probe` still listed by `git ls-remote remote.git`; the message names `feature/probe`. |
+| **Expected** | Non-zero exit; `feature/probe` still listed by `git ls-remote remote.git`; the message names `feature/probe` and says **`this would delete`**, the deletion rule's own words. *Corrected 2026-10-21: the row stopped at the branch name. The test was strengthened on 2026-10-09 and this row was not, and the three conditions it listed are all met by the ancestor check as well — with the deletion rule gone, that check refuses the same push with `holds commits your branch does not`.* |
 | **Test data** | `hookFixture()` with `feature/probe` already pushed successfully, so the deletion is the only operation under test. |
 | **Covers** | U4. |
-| **What it found** | Passed. The deletion arrives with an all-zero local sha, which is the only signal git gives, and the case fixes that reading in place. |
+| **What it found** | Passed. The deletion arrives with an all-zero local sha, which is the only signal git gives, and the case fixes that reading in place. *Added 2026-10-21:* its registered mutation turns `if is_zero "$local_sha"; then` in `config/agents/hooks/pre-push` into `if false; then`. Against the case as first written that mutation came back **unresolved**, because the next guard refused the push and the case could not tell the two rules apart. With the `this would delete` assertion it validates `(1 red, 0 green)`. |
 
 ##### A4-7 — a private key in the pushed commits is refused
 
@@ -1585,10 +1585,10 @@ difference in outcome is attributable to the one setting the case names.
 | **Premise** | The declaration already distinguishes read from write, and a read-only repository should not depend on its branch policy to be safe. Checked before any other rule, so the message is about access rather than about branches. |
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; set `access=read` and `policy=direct` — the most permissive branch setting; commit on a feature branch; push. |
-| **Expected** | Non-zero exit; the message contains `read` and does not mention the branch, so it is clear the access rule fired first. |
+| **Expected** | Non-zero exit; the message contains the phrase **`declared with access read`**, does not mention the branch — none of `feature branch`, `protected`, `default branch` — and does not carry the git-publish gate's `did not come through git-publish`, so it is clear the access rule fired first and not the gate. *Corrected 2026-10-09: this said "the message contains `read`", which is what the test asserted until those four letters were found inside the word "reads" — a vacuous match. The assertion was strengthened then and this row was not. B4 of the 2026-10-01 re-review. Corrected again 2026-10-21: the rewrite dropped "does not mention the branch", which the test still asserts.* |
 | **Test data** | `hookFixture()` with two settings changed: `liquidupstart.access=read` and `liquidupstart.policy=direct` — the most permissive branch setting, so a refusal cannot be attributed to the branch. Commit `add probe note` on `feature/probe`. |
 | **Covers** | U1, U4, §1.3. |
-| **What it found** | Passed, including the negative half: with `policy=direct` and the push aimed at a feature branch, the output names neither the branch nor a branch policy, so the access rule is demonstrably the one that fired. |
+| **What it found** | Passed, including the negative half: with `policy=direct` and the push aimed at a feature branch, the output names neither the branch nor a branch policy, so the access rule is demonstrably the one that fired. *Amended 2026-10-09.* What this row did not say is the thing worth recording: the first version of the case asserted `toContain('read')` and passed against a message that never mentioned access at all, because the four letters sit inside "reads". A case that cannot fail is the defect this whole practice exists to find, and it was found by the mutation runner rather than by the suite: mutations of the access rule left the case green, and a manual run showed why. The assertion is the phrase now, plus the absence of the gate's own sentence, which is what makes "the access rule fired first" an observation instead of an inference. *Corrected 2026-10-21: this sat in a third cell of a two-column table, which GitHub does not render, and it said the case was found "by reading"; `FEATURE-test-mutation.md` §15 and the test's own comment both say the runner.* |
 
 ##### A4-11 — a branch behind the remote is refused rather than integrated
 
@@ -3278,10 +3278,11 @@ with their numbers, because "it reproduced" is worth more than "it looked wrong"
 | | |
 |---|---|
 | **Premise** | `TaskRunner.svelte` opened the Claude panel on `task.log.includes('ACTION REQUIRED')`, and `authProbe` stays `unknown` while the stack is down. M-A9 taught `git.sh` to print exactly that banner for a missing deploy key, so the two met for the first time and the panel opened for a provider switched off in `.env`. |
-| **Component** | `config/scripts/start/openclaw.sh` and `TaskRunner.svelte` as text, plus a real `git.sh` run. |
-| **Test data** | The marker `::aiw-claude-auth-required::`; the three markers the other providers already use; and a `git.sh` run declaring `git@github.com:nocodenation/agent-skills.git\|read\|protected` against a refusing ssh stand-in with `SYSTEM_SIGNIN_WAIT_SECONDS=0`. |
-| **Expected** | The panel's condition names the marker and not the banner; the marker appears exactly once in `openclaw.sh`, within a few lines of the Claude banner it belongs to; the other three providers are untouched; and a run that only wants a deploy key prints the banner and not the marker. |
+| **Component** | `config/scripts/start/openclaw.sh` and `TaskRunner.svelte` as text; `openclaw.sh` again as bash itself nests it, for A13-8's guard clause; plus a real `git.sh` run. |
+| **Test data** | The marker `::aiw-claude-auth-required::`; the three markers the other providers already use; for the guard clause, `openclaw.sh` checked with `bash -n`, wrapped in a function by `eval`, printed by `declare -f` with `PATH=/nonexistent`, and never run; and a `git.sh` run declaring `git@github.com:nocodenation/agent-skills.git\|read\|protected` against a refusing ssh stand-in with `SYSTEM_SIGNIN_WAIT_SECONDS=0`. |
+| **Expected** | The panel's condition names the marker and not the banner; the marker appears exactly once in `openclaw.sh`, within a few lines of the Claude banner it belongs to, and **inside the branch `if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then` opens** — read from bash's own parse, `openclaw.sh` wrapped in a function and printed back by `declare -f`, never run: the marker is nested deeper than the guard, and no `fi`, `else` or `elif` at the guard's depth comes between them; the other three providers are untouched; and a run that only wants a deploy key prints the banner and not the marker. *Corrected 2026-10-21: the row had no guard clause. The test gained one on 2026-10-09 and the row did not, and the clause then looked for a column-0 `fi` in the text.* |
 | **Covers** | Finding 4 of the #9 follow-up. |
+| **What it found** | *Added 2026-10-21.* A13-8's registered mutation renamed the marker, which the presence check catches before the guard clause is reached, so the clause had never been shown able to fail. The entry now empties the guarded branch and opens an unconditional one after it — `if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then :` / `fi` / `if true; then`, valid bash that prints the marker whatever the setting — and validates `(1 red, 6 green)`: only the guard clause sees it. The clause itself was too weak twice in one day, and each time a shape of the same regression went through: under its text-only form a column-0 `else`, a `fi  # end claude`, a `fi` on the guard's own line (`then :; fi; if true; then`) and an indented `fi` all left the case green. Read from bash's parse, every one of those reddens it — measured by hand with bash 3.2 on the host; bash 5.2 in `liquidupstart/dashboard:latest` nests the unmutated script the same way, guard at depth 4 and marker at 24. **What the clause does not hold:** it reads structure, so `ENABLE_CLAUDE_CLI=1` assigned on the line above the guard leaves the case green while the marker prints whatever `.env` says (measured); and literal text — a heredoc body, a multi-line string — keeps its own indentation in `declare -f`'s output, so a marker moved into a heredoc inside the guard, or a line of literal text starting with `fi`, `else` or `elif` at exactly the guard's depth, reads red without a regression. |
 
 ##### A13-9 — the card is keyed by slug
 
@@ -3394,6 +3395,7 @@ reviews that followed, and each has its evidence in its own block.
 | A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
 | A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
 | A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
+| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Cases documented after the fact
 
@@ -3416,15 +3418,22 @@ them, and they were not — they were written after, during the rounds of review
 | A16-27 | Integration | positive | The wait really waits and then works: a lock released during the wait is picked up and the clone happens | `tests/integration/m-a16.lock-wait.test.ts` |
 | A16-28 | Integration **unhappy** | negative | A start that gives up waiting changes nothing: the budget ends without a clone, and the manifest still says what the last start found | `tests/integration/m-a16.lock-wait.test.ts` |
 | A16-29 | Integration **unhappy** | negative | And it says what it did instead of writing it down | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-30 | Component | positive | `All skipped` renders a space before the countdown — **renumbered from A16-19 on 2026-10-10**, see below | `tests/component/m-a16.skip-panel.test.ts` |
 
-**One collision is deliberately left standing and recorded instead.** `A16-19` names two unrelated
-cases: `describe('A16-19 skip-all says it too, with the space')` in
-`tests/component/m-a16.skip-panel.test.ts` and `test('A16-19 git tracks test files, so there is
-something to judge')` in `tests/contract/m-a16.text-only.test.ts`. The row above describes the
-second. Renumbering a signed-off id is the operator's decision, and `mutate.sh` refuses a `mustFail`
-that resolves to more than one test, so the collision surfaces as a refusal rather than a wrong
-answer. In `BACKLOG.md`.
-| A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
+**The `A16-19` collision is resolved, and the first account of it here was wrong.** *Corrected
+2026-10-10.*
+
+It said the row describes `test('A16-19 git tracks test files, so there is something to judge')`. It
+does not: the signed-off row at the head of this milestone describes **`no test file is binary to
+git`**, which is a different test in the same file. `m-a16.text-only.test.ts` carries both under one
+id, and legitimately — "git tracks test files, so there is something to judge" is the premise the
+other one needs, the same shape as `TR-2`: without it, a reader that matched nothing would make the
+binary-file assertion green for ever.
+
+The real collision was with `tests/component/m-a16.skip-panel.test.ts`, which had nothing to do with
+either. **That side moved**, to `A16-30`, because there was nothing here to move in a document
+somebody had approved — and its own header had never listed the id at all. Deciding *which* side
+moves looked arbitrary and was not: one of them had a signed-off row and the other had none.
 
 #### Detail per case
 

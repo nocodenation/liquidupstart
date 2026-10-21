@@ -765,6 +765,15 @@ against rather than reasoned about.
 Recorded 2026-10-13.
 
 ---
+**~~OC-15 and OC-16 depend on what else the machine is doing.~~** *Answered 2026-10-10, and it took
+two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
+precondition could not reach the thing that failed: the registry was reachable in both failing runs
+and the machine was busy. `SP-3` asks whether a registry answers and skips them on an offline machine;
+their own **180-second** budget answers the load, against a quiet build measured at **14 seconds** on
+one machine and **45** on another. The 60 they had failed twice under load on the first and held,
+unloaded, on the second. The cost is stated at the test: a genuinely broken build now takes three
+minutes to say so. The original entry follows. (Corrected 2026-10-21: this gave 14 seconds alone and
+"four times".)*
 
 **OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
@@ -796,6 +805,21 @@ the 2026-10-01 round and not fixed, because renumbering a signed-off id is a dec
 branch's subject is the suite's preconditions. Recorded 2026-10-09.
 
 ---
+
+**~~Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.~~**
+*Resolved 2026-10-10 on the operator's word, and the entry below got one thing wrong that is worth
+keeping visible.*
+
+It said `text-only`'s two A16-19 tests were half of the collision. They are not: that file carries
+two tests under one id **legitimately** — "git tracks test files, so there is something to judge" is
+the premise "no test file is binary to git" needs, the same shape as `TR-2`. The signed-off row
+describes the second of those, not the first, which this entry also had backwards.
+
+The real collision was `tests/component/m-a16.skip-panel.test.ts`, unrelated to either. **It moved,
+to `A16-30`**, because there was nothing on that side to move in an approved document — and its own
+header had never listed the id at all, which is the drift `TR-1` exists for and is how this was found.
+Asked whether the choice of side mattered, the answer was almost no: one had a signed-off row and the
+other had none. The original entry follows.
 
 **Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.**
 `tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
@@ -1500,9 +1524,9 @@ than the papercut warrants. Every fallback on a path the stack actually walks wa
 migration; these two are what is left.
 
 **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
-Suggested in the third review of #11 as an optional improvement to N1, and deferred here on the
+Suggested in the third review of #11 as an optional improvement to N1 (OC-60 since the 2026-09-30 rename), and deferred here on the
 grounds that the situation justifying it could not be produced. It produced itself two days later: a
-suite run hung fifteen minutes on the N1 case itself, a hand-run of the same command sat attached to
+suite run hung fifteen minutes on the N1 (OC-60) case itself, a hand-run of the same command sat attached to
 a live container for eight minutes, and an outer `timeout 40` around the whole thing did not return
 either — GNU timeout waits for its child after signalling. In that window three of four attempts
 needed the kill (rc 137 after the grace) rather than the signal (rc 124). It is **intermittent and

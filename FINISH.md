@@ -2,13 +2,15 @@
 
 **One list, worked from the top. When it is empty, nothing is open on our side and the only thing
 left is review.** Written 2026-10-17, because the question *"why is there always something new?"*
-has a structural answer and this file is it.
+has a structural answer and this file is it. **Checked against the tree on 2026-10-21**, with `main`
+at `8476389`. Rows 3 to 10 are left as `main` has them: the branches that answer them carry their
+own update of each row, and a second copy here would be a conflict with each of them.
 
 ## Why this file exists
 
-`BACKLOG.md` is a **log, not a queue.** Thirty-one entries across its three sections, of which
-twenty-three read as open — and they are four different things, with nothing in the file telling them
-apart:
+`BACKLOG.md` is a **log, not a queue.** On 2026-10-17 it held thirty-one entries across its three
+sections, of which twenty-three read as open — and they are four different things, with nothing in
+the file telling them apart:
 
 | Kind | Example | Work? |
 |---|---|---|
@@ -34,7 +36,7 @@ That is the whole rule. A new item joins this list only if it meets it.
 
 | # | Item | Where | State |
 |---|---|---|---|
-| 1 | Mark every `BACKLOG.md` entry `OPEN` / `SETTLED` / `RECORD` / `DONE-ON-#N`, so the file becomes the queue it is read as | `BACKLOG.md` | **deferred to last**: nine open pull requests touch that file, and marking every entry now buys nine conflicts. Done when the queue has drained. |
+| 1 | Mark every `BACKLOG.md` entry `OPEN` / `SETTLED` / `RECORD` / `DONE-ON-#N`, so the file becomes the queue it is read as | `BACKLOG.md` | **deferred to last, still**: on 2026-10-21 **eight** of our nine open pull requests touch that file — #37, #38, #39, #40, #41, #42, #43, #45 — so marking every entry now buys eight conflicts. It said nine on 2026-10-17. Done when those have merged. |
 | 2 | Strike what open branches already closed, so `main`'s copy stops reading as open | `BACKLOG.md` | with 1, same reason |
 | 3 | `m-a5.nested-clone` writes into `volumes/repos` from the **default tier** — `git init` into the checkout it was started from, which `tests/run.sh:18-23` calls the stack tier's privilege | `tests/contract/m-a5.nested-clone.test.ts:44-51` | **next** |
 | 4 | A test run leaked a **container**, not only an image: `festive_wescoff` held `nar-builder:run-47099-xoirn1` for two days. The sweep built on #18 reclaims images; a container that outlives its run pins one and is not swept | `tests/lib/builderimage.ts` | open |
@@ -52,11 +54,11 @@ defect `A1` on #17 was.
 
 | Entry | Why it is settled rather than open |
 |---|---|
-| `S3` — the builder's port trusts any container on the stack network | A trust boundary, not a defect. It needs the operator's decision and it belongs with the pairing work on #15 |
-| The `operator.admin` direction | Lives on #15's branch, where it is specified and under review. Not ours to move while it is being read |
+| `S3` — the builder's port trusts any container on the stack network | A trust boundary, not a defect. It needs the operator's decision. It was to go with the pairing work on #15, which merged on 2026-10-20 without it, so it waits on that decision alone |
+| The `operator.admin` direction | Specified and reviewed on #15, which merged on 2026-10-20 |
 | A row that describes a different case than the test carrying its id — the third id class | Needs a convention before it can be checked at all; recorded on #28. Judging whether two prose descriptions mean the same thing is a manual check by `CLAUDE.md`'s own rule |
 | Docker Desktop on macOS, Windows and WSL2 | Needs machines this host is not. Recorded in two specifications as deliberately unverified |
-| #10's controls into the mutation registry | The registry is on #18 and awaiting a re-read. Blocked, not deferred |
+| #10's controls into the mutation registry | It was blocked on #18, which merged on 2026-10-21; the runner is on `main` with an empty registry, and #17 fills it. Unblocked now, and still outside the cut line: nothing claims something false while they are unregistered, and `mutate.sh --gaps` lists them as missing, which is the true statement |
 | The Claude login expiry; the OpenClaw CLI's gateway token; `volumes/_openclaw-claude/skills` not removable | Carried over from the 2026.9.1 migration. None of them makes anything claim something false |
 | The deploy-key wait handling one key at a time | A design preference, with the reasoning recorded |
 | A run killed mid-clone leaves a clone the next run adopts | Narrow window, never observed, and the record says so |
@@ -65,6 +67,15 @@ defect `A1` on #17 was.
 
 ## What finishing means
 
-When items 3 to 10 are done: twelve pull requests waiting on review, nothing waiting on us. Review
-comments then arrive, are worked in, and that is the end of development. **This file is the only
-place a new item may be added, and only if it meets the cut line above.**
+When items 3 to 10 are done: every pull request of ours waiting on review, nothing waiting on us.
+Review comments then arrive, are worked in, and that is the end of development. *On 2026-10-21, nine
+pull requests of ours are open, and items 3 to 9 are answered on five of them, each of which updates
+its own row here when it merges: 3 on #39, 4 on #40, 5 and 6 on #41, 7 and 8 on #42 — #40 adds to
+row 7 as well — and the first half of 9 on #43. The five conflict with each other here in
+neighbouring rows, though each merges clean into `main`, so whichever lands second keeps both rows.
+6 and 8 are answered by settling them, which the operator accepted that day. 1 and 2 wait for the
+eight that touch `BACKLOG.md`. Of 10, two thirds held that day: every open pull request of ours
+carried a comment of ours newer than its head, compared in UTC, and every branch of ours merged
+clean. It said "twelve pull requests" on 2026-10-17, when the twelve were different ones; the count
+is the forge's to give, and `./scripts/state.sh` on #43, `feature/computed-state`, gives it.* **This
+file is the only place a new item may be added, and only if it meets the cut line above.**
