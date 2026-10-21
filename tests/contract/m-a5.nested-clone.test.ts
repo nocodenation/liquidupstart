@@ -26,11 +26,18 @@
  * Unhappy:  None. The counterpart — that a forced clean does remove it — is
  *           deliberately not run, because running it against the operator's
  *           workspace would be the incident this test exists to describe.
+ *
+ * Precondition: IN_GIT_REPO -- this checkout is a git repository. The three A5-8
+ *           scenarios ask git what it ignores and what it would clean, and a
+ *           release installation at `~/.liquidupstart` is not a repository at
+ *           all, so there they failed on the absence of `.git` rather than on
+ *           anything the rule says. Skipped where it is not one. SP-1, SP-2.
  */
 import { test, expect, beforeAll, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
+import { IN_GIT_REPO } from '../lib/preconditions';
 import { sh } from '../lib/shell';
 import { git, commit } from '../lib/gitfixture';
 
@@ -51,19 +58,19 @@ const nested = () =>
     .filter((name) => existsSync(join(reposDir, name, '.git')))
     .map((name) => rel(join(reposDir, name)));
 
-test('A5-8 volumes/repos is ignored, by the volumes/ rule in .gitignore', () => {
+test.skipIf(!IN_GIT_REPO)('A5-8 volumes/repos is ignored, by the volumes/ rule in .gitignore', () => {
   const r = sh(['git', 'check-ignore', '-v', 'volumes/repos'], repoRoot);
   expect(r.code).toBe(0);
   expect(r.stdout).toMatch(/^\.gitignore:\d+:volumes\/\tvolumes\/repos$/m);
 });
 
-test('A5-8 nothing under volumes/ shows in the operator\'s status', () => {
+test.skipIf(!IN_GIT_REPO)('A5-8 nothing under volumes/ shows in the operator\'s status', () => {
   const r = sh(['git', 'status', '--short', '--ignored=no', '--', 'volumes'], repoRoot);
   expect(r.code).toBe(0);
   expect(r.stdout).toBe('');
 });
 
-test('A5-8 a dry-run clean skips every nested repository rather than offering to remove it', () => {
+test.skipIf(!IN_GIT_REPO)('A5-8 a dry-run clean skips every nested repository rather than offering to remove it', () => {
   const r = sh(['git', 'clean', '-ndx', 'volumes/repos'], repoRoot);
   expect(r.code).toBe(0);
   const repos = nested();

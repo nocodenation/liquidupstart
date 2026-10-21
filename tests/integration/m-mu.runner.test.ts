@@ -1,5 +1,5 @@
 /**
- * MU-1 to MU-59 — the mutation runner, proved against its own failure modes.
+ * MU-1 to MU-63 — the mutation runner, proved against its own failure modes.
  *
  * Purpose: `tests/mutate.sh` exists to show that a case can fail. Its own
  * failure — silently skipping, or calling a green run a discovery — would be the
@@ -47,8 +47,11 @@
  * a survivor to point at.
  *
  * The directory becomes a git repository only when MU-7 runs `git init` in it, so
- * cases before and after MU-7 see different state -- and four cases do not use the
- * fixture at all: MU-8's three `--gaps` scenarios and MU-59 read this repository.
+ * cases before and after MU-7 see different state -- and some scenarios do not use
+ * the fixture at all: two of MU-8's `--gaps` scenarios and MU-59 read this
+ * repository, and MU-8's `--root` scenario builds a tree of its own. (This said
+ * "MU-8's three": the count scenario passes `--root` with a fixture. Corrected
+ * 2026-10-21 with the specification, finding 13 of the local review.)
  *
  * Requirements covered: MU-FR1 to MU-FR7, MU-NFR1, MU-NFR2, MU-NFR3.
  *
@@ -56,9 +59,14 @@
  * its stated subject data left the two `TWICE` lines out -- so a reader checking
  * the fixture against the description would have found a file with two lines in
  * it that the description did not mention. Finding 9 of the 2026-10-01 re-review.
+ *
+ * *Range corrected again 2026-10-20.* It still said MU-59 after MU-60, MU-61 and
+ * MU-62 were added to it, which is the same defect in the same line twice. The
+ * range is now the one `scenario-table.ts` generates from, so a reader can check
+ * it against the table below rather than against recollection.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { makeTree, dropTree } from '../lib/fixtures';
 import { createHash } from 'node:crypto';
@@ -67,6 +75,9 @@ import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 
 const RUNNER = join(repoRoot, 'tests/mutate.sh');
+// The generator's own reader, imported rather than copied: N2 of #16 is the
+// lesson -- a probe that re-implements what it measures measures itself.
+import { titles } from '../scenario-table';
 
 let root: string;
 const SUBJECT = 'subject.sh';
@@ -318,6 +329,54 @@ describe('MU-7 it does not run over uncommitted work', () => {
   });
 });
 
+describe('MU-7 and a subject reached through a link is judged where it leads', () => {
+  test('MU-7 an uncommitted edit behind a link stops the entry', () => {
+    // **N7 of the 2026-10-14 fourth re-review.** The guard asked git about
+    // `$file` as the registry wrote it, not about `$rel` where it leads, so with
+    // `viaLink.sh -> src/real.sh` and an uncommitted edit in `src/real.sh` the
+    // entry ran: the link itself has no changes.
+    //
+    // **Nothing is lost on the ordinary path**, which is why the severity is
+    // low: the backup is of the current content and the restore puts it back.
+    // What is lost is the backstop the procedure names for SIGKILL — a killed
+    // run leaves the target mutated, and the next run has to refuse rather than
+    // mutate on top of it. It did not. The same rule as MU-53: a subject is
+    // judged by where it leads.
+    const g = (...a: string[]) => sh(['git', '-C', root, ...a]);
+    mkdirSync(join(root, 'src'), { recursive: true });
+    const real = 'src/real.sh';
+    writeFileSync(join(root, real), subjectBody);
+    const link = 'viaLink.sh';
+    rmSync(join(root, link), { force: true });
+    symlinkSync(join(root, real), join(root, link));
+    g('add', '-A');
+    g('commit', '-qm', 'link fixture');
+
+    // The edit is in the target, which is what the registry does not name.
+    writeFileSync(join(root, real), subjectBody + '# local edit\n');
+    const r = run(registry([entry({ file: link })]));
+    expect(r.output).toContain('has uncommitted changes');
+    expect(r.code).not.toBe(0);
+
+    // The counterpart: with the target clean the guard does not fire, so it is
+    // not "refuse every link" — MU-53 already holds that a link to an ordinary
+    // file is a subject, and this keeps the two consistent.
+    //
+    // Asserted as *not refused* rather than as VALIDATED, and that is the
+    // precise property: the verdict here is **UNRESOLVED**, because the fixture
+    // spec reads `../subject.sh` while this entry mutates `src/real.sh`, so
+    // nothing it asserts changes. Expecting VALIDATED was this case's first
+    // reading and it was wrong about its own fixture — a reminder that a
+    // counterpart has to assert the thing under test and not the happiest
+    // outcome nearby.
+    writeFileSync(join(root, real), subjectBody);
+    const ok = run(registry([entry({ file: link })]));
+    expect(ok.output).not.toContain('has uncommitted changes');
+    expect(ok.output).toContain('UNRESOLVED FX-1');
+    rmSync(join(root, link), { force: true });
+  }, 300_000);
+});
+
 describe('MU-8 the gap is a number, not an impression', () => {
   test('MU-8 the report counts specified cases, registered ones and the difference', () => {
     // Against a specification with known contents rather than against whatever
@@ -345,6 +404,53 @@ describe('MU-8 the gap is a number, not an impression', () => {
     expect(r.output).toMatch(/missing:\s+FX-2 FX-3/);
   });
 
+  test('MU-8 and a row whose id is not of the registered shape is reported, not passed over', () => {
+    // **N8 of the 2026-10-14 fourth re-review: the one repair whose control
+    // stayed green.** A manual case has no trailing number — `A16-M1` in
+    // TEST-SPEC-git-integration.md — so the counting pattern skipped it and
+    // nothing said so. A reader comparing the number against the registry had no
+    // way to know a row had been passed over. The repair reports those ids
+    // instead of counting them, and the reviewer showed that replacing its
+    // `console.log` with `if (false)` left MU-8, MU-29, MU-36 and MU-60 all
+    // green: the behaviour existed and nothing held it.
+    //
+    // `FX-M1` is that shape in miniature, beside an ordinary `FX-1` so the two
+    // readings are made in one run: the count and the list must disagree about
+    // it in exactly the right way.
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    writeFileSync(
+      join(root, 'docs/TEST-SPEC-manual.md'),
+      [
+        '| ID | Level | Sign | Case |',
+        '|---|---|---|---|',
+        '| FX-1 | unit | positive | counted, because the id ends in digits |',
+        '| FX-M1 | system, **manual** | positive | not counted: a manual check has nothing to register |',
+        '| **FX-M2** | system, **manual** | positive | bolded, and still not counted |'
+      ].join('\n')
+    );
+    const reg = registry([entry()]);
+    const r = sh(['bash', RUNNER, '--gaps', '--registry', reg, '--root', root]);
+    expect(r.code).toBe(0);
+
+    // **Asserted relationally, not as an absolute count**, because the scenario
+    // above writes its own specification into the same `root` and its three ids
+    // are in this reading too. Expecting `specified=1` was this case's first
+    // version and it was measuring the other fixture. What is this case's own is
+    // the relationship: the two manual ids are reported, and they are **not** in
+    // the counted set — so they cannot appear as missing, which is what a reader
+    // comparing the number against the registry would otherwise conclude.
+    expect(r.output).toContain('not counted, their ids are not of the registered shape');
+    expect(r.output).toContain('FX-M1 (TEST-SPEC-manual.md)');
+    expect(r.output).toContain('FX-M2 (TEST-SPEC-manual.md)');
+    const missing = /^missing:\s+(.*)$/m.exec(r.output)?.[1] ?? '';
+    expect(missing).not.toContain('FX-M1');
+    expect(missing).not.toContain('FX-M2');
+    // And the bolded one is read: the loose pattern has to be a superset of the
+    // counted one, or widening the report narrows the count.
+    expect(r.output).toContain('FX-M2');
+    rmSync(join(root, 'docs/TEST-SPEC-manual.md'), { force: true });
+  });
+
   test('MU-8 and it reads the real specifications of whatever branch it runs on', () => {
     // The counterpart to the fixture: a parser that works only on its own test
     // data is a parser nobody can trust against the tree it ships with.
@@ -360,6 +466,30 @@ describe('MU-8 the gap is a number, not an impression', () => {
     const r = sh(['bash', RUNNER, '--gaps', '--registry', registry([entry({ case: 'ZZ-99' })])]);
     expect(r.output).toContain('orphaned=1');
     expect(r.output).toContain('ZZ-99');
+  });
+
+  test('MU-8 and --root alone reads the registry of that tree, not this one', () => {
+    // **Finding 11 of the local review of 2026-10-21.** The registry defaulted to
+    // this checkout's before `--root` was read, so `--root D --gaps` compared
+    // this repository's registry with D's specifications. The tree below holds
+    // its own registry whose one entry, `OW-2`, no specification of that tree
+    // mentions, so reading that registry is visible as an orphan -- and this
+    // checkout's registry cannot supply it by accident, since nothing here is
+    // called OW-2. The counterpart is the scenario above: `--registry` given
+    // explicitly still wins.
+    const tree = mkdtempSync(join(tmpdir(), 'mu-ownroot-'));
+    mkdirSync(join(tree, 'docs'), { recursive: true });
+    mkdirSync(join(tree, 'tests'), { recursive: true });
+    writeFileSync(join(tree, 'docs/TEST-SPEC-own.md'), '| **OW-1** | positive | a case of that tree |\n');
+    writeFileSync(join(tree, 'tests/mutations.json'), JSON.stringify([{ case: 'OW-2', exempt: 'fixture' }]));
+    try {
+      const r = sh(['bash', RUNNER, '--gaps', '--root', tree]);
+      expect(r.output).toContain('specified=1 registered=1');
+      expect(r.output).toContain('orphaned: OW-2');
+      expect(r.code).not.toBe(0);
+    } finally {
+      rmSync(tree, { recursive: true, force: true });
+    }
   });
 });
 
@@ -564,6 +694,13 @@ describe('MU-26 a restore that failed keeps its backup', () => {
     // permission staging it holds for root as well -- root may remove a
     // directory, and no uid can write into one that is gone. Item 1 of the
     // 2026-09-29 re-review.
+    //
+    // **Only under the mutation, corrected 2026-10-21.** The spec removed the
+    // directory unconditionally, so it was already gone after the *baseline*:
+    // the write then failed, the entry was refused as "the mutation did not
+    // reach", and the failing restore ran with nothing mutated. The assertion
+    // held and the path this case is named for -- the restore after a mutated
+    // run -- was never reached. Finding 10 of the local review of 2026-10-21.
     const dir = join(root, 'fragile');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'subject.sh'), subjectBody);
@@ -575,7 +712,7 @@ import { join } from 'node:path';
 const dir = join(import.meta.dir, '..', 'fragile');
 const s = readFileSync(join(dir, 'subject.sh'), 'utf8');
 test('the policy is protected', () => {
-  rmSync(dir, { recursive: true, force: true });
+  if (s.includes('POLICY="public"')) rmSync(dir, { recursive: true, force: true });
   expect(s).toContain('POLICY="protected"');
 });
 test('an unrelated survivor', () => { expect(1).toBe(1); });
@@ -585,10 +722,14 @@ test('an unrelated survivor', () => { expect(1).toBe(1); });
     const r = run(registry([entry({ file: 'fragile/subject.sh', spec })]), [], { TMPDIR: tmp });
     expect(r.code).not.toBe(0);
     expect(r.output).toContain('the backup is kept at');
+    // The mutation landed and was measured, so the failing restore is the one
+    // after a mutated run -- which is what makes the kept backup worth having.
+    expect(r.output).not.toContain('did not reach');
+    expect(r.output).toContain('VALIDATED FX-1');
     // The backup is still on disk, so the mutated file can be put back by hand.
     expect(readdirSync(tmp).length).toBeGreaterThan(0);
     rmSync(dir, { recursive: true, force: true });
-  });
+  }, 300_000);
 });
 
 describe('MU-27 the named test is matched as a whole name', () => {
@@ -932,6 +1073,53 @@ test('an unrelated survivor', () => { expect(1).toBe(1); });
     expect(r.output).not.toContain('VALIDATED');
     expect(sha()).toBe(cleanSha);
   }, 300_000);
+
+  test('MU-37 and an async hang that the bun timeout ends is refused, not validated', () => {
+    // **Finding 2 of the local review of 2026-10-21.** The comment above and the
+    // procedure both say an async hang came back VALIDATED and the budget ended
+    // that. It did not: the per-test limit the runner hands bun (`--timeout`,
+    // 120 s unless set) fires before the run budget (300 s), so bun reddened
+    // the test with a TimeoutError and the runner counted it as a kill. Reproduced before the repair, with a 3 s
+    // limit: `VALIDATED FX-1  the policy is protected  (1 red, 1 green)`, exit 0.
+    // The named test asserts nothing about POLICY at all -- it only hangs.
+    const spec = 'spec/async-hang.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', async () => {
+  if (s.includes('POLICY="public"')) await new Promise(() => {});
+  expect(1).toBe(1);
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec })]), ['--timeout', '3000']);
+    expect(r.output).toContain('was stopped by the bun timeout under the mutation, not by an assertion');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+    expect(sha()).toBe(cleanSha);
+  }, 300_000);
+
+  test('MU-37 and a test that awaits and then fails its assertion is still validated', () => {
+    // The counterpart: an awaiting test is not a hanging one. Without it, a rule
+    // that refused every async red would pass the scenario above.
+    const spec = 'spec/async-assert.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', async () => {
+  await Bun.sleep(50);
+  expect(s).toContain('POLICY="protected"');
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ spec })]), ['--timeout', '3000']);
+    expect(r.output).toContain('VALIDATED FX-1');
+    expect(r.code).toBe(0);
+  }, 300_000);
 });
 
 describe('MU-38 while an ordinary run is not slowed by the bound', () => {
@@ -1015,6 +1203,144 @@ test('an unrelated survivor', () => { expect(1).toBe(1); });
     expect(output).toContain('no entry was judged past this point');
     // And MU-6s two promises, which held before and must still hold.
     expect(sha()).toBe(cleanSha);
+  }, 300_000);
+
+  test('MU-39 and a restore that fails under the signal says so, not that the subject is back', async () => {
+    // **Finding 9 of the local review of 2026-10-21.** The handler restores and
+    // then prints its last line, and that line said "the subject is back"
+    // unconditionally -- right after restore had printed "could not restore"
+    // and kept the backup. Reproduced before the repair with a subject whose
+    // copy back failed: exit 143, `POLICY="public"` still on disk, and the last
+    // line saying the subject was back. That line is the one a supervisor reads.
+    //
+    // Staged by removing the subject's directory once the mutation is on disk,
+    // as MU-26 does, because root ignores a permission staging. The scenario
+    // above is the counterpart: a restore that works still says so.
+    const dir = join(root, 'doomed');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'subject.sh'), subjectBody);
+    const spec = 'spec/doomed-under-mutation.test.ts';
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+const dir = join(import.meta.dir, '..', 'doomed');
+const s = readFileSync(join(dir, 'subject.sh'), 'utf8');
+test('the policy is protected', async () => {
+  if (s.includes('POLICY="public"')) {
+    rmSync(dir, { recursive: true, force: true });
+    await new Promise((r) => setTimeout(r, 40000));
+  }
+  expect(s).toContain('POLICY="protected"');
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const tmp = mkdtempSync(join(tmpdir(), 'mu-doomed-'));
+    const child = Bun.spawn(
+      ['bash', RUNNER, '--registry', registry([entry({ file: 'doomed/subject.sh', spec })]),
+        '--root', root, '--timeout', '90000'],
+      { stdout: 'pipe', stderr: 'pipe', env: { ...process.env, TMPDIR: tmp } }
+    );
+
+    try {
+      // The directory goes only under the mutation, so its absence says the
+      // mutated run is under way.
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline && existsSync(dir)) await Bun.sleep(100);
+      expect(existsSync(dir)).toBe(false);
+
+      child.kill('SIGTERM');
+      const status = await child.exited;
+      const output = (await new Response(child.stdout).text()) + (await new Response(child.stderr).text());
+
+      expect(status).not.toBe(0);
+      expect(output).toContain('could not restore');
+      expect(output).toContain('the subject could NOT be put back');
+      expect(output).not.toContain('and the subject is back');
+      expect(output).not.toContain('VALIDATED');
+      // The backup is what a person puts back by hand, so it has to be there.
+      expect(readdirSync(tmp).some((f) => f.startsWith('lu-mutate.'))).toBe(true);
+    } finally {
+      // An assertion that throws before the signal must not leave the runner
+      // and its bun behind. TERM rather than KILL, because the runner's TERM
+      // handler is what takes bun with it; on a runner already gone it is a
+      // no-op.
+      child.kill('SIGTERM');
+      await child.exited;
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 300_000);
+
+  test('MU-39 and an earlier failed restore does not make a later clean one read as failed', async () => {
+    // **Found by the second pass over the repair of the local review of
+    // 2026-10-21.** The handler read the run's total of failed restores, so an
+    // earlier entry's failure made a clean restore under the signal print
+    // "could NOT be put back -- see the line above", pointing at a line about a
+    // different file. Reproduced with these two entries: the second subject was
+    // back on disk and the last line said it was not.
+    //
+    // Entry one is MU-26's shape on `fragile2/`: its restore fails and its
+    // backup stays. Entry two mutates the shared subject and sleeps once
+    // mutated; TERM goes while it sleeps.
+    const fdir = join(root, 'fragile2');
+    mkdirSync(fdir, { recursive: true });
+    writeFileSync(join(fdir, 'subject.sh'), subjectBody);
+    const fspec = 'spec/fragile2.test.ts';
+    writeFileSync(join(root, fspec), `
+import { test, expect } from 'bun:test';
+import { readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+const dir = join(import.meta.dir, '..', 'fragile2');
+const s = readFileSync(join(dir, 'subject.sh'), 'utf8');
+test('the policy is protected', () => {
+  if (s.includes('POLICY="public"')) rmSync(dir, { recursive: true, force: true });
+  expect(s).toContain('POLICY="protected"');
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const cspec = 'spec/calm-under-mutation.test.ts';
+    writeFileSync(join(root, cspec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', async () => {
+  if (s.includes('POLICY="public"')) await new Promise((r) => setTimeout(r, 40000));
+  expect(s).toContain('POLICY="protected"');
+});
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const tmp = mkdtempSync(join(tmpdir(), 'mu-earlier-'));
+    const reg = registry([
+      entry({ case: 'FX-1', file: 'fragile2/subject.sh', spec: fspec }),
+      entry({ case: 'FX-2', spec: cspec })
+    ]);
+    const child = Bun.spawn(
+      ['bash', RUNNER, '--registry', reg, '--root', root, '--timeout', '90000'],
+      { stdout: 'pipe', stderr: 'pipe', env: { ...process.env, TMPDIR: tmp } }
+    );
+    try {
+      // The shared subject is mutated only by the second entry, so seeing it
+      // mutated says the first is over and the second is under way.
+      const subject = join(root, SUBJECT);
+      const deadline = Date.now() + 60_000;
+      while (Date.now() < deadline && !readFileSync(subject, 'utf8').includes('POLICY="public"')) await Bun.sleep(100);
+      expect(readFileSync(subject, 'utf8')).toContain('POLICY="public"');
+
+      child.kill('SIGTERM');
+      const status = await child.exited;
+      const output = (await new Response(child.stdout).text()) + (await new Response(child.stderr).text());
+
+      expect(status).not.toBe(0);
+      expect(output).toContain('could not restore');
+      expect(output).toContain('and the subject is back; an earlier one could not be put back');
+      expect(output).not.toContain('the subject could NOT be put back');
+      expect(sha()).toBe(cleanSha);
+    } finally {
+      child.kill('SIGTERM');
+      await child.exited;
+      rmSync(tmp, { recursive: true, force: true });
+    }
   }, 300_000);
 });
 
@@ -1121,6 +1447,21 @@ test('an unrelated survivor', () => { expect(1).toBe(1); });
     );
     expect(r.output).toContain('VALIDATED FX-1');
   }, 300_000);
+
+  test('MU-41 and part of a parent name is not a block of its own', () => {
+    // **Finding 4 of the local review of 2026-10-21**, and the separator inside
+    // one segment is what reaches it. A block prefix was found with
+    // `path.startsWith(want + " > ")`, a string comparison, so `a & b` matched
+    // the path `a & b > "c" > deep` although no block is called `a & b`.
+    // Reproduced before the repair: `VALIDATED FX-1  a & b  (1 red, 1 green)`,
+    // exit 0 -- a false VALIDATED for a name that is no block and no test. The
+    // positive counterpart is the scenario above: the whole parent name matches.
+    seed();
+    const r = run(registry([entry({ spec: nested, mustFail: 'a & b' })]));
+    expect(r.output).toContain('did not run in');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
 });
 
 describe('MU-42 a case that is a block stands for the tests under it', () => {
@@ -1186,9 +1527,79 @@ test('the policy is protected', () => { expect(s).toContain('POLICY="protected"'
 test('an unrelated survivor', () => { expect(1).toBe(1); });
 `);
     const r = run(registry([entry({ file: 'sub/subject.sh', spec })]));
+    // *Since the local review of 2026-10-21 this is refused one step earlier*:
+    // the writer cannot read a subject that is gone, and its failure is now read
+    // rather than discarded, so the refusal comes from there with the reason
+    // appended. The `cmp` check stays behind it and is reachable only by a race.
     expect(r.output).toContain('the mutation did not reach sub/subject.sh');
     expect(r.output).not.toContain('VALIDATED');
     expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-43 and a write that fails partway is refused, not run against', () => {
+    // **Finding 5 of the local review of 2026-10-21.** The writer's exit status
+    // was discarded with `|| true`, and `cmp` only proves the file changed.
+    // `ulimit -f 4` caps a file at 4096 bytes -- measured on macOS bash 3.2 and
+    // on Linux bash 5.2 as root. The backup of this 1536-byte subject fits, and
+    // the mutated subject, every `a` tripled to 4536 bytes, does not, so
+    // writeFileSync truncates it, writes 4096 bytes and fails with EFBIG. The
+    // asserted line is the last one, so the truncation removes it. Reproduced
+    // before the repair: `VALIDATED FX-1  the policy is protected  (1 red,
+    // 1 green)`, where the same entry written whole is UNRESOLVED, because
+    // nothing the spec asserts contains an `a`. A file-size limit holds for
+    // root as well, which a permission staging would not.
+    const spec = 'spec/partial.test.ts';
+    mkdirSync(join(root, 'big'), { recursive: true });
+    const body = `#!/bin/sh\nPAD="${'a'.repeat(1500)}"\nPOLICY="protected"\n`;
+    writeFileSync(join(root, 'big/subject.sh'), body);
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'big', 'subject.sh'), 'utf8');
+test('the policy is protected', () => { expect(s).toContain('POLICY="protected"'); });
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const reg = registry([entry({
+      file: 'big/subject.sh', spec, from: 'a', to: 'aaa', all: true as unknown as string
+    })]);
+    const r = sh(['bash', '-c', 'ulimit -f 4; exec bash "$@"', 'bash',
+      RUNNER, '--registry', reg, '--root', root, '--timeout', '30000']);
+    expect(r.output).toContain('the mutation did not reach big/subject.sh whole');
+    expect(r.output).toContain('EFBIG');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+    expect(readFileSync(join(root, 'big/subject.sh'), 'utf8')).toBe(body);
+  }, 300_000);
+
+  test('MU-43 and a from the baseline removed is refused, not written somewhere else', () => {
+    // The other half of finding 5. The occurrence count is taken before the
+    // baseline, and a spec may rewrite its own subject while it runs. The writer
+    // then found no `from`, `indexOf` gave -1, and `slice(0, -1) + to` wrote a
+    // different edit, which was measured and credited. Reproduced before the
+    // repair: `VALIDATED`. The marker file makes the rewrite happen in the
+    // baseline only.
+    const spec = 'spec/rewrites-own-subject.test.ts';
+    mkdirSync(join(root, 'moving'), { recursive: true });
+    writeFileSync(join(root, 'moving/subject.sh'), subjectBody);
+    writeFileSync(join(root, spec), `
+import { test, expect } from 'bun:test';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+const p = join(import.meta.dir, '..', 'moving', 'subject.sh');
+const marker = join(import.meta.dir, '..', 'moving', 'baseline-ran');
+const s = readFileSync(p, 'utf8');
+if (!existsSync(marker)) { writeFileSync(marker, ''); writeFileSync(p, s.replace('POLICY="protected"', 'POLICY_GONE')); }
+test('the policy is protected', () => { expect(s).toContain('POLICY="protected"'); });
+test('an unrelated survivor', () => { expect(1).toBe(1); });
+`);
+    const r = run(registry([entry({ file: 'moving/subject.sh', spec })]));
+    expect(r.output).toContain('the mutation did not reach moving/subject.sh whole -- the from is no longer in the subject');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+    // The restore puts back what was there before the baseline, not what the
+    // spec left.
+    expect(readFileSync(join(root, 'moving/subject.sh'), 'utf8')).toBe(subjectBody);
   }, 300_000);
 });
 
@@ -1278,6 +1689,21 @@ describe('MU-46 and MU-47 a name that resolves to more than one test is refused'
   // evidence, and MU-33 is where the restore itself is held.
   const twoBlocks = 'spec/samename.test.ts';
   const blockAndTest = 'spec/blockandtest.test.ts';
+  // N1 of the fourth re-review: the same ambiguity one level up, on the block
+  // side. The reviewer's two shapes, by his names.
+  const twoNested = 'spec/f1n.test.ts';
+  const topAndNested = 'spec/f1t.test.ts';
+  // B1 of the fifth re-review: the precedence f1t needed, read on the leaf side.
+  // The reviewer's two shapes again, by his names.
+  const nestedLeaf = 'spec/nl.test.ts';
+  const topLeaf = 'spec/tl.test.ts';
+  // Finding 1 of the local review of 2026-10-21: the precedence f1t was given,
+  // read for a top-level block whose tests sit **deeper** than its first level.
+  const topDeep = 'spec/f1d.test.ts';
+  const topOnlyNested = 'spec/f1o.test.ts';
+  // Found by the second pass over that repair: two blocks whose names join to
+  // the same text.
+  const joined = 'spec/joined.test.ts';
 
   beforeAll(() => {
     const head = `
@@ -1300,6 +1726,66 @@ test('unrelated', () => { expect(1).toBe(1); });
 describe('rejects a bad value', () => { test('under the block', () => { expect(s).toContain('MODE=600'); }); });
 test('rejects a bad value', () => { expect(s).toContain('POLICY="protected"'); });
 `);
+    // Two *nested* blocks with one name: `policy > checks` guards the policy,
+    // `mode > checks` guards the mode. An entry naming `checks` means neither in
+    // particular, and the mutation reddens only the second.
+    writeFileSync(join(root, twoNested), `${head}
+describe('policy', () => { describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); }); });
+describe('mode', () => { describe('checks', () => { test('m', () => { expect(s).toContain('MODE=600'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // The shape where the remedy cannot help: a **top-level** `checks` whose own
+    // full name is `checks`, beside a nested `mode > checks`. No spelling names
+    // the first more precisely than the caller already did.
+    writeFileSync(join(root, topAndNested), `${head}
+describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); });
+describe('mode', () => { describe('checks', () => { test('m', () => { expect(s).toContain('MODE=600'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // The shape the precedence opened: a nested **test** named `checks` beside a
+    // nested **block** of that name. `checks` names neither in particular, and
+    // the mutation reddens only the test. Note the difference from `f1n`: there
+    // the two things are both blocks; here one is a leaf, which is what made it
+    // count as exact and outrank the other.
+    writeFileSync(join(root, nestedLeaf), `${head}
+describe('policy', () => { describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); }); });
+describe('mode', () => { test('checks', () => { expect(s).toContain('MODE=600'); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // And the counterpart to the repair itself: a **top-level** test named
+    // `checks`, whose own full name is `checks`, beside a nested block of that
+    // name. Here the precedence is the one f1t was given, so it still applies.
+    writeFileSync(join(root, topLeaf), `${head}
+test('checks', () => { expect(s).toContain('MODE=600'); });
+describe('policy', () => { describe('checks', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // A top-level `checks` with one test directly inside it and one a level
+    // deeper. The mutation reddens only the deeper one, which is still a test of
+    // the block the entry names.
+    writeFileSync(join(root, topDeep), `${head}
+describe('checks', () => {
+  test('direct', () => { expect(s).toContain('POLICY="protected"'); });
+  describe('sub', () => { test('nested', () => { expect(s).toContain('MODE=600'); }); });
+});
+describe('mode', () => { describe('checks', () => { test('m', () => { expect(s).toContain('FIELDS="A B C"'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // A top-level `checks` holding **no** test of its own, only a nested block,
+    // beside `mode > checks`. Its full name is still `checks`.
+    writeFileSync(join(root, topOnlyNested), `${head}
+describe('checks', () => { describe('sub', () => { test('p', () => { expect(s).toContain('MODE=600'); }); }); });
+describe('mode', () => { describe('checks', () => { test('m', () => { expect(s).toContain('POLICY="protected"'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
+    // One block literally named `a > b`, guarding POLICY, and a block `b` inside
+    // a block `a`, guarding MODE. Joined with the separator both paths read
+    // `a > b`; as lists they are `["a > b"]` and `["a", "b"]`.
+    writeFileSync(join(root, joined), `${head}
+describe('a > b', () => { test('p', () => { expect(s).toContain('POLICY="protected"'); }); });
+describe('a', () => { describe('b', () => { test('m', () => { expect(s).toContain('MODE=600'); }); }); });
+test('other', () => { expect(1).toBe(1); });
+`);
   });
 
   test('MU-46 the same test name in two blocks is refused, and the remedy is named', () => {
@@ -1314,6 +1800,126 @@ test('rejects a bad value', () => { expect(s).toContain('POLICY="protected"'); }
     const r = run(registry([entry({ spec: blockAndTest, mustFail: 'rejects a bad value', from: 'MODE=600', to: 'MODE=777' })]));
     expect(r.output).toContain('resolves to more than one test');
     expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-61 two nested blocks with one name are refused, not credited to either', () => {
+    // **N1 of the 2026-10-14 fourth re-review**, and it is finding 1 one level
+    // up. A block match was identified by the name the caller typed, so two
+    // different blocks collapsed into one thing and the ambiguity refusal never
+    // fired. Reproduced at b8b608b: `VALIDATED F1N  checks  (1 red, 2 green)`,
+    // exit 0, with the policy test green throughout. A false VALIDATED is the
+    // one verdict this tool must never print.
+    const r = run(registry([entry({ spec: twoNested, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('resolves to more than one test');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-61 and the remedy resolves it, which is what makes the refusal useful', () => {
+    const r = run(registry([entry({ spec: twoNested, mustFail: 'mode > checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-61 and two blocks whose names join to the same text are still two blocks', () => {
+    // **Found by the second pass over the repair of the local review of
+    // 2026-10-21.** An identity was the joined path, so `["a > b"]` and
+    // `["a", "b"]` were both `block@a > b`: one thing, never ambiguous, and
+    // "red if any is red" credited `m` for an entry about `p`. Reproduced at
+    // this branch's head and after the first repair alike:
+    // `VALIDATED FX-1  a > b  (1 red, 2 green)`, exit 0, with `p` green
+    // throughout. N1's defect, reached through the separator inside a name.
+    const r = run(registry([entry({ spec: joined, mustFail: 'a > b', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('resolves to more than one test');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-61 and naming the test in full still resolves the joined shape', () => {
+    // The counterpart. No spelling tells the two blocks apart, but each test's
+    // full name is its own: `a > b > m` is only the nested one.
+    const r = run(registry([entry({ spec: joined, mustFail: 'a > b > m', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED FX-1  a > b > m');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 a top-level block whose name repeats deeper is that block, not an ambiguity', () => {
+    // The shape where the remedy the refusal offers would be the name already
+    // given: the top-level block's full name **is** `checks`. The reviewer left
+    // the choice between precedence and an honest refusal; precedence is taken,
+    // because it leaves the author a way to express both. So this entry means
+    // the top-level block, the mutation reddens the other one, and the verdict
+    // is FAILED — which is true, and is not a false VALIDATED.
+    const r = run(registry([entry({ spec: topAndNested, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('FAILED');
+    expect(r.output).toContain("1 test(s) red but not 'checks'");
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-62 and the nested one is still reachable by its path', () => {
+    // The counterpart: precedence must not make the deeper block unnameable,
+    // which would trade a false VALIDATED for a case nobody can write.
+    const r = run(registry([entry({ spec: topAndNested, mustFail: 'mode > checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 a bare leaf name does not outrank a nested block of that name', () => {
+    // **B1 of the 2026-10-16 fifth re-review**, and the defect the round before
+    // introduced. `exact` was set whenever the leaf's own name matched, so the
+    // nested test `mode > checks` was exact for `checks` and the filter threw
+    // away every segment match -- including `policy > checks`, the block the
+    // entry was about. Reproduced by the reviewer at 59272f5:
+    // `VALIDATED FX-nl  checks  (1 red, 2 green)` with the policy test green
+    // throughout, where b8b608b had refused the same entry correctly.
+    const r = run(registry([entry({ spec: nestedLeaf, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('resolves to more than one test');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-62 and the remedy resolves the leaf shape too', () => {
+    // The refusal above is only worth printing if what it asks for works. The
+    // mutation reddens `mode > checks`, so naming it is a true control.
+    const r = run(registry([entry({ spec: nestedLeaf, mustFail: 'mode > checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 and a full name is still exact, which is the rule f1t was given', () => {
+    // The counterpart to the repair rather than to the defect: narrowing `exact`
+    // must not take the precedence away where it was wanted. A top-level
+    // `test('checks')` beside `policy > checks` has `checks` as its **whole**
+    // name, so it keeps winning -- and without this scenario, `exact = false`
+    // for every leaf would pass the three above.
+    const r = run(registry([entry({ spec: topLeaf, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 and a top-level block still holds the tests nested deeper inside it', () => {
+    // **Finding 1 of the local review of 2026-10-21.** Exactness was decided
+    // from a test's direct parent, so `checks > direct` was exact for `checks`
+    // and `checks > sub > nested` was a mere segment match -- and the filter
+    // kept only the first. Reproduced before the repair:
+    // `FAILED FX-1  1 test(s) red but not 'checks'`, blaming an entry whose own
+    // block had reddened. Wrong in the safe direction, and still wrong.
+    const r = run(registry([entry({ spec: topDeep, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED FX-1  checks');
+    expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-62 and a top-level block holding only nested blocks keeps its precedence', () => {
+    // The same rule with no test at the first level at all, so nothing was exact
+    // and the two blocks competed as equals. Reproduced before the repair:
+    // `REFUSED ... resolves to more than one test; name it in full` -- for a
+    // name that already is the full name, which leaves the author nothing to
+    // write. The negative counterpart is f1t's scenario above: the top-level
+    // block wins, so a mutation reddening the other one is FAILED.
+    const r = run(registry([entry({ spec: topOnlyNested, mustFail: 'checks', from: 'MODE=600', to: 'MODE=777' })]));
+    expect(r.output).toContain('VALIDATED FX-1  checks');
+    expect(r.code).toBe(0);
   }, 300_000);
 
   test('MU-47 and naming it in full resolves the ambiguity rather than only reporting it', () => {
@@ -1353,6 +1959,10 @@ describe('MU-48 and MU-49 the budget and a signal take bun with them', () => {
   // finishes first -- and the control showed it: MU-49 was green with the
   // repair reverted, because there was no live bun left to orphan.
   const slow = 'spec/slow-when-mutated.test.ts';
+  // N6: the same shape, with a SIGTERM handler. A spec that installs one is not
+  // exotic -- anything doing graceful shutdown does -- and the signal path sent
+  // TERM and nothing else, so this survived it.
+  const graceful = 'spec/graceful-when-mutated.test.ts';
 
   // A private TMPDIR per case, which is also how the assertion is made precise:
   // "no process is still running this run" is checked by looking for that
@@ -1373,6 +1983,17 @@ import { join } from 'node:path';
 const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
 test('the policy is protected', () => {
   if (!s.includes('POLICY="protected"')) { while (true) {} }
+  expect(1).toBe(1);
+});
+`);
+    writeFileSync(join(root, graceful), `
+import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+process.on('SIGTERM', () => {});
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+test('the policy is protected', async () => {
+  if (!s.includes('POLICY="protected"')) { await new Promise((r) => setTimeout(r, 8000)); }
   expect(1).toBe(1);
 });
 `);
@@ -1449,6 +2070,44 @@ test('the policy is protected', async () => {
     expect(sha()).toBe(cleanSha);
     rmSync(dir, { recursive: true, force: true });
   }, 300_000);
+
+  test('MU-49 and a spec that handles TERM is still taken with it', () => {
+    // **N6 of the 2026-10-14 fourth re-review.** The signal path sent TERM and
+    // nothing more, while the budget path sends TERM, waits and sends KILL. A
+    // spec with `process.on("SIGTERM", () => {})` therefore survived the signal:
+    // the reviewer measured exit 143 with the subject restored and **bun still
+    // alive**, writing `lu-mutate-junit.XXXXXX` back into TMPDIR nine seconds
+    // later. That is finding 2 again on the one path it had not reached.
+    //
+    // The fixture is the same shape as `slow` with a handler added, so what
+    // differs between this scenario and MU-49 is exactly the handler.
+    const dir = tmp();
+    const reg = registry([entry({ spec: graceful })]);
+    const script = [
+      'set -u',
+      `bash "$1" --registry "$2" --root "$3" --timeout 30000 >/dev/null 2>&1 &`,
+      'p=$!',
+      'i=0',
+      `while [ $i -lt 600 ] && ! grep -q 'POLICY="public"' "$3/${SUBJECT}"; do sleep 0.05; i=$((i+1)); done`,
+      `if grep -q 'POLICY="public"' "$3/${SUBJECT}"; then found=yes; else found=no; fi`,
+      'if kill -0 "$p" 2>/dev/null; then alive=yes; else alive=no; fi',
+      'kill -TERM "$p" 2>/dev/null',
+      'wait "$p"; rc=$?',
+      'printf "rc=%s mutated_at_signal=%s alive_at_signal=%s\\n" "$rc" "$found" "$alive"',
+      // Longer than the handler holds the process, so a survivor has time to
+      // write the record back -- which is the whole reading.
+      'sleep 10',
+      'printf "left=[%s]\\n" "$(ls "$TMPDIR" | tr "\\n" " ")"'
+    ].join('\n');
+    const r = sh(['bash', '-c', script, 'x', RUNNER, reg, root], undefined as unknown as string, { TMPDIR: dir });
+    expect(r.output).toContain('mutated_at_signal=yes');
+    expect(r.output).toContain('alive_at_signal=yes');
+    // Nothing written after the handler ran, and no survivor.
+    expect(r.output).toContain('left=[]');
+    expect(stillRunning(dir)).toEqual([]);
+    expect(sha()).toBe(cleanSha);
+    rmSync(dir, { recursive: true, force: true });
+  }, 300_000);
 });
 
 describe('MU-50 the run budget is a setting, and a setting can be wrong', () => {
@@ -1489,6 +2148,25 @@ describe('MU-50 the run budget is a setting, and a setting can be wrong', () => 
     refusesBudget('5m');
   }, 300_000);
 
+  test('MU-50 and a leading zero is refused, because it is read as octal', () => {
+    // **N4 of the fourth re-review**, and finding 4 one shape further on. `08` is
+    // all digits, so it passed the character check -- and then
+    // `(( RUN_BUDGET_MS <= 0 ))` raised `value too great for base`, a failed
+    // `(( ))` returns 1, and the `if` read that as false. The budget was
+    // accepted and **nothing was bounded**: the reviewer had to kill a spinning
+    // entry from outside after 246 arithmetic errors with no verdict, and a
+    // healthy entry printed VALIDATED with three errors on stderr.
+    refusesBudget('08');
+  }, 300_000);
+
+  test('MU-50 and so is one that would otherwise be read as a smaller number', () => {
+    // `010` got through as octal **8**, so a budget asked for as 10 ms was 8 ms.
+    // Visible, unlike `08`, and still not what was asked for -- which is why the
+    // repair refuses a leading zero rather than normalising it with `10#`: the
+    // string means two different things to two readers.
+    refusesBudget('010');
+  }, 300_000);
+
   test('MU-50 and a whole number is still accepted, so the check refuses only what it should', () => {
     // The counterpart. Without it the finding is answered by a check that
     // refuses every budget, and MU-48 -- which needs 3000 to be honoured -- is
@@ -1497,6 +2175,23 @@ describe('MU-50 the run budget is a setting, and a setting can be wrong', () => 
     expect(r.output).not.toContain('MUTATE_RUN_BUDGET_MS is milliseconds');
     expect(r.output).toContain('VALIDATED');
     expect(r.code).toBe(0);
+  }, 300_000);
+
+  test('MU-50 and the bun timeout is held to the same rule', () => {
+    // **Finding 6 of the local review of 2026-10-21.** `--timeout` went to bun
+    // unchecked. With `5m` bun exits at once with `Invalid timeout` and writes no
+    // record, so every entry was refused as "renamed, skipped, or misspelt" --
+    // reproduced before the repair -- which sends the author to the name. The
+    // positive counterpart is every other scenario in this file: `run` passes
+    // `--timeout 30000`, so a whole number is accepted on each of them.
+    const dir = mkdtempSync(join(tmpdir(), 'mu-badtimeout-'));
+    const r = run(registry([entry()]), ['--timeout', '5m'], { TMPDIR: dir });
+    expect(r.output).toContain("--timeout (MUTATE_TIMEOUT_MS) is milliseconds, a whole number above zero -- got '5m'");
+    expect(r.output).not.toContain('did not run in');
+    expect(r.code).toBe(2);
+    expect(readdirSync(dir)).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
+    expect(sha()).toBe(cleanSha);
   }, 300_000);
 });
 
@@ -1827,6 +2522,78 @@ if (s.includes('POLICY="protected"')) {
   }, 300_000);
 });
 
+describe('MU-63 the named test has to run under the mutation, as it had to before it', () => {
+  // **Finding 3 of the local review of 2026-10-21.** The baseline asks three
+  // things of the named test -- does it exist, did it run, was it green -- and
+  // the run after the mutation asked only whether it failed. So a named test the
+  // mutation skipped, or stopped registering, was simply not red, and the entry
+  // came back UNRESOLVED, or FAILED -- blaming the entry -- when something else
+  // reddened. A test generated from the subject's own content, which this
+  // project writes often, vanishes exactly that way when the mutation removes
+  // what it was generated from. MU-57 is the neighbouring shape, where nothing
+  // registers at all, and keeps its own message.
+  //
+  // The positive counterpart is MU-1: a named test that runs both times and
+  // reddens is still validated, and every other VALIDATED in this file says so.
+  const head = `
+import { test, expect, describe } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const s = readFileSync(join(import.meta.dir, '..', 'subject.sh'), 'utf8');
+`;
+  const skipped = 'spec/skipped-when-mutated.test.ts';
+  const skippedBeside = 'spec/skipped-beside-red.test.ts';
+  const doubled = 'spec/doubled-when-mutated.test.ts';
+
+  beforeAll(() => {
+    writeFileSync(join(root, skipped), `${head}
+test.skipIf(!s.includes('POLICY="protected"'))('the policy is protected', () => { expect(1).toBe(1); });
+test('the mode is 600', () => { expect(s).toContain('MODE=600'); });
+`);
+    writeFileSync(join(root, skippedBeside), `${head}
+test.skipIf(!s.includes('POLICY="protected"'))('the policy is protected', () => { expect(1).toBe(1); });
+test('the mode is 600', () => { expect(s).toContain('MODE=600'); });
+test('the policy line is there', () => { expect(s).toContain('POLICY="protected"'); });
+`);
+    // One `x` before the mutation; under it a second block registers another.
+    writeFileSync(join(root, doubled), `${head}
+describe('a', () => { test('x', () => { expect(s).toContain('POLICY="protected"'); }); });
+if (s.includes('POLICY="public"')) describe('b', () => { test('x', () => { expect(1).toBe(1); }); });
+test('the mode is 600', () => { expect(s).toContain('MODE=600'); });
+`);
+  });
+
+  test('MU-63 a named test the mutation skips is refused, not unresolved', () => {
+    // Reproduced before the repair: `UNRESOLVED FX-1  nothing went red`, exit 0.
+    const r = run(registry([entry({ spec: skipped })]));
+    expect(r.output).toContain("'the policy is protected' did not run under the mutation");
+    expect(r.output).not.toContain('UNRESOLVED');
+    expect(r.code).not.toBe(0);
+    expect(sha()).toBe(cleanSha);
+  }, 300_000);
+
+  test('MU-63 and a sibling reddening beside it does not turn that into failed', () => {
+    // Reproduced before the repair:
+    // `FAILED FX-1  1 test(s) red but not 'the policy is protected'`, which tells
+    // the author the entry protects something else, when its test never ran.
+    const r = run(registry([entry({ spec: skippedBeside })]));
+    expect(r.output).toContain("'the policy is protected' did not run under the mutation");
+    expect(r.output).not.toContain('FAILED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+
+  test('MU-63 and a name the mutation makes ambiguous is refused, not judged', () => {
+    // The baseline resolved `x` to one test; under the mutation it resolves to
+    // two. Before the repair that read as "not fail", and the verdict was
+    // `FAILED FX-1  1 test(s) red but not 'x'` although `a > x` was red.
+    const r = run(registry([entry({ spec: doubled, mustFail: 'x' })]));
+    expect(r.output).toContain("'x' resolves to more than one test under the mutation");
+    expect(r.output).not.toContain('FAILED');
+    expect(r.output).not.toContain('VALIDATED');
+    expect(r.code).not.toBe(0);
+  }, 300_000);
+});
+
 describe('MU-59 the specification and this file say the same thing', () => {
   // Finding 9 of the third re-review, answered by a check rather than by a
   // promise. The reviewer read the names out of this file and compared them with
@@ -1848,17 +2615,14 @@ describe('MU-59 the specification and this file say the same thing', () => {
   const specPath = join(repoRoot, 'docs/TEST-SPEC-mutation-runner.md');
   const filePath = join(repoRoot, 'tests/integration/m-mu.runner.test.ts');
 
-  // Only single-quoted literals, which is why MU-50's three scenarios are
-  // written out rather than looped: a title built by interpolation cannot be
-  // compared with a document.
-  const titlesInFile = () => {
-    const src = readFileSync(filePath, 'utf8');
-    const out: string[] = [];
-    const re = /^\s+test(?:\.skipIf\([^)]*\))?\(\s*'((?:[^'\\]|\\.)*)'/gm;
-    let m;
-    while ((m = re.exec(src)) !== null) if (m[1].startsWith('MU-')) out.push(m[1]);
-    return out;
-  };
+  // The generator's reader, imported at the top of this file. This was a second,
+  // narrower copy -- single quotes only, no template blanking -- so a title the
+  // generator put into the table could be one this side did not see, and a
+  // correct table failed against it. Finding 14 of the local review of
+  // 2026-10-21, and the N2 lesson the import above already cites. A title built
+  // by interpolation still cannot be compared with a document, which is why
+  // MU-50's scenarios are written out rather than looped.
+  const titlesInFile = () => titles(readFileSync(filePath, 'utf8')).filter((t) => t.startsWith('MU-'));
 
   // Two cells, which is what tells the scenario table from the overview above it:
   // the overview's rows have the same leading `| **MU-n** |` and a sign column,
@@ -1885,6 +2649,84 @@ describe('MU-59 the specification and this file say the same thing', () => {
   test('MU-59 and the specification lists no scenario this file does not have', () => {
     const extra = scenariosInSpec().filter((t) => !titlesInFile().includes(t));
     expect(extra).toEqual([]);
+  });
+
+  test('MU-59 and the table is what the generator produces, not a copy of it', () => {
+    // **N9 of the fourth re-review: the document said "generated" three times and
+    // there was no generator.** The table was hand-written and these two
+    // scenarios compared it, which is a check and not a derivation. CLAUDE.md
+    // asks for a computed answer where there is one, and the scenarios *are* the
+    // test titles — so `tests/scenario-table.ts` writes that block and this
+    // scenario runs it in `--check`. The guard does not go away; it guards a
+    // derivation instead of a copy, and a hand edit still fails.
+    const r = sh(['bun', join(repoRoot, 'tests/scenario-table.ts'), '--check'], undefined as unknown as string, {});
+    expect(r.output).toContain('up to date');
+    expect(r.code).toBe(0);
+  }, 120_000);
+
+  test('MU-59 and every test in this file carries an id', () => {
+    // **N5 of the fourth re-review**, first gap: the reader could not see an
+    // unlabelled test, which is how eleven scenarios had lost their ids in the
+    // first place — a title with no `MU-` simply was not compared with anything.
+    // The reviewer also showed `it(`, double quotes and backticks slipping past,
+    // so the generator matches all three quotings and both function names, as
+    // `m-tr.case-ids` on main does.
+    const unlabelled = titles(readFileSync(filePath, 'utf8')).filter((t) => !/^MU-\d+\s/.test(t));
+    expect(unlabelled).toEqual([]);
+  });
+
+  // Double quotes on purpose: this title is the one the old private reader in
+  // this case could not see, so with that reader restored the table carries a
+  // row this side does not, and "lists no scenario this file does not have" is
+  // red. Finding 14's control lives in the data.
+  test("MU-59 and the reader sees a test at column zero after a closing brace, and behind a modifier", () => {
+    // **Finding 7 of the local review of 2026-10-21.** The anchor was `^\s+`,
+    // which with the `m` flag reaches over a blank line but not over `});`, so a
+    // top-level `test(` directly after a closing brace was invisible -- and so
+    // was every `test.skip`, `.only`, `.each` and `.todo`. `m-tr.case-ids` on
+    // main corrected the same anchor on 2026-10-12, after it had missed seven
+    // ids; the generator was written with the old one. The source below is data
+    // in a template literal, which the reader blanks when it reads this file.
+    const src = `describe('x', () => {
+  test('indented', () => {});
+});
+test('at column zero after a closing brace', () => {});
+
+test('after a blank line', () => {});
+  test.skip('skipped', () => {});
+  test.each([1])('each %p', () => {});
+  test.only('only', () => {});
+  test.todo('todo');
+  it('it', () => {});
+`;
+    expect(titles(src)).toEqual([
+      'indented', 'at column zero after a closing brace', 'after a blank line',
+      'skipped', 'each %p', 'only', 'todo', 'it'
+    ]);
+  });
+
+  test('MU-59 and the overview names the same cases as the scenarios', () => {
+    // **N5, second gap**, and it is how N2 got through: fifteen cases had
+    // overview rows and scenario rows and nothing compared the two lists, so a
+    // case could be in one and missing from the other. Ids only — the overview
+    // carries a label and a reason per row, which are judgements and not
+    // derivable.
+    const doc = readFileSync(specPath, 'utf8');
+    const ids = (cells: number) => {
+      const out = new Set<string>();
+      for (const line of doc.split('\n')) {
+        if (!/^\|\s+~?~?\*\*MU-/.test(line)) continue;
+        const parts = line.split('|').slice(1, -1).map((c) => c.trim());
+        if (parts.length !== cells) continue;
+        out.add(parts[0].replace(/[*~]/g, ''));
+      }
+      return [...out].sort();
+    };
+    const overview = ids(3);
+    const scenarios = ids(2);
+    expect(overview.length).toBeGreaterThan(40);
+    expect(scenarios.filter((i) => !overview.includes(i))).toEqual([]);
+    expect(overview.filter((i) => !scenarios.includes(i))).toEqual([]);
   });
 
   test('MU-59 and the comparison is over something, so an empty read fails', () => {

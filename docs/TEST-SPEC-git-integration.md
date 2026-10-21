@@ -2433,6 +2433,13 @@ render, on a page that must answer while the stack is down — so it is recorded
 | A8-24 | Unit **unhappy** | A fixture-based test is handed a project, not the operator's `.env` | Bun loads the repository's `.env` into `process.env`, `sh()` forwarded it, and `git.sh` prefers the variable over the file. Five cases across M-A1 and M-A3 went red for a declaration none of them names |
 | A8-25 | Integration | The unreachable state survives a fresh request | A8-17 step 5 asks an operator to reload and see it still named. The card is rendered server-side from the manifest, so a second request with no prior exchange is the same claim — made without an installation to break |
 | A8-26 | Unit **unhappy** | The start says at the end what did not come up | A8-17 found the shape U11 names: the warning printed, then 250 lines, then a banner of URLs and passwords and the word *succeeded*. `.install-result` recorded `start_ok=1` |
+| **A8-28** | Integration **unhappy** | An image without the tools is refused while the stack is still up | The blocking finding of 2026-09-30, found from a live run. `start.sh` runs `down.sh` 123 lines before the git step, so the failure arrived *after* the teardown and repeated on every attempt |
+| **A8-28** | positive | …and it says which remedy applies where it is running | On a host, install them. In the dashboard's helper image, remove the image — the operator cannot install into it and has never heard of it |
+| **A8-29** | Integration **unhappy** | Which is what the refusal prevents: the git step dies at `ssh-keygen` with 127 | Measured rather than reasoned about; in the real sequence `down.sh` has already run by then |
+| **A8-30** | Integration | The counterpart: the same image **with** the tools still starts | Without it the check could be met by refusing every start on every host |
+| **A8-30** | **negative** | …and an install that failed is said out loud, not blamed on the product | Added 2026-10-13 — see the block |
+|  |  |  |  |
+| *A8-28 to A8-30 were `A8-24`, `A8-25` and `A8-26` until 2026-10-13* | | | Three ids that already belonged to three other cases — `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. The whole file was using them and **none of its own cases had a row**. `TR-1` passed throughout, because the ids *are* declared, by those other cases |
 
 #### Detail per case
 
@@ -2737,6 +2744,22 @@ drive it, which is a thing worth knowing before reaching for one.
 | **What it replaces** | A manual reload that costs a destroyed and rebuilt repository to reach. A8-17 keeps the step, because an operator watching a browser sees things a fetch does not, but the property no longer depends on it being done. |
 | **Covers** | FR11, U11. |
 
+##### A8-28 / A8-29 / A8-30 — the tools the git step needs, and a setup that must not be mistaken for the product
+
+| | |
+|---|---|
+| **Premise** | `start.sh` runs `down.sh` 123 lines before the git step, and the git step generates the agent key before it reads the declaration, so declaring nothing does not avoid it. On every installation that already had a toolbox image, Start tore the stack down and then died with `ssh-keygen: command not found`, exit 127 — and repeated it on every attempt. The pre-flight has to judge the tools *before* the teardown. |
+| **Component** | `config/scripts/start/git.sh --check-declaration`, run in `debian:bookworm-slim` — the toolbox's own base, which carries neither `git` nor OpenSSH — with this checkout's `config/` mounted read-only. |
+| **Steps** | The pre-flight in the bare image; the same image presented as the dashboard's helper; the git step itself, to measure what the refusal prevents; and the pre-flight in an image where the tools have been installed. |
+| **Test data** | The declaration `git@github.com:nocodenation/agent-skills.git\|read\|protected`, so the pre-flight has work to do beyond the tool check. The four tools named individually: `git`, `ssh`, `ssh-keygen`, `ssh-keyscan`. |
+| **Expected** | Exit 1 naming all four and saying the installation is intact; the right remedy for the place; exit 127 at `ssh-keygen` for the step; and exit 0 where the tools are present. |
+| **What it found** | Green. And on 2026-10-13 the counterpart found something about **itself**: it was green in one run and red in the next with only documentation changed between them. Its setup installs the tools with `apt-get`, and both lines were `>/dev/null 2>&1` with nothing checking they arrived — so when the Debian mirror refused (`At least one invalid signature was encountered`, then `Unable to locate package git`) the pre-flight truthfully reported the tools missing and the counterpart read that as the product being wrong. The status such a line would report comes from `tail` in the pipe, not from apt, so even unredirected it said nothing. |
+| **The repair, and its shape** | The install is checked, its output kept, and the counterpart steps aside when the tools are absent while a sibling case says so and quotes apt. **A setup failure must not arrive as a product failure** — the same shape as `registryReachable()` on #24 and `DASHBOARD_DEPS` on #22. |
+| **Controls** | With the install pointed at a package that does not exist: 5 pass / 0 fail, and the output carries `A8-30 stepped aside: … apt said: E: Unable to locate package no-such-package-xyz`. Before the repair the same condition was a red `A8-30` against correct code. |
+| **And the ids moved** | These were `A8-24`, `A8-25` and `A8-26` — three ids already belonging to `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. Found by accident on 2026-10-13 while chasing the failure above: the specification's `A8-26` described a different case entirely, which is why the first attempt to reproduce it ran the wrong file. `TR-1` cannot see this: it compares tested ids against declared ids, and these *were* declared — by the cases they were taken from. |
+| **Implemented by** | `tests/integration/m-a8.toolbox-tools.test.ts`. |
+| **Covers** | A8-28, A8-29, A8-30, FR11, U1. |
+
 ##### A8-26 — the start says at the end what did not come up
 
 | | |
@@ -2906,8 +2929,11 @@ first, so each one is known to fail for the reason it names.
 | A10-6 | Integration **unhappy** | The origin is read raw, not through `insteadOf` | `git remote get-url` applies the rewrite this stack itself writes, so it answers with the declared URL for a clone of something else |
 | A10-7 | Integration **unhappy** | A start that declares nothing needs nothing from GitHub | It exited 1 when github.com was unreachable — after `down.sh`, so an offline first start lost the whole stack over a section of `.env` it never filled in |
 | A10-8 | Integration **unhappy** | A seeding failure is an error per repository, not an abort | And no clone is attempted: with no `known_hosts`, `StrictHostKeyChecking=yes` could only produce a message about a key |
-| A10-9 | Integration | With GitHub reachable the seeding happens — and only when something is declared | The ordering asserted as behaviour rather than as a line number |
-| A10-10 | Integration **unhappy** | A host key GitHub does not publish is still refused | The refusal stays; what changes is that it costs one repository rather than the stack |
+| A10-9 | Integration positive | With GitHub reachable the seeding happens — and only when something is declared | The ordering asserted as behaviour rather than as a line number |
+| A10-9 | Integration positive | …and the file arrives at mode 644, not at `mktemp`'s 600 | `seed_known_hosts` writes through `mktemp` → `chmod` → `mv`; nothing asserted the mode the operator and every container actually get — `F2`, 2026-10-16 |
+| A10-9 | Integration **negative** | …and no `known_hosts.*` temporary is left behind | The other half of the same write. Litter in a directory the operator browses, and the only evidence it was ever absent was a hand observation |
+| A10-10 | Integration **negative** | A host key GitHub does not publish is still refused | The refusal stays; what changes is that it costs one repository rather than the stack |
+| A10-10 | Integration **negative** | …and the refusal path leaves no temporary either | The side it is easier to get wrong: the refusal returns early, and `rm -f "$scanned"` on every failure path is what keeps the directory clean |
 | A10-11 | Component **unhappy** | The dashboard's Test uses the folder a full start uses | With two declared repositories sharing a name it cloned into a third folder, and the next Test adopted that clone as its own |
 | A10-12 | Component | With no collision the plain name is still used | A fix that renamed every folder to a slug would move every existing installation's clones |
 | A10-13 | Component | The second repository can be addressed at all | Same cause: the lookup was by name, and two declared repositories can share one. Slug, then path, then a unique name |
@@ -2946,6 +2972,8 @@ first, so each one is known to fail for the reason it names.
 | **Expected** | With nothing declared: exit 0, nothing seeded, nothing said about GitHub. With a declaration: exit 0, each entry carrying the seeding failure, no clone attempted and no deploy key asked for. With GitHub reachable: seeded when something is declared, not seeded when nothing is. With a forged key: nothing written, the entry naming it, and the start continuing. |
 | **What it found in its own fixture** | The first version published the fingerprint *with* the `SHA256:` prefix, which the script adds itself, so every comparison failed and the fixture's defect read exactly like one in the script. The corrected value is in the test data above, and the reason is in the file's header — a fixture is test data, and wrong test data is a wrong test. |
 | **Covers** | Finding 4 of the #9 code review, FR3, FR4, NFR2. |
+| **What `F2` added, and why it was missing** | `seed_known_hosts` is the one writer whose new properties nothing checked. The specification said no case exercised the function at all — `B1` of the 2026-10-16 review, and false: this file never seeds `known_hosts`, so the early return never fires and both A10-9 and A10-10 run the whole path. What was true is that no case asserted what the change buys. Now: mode `0o644` on the written file (positive, A10-9), and an empty list of `known_hosts.*` leftovers on the writing path **and** on the refusal path (negative, both). Shown able to fail by reverting what each guards — dropping `chmod 644 "$scanned"` reddens the mode scenario, dropping the `rm -f "$scanned"` on the refusal path reddens A10-10's. |
+| **The leftover filter names both writers** | `known_hosts.*`, `repositories.json.*` and `.tmp`, because `F3` of the same review moved the manifest's temporary to `mktemp` and a filter keyed on `.tmp` would have gone blind to it. |
 
 ##### A10-11 to A10-13 — the Test button and a full start agree
 
@@ -3070,6 +3098,16 @@ capture taken after another file had written held the changed state as the thing
 |---|---|---|---|
 | A12-1 | Integration **unhappy** | The manifest is written before the waiting starts | The card rendered the previous start while this one waited: *"1 of 4"* beside a panel saying *"1 of 2"*, and *"Start the stack so it gets one"* during a start |
 | A12-2 | Integration | And the manifest written at the end is the one that counts | A provisional record that became the final answer would leave a key registered during the wait showing as unreachable until the next start |
+| A12-3 | Integration **negative** | A reader never sees a half-written manifest | The write truncated the file and then filled it. 88,365 reads over six runs found **893 empty** and **30 unparseable**, the longest 5,274 bytes ending mid-entry |
+| A12-3 | Integration positive | …and the reader looked often enough to have seen one | Its own control: with the window closed there is nothing to observe, so the count is what makes the zero mean anything |
+| A12-4 | Integration positive | The counterpart: each run does leave a whole manifest | Without it A12-3 is satisfied by a script that never writes one, which is how a "nothing bad was observed" case goes green over nothing |
+| A12-5 | Contract **negative** | Nothing truncates the manifest in place | The form is what makes A12-3's measurement a rule rather than luck, and it is what the dashboard's own writer already does |
+| A12-5 | Contract positive | …and the write arrives by `mv` from a temporary | The counterpart: "does not truncate" is also satisfied by a script that writes nothing at all |
+| A12-5 | Contract **negative** | …and no temporary is left in the secrets directory | Litter in a directory the operator browses. The filter names both writers' shapes since F3 renamed one of them |
+| A12-6 | Contract **negative** | No temporary in `$TMPDIR`, for either writer | `mv` renames within one filesystem and **copies** across one, so a temporary in `$TMPDIR` would leave the window open wherever TMPDIR is elsewhere |
+| A12-6 | Contract positive | …both sit beside the file they replace, by `mktemp` | The positive half of the same reading, and after F3 it is `mktemp` for both rather than for one |
+| A12-6 | Contract **negative** | …and no `$$` in a temporary's name | `$$` is unique inside one PID namespace, and `git.sh` runs in several — F3 of the 2026-10-16 review |
+| A12-6 | Contract positive | …while the `EXIT` trap survives a run that writes no manifest | Making the name where it is used leaves the variable empty elsewhere, so the trap's removal is guarded rather than bare |
 
 #### Detail per case
 
@@ -3081,6 +3119,78 @@ capture taken after another file had written held the changed state as the thing
 | **Steps** | Run `git.sh` in the background. Poll for the manifest until it lists both repositories, and read it **there**, while the run is still waiting. Then write the sentinel, let the run finish, and read the manifest again. |
 | **Expected** | During the wait: both repositories listed, `agent-skills` cloned with no error, `flows` not cloned and carrying the error its clone gave. Afterwards: both still listed, `flows` recorded as this run left it. And the run's own output must contain `::aiw-git-key-required::`, or the case was reading the final manifest and proving nothing. |
 | **Covers** | The operator's observation of 2026-09-17, FR3, FR20, U11. |
+
+#### The write itself — A12-3 to A12-6, added 2026-10-02, split per case 2026-10-16
+
+> **One block covered all four until `F1` of the 2026-10-16 review**, which is not what `CLAUDE.md`
+> asks for: a reviewer has to be able to sign one case off or challenge it without reading the
+> implementation, and four cases sharing a premise do not share an expectation. The shared *Test data*
+> and *Steps* are repeated per block rather than referenced, because a block that sends the reader
+> elsewhere for its data is the same problem one indirection further on.
+
+| | |
+|---|---|
+| **The common premise** | `lu_write_manifest` ended with `} > "$MANIFEST"`, which truncates the file and then fills it, and it runs twice per start. Every reader of `repositories.json` reads it whole and parses it: the dashboard's card, `git-repo-info` in every agent container, and `unreachable_repositories` in `start.sh`. So each write opens a window in which all three fail. |
+| **How it was found** | By the suite, by accident. A full run on 2026-10-02 ended with `SyntaxError: JSON Parse error: Unexpected EOF` at **load time** in `m-a12.manifest-while-waiting`, which parses the manifest in a module-scope helper. A second full run on the same tree did not, which is what makes it the likeliest explanation for finding 6 of the 2026-10-01 review of #18 — seen once in twenty runs and never reproduced. |
+| **Component, all four** | `lu_write_manifest` and `seed_known_hosts` in `config/scripts/start/git.sh`. |
+| **Implemented by** | `tests/integration/m-a12.manifest-atomic.test.ts`. |
+
+##### A12-3 — a reader never sees a half-written manifest · **negative**
+
+| | |
+|---|---|
+| **Premise** | The common premise above. This is the measurement: not that the form is right, but that no reader observes a torn document while three runs write six manifests. |
+| **Test data** | Three repositories — `probe-a`, `probe-b`, `probe-c`, each `git@github.com:nocodenation/<name>.git\|read\|protected` and each routed to its own seeded bare repository through the suite's fake ssh, so every run writes a complete three-entry manifest twice. `SYSTEM_SIGNIN_WAIT_SECONDS=0`, because the subject is the write and not the wait. |
+| **Steps** | Start a reader that reads the manifest and parses it as fast as it can, with no sleep and no deadline: it stops when the last run has exited. Run `git.sh` three times in sequence. Count the reads, the empty ones and the unparseable ones, and keep the longest bad read. Then assert on the three documents the runs left. |
+| **Expected** | Zero empty reads and zero unparseable reads, out of more than a thousand. |
+| **Its own positive half** | That the reader got past a thousand reads. With the window closed there is nothing to observe, so the case can only establish that it looked often enough — which is why the count matters more than it looks. |
+| **Measured against the unfixed code** | **118 empty reads** on one tree and **891** on another; the count varies with the machine and the signal does not. Reproduced again on 2026-10-16 before this round's changes: **1,207 empty, 91 unparseable**. Against the repaired script, twice at the size the defect was first measured at: **93,421 and 101,102 reads, zero empty and zero unparseable.** |
+| **Not one bad read was misleading** | Across all 923 of the first measurement, the file was always either empty or unparseable, never valid JSON with the wrong contents. So the defect produced readers that **fail**, never readers that are misled, which is why nothing downstream ever reported anything false. |
+| **Covers** | A12-3, the `} > "$MANIFEST"` defect, FR3, U11. |
+
+##### A12-4 — and each run does leave a whole manifest · positive
+
+| | |
+|---|---|
+| **Premise** | A12-3 is satisfied by a script that never writes a manifest at all. This is the counterpart that makes the measurement mean something, and it is the half that matters most: it is the failure mode of every "nothing bad was observed" case. |
+| **Test data** | Three repositories — `probe-a`, `probe-b`, `probe-c`, each `git@github.com:nocodenation/<name>.git\|read\|protected` and each routed to its own seeded bare repository through the suite's fake ssh, so every run writes a complete three-entry manifest twice. `SYSTEM_SIGNIN_WAIT_SECONDS=0`, because the subject is the write and not the wait. |
+| **Steps** | Start a reader that reads the manifest and parses it as fast as it can, with no sleep and no deadline: it stops when the last run has exited. Run `git.sh` three times in sequence. Count the reads, the empty ones and the unparseable ones, and keep the longest bad read. Then assert on the three documents the runs left. |
+| **Expected** | Each of the three documents names all three repositories and carries a `generated` stamp. |
+| **Measured against the unfixed code** | Passed — as it should: the unfixed script wrote complete documents too, between the windows. A counterpart that reddens with the defect is not a counterpart. |
+| **Covers** | A12-4, FR3, U11. |
+
+##### A12-5 — nothing truncates the manifest in place, and nothing is left behind · **negative**
+
+| | |
+|---|---|
+| **Premise** | The form is what makes A12-3's measurement a rule rather than luck. Held as a contract check on the script's text because a measurement over thousands of reads cannot distinguish "there is no window" from "we did not look at the wrong moment". |
+| **Steps** | Read `config/scripts/start/git.sh` as text; assert on three booleans rather than with `toMatch`, because a failing `toMatch` prints the whole 70 KB script and the finding is lost in it — the same mistake one layer out as `A1` of the 2026-10-01 review. Then list the secrets directory. |
+| **Test data, both sides** | The absence of `} > "$MANIFEST"` is the negative; the presence of `mv "$MANIFEST_TMP" "$MANIFEST"` is its positive counterpart, because "does not truncate" is also true of a script that writes nothing. The litter check reads the directory after the runs. |
+| **Expected** | `truncatesInPlace: false`, `renamesIntoPlace: true`, and no leftover temporary. |
+| **The litter filter outlived its name** | It matched `.tmp`, which was right for `${MANIFEST}.$$.tmp` and blind to `mktemp "${MANIFEST}.XXXXXX"` — so `F3` would have left a check that reads as covered and cannot see the litter. It now matches `.tmp`, `repositories.json.*` and `known_hosts.*`. |
+| **Measured against the unfixed code** | The form assertions failed; the litter check passed, which is correct — the unfixed script left nothing because it wrote in place. |
+| **Covers** | A12-5, FR3, U11. |
+
+##### A12-6 — the temporary sits beside its target, and its name is unique beyond one namespace · **negative**
+
+| | |
+|---|---|
+| **Premise** | `mv` is atomic within one filesystem and a copy across one, and a copy has the same window it is meant to close. So a temporary in `$TMPDIR` makes the guarantee depend on where `TMPDIR` points. On the host this was written on the two share a filesystem, which is why `seed_known_hosts` had never been seen to fail; on a Linux host with `/tmp` on tmpfs they do not. |
+| **And a second premise, added by `F3`** | `${MANIFEST}.$$.tmp` is unique only inside one PID namespace, and the `A16-M1` walk documents `git.sh` running in different ones — toolbox container to dashboard container, and host to dashboard, both with small PID ranges. Two runs sharing a PID share the temporary; then one `mv` publishes an inode the other is still writing, which is the torn read this case exists to close, reintroduced by its own fix. Improbable, never observed, one line to remove. |
+| **Steps** | Read the script as text; assert on booleans, as A12-5 does. |
+| **Test data, both sides** | Negative: no `scanned="$(mktemp)"` (the `$TMPDIR` form), and no `$$` anywhere in `MANIFEST_TMP`'s assignment. Positive: `mktemp "${MANIFEST}.…"` and `mktemp "${KNOWN_HOSTS}…"`, both beside their target. Asserting the absence of `$$` as well as the presence of `mktemp` is deliberate — a script can carry both, and only the dead one would be read. |
+| **And the trap** | Making the name where it is used leaves `MANIFEST_TMP` empty on every path that writes no manifest, and the `EXIT` trap removes it unconditionally. Under `set -u` an unset variable aborts the trap; bare, it is a removal whose argument depends on an empty variable. Both halves are asserted: the declaration exists and is empty, and the removal is guarded with `||` so the trap cannot end non-zero and change the status it was called with. |
+| **Expected** | `manifestTmpBesideTarget: true`, `knownHostsTmpBesideTarget: true`, `knownHostsTmpInTmpdir: false`, `usesMktemp: true`, `usesPidInTemporaryName: false`, `initialisedEmpty: true`, `removalGuarded: true`. |
+| **Measured against the unfixed code** | Failed on the form. The `$$` and trap scenarios post-date it: they were added with the fix for `F3` and shown able to fail by reverting it — restoring `$$` reddens two, removing the guard one. |
+| **Covers** | A12-6, FR3, U11. |
+
+##### What these four leave uncovered
+
+| | |
+|---|---|
+| **`seed_known_hosts`** | Changed for the same reason. Its paths run in **A10-9** (stubbed `ssh-keyscan` and `curl`, seeding succeeds, `known_hosts` written) and **A10-10** (a fingerprint GitHub does not publish, nothing written), both in `m-a10.offline-start.test.ts`. The claim here used to be that no case exercised it — `B1` of the 2026-10-16 review, and false: that file seeds no `known_hosts`, so the early return never fires. Since `F2` of the same review, **A10-9 and A10-10 assert both properties this change adds**: that the file arrives at mode 644, and that no `known_hosts.*` temporary is left on either the writing or the refusal path. The hand observation of 2026-10-02 against the real github.com stands beside them — all three offered host keys verified against GitHub's published fingerprints, file at mode 644, no temporary left — and is no longer the only evidence. |
+| **That a bad read ever happens** | With the repair there is no window to observe, so the case can only count that it looked often enough. A12-3's own positive half is that count. |
+| **A limit that is not touched** | Two writers can still lose each other's update: a dashboard retry writes `repositories.json.tmp` and renames while a start renames its own. Neither ever reads a fragment now, and which complete document survives is governed by the lock and by a Test writing nothing. **The names cannot collide, and since `F3` that is true for a better reason than it was**: it used to rest on the start's temporary carrying its pid, which is unique only within a namespace; it now rests on `mktemp`. |
 
 ---
 
@@ -3249,6 +3359,36 @@ reviews that followed, and each has its evidence in its own block.
 | A16-18 | Component | A prop change reaches a mounted component | The tier's own control. Without it every case above it can be green over a component that never re-rendered |
 | A16-19 | Contract **unhappy** | No file under `tests/` is binary to git | One NUL byte made a case unreadable on GitHub, header block included |
 | A16-20 | Unit | The case that needed a NUL still refuses one | Written as `'a\0b'`, so A16-19 cannot be met by giving up the test data |
+
+#### Cases documented after the fact
+
+*Written 2026-10-09.* Eleven cases in this milestone's test files carried an id that no row here
+declared, which `--gaps` cannot see and a reviewer cannot sign. They are gathered rather than
+interleaved on purpose: interleaving them would imply they were signed off with the rows around
+them, and they were not — they were written after, during the rounds of review that followed.
+`TR-1` is what stops this recurring.
+
+| # | Level | Sign | Case | Implemented by |
+|---|---|---|---|---|
+| A8-27 | Unit | positive | An update replaces every locally built image, the toolbox included: `update.sh` names all five, while the dashboard asks for the four that must already exist | `tests/unit/m-a8.built-images.test.ts` |
+| A14-7 | Contract | positive | A finished run refreshes what the page shows, and the refresh is **not** inside the success branch — `invalidateAll()` runs either way, while the success-only callback still means success | `tests/contract/m-a14.skip-button-shape.test.ts` |
+| A14-8 | Contract | positive | Each repository keeps its own test result: the state is a map keyed by slug rather than one answer per card, and starting one test clears only that repository's answer | `tests/contract/m-a14.skip-button-shape.test.ts` |
+| A16-21 | Integration | positive | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-22 | Integration **unhappy** | positive + negative | An abandoned `mkdir` is not forever either — an empty pid file older than any hold is taken over, and a fresh one is still held | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-24 | Component **unhappy** | negative | A contradicted result line is dropped, not hidden: it does not come back when the clone state flips back | `tests/component/m-a16.result-line.test.ts` |
+| A16-25 | Integration | positive | A folder that appeared during the wait survives it, and the start says it left it alone | `tests/integration/m-a16.wait-cleanup.test.ts` |
+| A16-26 | Integration | positive | The counterpart: a partial clone **this run** made is still cleaned up | `tests/integration/m-a16.wait-cleanup.test.ts` |
+| A16-27 | Integration | positive | The wait really waits and then works: a lock released during the wait is picked up and the clone happens | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-28 | Integration **unhappy** | negative | A start that gives up waiting changes nothing: the budget ends without a clone, and the manifest still says what the last start found | `tests/integration/m-a16.lock-wait.test.ts` |
+| A16-29 | Integration **unhappy** | negative | And it says what it did instead of writing it down | `tests/integration/m-a16.lock-wait.test.ts` |
+
+**One collision is deliberately left standing and recorded instead.** `A16-19` names two unrelated
+cases: `describe('A16-19 skip-all says it too, with the space')` in
+`tests/component/m-a16.skip-panel.test.ts` and `test('A16-19 git tracks test files, so there is
+something to judge')` in `tests/contract/m-a16.text-only.test.ts`. The row above describes the
+second. Renumbering a signed-off id is the operator's decision, and `mutate.sh` refuses a `mustFail`
+that resolves to more than one test, so the collision surfaces as a refusal rather than a wrong
+answer. In `BACKLOG.md`.
 | A16-M1 | **Manual** | The crossing between two process tables, and the panel after a provider skip | Walked 2026-09-22, three runs, both crossings; the lock named a container the tester is not, the Test answered *busy* without writing anything, and the deploy-key panel stayed closed after a Copilot skip |
 
 #### Detail per case

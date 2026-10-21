@@ -27,97 +27,55 @@
  * Requirements covered: OC-G1, OC-G2, §5.1, §5.2, §5.3.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { readFileSync as read } from 'node:fs';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-
-const IMAGE_NEW = 'ghcr.io/openclaw/openclaw:2026.9.1';
-const IMAGE_OLD = 'ghcr.io/openclaw/openclaw:2026.7.1';
-
-/**
- * The config writer as the start script actually holds it. Extracted by content
- * rather than by line number, and never copied into this file: a test carrying
- * its own copy of the thing under test stops testing it the moment the two drift.
- */
-function configWriter(): string {
-  const script = read(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
-  const lines = script.split('\n');
-  // A block opens on a line that is only `-e '` and closes on the next line
-  // whose first non-space character is the closing quote. The two sibling
-  // blocks close with `' || true)"`, so the terminator cannot be matched as a
-  // bare quote — doing that swallowed both of them and produced a program that
-  // was half shell.
-  const isOpen = (l: string) => /^\s*-e '\s*$/.test(l);
-  const isClose = (l: string) => /^\s*'/.test(l);
-  for (let start = 0; start < lines.length; start++) {
-    if (!isOpen(lines[start])) continue;
-    let end = -1;
-    for (let i = start + 1; i < lines.length; i++) {
-      if (isClose(lines[i])) { end = i; break; }
-    }
-    if (end === -1) continue;
-    const body = lines.slice(start + 1, end).join('\n');
-    if (body.includes('/state/openclaw.json')) return body;
-  }
-  throw new Error('config writer not found in config/scripts/start/openclaw.sh');
-}
+import {
+  IMAGE_NEW,
+  IMAGE_OLD,
+  configWriter,
+  dropWorkRoot,
+  newWorkRoot,
+  validate as validateWith,
+  writeConfig as runWriter,
+  type Env
+} from '../lib/openclaw-writer';
 
 let program: string;
 let workRoot: string;
 
 beforeAll(() => {
   program = configWriter();
-  workRoot = mkdtempSync(join(tmpdir(), 'lu-oc-'));
+  workRoot = newWorkRoot('lu-oc-');
 });
 
-afterAll(() => rmSync(workRoot, { recursive: true, force: true }));
+afterAll(() => dropWorkRoot(workRoot));
 
-type Env = Record<string, string>;
+// The subnet this suite was written against, before the default moved to
+// 10.99.0.0/24 -- its cases are about the shape, not the range.
+//
+// `LU_PROXY_IDENTITY` is the identity nginx asserts, and it belongs here rather
+// than in the shared `BASE_ENV`: it is this file's subject, and `m-m1` has no use
+// for it. It was never passed at all once, and the grant then landed under the
+// literal key `"undefined"` while the assertion -- which read
+// `Object.values(...)[0]` -- found it anyway, so a grant to nobody read as a
+// grant. Minor of the 2026-09-29 review. The merge of 2026-10-20 dropped it a
+// second time, because this file's own env map went to the shared helper and the
+// shared map does not carry it: `OC-75` and `OC-57` went red with
+// `undefined is not an object`, which is the same defect saying so loudly
+// instead of passing. One case overrides it with `''` on purpose.
+const OC_ENV: Env = {
+  LU_NETWORK_SUBNET: '172.18.0.0/16',
+  LU_PROXY_IDENTITY: 'user@nocodenation.org'
+};
 
 function writeConfig(env: Env): any {
-  const dir = mkdtempSync(join(workRoot, 'state-'));
-  writeFileSync(join(dir, 'openclaw.json'), '{}\n');
-  const progFile = join(dir, 'writer.js');
-  writeFileSync(progFile, program);
-  const envArgs: string[] = [];
-  const full: Env = {
-    OC_SCHEMA_NEW: '0',
-    OPENCLAW_VERSION: 'test',
-    ENABLE_CLAUDE_CLI: '0',
-    ENABLE_COPILOT: '0',
-    ENABLE_CODEX: '0',
-    ENABLE_GROK: '0',
-    ENABLE_LOCAL: '0',
-    LU_NETWORK_SUBNET: '172.18.0.0/16',
-    PLUGIN_PATHS: '',
-    MODEL_WILDCARDS: '',
-    OPENROUTER_MODELS_JSON: '[]',
-    LOCAL_LLM_MODELS_JSON: '[]',
-    ...env,
-  };
-  for (const [k, v] of Object.entries(full)) envArgs.push('-e', `${k}=${v}`);
-  const r = sh([
-    'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${dir}:/state`, ...envArgs,
-    '--entrypoint', 'node', IMAGE_NEW, `/state/writer.js`,
-  ]);
-  if (r.code !== 0) throw new Error(`config writer failed: ${r.output}`);
-  return JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
+  return runWriter({ workRoot, program, env: { ...OC_ENV, ...env } });
 }
 
-/** Validate a config document with a given version's own validator. */
 function validate(config: any, image: string): { code: number; output: string } {
-  const home = mkdtempSync(join(workRoot, 'home-'));
-  mkdirSync(join(home, '.openclaw'), { recursive: true });
-  writeFileSync(join(home, '.openclaw/openclaw.json'), JSON.stringify(config, null, 2));
-  return sh([
-    'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${home}:/home/node`, '-e', 'HOME=/home/node', '-e', 'OPENCLAW_HOME=/home/node',
-    '--entrypoint', 'openclaw', image, 'config', 'validate',
-  ]);
+  return validateWith({ workRoot, config, image });
 }
 
 describe('OC-1/OC-12 the 2026.9 shape', () => {
@@ -136,7 +94,6 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove).toEqual({
       enabled: true,
       scopes: [
-        'operator.admin',
         'operator.read',
         'operator.write',
         'operator.talk',
@@ -147,29 +104,86 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     });
   });
 
-  test('OC-12 the scope set contains operator.admin, and that is the decision', () => {
-    // Reversed on 2026-09-10, by measurement rather than by preference. This list
-    // is a CAP on what an auto-approval may grant, and the Control UI requests
-    // operator.admin: without it a freshly approved browser does not lose pages,
-    // it cannot connect at all — "Role upgrade pending" — and the recovery the
-    // interface names answers `unauthorized` from every container that could run
-    // it. OC-38 is that measurement; §5.3 of the feature document carries the
-    // reasoning it overturned. The price is a SECURITY WARNING from the gateway,
-    // which OC-11 now requires to be present rather than absent: if it ever
-    // disappears, somebody has taken the scope back out and the next fresh
-    // browser is locked out.
-    expect(cfg.gateway.auth.trustedProxy.deviceAutoApprove.scopes).toContain('operator.admin');
+  test('OC-75 admin is not in the cap, and is granted per identity instead', () => {
+    // **Renumbered from OC-46 on 2026-10-14.** B6 of the 2026-10-01 review: the
+    // overview carries `OC-46` as a *manual system* case -- the fresh browser
+    // connecting in a private window on 2026-09-19 -- and this automated case
+    // carried the same id, so a report showed a pass under `OC-46` for a run in
+    // which no browser connected at all. Same precedent as `OC-40`/`OC-42`
+    // becoming `OC-63`/`OC-64`: the later case moves. The manual run keeps the id
+    // it was signed off under, and what this one reads about the written config
+    // is `OC-75`.
+    //
+    // Reversed twice, and this is the reversal that has both halves measured.
+    //
+    // 2026-09-10 put operator.admin IN the cap, because without it a fresh
+    // browser could not connect and "no documented recovery worked". OC-38
+    // measured the first half correctly and the second half wrongly: the
+    // recovery does work, through nginx, which is R1. With that reason gone,
+    // what was left was the gateway telling us at every start to grant admin per
+    // identity instead — advice logged since 2026-09-10 and read by nobody.
+    //
+    // 2026-09-19 measured the replacement in a private window, end to end: the
+    // device was auto-approved with five scopes and no admin, the connection was
+    // elevated by the identity grant, and the Control UI connected on the first
+    // try with its admin-gated pages working. Twelve milliseconds, no approval.
+    //
+    // Both assertions together are the decision. The cap alone would be
+    // satisfied by granting nothing anywhere, which locks every browser out.
+    const d = cfg.gateway.auth.trustedProxy.deviceAutoApprove;
+    expect(d.scopes).not.toContain('operator.admin');
+    // By key, not by position: Object.values(...)[0] passed over a grant written
+    // under the key "undefined".
+    const identity = cfg.gateway.auth.identityScopes;
+    expect(Object.keys(identity)).toEqual(['user@nocodenation.org']);
+    expect(identity['user@nocodenation.org']).toContain('operator.admin');
+    // And the cap still admits a browser at all: the scopes it does carry are
+    // what the device receives, so an empty cap is not the same decision.
+    expect(d.enabled).toBe(true);
+    expect(d.scopes.length).toBeGreaterThan(0);
   });
 
-  test('N10 and no rationale in the writer still says the opposite', () => {
-    // The paragraph above the block kept the pre-measurement reasoning --
-    // operator.admin "is excluded" and admin goes to identityScopes -- while the
-    // code three lines down granted it. A reader or a security review takes the
-    // prose at face value; the code is what runs. Whichever one is wrong, they
-    // must not disagree.
+  test('OC-56 nothing is granted when no identity is named', () => {
+    // The grant used to be written unconditionally, so without LU_PROXY_IDENTITY
+    // it landed under the literal key "undefined" -- a grant to nobody that reads
+    // as a grant, and one no reader of the file would question. Minor of the
+    // 2026-09-29 review.
+    const cfg = writeConfig({ OC_SCHEMA_NEW: '1', LU_PROXY_IDENTITY: '' });
+    const identity = cfg.gateway.auth.identityScopes ?? {};
+    expect(Object.keys(identity)).not.toContain('undefined');
+    expect(Object.keys(identity)).toEqual([]);
+  });
+
+  test('OC-57 and an identity the operator granted by hand survives a start', () => {
+    // The rest of this writer preserves what the operator edited; this line
+    // replaced the whole map, so a grant they had added was lost on the next
+    // start with nothing said. Minor of the 2026-09-29 review.
+    //
+    // Seeded through the shared helper's `seed`, which is what this case wrote
+    // its own `writeConfigIn` for before that option existed on `main`. The
+    // merge of 2026-10-20 took the shared shape: two readers of one state
+    // directory is how they come to disagree about what is in it.
+    const cfg = runWriter({
+      workRoot,
+      program,
+      env: { ...OC_ENV, OC_SCHEMA_NEW: '1' },
+      seed: { gateway: { auth: { identityScopes: { 'ops@example.invalid': ['operator.read'] } } } }
+    });
+    const identity = cfg.gateway.auth.identityScopes;
+    expect(identity['ops@example.invalid']).toEqual(['operator.read']);
+    expect(identity['user@nocodenation.org']).toContain('operator.admin');
+  });
+
+  test('N10 and the rationale in the writer does not contradict it', () => {
+    // The paragraph above the block once kept the pre-measurement reasoning --
+    // admin "is excluded" -- while the code three lines down granted it. A
+    // reader or a security review takes the prose at face value; the code is
+    // what runs. The direction has flipped since, so the assertion flips with
+    // it: the code now excludes admin from the cap, and the prose must not claim
+    // it is granted there.
     const script = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
-    const claimsExcluded = /operator\.admin[\s\S]{0,200}?(so it is excluded|is excluded)/.test(script);
-    expect({ granted: true, claimsExcluded }).toEqual({ granted: true, claimsExcluded: false });
+    const claimsGranted = /so operator\.admin is in|admin is in the cap|granting it restores/i.test(script);
+    expect({ excluded: true, claimsGranted }).toEqual({ excluded: true, claimsGranted: false });
   });
 });
 

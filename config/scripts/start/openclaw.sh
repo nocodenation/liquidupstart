@@ -47,6 +47,7 @@ get_env() {
 # stop at a deadline. Before it, each wait below carried its own copy of the
 # deadline and none of them could be skipped.
 . "${SCRIPT_DIR}/lib/wait-for-operator.sh"
+. "${SCRIPT_DIR}/lib/proxy-identity.sh"
 
 OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 
@@ -283,6 +284,15 @@ for _tp in \
   fi
 done
 
+# Is there an OpenAI key? memory.search defaults to the openai provider, so
+# without one every turn pays for a failed embedding call --
+# on an installation that .env.example:85 explicitly blesses: "Don't have any
+# keys? That's fine". Computed here, where the keys are read, rather than
+# inferred in the writer from MODEL_WILDCARDS, which also carries openai/* for
+# ENABLE_CODEX=1 and would answer yes without a key. F4 of the 2026-09-22 review.
+MEMORY_OPENAI_KEY=0
+[[ -n "$(get_env OPENAI_API_KEY)" ]] && MEMORY_OPENAI_KEY=1
+
 # The Claude CLI serves models under two provider ids: anthropic/* for the API
 # route and claude-cli/* for the CLI itself. 2026.7.1 had no model policy, so
 # only the routing map mattered and anthropic/* was enough. 2026.9.1 introduced
@@ -393,6 +403,28 @@ else
     exit 1
   fi
 
+  # The identity nginx puts on every proxied request, read out of the template
+  # that sets it rather than written down a second time here. Two files that must
+  # agree on a string will disagree eventually, and the failure is silent: the
+  # grant below simply never matches, and the CLI is refused for what looks like a
+  # scope problem. So it is computed, and a template that carries more than one
+  # identity fails the start rather than picking one.
+  #
+  # What the grant is for: gateway.auth.mode is trusted-proxy, so a CLI that
+  # reaches the gateway directly sends no header and is refused. Sent THROUGH
+  # nginx it is authenticated, and then it needs a scope -- which comes from
+  # nowhere, because scopes live on the device record and a fresh CLI has none.
+  # Without this, `openclaw devices approve` cannot run in this stack at all, and
+  # a browser whose device token was revoked has no way back. Measured 2026-09-19;
+  # the case is OC-41, and OC-42 is the half that shows this does not by itself
+  # release such a browser. See §9 of docs/FEATURE-openclaw-2026-9-1.md.
+  # One place computes this, and `scripts/linux/start.sh` asks it **before**
+  # down.sh so a template this cannot read does not end the start with the stack
+  # already emptied. C4 of the 2026-10-01 review; the function's own header has
+  # the reasoning and the spellings it refuses.
+  NGINX_TEMPLATE="${PROJECT_DIR}/config/nginx/templates/nginx.conf"
+  LU_PROXY_IDENTITY="$(lu_proxy_identity "$NGINX_TEMPLATE")" || exit 1
+
   # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
   # relocated agents.defaults.memorySearch to memory.search, and retired
   # gateway.controlUi.dangerouslyDisableDeviceAuth in favour of
@@ -415,6 +447,7 @@ else
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
     -e LU_PROXY_IP="${LU_PROXY_IP}" \
+    -e LU_PROXY_IDENTITY="${LU_PROXY_IDENTITY}" \
     -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
     -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
@@ -427,6 +460,7 @@ else
     -e LOCAL_LLM_MODELS_JSON="${LOCAL_LLM_MODELS_JSON}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
+    -e MEMORY_OPENAI_KEY="${MEMORY_OPENAI_KEY}" \
     -e OPENROUTER_MODELS_JSON="${OPENROUTER_MODELS_JSON}" \
     --entrypoint node \
     "${OPENCLAW_IMAGE}" \
@@ -468,32 +502,68 @@ else
       // `openclaw devices approve` needs a gateway token this stack does not set.
       //
       // The 2026.9.1 replacement auto-approves a browser once the proxy has
-      // authenticated the user. Which scopes that may grant, and why the list
-      // includes operator.admin, is at the deviceAutoApprove block below.
+      // authenticated the user. Which scopes that may grant is the
+      // deviceAutoApprove block below; operator.admin is NOT among them since
+      // 2026-09-19 -- it is granted to the proxy identity instead, a few lines
+      // down. Corrected 2026-09-29: this said the list "includes operator.admin".
       if (schemaNew) {
         delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
-        // The Control UI requests operator.admin among its default scopes, and
-        // this list is a CAP on what an auto-approval may grant -- not the set a
-        // device receives. Leave admin out and a fresh browser does not lose a
-        // few pages: it cannot connect at all. Measured 2026-09-10 by revoking
-        // the operator device and reconnecting -- "Role upgrade pending, this
-        // browser is already known, but the requested access changed" -- and the
-        // recovery the UI names, `openclaw devices approve`, answers
-        // `unauthorized` from the gateway container and from openclaw-cli alike,
-        // because trusted-proxy auth wants a header the CLI does not send. There
-        // was no documented way back in.
+        // The way back into the Control UI. Scopes otherwise come only from a
+        // device record, so a CLI arriving through nginx is authenticated and
+        // still cannot approve anything -- which is how a browser with a revoked
+        // device token became unrecoverable on 2026-09-19. Granting them to the
+        // identity is what the gateway security warning itself recommends, and it
+        // is connection-only: it does not approve a device, it lets a caller that
+        // nginx has already authenticated act. R1 of §9.
         //
-        // Granting it restores the posture 2026.7.1 had with
-        // dangerouslyDisableDeviceAuth, which the migration gave up by accident
-        // rather than by decision. It is not a new exposure: the nginx here
-        // authenticates nobody, it sets a constant X-Forwarded-User, so whoever
-        // reaches the proxy is already the operator. The gateway logs a SECURITY
-        // WARNING naming operator.admin when it is here, which is what OC-10
-        // asserts, and that warning is the honest record of the trade.
+        // No apostrophes in this block: the whole program is one single-quoted
+        // bash string, and one of them ends it.
+        //
+        // Merged, not replaced. The rest of this writer preserves what the
+        // operator edited by hand and this line did not, so an identity they had
+        // granted anything to lost it on the next start. And nothing is written
+        // at all without a name for the proxy identity: assigning under
+        // [undefined] produced the literal key "undefined", a grant to nobody
+        // that read as a grant. Both minors of the 2026-09-29 review.
+        var proxyIdentity = process.env.LU_PROXY_IDENTITY;
+        if (proxyIdentity) {
+          c.gateway.auth.identityScopes = c.gateway.auth.identityScopes || {};
+          c.gateway.auth.identityScopes[proxyIdentity] = [
+            "operator.admin",
+            "operator.read",
+            "operator.write",
+            "operator.talk",
+            "operator.pairing",
+            "operator.approvals",
+            "operator.questions",
+          ];
+        }
+        // This list is a CAP on what an auto-approval may grant, not the set a
+        // device receives. operator.admin is deliberately NOT in it -- and that
+        // is a reversal of the decision taken on 2026-09-10, made on a
+        // measurement rather than on preference.
+        //
+        // What 2026-09-10 measured: with admin left out, a fresh browser could
+        // not connect at all, and no documented recovery worked. The second half
+        // of that was false. The recovery does work, through nginx, which is R1
+        // above -- so the reason for putting admin in the cap was gone, and what
+        // remained was the gateway telling us at every start to grant admin per
+        // identity instead.
+        //
+        // What 2026-09-19 measured, in a private window, end to end:
+        //
+        //   device auto-approved  scopes=approvals,pairing,questions,read,write
+        //   identity scope grant elevated connection  addedScopes=operator.admin
+        //   webchat connected  client=openclaw-control-ui
+        //
+        // Twelve milliseconds, no approval, and the admin-gated pages worked.
+        // The device is capped below admin and the CONNECTION is elevated by the
+        // identity, which is exactly the shape the warning asks for -- and the
+        // warning is gone from the startup log, which is what OC-11 now asserts.
+        // OC-46 is the case; OC-38 is its control.
         c.gateway.auth.trustedProxy.deviceAutoApprove = {
           enabled: true,
           scopes: [
-            "operator.admin",
             "operator.read",
             "operator.write",
             "operator.talk",
@@ -504,6 +574,10 @@ else
         };
       } else {
         delete c.gateway.auth.trustedProxy.deviceAutoApprove;
+        // Neither key exists in the 2026.7.1 schema, and a key that version does
+        // not know is a validation failure at start rather than a warning, which
+        // is the lesson of §5.1.
+        delete c.gateway.auth.identityScopes;
         c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
       }
 
@@ -623,6 +697,219 @@ else
         }
       }
 
+      // The mid-term memory this stack already ships, switched on rather than
+      // built. docs/FEATURE-memory-midterm.md.
+      //
+      // active-memory implements Remember across conversations; memory-core
+      // indexes and ranks. Promotion into MEMORY.md is earned by use -- three
+      // recalls across three distinct queries inside thirty days, thresholds read
+      // out of `openclaw memory promote-explain` on 2026-09-20 -- so switching
+      // this on changes nothing until somebody asks questions. That is the point:
+      // it is here so the first week of real use is measured rather than missed.
+      //
+      // sources stays at ["memory"] deliberately. Adding "sessions" would index
+      // transcript history, which is what NFR-M1 forbids until the redaction of
+      // NFR-M4 exists: a conversation in this stack carries .env lines and keys.
+      //
+      // No provider is set here -- though one is sometimes deleted, which this
+      // comment did not say until N5 of the 2026-10-13 re-review: a
+      // github-copilot provider left by a harness that is now off is removed and
+      // the gate falls back to the openai credential. It defaults to openai, the
+      // gateway has OPENAI_API_KEY, and the Copilot branch above owns the
+      // provider when that harness is on -- writing one here would silently win
+      // or lose depending on
+      // block order.
+      //
+      // 2026.7.1 knows neither key, and an unknown key there is a failed start
+      // rather than a warning, which is the lesson of section 5.1.
+      if (schemaNew) {
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        // Merged, not replaced. The plugin manifest declares 29 config keys with
+        // additionalProperties:false, so assigning a fresh object discards every
+        // one an operator has tuned -- silently, on the next start. The codex and
+        // grok blocks below already merge; this one did not. F2 of 2026-09-22.
+        // Switched on only where an embedding backend has a credential. The
+        // guards below are written either way: they are what keeps transcripts
+        // out, and they have to be in place for whenever it is switched on.
+        // Which backend will do the embedding decides whether this gate has
+        // anything to say. It knows about openai and github-copilot; anything
+        // else -- ollama, local, gemini, lmstudio, all in the schema -- is the
+        // operator choice, and writing `enabled` over it switched their memory
+        // off on every start while claiming there was no credential. Blocker 3
+        // of 2026-09-28. And a github-copilot left behind by a harness that is
+        // now off has no auth either, which is blocker 4.
+        const searchNow = (c.memory && c.memory.search) || {};
+        const provider = typeof searchNow.provider === "string" ? searchNow.provider : "";
+        let embeddings = null;
+        // **A key the operator configured is a key.** The gate read
+        // MEMORY_OPENAI_KEY only, so an installation pointing memory.search at
+        // its own OpenAI-compatible endpoint -- provider "openai" with
+        // memory.search.remote.{baseUrl,apiKey} set, which the schema supports --
+        // was switched off on every start, with a line claiming there was no
+        // embedding credential. There was one; we looked in the wrong place.
+        // That is blocker 3 of 2026-09-28 for a supported configuration, and N3
+        // of the 2026-10-13 re-review.
+        const remoteKey = Boolean(
+          searchNow && searchNow.remote && typeof searchNow.remote.apiKey === "string" &&
+          searchNow.remote.apiKey.trim() !== ""
+        );
+        if (provider === "" || provider === "openai") {
+          embeddings = remoteKey || process.env.MEMORY_OPENAI_KEY === "1";
+        } else if (provider === "github-copilot") {
+          embeddings = enableCopilot;
+          if (!enableCopilot) {
+            delete searchNow.provider;
+            console.log("openclaw.json: removed a github-copilot embedding provider left by a harness that is now off");
+            embeddings = remoteKey || process.env.MEMORY_OPENAI_KEY === "1";
+          }
+        }
+        // The id the harness uses when nothing names one; the plugin calls it
+        // DEFAULT_AGENT_ID in its own types. It is the fallback, not the answer:
+        // see the roster below.
+        const DEFAULT_AGENT = "main";
+
+        // **Every agent the roster names, computed.** This wrote ["main"], so on
+        // an installation whose agent is called anything else -- or which has
+        // simply run `openclaw agents add ops` -- the config validated and
+        // isEnabledForAgent answered false for that agent. That is blocker 1
+        // again for every install off the stock roster: enabled written, nothing
+        // gathered, and it looks the same whether it ran or not. N1 of the
+        // 2026-10-13 re-review.
+        //
+        // Both representations, for the reason the NFR-M1 guard walks both: the
+        // keyed map is canonical in 2026.9.1 and agents.list is the legacy shape
+        // that doctor --fix migrates away. The operator decided this and the
+        // specification records it: the plugin covers every agent the roster
+        // names, because NFR-M1 closes transcripts and says nothing about which
+        // agents may have a memory -- and a second agent silently without one is
+        // a surprise rather than a protection.
+        const rosterIds = [];
+        if (c.agents && c.agents.entries && typeof c.agents.entries === "object") {
+          for (const id of Object.keys(c.agents.entries)) if (id) rosterIds.push(id);
+        }
+        if (c.agents && Array.isArray(c.agents.list)) {
+          for (const a of c.agents.list) if (a && a.id && rosterIds.indexOf(a.id) === -1) rosterIds.push(a.id);
+        }
+        const am = c.plugins.entries["active-memory"] || {};
+        if (embeddings !== null) am.enabled = embeddings;
+        else if (typeof am.enabled !== "boolean") am.enabled = true;
+        // The plugin acts before a reply only when one of two gates is open:
+        // its config.agents names the agent, or rememberAcrossConversations is
+        // on for it. NFR-M1 keeps the second shut until the redaction of NFR-M4
+        // exists -- so without this the entry said enabled:true and the plugin
+        // did nothing at all, which is the shape section 2.1 warns about: it
+        // looks the same whether it ran or not. config.agents defaults to an
+        // empty list, and an empty list names nobody. Blocker 1 of 2026-09-28.
+        am.config = am.config || {};
+        // An operator list is left alone; an empty or missing one is filled from
+        // the roster, falling back to the default id when the roster names
+        // nobody -- a fresh install has no agents block at all.
+        if (!Array.isArray(am.config.agents) || am.config.agents.length === 0) {
+          am.config.agents = rosterIds.length > 0 ? rosterIds.slice() : [DEFAULT_AGENT];
+        }
+        c.plugins.entries["active-memory"] = am;
+        // Like the codex and xai blocks: with an operator allowlist in place,
+        // a plugin that is not on it is not loaded however enabled it says it
+        // is. Onboarding writes no allowlist, so most installs never see this.
+        if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("active-memory")) {
+          c.plugins.allow.push("active-memory");
+        }
+        c.memory = c.memory || {};
+        c.memory.search = c.memory.search || {};
+        if (embeddings !== null) {
+          c.memory.search.enabled = embeddings;
+          if (!embeddings) {
+            console.log("openclaw.json: mid-term memory stays off -- no embedding credential (OPENAI_API_KEY unset and Copilot off)");
+          }
+        } else {
+          console.log("openclaw.json: memory.search.enabled left as it is -- the embedding provider is " + provider + ", which this stack does not hold credentials for");
+        }
+        // Written every start, not filled in when missing. The comment above
+        // states an invariant -- transcripts stay out until NFR-M4 redaction
+        // exists -- and a value that is only defaulted is not an invariant: a
+        // "sessions" that reached the file once, by hand or by an older version,
+        // survived every start after it. Measured on 2026-09-22 against a seeded
+        // ["memory","sessions"], which came back unchanged. F3.
+        const wanted = ["memory"];
+        const had = c.memory.search.sources;
+        if (!Array.isArray(had) || had.join(",") !== wanted.join(",")) {
+          if (Array.isArray(had) && had.length) {
+            console.log("openclaw.json: memory.search.sources was", JSON.stringify(had) + "; NFR-M1 allows only", JSON.stringify(wanted));
+          }
+          c.memory.search.sources = wanted;
+        }
+        // False, explicitly, rather than left out. This key is *transcript*
+        // recall across private conversations. The schema in the 2026.9.1 image
+        // describes it as relevant context from the other private conversations
+        // of this agent, through protected transcript recall -- and says that an
+        // explicit true or false always wins. (No apostrophes anywhere in this
+        // block: the whole writer is one single-quoted bash string, and a single
+        // apostrophe ends it. That cost a broken start once already.)
+        // It is the thing the sources line above exists to prevent, and NFR-M1
+        // forbids it until NFR-M4 redaction exists. Omitting it would not do:
+        // the schema default is on whenever session.dmScope is unset or "main",
+        // a setting this block does not own, so the guarantee would depend on a
+        // value somebody else can change. F1 of 2026-09-22, and it had been
+        // written `true` since 2026-09-20.
+        c.memory.search.rememberAcrossConversations = false;
+
+        // And the same keys wherever an agent can override them. OpenClaw
+        // resolves them as <agent>.memory.search.X ?? memory.search.X, so a
+        // per-agent block brought transcripts straight back past a guard that
+        // only ever wrote the defaults level. Blocker 2 of 2026-09-28.
+        //
+        // **Both rosters, and agents.entries is the one that matters.** This
+        // walked agents.list only. In 2026.9.1 that is the *legacy* shape:
+        // listAgentEntries reads cfg.agents.entries first, the validator reports
+        // agents.list problems under agents.entries.<id>, config validate warns
+        // about any agents.list at all, and the image calls the keyed map
+        // canonical. Worse, the stack migrates to it itself --
+        // openclaw_migrate_state runs doctor --fix before this writer whenever
+        // the state came from an older version, and that rule is literally
+        // "agents.list moved to keyed agents.entries". So the guard protected the
+        // one representation that cannot persist and missed the one every tool
+        // writes. Reproduced before this change: a seeded
+        // agents.entries.main.memory.search with rememberAcrossConversations
+        // true and sources ["memory","sessions"] came through untouched, the
+        // config validated, and the image resolver answered remembers true.
+        // C1 of the 2026-10-13 re-review.
+        //
+        // **And experimental.sessionMemory is a third key, not a detail.** The
+        // resolver turns transcript indexing on when that flag is true and
+        // "sessions" is in the agent sources, *even with
+        // rememberAcrossConversations false* -- so forcing two keys left a route
+        // that reaches the same outcome. Measured: remembers false, active true,
+        // with the flag surviving the writer.
+        const agentBlocks = [];
+        if (c.agents && Array.isArray(c.agents.list)) {
+          for (const a of c.agents.list) if (a) agentBlocks.push([a.id || "?", a]);
+        }
+        if (c.agents && c.agents.entries && typeof c.agents.entries === "object") {
+          for (const id of Object.keys(c.agents.entries)) {
+            const a = c.agents.entries[id];
+            if (a && typeof a === "object") agentBlocks.push([id, a]);
+          }
+        }
+        for (const pair of agentBlocks) {
+          const id = pair[0];
+          const as = pair[1] && pair[1].memory && pair[1].memory.search;
+          if (!as) continue;
+          if (as.rememberAcrossConversations === true) {
+            console.log("openclaw.json: agent " + id + " asked for transcript recall; NFR-M1 forbids it until redaction exists");
+          }
+          as.rememberAcrossConversations = false;
+          if (Array.isArray(as.sources) && as.sources.join(",") !== wanted.join(",")) {
+            console.log("openclaw.json: agent " + id + " memory.search.sources was " + JSON.stringify(as.sources) + "; NFR-M1 allows only " + JSON.stringify(wanted));
+            as.sources = wanted.slice();
+          }
+          if (as.experimental && as.experimental.sessionMemory === true) {
+            console.log("openclaw.json: agent " + id + " asked for experimental.sessionMemory; that indexes transcripts, which NFR-M1 forbids until redaction exists");
+            as.experimental.sessionMemory = false;
+          }
+        }
+      }
+
       if (enableCodex) {
         c.plugins = c.plugins || {};
         c.plugins.entries = c.plugins.entries || {};
@@ -729,6 +1016,11 @@ else
            ["agents", "defaults", "memorySearch"],
            ["gateway", "controlUi", "dangerouslyDisableDeviceAuth"]]
         : [["memory", "search"],
+           // 2026.7.1 knows no active-memory plugin. Swept here rather than
+           // deleted inline beside the block that writes it, so a downgrade
+           // says what it removed instead of doing it silently. F8 of
+           // 2026-09-22.
+           ["plugins", "entries", "active-memory"],
            ["gateway", "auth", "trustedProxy", "deviceAutoApprove"]];
 
       // 2026.9.1 enables the codex plugin in the config by itself during its
