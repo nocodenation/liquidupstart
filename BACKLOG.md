@@ -108,6 +108,29 @@ the repair together would leave the check never having been seen to fail against
 collision still exists to catch.
 
 Recorded 2026-10-12.
+**The embedding credential gate speaks for two providers out of six.** `openclaw.sh` can say whether
+an embedding backend has a credential for `openai` (is `OPENAI_API_KEY` set) and for `github-copilot`
+(is the harness on). The schema also allows `ollama`, `local`, `gemini` and `lmstudio`, and for those
+the start deliberately writes nothing and leaves `memory.search.enabled` as the operator set it —
+blocker 3 of the 2026-09-28 review on #16, where writing it unconditionally had been switching their
+memory off on every start.
+
+**That is correct and it is not complete.** On those four the stack cannot tell the operator whether
+memory search will do anything, because nothing checks the backend is reachable. The operator decided
+on 2026-10-13 to fix the boundary first and document it, and to extend later.
+
+**What extending needs, and why it is not one change.** "Has a credential" is an API key for `openai`
+and a live harness for Copilot; for `ollama` or `lmstudio` it is a reachable endpoint, for `local` a
+model on disk, for `gemini` another key. So it is **one measurement per provider** rather than one
+condition, and the shape that fits is the one `registryReachable()` uses on #24: ask, cheaply, once,
+and cache the answer. The log line should then name what it asked and what answered, because a gate
+that silently decides is what blocker 3 was.
+
+Not built with the repair because the repair is the operator's setting being left alone, which needs
+no knowledge of any backend, and because each provider's check wants a live instance to be measured
+against rather than reasoned about.
+
+Recorded 2026-10-13.
 
 ---
 
@@ -956,6 +979,26 @@ the reason it is here is that `docs/FEATURE-git-integration.md` and the test spe
 it is, and a document that claims a record must have one.
 
 ---
+
+## Does the mid-term memory remember the right things? — deferred 2026-09-20, with a trigger
+
+**The mechanism is measured and works; the value is unmeasurable until the stack is used.**
+`docs/FEATURE-memory-midterm.md` §2.2 has the detail. In short: `memory-core` indexes, ranks, and
+explains its decisions, and promotion into `MEMORY.md` requires an entry to be recalled **three times
+across three distinct queries** within thirty days. This installation has produced one session
+summary ever and asked no questions, so nothing has been promoted, and nothing will be.
+
+**Do not wait for it.** Days accumulate and recalls do not, and `maxAgeDays=30` means the fifteen
+entries now in the store drop out on 2026-10-19 unpromoted. A daily look would show the same zero
+until then — the accumulating-nothing that looks like accumulating evidence.
+
+**The trigger:** once OpenClaw has been used in earnest for about a week, run
+`openclaw memory promote --json` and read `recalls`, `uniqueQueries` and `score`. Promotions happening
+would give M-M3 a baseline to beat and might remove the need for it; thresholds never being reached
+under real use makes the thresholds the thing to tune, and they are readable rather than guessed.
+
+**A synthetic conversation was considered and refused.** It would answer only what was put into it,
+and this project has enough of those.
 
 ## `operator.admin` is reachable from any container on the stack network
 
