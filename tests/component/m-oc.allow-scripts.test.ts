@@ -34,6 +34,26 @@
  *
  * Requirements covered: OC-G4, FEATURE-openclaw-2026-9-1.md §5.5; the budget and
  * the guard are held by SP-5.
+ *
+ * Precondition: registryReachable() -- a package registry answers, because the
+ *           build does `npm install -g`. Skipped where it does not, which is an
+ *           offline machine -- or one with no `curl` to ask with, which then
+ *           shows as SP-3's permitting half failing in m-sp.preconditions, not
+ *           as two quiet skips here.
+ *
+ *           **And a budget of its own, because the precondition is not what the
+ *           failures were.** These two failed twice by timing out at the suite's
+ *           60s and passed twice on a quiet machine -- the registry was reachable
+ *           every time and the machine was busy. Two measurements, because one
+ *           machine's figure is not a budget: **14s** on the author's machine
+ *           (2026-10-10) and **45s** on the reviewer's, both unloaded and both
+ *           against the same image. 60s failed twice under load on the first and
+ *           held on the second, which was not loaded; the second's figure is why
+ *           one machine's duration is not a budget. 180s clears the slower by 4x;
+ *           the cost is that a genuinely broken build takes that long to say so.
+ *           SP-3, and the second finding of #22. Raised to ten minutes on #42,
+ *           2026-10-21 -- BUILD_BUDGET_MS below, with its reasoning, and SP-5
+ *           holding it; which figure stands is the reviewer's decision.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
@@ -41,6 +61,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { sh, wasInterrupted } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { registryReachable } from '../lib/preconditions';
 
 let workRoot: string;
 
@@ -130,22 +151,30 @@ describe('OC-15/OC-16 the install script flag', () => {
   // minutes here turns a slow link into a slow suite rather than a red one, which
   // is the first of the two ways out the backlog recorded -- and the guard above
   // is what keeps a cut-off build from reading as a verdict either way.
-  test('OC-15 with the flag, the image is built and the CLI reports a version', () => {
-    const r = build('lu-oc15-with', installLine());
-    refuseInterrupted(r, 'OC-15');
-    expect(r.code).toBe(0);
-    expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
-  }, BUILD_BUDGET_MS);
+  test.skipIf(!registryReachable())(
+    'OC-15 with the flag, the image is built and the CLI reports a version',
+    () => {
+      const r = build('lu-oc15-with', installLine());
+      refuseInterrupted(r, 'OC-15');
+      expect(r.code).toBe(0);
+      expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
+    },
+    BUILD_BUDGET_MS
+  );
 
-  test('OC-16 without the flag, the build fails instead of shipping an empty launcher', () => {
-    const without = installLine().replace('--allow-scripts=@anthropic-ai/claude-code ', '');
-    expect(without).not.toContain('--allow-scripts');
-    const r = build('lu-oc16-without', without);
-    // Before the assertion, not after: this case expects a non-zero exit, so an
-    // interrupted build would satisfy it by accident.
-    refuseInterrupted(r, 'OC-16');
-    expect(r.code).not.toBe(0);
-    // npm names the script it refused to run; the build then dies on the version check.
-    expect(r.output).toContain('install.cjs');
-  }, BUILD_BUDGET_MS);
+  test.skipIf(!registryReachable())(
+    'OC-16 without the flag, the build fails instead of shipping an empty launcher',
+    () => {
+      const without = installLine().replace('--allow-scripts=@anthropic-ai/claude-code ', '');
+      expect(without).not.toContain('--allow-scripts');
+      const r = build('lu-oc16-without', without);
+      // Before the assertion, not after: this case expects a non-zero exit, so an
+      // interrupted build would satisfy it by accident.
+      refuseInterrupted(r, 'OC-16');
+      expect(r.code).not.toBe(0);
+      // npm names the script it refused to run; the build then dies on the version check.
+      expect(r.output).toContain('install.cjs');
+    },
+    BUILD_BUDGET_MS
+  );
 });
