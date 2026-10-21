@@ -22,6 +22,7 @@
  *
  * Requirements covered: OC-G2, N8 of the #11 second review.
  */
+import { throwawayTag, fixtureLabels } from '../lib/dashboardserver';
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -50,9 +51,19 @@ function probe(image: string): number {
 // An image derived from the real one with the shadow taken out, standing in for
 // one built before the step that writes it.
 function withoutShadow(): string {
-  const tag = 'liquidupstart/openclaw:n8-no-shadow';
+  const tag = throwawayTag('liquidupstart/openclaw:n8-no-shadow');
   const df = `FROM ${IMAGE}\nUSER root\nRUN rm -rf /home/node/.local/bin\n`;
-  const r = sh(['bash', '-c', `printf '%b' ${JSON.stringify(df)} | docker build -q -t ${tag} -`], repoRoot);
+  // **Labelled as well as named.** A per-run tag with no label is strictly worse
+  // than the fixed tag it replaced: nothing names it again, so the next run's
+  // `docker build -t` no longer reclaims it, and the sweep filters on
+  // `lu-test=1` and cannot see it either. An interrupted run then leaves a full
+  // openclaw-derived image on the host for good. That is the A1/A2 regression
+  // `dashboardserver.ts` warns about, in the file that adopted half the repair.
+  const labelArgs = fixtureLabels().join(' ');
+  const r = sh(
+    ['bash', '-c', `printf '%b' ${JSON.stringify(df)} | docker build -q ${labelArgs} -t ${tag} -`],
+    repoRoot
+  );
   if (r.code !== 0) throw new Error(`could not derive the image: ${r.output}`);
   return tag;
 }
