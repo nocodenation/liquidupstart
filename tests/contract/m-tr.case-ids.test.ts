@@ -107,9 +107,21 @@ function idsInTests(): Map<string, string[]> {
       //
       // The original concern is kept in view rather than dismissed: a template
       // literal holding a literal `describe('X-1 ...` at column 0 would now be
-      // read as a case. None exists on this tree -- that is what the 7 above
-      // being real test files establishes -- and if one appears, the check
-      // reports an id a human can look at, which is the better failure.
+      // read as a case. None existed when this was written -- that is what the
+      // 7 above being real test files established -- and if one appeared, the
+      // check would report an id a human can look at, which is the better
+      // failure.
+      //
+      // **One has appeared, with #18 on `main` (2026-10-21):** MU-42's fixture
+      // spec in `m-mu.runner` writes `describe('A10-14 a checked-in template is
+      // not a credential', …)` at column 0, because it is the shape of the real
+      // case. `TR-1` is untouched by it -- A10-14 is declared -- and `TR-4` saw
+      // A10-14 in two files, which is how it was found. It is judged on the list
+      // below. Blanking template contents before reading was measured and is not
+      // safe: the scanner `tests/scenario-table.ts` uses for its one file hid 34
+      // ids across this tree, 33 of them real titles -- TR-1 to TR-4 among them --
+      // because it misreads backticks and regex literals in code. The method and
+      // the list are in the specification's TR-4 block.
       const re =
         /^[ \t]*(?:test|describe)(?:\.\w+\([^)]*\))?\(\s*['"`]([A-Z][A-Za-z0-9]*-[A-Za-z0-9]+)\b/gm;
       let m: RegExpExecArray | null;
@@ -331,6 +343,12 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
     id: 'A8-21',
     files: ['tests/contract/m-a8.preflight-order.test.ts', 'tests/unit/m-a8.declaration-preflight.test.ts'],
     why: 'the declaration pre-flight: unit parses it, contract holds that it is judged before the teardown'
+  },
+  // Not a second case: fixture data that this reader cannot tell from one.
+  {
+    id: 'A10-14',
+    files: ['tests/integration/m-mu.runner.test.ts', 'tests/unit/m-a10.scan-paths.test.ts'],
+    why: 'not a level split: m-mu.runner holds MU-42 fixture source in a template literal whose column-0 line is describe(A10-14 …), the shape of the real case in m-a10.scan-paths, and idsInTests reads it as a title'
   },
   {
     id: 'OC-12',
