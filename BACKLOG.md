@@ -253,6 +253,13 @@ provided nothing else in the tier writes there, which no one has measured over a
 
 Recorded 2026-10-20.
 
+**Answered on #46, open, 2026-10-21, as the operator chose: the case moved out of the checkout.** It
+now reads the ceiling the helper's git process receives, through a git alias in a directory that is
+no repository, and compares it with the toplevel git reports from the test file's own directory; and
+it shows git honouring a ceiling given that way in two throwaway hosts, a repository and a worktree,
+each with the no-ceiling counterpart. The checkout's `volumes/repos` is not touched by a run. The
+`volumes/` this left in checkouts where no stack ran stays until removed.
+
 ---
 
 **The README still says there are no named volumes, and the Java feature runs on two.** Found by
@@ -625,6 +632,30 @@ either arm. The first sits **before** the Maven run (`build.sh:945` on #46, the 
 — reaches it once the drop directory is one the build user can write; the second sits after the run
 and needs a build that succeeds. FR36a's table on #46 says so rather than claiming that 2 means only
 the bundle's own refusal.
+
+Recorded 2026-10-21.
+
+---
+
+**The suite passes an inherited `GIT_DIR` to its git commands, and that overrides the ceiling.**
+Found by the local review of #46's A10-23 on 2026-10-21. `git()` in `tests/lib/gitfixture.ts` runs git
+with `{ ...process.env, ...FIXTURE_IDENTITY, ...env }`, so `GIT_DIR`, `GIT_WORK_TREE` and
+`GIT_INDEX_FILE` from the environment the suite was started in reach every fixture command, and git
+does no discovery when `GIT_DIR` is set — the ceiling never comes into it. Measured 2026-10-21 with a
+throwaway repository as the target: `GIT_DIR=<it>/.git GIT_CEILING_DIRECTORIES=<host> git -C
+<host>/volumes/repos/probe commit --allow-empty -m probe` exited 0 and moved that repository's `HEAD`.
+Git exports `GIT_DIR` to the hooks it runs in a linked worktree, as every review checkout here is: measured
+with git 2.48.1 for `pre-commit`, `commit-msg`, `post-commit`, `pre-push` and `post-checkout` (in a
+plain repository it exports only `GIT_INDEX_FILE`). The same fixture-shaped commit, ceiling set, run
+from a worktree's `pre-push` hook exited 0 and landed on that worktree's branch; outside the hook it
+answered "not a git repository". That is the 2026-09-17 incident by another door.
+
+`git()` is not the only door. `seedRepo`'s own add and commit, which also run without the ceiling,
+`runStart`, `publish` and `askRepoCommand` spread `process.env` the same way, and `sh()` passes it on
+through `childEnv` in `tests/lib/shell.ts`, which already removes `GIT_REPOSITORIES` for a like reason.
+Neither `tests/run.sh` nor a preload clears the variables. The repair belongs in one place every child
+goes through — `childEnv`, with the fixture helpers made to use it, or the runner — and it touches
+every fixture command, which is why it is not A10-23's. Found by the local review of this entry.
 
 Recorded 2026-10-21.
 
