@@ -446,6 +446,35 @@ too.
 
 Recorded 2026-10-21.
 
+---
+
+**An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.** Found
+by a local `/code-review` of `fix/narcheck-unavailable` (#36) on 2026-10-21. The gate's read probe is
+`head -c 1`, which exits 0 on an empty file, and `python3` runs an empty file and exits 0 — both
+measured in the builder image. So a checker truncated to nothing, or presented at 0 bytes by a partial
+mount, deploys every bundle as judged. `main` has the same through its `[ -f ]`, and three cases on
+`main` use exactly this as their stand-in: `m-b6.ordinary-projects`, `m-b5.stale-artifact` and
+`m-b6.concurrent-and-strays` each write `: > /opt/builder/narcheck.py` as *"a checker that permits"*.
+
+The repair is a positive verdict rather than the absence of a refusal — `check-index` printing a line
+that says it judged, and the gate deploying only on that — and it changes those three fixtures with
+it, which is why it is not #36's. Until then the probe could at least require one byte.
+
+Recorded 2026-10-21.
+
+---
+
+**A check that could not run still reaches the client as a refusal.** Found by the same review of #36.
+`nar-build` now tells *refused on merit* from *cannot be judged* in its own words, and returns 2 from
+both arms; `config/nar_builder/BuildServer.java` maps 2 to **422** (`case 2 -> 422`, beside 3 → 409,
+4 → 400, anything else 500), so an agent reading the status sees *"your bundle is unprocessable"* for
+an installation that could not judge it. A distinct exit for *cannot be judged*, mapped to a status
+that says the service could not do its job — 503 is the obvious one — would carry the distinction
+past the boundary. It changes `BuildServer.java` and what `nar-build.sh` reports, neither of which #36
+touches.
+
+Recorded 2026-10-21.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
