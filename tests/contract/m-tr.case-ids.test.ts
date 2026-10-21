@@ -25,8 +25,8 @@
  *          twice inside a single document, and one id declared by two documents --
  *          and `A16-20` is the class `TR-4` cannot see at all: one file, one id,
  *          and a specification row that is not its case. The specification's
- *          *What this check still does not do* carries all three with their
- *          measurements.
+ *          *No id is carried by two test files unless that is on record* carries
+ *          all three with their measurements.
  *
  *          None of them was wrong; they were written after the rows around them,
  *          during the rounds of review that followed, and nothing brought the
@@ -56,14 +56,18 @@
  *          matched nothing would make TR-1 green for ever. That is the shape of
  *          the `'' === ''` leftover the 2026-10-01 review found in B1-8.
  *
- *          `TR-4` has three refusals and one counterpart. It refuses an id spanning
- *          files that nothing claims; a reason that is a placeholder; and an entry
- *          that has outlived what it exempts, which is now either an id that no
- *          longer spans files **or** one its block has come to claim, so the list
- *          can only shrink. The counterpart is that a real level split is
- *          **accepted** by both routes -- `OC-17` through the list, `OC-68`
- *          through its own block -- because a rule that refused everything would
- *          satisfy all three refusals.
+ *          `TR-4` runs twice. On this tree: no id spanning files that nothing
+ *          claims, no reason that is a placeholder, no entry that has outlived
+ *          what it exempts -- and the counterpart, that real level splits are
+ *          **accepted** by both routes, `OC-68` through its own block and the
+ *          rest through the list, because a rule that refused everything would
+ *          satisfy every refusal. And on **stated data**, since this tree is green
+ *          and reaches none of the refusals: a heading claims only the cases it
+ *          names first; two blocks do not add up to a claim; a file an entry does
+ *          not name, an entry made redundant by its block, a file an entry names
+ *          that no longer carries the id, an id that spans nothing, and an id
+ *          listed twice are each reported by name; and the two accepted shapes
+ *          are accepted with nothing else reported (2026-10-21).
  */
 import { test, expect, describe } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -134,56 +138,94 @@ function idsInSpecs(): Set<string> {
   return out;
 }
 
-/** An id as a whole token, so `A8-2` does not match inside `A8-20`. */
-function idToken(id: string): RegExp {
-  return new RegExp(`(?<![A-Za-z0-9-])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9-])`);
+/**
+ * The cases a heading is about: the list it **starts** with, ranges expanded.
+ *
+ * This replaced a search for the id as a token anywhere in the heading, and that
+ * search claimed an id the heading's prose merely mentions -- `B6-17 — the build
+ * budget, and what B5-14 could not see` gave its file to `B5-14`, so a `B5-14`
+ * case added to that file was accepted without a word. And a range named only its
+ * ends: `B6-10 to B6-13` claimed nothing for `B6-11`. Findings 2 and 7 of the
+ * local review of 2026-10-21.
+ *
+ * The list is the start of the heading, before any ` — `. A list runs while each
+ * next id is joined by `,`, `/`, `and` or `to`, and the first word that is not an
+ * id ends it, so `SP-1, tightened 2026-10-14` is about SP-1 alone. A heading that
+ * does not **start** with an id claims nothing: `The write itself — A12-3 to
+ * A12-6, added …` is the one such heading on the tree, its ids are carried by one
+ * file, and reading past the dash would let any prose that opens with an id claim
+ * it -- which is the defect this replaces, one dash further on. Found by the
+ * second pass over this repair, as was the suffix: an id may end in letters
+ * (`A16-M1`), as `idsInTests` reads them, and only a numeric pair makes a range.
+ */
+const LEADING_ID = /^([A-Z][A-Za-z0-9]*)-([A-Za-z0-9]+)\b/;
+function ownIds(heading: string): string[] {
+  const part = heading.replace(/^#+\s*/, '').split(' — ')[0];
+  const out: string[] = [];
+  let rest = part;
+  let prev: [string, number] | null = null;
+  let range = false;
+  for (let m = LEADING_ID.exec(rest); m; m = LEADING_ID.exec(rest)) {
+    const [prefix, n] = [m[1], /^\d+$/.test(m[2]) ? Number(m[2]) : NaN];
+    if (range && prev && prev[0] === prefix && n > prev[1]) {
+      for (let k = prev[1] + 1; k <= n; k++) out.push(`${prefix}-${k}`);
+    } else {
+      out.push(`${prefix}-${m[2]}`);
+    }
+    prev = [prefix, n];
+    rest = rest.slice(m[0].length);
+    const sep = /^\s*(,|\/|and\b|to\b)\s*/.exec(rest);
+    if (!sep) break;
+    range = sep[1] === 'to';
+    rest = rest.slice(sep[0].length);
+  }
+  return out;
 }
 
 /**
- * The test files a specification block claims for an id, by **full path**.
+ * A detail block: the cases its heading names, and the files its *Implemented by*
+ * rows name -- each with the cases it holds, where the row says so.
  *
- * This is the computed half of `TR-4`, and it is what the house rule asks for:
- * where a question has a determinable answer, compute it rather than keeping a
- * list somebody has to remember to update. The detail-block convention already
- * carries the answer -- *Implemented by* names the files -- so an id whose block
- * names **every** file carrying it has already been judged, in the place
- * reviewers read, and needs no entry below.
- *
- * A full path and not a basename, because `m-oc.pairing-card` exists twice: as a
- * contract file reading the card as text and as a component file mounting it. A
- * basename match would accept the wrong one silently.
- *
- * Measured on the tree of 2026-10-20, with `main` merged: of **15** ids carried by
- * more than one test file, **3** are accepted here -- `OC-68`, `OC-69`, `OC-70`,
- * which came in with #15 and whose blocks name both files each. The other 12 have
- * blocks that predate the convention, which is why the list survives beside this.
- *
- * **What this cannot distinguish, stated because it is the rule's one weakness:**
- * a block whose heading names several ids -- `OC-43 / OC-44 / OC-45` -- claims its
- * files for all of them together, so within such a block the rule cannot say which
- * id a file belongs to. What it still catches is a file that **no** block
- * mentioning the id claims, which is the shape a stolen id takes.
+ * `` `tests/unit/m-b6.nothing-to-judge.test.ts` (B6-10, B6-11) `` is how three
+ * blocks on the tree say which file holds which case, and a file so annotated is
+ * claimed for those cases only. Without it a block about a range claims every
+ * file for every case in it, so a `B6-12` case added to the unit file above would
+ * be accepted. Found by the second pass over this repair.
  */
-function namedByBlock(id: string): string[] {
-  const out = new Set<string>();
-  const docs = join(repoRoot, 'docs');
-  const token = idToken(id);
-  for (const name of readdirSync(docs)) {
-    if (!/^TEST-SPEC-.*\.md$/.test(name)) continue;
-    let heading = '';
-    for (const line of readFileSync(join(docs, name), 'utf8').split('\n')) {
+type Block = { ids: string[]; files: Array<{ path: string; only?: string[] }> };
+
+/**
+ * Every block in the given documents that names a case and a file, by **full
+ * path** -- `m-oc.pairing-card` exists both as a contract file and as a component
+ * file, so a basename would accept the wrong one silently. Documents are passed
+ * as text, so the decision below can be put to stated data as well as to this
+ * tree, and this tree is read once rather than once per id.
+ */
+function blocksOf(documents: string[]): Block[] {
+  const out: Block[] = [];
+  for (const body of documents) {
+    let block: Block | null = null;
+    for (const line of body.split('\n')) {
       if (/^#{2,6} /.test(line)) {
-        heading = line;
+        block = { ids: ownIds(line), files: [] };
+        out.push(block);
         continue;
       }
-      if (!/^\|\s*\*{0,2}Implemented by\*{0,2}\s*\|/.test(line)) continue;
-      if (!token.test(heading)) continue;
-      for (const m of line.matchAll(/tests\/[A-Za-z0-9._/-]+\.test\.ts/g)) out.add(m[0]);
+      if (!block || !/^\|\s*\*{0,2}Implemented by\*{0,2}\s*\|/.test(line)) continue;
+      for (const m of line.matchAll(/(tests\/[A-Za-z0-9._/-]+\.test\.ts)`?\s*(?:\(([^)]*)\))?/g)) {
+        const only = m[2] ? ownIds(m[2]) : [];
+        block.files.push(only.length ? { path: m[1], only } : { path: m[1] });
+      }
     }
   }
-  return [...out].sort();
+  return out.filter((b) => b.ids.length > 0 && b.files.length > 0);
 }
 
+const specDocuments = () =>
+  readdirSync(join(repoRoot, 'docs'))
+    .filter((n) => /^TEST-SPEC-.*\.md$/.test(n))
+    .sort()
+    .map((n) => readFileSync(join(repoRoot, 'docs', n), 'utf8'));
 const rel = (p: string) => p.replace(`${repoRoot}/`, '');
 
 describe('TR-1 a test carries no case id that no specification declares', () => {
@@ -192,7 +234,7 @@ describe('TR-1 a test carries no case id that no specification declares', () => 
     const declared = idsInSpecs();
     const undocumented = [...tested.keys()]
       .filter((id) => !declared.has(id))
-      .map((id) => `${id} (${tested.get(id)!.map((p) => p.replace(`${repoRoot}/`, '')).join(', ')})`)
+      .map((id) => `${id} (${tested.get(id)!.map(rel).join(', ')})`)
       .sort();
     expect(undocumented).toEqual([]);
   });
@@ -234,13 +276,15 @@ describe('TR-3 the reader sees a case wherever the file puts it', () => {
  * the outside: one case tested at two levels, which this project asks for, and two
  * unrelated cases wearing one id, which is a defect. "One id, one file" would fail
  * the first -- measured 2026-10-13, nine of eleven spanning ids were level splits.
- * `namedByBlock` above decides the ones whose specification follows the
- * *Implemented by* convention, which is the determinable half; the blocks that
- * predate it are what is left, and they are listed here until their blocks are
- * brought up to the convention. **The list can therefore only shrink**, and
- * `TR-4`'s third scenario makes that true rather than hoped for: an entry the
- * computed rule has made unnecessary is reported, as is one whose id no longer
- * spans files at all.
+ * `blocksOf` above reads the ones whose specification follows the *Implemented
+ * by* convention, which is the determinable half; the blocks that predate it are
+ * what is left, and they are listed here until their blocks are brought up to the
+ * convention. An entry **leaves** when that happens: `TR-4`'s *does not outlive*
+ * scenario reports an entry the block has made unnecessary, and one whose id no
+ * longer spans files. Nothing stops an entry being **added** -- that is a reviewed
+ * change to this file, like any other. *(This said the list "can only shrink",
+ * and called the scenario TR-4's third; it is the fourth of the live-tree ones.
+ * Findings 9 and 13 of the local review of 2026-10-21.)*
  *
  * **Each entry names its files, and the match is equality.** Judging only the
  * **id** left the exemption open to theft: once `OC-17` was listed, any third file
@@ -344,54 +388,106 @@ function spanningIds(): Array<[string, string[]]> {
     .sort(([a], [b]) => a.localeCompare(b));
 }
 
-const listed = new Map(SPANS_FILES.map((e) => [e.id, [...e.files].sort()]));
-const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+type Entry = { id: string; files: string[]; why: string };
+type Verdict = { problems: string[]; stale: string[]; viaBlock: string[]; viaList: string[] };
+
+/**
+ * `TR-4`'s whole decision, over data rather than over this tree.
+ *
+ * Every refusal in it used to run only against the live tree, which is green and
+ * so reaches none of them; four defects sat in those branches and no run could
+ * see them. Taking the spanning ids, the blocks and the list as arguments is what
+ * lets each refusal be put to stated values below. Finding 10 of the local review
+ * of 2026-10-21.
+ *
+ * - **One block has to claim every carrying file.** The files used to be pooled
+ *   over every block naming the id, so two unrelated cases with a block each
+ *   passed as one -- the `OC-40` shape this exists for. Finding 1.
+ * - **Redundant means the block accepts what is carried**, not that the entry's
+ *   own files are all named: an entry naming a file that does not carry the id
+ *   was never reported, and stood ready to accept that file later. Finding 3.
+ * - **A file the entry names and nobody carries is stale, by name.** It was
+ *   reported as a surplus with an empty list. Finding 4.
+ * - **An id listed twice is reported.** A Map kept the last entry, so a reader
+ *   saw two files where three were accepted. Finding 6.
+ */
+function judge(spanning: Array<[string, string[]]>, blocks: Block[], list: Entry[]): Verdict {
+  const v: Verdict = { problems: [], stale: [], viaBlock: [], viaList: [] };
+  const entries = new Map<string, Entry>();
+  const twice = new Set<string>();
+  for (const e of list) {
+    if (entries.has(e.id) && !twice.has(e.id)) {
+      v.problems.push(`${e.id} is listed twice, and only one entry can be read`);
+      twice.add(e.id);
+    }
+    entries.set(e.id, e);
+  }
+  const holds = (b: Block, id: string, f: string) =>
+    b.files.some((x) => x.path === f && (!x.only || x.only.includes(id)));
+  const claimed = (id: string, files: string[]) =>
+    blocks.some((b) => b.ids.includes(id) && files.every((f) => holds(b, id, f)));
+  const carried = new Map(spanning);
+  for (const [id, files] of spanning) {
+    if (claimed(id, files)) {
+      v.viaBlock.push(id);
+      continue;
+    }
+    if (twice.has(id)) continue;
+    const e = entries.get(id);
+    if (!e) {
+      v.problems.push(`${id} (${files.join(', ')})`);
+      continue;
+    }
+    // A surplus file is the OC-40 mechanism aimed at an id this list has made
+    // safe to take, so it is named rather than counted.
+    const surplus = files.filter((f) => !e.files.includes(f));
+    if (surplus.length) v.problems.push(`${id} carried by a file its entry does not name: ${surplus.join(', ')}`);
+    else v.viaList.push(id);
+  }
+  for (const e of entries.values()) {
+    if (twice.has(e.id)) continue;
+    const files = carried.get(e.id);
+    if (!files) {
+      v.stale.push(`${e.id} no longer spans files`);
+      continue;
+    }
+    if (claimed(e.id, files)) {
+      v.stale.push(`${e.id} is claimed by its own block now, so this entry is redundant`);
+      continue;
+    }
+    const gone = e.files.filter((f) => !files.includes(f));
+    if (gone.length) v.stale.push(`${e.id} names a file that no longer carries it: ${gone.join(', ')}`);
+  }
+  return v;
+}
+
+// Read once: the tree does not change during a run, and three scenarios ask.
+let treeVerdict: Verdict | undefined;
+const onThisTree = () => (treeVerdict ??= judge(spanningIds(), blocksOf(specDocuments()), SPANS_FILES));
 
 describe('TR-4 no id is carried by two different cases without that being on record', () => {
   test('TR-4 every id spanning files is one its specification claims, or one somebody judged', () => {
     // Two ways to be allowed, and the first is the one the house rule prefers:
-    // the detail block names every file carrying the id, so the judgement is
+    // a detail block names every file carrying the id, so the judgement is
     // computed out of the document reviewers already read. The list is for the
     // blocks that predate that convention, and it names the exact file set.
-    const unjudged: string[] = [];
-    for (const [id, files] of spanningIds()) {
-      const named = namedByBlock(id);
-      if (files.every((f) => named.includes(f))) continue;
-      const entry = listed.get(id);
-      if (entry && same(entry, files)) continue;
-      // A surplus file is the OC-40 mechanism aimed at an id this list has just
-      // made safe to take, so it is named rather than counted.
-      const surplus = entry ? files.filter((f) => !entry.includes(f)) : files;
-      unjudged.push(
-        entry
-          ? `${id} carried by a file its entry does not name: ${surplus.join(', ')}`
-          : `${id} (${files.join(', ')})`
-      );
-    }
-    expect(unjudged.sort()).toEqual([]);
+    expect(onThisTree().problems.sort()).toEqual([]);
   });
 
   test('TR-4 the counterpart: a level split on record is accepted, by either route', () => {
     // Without this, every scenario here is a refusal, and a rule that refuses
-    // everything would satisfy all of them. Two real ids, one per route:
+    // everything would satisfy all of them. On this tree `OC-68` -- component
+    // draws the refusal, integration holds the budget -- is accepted by its own
+    // block, and the list accepts the blocks that predate the convention.
     //
-    //   OC-17 -- unit parses the version line, integration probes the images --
-    //            is on the list, so this is the judged route.
-    //   OC-68 -- component draws the refusal, integration holds the budget --
-    //            came in with #15 and its block names both files, so this is the
-    //            computed route, and nothing about it is listed.
-    const spanning = new Map(spanningIds());
-    const oc17 = spanning.get('OC-17') ?? [];
-    expect(oc17).toEqual([
-      'tests/integration/m-oc.version-probe-images.test.ts',
-      'tests/unit/m-oc.version-probe.test.ts'
-    ]);
-    expect(listed.get('OC-17')).toEqual(oc17);
-
-    const oc68 = spanning.get('OC-68') ?? [];
-    expect(oc68.length).toBe(2);
-    expect(listed.has('OC-68')).toBe(false);
-    expect(namedByBlock('OC-68')).toEqual(expect.arrayContaining(oc68));
+    // *Corrected 2026-10-21*: this named `OC-17` as the list's witness and
+    // compared its entry by hand, so bringing OC-17's block up to the convention
+    // -- which is how an entry is meant to leave -- would have broken this case.
+    // So would any live witness for the list: a fully drained list is the state
+    // the design aims at. The list route's witness is the stated-data scenario
+    // *the exact file set on the list is accepted*. Finding 8 of the local review,
+    // and the second pass over its repair.
+    expect(onThisTree().viaBlock).toContain('OC-68');
   });
 
   test('TR-4 the negative: every reason is a reason, not a placeholder', () => {
@@ -403,33 +499,103 @@ describe('TR-4 no id is carried by two different cases without that being on rec
       expect(why.length).toBeGreaterThan(40);
       expect(why).not.toMatch(/^(todo|tbd|see above|n\/a)/i);
       expect(id).toMatch(/^[A-Z][A-Za-z0-9]*-[A-Za-z0-9]+$/);
-      // And an entry that names no files judges nothing.
-      expect(files.length).toBeGreaterThan(1);
+      // And an entry that names no files judges nothing -- nor one that names a
+      // file twice, which passed this floor with a single file.
+      expect(new Set(files).size).toBeGreaterThan(1);
+      expect(new Set(files).size).toBe(files.length);
       for (const f of files) expect(f).toMatch(/^tests\/[A-Za-z0-9._/-]+\.test\.ts$/);
     }
   });
 
   test('TR-4 the negative: the list does not outlive what it exempts', () => {
-    // The direction that makes the list shrink rather than grow for ever, and it
-    // is now two things. An entry whose id no longer spans files is stale --
-    // A16-19's own text says it goes when #24 merges. And an entry the computed
-    // rule would accept anyway is **redundant**: bringing a block up to the
+    // The direction that makes entries leave. An entry whose id no longer spans
+    // files is stale -- A16-19's own text says it goes when #24 merges. An entry
+    // the block now accepts is **redundant**: bringing a block up to the
     // *Implemented by* convention is how an entry is meant to leave this list, so
-    // it has to be red until the entry goes with it.
-    const spanning = new Map(spanningIds());
-    const gone: string[] = [];
-    for (const { id, files } of SPANS_FILES) {
-      const carried = spanning.get(id);
-      if (!carried) {
-        gone.push(`${id} no longer spans files`);
-        continue;
-      }
-      const named = namedByBlock(id);
-      if (files.every((f) => named.includes(f))) {
-        gone.push(`${id} is claimed by its own block now, so this entry is redundant`);
-      }
-    }
-    expect(gone.sort()).toEqual([]);
+    // it has to be red until the entry goes with it. And a file an entry names
+    // that no longer carries the id is reported by name.
+    expect(onThisTree().stale.sort()).toEqual([]);
+  });
+});
+
+describe('TR-4 the decision, put to stated data', () => {
+  // The live tree is green, so the scenarios above reach no refusal. These put
+  // each one to values chosen for it. The ids are `ZZ-`, which no specification
+  // in this repository declares, and the paths name no file that exists, so
+  // nothing here can be read as a real case or a real file.
+  const a = 'tests/unit/zz.alpha.test.ts';
+  const b = 'tests/integration/zz.beta.test.ts';
+  const c = 'tests/contract/zz.gamma.test.ts';
+  const why = 'stated data for the decision, not a judgement about any real case';
+
+  test('TR-4 a heading claims the cases it names first, never one its prose mentions', () => {
+    expect(ownIds('#### ZZ-17 — the build budget, and what ZZ-14 could not see')).toEqual(['ZZ-17']);
+    expect(ownIds('### ZZ-43 / ZZ-44 / ZZ-45 — three cases, one block')).toEqual(['ZZ-43', 'ZZ-44', 'ZZ-45']);
+    expect(ownIds('#### ZZ-10 to ZZ-13 — a range')).toEqual(['ZZ-10', 'ZZ-11', 'ZZ-12', 'ZZ-13']);
+    expect(ownIds('##### ZZ-14, ZZ-15, ZZ-20 to ZZ-22 — a list holding a range')).toEqual([
+      'ZZ-14', 'ZZ-15', 'ZZ-20', 'ZZ-21', 'ZZ-22'
+    ]);
+    expect(ownIds('#### ZZ-5 and ZZ-7 — two cases')).toEqual(['ZZ-5', 'ZZ-7']);
+    expect(ownIds('#### The write itself — ZZ-3 to ZZ-6, added 2026-10-02')).toEqual([]);
+    expect(ownIds('#### The build budget — ZZ-14 could not see it')).toEqual([]);
+    expect(ownIds('#### ZZ-M1 — a manual case')).toEqual(['ZZ-M1']);
+    expect(ownIds('### ZZ-1, tightened 2026-10-14 — prose naming ZZ-2')).toEqual(['ZZ-1']);
+    expect(ownIds('## Overview')).toEqual([]);
+  });
+
+  test('TR-4 two blocks that each claim part of an id do not add up to a claim', () => {
+    const v = judge([['ZZ-70', [a, c]]], [{ ids: ['ZZ-70'], files: [{ path: a }] }, { ids: ['ZZ-70'], files: [{ path: c }] }], []);
+    expect(v).toEqual({ problems: [`ZZ-70 (${a}, ${c})`], stale: [], viaBlock: [], viaList: [] });
+  });
+
+  test('TR-4 and one block naming every file is a claim', () => {
+    const v = judge([['ZZ-70', [a, c]]], [{ ids: ['ZZ-70'], files: [{ path: a }, { path: c }] }], []);
+    expect(v).toEqual({ problems: [], stale: [], viaBlock: ['ZZ-70'], viaList: [] });
+  });
+
+  test('TR-4 a file a block says holds other cases does not claim this one', () => {
+    // The block is about ZZ-10 to ZZ-13 and its row says alpha holds ZZ-10 and
+    // ZZ-11, beta ZZ-12 and ZZ-13. A ZZ-12 case in alpha is not the block's.
+    const row = `| **Implemented by** | \`${a}\` (ZZ-10, ZZ-11) and \`${b}\` (ZZ-12, ZZ-13). |`;
+    const blocks = blocksOf([`#### ZZ-10 to ZZ-13 — a range\n\n${row}\n`]);
+    expect(judge([['ZZ-12', [a, b]]], blocks, [])).toEqual({ problems: [`ZZ-12 (${a}, ${b})`], stale: [], viaBlock: [], viaList: [] });
+    // And the counterpart on the same block: alpha and beta both hold ZZ-11 here.
+    const both = blocksOf([`#### ZZ-10 to ZZ-13 — a range\n\n| **Implemented by** | \`${a}\` (ZZ-10, ZZ-11) and \`${b}\` (ZZ-11 to ZZ-13). |\n`]);
+    expect(judge([['ZZ-11', [a, b]]], both, [])).toEqual({ problems: [], stale: [], viaBlock: ['ZZ-11'], viaList: [] });
+  });
+
+  test('TR-4 a file the entry does not name is reported by name', () => {
+    const v = judge([['ZZ-17', [a, b, c]]], [], [{ id: 'ZZ-17', files: [a, b], why }]);
+    expect(v).toEqual({ problems: [`ZZ-17 carried by a file its entry does not name: ${c}`], stale: [], viaBlock: [], viaList: [] });
+  });
+
+  test('TR-4 and the exact file set on the list is accepted', () => {
+    const v = judge([['ZZ-17', [a, b]]], [], [{ id: 'ZZ-17', files: [a, b], why }]);
+    expect(v).toEqual({ problems: [], stale: [], viaBlock: [], viaList: ['ZZ-17'] });
+  });
+
+  test('TR-4 an entry the block has made unnecessary is reported, even when it names a file that does not carry the id', () => {
+    const v = judge([['ZZ-45', [a, b]]], [{ ids: ['ZZ-45'], files: [{ path: a }, { path: b }] }], [{ id: 'ZZ-45', files: [a, b, c], why }]);
+    expect(v).toEqual({ problems: [], stale: ['ZZ-45 is claimed by its own block now, so this entry is redundant'], viaBlock: ['ZZ-45'], viaList: [] });
+  });
+
+  test('TR-4 an entry naming a file that no longer carries the id says which', () => {
+    const v = judge([['ZZ-31', [a, b]]], [], [{ id: 'ZZ-31', files: [a, b, c], why }]);
+    expect(v).toEqual({ problems: [], stale: [`ZZ-31 names a file that no longer carries it: ${c}`], viaBlock: [], viaList: ['ZZ-31'] });
+  });
+
+  test('TR-4 an entry whose id spans no files any more is stale', () => {
+    const v = judge([], [], [{ id: 'ZZ-19', files: [a, b], why }]);
+    expect(v).toEqual({ problems: [], stale: ['ZZ-19 no longer spans files'], viaBlock: [], viaList: [] });
+  });
+
+  test('TR-4 an id listed twice is reported, not silently read as one entry', () => {
+    const v = judge([['ZZ-31', [a, b, c]]], [], [
+      { id: 'ZZ-31', files: [a, b], why },
+      { id: 'ZZ-31', files: [a, b, c], why }
+    ]);
+    // Refused and not accepted: an id whose entry cannot be told is judged by none.
+    expect(v).toEqual({ problems: ['ZZ-31 is listed twice, and only one entry can be read'], stale: [], viaBlock: [], viaList: [] });
   });
 });
 

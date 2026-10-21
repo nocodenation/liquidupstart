@@ -93,7 +93,8 @@ and the shape is **two routes rather than one**: an id carried by several test f
 its own detail block's *Implemented by* names every one of them, which is the computed answer the
 house rule asks for, and otherwise only through a reviewed entry naming that exact file set. Of 15
 such ids on the tree of 2026-10-20, the computed route takes 4 and the list carries 11, and an entry
-whose block has come to claim its files is reported as redundant — so the list can only shrink.
+whose block has come to claim its files is reported as redundant — so entries leave as blocks catch up.
+*(It said "the list can only shrink"; nothing stops an entry being added. Corrected 2026-10-21.)*
 
 **The other two checks are still open, with what they would find today measured** in that document's
 *No id is carried by two test files unless that is on record* section: the per-document duplicate
@@ -101,6 +102,8 @@ check is **not buildable as stated**, because one row per scenario means 50 of 4
 legitimately carry several rows; the cross-document check **finds exactly one id, `SP-2`**, which is
 by design and would need an exemption on its first run. A third class neither check reaches is
 `A16-20`: one file, one id, and a specification row that is not its case.
+
+*The original entry follows, as written on 2026-10-12; its "Not built here" is that day's.*
 
 ~~**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
 ids in `TEST-SPEC-*.md` rows, in both directions, and has nothing to say about two different cases
