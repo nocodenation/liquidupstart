@@ -389,12 +389,6 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
       'tests/unit/m-sp.preconditions.test.ts'
     ],
     why: 'SP-2 is a rule rather than a single case: the unit file holds the rule, and each DOM file carries the voiced skip the rule requires -- so the id is the rule plus one instance per file the computation finds'
-  },
-  // A real collision, already repaired on a branch that has not merged.
-  {
-    id: 'A16-19',
-    files: ['tests/component/m-a16.skip-panel.test.ts', 'tests/contract/m-a16.text-only.test.ts'],
-    why: 'COLLISION, not a level split: m-a16.text-only is about git tracking test files and m-a16.skip-panel about the skip-all wording. Renumbered to A16-30 on #24; delete this entry when #24 merges'
   }
 ];
 
@@ -527,7 +521,8 @@ describe('TR-4 no id is carried by two different cases without that being on rec
 
   test('TR-4 the negative: the list does not outlive what it exempts', () => {
     // The direction that makes entries leave. An entry whose id no longer spans
-    // files is stale -- A16-19's own text says it goes when #24 merges. An entry
+    // files is stale -- A16-19's was, once #28 and #24 were both on one tree, and
+    // it was deleted on #24 on 2026-10-21 after this scenario named it. An entry
     // the block now accepts is **redundant**: bringing a block up to the
     // *Implemented by* convention is how an entry is meant to leave this list, so
     // it has to be red until the entry goes with it. And a file an entry names

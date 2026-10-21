@@ -305,6 +305,7 @@ eleven cases in `TEST-SPEC-git-integration.md`.
 | **Test data** | OC-15: the rendered line as it stands — `RUN npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code && claude --version`. OC-16: the same line with `--allow-scripts=@anthropic-ai/claude-code` removed, built against the same base. |
 | **Expected** | OC-15: the build ends with a version string (`2.1.x (Claude Code)`) and exits 0. OC-16: the build **fails** at `claude --version`, non-zero, no image produced. |
 | **Failure** | OC-16 succeeding would mean npm 12 does not block the postinstall in this image and the flag can go — a smaller footprint, and worth knowing rather than assuming. |
+| **What these two need before they can run, added 2026-10-20** | Both do a real `npm install -g` inside a `docker build --no-cache`, so they need a **package registry** and they need **time**. The registry is `SP-3` in [TEST-SPEC-suite-preconditions.md](TEST-SPEC-suite-preconditions.md) — `registryReachable()`, which skips them on an offline machine rather than reddening there. The time is a per-case budget of **180s**, which is theirs and not the suite's 60s: they failed twice by timing out at 60s and passed twice on a quiet machine, and the quiet build itself is 14s on one machine and 45s on another. Without both, these two are a case whose colour depends on the load, which is how red stops meaning anything. |
 | **Covers** | §5.5 |
 
 ### OC-17 / OC-18 / OC-19 — the version probe
