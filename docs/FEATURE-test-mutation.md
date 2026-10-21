@@ -1,21 +1,26 @@
 # Proving a test can fail
 
-**Status, as of 2026-10-09.** Written 2026-09-19 before any code, as this project requires.
+**Status, as of 2026-10-21.** Written 2026-09-19 before any code, as this project requires.
 
-- **M-MU1 -- the runner and its own cases -- is on #18**, `feature/mutation-registry`, not here. It
-  has grown from twelve cases to 91 scenarios over 55 ids, and its specification is
-  `docs/TEST-SPEC-mutation-runner.md` there. This branch carries the **registry** and the backfill.
-- **M-MU2, the backfill**, runs per milestone and is by design never finished; §15 carries the
-  current number.
-- **M-MU3 is not built.** D1's "a missing mutation blocks" is enforced nowhere: see §9.
+- **M-MU1 -- the runner and its own cases -- is on `main`.** It was built on #18,
+  `feature/mutation-registry`, which merged on 2026-10-21; its cases are specified in
+  `docs/TEST-SPEC-mutation-runner.md`. This branch carries the **registry** and the backfill.
+- **M-MU2, the backfill**, runs per milestone and is by design never finished. §15 carries the
+  figures as last recorded, each with the tree it was measured on; every run of `tests/mutate.sh`
+  ends with the gap as it is now.
+- **M-MU3 is not built.** D1's "a missing mutation blocks" is enforced nowhere: see §7.
 
 Branch `feature/test-mutation-control`. It was cut from `feature/git-integration` (#9) because that
-is where the suite it validates lived; #9 is merged, so it sits on `main` now, and since 2026-10-09
-its pull request is based on #18 so that the two do not collide over `tests/mutations.json`.
+is where the suite it validates lived. #9 is merged; from 2026-10-09 the pull request was based on #18
+so that the two would not collide over `tests/mutations.json`, and since #18 merged it is based on
+`main`.
 
 *The paragraph this replaces said M-MU1 was "in" here, gave the branch as cut from #9 as though #9
 were open, and said the testing skill "exists on #9 and not on `main`". All three stopped being true.
-B1 of the 2026-10-01 re-review.*
+B1 of the 2026-10-01 re-review. Brought up to date again 2026-10-21, N3 of that day's re-review: it
+said the runner was "on #18, not here" with "91 scenarios", after #18 had merged, and pointed at §9
+for a status §9 did not give. No scenario count is printed here any more, because the runner's own
+specification is where that number lives.*
 
 ---
 
@@ -111,22 +116,28 @@ occurrence is meant**. A mutation that could land in two places is not a control
 the entry says it is one. It may span several lines: `from` and `to` travel base64-encoded, which the
 first implementation did not allow and MU-5 caught -- see §13.
 
-**The contract is `docs/PROCEDURE-mutation-control.md` on #18, and this table is the sketch it grew
-out of.** *Rewritten 2026-10-09, B1 of the 2026-10-01 re-review, which found three things wrong with
-the sketch rather than with the runner:*
+**The contract is `docs/PROCEDURE-mutation-control.md`, and this table is the sketch it grew out
+of.** *Rewritten 2026-10-09, B1 of the 2026-10-01 re-review, which found three things wrong with the
+sketch rather than with the runner:*
 
 | Field | What it is | Where it is specified |
 |---|---|---|
-| `case` | ties the entry to its row | PROCEDURE §*the registry's contract* |
+| `case` | ties the entry to its row | PROCEDURE §*The registry* |
 | `file`, `from`, `to` | the smallest edit to the **subject** | the same |
 | `spec` | the test file that owns the case; the runner runs that file and nothing else. **Required**, not the afterthought the sketch made it | the same |
-| `mustFail` | the test that must go red — **or a describe block, which stands for every test under it: red if any is red** | the same, and MU-42 on #18 |
-| `all` | every occurrence of `from` is meant. Four entries use it | MU-35 on #18 |
-| `exempt` | a registered decision not to mutate, with its reason. One entry uses it | MU-34, MU-36 on #18 |
+| `mustFail` | the test that must go red — **or a describe block, which stands for every test under it: red if any is red** | the same, and MU-42 |
+| `all` | every occurrence of `from` is meant. Three entries use it: A3c-5, A3c-8 and A6-12 | MU-35 |
+| `exempt` | a registered decision not to mutate, with its reason. One entry uses it: A3-3 | MU-34, MU-36 |
 
-The sketch said `mustFail` is "the name of the test ... not 'some test'", and two entries — A10-14 and
-A10-20 — now name a block. That is not "some test": a block is a case whose tests are generated, and
-the rule is written down in the PROCEDURE rather than here.
+The sketch said `mustFail` is "the name of the test ... not 'some test'", and three entries — A10-10,
+A10-14 and A10-20 — name a block. That is not "some test": a block is a case whose tests are
+generated, and the rule is written down in the PROCEDURE rather than here.
+
+*Corrected 2026-10-21.* The `all` row said four entries use it, and three did on the day it was
+written as they do now; the paragraph above said two entries name a block, and A10-10 — registered in
+the same round — made it three. The entries are named now rather than counted, so a reader can check
+them against `tests/mutations.json` in one look. The MU ids are on `main` since #18 merged, so "on
+#18" went from the table. Item 5 of the local review of 2026-10-21, and N3 of that day's re-review.
 
 ## 5. The runner, and the five rules that make it worth having
 
@@ -189,11 +200,19 @@ That would be one line in `CLAUDE.md` § Development rules and one section in
 standard as the agents building it.
 
 > **Not built, and nothing enforces it.** *Written 2026-10-09, A2 of the 2026-10-01 re-review.*
-> `grep -ci mutation` is **0** in `CLAUDE.md`, **0** in `config/agents/skills/testing/SKILL.md`, and
+> `grep -ci mutation` was **0** in `CLAUDE.md`, **0** in `config/agents/skills/testing/SKILL.md`, and
 > **0** in both `docs/TEST-SPEC-git-integration.md` and `docs/TEST-SPEC-openclaw-2026-9-1.md` — so
-> not one of the 31 registered cases has its mutation in its detail block, which is the reviewer's
-> only view of the experiment and the thing D2 below rests on. The sentence above is the intention.
-> What holds today is weaker and is stated in §9.
+> not one registered case had its mutation in its detail block, which is the reviewer's only view of
+> the experiment and the thing D2 below rests on. The sentence above is the intention. What holds
+> today is weaker: the mutation is in `tests/mutations.json`, which a reviewer sees in the pull
+> request's diff, and nowhere beside the case.
+>
+> *Measured again 2026-10-21.* `CLAUDE.md` and `SKILL.md` are still at 0. Three detail blocks now
+> carry their registered mutation, written while answering that day's review: A4-6 and A13-8 in
+> `docs/TEST-SPEC-git-integration.md`, and OC-60 in `docs/TEST-SPEC-openclaw-2026-9-1.md`. The other
+> 29 non-exempt entries have theirs in the registry only. That is three cases done by hand, not the
+> rule: nothing asks for the block, and nothing notices when one is missing. *The note said "31
+> registered cases" when the registry held 32 non-exempt entries; N3 of the 2026-10-21 re-review.*
 
 **Adopted as a block rather than a note** (D1), with the signal that would retire it written down in
 §11 — because a rule whose cost nobody can demonstrate is a rule nobody can ever take back out. And
@@ -206,31 +225,50 @@ point at which a second person sees the experiment at all.
 
 - **MU-FR1** A registry entry names case, file, `from`, `to` and the test that must fail.
 - **MU-FR2** The runner applies one entry at a time, runs only the owning test file, and restores.
-- **MU-FR3** A `from` that does not occur exactly once fails the run and names the entry.
+- **MU-FR3** A `from` that does not occur exactly once fails the run and names the entry, **unless
+  `"all": true` declares that every occurrence is meant**. *Corrected 2026-10-21 -- this gave "exactly
+  once" with no exception, while MU-35 is that exception.* The entry is refused and the rest still run;
+  the run's exit status is non-zero.
 - **MU-FR4** The run fails unless **the named test** fails, and **at least one** other test in the file
   must still pass. *Corrected 2026-09-30 -- this said "other tests in the file must still pass".* All of
   them passing is not the rule and never was buildable: a mutation often reddens a sibling that reads the
   same line, which is a fact about the file rather than a defect in the entry. A file holding a single
   test waives the rule entirely, because it reddens whole when that test reddens.
 - **MU-FR5** The subject is restored on success, on failure, and on interrupt.
-- **MU-FR6** The runner refuses to start when the working tree has uncommitted changes to a subject.
-- **MU-FR7** The report lists, per entry, the case, the mutation and the outcome — and separately the
-  cases in the specification that carry **no** entry.
+- **MU-FR6** The runner refuses **the entry** whose subject has uncommitted changes, and carries on
+  with the rest. *Corrected 2026-10-21 -- this said it "refuses to start when the working tree has
+  uncommitted changes to a subject", which §5 already contradicted and MU-7 holds the opposite of: a
+  checkout with unrelated work in progress still runs every entry whose own subject is clean.*
+- **MU-FR7** The report lists, per entry, the outcome, the case and the test that must fail, and ends
+  every run with the gap: how many cases in the specification carry **no** entry. *Corrected
+  2026-10-21 -- this said the report lists "the mutation" per entry. It prints the case and
+  `mustFail`, as `VALIDATED A4-6  <mustFail>  (1 red, 0 green)`; the mutation is in the registry. The
+  gap has been on every run since MU-60, and `--gaps` lists the cases.*
 
 **Non-functional**
 
 - **MU-NFR1 · It is a tool that is run.** A mutation registry nobody executes is the third copy of
   the mistake this milestone exists for. It runs in the milestone cycle, at the same point as the
-  suite.
-- **MU-NFR2 · Bounded.** Each entry has a timeout; an entry that hangs fails rather than stalling the
-  run, and the subject is restored.
+  suite, and the gap it reports is computed, not counted: the specified case ids are read out of the
+  `TEST-SPEC-*.md` tables and the registered ones out of `tests/mutations.json`. *Annotated
+  2026-10-21.* The second half is built — MU-8, MU-36 and MU-60. **The first is not**: nothing but
+  its own test file runs `tests/mutate.sh` — not `tests/run.sh`, not a script under `scripts/`, not the
+  cycle in `HANDOFF.md` — so the registry runs when somebody remembers it. A traceability table that
+  gives only *"the gap is computed, not counted"* for this id gives the half that holds; the 2026-10-09
+  rewording in `TEST-SPEC-test-mutation.md` had dropped the other half as being "about when and not
+  about what", and a requirement that is not met is kept and marked, not reworded until it is.
+- **MU-NFR2 · Bounded.** Each test has a timeout and each spec run a budget; an entry that does not
+  finish is **refused** rather than stalling the run, and the subject is restored. *Corrected
+  2026-10-21 -- this said such an entry "fails". `failed` means the named test passed under the
+  mutation; a run that did not finish measured nothing, and a test red only because bun timed it out
+  is not an assertion failing. Agreed with the reviewer on 2026-10-01.*
 - **MU-NFR3 · It never edits a test.** The registry mutates the subject under test and nothing else.
   A tool that can rewrite the assertions can make anything pass.
 
 **A note on the MU numbers, 2026-09-30.** This branch and `feature/mutation-registry` each carried a
 copy of the runner and its cases, and the numbering diverged: what was MU-16, MU-17 and MU-18 here is
 MU-19, MU-21 and MU-34 on the copy that survives. The references above are to the surviving numbers.
-Every case from MU-13 upward is specified in `docs/TEST-SPEC-mutation-runner.md` on that branch --
+Every case from MU-13 upward is specified in `docs/TEST-SPEC-mutation-runner.md`, on `main` since #18 merged --
 written because a reviewer found the runner had cases in no specification at all, which made them
 invisible to `--gaps`, the very report that counts coverage.
 
@@ -242,11 +280,12 @@ the sample measured, so M-MU2 starts at ten rather than nought. What building it
 
 *Corrected 2026-09-30.* This said "sixteen tests covering MU-1 to MU-12", and neither number held: the
 file carried 25 tests by the time it was reviewed, and MU-10 was specified and never built. **The runner
-now lives on `feature/mutation-registry`, on its way to `main`, with 91 scenarios as MU-1 to MU-60 as of 2026-10-09** -- this
-branch keeps the registry, the specification and this document, and drops its own copy of the runner.
-The reason is structural: both branches added the same four files, so `git merge-tree` gives add/add
-conflicts on all of them, and resolving them toward this branch would silently restore every defect the
-other one fixed. #17 does not merge before #18.
+moved to `feature/mutation-registry` (#18), which merged into `main` on 2026-10-21** -- this branch
+keeps the registry, the specification and this document, and dropped its own copy of the runner. The
+reason was structural: both branches added the same four files, so `git merge-tree` gave add/add
+conflicts on all of them, and resolving them toward this branch would silently have restored every
+defect the other one fixed. That is why #18 had to merge first, and it did; this branch's merge of
+`main` leaves the runner, its test file and the PROCEDURE identical to `main`'s.
 
 **M-MU2 · Backfill, per milestone as each is next touched** (D3). Every case that carries a decision
 gets an entry when its milestone is worked on again, and the ones deliberately exempt are listed with
@@ -257,6 +296,8 @@ anyone will know how many of 543 cases can be shown to fail.
 
 **M-MU3 · The rule into the documents.** `CLAUDE.md` § Development rules and
 `config/agents/skills/testing/SKILL.md`, plus the detail-block format in the test specifications.
+**Not built** as of 2026-10-21: §7's note has the measurement, and D1's "a missing mutation blocks"
+is enforced nowhere.
 
 ## 10. Deliberately not in scope
 
@@ -305,6 +346,11 @@ the mutation in the detail block of the test specification, beside what makes th
 second pair of eyes is the **reviewer at review time** — a thing Timur can challenge on a pull
 request, which is exactly what he cannot do today.
 
+> *Not as built, 2026-10-21.* §7 is not built, so the mutation sits beside its case for three of the
+> 32 non-exempt entries, written by hand (§7's note), and for the rest the reviewer sees it only in
+> `tests/mutations.json` in the pull request's diff. The compensation that holds without anyone's
+> attention is the mechanical one below.
+
 **But §12 showed that is not enough on its own.** A reviewer sees the mutation that was *registered*
 — the one that worked. They never see the four that came before it and produced false greens, and
 the author is the person least able to notice that their own mutation was the weak part rather than
@@ -330,7 +376,7 @@ invisible, and its size is readable on any day somebody wants to know.
 > because the debt showed on every run, and it showed on no run anybody makes. The operator chose to
 > make the sentence true rather than to narrow it: an ordinary run now ends with
 > `gap: specified=... registered=... missing=... orphaned=... exempt=... -- mutate.sh --gaps lists
-> them`, from the same computation `--gaps` uses, held by **MU-60** on #18. It is informational and
+> them`, from the same computation `--gaps` uses, held by **MU-60**. It is informational and
 > does not touch the exit status — the error is an orphan, which `--gaps` enforces. **D1's "blocks"
 > is still not built**, and §7 now says so.
 
@@ -444,7 +490,7 @@ of which reading it would have shown. Each was found by pointing it at a real ca
 | **A spec with one test could never be validated** | The survivor rule — the named test fails and at least one still passes — has no survivor to ask for in a single-test file, so the runner called every honest entry against one a *broken file* | A4-6 |
 | **An empty `to` shifted every later field** | Tab is IFS whitespace and bash collapses a run of it into one delimiter. A deletion mutation — which is what an empty `to` is — moved the `all` flag into `to` and the test name into the flag. It still ran, against the wrong strings, and reported a clean result | A3c-8 |
 | **A rule asserted in several places could not be mutated at all** | "Exactly once" is there because nobody can say which occurrence carried the rule. Some rules are deliberately repeated — two ssh invocations in one script, three service declarations in `compose.yml` — and had no expressible mutation | A3c-8 |
-| **The suite runner counted as an assertion** | *Half corrected 2026-10-09: `tests/run.sh` is a subject in its own right and `tests/mutate.sh` is not — the corrected guard refuses it by name, along with `tests/lib/` and `tests/mutations.json`, because a mutation of the runner is a mutation of the instrument. MU-28 on #18 holds both halves.* The guard refused any `file` under `tests/`. `tests/run.sh` and `tests/mutate.sh` are subjects in their own right; the rule is that the file is a **test**, not where it lives | A0-4 |
+| **The suite runner counted as an assertion** | *Half corrected 2026-10-09: `tests/run.sh` is a subject in its own right and `tests/mutate.sh` is not — the corrected guard refuses it by name, along with `tests/lib/` and `tests/mutations.json`, because a mutation of the runner is a mutation of the instrument. MU-28 holds both halves.* The guard refused any `file` under `tests/`. `tests/run.sh` and `tests/mutate.sh` are subjects in their own right; the rule is that the file is a **test**, not where it lives | A0-4 |
 
 The second is the one worth dwelling on: **it did not fail, it answered.** The entry ran, matched
 nothing meaningful, and produced a verdict — exactly the class of defect this milestone exists to
@@ -524,16 +570,20 @@ different reason each time.
 `volumes/_git-secrets/known_hosts` — a file a start wrote days ago. Mutating the `ssh-keyscan` that
 produced it changes nothing about what the case reads, so no mutation of the code can redden it.
 
-That is §6's line, met in practice for the first time: it is an assertion about an **artefact**, not
-about decision logic. The registry gained a form for it —
+That is §6's line, met in practice for the first time: the *test* asserts an **artefact**, so no
+mutation of the code can redden it. The registry gained a form for it — `"exempt"` with a reason —
+reported as `EXEMPT` and counted separately. **An exemption without a reason is refused**, because
+"exempt" with nothing after it is how a gap becomes invisible, which is what the report exists to
+prevent. MU-34.
 
-```json
-{ "case": "A3-3", "exempt": "asserts the generated known_hosts, not the code that writes it" }
-```
-
-— reported as `EXEMPT` with its reason and counted separately. **An exemption without a reason is
-refused**, because "exempt" with nothing after it is how a gap becomes invisible, which is what the
-report exists to prevent. MU-34.
+*Corrected 2026-10-21, N3 of that day's re-review.* This subsection showed the reason as first
+written, *"asserts the generated known_hosts, not the code that writes it"*, and called A3-3 an
+assertion "not about decision logic". B2 of the 2026-10-01 re-review had withdrawn that: it read as
+though the **rule** needed no mutation, when only this test cannot carry one. The rule under the
+artefact — `seed_known_hosts` refusing a host key GitHub does not publish — is a refusing guard,
+which §6 says does need one, and A10-10 is registered with it. The reason in `tests/mutations.json`
+says both halves; it opens *"its test reads the generated volumes/_git-secrets/known_hosts, which a
+start wrote days ago, so it cannot fail against the code"*.
 
 ### What still dominates
 

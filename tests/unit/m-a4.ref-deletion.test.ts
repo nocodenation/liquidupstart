@@ -10,7 +10,9 @@
  *           operation under test.
  * When:     `git push origin --delete feature/probe` runs.
  * Then:     Non-zero exit, the branch still listed on the remote, and the
- *           message names it.
+ *           message names it and says `this would delete` -- the deletion rule's
+ *           own words. The other three hold for the ancestor check too, which
+ *           refuses the same push when the deletion rule is gone; see the test.
  * Covers:   A4-6, U4
  * Unhappy:  The whole case. Its counterweight is the push in its own first
  *           step: the same branch, the same clone, allowed.

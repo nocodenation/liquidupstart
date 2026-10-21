@@ -91,8 +91,8 @@
     "case": "A13-8",
     "file": "config/scripts/start/openclaw.sh",
     "spec": "tests/contract/m-a13.claude-panel-marker.test.ts",
-    "from": "::aiw-claude-auth-required::",
-    "to": "::aiw-claude-needs-you::",
+    "from": "if [[ \"$ENABLE_CLAUDE_CLI\" == \"1\" ]]; then\n",
+    "to": "if [[ \"$ENABLE_CLAUDE_CLI\" == \"1\" ]]; then :\nfi\nif true; then\n",
     "mustFail": "it sits beside the banner, inside the branch ENABLE_CLAUDE_CLI guards"
   },
   {

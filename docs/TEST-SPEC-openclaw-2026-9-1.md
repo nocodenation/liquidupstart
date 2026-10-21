@@ -43,7 +43,7 @@ here; each is executed where its subject exists.
 |---|---|---|---|
 | OC-1 | component | positive | On 2026.9.1 the written config contains **no** `agents.defaults.cliBackends`, and `config validate` passes |
 | OC-2 | component | **negative** | On 2026.9.1 a config that **does** contain it is rejected by `config validate` |
-| OC-3 | contract | **negative** | Every unattended `docker run` in the start script is bounded, or is a named exception with a reason. **Live, and the only case asserting that rule** — `tests/contract/m-oc.bounded-calls.test.ts:119`. It carries no registry entry; see the note under OC-60 |
+| OC-3 | contract | **negative** | Every unattended `docker run` in the start script is bounded, or is a named exception with a reason. **Live, and the only case asserting that rule** — `describe('OC-3 every unattended docker call in the start script is bounded')` in `tests/contract/m-oc.bounded-calls.test.ts`. It carries no registry entry; see *OC-60 / OC-61 / OC-62* in §4 |
 | OC-4 | system | positive | On **2026.7.1**, with `cliBackends` absent, Claude requests still run through the wrapper |
 | OC-5 | component | positive | With Copilot enabled on 2026.9.1, the config carries `memory.search.*` and validates |
 | OC-6 | component | **negative** | `agents.defaults.memorySearch` on 2026.9.1 is rejected |
@@ -72,24 +72,8 @@ here; each is executed where its subject exists.
 | **OC-34** | contract | **negative** | No `docker compose restart` in the start scripts drags its dependants along |
 | **OC-35** | contract | **negative** | Every network the start creates is one the stack actually uses |
 | **OC-36** | contract + unit | **negative** | `with_timeout` is never handed a shell function, because `timeout` cannot see one |
-| **OC-60** | contract | **negative** | Every bounded `docker run` **can actually be bounded**: each carries `--init`, without which `timeout` frees the client and leaves the container, and each bounded helper names its container and force-removes it |
-| **OC-61** | contract | **negative** | A named container is removed when its run does not end by itself: `timeout` kills the docker client, not the container |
-
-**OC-3, OC-60 and OC-61 are three rules, not one replaced by two.** *Corrected 2026-10-09, A3 of the
-2026-10-01 re-review of #17.* The OC-60 row said this case asserts that every unattended `docker run`
-"is bounded by `with_timeout`, or is a named exception carrying its reason", and the OC-3 row said
-OC-3 had been "replaced 2026-09-07 by OC-60 and OC-61". Both were wrong about the same thing: that
-rule is asserted by `describe('OC-3 every unattended docker call in the start script is bounded')` at
-`tests/contract/m-oc.bounded-calls.test.ts:119`, which was never touched and still carries OC-3. What
-OC-60 asserts is that a bounded run *can* be bounded — `--init`, the named container, the forced
-removal — which is a different rule standing behind OC-3's.
-
-The reviewer measured the difference rather than reading it: with `with_timeout 60` removed from
-`config/scripts/start/openclaw.sh:173`, all five OC-60 and OC-61 tests stayed green and only
-`OC-3 ... > each call is bounded, or is a named exception` went red. So the registry reported OC-60
-validated while a reader took the bounding rule to be proven, and `--gaps` listed OC-3 as missing
-beside a row saying OC-3 was gone. OC-3 is the live case with no entry, which is the honest state and
-is what `--gaps` now reports.
+| **OC-60** | contract | **negative** | Every bounded `docker run` **can actually be bounded**: each carries `--init`, without which `timeout` frees the client and leaves the container, and the bound comes back within its limit plus the grace |
+| **OC-61** | contract | **negative** | A named container is removed when its run does not end by itself: every `docker run` whose container is named `"$name"` or `"$cname"` is followed by a `docker rm -f` of that name, because `timeout` kills the docker client, not the container. It asserts that the removal is there, not the condition it runs under |
 | **OC-62** | unit | **negative** | A host without GNU coreutils still has a bound: the fallback ran the command unbounded, which is every macOS host, the operator's included |
 | **OC-37** | contract | **negative** | A version probe that fails does not take the start down with it |
 | **OC-38** | system, **manual** | **negative** | Without `operator.admin` in the cap, a freshly approved browser cannot connect at all |
@@ -224,14 +208,6 @@ eleven cases in `TEST-SPEC-git-integration.md`.
 | **Expected** | OC-1: `jq -e '.agents.defaults.cliBackends'` finds nothing, and `openclaw config validate` exits 0. OC-2: validate exits non-zero naming `agents.defaults: Unrecognized key: "cliBackends"`. OC-3: see the replacement below. |
 | **Failure** | OC-1: the key is present, or validation fails for another reason. OC-2: validation passes — the key would then be harmless and §5.1 would be wrong. |
 
-**OC-60, OC-61 and OC-62 were N1, N4 and N1b until 2026-09-30.** They were labelled with the
-finding ids from the review that produced them, and every other case in this repository is
-`PREFIX-number`. That is not cosmetic: `mutate.sh --gaps` reads case ids out of these tables and its
-pattern requires the hyphen, so three cases were invisible to the coverage report -- neither counted as
-specified nor reported as missing -- and the registry entry for OC-60 had to name `OC-3`, whose row says
-it was replaced. A reviewer found the entry pointing at a case that no longer existed; the link from the
-id to the test lived only in a header comment.
-
 ##### OC-3, replaced 2026-09-07: assert the guard, not the hazard
 
 | | |
@@ -249,6 +225,42 @@ id to the test lived only in a header comment.
 | **The second fix** | `config/scripts/start/lib/with-timeout.sh`, one implementation for both start scripts — `openclaw.sh` and `git.sh` each carried their own copy, so the unbounded fallback existed twice. Where coreutils is present it is still used, because it is the better instrument and every container here has it. Where it is not, the command runs in the background under a watchdog that sends SIGTERM at the limit and SIGKILL after the grace, and the helper answers **124**, the number coreutils uses, so a caller cannot tell the two hosts apart. OC-62 covers it: the expiry, the counterpart of a command that finishes, output captured through `$( )`, the command's own stderr kept while the shell's job bookkeeping is not, `0` still meaning unbounded, and a stub named `timeout` on `PATH` proving coreutils is still preferred. |
 | **Covers** | OC-G4, §5.1 |
 | **Covers** | OC-G1, §5.1 |
+
+### OC-60 / OC-61 / OC-62 — a bound that can bound, and a container that does not outlive it
+
+*Written 2026-10-21. The three cases had overview rows and no detail block; the reasoning lived in the
+test files' headers and in a note that sat inside the overview table and broke its rendering from
+`OC-62` down. Items N1 and N2 of the 2026-10-21 re-review of #17, and the local review of that day.*
+
+**OC-3, OC-60 and OC-61 are three rules, not one replaced by two.** OC-3 asserts that every unattended
+`docker run` in the start script is bounded or a named exception. OC-60 asserts that a bounded run *can*
+be bounded. OC-61 asserts that a container a helper named is removed when its run did not end by
+itself. OC-62 asserts that the bound exists on a host without GNU coreutils. *Corrected 2026-10-09, A3
+of the 2026-10-01 re-review of #17:* the OC-60 row had described OC-3's rule, and the OC-3 row had
+said OC-3 was "replaced 2026-09-07 by OC-60 and OC-61"; `describe('OC-3 every unattended docker call in
+the start script is bounded')` in `tests/contract/m-oc.bounded-calls.test.ts` was never touched and
+still carries OC-3.
+
+| | |
+|---|---|
+| **Premise** | `timeout` signals the docker *client*, not the container. Reproduced 2026-09-11: `timeout 15 docker run --rm --name X --entrypoint node <image> -e 'setInterval(()=>{},1000)' </dev/null` was still blocked after two minutes with the container up; the same with `--init` came back with rc 124 after 16 s. On 2026-09-14 the `--init` form hung a suite run for 15 minutes, and an hour later four of four ended at SIGTERM within eight seconds — intermittent, cause not established. So the property is not "returns 124". It is that the bound returns at all, within its limit plus the grace, with a status the caller reads as failure, and that nothing is left running. On 2026-09-17 the bound turned out to be absent altogether on a host without coreutils; see *What it found on 2026-09-17* in OC-3's block above. |
+| **Component** | OC-60 and OC-61: `config/scripts/start/openclaw.sh` read as text, and `with_timeout` from `config/scripts/start/lib/with-timeout.sh` run against a real docker. OC-62: `with-timeout.sh` alone, under a `PATH` the case builds. |
+| **Steps** | **OC-60:** collect every non-comment line of `openclaw.sh` matching `with_timeout <secs> docker run` and check each for `--init`; then source `with-timeout.sh` and run `with_timeout 8 docker run --rm --init --name lu-bound-probe-<run id> <fixture labels> --entrypoint node liquidupstart/openclaw:latest -e 'setInterval(()=>{},1000)'`, timed, followed by `docker rm -f` of that name. **OC-61:** for every `docker run … --name "$name"` (or `"$cname"`) line, look for `docker rm -f "$name"` in that line and the fourteen after it; for every `local rc=0 cname=`, look for `rc=$?` and `return $rc` in that line and the sixteen after it. **OC-62:** run the helper with `PATH=<scratch dir>:/usr/bin:/bin` and `LU_TIMEOUT_GRACE=2`. |
+| **Expected** | **OC-60:** more than four bounded runs found; none without `--init`; the probe comes back with rc 124 or 137 in under 45 s — an 8 s limit and a 10 s grace, with room for a loaded machine. **OC-61:** more than two named runs found, each followed by its forced removal; no helper declares `rc` or `cname` without using them. **OC-62:** `command -v timeout gtimeout` finds neither; under `with_timeout 3`, `sh -c 'while :; do sleep 1; done'` comes back with 124 in under 20 s; `with_timeout 10 sh -c 'echo alive; exit 3'` returns 3 and prints `alive`; `echo captured` is still read through `$( )`; `echo mine >&2` survives an expiry while `Terminated` does not appear; `echo hello \| { with_timeout 0 cat; }` prints `hello`; and with a stub `timeout` on `PATH` that prints `stub-timeout $*` and exits 124, the output carries `stub-timeout` and `-k 2 3 sh -c`, and the status is 124. |
+| **Test data** | The image `liquidupstart/openclaw:latest`, built by `./scripts/linux/build.sh`; the container name `containerName('lu-bound-probe')` — `lu-bound-probe-<pid>-<six random characters>`, per run so that two runs cannot take each other's — carrying `fixtureLabels()` from `tests/lib/dashboardserver.ts`, so that a container an interrupted run leaves behind is one the sweep can find (since #19); the commands and the stub above, each asserted on its literal output. |
+| **What each case does not hold** | Measured 2026-10-21 by the reviewer, and again here: with both `docker rm -f "$name"` in `openclaw.sh` replaced by `true`, every OC-60 test stays green, and only OC-61's *every helper that names a container also force-removes it on failure* and OC-3's *the timed helpers force-remove their container, because timeout does not* go red. Measured 2026-10-09 by the reviewer: with the `with_timeout 60` removed from the state-version read — the `docker run … --entrypoint node "${OPENCLAW_IMAGE}" -e '…'` that was line 173 on that day's tree — all five OC-60 and OC-61 tests stay green and only OC-3's *each call is bounded, or is a named exception* goes red. So the bounding rule is OC-3's, the removal rule is OC-61's and OC-3's, and OC-60's is `--init` and the bound returning. And neither OC-61 nor OC-3 holds **when** the removal runs: with both helpers' `if (( rc != 0 ))` turned into `if (( rc == 0 ))`, so that a container is removed only after a run that succeeded, all ten tests of the two files stay green. Nor does OC-61 see a run named anything else: with the `docker rm -f "$_mig"` after the state migration's `docker compose run --rm --name "$_mig"` replaced by `true`, OC-61 stays green and only OC-3's *the timed helpers force-remove their container* goes red. Both measured 2026-10-21, local review. |
+| **Registry** | OC-60 is registered: `docker run --rm --init --entrypoint openclaw` turned into `docker run --rm --entrypoint openclaw` must redden *each carries --init, without which timeout only frees the client*. OC-3, OC-61 and OC-62 have no entry, and `mutate.sh --gaps` lists all three as missing. |
+| **Three limits of the tests, not repaired here** | OC-61 and OC-3 do not hold the condition of the removal, and OC-61 sees only two names; both measured in the row above. When `liquidupstart/openclaw:latest` is absent, OC-60's behaviour half asserts an object equal to itself and **passes**, where it should skip. And on a Linux host OC-62's first test is **red**: `/usr/bin` holds a `timeout` there — in `liquidupstart/dashboard:latest` it is busybox's — so the `PATH` the case builds still finds one and the branch the case exists for never runs. All three are recorded on `docs/suite-fixture-findings` (#45) with their measurements, not repaired here. |
+| **Covers** | OC-G4, §5.1. |
+
+**OC-60, OC-61 and OC-62 were N1, N4 and N1b until 2026-09-30.** They were labelled with the
+finding ids from the review that produced them, and every other case in this repository is
+`PREFIX-number`. That is not cosmetic: `mutate.sh --gaps` reads case ids out of these tables and its
+pattern requires the hyphen, so three cases were invisible to the coverage report -- neither counted as
+specified nor reported as missing -- and the registry entry for OC-60 had to name `OC-3`, whose row then
+said it was replaced. A reviewer found the entry pointing at a case that no longer existed; the link from the
+id to the test lived only in a header comment.
+
 
 ### OC-4 — does the wrapper alone suffice on 2026.7.1?
 

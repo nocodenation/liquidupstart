@@ -6,7 +6,7 @@
 # ran the command with no bound at all, and nothing said so. macOS ships neither:
 # they are GNU coreutils. So on the operator's own machine every "bounded"
 # docker run in this stack was unbounded, which is the opposite of what the call
-# site reads as, and the property N1 -- OC-60 since the 2026-09-07 rename -- was
+# site reads as, and the property N1 -- OC-60 since the 2026-09-30 rename -- was
 # written to guarantee.
 #
 # Measured 2026-09-17 on this machine, three times in one afternoon: the N1 (OC-60) probe
