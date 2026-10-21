@@ -36,6 +36,46 @@ manifest's temporary to `mktemp` would have blinded the litter check that guards
 filter matched `.tmp` and `mktemp`'s names carry none. A fix that silently disarms its own guard is
 the shape worth looking for twice.
 
+**#36 repairs the misreport that this morning's measurement produced**, which is the first thing
+today that was neither a review answer nor housekeeping. `build.sh` gated deployment on
+`[ -f "$NAR_CHECK" ]`, which stats; with the checker unreadable, python3's non-zero status was read as
+a refusal and the operator was told their bundle *"cannot link against the NiFi API the running
+Liquid loads"* — a verdict nothing had reached. `narcheck_available` now reads the file, and the
+headline no longer asserts one of narcheck's two reasons over the other: it returns 1 both for a
+bundle the index refuses and for anything it could not read, which the repair found by reproducing
+the second case. `B6-40`, seven scenarios, each shown able to fail. **One of the new assertions was
+weak and is written up as such**: it checked that the gate's old inline form was gone, which the
+extraction alone achieved, so it stayed green with the fix reverted — an assertion a refactor
+satisfies is not guarding anything.
+
+**#37 closes `S9`'s second half, and the operator took the decision the entry had been holding
+since 2026-10-08.** Nine test files named `ghcr.io/nocodenation/liquid-nifi:latest` themselves, and
+six pinned what that tag happened to contain, so an upstream release reddened them over somebody
+else's work. A digest was the obvious repair; it buys a suite that tests an image the stack no longer
+runs until a hand re-pins. **The tag stays moving and an upgrade is made legible instead**: both
+versions are read out of the image, the nine files name the tag through one constant, `tests/run.sh`
+says before every run which state it is in — beside the disk line, because seventeen scattered skips
+are not a message — and the six version-pinning files skip rather than fail. Simulated, a moved tag
+takes the M-B5 tier to 27 pass / 17 skip / 0 fail with the cause printed above it. `B5-33`, eight
+scenarios, each shown able to fail.
+
+**What is deliberately not asserted there is the agreement itself** — that the image equals the
+pinned pair. That agreement is the question, and asserting it would make an upstream release red,
+which is the defect being removed. It is the same distinction the disk guard draws: *cannot measure*
+is not *empty*.
+
+**And a mistake of mine worth the line.** The import I inserted into nine files landed inside an
+embedded Python heredoc in one of them, because the last line beginning with `import` was
+`import http.server, ssl`. Running the file caught it; reading the diff had not. Fixed by matching the
+TypeScript form, and the heredoc verified byte-identical against `main` afterwards. **A mechanical
+edit across nine files needs a run, not a read.**
+
+**Three backlog entries closed, none of them by that code.** The `M2` decision — *"the decision left
+is one the operator has to take"* — was taken and merged as `480455b` with #25, and was still being
+read as open today, by me, out loud. Two `/m2` entries describe a mount #25 removed. All three struck
+through rather than deleted, so the reasoning stays readable. The lesson is cheap and worth the line:
+**a merge closes code, and nothing closes the entry that asked for it.**
+
 **#15 was the only branch #20's merge collided with**, in `scripts/linux/start.sh`, and the collision
 was two `source` lines: #15 adds `proxy-identity.sh`, #20 added `bind-address.sh`, both after
 `wait-for-operator.sh`. Both kept, both verified present and called. The merge also made a tense true:
@@ -370,7 +410,8 @@ not mean nothing is pending on our side.** Two substantive debts are:
 Smaller: #25 records that a project bringing its own `pom.xml` cannot be given the lifecycle pins, so
 its closure is re-fetched per build — the security property holds, the speed is **unmeasured**.
 
-Waiting on Timur and never reviewed by him: **#20, #21, #24, #25**.
+Waiting on Timur and never reviewed by him: **#24**. #20 and #21 were reviewed on 2026-10-16 and
+both rounds are answered; #25 merged that day.
 
 ## Where it stands, 2026-10-10
 
@@ -392,7 +433,7 @@ reply**, and it is deliberately outside this cycle.
 | #18 | `feature/mutation-registry` | `b8b608b` | answered; verdict was *merge after fixes* |
 | #19 | `fix/fixture-names-per-run` | — | answered 10-02. Carries an **older `HANDOFF.md`** — see the note at the top |
 | #20 | `fix/bind-address` | — | never reviewed. **A precondition of #15's identity rule**, not a smaller thing beside it |
-| #21 | `fix/manifest-atomic-write` | — | never reviewed |
+| #21 | `fix/manifest-atomic-write` | — | **reviewed 2026-10-16**: one blocking item and four follow-ups, answered the same day |
 | #24 | `fix/fourth-precondition` | `c40606a` | opened 10-10 off `main`: `registryReachable()`, `A16-30`, and three of my own mistakes. `572 pass / 4 skip / 0 fail` |
 
 ### What is open, and whose it is
@@ -443,7 +484,7 @@ findings in all.
 | #18 | `feature/mutation-registry` | **10** (2 before merge) | third re-review of 10-01 **unanswered**; verdict *merge after fixes* |
 | #19 | `fix/fixture-names-per-run` | **7** | A1, A2, B1–B4 built in `2dbb523`; **no reply posted yet** |
 | #20 | `fix/bind-address` | — | opened 10-02, awaiting first review |
-| #21 | `fix/manifest-atomic-write` | — | opened 10-03, off `main`, awaiting first review |
+| #21 | `fix/manifest-atomic-write` | — | opened 10-03, off `main`; **reviewed 2026-10-16**, changes requested and answered, awaiting the re-read |
 
 **#17 must not merge before #18.** #17 carried its own older copy of the mutation runner; both branches
 add the same four files, so `git merge-tree` gives add/add conflicts on all of them and a resolution
@@ -476,11 +517,15 @@ Decided with the operator on 2026-10-02. Everything else waits.
 1. ~~**A16-11, and a sweep for the same shape**~~ — **done 2026-10-02**, and the sweep found three
    more: A15-1's `Bun.sleep(700)`, A16-27 passing over a `git.sh` with no wait at all, and five cases
    running the start script in bun's default 5s budget. The six of them are the *"Waiting on the clock"*
-   entry below. One further thing came out of it and is **not** repaired: eight case ids used in the
-   A16 tests — A16-21, 22, 24, 25, 26, 27, 28, 29 — appear in no row of the test specification, and
-   `A16-20` names two different cases, a NUL unit check and a stale-foreign-lock integration case. The
-   cases are on `main`; renumbering one of them is a decision for the reviewer, so it is reported on
-   #19 and belongs with the `git.sh` manifest repair rather than inside a harness fix.
+   entry below. One further thing came out of it, and **half of it is now repaired.** Eight case ids
+   used in the A16 tests — A16-21, 22, 24, 25, 26, 27, 28, 29 — appeared in no row of the test
+   specification; #23 gave them rows, and `TR-1` passes 4 of 4, so that half is closed.
+   **`A16-20` still names two different cases**: the test specification's row for it describes a NUL
+   unit check, while `m-a16.lock-identity.test.ts:177` carries it on a stale-foreign-lock integration
+   case. `TR-1` cannot see this — it asks whether an id in a test title has *a* row, not whether the
+   row describes that case — so nothing will go red over it. The review of #21 suggested closing this
+   note entirely on the strength of #23; checked on 2026-10-16, and the collision is still there, so
+   the note stays narrowed to it. Renumbering one of the two is a decision for the reviewer.
    What it was: `m-a16.lock-identity.test.ts:142` did `await Bun.sleep(900)` and then read
    `volumes/_git-secrets/locks/<slug>/pid`, which is empty under load — the case passed 5 of 5 alone
    and failed 8 of 8 with eight starts at once. It waits on the holder landing now, and the fourth

@@ -42,7 +42,16 @@
  * Requirements covered: A10-7 to A10-10, finding 4 of the #9 code review.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { rmSync, existsSync, mkdirSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
+import {
+  rmSync,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  chmodSync,
+  readFileSync,
+  readdirSync,
+  statSync
+} from 'node:fs';
 import { join } from 'node:path';
 import { tempProject, runStart, manifest } from '../lib/gitfixture';
 import { sh } from '../lib/shell';
@@ -95,6 +104,14 @@ function project(name: string): string {
 
 const knownHosts = (p: string) => join(p, 'volumes', '_git-secrets', 'known_hosts');
 
+// Both writers' temporaries, by the names they actually carry: `seed_known_hosts`
+// uses `mktemp "${KNOWN_HOSTS}.XXXXXX"`, and since F3 of the 2026-10-16 review so
+// does the manifest. A filter keyed on `.tmp` would see neither.
+const leftoverTemporaries = (p: string) =>
+  readdirSync(join(p, 'volumes', '_git-secrets'))
+    .filter((f) => /^known_hosts\./.test(f) || /^repositories\.json\./.test(f) || f.includes('.tmp'))
+    .sort();
+
 describe('A10-7 nothing declared needs nothing from GitHub', () => {
   const p = project('empty-offline');
   const run = runStart(p, '', { pathPrefix: stubs('empty-offline', { keyscan: 'fail', published: null }) });
@@ -142,6 +159,14 @@ describe('A10-9 with GitHub reachable, the seeding happens — and only when som
     expect(run.code).toBe(0);
     expect(existsSync(knownHosts(p))).toBe(true);
     expect(readFileSync(knownHosts(p), 'utf8')).toContain('github.com');
+    // F2 of the 2026-10-16 review. `seed_known_hosts` writes through
+    // `mktemp` → `chmod 644` → `mv`, and until now nothing asserted either half
+    // of what that buys: the file must not arrive at mktemp's 600, and the
+    // temporary must not survive. Both were hand-observed on 2026-10-02 against
+    // the real github.com and recorded as a manual note; here they are measured
+    // against the stubs, on every run.
+    expect(statSync(knownHosts(p)).mode & 0o777).toBe(0o644);
+    expect(leftoverTemporaries(p)).toEqual([]);
   });
 
   test('and an empty declaration does not, although GitHub is reachable', () => {
@@ -173,6 +198,13 @@ describe('A10-10 a host key GitHub does not publish is still refused', () => {
     const e = manifest(p).repositories[0] as { cloned: boolean; error: string };
     expect(e.cloned).toBe(false);
     expect(e.error).toContain('does not publish');
+  });
+
+  test('and the refusal path leaves no temporary behind either', () => {
+    // The other half of F2, on the side where it is easier to get wrong: the
+    // refusal takes an early return, and `rm -f "$scanned"` on every failure
+    // path is what keeps the directory clean. Nothing asserted it.
+    expect(leftoverTemporaries(p)).toEqual([]);
   });
 
   test('and the start still continues', () => {
