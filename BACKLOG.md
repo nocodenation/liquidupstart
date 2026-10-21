@@ -399,6 +399,53 @@ one branch's correction round.
 
 Recorded 2026-10-21.
 
+---
+
+**A per-test budget lowers what `TEST_TIMEOUT_MS` was raised to.** Found by a local `/code-review`
+of `fix/fourth-precondition` (#24) on 2026-10-21. `tests/run.sh` passes `--timeout $TEST_TIMEOUT_MS`
+and says the suite's budget is *"raised in one place rather than per test"*. A literal on a test wins
+over it in both directions: measured on bun 1.4.3, a test given `1000` that sleeps 2000 ms times out
+after 1000 ms under `--timeout 10000`. So once OC-15 and OC-16 carry their own figure, an operator who
+raises `TEST_TIMEOUT_MS` for a slow machine gives every case more time except those two.
+
+Both branches that set that figure have this shape — #24 with `180_000` on each case, #42 with
+`BUILD_BUDGET_MS = 600_000` — and which figure stands is the open decision between them. Whichever
+does could take the larger of itself and the configured timeout; recorded here because the choice of
+form belongs with the choice of figure, not inside either branch.
+
+Recorded 2026-10-21.
+
+---
+
+**The cases documented after the fact have rows and no detail blocks.** Found by a local
+`/code-review` of #24 on 2026-10-21, about `A16-30`, which that branch renumbered from `A16-19`. It is
+right about `A16-30` and the gap is not that row's: *Cases documented after the fact* in
+`docs/TEST-SPEC-git-integration.md` carries eleven rows on `main` at `3a2ef0f` — `A8-27`, `A14-7`,
+`A14-8`, `A16-21`, `A16-22` and `A16-24` to `A16-29` — each with a level, a sign and the file that
+implements it, and none with the premise, steps, expected result or findings `CLAUDE.md` asks every
+test's detail block to carry. The section says why it is separate: those cases were written during the
+review rounds, not signed off with the rows around them. Writing their blocks is the next step for that
+section as a whole, and doing it for `A16-30` alone would make one of twelve look finished.
+
+Recorded 2026-10-21.
+
+---
+
+**`sh()` lets a missing executable throw, and the preconditions module runs it as it loads.** Found
+by the second pass of a local `/code-review` over #24's repair on 2026-10-21. `tests/lib/shell.ts`'s
+`sh()` hands `argv` to `Bun.spawnSync`, which throws `ENOENT` — *"Executable not found in $PATH"* —
+rather than returning a code. `tests/lib/preconditions.ts` computes `IN_GIT_REPO =
+inGitRepoAt(repoRoot)` at load, so on a machine without `git` importing that module throws, and every
+file importing it errors at collection. Measured with a `PATH` holding neither: the import stops at
+`inGitRepoAt`, `preconditions.ts:60`. #24 caught the same error for `curl` inside `registryReachable()`
+only, because that was the call it added.
+
+Returning 127 from `sh()` on `ENOENT`, as a shell does, would answer both; what each caller then
+makes of a 127 has not been checked. Not done on #24 because `sh()` is `main`'s, and #42 changes it
+too.
+
+Recorded 2026-10-21.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
