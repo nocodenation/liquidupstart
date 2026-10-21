@@ -721,6 +721,14 @@ lock stale and took it over -- the very concurrency M-A15 exists to prevent. The
 A lock in the **old** format, a bare number, is judged the way the code that wrote it judged, because
 sealing a repository until someone deletes a directory by hand would be worse than what it replaces.
 
+*The wait said nothing for its first thirty seconds.* `lu_take_lock_waiting` announced itself
+every 30s, and a start may legitimately wait the whole 300s, so for the first half minute a start
+that was waiting and a start that was hung looked the same to the operator. It says so at the first
+refusal now. That line is also the only evidence the wait happened at all, which is what A16-27 reads:
+until 2026-10-02 the case released the lock after a 3000ms sleep and asserted that 3000ms had passed
+— which its own sleep guarantees. Measured with `lu_take_lock_waiting` removed from `git.sh`
+altogether and the release brought forward: all four cases in the file passed.
+
 *And three in the dashboard.* The three-second hold that keeps a skip confirmation readable was
 applied to every skip, so skipping a Claude or Codex panel brought the finished deploy-key panel back
 for three seconds; it belongs to `git-key-` steps only. The countdown said "Next repository" whenever
