@@ -58,13 +58,20 @@ yields, so no per-test timeout can end it, and an async hang came back **validat
 reddened the test and the run carried on. A run the budget had to stop is **refused**: it did not
 finish, so it measured nothing. The subject is restored either way.
 
+*Corrected 2026-10-21.* The budget does not reach the async hang: the per-test limit `mutate.sh` hands
+bun — `--timeout`, 120 seconds unless set; bun's own default is 5 — fires before the run budget of 300
+seconds, and bun writes that test red with `type="TimeoutError"`. So the async half was still
+**validated** until the record was read for it. A named test that is red only because bun timed it out
+is now **refused** as well — a hang is not an assertion failing. Finding 2 of the local review of
+2026-10-21; MU-37 holds it.
+
 ## The four outcomes, and why there are four
 
 | | |
 |---|---|
 | **validated** | the named test failed and at least one test still passed -- **except in a file holding a single test**, where that test reddening is the whole file reddening and no survivor can exist (`mutate.sh`, and MU-14) |
 | **failed** | the named test passed — the entry does not protect what it claims |
-| **refused** | the mutation could not be applied, **every** test failed — a broken file rather than a control — or the run did not finish inside its budget |
+| **refused** | the mutation could not be applied **whole**, **every** test failed — a broken file rather than a control — the run did not finish inside its budget, or the named test **did not run, was stopped by the bun timeout, or became ambiguous** under the mutation |
 | **unresolved** | nothing went red at all |
 
 There is a fifth line in the tally, **exempt**, and it is not an outcome: nothing was run. It is
@@ -92,6 +99,10 @@ run otherwise looks exactly like a check that ran:
 - an **empty registry** — it says so, rather than printing four zeros that read like health
 - a `--case` that **matches nothing** — that one exits non-zero, because it answers a direct question
   with a reassuring silence
+- a named test that **did not run under the mutation** — skipped, or no longer registered — which
+  read as unresolved, or as failed when a sibling reddened (MU-63)
+- a write that **failed partway** — the subject is not the mutation the entry describes, and a run
+  against it measures something else (MU-43)
 
 ## Where it applies
 

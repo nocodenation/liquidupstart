@@ -19,7 +19,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REGISTRY="${ROOT}/tests/mutations.json"
+REGISTRY=""
 ONLY=""
 TIMEOUT_MS="${MUTATE_TIMEOUT_MS:-120000}"
 
@@ -34,6 +34,11 @@ while [[ $# -gt 0 ]]; do
     *) echo "mutate: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+
+# After the arguments, so `--root D` alone reads D's registry. Defaulted before
+# them, it read this checkout's registry against D's tree and D's
+# specifications. Finding 11 of the local review of 2026-10-21.
+REGISTRY="${REGISTRY:-${ROOT}/tests/mutations.json}"
 
 [[ -f "$REGISTRY" ]] || { echo "mutate: no registry at ${REGISTRY}" >&2; exit 2; }
 
@@ -287,9 +292,22 @@ interrupted() {  # interrupted <status> <name>
   sleep 1
   for p in $pids; do kill -KILL "$p" 2>/dev/null || true; done
   wait 2>/dev/null || true
+  local earlier="$RESTORE_FAILED"
   restore
   rm -f "$JUNIT" "$TIMED_OUT" "$RUN_OUT"
-  echo "mutate: stopped by ${2}; no entry was judged past this point, and the subject is back." >&2
+  # The last line is the one a supervisor reads, so it says what restore found:
+  # it said "the subject is back" after restore had just reported the opposite,
+  # with the mutated file still on disk. Finding 9 of the local review of
+  # 2026-10-21. Against the count before this restore, not the run's total: an
+  # earlier entry's failure made a clean restore here read as a failed one --
+  # found by the second pass over that repair.
+  if (( RESTORE_FAILED > earlier )); then
+    echo "mutate: stopped by ${2}; no entry was judged past this point, and the subject could NOT be put back -- see the line above." >&2
+  elif (( earlier > 0 )); then
+    echo "mutate: stopped by ${2}; no entry was judged past this point, and the subject is back; an earlier one could not be put back -- see above." >&2
+  else
+    echo "mutate: stopped by ${2}; no entry was judged past this point, and the subject is back." >&2
+  fi
   exit "$1"
 }
 trap 'restore; rm -f "$JUNIT" "$TIMED_OUT" "$RUN_OUT"' EXIT
@@ -329,6 +347,10 @@ trap 'interrupted 143 SIGTERM' TERM
 # ever -- and an async hang came back VALIDATED, because bun reddened the test and
 # the run carried on. Either way the budget was a promise the tool did not keep.
 # Item 6 of the 2026-09-29 review of #17, specified as MU-10 and never built.
+#
+# The budget ends the first of those and never sees the second: the bun timeout
+# fires first and the test comes back red. That one is read off the record as
+# `hang`, in named_state. Finding 2 of the local review of 2026-10-21.
 #
 # Not `timeout(1)`: macOS ships none, and this runs on the operator machine as
 # well as in the image. A background child plus a polled deadline needs nothing
@@ -373,6 +395,15 @@ if (( RUN_BUDGET_MS <= 0 )); then
   echo "mutate: MUTATE_RUN_BUDGET_MS is milliseconds, a whole number above zero -- got '${RUN_BUDGET_MS}'" >&2
   exit 2
 fi
+# bun's per-test limit, held to the same rule. Unchecked, `--timeout 5m` made bun
+# exit at once with `Invalid timeout` and no record, and every entry was then
+# refused as "renamed, skipped, or misspelt" -- which sends the author to the
+# name. Finding 6 of the local review of 2026-10-21.
+case "$TIMEOUT_MS" in
+  ''|*[!0-9]*|0?*|0)
+    echo "mutate: --timeout (MUTATE_TIMEOUT_MS) is milliseconds, a whole number above zero -- got '${TIMEOUT_MS}'" >&2
+    exit 2 ;;
+esac
 
 # It leaves its output in RUN_OUT rather than printing it, and the caller reads
 # that file.
@@ -436,7 +467,7 @@ run_spec() {  # run_spec <spec>; output lands in RUN_OUT
   CHILD_PID=""
 }
 
-# `pass`, `fail` or `none` for the named test.
+# `pass`, `fail`, `hang`, `ambiguous` or `none` for the named test.
 #
 # The baseline used `bun test -t "$must"`, and -t is a regular expression
 # matched anywhere in the full name -- so a name carrying `(`, `[`, `+` or `*`
@@ -543,23 +574,38 @@ named_state() {  # named_state <name>
       // *full* name earns -- `checks` as a whole name -- and a bare leaf name
       // earns nothing, so it competes as a segment match does and the
       // ambiguity refusal fires. MU-62 carries both halves of it.
+      //
+      // **A whole name is any block the test sits in, at any depth, whose path
+      // from the top is the name.** Exactness was decided from the direct
+      // parent alone, so `checks > sub > nested` earned nothing for `checks`:
+      // the filter below dropped it in favour of `checks > direct` and printed
+      // `FAILED ... red but not checks` when the nested test reddened, and a
+      // top-level `checks` holding only nested blocks was refused as ambiguous
+      // beside `mode > checks`. And the prefix is compared at segment
+      // boundaries, not as a string: `startsWith(want + " > ")` read `a & b` as
+      // a block of `a & b > "c" > deep`, whose first segment is `a & b > "c"`,
+      // and printed VALIDATED for a name that is no block and no test. Findings
+      // 1 and 4 of the local review of 2026-10-21; MU-62 and MU-41 hold them.
+      //
+      // **An identity is the segment list, not the joined string.** Joined,
+      // `describe("a > b")` and `describe("a") > describe("b")` are both
+      // `a > b`, so two different blocks were one thing and "red if any is red"
+      // credited the wrong one: VALIDATED for `a > b` with its own test green,
+      // measured at the head of this branch and after the repair above. The
+      // separator can sit inside a segment (MU-41), so only the list tells them
+      // apart. Found by the second pass over that repair; MU-61 holds it.
+      const at = (s) => JSON.stringify(s);
       let identity = "";
       let exact = false;
-      if (name === want || full === want) { identity = "test@" + path; exact = full === want; }
-      else if (path === want) {
-        exact = true;
-        // **An exact path wins over a segment match**, and without that rule a
-        // top-level describe named checks and a nested mode > checks are two
-        // things that nothing can tell apart: the full name of the top-level
-        // block IS checks, so no spelling the author can write disambiguates it.
-        // With this, checks means the top-level block and mode > checks means
-        // the other one.
-        identity = "block@" + path;
-      } else {
+      let k = 1;
+      while (k <= segs.length && segs.slice(0, k).join(" > ") !== want) k += 1;
+      if (full === want) { identity = "test@" + at(segs); exact = true; }
+      else if (k <= segs.length) { identity = "block@" + at(segs.slice(0, k)); exact = true; }
+      else if (name === want) identity = "test@" + at(segs);
+      else {
         const i = segs.indexOf(want);
-        if (i !== -1) identity = "block@" + segs.slice(0, i + 1).join(" > ");
-        else if (path !== "" && path.startsWith(want + " > ")) identity = "block@" + want;
-        else continue;
+        if (i === -1) continue;
+        identity = "block@" + at(segs.slice(0, i + 1));
       }
       // Collected rather than counted here: whether a segment match survives
       // depends on something only the whole record knows -- see the filter below.
@@ -577,7 +623,14 @@ named_state() {  # named_state <name>
       // refusal message itself names. Finding 1.
       if (/<skipped\b/.test(body)) continue;
 
-      hits.push({ identity: identity, exact: exact, red: /<(failure|error)\b/.test(body) });
+      // A test bun stopped at its own --timeout is red in the record, and it was
+      // counted as a kill: an async hang came back VALIDATED, which the budget
+      // was said to prevent -- but the per-test limit handed to bun, 120 s unless
+      // set, fires before the 300 s run budget, so the budget never saw it. bun 1.3.13, 1.4.2 and 1.4.3 all
+      // write `<failure type="TimeoutError"`. Finding 2 of the local review of
+      // 2026-10-21; MU-37 holds it.
+      hits.push({ identity: identity, exact: exact, red: /<(failure|error)\b/.test(body),
+                  hung: /<failure\b[^>]*\btype="TimeoutError"/.test(body) });
     }
 
     // **An exact match outranks a segment match**, decided once over the whole
@@ -590,9 +643,12 @@ named_state() {  # named_state <name>
     // an honest refusal; precedence is taken, because it leaves the author a way
     // to express both blocks, and mode > checks still means the other one.
     const kept = hits.some((h) => h.exact) ? hits.filter((h) => h.exact) : hits;
-    for (const h of kept) { ids.add(h.identity); ran += 1; if (h.red) red += 1; }
+    let hung = 0;
+    for (const h of kept) { ids.add(h.identity); ran += 1; if (h.red) red += 1; if (h.hung) hung += 1; }
 
-    console.log(ids.size > 1 ? "ambiguous" : red > 0 ? "fail" : ran > 0 ? "pass" : "none");
+    // `hang` only when every red test was a timeout: one assertion that failed
+    // is still a kill, whatever its siblings did.
+    console.log(ids.size > 1 ? "ambiguous" : red > 0 ? (hung === red ? "hang" : "fail") : ran > 0 ? "pass" : "none");
    } catch (e) { console.error("junit: " + (e && e.message ? e.message : e)); process.exit(2); }
   ' "$JUNIT" 2>/dev/null || printf none
 }
@@ -857,7 +913,7 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
   fi
 
   case "$(named_state "$must")" in
-    fail)
+    fail|hang)
       rm -f "$BACKUP"; BACKUP=""
       add "REFUSED   ${id}  '${must}' is already red before the mutation"
       refused=$((refused+1)); continue ;;
@@ -896,7 +952,14 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
   fi
 
   SUBJECT="$abs"
-  FROM="$from" TO="$to" ALL="$all" bun -e '
+  # **The writer's own answer is read.** It was discarded with `|| true` and only
+  # `cmp` asked, which proves the file changed, not that it holds the mutation:
+  # measured with `ulimit -f 4`, writeFileSync truncated the subject, wrote 4096
+  # bytes, reported EFBIG -- and the runner printed VALIDATED for an entry whose
+  # whole write gives UNRESOLVED. And a `from` the spec removed during the
+  # baseline left `at` at -1, so a different edit was measured and credited.
+  # Finding 5 of the local review of 2026-10-21; MU-43 holds both.
+  if ! werr="$(FROM="$from" TO="$to" ALL="$all" bun -e '
    try {
     const fs = require("fs");
     const p = process.argv[1];
@@ -912,10 +975,15 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
       fs.writeFileSync(p, body.split(needle).join(to));
     } else {
       const at = body.indexOf(needle);
+      if (at === -1) { console.error("write: the from is no longer in the subject"); process.exit(3); }
       fs.writeFileSync(p, body.slice(0, at) + to + body.slice(at + needle.length));
     }
    } catch (e) { console.error("write: " + (e && e.message ? e.message : e)); process.exit(2); }
-  ' "$abs" || true
+  ' "$abs" 2>&1)"; then
+    werr="${werr#write: }"
+    add "REFUSED   ${id}  the mutation did not reach ${file} whole -- ${werr:-the writer failed and said nothing}"
+    refused=$((refused+1)); restore; continue
+  fi
 
   # The write is verified, not assumed. A read-only subject or a bun that dies
   # mid-write left the file untouched, the spec ran against the original, and
@@ -947,8 +1015,9 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
 
   # The named test's own verdict, by exact name. Survivors are counted from the
   # tally below, which is a summary line both bun versions print.
+  named="$(named_state "$must")"
   named_failed=0
-  [[ "$(named_state "$must")" == "fail" ]] && named_failed=1
+  [[ "$named" == "fail" ]] && named_failed=1
 
   read -r ran red <<<"$(counts)"
   fails="$red"
@@ -989,6 +1058,24 @@ while IFS=$'\t' read -r kind id file spec from to all must; do
     add "REFUSED   ${id}  no test executed in ${spec} -- the run did not happen, so it answered nothing"
     refused=$((refused+1)); continue
   fi
+
+  # The baseline's three questions, asked again of the mutated run. Only `fail`
+  # was asked, so a named test the mutation skipped or stopped registering read
+  # as UNRESOLVED -- or as FAILED, blaming the entry, when a sibling reddened --
+  # and one that bun timed out read as a kill. After the two checks above, so a
+  # spec that did not load or ran nothing keeps its own message. Findings 3 and 2
+  # of the local review of 2026-10-21; MU-63 and MU-37 hold them.
+  case "$named" in
+    none)
+      add "REFUSED   ${id}  '${must}' did not run under the mutation -- skipped or never registered, so it answered nothing"
+      refused=$((refused+1)); continue ;;
+    ambiguous)
+      add "REFUSED   ${id}  '${must}' resolves to more than one test under the mutation; name it in full, as 'describe > test'"
+      refused=$((refused+1)); continue ;;
+    hang)
+      add "REFUSED   ${id}  '${must}' was stopped by the bun timeout under the mutation, not by an assertion -- a hang is not a result"
+      refused=$((refused+1)); continue ;;
+  esac
 
   if [[ "$fails" == "0" ]]; then
     add "UNRESOLVED ${id}  nothing went red -- needs a second mutation of another shape before this counts as a finding"

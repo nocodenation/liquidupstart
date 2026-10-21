@@ -38,10 +38,18 @@ const END = '<!-- end scenario-table -->';
  * and backtick — and `it(` as well as `test(`, which is N5's cheap half: a title
  * written any of those ways was invisible to the old reader, and so was one
  * carrying no id at all.
+ *
+ * **`^[ \t]*`, not `^\s+`, and any chain of modifiers.** `\s` takes the newline,
+ * so with the `m` flag the anchor reached over a blank line and not over `});`:
+ * a top-level `test(` right after a closing brace was invisible, and so were
+ * `.skip`, `.only`, `.each` and `.todo`. `m-tr.case-ids` corrected the same
+ * anchor on 2026-10-12. Column 0 is safe here because the fixture specs sit in
+ * template literals and those are blanked first. Finding 7 of the local review
+ * of 2026-10-21; MU-59 holds it.
  */
 export function titles(src: string): string[] {
   const out: string[] = [];
-  const re = /^\s+(?:test|it)(?:\.skipIf\([^)]*\))?\(\s*(['"`])((?:[^\\]|\\.)*?)\1/gm;
+  const re = /^[ \t]*(?:test|it)(?:\.\w+(?:\([^)]*\))?)*\(\s*(['"`])((?:[^\\]|\\.)*?)\1/gm;
   let m: RegExpExecArray | null;
   const scanned = withoutTemplates(src);
   while ((m = re.exec(scanned)) !== null) out.push(m[2]);
