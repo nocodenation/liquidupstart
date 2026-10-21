@@ -27,108 +27,55 @@
  * Requirements covered: OC-G1, OC-G2, §5.1, §5.2, §5.3.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { readFileSync as read } from 'node:fs';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-
-const IMAGE_NEW = 'ghcr.io/openclaw/openclaw:2026.9.1';
-const IMAGE_OLD = 'ghcr.io/openclaw/openclaw:2026.7.1';
-
-/**
- * The config writer as the start script actually holds it. Extracted by content
- * rather than by line number, and never copied into this file: a test carrying
- * its own copy of the thing under test stops testing it the moment the two drift.
- */
-function configWriter(): string {
-  const script = read(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
-  const lines = script.split('\n');
-  // A block opens on a line that is only `-e '` and closes on the next line
-  // whose first non-space character is the closing quote. The two sibling
-  // blocks close with `' || true)"`, so the terminator cannot be matched as a
-  // bare quote — doing that swallowed both of them and produced a program that
-  // was half shell.
-  const isOpen = (l: string) => /^\s*-e '\s*$/.test(l);
-  const isClose = (l: string) => /^\s*'/.test(l);
-  for (let start = 0; start < lines.length; start++) {
-    if (!isOpen(lines[start])) continue;
-    let end = -1;
-    for (let i = start + 1; i < lines.length; i++) {
-      if (isClose(lines[i])) { end = i; break; }
-    }
-    if (end === -1) continue;
-    const body = lines.slice(start + 1, end).join('\n');
-    if (body.includes('/state/openclaw.json')) return body;
-  }
-  throw new Error('config writer not found in config/scripts/start/openclaw.sh');
-}
+import {
+  IMAGE_NEW,
+  IMAGE_OLD,
+  configWriter,
+  dropWorkRoot,
+  newWorkRoot,
+  validate as validateWith,
+  writeConfig as runWriter,
+  type Env
+} from '../lib/openclaw-writer';
 
 let program: string;
 let workRoot: string;
 
 beforeAll(() => {
   program = configWriter();
-  workRoot = mkdtempSync(join(tmpdir(), 'lu-oc-'));
+  workRoot = newWorkRoot('lu-oc-');
 });
 
-afterAll(() => rmSync(workRoot, { recursive: true, force: true }));
+afterAll(() => dropWorkRoot(workRoot));
 
-type Env = Record<string, string>;
+// The subnet this suite was written against, before the default moved to
+// 10.99.0.0/24 -- its cases are about the shape, not the range.
+//
+// `LU_PROXY_IDENTITY` is the identity nginx asserts, and it belongs here rather
+// than in the shared `BASE_ENV`: it is this file's subject, and `m-m1` has no use
+// for it. It was never passed at all once, and the grant then landed under the
+// literal key `"undefined"` while the assertion -- which read
+// `Object.values(...)[0]` -- found it anyway, so a grant to nobody read as a
+// grant. Minor of the 2026-09-29 review. The merge of 2026-10-20 dropped it a
+// second time, because this file's own env map went to the shared helper and the
+// shared map does not carry it: `OC-75` and `OC-57` went red with
+// `undefined is not an object`, which is the same defect saying so loudly
+// instead of passing. One case overrides it with `''` on purpose.
+const OC_ENV: Env = {
+  LU_NETWORK_SUBNET: '172.18.0.0/16',
+  LU_PROXY_IDENTITY: 'user@nocodenation.org'
+};
 
 function writeConfig(env: Env): any {
-  const dir = mkdtempSync(join(workRoot, 'state-'));
-  writeFileSync(join(dir, 'openclaw.json'), '{}\n');
-  return writeConfigIn(dir, env);
+  return runWriter({ workRoot, program, env: { ...OC_ENV, ...env } });
 }
 
-// The same run over a state directory the caller has already seeded, so a case
-// can start from a configuration the operator edited.
-function writeConfigIn(dir: string, env: Env): any {
-  const progFile = join(dir, 'writer.js');
-  writeFileSync(progFile, program);
-  const envArgs: string[] = [];
-  const full: Env = {
-    OC_SCHEMA_NEW: '0',
-    OPENCLAW_VERSION: 'test',
-    ENABLE_CLAUDE_CLI: '0',
-    ENABLE_COPILOT: '0',
-    ENABLE_CODEX: '0',
-    ENABLE_GROK: '0',
-    ENABLE_LOCAL: '0',
-    LU_NETWORK_SUBNET: '172.18.0.0/16',
-    // The identity nginx asserts. It was never passed, so the grant landed under
-    // the literal key "undefined" and the assertion below -- which read
-    // Object.values(...)[0] -- found it anyway. A grant to nobody read as a grant.
-    // Minor of the 2026-09-29 review.
-    LU_PROXY_IDENTITY: 'user@nocodenation.org',
-    PLUGIN_PATHS: '',
-    MODEL_WILDCARDS: '',
-    OPENROUTER_MODELS_JSON: '[]',
-    LOCAL_LLM_MODELS_JSON: '[]',
-    ...env,
-  };
-  for (const [k, v] of Object.entries(full)) envArgs.push('-e', `${k}=${v}`);
-  const r = sh([
-    'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${dir}:/state`, ...envArgs,
-    '--entrypoint', 'node', IMAGE_NEW, `/state/writer.js`,
-  ]);
-  if (r.code !== 0) throw new Error(`config writer failed: ${r.output}`);
-  return JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
-}
-
-/** Validate a config document with a given version's own validator. */
 function validate(config: any, image: string): { code: number; output: string } {
-  const home = mkdtempSync(join(workRoot, 'home-'));
-  mkdirSync(join(home, '.openclaw'), { recursive: true });
-  writeFileSync(join(home, '.openclaw/openclaw.json'), JSON.stringify(config, null, 2));
-  return sh([
-    'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${home}:/home/node`, '-e', 'HOME=/home/node', '-e', 'OPENCLAW_HOME=/home/node',
-    '--entrypoint', 'openclaw', image, 'config', 'validate',
-  ]);
+  return validateWith({ workRoot, config, image });
 }
 
 describe('OC-1/OC-12 the 2026.9 shape', () => {
@@ -211,14 +158,17 @@ describe('OC-1/OC-12 the 2026.9 shape', () => {
     // The rest of this writer preserves what the operator edited; this line
     // replaced the whole map, so a grant they had added was lost on the next
     // start with nothing said. Minor of the 2026-09-29 review.
-    const dir = mkdtempSync(join(workRoot, 'kept-'));
-    writeFileSync(
-      join(dir, 'openclaw.json'),
-      JSON.stringify({
-        gateway: { auth: { identityScopes: { 'ops@example.invalid': ['operator.read'] } } }
-      }) + '\n'
-    );
-    const cfg = writeConfigIn(dir, { OC_SCHEMA_NEW: '1' });
+    //
+    // Seeded through the shared helper's `seed`, which is what this case wrote
+    // its own `writeConfigIn` for before that option existed on `main`. The
+    // merge of 2026-10-20 took the shared shape: two readers of one state
+    // directory is how they come to disagree about what is in it.
+    const cfg = runWriter({
+      workRoot,
+      program,
+      env: { ...OC_ENV, OC_SCHEMA_NEW: '1' },
+      seed: { gateway: { auth: { identityScopes: { 'ops@example.invalid': ['operator.read'] } } } }
+    });
     const identity = cfg.gateway.auth.identityScopes;
     expect(identity['ops@example.invalid']).toEqual(['operator.read']);
     expect(identity['user@nocodenation.org']).toContain('operator.admin');
