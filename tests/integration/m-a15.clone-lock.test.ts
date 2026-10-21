@@ -38,7 +38,9 @@
  * `github.com_nocodenation_agent-skills`; the lock directory
  * `volumes/_git-secrets/locks/<slug>`; an ssh stand-in that sleeps two seconds
  * before refusing, so the first run is demonstrably still inside its clone when
- * the second starts.
+ * the second starts -- and the second is started once the first has written its
+ * holder into the lock, which is what makes "demonstrably" true rather than
+ * likely.
  *
  * Requirements covered: A15-1 to A15-4, and the operator's observation of
  * 2026-09-18.
@@ -46,7 +48,7 @@
 import { test, expect, describe, afterAll } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tempProject, seedKnownHosts, gitScript } from '../lib/gitfixture';
+import { tempProject, seedKnownHosts, gitScript, awaitFile } from '../lib/gitfixture';
 
 const work = tempProject('lu-a15-');
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -87,7 +89,26 @@ const manifest = () =>
 
 // The first run, and a second started while it is still working.
 const first = spawnGit();
-await Bun.sleep(700);
+// The second run starts once the first demonstrably holds the lock. A
+// `Bun.sleep(700)` stood here, and 700ms is a guess about the machine rather
+// than a fact about the run: measured 2026-10-02, the holder lands after around
+// 250ms on an idle host and after 1047 to 1342ms with eight starts at once. Past
+// that guess the first run had not taken the lock yet, so the second took it,
+// cloned, and A15-1 failed in both of its assertions -- for a reason that has
+// nothing to do with locking. A15-1 of the 2026-10-01 review, the same shape as
+// A16-11.
+//
+// Caught rather than thrown, because this is module scope: an exception here
+// would be one `(unnamed)` error and not a single case would run, where a
+// product that takes no lock should produce a named A15-1 failure. The message
+// is carried into the assertion instead. A1 of the 2026-10-01 review made the
+// same point about a different wait.
+let lockWait = '';
+try {
+  await awaitFile(join(lockDir, 'pid'), first);
+} catch (e) {
+  lockWait = e instanceof Error ? e.message : String(e);
+}
 const lockedWhileBusy = existsSync(lockDir);
 const second = spawnGit({ GIT_ONLY_SLUG: SLUG });
 const secondOut = `${await new Response(second.stdout).text()}${await new Response(second.stderr).text()}`;
@@ -97,6 +118,7 @@ const firstCode = await first.exited;
 
 describe('A15-1 the run that gets there first holds the repository', () => {
   test('a lock is taken while it works', () => {
+    expect(lockWait).toBe('');
     expect(lockedWhileBusy).toBe(true);
   });
 

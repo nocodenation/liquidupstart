@@ -31,9 +31,12 @@
  *           start sealing a repository forever.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync, utimesSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync, chmodSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
-import { tempProject, seedKnownHosts, seedRepo, fakeSsh, gitScript } from '../lib/gitfixture';
+import {
+  tempProject, seedKnownHosts, seedRepo, fakeSsh, gitScript, awaitFile, watchOutput,
+  START_SCRIPT_BUDGET
+} from '../lib/gitfixture';
 
 const work = tempProject('lu-a16-identity-');
 afterAll(() => rmSync(work, { recursive: true, force: true }));
@@ -139,9 +142,12 @@ describe('A16-11 the lock names an identity, not a bare number', () => {
       stdout: 'pipe',
       stderr: 'pipe'
     });
-    await Bun.sleep(900);
-    const file = join(lockDir, 'pid');
-    const holder = existsSync(file) ? readFileSync(file, 'utf8') : '';
+    // Waited on the holder landing, not on a number of milliseconds. The run
+    // reaches the lock when the machine lets it: measured 2026-10-02, around
+    // 250ms idle and 1047 to 1342ms with eight starts at once, so the
+    // `Bun.sleep(900)` that stood here read an empty file and reported the
+    // identity as missing. A16-11 of the 2026-10-01 review.
+    const holder = await awaitFile(join(lockDir, 'pid'), run, watchOutput(run));
     run.kill();
     await run.exited;
 
@@ -161,6 +167,11 @@ describe('A16-11 the lock names an identity, not a bare number', () => {
 // closing a tab and pressing Start again does.
 // ---------------------------------------------------------------------------
 
+// Every case below runs the start script inside its own body, so each carries
+// START_SCRIPT_BUDGET. bun's default is 5s, and a start takes about 1s on an idle
+// host: measured 2026-10-02, A16-20's second case timed out at 6055ms in eight of
+// eight concurrent runs of this file. The default is a bet on the machine, which
+// is the same mistake as the fixed sleep A16-11 used to make.
 const OLD = new Date(Date.now() - 36 * 3600 * 1000);
 
 function seedLock(holder: string | null, when?: Date) {
@@ -185,13 +196,13 @@ describe('A16-20 a foreign lock nobody can ask about is not forever', () => {
     const r = runAgainst(null, true);
     expect(r.code).toBe(0);
     expect(r.cloned).toBe(true);
-  });
+  }, START_SCRIPT_BUDGET);
 
   test('A16-20 and the run says it did so', () => {
     seedLock('some-other-container:7', OLD);
     const r = runAgainst(null, true);
     expect(r.output).toMatch(/stale|took over|abandoned/i);
-  });
+  }, START_SCRIPT_BUDGET);
 });
 
 describe('A16-21 but a fresh foreign lock is still honoured', () => {
@@ -202,7 +213,7 @@ describe('A16-21 but a fresh foreign lock is still honoured', () => {
     const r = runAgainst(null, true);
     expect(r.code).toBe(4);
     expect(r.cloned).toBe(false);
-  });
+  }, START_SCRIPT_BUDGET);
 });
 
 describe('A16-22 an abandoned mkdir is not forever either', () => {
@@ -214,11 +225,11 @@ describe('A16-22 an abandoned mkdir is not forever either', () => {
     const r = runAgainst(null, true);
     expect(r.code).toBe(0);
     expect(r.cloned).toBe(true);
-  });
+  }, START_SCRIPT_BUDGET);
 
   test('A16-22 and a fresh one is still held', () => {
     seedLock('');
     const r = runAgainst(null, true);
     expect(r.code).toBe(4);
-  });
+  }, START_SCRIPT_BUDGET);
 });
