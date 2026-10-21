@@ -344,6 +344,61 @@ change to make, not #42's.
 
 Recorded 2026-10-21.
 
+---
+
+**Two entries say `mutate.sh` catches the A16-19 collision. It cannot see it.** Found by a local
+`/code-review` of `feature/mutation-registry` (#18) on 2026-10-21. Both A16-19 entries under *Open
+findings* rank the collision as not urgent because `mutate.sh` *"refuses a `mustFail` resolving to more
+than one test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer"*.
+It cannot: an entry names **one** spec file and the runner reads only that file's record, so a test
+carrying the same id in another file never meets the first; and `mustFail` is a test title, not a case
+id, so the bare id matches no test at all.
+
+Measured on #18's head `c8f6b5c` with two spec files over one subject — `spec/one.test.ts` holding
+`describe('ZZ-19 the first case')`, `spec/two.test.ts` holding `test('ZZ-19 an unrelated second
+case')` — and an entry on `spec/one.test.ts`. `mustFail: "ZZ-19 the first case"` gives `VALIDATED`;
+`mustFail: "ZZ-19"` gives `REFUSED … did not run in spec/one.test.ts -- renamed, skipped, or
+misspelt`. Neither is the ambiguity refusal, so *"the good failure mode"* both entries rely on does not
+exist. `ZZ-19` is chosen so that no specification in this repository can supply it.
+
+What does see one id on two titles across files is `TR-4`, on #28. The sentence about `mutate.sh`
+should leave both entries rather than be carried forward as the reason the collision could wait. It is
+not edited here because #24 rewrites the second entry, and two branches editing one paragraph is a
+conflict made on purpose.
+
+Recorded 2026-10-21.
+
+---
+
+**Most specifications do not sign each scenario, which `CLAUDE.md` asks for.** Found by a local
+`/code-review` of `feature/mutation-registry` (#18) on 2026-10-21. `CLAUDE.md`, since 2026-08-31:
+*"Every scenario gets its own row, labelled positive or negative."* On #18,
+`docs/TEST-SPEC-mutation-runner.md` signs its overview — 83 rows — while its 123 scenarios sit in a
+generated table, several to a row and unsigned; MU-21, MU-25, MU-50 and MU-53 are labelled
+**negative** though each holds a positive counterpart.
+
+That specification is not the outlier. Counted on `main` at `3a2ef0f` — rows whose first cell is a
+case id, against rows carrying a sign. The first column also counts detail and traceability rows, so
+it overstates the cases; the second is exact.
+
+| Specification | Rows with a case id first | Signed rows |
+|---|---|---|
+| `TEST-SPEC-git-integration.md` | 250 | 2 |
+| `TEST-SPEC-liquid-java-extensions.md` | 137 | 27 |
+| `TEST-SPEC-openclaw-2026-9-1.md` | 134 | 47 |
+| `TEST-SPEC-suite-preconditions.md` | 16 | 13 |
+| `TEST-SPEC-bind-address.md` | 11 | 0 |
+| `TEST-SPEC-case-id-traceability.md` | 4 | 3 |
+
+**Why not on #18.** Signing its 123 scenarios would make one specification meet a rule most do not,
+and for a generated table it needs a decision first: where a sign lives when the scenario row is
+derived from a test title. Two shapes are open — the sign carried in the title, or a sign column the
+generator keeps from the existing table and refuses to emit while a scenario has none. Either is the
+same decision for every specification that adopts a generator, so it is taken once rather than inside
+one branch's correction round.
+
+Recorded 2026-10-21.
+
 ## Open findings
 
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
