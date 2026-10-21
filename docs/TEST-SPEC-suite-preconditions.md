@@ -71,6 +71,8 @@ like a suite that ran.
 | **SP-4** | **negative** | The guard throws with that message when the VM is empty |
 | **SP-4** | positive | …and does not throw when it is healthy |
 | **SP-4** | positive | The live reading is of the VM and is a number, or an honest `null` |
+| **SP-6** | **negative** | Where `git` is not installed, the preconditions module still loads, and `IN_GIT_REPO` answers `false` |
+| **SP-6** | positive | …while in a real repository with `git` present it answers `true` |
 
 ## Detail
 
@@ -206,12 +208,24 @@ reachability check cannot reach.
 | **Implemented by** | `tests/unit/m-sp.docker-space.test.ts`. |
 | **Covers** | SP-4, SP-FR1. |
 
+### SP-6 — a precondition that cannot be asked answers no, instead of stopping every file
+
+| | |
+|---|---|
+| **Premise** | `tests/lib/preconditions.ts` computes `IN_GIT_REPO = inGitRepoAt(repoRoot)` when it loads, and `inGitRepoAt` runs `git` through `sh()`, which hands `argv` to `Bun.spawnSync`. That throws *"Executable not found in $PATH"* where there is no `git`, so on such a machine importing the module throws, and every file that imports it errors while bun collects it — the opposite of a precondition, which exists to let a case say why it cannot run. Measured on `main` at `a3ef20f`: with a `PATH` holding only `bun`, the import fails with `Executable not found in $PATH: "git"`. `registryReachable()` already catches the same error for `curl`, because that was the call it added. |
+| **Component** | `inGitRepoAt` in `tests/lib/preconditions.ts`. `sh()` itself is left as it is: #42 changes it, and whether every caller of it should get 127 for a missing executable is a question for every caller, recorded on #45. |
+| **Steps** | In a child bun started by its absolute path, with a `PATH` that is an empty scratch directory, import the module and print `IN_GIT_REPO`. Then, in this process, ask `inGitRepoAt` of a directory `git init` made. |
+| **Test data, both sides** | The child's `PATH`: an empty scratch directory, so no host can supply `git` by accident; the expected line `IN_GIT_REPO=false`, and the child's exit 0. The real repository: a fresh `git init` in a scratch directory, expected `true` — what must still be found. |
+| **Expected** | The child prints `IN_GIT_REPO=false`, never `Executable not found`, and exits 0; the initialised directory answers `true`. |
+| **Covers** | SP-6, SP-FR1, SP-FR2. |
+| **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
+
 ## Traceability
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4** |
-| SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, **SP-6** |
+| SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3**, **SP-6** |
 | SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2, **SP-3** |
 
 *`SP-3` added to all three rows 2026-10-20.* Its detail block claimed them and the table listed it

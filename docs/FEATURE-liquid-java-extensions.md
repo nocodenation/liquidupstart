@@ -113,6 +113,21 @@ mistake is available here and is cheaper to avoid than to repeat.
   distribution was actually built against, writes that version into the project, and prints it. FR23
   asked for the target to be computed; this is the half of it M-B1 got wrong by pinning a version it
   knew was not the one that loads.
+
+  *Amended 2026-10-21.* **For a project with its own `pom.xml`, an API version that cannot be resolved
+  does not stop the build.** The resolution exists to write a version into a synthesised project; an
+  author's pom declares its own and `nar-build` uses it unchanged, so nothing is written. After the
+  build the classes the bundle references are checked against the ones the running Liquid loads
+  (FR36, FR36a), as for any bundle; that check does not see methods, so a call that exists only in a
+  newer `nifi-api` than Liquid's passes it, and the version in an author's pom stays the author's to
+  get right — which the notice says. The refusal for an unresolvable API told the author to *"add a pom.xml … nar-build
+  uses it unchanged"* — and stopped a directory that had one, because the resolution ran before the
+  pom was looked at: measured on `main` at `a3ef20f`, a source with a `pom.xml` and the probe pinned to
+  `99.99.99` got exactly that advice and exit 3. Now the build says at once that the version could not
+  be resolved and why it goes on anyway, its report on success gives `nifi_api_version not resolved`,
+  and the build goes on; a synthesised project is still refused, with the same
+  advice, which is then true. Liquid answering and the running versions being readable are still
+  required for both — they are what the check judges against.
 - **FR28 — The deployment cycle is documented as one path.** §6.4 of the `liquid` skill opens with
   "Build the NAR(s)" and does not say how. From the source to the processor appearing, in one place,
   naming `nar-build` as the first step.
@@ -167,9 +182,18 @@ mistake is available here and is cheaper to avoid than to repeat.
   ```bash
   # Which bundles Liquid currently loads, and the one to take out:
   docker compose exec liquid ls -A /opt/nifi/nifi-current/nar_extensions
+  # The inbox copy first: every start judges the inbox and promotes what passes.
+  rm ./volumes/nar_extensions/<bundle>.nar
   docker compose exec liquid rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar
   docker compose restart liquid
   ```
+
+  *Corrected 2026-10-21.* The procedure had the load-path `rm` and the restart only, and that unloads
+  nothing while the inbox still holds the bundle: `config/liquid/entrypoint.sh` judges every
+  `"$DROP_DIR"/*.nar` at each start and copies each one that passes into the load directory, so the
+  restart meant to unload it promotes it again. The run below could not show that — the bundle it
+  removed, `pr10probe-nar-1.0.0.nar`, had no inbox copy — so the inbox step is measured separately,
+  in a throwaway Liquid container with a stock bundle in its inbox; see `M6`'s *Measured* row.
 
   Run against `pr10probe-nar-1.0.0.nar`: afterwards the catalogue reported the other five
   and not that one, and `work/nar/extensions/pr10probe-nar-1.0.0.nar-unpacked` was **gone**
@@ -197,17 +221,19 @@ mistake is available here and is cheaper to avoid than to repeat.
 - **FR35 — Concurrent builds do not corrupt each other.** One builder, one dependency cache, one
   `/repos`. Two builds at once is the ordinary case the moment two agents work, and nothing has ever
   run it.
-- **FR36a — The check's exit status says which of three things happened, and only 0 deploys.**
+- **FR36a — The check's exit status says which of three things happened, and only a stated verdict
+  deploys.** *Heading amended 2026-10-21: it said "only 0 deploys", and a 0-byte checker's 0 is not a
+  verdict — see below.*
   *Added 2026-10-20, blocking item 1 of the first review of #36.* `nar-build` had two outcomes where
   it needs three, so a bundle nothing had judged was filed under `refused/` and the operator was told
   it could not link.
 
   | Status | Meaning | What `nar-build` does |
   |---|---|---|
-  | **0** | the bundle links against the index | deploys it into the drop directory |
-  | **1** | **refused on merit** — a reference the index does not have, or a bundle part that could not be read | not deployed; the bundle is kept under `refused/`, out of the load path; the headline says *it cannot link against the NiFi API the running Liquid loads* |
+  | **0** | the bundle links against the index — *and, since 2026-10-21, says so: `JUDGED <bundle>`* | deploys it into the drop directory |
+  | **1** | **refused on merit** — a reference the index does not have, or a bundle part that could not be read — *which `check-index` has always opened with `REFUSED <bundle>`; the gate requires that line since 2026-10-21* | not deployed; the bundle is kept under `refused/`, out of the load path; the headline says *it cannot link against the NiFi API the running Liquid loads* |
   | **3** | `check-index` **could not judge**: the index could not be read, holds bytes that are not text, or names no API package; or the check stopped before a verdict — about this installation or the check, not the code | not deployed, **not** filed as refused, and the message says nothing here has judged the bundle |
-  | anything else (2, 126, 127, …) | the check did not complete — python3 could not open the checker, is absent, is not executable | the same arm as 3, naming the status |
+  | anything else (2, 126, 127, …), **and 0 or 1 without its line** | the check did not complete — python3 could not open the checker, is absent, is not executable; or what ran was an empty, cut-off or older copy of the checker, or not the checker at all | the same arm as 3, naming the status |
 
   `narcheck.py`'s `check` and `index` modes keep their own codes; only `check-index` gained 3. The
   property that matters is that **only 0 deploys**, which `B6-42` holds over the whole range rather
@@ -222,6 +248,38 @@ mistake is available here and is cheaper to avoid than to repeat.
 
   *Open:* status 1 also covers a class narcheck cannot parse, which is about the bundle and is not a
   link failure, under the link headline. Whether that gets its own status is not settled here.
+
+  *Amended 2026-10-21.* **A verdict is said, not inferred from a status.** `check-index` ends a 0
+  with the line `JUDGED <bundle>`, and a 1 has always opened with `REFUSED <bundle>`. The gate
+  takes a 0 as judged only **with** its line and a 1 as refused only with its, and anything else —
+  either status without its line, or any other status — is the cannot-judge arm. An empty checker
+  gives 0: the read probe `head -c 1` succeeds on a 0-byte file and `python3` runs one and exits 0 —
+  measured on `main` at `a3ef20f`, a 0-byte checker and one that exits 0 saying nothing were **both
+  deployed**. A truncated one gives 1: `python3` exits 1 for a `SyntaxError` — measured while this
+  amendment was written, the bundle went under `refused/` with the link headline. The checker reaches the builder as a single-file bind mount, the shape that has
+  presented a file that `stat`s and cannot be read; Liquid's own copy is baked into its image at
+  build time, and its `check` mode and callers are unchanged here.
+
+  **And "cannot be judged" leaves the builder as a status of its own.** Both cannot-judge arms of the
+  gate return **5**. Until now they returned 2, the status of a refusal, and the server's 422 told the
+  caller its bundle was unprocessable. The server answers 5 with **500**, through its default and
+  with no change to `BuildServer.java`: a fault of this installation, as 1 is. Not 503, which the
+  server already answers when two builds are running — a caller may retry that, and a build nothing
+  can judge comes back the same however often it is sent. The builder's statuses, end to end:
+
+  | `build.sh` exits | Meaning | `BuildServer` answers |
+  |---|---|---|
+  | 0 | built, judged and placed | 200 |
+  | 2 | refused: the bundle cannot link (FR36a status 1), or the build itself failed — **and, still, two faults of this installation**: a builder whose drop directory the build user could write, and a drop directory the bundle cannot be written to. Those belong with 1 and are recorded on `docs/suite-fixture-findings` (#45); no case drives either arm yet | 422 |
+  | 3 | the target could not be established — Liquid not answering, versions unreadable, the API unresolvable for a synthesised project | 409 |
+  | 4 | the request names no buildable source | 400 |
+  | **5** | **built, and nothing could judge it** — the checker or the index unavailable, or the check ending without a stated verdict | **500** |
+  | anything else | a fault of the installation, such as a judged bundle that could not be placed (1) | 500 |
+  | — | the server itself: two builds already running | 503 |
+
+  `nar-build` in the agents' containers prints the builder's words either way and exits 1 on any
+  status but 200, so what an agent reads does not change; what changes is the status every other
+  caller sees.
 
 - **FR36 — A bundle that cannot link against the API Liquid loads is refused at deployment.** The
   entrypoint already walks every `*.nar` in the drop directory on its way into `lib/`; before it
