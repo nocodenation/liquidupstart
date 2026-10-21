@@ -2438,6 +2438,16 @@ render, on a page that must answer while the stack is down — so it is recorded
 | **A8-29** | Integration **unhappy** | Which is what the refusal prevents: the git step dies at `ssh-keygen` with 127 | Measured rather than reasoned about; in the real sequence `down.sh` has already run by then |
 | **A8-30** | Integration | The counterpart: the same image **with** the tools still starts | Without it the check could be met by refusing every start on every host |
 | **A8-30** | **negative** | …and an install that failed is said out loud, not blamed on the product | Added 2026-10-13 — see the block |
+| **A8-31** | Unit | The whole decision over one record: exactly the two abandoned ids are named | Added 2026-10-20. The decision had no case while it was wrong in both directions a fortnight apart |
+| **A8-31** | **negative** | …and not a live run's fixtures, which is the defect this PR exists against, arriving back through its own repair | Measured by the reviewer: one sweep from a second clone killed a running case |
+| **A8-31** | positive | …while a genuinely abandoned one **is** named, because a sweep that takes nothing is the other defect | Three dashboards and a tag per interrupted run |
+| **A8-31** | **negative** | …and a timestamp it cannot read keeps the object, because *"cannot measure" is not "stale"* | The only direction that cannot destroy a live run |
+| **A8-31** | positive | …and **this run owns its fixtures whatever their age**, or a run longer than the floor deletes its own containers | *This row was missing until 2026-10-20 — see the block* |
+| **A8-31** | positive | …while the boundary sits **at** the floor, and a second inside it is not stale | Where an off-by-one would live |
+| **A8-32** | positive | The stamp is **read**, in all three spellings docker uses — and a label for the image | *Added 2026-10-20 after a review found the reading wrong* |
+| **A8-32** | **negative** | …and an answer that is not a time, including the **bare date** the old reader produced, is no time at all | A bare date parses, to midnight, which is why the defect was silent |
+| **A8-33** | positive | An id is ours whichever way docker spells it — short, long, or `sha256:`-prefixed | The own-run exemption could not fire in production |
+| **A8-33** | **negative** | …and another run's id is not ours, so the exemption does not swallow everything | Otherwise the sweep takes nothing |
 |  |  |  |  |
 | *A8-28 to A8-30 were `A8-24`, `A8-25` and `A8-26` until 2026-10-13* | | | Three ids that already belonged to three other cases — `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. The whole file was using them and **none of its own cases had a row**. `TR-1` passed throughout, because the ids *are* declared, by those other cases |
 
@@ -2616,7 +2626,7 @@ drive it, which is a thing worth knowing before reaching for one.
 |---|---|
 | **Premise** | The route already swallows a missing or malformed manifest and answers with an empty list. That is safe and it is a lie: `GIT_REPOSITORIES` may name two repositories while the manifest says nothing, and "no repositories declared" sends the operator looking at their configuration for a mistake that is not there. |
 | **Component** | The same, against a fixture whose `.env` names two repositories while `repositories.json` is absent, then present but truncated mid-JSON. |
-| **Steps** | `GET` the launchpad in both states. |
+| **Steps** | `GET` the launchpad in both states. For the truncated one, **wait until the container reads the truncated file** before fetching: the fixture project is bind-mounted and a host write is not at once what the container sees. *Added 2026-10-02* — this case had the same race as A8-20 and had simply not been caught at it. The wait is on the bytes, never on the page: waiting for a phrase the page renders would add an assertion this block does not make, and report a copy edit as a timeout. |
 | **Expected** | Both times the page says two repositories are declared and their state is unknown, and names starting the stack as the next step. Neither an empty card nor a stack trace. |
 | **What it found** | Green once the count came from the declaration rather than the manifest. Both broken states reach it: a missing file and a file truncated mid-JSON land in the same branch, the page answers 200 in both, and it names the two repositories it cannot account for. A card built from the manifest alone can only say nothing here, which is the lie the case was written against. |
 | **Covers** | FR10, FR11, FR20. |
@@ -2680,10 +2690,12 @@ drive it, which is a thing worth knowing before reaching for one.
 |---|---|
 | **Premise** | The manifest is what the last start prepared; the declaration in `.env` is what the operator asked for. They part company on an ordinary sequence — declare a repository in the configuration view, save, do not restart yet, which is **A8-15 step 2** — and again inside the retry, because `git.sh` writes `repositories.json` whole from the declaration it is handed and the retry hands it one entry. |
 | **Component** | `gitCard`, and the served page. |
-| **Steps** | With two declared and both in the manifest, read the card. Then narrow the manifest to one, leaving `.env` alone, and read it again — and fetch the page, because carrying the data is not drawing it. |
+| **Steps** | With two declared and both in the manifest, read the card. Then narrow the manifest to one, leaving `.env` alone, **wait until the container reads the narrowed file**, and fetch the page — because carrying the data is not drawing it. |
 | **Expected** | With the two in agreement, nothing is pending. With them apart, the missing repository is named as declared and not yet prepared, it appears in the served markup, and the message no longer claims the declared repositories are cloned — any completeness claim is scoped to what was **prepared**. |
 | **What it found, before it was written** | The card was built from the manifest alone and answered *"All 1 prepared repository is cloned into ./volumes/repos"* while `.env` named two. The second was not reported as missing; it was not reported at all. That is U11's shape — *"a start that ends in a list of URLs and passwords while two repositories are unreachable"* — reached from the other side, and it needs no crash to produce: a save without a restart is enough. |
 | **And what it found in its own fix** | The singular branch of the new message read *"All prepared repository is cloned"*. Written, run, red, corrected — which is the argument for asserting the wording rather than eyeballing it. |
+| **And what its own instrument did, 2026-09-30** | It failed **2 of 3 runs on an idle machine**, and the red said this case was broken. The dashboard runs in a container with the fixture project bind-mounted, and Docker Desktop propagates a host write with a delay — so the page was served from the manifest as it had been, both repositories drawn, and the case reported that a lost one was not named as pending. A 1.5s wait made it 3 of 3, which is what identified the cause. That is the waiting step above, and it is why the step exists at all. |
+| **And what the first repair got wrong, 2026-10-02** | The wait polled the **page** until it said *"not yet prepared"* — this case's own expectation. A predicate about the product turns a product defect into a timeout: rewording that heading made the wait expire, bun reported one `(unnamed)` failure and **none of the ten tests in the file ran**, where before the repair the same change gave this case failing by name beside nine passes. A reviewer measured both. The wait is on the bytes the container reads now, and the verdict is left here, where it belongs. |
 | **Covers** | FR11, FR20, U1, U11. |
 
 
@@ -2743,6 +2755,29 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Expected** | Status 200 both times, the block still says `unreachable`, and the two are **identical** — not merely both present, since a card that regenerated something per request would satisfy the weaker assertion. |
 | **What it replaces** | A manual reload that costs a destroyed and rebuilt repository to reach. A8-17 keeps the step, because an operator watching a browser sees things a fetch does not, but the property no longer depends on it being done. |
 | **Covers** | FR11, U11. |
+
+##### A8-31 — the sweep removes what is abandoned, not what is running
+
+| | |
+|---|---|
+| **Premise** | Fixed container names and image tags meant a second checkout destroyed the first one's fixtures — `A2` of the 2026-10-01 review, measured with two runs of `m-a8.served-card` at once. Per-run names fixed that and broke the reclaim: with unique names nothing ever names an interrupted run's litter again, so a run killed after its containers start leaks three dashboards and a tag for good. A start-of-run sweep is the answer to the second half, and **the first sweep reintroduced the first half**: it removed every `lu-test=1` object that was not *this* run's, and "not this run" is not "stale". |
+| **What was measured, in both directions** | 2026-09-30, fixed names: `could not start lu-a8-unprepared: … No such container`, and before that a page served from the *other* run's project directory, which read as `A8-20` failing. 2026-10-20, the sweep: the reviewer ran one `sweepStaleFixtures()` from a second clone as soon as a run's first container appeared, and that run failed `0 pass / 1 fail (unnamed)` with `lu-a8-ready-1-vyc8xo never answered on port 32780: … No such container: lu-a8-ready-1-vyc8xo` — leaving its two siblings running, which is the `Promise.all` half of `A2` in the same measurement. |
+| **Component** | `staleIds` in `tests/lib/dashboardserver.ts`, the decision alone. It is exported and separate on purpose: inside the `docker rm` loop, the only way to test it is to destroy something, and the only way to see it being wrong is to lose a run. |
+| **Why an age and not a heartbeat** | A heartbeat has to be written by a run that may be killed at any moment, which is the state this is trying to clean up after, and it needs a place to live that two checkouts share. An age is already in docker's own record. The pid is no good across containers, which the earlier round established. |
+| **Test data, both sides** | A fixed clock of `2026-10-20T12:00:00Z` and `STALE_AFTER_MS` = 3 h, so the boundary is `09:00:00Z`. What must be swept: `old-1` at `06:00:00Z` and `edge-1` exactly at `09:00:00Z`, neither of them this run's. What must **not**: `live-1` at `11:58:00Z` (another run, two minutes old — the measured defect), `just-under` at `09:00:01Z` (a second inside the floor), `unreadable` carrying the string `not a date`, `empty` carrying `""`, and both of this run's own — `mine-1` at `11:59:00Z` and `mine-stale` at `06:00:00Z`, which is six hours old and still kept. No docker, no network, no clock of its own. |
+| **Why this run's own fixtures are exempt whatever their age** | A run longer than the floor would otherwise begin deleting its own containers out from under itself. The floor is a **distance** from a run rather than an estimate of one — the longest measured full run on this host is 17 minutes against 3 h — so the exemption costs nothing real, and without it the floor would have to be guessed upward for ever. |
+| **Why three hours** | An order of magnitude above the longest measured run. Anything closer turns the sweep into a race it can lose on a slow machine, which is the race it was written to remove. The cost is that litter from a run killed half an hour ago survives until a sweep after it ages, and that is the cheap direction to be wrong in: litter, rather than a false red in somebody else's run. |
+| **Expected** | `staleIds` names exactly `edge-1` and `old-1` over the whole record, and nothing at all for each of the **six** that must survive. |
+| **Shown able to fail** | The age filter removed — the defect as it was measured — reddens **4 of 6** of `A8-31`'s scenarios, the live sibling and the boundary pair among them. An unreadable timestamp read as stale instead of kept reddens **2**. For the repairs of 2026-10-20: `split(' ')[1]` restored reddens `A8-32`'s network row and its bare-date negative; `.Created` read for an image in place of the label reddens nothing here and is held instead by the end-to-end probe recorded above, which is stated rather than papered over; `mine.has(r.id)` restored reddens three of `A8-33`'s five. All restored, the files byte-identical afterwards. |
+| **Where the rows were wrong, and the count is the point** | Until 2026-10-20 this block had **four** overview rows against **six** tests, while its own *Shown able to fail* row said "4 of 6" — so the document contradicted itself two rows apart. The scenario with no row was *"this run owns its fixtures whatever their age"*, which is the one the detail block gives a dedicated argument to and the one the review found inert in production: a reviewer signing `A8-31` off from the table could not see it. The *Expected* row also promised "nothing at all for each of the **five** that must survive" while the data named six. Both corrected, and `CLAUDE.md`'s rule is the reason: every scenario gets its own row, and an omission has to read as a decision. |
+| **What this row used to claim, and it was false** | It read: *"That `docker <kind> inspect` prints what this reads … `{{.Created}}` is RFC 3339 for containers, images and networks, measured on docker 29.8.1."* **It is RFC 3339 for a container and for an image, and it is not for a network**, which answers a Go `time.Time`: `2026-10-20 15:04:44.637957344 +0000 UTC`. The claim was made from a measurement taken through `cut -c1-70`, which cut the network's line off after the date — so the one fact the block declared uncovered, on the strength of a measurement, was the fact that was wrong. `A8-32` covers the reading now, with all three real strings. |
+| **What the misreading did, measured end to end** | The reader took `l.split(' ')[1]`, which on a network keeps `2026-10-20` alone. That parses — to **midnight UTC** — so after 03:00 UTC every foreign `lu-test=1` network read as older than the three-hour floor. Probed on 2026-10-20 against docker 29.8.1: a network created **four seconds** earlier read as **15.14 hours** old and was named by the decision as it stood. A second run would have removed a live first run's networks, which is this branch's headline defect arriving back through the repair for it, for the second time, and for the same reason both times: **the age was never actually measured, only computed from something assumed.** |
+| **And an image's `{{.Created}}` is not when this host made it** | It is the image config's timestamp, and a cache hit copies it. Measured: two distinct image ids built three seconds apart both reported `2026-10-20T15:05:21.259048666Z`. `dashboard/Dockerfile` has no cache-busting step, so a second run over an unchanged tree is a full cache hit and its **fresh** image carries the first build's time — or, for a label-only build, the base image's, months back. The build writes the time itself as the `lu-test-made` label now, and that is what the sweep reads: a label is part of the config a build writes, so it cannot be inherited. An image without it answers nothing and is kept. |
+| **The ownership exemption could not fire in production** | `mine.has(r.id)` compared ids from two different spellings: the listings are `docker ps -aq` and `docker images -q`, which print the short form, while `inspect -f '{{.Id}}'` prints the long one and prefixes an image's with `sha256:`. Measured. So the branch the scenario below certifies was never taken with real docker output, and the only live protection was the pre-filter in `sweepStaleFixtures` — which does work, and which reads as an optimisation. `isOwn` decides it on whichever spelling it is handed, and `A8-33` is its case. |
+| **And a failed ownership listing now stops the sweep** | It read `.stdout` alone, so one non-zero `docker ps -aq --filter label=lu-test-run=<RUN_ID>` left the set empty and this run's own objects went to the age floor as somebody else's. *"Cannot measure" is not "not ours"*, and the only safe answer to an unanswerable question here is to sweep nothing. |
+| **What is still not covered** | That `inspect` answers at all for a given id. A row it does not answer for is simply absent from the record, and an absent row is never swept — which is the safe direction, and is the one claim of this kind that survives. |
+| **Implemented by** | `tests/unit/m-a8.stale-sweep.test.ts`. |
+| **Covers** | A8-31, A8-32, A8-33, **FR12**, **U7** — the suite's own fixtures are governed from one place, which is what `A4-13` asks of the agents' hooks. |
 
 ##### A8-28 / A8-29 / A8-30 — the tools the git step needs, and a setup that must not be mistaken for the product
 
@@ -2929,8 +2964,11 @@ first, so each one is known to fail for the reason it names.
 | A10-6 | Integration **unhappy** | The origin is read raw, not through `insteadOf` | `git remote get-url` applies the rewrite this stack itself writes, so it answers with the declared URL for a clone of something else |
 | A10-7 | Integration **unhappy** | A start that declares nothing needs nothing from GitHub | It exited 1 when github.com was unreachable — after `down.sh`, so an offline first start lost the whole stack over a section of `.env` it never filled in |
 | A10-8 | Integration **unhappy** | A seeding failure is an error per repository, not an abort | And no clone is attempted: with no `known_hosts`, `StrictHostKeyChecking=yes` could only produce a message about a key |
-| A10-9 | Integration | With GitHub reachable the seeding happens — and only when something is declared | The ordering asserted as behaviour rather than as a line number |
-| A10-10 | Integration **unhappy** | A host key GitHub does not publish is still refused | The refusal stays; what changes is that it costs one repository rather than the stack |
+| A10-9 | Integration positive | With GitHub reachable the seeding happens — and only when something is declared | The ordering asserted as behaviour rather than as a line number |
+| A10-9 | Integration positive | …and the file arrives at mode 644, not at `mktemp`'s 600 | `seed_known_hosts` writes through `mktemp` → `chmod` → `mv`; nothing asserted the mode the operator and every container actually get — `F2`, 2026-10-16 |
+| A10-9 | Integration **negative** | …and no `known_hosts.*` temporary is left behind | The other half of the same write. Litter in a directory the operator browses, and the only evidence it was ever absent was a hand observation |
+| A10-10 | Integration **negative** | A host key GitHub does not publish is still refused | The refusal stays; what changes is that it costs one repository rather than the stack |
+| A10-10 | Integration **negative** | …and the refusal path leaves no temporary either | The side it is easier to get wrong: the refusal returns early, and `rm -f "$scanned"` on every failure path is what keeps the directory clean |
 | A10-11 | Component **unhappy** | The dashboard's Test uses the folder a full start uses | With two declared repositories sharing a name it cloned into a third folder, and the next Test adopted that clone as its own |
 | A10-12 | Component | With no collision the plain name is still used | A fix that renamed every folder to a slug would move every existing installation's clones |
 | A10-13 | Component | The second repository can be addressed at all | Same cause: the lookup was by name, and two declared repositories can share one. Slug, then path, then a unique name |
@@ -2969,6 +3007,8 @@ first, so each one is known to fail for the reason it names.
 | **Expected** | With nothing declared: exit 0, nothing seeded, nothing said about GitHub. With a declaration: exit 0, each entry carrying the seeding failure, no clone attempted and no deploy key asked for. With GitHub reachable: seeded when something is declared, not seeded when nothing is. With a forged key: nothing written, the entry naming it, and the start continuing. |
 | **What it found in its own fixture** | The first version published the fingerprint *with* the `SHA256:` prefix, which the script adds itself, so every comparison failed and the fixture's defect read exactly like one in the script. The corrected value is in the test data above, and the reason is in the file's header — a fixture is test data, and wrong test data is a wrong test. |
 | **Covers** | Finding 4 of the #9 code review, FR3, FR4, NFR2. |
+| **What `F2` added, and why it was missing** | `seed_known_hosts` is the one writer whose new properties nothing checked. The specification said no case exercised the function at all — `B1` of the 2026-10-16 review, and false: this file never seeds `known_hosts`, so the early return never fires and both A10-9 and A10-10 run the whole path. What was true is that no case asserted what the change buys. Now: mode `0o644` on the written file (positive, A10-9), and an empty list of `known_hosts.*` leftovers on the writing path **and** on the refusal path (negative, both). Shown able to fail by reverting what each guards — dropping `chmod 644 "$scanned"` reddens the mode scenario, dropping the `rm -f "$scanned"` on the refusal path reddens A10-10's. |
+| **The leftover filter names both writers** | `known_hosts.*`, `repositories.json.*` and `.tmp`, because `F3` of the same review moved the manifest's temporary to `mktemp` and a filter keyed on `.tmp` would have gone blind to it. |
 
 ##### A10-11 to A10-13 — the Test button and a full start agree
 
@@ -3093,6 +3133,16 @@ capture taken after another file had written held the changed state as the thing
 |---|---|---|---|
 | A12-1 | Integration **unhappy** | The manifest is written before the waiting starts | The card rendered the previous start while this one waited: *"1 of 4"* beside a panel saying *"1 of 2"*, and *"Start the stack so it gets one"* during a start |
 | A12-2 | Integration | And the manifest written at the end is the one that counts | A provisional record that became the final answer would leave a key registered during the wait showing as unreachable until the next start |
+| A12-3 | Integration **negative** | A reader never sees a half-written manifest | The write truncated the file and then filled it. 88,365 reads over six runs found **893 empty** and **30 unparseable**, the longest 5,274 bytes ending mid-entry |
+| A12-3 | Integration positive | …and the reader looked often enough to have seen one | Its own control: with the window closed there is nothing to observe, so the count is what makes the zero mean anything |
+| A12-4 | Integration positive | The counterpart: each run does leave a whole manifest | Without it A12-3 is satisfied by a script that never writes one, which is how a "nothing bad was observed" case goes green over nothing |
+| A12-5 | Contract **negative** | Nothing truncates the manifest in place | The form is what makes A12-3's measurement a rule rather than luck, and it is what the dashboard's own writer already does |
+| A12-5 | Contract positive | …and the write arrives by `mv` from a temporary | The counterpart: "does not truncate" is also satisfied by a script that writes nothing at all |
+| A12-5 | Contract **negative** | …and no temporary is left in the secrets directory | Litter in a directory the operator browses. The filter names both writers' shapes since F3 renamed one of them |
+| A12-6 | Contract **negative** | No temporary in `$TMPDIR`, for either writer | `mv` renames within one filesystem and **copies** across one, so a temporary in `$TMPDIR` would leave the window open wherever TMPDIR is elsewhere |
+| A12-6 | Contract positive | …both sit beside the file they replace, by `mktemp` | The positive half of the same reading, and after F3 it is `mktemp` for both rather than for one |
+| A12-6 | Contract **negative** | …and no `$$` in a temporary's name | `$$` is unique inside one PID namespace, and `git.sh` runs in several — F3 of the 2026-10-16 review |
+| A12-6 | Contract positive | …while the `EXIT` trap survives a run that writes no manifest | Making the name where it is used leaves the variable empty elsewhere, so the trap's removal is guarded rather than bare |
 
 #### Detail per case
 
@@ -3104,6 +3154,78 @@ capture taken after another file had written held the changed state as the thing
 | **Steps** | Run `git.sh` in the background. Poll for the manifest until it lists both repositories, and read it **there**, while the run is still waiting. Then write the sentinel, let the run finish, and read the manifest again. |
 | **Expected** | During the wait: both repositories listed, `agent-skills` cloned with no error, `flows` not cloned and carrying the error its clone gave. Afterwards: both still listed, `flows` recorded as this run left it. And the run's own output must contain `::aiw-git-key-required::`, or the case was reading the final manifest and proving nothing. |
 | **Covers** | The operator's observation of 2026-09-17, FR3, FR20, U11. |
+
+#### The write itself — A12-3 to A12-6, added 2026-10-02, split per case 2026-10-16
+
+> **One block covered all four until `F1` of the 2026-10-16 review**, which is not what `CLAUDE.md`
+> asks for: a reviewer has to be able to sign one case off or challenge it without reading the
+> implementation, and four cases sharing a premise do not share an expectation. The shared *Test data*
+> and *Steps* are repeated per block rather than referenced, because a block that sends the reader
+> elsewhere for its data is the same problem one indirection further on.
+
+| | |
+|---|---|
+| **The common premise** | `lu_write_manifest` ended with `} > "$MANIFEST"`, which truncates the file and then fills it, and it runs twice per start. Every reader of `repositories.json` reads it whole and parses it: the dashboard's card, `git-repo-info` in every agent container, and `unreachable_repositories` in `start.sh`. So each write opens a window in which all three fail. |
+| **How it was found** | By the suite, by accident. A full run on 2026-10-02 ended with `SyntaxError: JSON Parse error: Unexpected EOF` at **load time** in `m-a12.manifest-while-waiting`, which parses the manifest in a module-scope helper. A second full run on the same tree did not, which is what makes it the likeliest explanation for finding 6 of the 2026-10-01 review of #18 — seen once in twenty runs and never reproduced. |
+| **Component, all four** | `lu_write_manifest` and `seed_known_hosts` in `config/scripts/start/git.sh`. |
+| **Implemented by** | `tests/integration/m-a12.manifest-atomic.test.ts`. |
+
+##### A12-3 — a reader never sees a half-written manifest · **negative**
+
+| | |
+|---|---|
+| **Premise** | The common premise above. This is the measurement: not that the form is right, but that no reader observes a torn document while three runs write six manifests. |
+| **Test data** | Three repositories — `probe-a`, `probe-b`, `probe-c`, each `git@github.com:nocodenation/<name>.git\|read\|protected` and each routed to its own seeded bare repository through the suite's fake ssh, so every run writes a complete three-entry manifest twice. `SYSTEM_SIGNIN_WAIT_SECONDS=0`, because the subject is the write and not the wait. |
+| **Steps** | Start a reader that reads the manifest and parses it as fast as it can, with no sleep and no deadline: it stops when the last run has exited. Run `git.sh` three times in sequence. Count the reads, the empty ones and the unparseable ones, and keep the longest bad read. Then assert on the three documents the runs left. |
+| **Expected** | Zero empty reads and zero unparseable reads, out of more than a thousand. |
+| **Its own positive half** | That the reader got past a thousand reads. With the window closed there is nothing to observe, so the case can only establish that it looked often enough — which is why the count matters more than it looks. |
+| **Measured against the unfixed code** | **118 empty reads** on one tree and **891** on another; the count varies with the machine and the signal does not. Reproduced again on 2026-10-16 before this round's changes: **1,207 empty, 91 unparseable**. Against the repaired script, twice at the size the defect was first measured at: **93,421 and 101,102 reads, zero empty and zero unparseable.** |
+| **Not one bad read was misleading** | Across all 923 of the first measurement, the file was always either empty or unparseable, never valid JSON with the wrong contents. So the defect produced readers that **fail**, never readers that are misled, which is why nothing downstream ever reported anything false. |
+| **Covers** | A12-3, the `} > "$MANIFEST"` defect, FR3, U11. |
+
+##### A12-4 — and each run does leave a whole manifest · positive
+
+| | |
+|---|---|
+| **Premise** | A12-3 is satisfied by a script that never writes a manifest at all. This is the counterpart that makes the measurement mean something, and it is the half that matters most: it is the failure mode of every "nothing bad was observed" case. |
+| **Test data** | Three repositories — `probe-a`, `probe-b`, `probe-c`, each `git@github.com:nocodenation/<name>.git\|read\|protected` and each routed to its own seeded bare repository through the suite's fake ssh, so every run writes a complete three-entry manifest twice. `SYSTEM_SIGNIN_WAIT_SECONDS=0`, because the subject is the write and not the wait. |
+| **Steps** | Start a reader that reads the manifest and parses it as fast as it can, with no sleep and no deadline: it stops when the last run has exited. Run `git.sh` three times in sequence. Count the reads, the empty ones and the unparseable ones, and keep the longest bad read. Then assert on the three documents the runs left. |
+| **Expected** | Each of the three documents names all three repositories and carries a `generated` stamp. |
+| **Measured against the unfixed code** | Passed — as it should: the unfixed script wrote complete documents too, between the windows. A counterpart that reddens with the defect is not a counterpart. |
+| **Covers** | A12-4, FR3, U11. |
+
+##### A12-5 — nothing truncates the manifest in place, and nothing is left behind · **negative**
+
+| | |
+|---|---|
+| **Premise** | The form is what makes A12-3's measurement a rule rather than luck. Held as a contract check on the script's text because a measurement over thousands of reads cannot distinguish "there is no window" from "we did not look at the wrong moment". |
+| **Steps** | Read `config/scripts/start/git.sh` as text; assert on three booleans rather than with `toMatch`, because a failing `toMatch` prints the whole 70 KB script and the finding is lost in it — the same mistake one layer out as `A1` of the 2026-10-01 review. Then list the secrets directory. |
+| **Test data, both sides** | The absence of `} > "$MANIFEST"` is the negative; the presence of `mv "$MANIFEST_TMP" "$MANIFEST"` is its positive counterpart, because "does not truncate" is also true of a script that writes nothing. The litter check reads the directory after the runs. |
+| **Expected** | `truncatesInPlace: false`, `renamesIntoPlace: true`, and no leftover temporary. |
+| **The litter filter outlived its name** | It matched `.tmp`, which was right for `${MANIFEST}.$$.tmp` and blind to `mktemp "${MANIFEST}.XXXXXX"` — so `F3` would have left a check that reads as covered and cannot see the litter. It now matches `.tmp`, `repositories.json.*` and `known_hosts.*`. |
+| **Measured against the unfixed code** | The form assertions failed; the litter check passed, which is correct — the unfixed script left nothing because it wrote in place. |
+| **Covers** | A12-5, FR3, U11. |
+
+##### A12-6 — the temporary sits beside its target, and its name is unique beyond one namespace · **negative**
+
+| | |
+|---|---|
+| **Premise** | `mv` is atomic within one filesystem and a copy across one, and a copy has the same window it is meant to close. So a temporary in `$TMPDIR` makes the guarantee depend on where `TMPDIR` points. On the host this was written on the two share a filesystem, which is why `seed_known_hosts` had never been seen to fail; on a Linux host with `/tmp` on tmpfs they do not. |
+| **And a second premise, added by `F3`** | `${MANIFEST}.$$.tmp` is unique only inside one PID namespace, and the `A16-M1` walk documents `git.sh` running in different ones — toolbox container to dashboard container, and host to dashboard, both with small PID ranges. Two runs sharing a PID share the temporary; then one `mv` publishes an inode the other is still writing, which is the torn read this case exists to close, reintroduced by its own fix. Improbable, never observed, one line to remove. |
+| **Steps** | Read the script as text; assert on booleans, as A12-5 does. |
+| **Test data, both sides** | Negative: no `scanned="$(mktemp)"` (the `$TMPDIR` form), and no `$$` anywhere in `MANIFEST_TMP`'s assignment. Positive: `mktemp "${MANIFEST}.…"` and `mktemp "${KNOWN_HOSTS}…"`, both beside their target. Asserting the absence of `$$` as well as the presence of `mktemp` is deliberate — a script can carry both, and only the dead one would be read. |
+| **And the trap** | Making the name where it is used leaves `MANIFEST_TMP` empty on every path that writes no manifest, and the `EXIT` trap removes it unconditionally. Under `set -u` an unset variable aborts the trap; bare, it is a removal whose argument depends on an empty variable. Both halves are asserted: the declaration exists and is empty, and the removal is guarded with `||` so the trap cannot end non-zero and change the status it was called with. |
+| **Expected** | `manifestTmpBesideTarget: true`, `knownHostsTmpBesideTarget: true`, `knownHostsTmpInTmpdir: false`, `usesMktemp: true`, `usesPidInTemporaryName: false`, `initialisedEmpty: true`, `removalGuarded: true`. |
+| **Measured against the unfixed code** | Failed on the form. The `$$` and trap scenarios post-date it: they were added with the fix for `F3` and shown able to fail by reverting it — restoring `$$` reddens two, removing the guard one. |
+| **Covers** | A12-6, FR3, U11. |
+
+##### What these four leave uncovered
+
+| | |
+|---|---|
+| **`seed_known_hosts`** | Changed for the same reason. Its paths run in **A10-9** (stubbed `ssh-keyscan` and `curl`, seeding succeeds, `known_hosts` written) and **A10-10** (a fingerprint GitHub does not publish, nothing written), both in `m-a10.offline-start.test.ts`. The claim here used to be that no case exercised it — `B1` of the 2026-10-16 review, and false: that file seeds no `known_hosts`, so the early return never fires. Since `F2` of the same review, **A10-9 and A10-10 assert both properties this change adds**: that the file arrives at mode 644, and that no `known_hosts.*` temporary is left on either the writing or the refusal path. The hand observation of 2026-10-02 against the real github.com stands beside them — all three offered host keys verified against GitHub's published fingerprints, file at mode 644, no temporary left — and is no longer the only evidence. |
+| **That a bad read ever happens** | With the repair there is no window to observe, so the case can only count that it looked often enough. A12-3's own positive half is that count. |
+| **A limit that is not touched** | Two writers can still lose each other's update: a dashboard retry writes `repositories.json.tmp` and renames while a start renames its own. Neither ever reads a fragment now, and which complete document survives is governed by the lock and by a Test writing nothing. **The names cannot collide, and since `F3` that is true for a better reason than it was**: it used to rest on the start's temporary carrying its pid, which is unique only within a namespace; it now rests on `mktemp`. |
 
 ---
 
@@ -3229,7 +3351,7 @@ read out of the source; whether it looks right is a person's judgement, and A14-
 | **Premise** | `git clone` creates `dest/.git` and writes the remote into it within 20 ms, and a start that waits retries that clone every five seconds. A dashboard Test that lands in one of those windows sees a `.git` whose origin matches and adopts it. Observed by the operator on 2026-09-18, and reproduced with a clone against a repository that cannot exist: `t=20ms: target/.git EXISTS  HEAD=fatal: ambiguous argument 'HEAD'`. |
 | **Why not inspect more carefully** | A clone in flight and a finished clone of an **empty** repository are the same thing on disk: a repository with a remote and no commits. There is no cheap discriminator, so the runs are kept apart instead of being judged after the fact. |
 | **Component** | `lu_take_lock` and the `trap` in `config/scripts/start/git.sh`, with two runs started against one project. |
-| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, the lock directory `volumes/_git-secrets/locks/github.com_nocodenation_agent-skills`, and an ssh stand-in that **sleeps two seconds** before refusing, so "while the first run is inside its clone" is a window rather than a coincidence. A15-4 writes `<this host>:999999` into a lock by hand — a process that does not exist, on an identity that does. Until M-A16 it wrote the bare number `999999`. |
+| **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, the lock directory `volumes/_git-secrets/locks/github.com_nocodenation_agent-skills`, and an ssh stand-in that **sleeps two seconds** before refusing, so "while the first run is inside its clone" is a window rather than a coincidence. The second run is started once the first has written its holder into `locks/<slug>/pid`, not 700ms after it was spawned — the holder lands after about 250ms on an idle host and after 1047 to 1342ms with eight starts at once, measured 2026-10-02, so the sleep that stood there made A15-1 a race rather than a case. A15-4 writes `<this host>:999999` into a lock by hand — a process that does not exist, on an identity that does. Until M-A16 it wrote the bare number `999999`. |
 | **Expected** | The lock exists while the first run works; the second run **says** *"another run is preparing volumes/repos/… right now"* and ends with status 4 without writing a record of it (amended by M-A16 — the original wording required that sentence to be written *into the manifest*, which is finding 1 of 2026-09-21), leaves the directory alone and asks for no deploy key; the lock is gone when the first run ends; a later run gets through to the clone; and a lock whose pid is dead is taken over rather than obeyed. |
 | **What it leaves uncovered** | A run killed **mid-clone** leaves a half-written `.git` whose origin already matches, and the next run adopts it. The lock prevents overlap, not corpses. Recorded in `BACKLOG.md` rather than papered over. |
 | **Covers** | The operator's observation of 2026-09-18, FR3, FR11. |
@@ -3256,7 +3378,7 @@ reviews that followed, and each has its evidence in its own block.
 | A16-2 | Integration | A run that gets the lock still writes its result | Otherwise A16-1 passes because nothing is ever written |
 | A16-3 | Component **unhappy** | The operator is told the repository is busy, not unreachable | 409, and neither "still unreachable" nor "Register the deploy key below" |
 | A16-4 | Component **unhappy** | An agent is not sent after a deploy key either | `git-repo-info` still describes the clone it has, rather than `clone (missing)` |
-| A16-5 | Integration **unhappy** | A start waits for a lock rather than recording an error | Bounded, and the bound is settable. A Test does not wait — an operator is in front of it |
+| A16-5 | Integration **unhappy** | A start waits for a lock rather than recording an error | Bounded, and the bound is settable. A Test does not wait — an operator is in front of it. **It says it is waiting at the first refusal**, not only once 30s have gone: that is what the operator reads, and what A16-27 reads — within 20s, so the old 30s line cannot satisfy it — to know a wait happened |
 | A16-6 | Integration | A start holds only what it is still waiting for | Locks of repositories settled in pass 1 are released before pass 2 waits |
 | A16-7 | Integration **unhappy** | A live process on this identity is honoured | The lock holds while its process lives |
 | A16-8 | Integration | A dead process on this identity still lets go | A15-4's promise, which the fix must not withdraw |
@@ -3313,6 +3435,7 @@ answer. In `BACKLOG.md`.
 | **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, clonable through the suite's `fakeSsh` from a local bare repository, and `git@github.com:nocodenation/liquid-flows.git\|write\|protected` with no route, so its clone fails and a deploy key is asked for. `SYSTEM_SIGNIN_WAIT_SECONDS=90`, so the start is measured inside its wait rather than past it. Lock holders written by hand: `some-other-container:7` (an identity this machine is not, naming a pid that is certainly alive here), `<this host>:999999` (dead), `<this host>:<a live sleep>` (alive and ours), and the empty string. The panel is driven by a task log carrying `::aiw-git-keys-pending::<a> <b>` and `::aiw-git-key-required::<b>`. |
 | **Expected** | As the rows above. |
 | **Measured against the unfixed code** | 18 fail, 9 pass. The 9 are A16-2's first half, A16-6's first two, A16-8, A16-13, A16-15, A16-17, A16-18 and A16-19's count guard — every one of them a counterpart or a control, which is what those are for. |
+| **What the instrument got wrong, 2026-10-02** | Three cases here waited on the clock and read the result afterwards. A16-11 slept 900ms and read `locks/<slug>/pid`: the holder lands after about 250ms idle and 1047 to 1342ms with eight starts at once, so eight of eight concurrent runs read an empty file and reported the identity as missing. A16-20's second case ran the start script inside bun's default 5s budget and timed out at 6055ms in all eight. And A16-27 released the lock after 3000ms, then asserted that 3000ms had passed — which its own sleep guarantees: with `lu_take_lock_waiting` removed from `git.sh` and the release brought forward, all four cases in that file passed. Each now waits on its subject — the holder on disk, the line the run prints — and the five cases that run the script carry `START_SCRIPT_BUDGET`. Eight concurrent runs of the three files: 22 / 0 each. |
 | **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on both paths: toolbox → dashboard from the dashboard's Start button, and host → dashboard from a terminal. |
 | **Covers** | Findings 1 to 6 of 2026-09-21, FR3, FR11, NFR1, U1, U2, U11. |
 

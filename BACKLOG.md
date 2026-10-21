@@ -9,6 +9,28 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The mutation runner's bound does not reach a process the spec itself started.** `tests/mutate.sh`
+spawns the spec with `exec` inside its subshell, so the run budget and the TERM handler reach `bun`
+itself — which is finding 2 of the third re-review, and `MU-48` to `MU-51` hold it. What they do not
+reach is a **grandchild**: a spec that starts a process of its own, say a container or a server,
+leaves it running when the budget fires, and if that process holds the `--reporter-outfile` it can
+write the record after the handler has removed it. That is the shape finding 2 was about, one level
+further down.
+
+The repair is to put the spec in its own process group — `setsid` or `set -m`, then signal `-$pid` —
+which is what `dashboard/src/lib/server/pairing.ts` does for the same reason (A2 of #15's
+2026-10-01 review, where an orphaned `docker run` held the pipes). It is deferred because no entry in
+either registry starts such a process today, so the exposure is reachable only by a case nobody has
+written, and because signalling a group from a script that is itself run under a test runner needs its
+own measurement — the runner must not take its own parent down.
+
+**Recorded 2026-10-14, after N3 of the fourth re-review found that two places pointed here and
+nothing was here.** `tests/mutate.sh:370` and `tests/integration/m-mu.runner.test.ts` both said it was
+in this file. `PROCEDURE-mutation-control.md`, corrected in that same round, says that *"a pointer to
+a file the reader cannot open is worse than no pointer"* — which is exactly what those two were.
+
+---
+
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
 2026-10-14 re-review closed the way past them — `zf.read` inflated a member whole before truncating
 it to a declared size, so an entry that *claimed* 1000 bytes cost 1610 MB from an 815,695-byte file,
@@ -42,15 +64,18 @@ entry above: the reply of 2026-10-13 said it was already here.
 
 ---
 
-**After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
-`cleanup.sh` has no leg for it.** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
+**~~After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
+`cleanup.sh` has no leg for it.~~** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
 host directory ends up owned by `101499` with every Maven-written subdirectory `101499:100998`, so
 `rm -rf volumes/nar_builder/m2` as the host user fails with `Permission denied` and the tree has to
 be removed from a container. That contradicts CLAUDE.md's *"a reset is just deleting `volumes/`"*. It
 is a consequence of B1's build user and only becomes reachable with C2's `chown`, because before it
 the build user could write nothing there.
 
-**Recorded against #25 rather than fixed here, by decision.** #25 removes `/m2` altogether — each
+**~~Recorded against #25 rather than fixed here, by decision.~~ #25 merged on 2026-10-16, so both
+entries above describe a mount that no longer exists** — `grep volumes/nar_builder/m2 compose.yml`
+on `main` finds nothing. Kept struck through rather than deleted, because the reasoning is the
+record of a decision that held: #25 removed `/m2` altogether — each
 build resolves into its own repository under its own work directory, discarded with the build — so
 there is no shared cache for the host to be locked out of. Adding a containerised `rm -rf` to
 `cleanup.sh`, which is a destructive script, for a directory the next branch deletes would be code
@@ -93,9 +118,31 @@ before the images, never the run in flight and never anything else; `B6-41`, fou
 verified against real docker with the operator's stack running beside it.
 ---
 
-**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
+**Answered in part 2026-10-20 by #28, and the two halves it does not cover are stated below rather
+than closed.** `TR-4` is built for the third of the three checks sketched here — *across test files,
+no id on two different titles* — and that is the one this entry called the one that mattered. It was
+written against #27's parent, where the `A8-24`/`A8-25`/`A8-26` collision still existed, so it has
+been seen to fail against a real one: it reports those three ids there and is green on the repair.
+Its detail block is `TR-4` in [`docs/TEST-SPEC-case-id-traceability.md`](docs/TEST-SPEC-case-id-traceability.md),
+and the shape is **two routes rather than one**: an id carried by several test files is accepted when
+its own detail block's *Implemented by* names every one of them, which is the computed answer the
+house rule asks for, and otherwise only through a reviewed entry naming that exact file set. Of 15
+such ids on the tree of 2026-10-20, the computed route takes 4 and the list carries 11, and an entry
+whose block has come to claim its files is reported as redundant — so entries leave as blocks catch up.
+*(It said "the list can only shrink"; nothing stops an entry being added. Corrected 2026-10-21.)*
+
+**The other two checks are still open, with what they would find today measured** in that document's
+*No id is carried by two test files unless that is on record* section: the per-document duplicate
+check is **not buildable as stated**, because one row per scenario means 50 of 459 id/document pairs
+legitimately carry several rows; the cross-document check **finds exactly one id, `SP-2`**, which is
+by design and would need an exemption on its first run. A third class neither check reaches is
+`A16-20`: one file, one id, and a specification row that is not its case.
+
+*The original entry follows, as written on 2026-10-12; its "Not built here" is that day's.*
+
+~~**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
 ids in `TEST-SPEC-*.md` rows, in both directions, and has nothing to say about two different cases
-sharing one id.
+sharing one id.~~
 
 That is not hypothetical. `OC-40` and `OC-42` were specified on #15 on 2026-09-19 — two signed detail
 blocks, a traceability row, test headers and a comment in `config/scripts/start/openclaw.sh` — and the
@@ -118,6 +165,29 @@ the repair together would leave the check never having been seen to fail against
 collision still exists to catch.
 
 Recorded 2026-10-12.
+**The embedding credential gate speaks for two providers out of six.** `openclaw.sh` can say whether
+an embedding backend has a credential for `openai` (is `OPENAI_API_KEY` set) and for `github-copilot`
+(is the harness on). The schema also allows `ollama`, `local`, `gemini` and `lmstudio`, and for those
+the start deliberately writes nothing and leaves `memory.search.enabled` as the operator set it —
+blocker 3 of the 2026-09-28 review on #16, where writing it unconditionally had been switching their
+memory off on every start.
+
+**That is correct and it is not complete.** On those four the stack cannot tell the operator whether
+memory search will do anything, because nothing checks the backend is reachable. The operator decided
+on 2026-10-13 to fix the boundary first and document it, and to extend later.
+
+**What extending needs, and why it is not one change.** "Has a credential" is an API key for `openai`
+and a live harness for Copilot; for `ollama` or `lmstudio` it is a reachable endpoint, for `local` a
+model on disk, for `gemini` another key. So it is **one measurement per provider** rather than one
+condition, and the shape that fits is the one `registryReachable()` uses on #24: ask, cheaply, once,
+and cache the answer. The log line should then name what it asked and what answered, because a gate
+that silently decides is what blocker 3 was.
+
+Not built with the repair because the repair is the operator's setting being left alone, which needs
+no knowledge of any backend, and because each provider's check wants a live instance to be measured
+against rather than reasoned about.
+
+Recorded 2026-10-13.
 
 ---
 
@@ -241,7 +311,13 @@ produces references the index does not have and is refused; one that is too **lo
 deploys, compiled against an older API than the instance runs. *Read out of `narcheck.py:396`, where
 a reference whose package is not in the judged set is skipped — reasoned from the code, not run.*
 
-**So the decision left is one the operator has to take, and it is not about the pom.** Carry
+**~~So the decision left is one the operator has to take, and it is not about the pom.~~ Taken, and
+merged.** `480455b`, *"M2 answered by moving the index out of the host’s reach, not by validating
+it"*, went in with #25 on 2026-10-16: `compose.yml` declares `liquid_api` as a volume shared between
+`liquid` and `nar_builder`, `volumes/liquid/api` is no longer a host bind, and `CLAUDE.md` carries
+the narrowed rule — *"all **state** lives in browsable `./volumes/` bind mounts; never use named
+Docker volumes **for it**"* — which is the argument the paragraph below records as the one for it.
+The host write path this entry is about is closed. What it said, and what was decided: carry
 `volumes/liquid/api` as a volume shared between `liquid` and `nar_builder` instead of a host bind,
 the way `nar_extensions` already is — which closes the host's write path completely and contradicts
 CLAUDE.md's *"all state lives in browsable ./volumes/ bind mounts; never use named Docker volumes"*.
@@ -967,14 +1043,43 @@ it is, and a document that claims a record must have one.
 
 ---
 
+## Does the mid-term memory remember the right things? — deferred 2026-09-20, with a trigger
+
+**The mechanism is measured and works; the value is unmeasurable until the stack is used.**
+`docs/FEATURE-memory-midterm.md` §2.2 has the detail. In short: `memory-core` indexes, ranks, and
+explains its decisions, and promotion into `MEMORY.md` requires an entry to be recalled **three times
+across three distinct queries** within thirty days. This installation has produced one session
+summary ever and asked no questions, so nothing has been promoted, and nothing will be.
+
+**Do not wait for it.** Days accumulate and recalls do not, and `maxAgeDays=30` means the fifteen
+entries now in the store drop out on 2026-10-19 unpromoted. A daily look would show the same zero
+until then — the accumulating-nothing that looks like accumulating evidence.
+
+**The trigger:** once OpenClaw has been used in earnest for about a week, run
+`openclaw memory promote --json` and read `recalls`, `uniqueQueries` and `score`. Promotions happening
+would give M-M3 a baseline to beat and might remove the need for it; thresholds never being reached
+under real use makes the thresholds the thing to tune, and they are readable rather than guessed.
+
+**A synthetic conversation was considered and refused.** It would answer only what was put into it,
+and this project has enough of those.
+
 ## `operator.admin` is reachable from any container on the stack network
 
 **Not a defect of the git integration, and not of the pairing recovery either — it predates both.**
 Raised by the reviewer on 2026-09-28 against #9's base `e33d1e6`, measured live, and recorded here at
 their request. It is a design question, and the answer changes nginx.
 
+**Rewritten 2026-10-02, and what stood here was wrong about this branch's own feature.** The entry
+existed on two branches: this one from 2026-09-30, and #19, which carried the decision taken later
+that day. The #19 copy is removed — approving a harness fix should not also sign off a trust boundary —
+and this is now the only one. The version it replaces proposed *"set `X-Forwarded-User` only for
+requests arriving from the host rather than from the stack's network, or do not route the agents to the
+`openclaw.localhost` vhost at all"* and called that the direction that answers the finding. **It would
+break the recovery path #15 exists to provide**, which runs its CLI inside that network and through
+that vhost. The catch is below, and it is why the decision went to a named address instead.
+
 nginx attaches one constant identity to every request it forwards —
-`X-Forwarded-User "user@nocodenation.org"`, `nginx.conf:92` — and the proxy's address is in OpenClaw's
+`X-Forwarded-User "user@nocodenation.org"` — and the proxy's address is in OpenClaw's
 `trustedProxies`. So a container on the stack network that connects to OpenClaw through nginx with a
 fresh device key, presenting itself as the Control UI, is auto-approved with `operator.admin` and no
 human involved:
@@ -989,35 +1094,185 @@ control or true for every request: `clientId: openclaw-control-ui` is a connect 
 provenance check, `allowedOrigins` is `["*"]`, and `clientBuildId: "dev"` is accepted because it is a
 cache-bust guard rather than a boundary.
 
-**Why it matters on a local single-user stack.** Admin in the Control UI is expected — it is the
-operator's own machine. The concern is the agents, which run on the same network. `operator.admin`
-covers `exec.approvals.set` — whether an agent's shell commands need the operator's approval — as well
-as `config.apply`, `terminal.open` and `plugins.install`. An agent that has been steered by a prompt
-injection in a page or a repository it read can switch off the step that is meant to supervise it.
-Secondarily, the proxy port is published on every host interface, so the local network can do the same;
-other services on that port are already unauthenticated, so that part is not new.
+**The finding is about the agents.** Admin in the Control UI is expected — it is the operator's own
+machine. The agents run on the same network, and `operator.admin` covers `exec.approvals.set` —
+whether an agent's shell commands need the operator's approval — as well as `config.apply`,
+`terminal.open` and `plugins.install`. An agent steered by a prompt injection in a page or a
+repository it read can switch off the step that is meant to supervise it.
+
+**The local network is a second thing, and not what the decision below is about.** The proxy port was
+published on every host interface, so anything on the LAN could do the same. That was a promise
+`README.md` had made since 2026-07-17 and the compose file did not keep; **#20 repaired it**, merged as `fb6d6ec`
+on 2026-10-16, with `SYSTEM_BIND_ADDRESS` defaulting to `127.0.0.1`. Read the identity rule below as doing nothing about
+the LAN, and the binding as doing nothing about the agents.
+
+They are not independent, though, and the reviewer's measurement of 2026-10-01 is why: on rootless
+Docker a request to `127.0.0.1` and a request to the host's LAN address both reached nginx with the
+same `$remote_addr`, the bridge gateway (`10.231.7.1`), while a container on the network arrived as
+`10.231.7.3`. So any rule that keys on the address cannot tell the operator's own browser from the LAN
+until the port is bound. **#20 was a precondition of the direction below**, not a smaller thing beside
+it, and it is in place: the port binds to `127.0.0.1` by default as of `fb6d6ec`, so a rule that keys
+on the address can now tell the operator's browser from the LAN.
 
 **What #15 changed, and did not.** It moved admin out of the device auto-approval cap into
 `gateway.auth.identityScopes`. That removes a pairing step a container could script and stops the
-gateway logging its SECURITY WARNING; it leaves the exposure exactly as it is, because the identity is
-what nginx asserts for everything.
+gateway logging its SECURITY WARNING; it leaves the exposure as it is, because the identity is what
+nginx asserts for everything.
 
-**Two directions, neither built:**
+**The direction, decided by the operator on 2026-09-30:** nginx asserts the identity for the host and
+for one named address on the stack network, and for nothing else. It sets `X-Forwarded-User`
+unconditionally in three vhosts today — `openclaw.localhost`, `bridge.openclaw.localhost` and
+`msteams.openclaw.localhost`, at lines 92, 114 and 136 of
+**`config/nginx/templates/nginx.conf`**. That file, not `config/nginx/nginx.conf`: the rendered one is
+generated and is not in the repository, and editing it is how a fix survives until the next render.
 
-1. **Assert the identity only for the operator.** Set `X-Forwarded-User` in nginx only for requests
-   arriving from the host rather than from the stack's network, or do not route the agents to the
-   `openclaw.localhost` vhost at all. Then the identity means "the operator's browser", and the
-   separation between the agents and the gateway that supervises them becomes real. This is the one
-   that answers the finding.
-2. **Bind the proxy port to `127.0.0.1` by default.** Smaller, and it only addresses the local network.
+An address is a position on a network, not a principal. Whoever holds it gets the identity, so the
+rule is only as strong as the guarantee that nothing else can hold it — which is the next paragraph,
+and the reason this is not one line.
+
+**The catch that shaped the decision.** The obvious form — *"only for requests from the host"* —
+breaks the recovery path #15 exists to provide. `config/scripts/openclaw-pairing.sh` runs a throwaway
+OpenClaw CLI **inside the stack network** (`--network "$NETWORK"`, with
+`--add-host openclaw.localhost:${PROXY_IP}`), because a CLI reaching the gateway directly sends no
+identity header and is refused — the dead end of 2026-09-19. So a stack-network client has to keep the
+identity, and the question is what nginx can tell that container apart by.
+
+*Two answers were weighed:*
+
+1. **A fixed address.** nginx sets the identity for the host and that address alone. **Chosen.**
+2. **A shared secret in a header.** More flexible, and it adds a secret to generate, mount, rotate and
+   keep out of logs. Rejected: this stack's argument is that a fact you can read beats one you have to
+   remember.
+
+**What the fixed address costs, which an earlier version of this entry understated.** It said the
+choice "introduces nothing new to keep". That was false, and the reviewer's #15 review of 2026-10-01
+is what corrected it:
+
+- **The pairing helper has no fixed address today.** It runs `docker run --network "$NETWORK"` with no
+  `--ip`, so docker assigns one from the pool. A pinned address means a new `.env.example` key, a new
+  variable in the nginx template, and an `--ip` on that `docker run` — three things to keep in step,
+  not none.
+- **Two concurrent helper runs collide.** With the address pinned, the second `docker run` fails with
+  *address already in use*. Today they simply get different addresses.
+- **An orphaned helper holds the address.** A run killed before its cleanup keeps the container, and
+  the next one cannot have the address until something removes it.
+- **In its favour, and unsaid until now:** `ip_range: ${SYSTEM_NETWORK_POOL:-10.99.0.128/25}` in
+  `compose.yml:898` keeps docker's dynamic pool above `.128`, so a pinned address below it cannot be
+  handed to anything else. That is the guarantee the rule needs, and it already exists — **and it is
+  enforced rather than assumed**: `lu_ip_in_cidr` in `scripts/linux/start.sh` refuses a
+  `SYSTEM_PROXY_IP` that falls inside the pool, and does it before `down.sh` runs, which
+  `m-oc.env-reads` holds in four cases. Extending that guard to a second pinned key is the known
+  shape of the work, not new ground. It is also where the cost sits: the pool is a variable with a
+  default, so two keys have to agree and nothing checks the new one until the guard is extended. That
+  is the lesson of the subnet pin, one layer along — ask what else knows the number you just wrote
+  down.
 
 Narrowing `allowedOrigins` does not help: a non-browser client sends whatever `Origin` it likes.
 
-Not built in #9 or #15 because it is a change to the stack's trust boundary rather than to either
-feature, it needs the operator's decision on whether the agents lose the OpenClaw vhost entirely, and
-every case for it has to be written against a live gateway.
+**What had to be measured before any of it was written, and two of the four now are.** Whether nginx
+can distinguish host traffic at all, and by what. The four combinations that matter are **rootless and
+rootful, on Linux and on macOS**, with loopback and LAN read separately in each. The two that are
+measured are the **diagonal** — they differ in both dimensions — and they agree:
 
-Recorded 2026-09-30.
+| Measured | Loopback | The host's LAN address | A container on the stack network |
+|---|---|---|---|
+| Linux, **rootless**, reviewer, 2026-10-01 | `10.231.7.1` | `10.231.7.1` | `10.231.7.3` |
+| macOS, **rootful** (Docker Desktop 4.93.0), 2026-10-10 | `192.168.65.1` | `192.168.65.1` | `10.99.0.148` |
+
+Different mechanisms — a bridge gateway on one, a userland proxy on the other — and the same verdict
+on the LAN half.
+
+> **Retracted 2026-10-13, and it was the load-bearing half.** This entry said *"Host against container
+> separates, on both. That is the half the decision rests on, and it holds."* **It does not hold.** The
+> reviewer measured the route neither row had: a container **on the stack network** reaching the host's
+> LAN address through the **published port**. On rootless Linux it arrived as the host; re-measured the
+> same day on macOS/rootful with `tests/verify/address-routes.sh`, it arrives as the host there too.
+> Both rows had only ever measured a stack container talking to nginx **directly**, where of course it
+> arrives as itself. My own sixth macOS reading — a container on an *unrelated* network, through the
+> published port, arriving as the host — pointed straight at it, and I did not follow it.
+>
+> So **neither half separates while the port is published on all interfaces**, and the agent case this
+> entry says the rule answers is open, not closed.
+
+**The matrix, reproducible as of 2026-10-13.** `tests/verify/address-routes.sh` builds a throwaway
+network with the stack's own shape, a throwaway nginx returning `$remote_addr`, and asks every route.
+macOS, rootful, Docker 29.8.1:
+
+| client → target | `$remote_addr` |
+|---|---|
+| host → `127.0.0.1`, published on all interfaces | `192.168.65.1` |
+| host → the host's LAN address | `192.168.65.1` |
+| stack-network container → nginx **directly** | `10.77.5.130`, its own |
+| **stack-network container → the host's LAN address** | **`192.168.65.1`, the host** |
+| container on an unrelated network → the host's LAN address | `192.168.65.1` |
+| stack-network container → the network gateway, published port | `10.77.5.130`, its own |
+| host → `127.0.0.1`, **bound to loopback** | **`10.77.5.128`, the gateway** |
+| **stack-network container → the host's LAN address, bound to loopback** | **no answer** |
+
+**Three things in that table change the entry.**
+
+1. **The last row is why #20 is enough for this.** With the port bound to loopback the container's
+   route through it is simply refused, so the published port — not the network — is what let a
+   container present itself as the host. #20 is therefore a precondition for **both** halves of the
+   rule, not only for host-against-LAN as written above.
+2. **The host's address is not fixed, and it is not `.1`.** With the port on all interfaces the host
+   arrives as the userland proxy's `192.168.65.1`; bound to loopback it arrives as the **network
+   gateway**, which docker sets to the **first address of the pool** — `10.77.5.128` here, because
+   `ip_range` starts there and no `gateway:` is declared. The reviewer found the same on Linux. So any
+   rule naming the host address must **compute it from the running network** rather than carry a
+   constant.
+3. **The binding coupling below is larger than it was written.** Opening `SYSTEM_BIND_ADDRESS` does not
+   only expose the LAN: it hands the identity to **every container on the host**, agents included, by
+   the route in the fourth row. The guard proposed there — refuse, or do not assert, when the bind
+   address is not a loopback address — is unchanged in shape and carries more weight.
+
+**Still not measured:** rootful Linux, the `slirp4netns` and `pasta` port drivers, and a request from
+a second physical machine. Two of the four combinations remain, and the probe above is what they should
+be measured with so the readings can be compared rather than retold.
+
+The macOS reading was taken six ways, because one reading of an address is a reading of a route and not
+of a property: IPv4 loopback, IPv6 loopback (`openclaw.localhost` resolves to both here), the hostname,
+the host's LAN address, and — to get a client out of the host's own network namespace — a container on
+an unrelated docker network reaching the published port through `host-gateway` and through that LAN
+address. **All six arrived as `192.168.65.1`.**
+
+*And the sentence that followed was wrong: "the stack-network container was the only client that
+arrived as itself".* It arrives as itself when it talks to nginx **directly**, which is the only way
+it was asked. Through the published port it arrives as the host — see the retraction above. Six
+readings of one route are still one route.
+
+**Still not measured, and stated rather than implied:** no reading was taken from a second physical
+machine. Both rows above originate on the host under test, as did the reviewer's. What the six readings
+establish is that the published port collapses the source address of every client that is not on the
+stack network, which is the mechanism a LAN peer would also arrive through — but it is an inference from
+the route, and the measurement that would close it is one `curl` from another machine.
+
+**One thing was observed that had until now only been read.** `ip_range: ${SYSTEM_NETWORK_POOL:-10.99.0.128/25}`
+is the guarantee the pinned address depends on, and the entry above argued it from `compose.yml`. The
+container in the table arrived from `10.99.0.148` — inside the pool, where docker's dynamic assignment
+belongs — while the proxy itself sits at `10.99.0.2`, below it. The guarantee is now a reading.
+
+**What the pair above does to the decision.** It does not overturn the fixed address; it makes
+**#20 a hard precondition rather than an ordering preference**, on two of two combinations measured and
+by two unrelated mechanisms. And it exposes a coupling that no document has yet named: #20 makes the
+binding a *variable*, `SYSTEM_BIND_ADDRESS`, defaulting to `127.0.0.1` and openable. An operator who
+opens the port for a reason that has nothing to do with OpenClaw — reaching pgAdmin from a laptop —
+would, once the identity rule is in, hand `operator.admin` to the LAN, silently, because the host
+address the rule names is the address the LAN arrives as.
+
+**So the rule cannot be written as a rule about an address alone.** The shape that fits this stack is
+the one `lu_ip_in_cidr` already uses: a guard that refuses the combination. If `SYSTEM_BIND_ADDRESS` is
+not a loopback address, either the start refuses, or nginx does not assert the identity at all and the
+operator is told why. That is a computed answer where the alternative is an operator remembering that
+two unrelated keys constrain each other — which is the thing this project does not rely on.
+
+**That is the operator's decision and it is open.** It is written up for #15 rather than built.
+
+**Not built in #9, #15 or #19** because it changes the stack's trust boundary rather than any of those
+features, and every case for it has to be written against a live gateway.
+
+Recorded 2026-09-30, direction decided the same day, corrected here 2026-10-02, second measurement
+and the binding coupling added 2026-10-10.
 
 ---
 
@@ -1041,7 +1296,7 @@ Recorded 2026-09-30.
 
 ---
 
-## A checker that cannot be opened is reported as a bundle that cannot link
+## ~~A checker that cannot be opened is reported as a bundle that cannot link~~ — repaired
 
 `config/nar_builder/build.sh:776` gates deployment on `[ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]`.
 Both tests stat. When `narcheck.py` is present but unreadable, the first test passes, `python3 "$NAR_CHECK"`
@@ -1065,5 +1320,15 @@ not look".
 Not fixed with the measurement because the measurement is what #25 is in review for, and this changes the gate
 that decides what reaches Liquid's autoloader — the one place on this branch where a quick edit is the wrong
 shape. It needs its own case: a negative control that makes the checker unreadable and reads the message.
+
+**Repaired 2026-10-16**, same day, in `fix/narcheck-unavailable`. The gate now reads the checker
+rather than stating it — `narcheck_available` in `config/nar_builder/build.sh` — and a checker it
+cannot open takes the honest arm, which now says *"this is about the check, not about the code"*.
+The repair also found a second instance of the same class: `narcheck` returns 1 both for a bundle
+the index refuses and for anything it could not read, and the headline above it asserted the first
+over whatever followed — including over its own words *"the index of what Liquid can load is not
+readable"*. The headline now names both and lets the check give the reason. `B6-40`, seven
+scenarios, each shown able to fail. *(Superseded on 2026-10-20: `check-index` answers 3 for an index
+it cannot read, and the headline for status 1 is the specific one again — FR36a.)*
 
 Recorded 2026-10-16.

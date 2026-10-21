@@ -3,6 +3,7 @@
   import TaskRunner from '$lib/components/TaskRunner.svelte';
   import NextcloudAppPassword from '$lib/components/NextcloudAppPassword.svelte';
   import GitRepositories from '$lib/components/GitRepositories.svelte';
+  import OpenClawPairing from '$lib/components/OpenClawPairing.svelte';
   import SecretValue from '$lib/components/SecretValue.svelte';
 
   const SECRET_LABEL = /password|token|key|secret/i;
@@ -105,6 +106,16 @@
       />
     </section>
   {/if}
+
+  <!-- Above the repositories, because it is only ever drawn when something is
+       stuck, and what is stuck is the operator getting into OpenClaw at all. -->
+  <!-- `running` and `activeTask` are handed over because the card must not poll
+       while the stack is down or while a task holds the page: A3 of the
+       2026-10-01 review. This element sits outside the `{#if data.running}`
+       block above on purpose -- the card is also the way back when OpenClaw
+       itself refuses a browser -- so the condition travels as a prop rather than
+       as a position in the markup. -->
+  <OpenClawPairing running={data.running} busy={activeTask !== ''} />
 
   <GitRepositories git={data.git} />
 
