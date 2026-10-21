@@ -17,7 +17,17 @@
  *           by hand.
  * Then:     All three name the same shared hook directory, and the file there
  *           exists and is executable.
- * Covers:   A4-13, U7, U8, FR12
+ * Covers:   A4-13, **CM-6**, U7, U8, FR12
+ *
+ * CM-6 is the commit-message guard in the same place, added 2026-10-20. The
+ *           agents in this stack push to declared GitHub repositories and write
+ *           the same prose about pull requests that closed one from a `main`
+ *           commit on 2026-10-16, and `FEATURE-commit-message-guard.md` neither
+ *           covered them nor named them as uncovered -- A3 of the first review
+ *           of #35. It is one `install` line beside `pre-push`, because
+ *           `core.hooksPath` already points every agent clone here, so the case
+ *           is the same case: the file is in the shared directory, it is
+ *           executable, and it refuses what it exists to refuse.
  * Unhappy:  A clone that names something else, or names the directory while no
  *           executable hook is in it, fails by name rather than being averaged
  *           away with the clones that are fine.
@@ -28,9 +38,10 @@
  * what this test stats.
  */
 import { test, expect, afterAll } from 'bun:test';
-import { rmSync, statSync, existsSync } from 'node:fs';
+import { rmSync, statSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tempProject, seedRepo, seedKnownHosts, fakeSsh, runStart, git, HOOKS_MOUNT } from '../lib/gitfixture';
+import { sh } from '../lib/shell';
 
 const work = tempProject('lu-a4-hookspath-');
 const project = join(work, 'project');
@@ -76,4 +87,25 @@ test('A4-13 the shared hook is one file, and it is executable', () => {
   const hook = join(hostHooks, 'pre-push');
   expect(existsSync(hook)).toBe(true);
   expect(statSync(hook).mode & 0o111).not.toBe(0);
+});
+
+test('CM-6 the commit-message guard is in the same shared directory, and executable', () => {
+  const hook = join(hostHooks, 'commit-msg');
+  expect(existsSync(hook), 'the agents have no commit-message guard').toBe(true);
+  expect(statSync(hook).mode & 0o111).not.toBe(0);
+});
+
+test('CM-6 and it refuses there what it refuses here, on the agents\' own prose', () => {
+  // Installed rather than imagined: the file the start script put in the shared
+  // directory is the one invoked, with the sentence that closed #18.
+  const hook = join(hostHooks, 'commit-msg');
+  const msg = join(work, 'cm6-msg');
+  writeFileSync(msg, 'docs: x\n\nboth are merged and resolved: #18\n');
+  const bad = sh(['sh', hook, msg], work);
+  expect(bad.code, bad.output).toBe(1);
+  expect(bad.output).toContain('commit-msg refused this message');
+  // And the counterpart, so this is not a hook that refuses everything an agent
+  // writes -- which would stop the stack's agents committing at all.
+  writeFileSync(msg, 'docs: x\n\nthe #18 conflict, answered on #19\n');
+  expect(sh(['sh', hook, msg], work).code).toBe(0);
 });
