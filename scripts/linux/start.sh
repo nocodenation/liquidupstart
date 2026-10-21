@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+# Start the stack: stop what runs, prepare each service's configuration, and bring compose up.
+#
+# What it does, in order
+#   1. Reads the privacy routing mode from .env and stops on an unknown value, before anything
+#      is stopped (config/scripts/lib/privacy-routing.sh). Warns when "only" leaves the AI
+#      agents without a cloud model.
+#   2. Stops the running stack (down.sh) and checks that the proxy's host ports are free.
+#   3. Runs the per-service start steps under config/scripts/start/ (nginx, Liquid, OpenClaw).
+#   4. With PRIVACY_PROXY_ENABLE=1, activates the privacy-proxy compose profile and exports
+#      PRIVACY_PROXY_URL; with PRIVACY_PROXY_ROUTING=only, also adds the compose override
+#      config/privacy-proxy/compose.routing-only.yml, which withholds the provider keys and
+#      logins from the agent containers.
+#   5. Runs `docker compose up -d` and prints the URLs and credentials.
+#
+# Callers
+#   The operator, and the dashboard's Start action.
+#
+# Usage
+#   ./scripts/linux/start.sh      (from anywhere; it changes into the project root)
+#
+# Exit status
+#   0 when the stack is up; 1 when .env is missing, PRIVACY_PROXY_ROUTING is unknown, a port
+#   is taken, or compose fails.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +34,21 @@ NGINX_OUTPUT_DIR="${PROJECT_DIR}/config/nginx"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: .env file not found at ${ENV_FILE}" >&2
   exit 1
+fi
+
+# --- Privacy routing mode: checked before anything is stopped ----------------
+# An unknown PRIVACY_PROXY_ROUTING value stops here, so that a typo neither takes the running
+# stack down nor starts it with the direct provider routes open.
+# shellcheck source=../../config/scripts/lib/privacy-routing.sh
+. "${PROJECT_DIR}/config/scripts/lib/privacy-routing.sh"
+PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
+if [[ "$PRIVACY_ROUTING" == only \
+      && -z "$(env_value "$ENV_FILE" OPENAI_API_KEY)" && -z "$(env_value "$ENV_FILE" ANTHROPIC_API_KEY)" \
+      && "$(env_value "$ENV_FILE" ENABLE_ANTHROPIC_CLAUDE_CODE)" != 1 ]]; then
+  # Not an error: the local LLM may be all the operator wants. But the agents will have no cloud
+  # model at all, and that should not come as a surprise.
+  echo "Warning: PRIVACY_PROXY_ROUTING=only, but neither OPENAI_API_KEY nor ANTHROPIC_API_KEY is set and the Claude CLI is off." >&2
+  echo "         The AI agents will have no cloud model, only the local LLM if one is configured." >&2
 fi
 
 "${PROJECT_DIR}/scripts/linux/down.sh"
@@ -153,6 +191,18 @@ if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
   PP_PORT="${PP_PORT:-8080}"
   export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
   export PRIVACY_PROXY_URL="http://privacy-proxy:${PP_PORT}"
+fi
+# In only mode the override withholds the provider keys and logins from the agent containers.
+# The empty directories it mounts in place of the real ones are created here, so that Docker does
+# not create them root-owned (see openclaw.sh).
+if [[ "$PRIVACY_ROUTING" == only ]]; then
+  for dir in "${PROJECT_DIR}/volumes/_openclaw-claude-routing-only" \
+             "${PROJECT_DIR}/volumes/_openclaw-auth-profile-secrets-routing-only"; do
+    mkdir -p "$dir"
+    chmod 700 "$dir"
+  done
+  export COMPOSE_FILE="compose.yml:config/privacy-proxy/compose.routing-only.yml"
+  echo "Privacy routing: only. The AI agents get the privacy providers and the local LLM, and no provider key or login."
 fi
 
 echo "Starting containers..."

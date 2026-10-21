@@ -26,6 +26,13 @@ get_env() {
 
 OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 
+# The privacy routing mode (off | opt-in | only). In "only" OpenClaw is offered the privacy
+# providers and the local LLM and nothing else, receives no provider key, and its stored
+# subscription sign-ins are set aside. An unknown value stops here, as it does in start.sh.
+# shellcheck source=../lib/privacy-routing.sh
+. "${PROJECT_DIR}/config/scripts/lib/privacy-routing.sh"
+PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
+
 # Render config/openclaw/.env from the template, then inject model-provider keys
 # from the root .env. The template is the contract: only keys it already declares
 # (as a commented `# KEY=` line) are supported; others are ignored. A supported
@@ -43,9 +50,12 @@ fi
 echo "Rendering OpenClaw env: ${OPENCLAW_ENV}"
 cp "$OPENCLAW_ENV_TEMPLATE" "$OPENCLAW_ENV"
 
-for key in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
+# In only mode no provider key is written: the template stays all comments.
+PROVIDER_KEYS=(ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY \
            GEMINI_API_KEY GOOGLE_API_KEY ZAI_API_KEY AI_GATEWAY_API_KEY \
-           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY; do
+           TOKENHUB_API_KEY LKEAP_API_KEY MINIMAX_API_KEY SYNTHETIC_API_KEY)
+[[ "$PRIVACY_ROUTING" == only ]] && { PROVIDER_KEYS=(); echo "  privacy routing only: no provider key written"; }
+for key in ${PROVIDER_KEYS[@]+"${PROVIDER_KEYS[@]}"}; do
   # Skip keys the template does not declare — OpenClaw doesn't support them.
   grep -qE "^#[[:space:]]*${key}=" "$OPENCLAW_ENV" || continue
   value="$(get_env "$key")"
@@ -76,6 +86,17 @@ for dir in "${SECRETS_DIR}" "${CLAUDE_DIR}"; do
   chmod 700 "$dir"
 done
 
+# Stored sign-ins (GitHub Copilot, ChatGPT/Codex, Grok and any other auth profile) live in the
+# state directory, which every OpenClaw container mounts. In only mode they are moved to a
+# directory no container mounts, and on the next start in another mode they are moved back, so
+# switching modes never makes the operator sign in again.
+WITHHELD_LOGINS_DIR="${PROJECT_DIR}/volumes/_openclaw-withheld-logins"
+if [[ "$PRIVACY_ROUTING" == only ]]; then
+  withhold_openclaw_logins "$STATE_DIR" "$WITHHELD_LOGINS_DIR"
+else
+  restore_openclaw_logins "$STATE_DIR" "$WITHHELD_LOGINS_DIR"
+fi
+
 # Each ENABLE flag wires its provider/runtime and adds provider/* to OpenClaw's
 # model picker; the model is chosen there, not pinned here.
 ENABLE_CLAUDE_CLI="$(get_env ENABLE_ANTHROPIC_CLAUDE_CODE)"
@@ -89,6 +110,18 @@ ENABLE_CODEX="$(get_env ENABLE_OPENAI_CODEX)"
 
 ENABLE_GROK="$(get_env ENABLE_XAI_GROK)"
 [[ -z "$ENABLE_GROK" ]] && ENABLE_GROK=0
+
+# ENABLE_CLAUDE_CLI keeps meaning "the operator has a Claude subscription": it decides the Claude
+# sign-in below and whether privacy-anthropic can use that login. OPENCLAW_CLAUDE_BACKEND decides
+# whether OpenClaw itself routes anthropic/* through that login. In only mode OpenClaw gets
+# neither that backend nor the Copilot, Codex or Grok ones.
+OPENCLAW_CLAUDE_BACKEND="$ENABLE_CLAUDE_CLI"
+if [[ "$PRIVACY_ROUTING" == only ]]; then
+  OPENCLAW_CLAUDE_BACKEND=0
+  ENABLE_COPILOT=0
+  ENABLE_CODEX=0
+  ENABLE_GROK=0
+fi
 
 LOCAL_LLM_API_BASE="$(get_env LOCAL_LLM_API_BASE)"
 LOCAL_LLM_API_KEY="$(get_env LOCAL_LLM_API_KEY)"
@@ -178,6 +211,9 @@ fi
 # to its OpenClaw provider id (GEMINI/GOOGLE both map to "google"; node patch
 # dedupes by key). Plain loop for bash 3.2 (macOS) compat.
 MODEL_WILDCARDS=""
+# In only mode no direct provider gets a wildcard, whatever keys .env holds.
+_KEY_PROVIDERS=1
+[[ "$PRIVACY_ROUTING" == only ]] && _KEY_PROVIDERS=0
 for _tp in \
   "ANTHROPIC_API_KEY:anthropic" \
   "OPENAI_API_KEY:openai" \
@@ -190,7 +226,7 @@ for _tp in \
   "SYNTHETIC_API_KEY:synthetic" \
   "TOKENHUB_API_KEY:tokenhub" \
   "LKEAP_API_KEY:lkeap"; do
-  if [[ -n "$(get_env "${_tp%%:*}")" ]]; then
+  if [[ "$_KEY_PROVIDERS" == 1 && -n "$(get_env "${_tp%%:*}")" ]]; then
     MODEL_WILDCARDS="${MODEL_WILDCARDS:+${MODEL_WILDCARDS},}${_tp##*:}/*"
   fi
 done
@@ -243,6 +279,7 @@ else
 
   OPENROUTER_MODELS_JSON="[]"
   OPENROUTER_KEY="$(get_env OPENROUTER_API_KEY)"
+  [[ "$PRIVACY_ROUTING" == only ]] && OPENROUTER_KEY=""
   if [[ -n "$OPENROUTER_KEY" ]]; then
     OPENROUTER_MODELS_JSON="$(docker run --rm \
       -e OPENROUTER_API_KEY="${OPENROUTER_KEY}" \
@@ -271,7 +308,8 @@ else
   # a throwaway container mounting only the state dir).
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
-    -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
+    -e ENABLE_CLAUDE_CLI="${OPENCLAW_CLAUDE_BACKEND}" \
+    -e PRIVACY_ROUTING="${PRIVACY_ROUTING}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
     -e ENABLE_GROK="${ENABLE_GROK}" \
@@ -285,299 +323,11 @@ else
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
     -e OPENROUTER_MODELS_JSON="${OPENROUTER_MODELS_JSON}" \
+    -e OPENCLAW_JSON=/state/openclaw.json \
+    -v "${PROJECT_DIR}/config/openclaw/patch-openclaw-json.js:/opt/patch-openclaw-json.js:ro" \
     --entrypoint node \
     ghcr.io/openclaw/openclaw:latest \
-    -e '
-      const fs = require("fs");
-      const p = "/state/openclaw.json";
-      const c = JSON.parse(fs.readFileSync(p, "utf8"));
-
-      c.gateway = c.gateway || {};
-
-      // Delegate auth to nginx (sets X-Forwarded-User); trust it only from these
-      // proxy IPs. allowLoopback keeps the shared-netns openclaw-cli working.
-      c.gateway.auth = c.gateway.auth || {};
-      c.gateway.auth.mode = "trusted-proxy";
-      delete c.gateway.auth.token;
-      delete c.gateway.auth.tokenFile;
-      c.gateway.auth.trustedProxy = c.gateway.auth.trustedProxy || {};
-      c.gateway.auth.trustedProxy.userHeader = "x-forwarded-user";
-      c.gateway.auth.trustedProxy.allowLoopback = true;
-      c.gateway.trustedProxies = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
-      c.gateway.allowRealIpFallback = true;
-
-      // Allow any browser origin (proxy guards access; only a CSRF-style guard).
-      c.gateway.controlUi = c.gateway.controlUi || {};
-      c.gateway.controlUi.allowedOrigins = ["*"];
-
-      // Auto-pair proxy-authenticated browsers (see header comment): allowInsecureAuth
-      // is localhost-only and useless behind the proxy.
-      delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
-      c.gateway.auth.trustedProxy.deviceAutoApprove = {
-        enabled: true,
-        scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing", "operator.talk"]
-      };
-
-      // Per-backend provider/runtime wiring. No primary model is pinned; each
-      // enabled backend routes its provider/* through the right runtime and the
-      // user picks the concrete model in the OpenClaw model picker.
-      const enableClaudeCli = process.env.ENABLE_CLAUDE_CLI === "1";
-      const enableCopilot = process.env.ENABLE_COPILOT === "1";
-      const enableCodex = process.env.ENABLE_CODEX === "1";
-      const enableGrok = process.env.ENABLE_GROK === "1";
-      const enableLocal = process.env.ENABLE_LOCAL === "1";
-      const privacyOpenai = process.env.PRIVACY_OPENAI === "1";
-      const privacyAnthropic = process.env.PRIVACY_ANTHROPIC === "1";
-      c.agents = c.agents || {};
-      c.agents.defaults = c.agents.defaults || {};
-      c.agents.defaults.models = c.agents.defaults.models || {};
-
-      // The bundled model catalog of a provider plugin: every node with a string id and a
-      // numeric contextWindow, deduplicated to the widest entry per id.
-      const catalogOf = (pluginId) => {
-        const found = [];
-        try {
-          const manifest = JSON.parse(fs.readFileSync("/app/dist/extensions/" + pluginId + "/openclaw.plugin.json", "utf8"));
-          const collect = (node) => {
-            if (Array.isArray(node)) { node.forEach(collect); return; }
-            if (!node || typeof node !== "object") return;
-            if (typeof node.id === "string" && typeof node.contextWindow === "number") found.push(node);
-            Object.values(node).forEach(collect);
-          };
-          collect(manifest);
-        } catch (e) {
-          console.log("openclaw.json: could not read the " + pluginId + " model catalog (" + e.message + ")");
-        }
-        const widest = new Map();
-        for (const m of found) {
-          const prev = widest.get(m.id);
-          if (!prev || m.contextWindow > prev.contextWindow) widest.set(m.id, m);
-        }
-        return [...widest.values()];
-      };
-      const modelEntry = (m, suffix) => ({
-        id: m.id,
-        name: (m.name || m.id).replace(/\s*\((Claude CLI|private)\)\s*$/, "") + " (" + suffix + ")",
-        reasoning: m.reasoning === true,
-        input: Array.isArray(m.input) ? m.input : ["text"],
-        contextWindow: m.contextWindow,
-        ...(typeof m.maxTokens === "number" ? { maxTokens: m.maxTokens } : {})
-      });
-
-      let cliPinnedModels = [];
-
-      delete c.agents.defaults.cliBackends;
-      if (enableClaudeCli) {
-        c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
-        c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
-
-        const CLI_DEFAULT_CONTEXT_WINDOW = 200000;
-        const cliServes = (id) => /^claude-(opus|sonnet|fable|mythos)-/.test(id);
-        const candidates = catalogOf("anthropic")
-          .filter((m) => cliServes(m.id) && m.contextWindow > CLI_DEFAULT_CONTEXT_WINDOW);
-
-        if (candidates.length) {
-          c.models = c.models || {};
-          c.models.providers = c.models.providers || {};
-          c.models.providers["claude-cli"] = c.models.providers["claude-cli"] || {};
-          const cliModels = Array.isArray(c.models.providers["claude-cli"].models)
-            ? c.models.providers["claude-cli"].models
-            : [];
-          for (const model of candidates) {
-            if (cliModels.some((m) => m && m.id === model.id)) continue;
-            cliModels.push(modelEntry(model, "Claude CLI"));
-            cliPinnedModels.push(model.id + "=" + model.contextWindow);
-          }
-          c.models.providers["claude-cli"].models = cliModels;
-        }
-      }
-
-      if (enableCopilot) {
-        c.agents.defaults.models["github-copilot/*"] = c.agents.defaults.models["github-copilot/*"] || {};
-        c.agents.defaults.models["github-copilot/*"].agentRuntime = { id: "copilot" };
-      }
-
-      if (enableCodex) {
-        c.agents.defaults.models["openai/*"] = c.agents.defaults.models["openai/*"] || {};
-        c.agents.defaults.models["openai/*"].agentRuntime = { id: "codex" };
-      }
-
-      // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
-      // memory.search at github-copilot.
-      if (enableCopilot) {
-        c.gateway = c.gateway || {};
-        c.gateway.http = c.gateway.http || {};
-        c.gateway.http.endpoints = c.gateway.http.endpoints || {};
-        c.gateway.http.endpoints.chatCompletions = c.gateway.http.endpoints.chatCompletions || {};
-        c.gateway.http.endpoints.chatCompletions.enabled = true;
-        delete c.agents.defaults.memorySearch;
-        c.memory = c.memory || {};
-        c.memory.search = c.memory.search || {};
-        c.memory.search.provider = "github-copilot";
-        if (!c.memory.search.model) c.memory.search.model = "text-embedding-3-small";
-      }
-
-      if (enableCodex) {
-        c.plugins = c.plugins || {};
-        c.plugins.entries = c.plugins.entries || {};
-        c.plugins.entries.codex = c.plugins.entries.codex || {};
-        c.plugins.entries.codex.enabled = true;
-        if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("codex")) {
-          c.plugins.allow.push("codex");
-        }
-      }
-
-      if (enableGrok) {
-        c.plugins = c.plugins || {};
-        c.plugins.entries = c.plugins.entries || {};
-        c.plugins.entries.xai = c.plugins.entries.xai || {};
-        c.plugins.entries.xai.enabled = true;
-        if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("xai")) {
-          c.plugins.allow.push("xai");
-        }
-      }
-
-      if (enableLocal && process.env.LOCAL_LLM_API_BASE) {
-        c.models = c.models || {};
-        c.models.providers = c.models.providers || {};
-        c.models.providers.local = c.models.providers.local || {};
-        c.models.providers.local.baseUrl = process.env.LOCAL_LLM_API_BASE.replace(/\/+$/, "") + "/v1";
-        c.models.providers.local.api = "openai-completions";
-        c.models.providers.local.apiKey = process.env.LOCAL_LLM_API_KEY || "local-no-auth";
-        c.models.providers.local.auth = "api-key";
-        let discovered = [];
-        try { discovered = JSON.parse(process.env.LOCAL_LLM_MODELS_JSON || "[]"); } catch (e) {}
-        const chatModels = discovered.filter((id) => !/embed/i.test(id));
-        if (chatModels.length) {
-          c.models.providers.local.models = chatModels.map((id) => ({ id, name: id }));
-        } else {
-          delete c.models.providers.local;
-        }
-      }
-
-      // One privacy provider per credentialed upstream, carrying the catalog of that
-      // upstream and routed through the dialect-native door the proxy has for it.
-      if (c.models && c.models.providers) delete c.models.providers.privacy;
-      delete c.agents.defaults.models["privacy/*"];
-      if ((privacyOpenai || privacyAnthropic) && process.env.PRIVACY_PROXY_URL) {
-        const proxy = process.env.PRIVACY_PROXY_URL.replace(/\/+$/, "");
-        const privacyProvider = (pluginId, api, baseUrl) => {
-          const models = catalogOf(pluginId).map((m) => modelEntry(m, "private"));
-          if (!models.length) { console.log("openclaw.json: no " + pluginId + " catalog; privacy-" + pluginId + " skipped"); return; }
-          c.models = c.models || {};
-          c.models.providers = c.models.providers || {};
-          c.models.providers["privacy-" + pluginId] = {
-            baseUrl, api, apiKey: "local-no-auth", auth: "api-key", timeoutSeconds: 600, models,
-          };
-        };
-        if (privacyOpenai) privacyProvider("openai", "openai-completions", proxy + "/openai/v1");
-        if (privacyAnthropic) privacyProvider("anthropic", "anthropic-messages", proxy + "/anthropic");
-      }
-
-      // Model picker allowlist: add a `provider/*` wildcard per credentialed
-      // provider (from MODEL_WILDCARDS) so the picker is not limited to the primary.
-      // Idempotent and additive: existing entries (e.g. the claude-cli ref) survive.
-      const modelWildcards = (process.env.MODEL_WILDCARDS || "")
-        .split(",").map((s) => s.trim()).filter(Boolean);
-      if (modelWildcards.length) {
-        c.agents = c.agents || {};
-        c.agents.defaults = c.agents.defaults || {};
-        c.agents.defaults.models = c.agents.defaults.models || {};
-        for (const w of modelWildcards) {
-          if (!c.agents.defaults.models[w]) c.agents.defaults.models[w] = {};
-        }
-      }
-
-      const currentPrimary = typeof c.agents.defaults.model === "string"
-        ? c.agents.defaults.model
-        : c.agents.defaults.model && c.agents.defaults.model.primary;
-      if (!currentPrimary) {
-        const firstLocal = (((c.models || {}).providers || {}).local || {}).models;
-        const defaultPrimary = enableClaudeCli ? "anthropic/claude-opus-5"
-          : enableCodex ? "openai/gpt-5.5"
-          : enableCopilot ? "github-copilot/gpt-4o"
-          : (Array.isArray(firstLocal) && firstLocal.length) ? "local/" + firstLocal[0].id
-          : null;
-        if (defaultPrimary) {
-          c.agents.defaults.model = typeof c.agents.defaults.model === "object" && c.agents.defaults.model
-            ? { ...c.agents.defaults.model, primary: defaultPrimary }
-            : { primary: defaultPrimary };
-          console.log("openclaw.json: pinned default primary model =", defaultPrimary, "(first-run model wizard skipped; change it in the UI)");
-        }
-      }
-
-      let openrouterModels = [];
-      try { openrouterModels = JSON.parse(process.env.OPENROUTER_MODELS_JSON || "[]"); } catch (e) {}
-      if (openrouterModels.length) {
-        c.agents = c.agents || {};
-        c.agents.defaults = c.agents.defaults || {};
-        c.agents.defaults.models = c.agents.defaults.models || {};
-        for (const id of openrouterModels) {
-          const ref = "openrouter/" + id;
-          if (!c.agents.defaults.models[ref]) c.agents.defaults.models[ref] = {};
-        }
-      }
-
-      // Register local plugin dirs. Our plugins ship a self-contained dist/*.mjs
-      // bundle, so no node_modules is needed at runtime.
-      const pluginPaths = (process.env.PLUGIN_PATHS || "")
-        .split(",").map((s) => s.trim()).filter(Boolean);
-      if (pluginPaths.length) {
-        c.plugins = c.plugins || {};
-        c.plugins.load = c.plugins.load || {};
-        // REPLACE, not append: the start script owns this list. OpenClaw validates
-        // every load.path at startup and aborts if one is missing, so stale entries
-        // (e.g. an old path persisted in openclaw.json) must be dropped.
-        c.plugins.load.paths = pluginPaths;
-        const baseAllow = ["anthropic","browser","canvas","codex","device-pair",
-          "file-transfer","memory-core","ollama","openai","openrouter",
-          "talk-voice","ingest-pdf"];
-        if (enableGrok) baseAllow.push("xai");
-        const allow = new Set([...(c.plugins.allow || []), ...baseAllow]);
-        c.plugins.allow = [...allow];
-        c.tools = { profile: "full", web: { search: { enabled: false } } };
-      }
-
-      fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
-      console.log("openclaw.json: auth.mode =", c.gateway.auth.mode, "; trustedProxies =", JSON.stringify(c.gateway.trustedProxies));
-      console.log("openclaw.json: allowedOrigins =", JSON.stringify(c.gateway.controlUi.allowedOrigins));
-      console.log("openclaw.json: trustedProxy.deviceAutoApprove =", JSON.stringify(c.gateway.auth.trustedProxy.deviceAutoApprove));
-      if (pluginPaths.length) {
-        console.log("openclaw.json: plugins.load.paths =", JSON.stringify(c.plugins.load.paths));
-      }
-      if (modelWildcards.length) {
-        console.log("openclaw.json: model allowlist wildcards =", JSON.stringify(modelWildcards));
-      }
-      if (openrouterModels.length) {
-        console.log("openclaw.json: added " + openrouterModels.length + " OpenRouter models to the picker allowlist");
-      }
-      if (enableClaudeCli) {
-        console.log("openclaw.json: routed anthropic/* through the claude-cli runtime");
-        if (cliPinnedModels.length) {
-          console.log("openclaw.json: pinned claude-cli context windows [" + cliPinnedModels.join(", ") + "] (openclaw defaults them to 200k)");
-        }
-      }
-      if (enableCopilot) {
-        console.log("openclaw.json: routed github-copilot/* through the copilot runtime");
-        console.log("openclaw.json: enabled gateway /v1/embeddings + memory.search.provider = github-copilot (model", c.memory.search.model + ") for RAG embeddings");
-      }
-      if (enableCodex) {
-        console.log("openclaw.json: routed openai/* through the codex runtime");
-        console.log("openclaw.json: enabled bundled codex plugin (ChatGPT/Codex subscription harness for openai/* turns)");
-      }
-      if (enableGrok) {
-        console.log("openclaw.json: enabled bundled xai plugin (Grok subscription provider for xai/* turns)");
-      }
-      for (const pid of ["privacy-openai", "privacy-anthropic"]) {
-        const prov = c.models && c.models.providers && c.models.providers[pid];
-        if (prov) console.log("openclaw.json: registered " + pid + " (" + prov.baseUrl + ") with models [" + prov.models.map((m) => m.id).join(", ") + "] and allowlisted " + pid + "/*");
-      }
-      if (enableLocal && c.models && c.models.providers && c.models.providers.local) {
-        console.log("openclaw.json: registered self-hosted local provider (" + c.models.providers.local.baseUrl + ") with models [" + c.models.providers.local.models.map((m) => m.id).join(", ") + "] and allowlisted local/*");
-      } else if (enableLocal && process.env.LOCAL_LLM_API_BASE) {
-        console.log("openclaw.json: local provider NOT registered — no chat models discovered from " + process.env.LOCAL_LLM_API_BASE + "/v1/models (is the endpoint up and reachable from containers?)");
-      }
-    '
+    /opt/patch-openclaw-json.js
 fi
 
 # The Claude CLI backend needs a Claude Code login. The wrapper pins
@@ -733,7 +483,11 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       'openclaw models auth login --provider anthropic --method cli' /dev/null
   }
 
-  if [[ -n "$OAUTH_TOKEN" ]] || claude_cli "" auth status >/dev/null 2>&1; then
+  # In only mode OpenClaw does not use the Claude login, so it is not registered as an OpenClaw
+  # auth profile; the sign-in above still ran, because privacy-anthropic uses the same login.
+  if [[ "$PRIVACY_ROUTING" == only ]]; then
+    echo "Claude CLI: privacy routing only, login kept for the privacy proxy and not registered in OpenClaw."
+  elif [[ -n "$OAUTH_TOKEN" ]] || claude_cli "" auth status >/dev/null 2>&1; then
     if register_anthropic_cli_profile >/dev/null 2>&1; then
       echo "Claude CLI: registered Anthropic auth profile in OpenClaw (anthropic/* models now appear in the picker)."
     else

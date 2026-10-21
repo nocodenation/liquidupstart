@@ -35,9 +35,13 @@ export function sectionModeFromTitle(title: string): { mode: SectionMode; displa
 
 // Changing any of these requires rebuilding images (IMAGE BUILD CONFIGURATION
 // knobs consumed by build.sh, plus the OpenClaw build switch).
+// A key whose change needs the stack built and started again before it takes effect: the save
+// redirects with rebuild=1. PRIVACY_PROXY_ROUTING changes which providers, keys and logins the AI
+// agents are given, which only a fresh start applies.
 export function isBuildAffecting(key: string): boolean {
   return (
     key === 'ENABLE_ANTHROPIC_CLAUDE_CODE' ||
+    key === 'PRIVACY_PROXY_ROUTING' ||
     /SYSTEM_DEPENDENCIES(_MODE)?$/.test(key) ||
     /POST_INSTALLATION_COMMANDS(_MODE)?$/.test(key)
   );

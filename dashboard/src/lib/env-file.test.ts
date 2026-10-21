@@ -198,6 +198,13 @@ describe('env-meta', () => {
     expect(isBuildAffecting('DATABASE_PASSWORD')).toBe(false);
   });
 
+  // TC-804: a change of the privacy routing mode asks for a rebuild (REQ-245).
+  test('the privacy routing mode is build-affecting and offers its two modes', () => {
+    expect(isBuildAffecting('PRIVACY_PROXY_ROUTING')).toBe(true);
+    expect(selectOptions('PRIVACY_PROXY_ROUTING', '# opt-in | only')).toEqual(['opt-in', 'only']);
+    expect(inputType('PRIVACY_PROXY_ROUTING', '# opt-in | only')).toBe('select-mode');
+  });
+
   test('picks input widgets', () => {
     expect(inputType('ENABLE_ANTHROPIC_CLAUDE_CODE')).toBe('checkbox');
     expect(inputType('LIQUID_SYSTEM_DEPENDENCIES_MODE')).toBe('select-mode');
