@@ -497,6 +497,101 @@ will.
 
 Recorded 2026-10-21.
 
+---
+
+**Tables that GitHub renders as text, and nothing that checks a table renders.** Found on #17 on
+2026-10-21 by the reviewer (N2): a note inserted between two rows of
+`docs/TEST-SPEC-openclaw-2026-9-1.md`'s Suite 1 overview turned every row after it — 88 of them,
+`main`'s `OC-63` to `OC-77` and `SP-2` among them — into literal `| … |` text. Repaired on #17. The
+same shape stands on `main` at `8476389` three times, found by a scan for runs of lines starting with
+`|` whose second line is not a delimiter row, and confirmed by rendering each with `gh api markdown`
+in `gfm` mode:
+
+- `docs/TEST-SPEC-git-integration.md:3427` on `main`, the `A16-M1` overview row, alone after a
+  paragraph. It was written under `A16-20` in `2115193` (2026-09-22) and cut off by `40ef28f`
+  (2026-10-09), which added the paragraph above it. **#24 repairs it as a side effect**: measured at
+  `5e62534` and again after its merge of `main`, the row is back under `A16-20` and the same scan
+  finds nothing in that file.
+- `config/agents/instructions.md:142` and `config/opencode/instructions.md:98`, the four rows
+  `$LIQUID_USERNAME`, `$LIQUID_PASSWORD`, `$SYSTEM_HTTP_PORT` and `$SYSTEM_HTTPS_PORT` after the
+  paragraph on the embedding model, since `c6c29d0` (2026-06-22). An agent reads the raw file and
+  loses nothing; a person reading it on GitHub sees a run of pipes.
+
+`TR-1`, `mutate.sh --gaps` and `scenario-table.ts --check` all read lines, so a broken table is still
+counted and still checked, and only a human looking at the rendered page notices. The computed answer
+is a contract case over the tracked `*.md`: every run of lines starting with `|`, outside a fence, has
+a delimiter row as its second line. Not built on #17, because it would be red on `main` for the three
+above, which are not that branch's; after #24 it would be red for the two instruction files alone.
+
+Recorded 2026-10-21.
+
+---
+
+**OC-60's behaviour half passes when the image it needs is absent.** The case is `N1` on `main`,
+`OC-60` from #17 on. `tests/contract/m-oc.bounded-runs.test.ts`, *and the bound really returns,
+rather than blocking past its limit*: when `docker image inspect liquidupstart/openclaw:latest` fails, the test runs
+`expect({ skipped: 'image absent', image }).toEqual({ skipped: 'image absent', image })` and returns —
+an object compared with itself, reported as a **pass**. `TEST-SPEC-openclaw-2026-9-1.md`'s OC-3 block
+already says the case *"had also been silently skipping"* on 2026-09-17; this is the line that does
+it, and it is still on `main` at `8476389`. The suite's own form is `test.skipIf(!X)`, as `B1-9` uses
+it in `tests/integration/m-b1.dependency-cache.test.ts`, which reports a skip as a skip. Found by the
+local review of #17 on 2026-10-21, and recorded in #17's new OC-60 detail block as a limit.
+
+Recorded 2026-10-21.
+
+---
+
+**OC-62 is red on a Linux host, and its watchdog branch has never run there.** The case is `N1b` on
+`main`, `OC-62` from #17 on. `tests/unit/m-oc.bound-without-coreutils.test.ts` takes coreutils away by running the helper under
+`PATH=<scratch dir>:/usr/bin:/bin`, and its first test asserts that `command -v timeout gtimeout` then
+finds neither. On macOS that holds. On Linux `/usr/bin/timeout` is there: in
+`liquidupstart/dashboard:latest` it is a link to `/bin/busybox`, and under that `PATH`
+`command -v timeout gtimeout` prints `/usr/bin/timeout` — measured 2026-10-21. So the first test is
+red, and the other five pass against the coreutils branch rather than the watchdog the case exists
+for. The reviewer ran the six files #17 changes in that image on 2026-10-21 and reported 25 pass /
+1 fail with this one, identical on `main`, as environmental. It is a property of the case: the `PATH`
+it builds must hold only what the case runs, so that no host can supply a `timeout` by accident.
+
+Recorded 2026-10-21.
+
+---
+
+**OC-61 and OC-3 hold that a forced removal is there, not when it runs — and OC-61 sees two names.**
+`OC-61` is `N4` on `main`. Measured 2026-10-21 on #17 against `config/scripts/start/openclaw.sh`, each
+mutation by hand:
+
+- With the three bounded helpers' `if (( rc != 0 )); then docker rm -f …` — two on `"$name"`, at
+  `:1209` and `:1343`, one on `"$cname"` at `:1424` — turned into `if (( rc == 0 ))`, so that a
+  container is removed only after a run that succeeded, the opposite of the rule, all ten tests of
+  `m-oc.bounded-runs.test.ts` and `m-oc.bounded-calls.test.ts` stay green. The same with the two
+  `"$name"` helpers alone.
+- OC-61 finds named runs with `/docker run .*--name "\$\{?c?name\}?"/`, so the state migration's
+  `docker compose run --rm --name "$_mig"` is outside it: with the `docker rm -f "$_mig"` after it
+  replaced by `true`, OC-61 stays green and only OC-3's *the timed helpers force-remove their
+  container, because timeout does not* goes red.
+
+The first is the one that matters, because an expired bound is exactly when the removal is needed and
+a removal that runs only on success never runs then. Holding it takes a behaviour case: a helper
+driven to expiry against a container that never exits, and `docker ps -a` asked afterwards for the
+name, with no `docker rm -f` of the test's own in between. Recorded in #17's OC-60/61/62 detail block
+as a limit; the tests are older than that branch.
+
+Recorded 2026-10-21.
+
+---
+
+**Four of the mutation runner's cases trace to no requirement.** `docs/TEST-SPEC-mutation-runner.md`
+§*Traceability* lists the cases that cover each MU-FR and MU-NFR id. MU-5, MU-11, MU-14 and MU-59 have
+overview rows and appear in no row of that table — measured 2026-10-21 on #17's head by comparing the
+ids in the overview with the ids in the table. MU-5, *a mutation that reddens every test is refused as
+a broken file*, and MU-14, *a file holding a single test is validated when that test reddens*, read as
+MU-FR4 and its waiver; MU-11, *a mutation that reddens nothing is unresolved*, as MU-FR4 or MU-FR7;
+MU-59, *this document and the test file name the same scenarios*, as MU-NFR1. Left here rather than
+added on #17 because the table's mapping is the reviewer's, made case by case in N2 of the fourth
+re-review of #18, and these four belong in the same hands.
+
+Recorded 2026-10-21.
+
 ## Open findings
 
 **The mutation runner's bound does not reach a process the spec itself started.** `tests/mutate.sh`
