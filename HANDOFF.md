@@ -293,7 +293,7 @@ branches conflict with each other in `FINISH.md`**, though each merges clean int
 neighbouring rows, and `git merge-file` over their copies gives a conflict for #39×#40, #40×#41,
 #40×#42, #41×#42 and #42×#43. So whichever lands second needs `main` merged in and both rows kept —
 each branch owns its own row — and for row 7, #42's row already carries what #40 adds to it.
-`state.sh` cannot show this: it judges each branch against `main` alone. Today's update leaves rows 3 to 10 as `main` has them,
+`state.sh` cannot show this: it judges each branch alone, against its own base, and never two branches against each other. Today's update leaves rows 3 to 10 as `main` has them,
 because a second copy would conflict with those five branches; trial-merged with each, it is clean.
 *The first version of this paragraph, and of that update, said 6, 8 and 9 were on no branch. It was
 written from `main`'s copy of the file without reading the branches' copies.*

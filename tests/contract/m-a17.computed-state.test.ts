@@ -23,21 +23,27 @@
  *           inside `$(...)`, the way the script calls it.
  * When:     The script runs against forges that answer, answer nothing, fail, or
  *           are absent, and against a git that cannot `merge-tree --write-tree`;
- *           the function is handed pairs of fixture branches.
+ *           in a clone whose refspec covers main alone, with a fork's pull
+ *           request whose branch is called main, a base origin does not have, and
+ *           an origin whose main cannot be fetched; and the function is handed
+ *           pairs of fixture branches.
  * Then:     It prints the forge's answer in number order with the decision it
- *           actually carries, judges each branch against its own base, says
- *           CANNOT TELL wherever it could not measure, and refuses outright when
+ *           actually carries, judges each pull request's own head, fetched by its
+ *           number, against its own base, fetched each time, in number order,
+ *           says that is a textual merge of one branch alone, says CANNOT TELL
+ *           wherever it could not measure, and refuses outright when
  *           it cannot ask the forge at all. The function names the conflicted
  *           files in any locale and for any kind of conflict.
  * Covers:   A17-1, A17-2
- * Negative: The absent and the failing forge, the unfetchable branch, the old
- *           git, the conflicts and the missing ref. *"Cannot measure" is not
+ * Negative: The absent and the failing forge, the unfetchable branch, the stale
+ *           ref outside the refspec, the fork's branch, the missing base, the
+ *           unfetchable main, the old git, the conflicts and the missing ref. *"Cannot measure" is not
  *           "nothing is open"* — the same rule `SP-4` carries for the disk and
  *           `B5-33` for the image.
  *
- * Precondition: a `jq` that runs, because `gh --jq` runs inside `gh` and the stub
- *           needs another evaluator for the same expression; asserted by its own
- *           case rather than assumed. *Runs*, not *is on PATH*: on this host the
+ * Precondition: JQ -- a `jq` that runs, because `gh --jq` runs inside `gh` and the
+ *           stub needs another evaluator for the same expression. The cases that
+ *           run the stub skip without one, and an `SP-2` case says so (SP-2). *Runs*, not *is on PATH*: on this host the
  *           first `jq` on PATH is an x86_64 build from 2022 with no Rosetta to run
  *           it, and zsh quietly falls through to `/usr/bin/jq` where bash does
  *           not. Measured 2026-10-20. The German-locale case skips where this host's
@@ -91,7 +97,7 @@ const JQ =
 //                    base, merges clean into that base
 //   lu-a17/gone      not on origin at all, while a stale tracking ref of that
 //                    name is lying here — what a branch deleted upstream leaves
-type Fixture = { root: string; work: string; originHead: string; stale: string };
+type Fixture = { root: string; origin: string; work: string; originHead: string; stale: string };
 
 function fixture(): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'lu-a17-'));
@@ -117,10 +123,16 @@ function fixture(): Fixture {
   ok(work, ['fetch', '-q', 'origin']);
   const stale = ok(work, ['rev-parse', 'lu-a17/agrees']);
   ok(work, ['update-ref', 'refs/remotes/origin/lu-a17/gone', stale]);
+  // What GitHub keeps for every pull request, fork or not.
+  for (const pr of FORGE) {
+    if (git(origin, ['rev-parse', '-q', '--verify', `refs/heads/${pr.headRefName}`]).code === 0) {
+      ok(origin, ['update-ref', `refs/pull/${pr.number}/head`, `refs/heads/${pr.headRefName}`]);
+    }
+  }
   mkdirSync(join(work, 'scripts'));
   copyFileSync(STATE, join(work, 'scripts/state.sh'));
   chmodSync(join(work, 'scripts/state.sh'), 0o755);
-  return { root, work, originHead: ok(work, ['log', '--oneline', '-1', 'origin/main']), stale };
+  return { root, origin, work, originHead: ok(work, ['log', '--oneline', '-1', 'origin/main']), stale };
 }
 
 // The forge's answer, in the shape `gh pr list --json` gives it, deliberately out
@@ -172,15 +184,16 @@ function section(output: string, heading: string): string {
   return end < 0 ? rest : rest.slice(0, end);
 }
 
-function rowOf(merges: string, branch: string): string {
-  return merges.split('\n').find((l) => l.trim().startsWith(`${branch} `)) ?? '';
+function rowOf(merges: string, num: string): string {
+  return merges.split('\n').find((l) => l.trim().startsWith(`${num} `)) ?? '';
 }
 
-test('A17-1 precondition: a jq that runs, for the stub forge', () => {
-  expect(JQ, "the stub runs the script's own --jq expression through jq").not.toBe('');
+test.skipIf(!!JQ)('SP-2 the cases in this file that run the stub forge need a jq that runs, which is absent here', () => {
+  // Not a label: it asserts the absence, so a jq that runs brings them back.
+  expect(JQ).toBe('');
 });
 
-describe('A17-1 the state is read from the forge, not from a document', () => {
+describe.skipIf(!JQ)('A17-1 the state is read from the forge, not from a document', () => {
   const f = fixture();
   const r = run(f.work, stubGh(f.root, FORGE));
   const prs = section(r.output, 'open pull requests');
@@ -217,23 +230,90 @@ describe('A17-1 the state is read from the forge, not from a document', () => {
   });
 
   test('A17-1 a branch that diverged from main and touches another file merges clean', () => {
-    expect(rowOf(merges, 'lu-a17/agrees')).toMatch(/\bclean$/);
+    expect(rowOf(merges, '#9001')).toMatch(/\bclean$/);
   });
 
   test('A17-1 a branch that collides with main is reported as conflicting', () => {
-    expect(rowOf(merges, 'lu-a17/collides')).toContain('CONFLICT: shared.txt');
+    expect(rowOf(merges, '#9002')).toContain('CONFLICT: shared.txt');
   });
 
   test('A17-1 a stacked branch is judged against its own base, not against main', () => {
     // Against main it conflicts through lu-a17/collides; against its base it is
-    // clean. #17 targets feature/mutation-registry, so this is not hypothetical.
-    expect(rowOf(merges, 'lu-a17/stacked')).toBe(`  ${'lu-a17/stacked'.padEnd(42)} clean  (into lu-a17/collides)`);
+    // clean.
+    expect(rowOf(merges, '#9003')).toBe(`  ${'#9003'.padEnd(6)} ${'lu-a17/stacked'.padEnd(42)} clean  (into lu-a17/collides)`);
   });
 
   test('A17-1 a branch that cannot be fetched is not judged on the stale ref lying here', () => {
     // The stale ref points at a commit that would merge clean.
     expect(git(f.work, ['rev-parse', 'origin/lu-a17/gone']).stdout.trim()).toBe(f.stale);
-    expect(rowOf(merges, 'lu-a17/gone')).toContain('CANNOT TELL: could not fetch it');
+    expect(rowOf(merges, '#9004')).toContain('CANNOT TELL: could not fetch it');
+  });
+
+  test('A17-1 and the merge rows are in order of number too, each led by it', () => {
+    const rows = merges.split('\n').filter((l) => /^\s+#\d+ /.test(l)).map((l) => l.trim().split(/\s+/)[0]);
+    expect(rows).toEqual(['#9001', '#9002', '#9003', '#9004']);
+  });
+
+  test('A17-1 and it says what the merge rows do not check', () => {
+    // #24 merged textually clean and turned TR-4 red; two branches that each merge
+    // clean alone can conflict with each other.
+    expect(r.output).toContain("=== does each open branch, alone, merge textually into its base's current head? ===");
+    expect(merges).toContain('(git merge-tree only: no tests run on the result, and the branches are not merged with each other)');
+  });
+});
+
+describe.skipIf(!JQ)('A17-1 and each row is judged on what was fetched for that pull request', () => {
+  const f = fixture();
+  // A clone whose refspec covers main alone, as `git clone --single-branch` leaves
+  // one, holding an origin/lu-a17/collides at a commit that would merge clean.
+  ok(f.work, ['config', 'remote.origin.fetch', '+refs/heads/main:refs/remotes/origin/main']);
+  ok(f.work, ['update-ref', 'refs/remotes/origin/lu-a17/collides', f.stale]);
+  // A fork's pull request from its own main: GitHub keeps its head as
+  // refs/pull/9005/head, while the name is also one of origin's branches.
+  ok(f.origin, ['update-ref', 'refs/pull/9005/head', 'refs/heads/lu-a17/collides']);
+  ok(f.origin, ['update-ref', 'refs/pull/9006/head', 'refs/heads/lu-a17/agrees']);
+  const forge = [
+    ...FORGE,
+    { number: 9005, author: { login: 'probe-fork' }, reviewDecision: '', reviews: [], headRefName: 'main', baseRefName: 'main', updatedAt: '2026-10-20T09:00:00Z' },
+    { number: 9006, author: { login: 'probe-ours' }, reviewDecision: '', reviews: [], headRefName: 'lu-a17/agrees', baseRefName: 'lu-a17/vanished', updatedAt: '2026-10-20T09:00:00Z' }
+  ];
+  const r = run(f.work, stubGh(f.root, forge));
+  const merges = section(r.output, 'does each open branch');
+
+  test('A17-1 the negative: outside the refspec, the branch is judged and not the stale ref lying here', () => {
+    expect(git(f.work, ['rev-parse', 'origin/lu-a17/collides']).stdout.trim()).toBe(f.stale);
+    expect(rowOf(merges, '#9002')).toContain('CONFLICT: shared.txt');
+  });
+
+  test('A17-1 the negative: a fork\'s branch called main is judged as the fork\'s, not as main', () => {
+    expect(rowOf(merges, '#9005')).toContain('CONFLICT: shared.txt');
+  });
+
+  test('A17-1 the negative: a base origin does not have reads CANNOT TELL', () => {
+    expect(rowOf(merges, '#9006')).toContain('CANNOT TELL: could not fetch its base lu-a17/vanished');
+  });
+});
+
+describe.skipIf(!JQ)('A17-1 and with main unfetchable, no row into main is judged', () => {
+  // The clone keeps the origin/main it fetched, which would answer for every row.
+  const f = fixture();
+  ok(f.origin, ['update-ref', '-d', 'refs/heads/main']);
+  const r = run(f.work, stubGh(f.root, FORGE));
+  const merges = section(r.output, 'does each open branch');
+
+  test('A17-1 the negative: the main section says it could not fetch', () => {
+    expect(r.code, r.output).toBe(0);
+    expect(section(r.output, 'main')).toContain('could not fetch; the line below may be behind');
+  });
+
+  test('A17-1 the negative: each row into main reads CANNOT TELL', () => {
+    expect(['#9001', '#9002'].map((n) => rowOf(merges, n))).toEqual(
+      ['#9001', '#9002'].map((n) => expect.stringContaining('CANNOT TELL: could not fetch its base main'))
+    );
+  });
+
+  test('A17-1 the counterpart: a row into a base origin still has is judged', () => {
+    expect(rowOf(merges, '#9003')).toContain('clean  (into lu-a17/collides)');
   });
 });
 
@@ -267,17 +347,17 @@ describe('A17-1 and a tool that cannot measure says so', () => {
     expect(r.output).not.toContain('=== does each open branch');
   });
 
-  test('A17-1 the negative: a forge that stops answering mid-run still leaves a row for every branch', () => {
+  test.skipIf(!JQ)('A17-1 the negative: a forge that stops answering mid-run still leaves a row for every branch', () => {
     // The walk used to ask the forge a second time, in `for b in $(gh ...)`,
     // whose status `set -e` never sees: an empty section under the heading.
     const f = fixture();
     const r = run(f.work, stubGh(f.root, FORGE, 'once'));
     expect(r.code, r.output).toBe(0);
     const merges = section(r.output, 'does each open branch');
-    for (const pr of FORGE) expect(rowOf(merges, pr.headRefName), pr.headRefName).not.toBe('');
+    for (const pr of FORGE) expect(rowOf(merges, `#${pr.number}`), pr.headRefName).not.toBe('');
   });
 
-  test('A17-1 the positive: a forge that answers nothing open is believed, and main still stands', () => {
+  test.skipIf(!JQ)('A17-1 the positive: a forge that answers nothing open is believed, and main still stands', () => {
     const f = fixture();
     const r = run(f.work, stubGh(f.root, []));
     expect(r.code, r.output).toBe(0);
@@ -285,22 +365,22 @@ describe('A17-1 and a tool that cannot measure says so', () => {
     expect(section(r.output, 'main')).toContain(f.originHead);
   });
 
-  test('A17-1 the negative: a list as long as the limit says there may be more', () => {
+  test.skipIf(!JQ)('A17-1 the negative: a list as long as the limit says there may be more', () => {
     const f = fixture();
     const many = Array.from({ length: 100 }, (_, i) => ({ ...FORGE[1], number: 9100 + i }));
     const r = run(f.work, stubGh(f.root, many));
     expect(r.code, r.output).toBe(0);
     expect(r.output).toContain('asked for at most 100; there may be more');
-  });
+  }, 30_000); // a row for each of a hundred pull requests: 2.7 s beside a suite here
 
-  test('A17-1 the positive: a shorter list does not say so', () => {
+  test.skipIf(!JQ)('A17-1 the positive: a shorter list does not say so', () => {
     const f = fixture();
     const r = run(f.work, stubGh(f.root, FORGE));
     expect(r.code, r.output).toBe(0);
     expect(r.output).not.toContain('there may be more');
   });
 
-  test('A17-1 the negative: a git without merge-tree --write-tree says so once, and judges nothing', () => {
+  test.skipIf(!JQ)('A17-1 the negative: a git without merge-tree --write-tree says so once, and judges nothing', () => {
     // The wrapper answers as Ubuntu 22.04's git 2.34.1 did on 2026-10-20 —
     // `fatal: unknown rev --write-tree`, exit 128 — and is real git otherwise.
     const f = fixture();

@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
-# Where the work stands, computed.
-#
-# Everything here was typed by hand, repeatedly, and then written into
-# HANDOFF.md -- where it went stale the moment something merged. On 2026-10-16
-# that file said #21 was "never reviewed" while a review of it was being
-# answered, and the reviewer asked for the row to be corrected; on 2026-10-17 its
-# own current section said nine pull requests were open when twelve were. Two
-# copies of one fact, one of which cannot keep up.
-#
-# So: the handover keeps the map and the lessons, and the state is asked for.
-# `CLAUDE.md` puts it plainly -- prefer a computed answer to a rule an agent has
-# to remember -- and a count of open pull requests is a fact, not a judgement.
+# Where the work stands, computed: main's head, the open pull requests with the
+# forge's own review state, whether each still merges into its base, and the
+# worktrees. A count of open pull requests is a fact, so it is asked for rather
+# than written into HANDOFF.md, where it went stale.
 #
 # It needs `gh` and refuses without it rather than printing an empty picture:
 # "cannot measure" is not "nothing open", which is the same rule the disk guard
@@ -33,9 +25,7 @@ fi
 # Does one branch still merge into another, and say so when it cannot tell.
 #
 # `git merge-tree` is the authority rather than the forge's `mergeable` field,
-# which is computed lazily and answers UNKNOWN for minutes after a push --
-# measured repeatedly on 2026-10-16, where every branch read UNKNOWN while this
-# answered at once.
+# which is computed lazily and answers UNKNOWN for minutes after a push.
 #
 # Its **exit status** says whether: 0 clean, 1 conflicts, anything else a
 # failure to judge. A ref this host does not have **also** exits 1, so the
@@ -43,12 +33,8 @@ fi
 # settles it, because only a merge that ran prints a tree id there.
 #
 # The conflicted paths are read from the list `--name-only` prints between the
-# tree id and the first blank line, never from the CONFLICT messages after it.
-# Those are translated -- `KONFLIKT (Inhalt)` under de_DE, measured 2026-10-20 --
-# and worded differently per kind, so the earlier
-# `grep '^CONFLICT' | sed 's/.*in //'` reported every conflict on a German-locale
-# machine as CANNOT TELL, and a modify/delete as a conflict in a file called
-# `tree.`.
+# tree id and the first blank line, never from the CONFLICT messages after it,
+# which are translated and worded differently per kind of conflict.
 #
 # A function so a case can put branches through it -- the idiom B6-3 established.
 lu_merge_state() {  # lu_merge_state <base-ref> <branch-ref>
@@ -72,15 +58,11 @@ git fetch -q origin main 2>/dev/null || echo "  (could not fetch; the line below
 git log --oneline -1 origin/main
 
 # One question to the forge, and its status is checked: the table and the merge
-# walk are both read from this answer. The walk used to ask again in
-# `for b in $(gh ...)`, whose status not even `set -e` sees, so a rate limit or
-# an expired token printed the merge heading over nothing -- which reads as
-# "nothing to check".
+# walk are both read from this answer.
 #
 # An empty reviewDecision means no decision, not no review: a review that only
-# comments never sets it (measured 2026-10-20 on cli/cli and oven-sh/bun, where
-# such pull requests still read REVIEW_REQUIRED). And `//` cannot catch the
-# empty string, because the field is "" rather than null.
+# comments never sets it. And `//` cannot catch the empty string, because the
+# field is "" rather than null.
 LIMIT=100
 if ! prs="$(gh pr list --state open --limit "${LIMIT}" \
     --json number,author,reviewDecision,reviews,headRefName,baseRefName,updatedAt \
@@ -106,32 +88,36 @@ if [ "$(printf '%s\n' "${prs}" | grep -c . || true)" -ge "${LIMIT}" ]; then
 fi
 
 echo
-echo "=== does each open branch still merge into its base? ==="
-# Into its own base, which for a stacked pull request is not main: #17 targets
-# feature/mutation-registry, and an answer about main does not apply to it.
+echo "=== does each open branch, alone, merge textually into its base's current head? ==="
 probe="$(lu_merge_state origin/main origin/main)"
 if [ "${probe}" != "clean" ]; then
   # merge-tree learned --write-tree in git 2.38. Ubuntu 22.04 ships 2.34.1, which
-  # answers `fatal: unknown rev --write-tree` with 128 -- measured 2026-10-20 --
-  # and would otherwise put that line under every branch.
+  # answers `fatal: unknown rev --write-tree` with 128, and would otherwise put
+  # that line under every branch.
   printf '  CANNOT TELL for any branch: git merge-tree --write-tree does not work here (%s).\n' "${probe}"
   printf '  It needs git 2.38 or newer, and this is %s.\n' "$(git --version)"
 elif [ -n "${prs}" ]; then
-  while IFS=$'\t' read -r _ _ _ _ head base; do
-    # A branch that cannot be fetched would be judged on whatever ref is lying
-    # here, which may be days old, so it is not judged at all.
-    if ! git fetch -q origin "${head}" 2>/dev/null; then
-      printf '  %-42s %s\n' "${head}" "CANNOT TELL: could not fetch it, and what is here may be stale"
+  # Each head by its pull request's number and each base every time, into refs
+  # this script owns: a fetch by name writes only FETCH_HEAD where the refspec
+  # does not cover the branch, and a fork's branch is not origin's at all, so
+  # `origin/<name>` can be another commit than the one asked about. A stacked
+  # pull request is judged into its own base, which is not main.
+  trap 'git for-each-ref --format="delete %(refname)" refs/lu-state/ | git update-ref --stdin' EXIT
+  while IFS=$'\t' read -r num _ _ _ head base; do
+    n="${num#\#}"
+    if ! git fetch -q origin "+refs/pull/${n}/head:refs/lu-state/head/${n}" 2>/dev/null; then
+      printf '  %-6s %-42s %s\n' "${num}" "${head}" "CANNOT TELL: could not fetch it"
       continue
     fi
-    if [ "${base}" != "main" ] && ! git fetch -q origin "${base}" 2>/dev/null; then
-      printf '  %-42s %s\n' "${head}" "CANNOT TELL: could not fetch its base ${base}"
+    if ! git fetch -q origin "+refs/heads/${base}:refs/lu-state/base/${n}" 2>/dev/null; then
+      printf '  %-6s %-42s %s\n' "${num}" "${head}" "CANNOT TELL: could not fetch its base ${base}"
       continue
     fi
     into=""
     [ "${base}" = "main" ] || into="  (into ${base})"
-    printf '  %-42s %s%s\n' "${head}" "$(lu_merge_state "origin/${base}" "origin/${head}")" "${into}"
-  done <<< "${prs}"
+    printf '  %-6s %-42s %s%s\n' "${num}" "${head}" "$(lu_merge_state "refs/lu-state/base/${n}" "refs/lu-state/head/${n}")" "${into}"
+  done <<< "$(printf '%s\n' "${prs}" | sort -t'#' -k2 -n)"
+  echo "  (git merge-tree only: no tests run on the result, and the branches are not merged with each other)"
 fi
 
 echo
