@@ -3,30 +3,13 @@ import { repoRoot, runnerPath } from './paths';
 export type Result = { code: number; stdout: string; stderr: string; output: string };
 
 /**
- * Was this child cut off rather than finished?
+ * Was this child cut off rather than finished? Four signs, measured 2026-10-21
+ * with docker 29.8.1 and bun 1.4.3:
  *
- * Four signs, each measured, and read in this order:
- *
- * - **Its own timeout fired** (`timedOut`, from `sh(..., timeoutMs)`). The one a
- *   case can rely on. Under bun 1.4.3 the per-test budget kills a `spawnSync`
- *   child with SIGTERM, and `docker build` then exits **255** and prints nothing
- *   about it -- measured 2026-10-21 with docker 29.8.1 -- so none of the signs
- *   below sees it. A case gives its build a timeout under its budget and reads
- *   that instead. With that timeout the build exits 255 whichever signal ends it:
- *   SIGINT and SIGTERM measured the same.
- * - **A signal ended it** (`signal`): the OOM killer, or anyone's `kill`. Its exit
- *   code is then no exit code at all, which `sh()` reports as -1.
- * - **130**: SIGINT, an operator's Ctrl-C. What the budget produced under bun
- *   1.3.13 on 2026-10-09, when `OC-15` read *"expected 0, received 130"*.
- * - **`context canceled`**, which docker prints on SIGINT --
- *   `ERROR: failed to build: failed to solve: Canceled: context canceled`,
- *   measured 2026-10-21. Read only for a non-zero exit, so a build that passed is
- *   never called interrupted for a word in its log.
- *
- * It exists because a cut-off run says nothing about the code under test, and two
- * cases read it as if it did: `OC-15` expects exit 0, so an interrupted build read
- * as a verdict on `--allow-scripts`, and `OC-16` expects a non-zero exit, so an
- * interrupted build satisfied its first assertion **by accident**.
+ * - its own timeout fired (`timedOut`): `docker build` then exits 255 and says nothing;
+ * - a signal ended it (`signal`): no exit code, which `sh()` reports as -1;
+ * - exit 130: SIGINT;
+ * - `context canceled` with a non-zero exit: what docker prints on SIGINT.
  */
 export function wasInterrupted(
   r: Pick<Result, 'code' | 'output'> & { timedOut?: boolean; signal?: string | null }
@@ -36,6 +19,27 @@ export function wasInterrupted(
     (r.signal ?? null) !== null ||
     r.code === 130 ||
     (r.code !== 0 && /context canceled/i.test(r.output))
+  );
+}
+
+/**
+ * Throws when `r` was cut off, so a run that measured nothing fails as the machine's
+ * fault and is never read as a verdict. `timeoutMs` is the timeout `r` ran under.
+ */
+export function refuseInterrupted(
+  r: Pick<Result, 'code' | 'output'> & { timedOut?: boolean; signal?: string | null },
+  what: string,
+  timeoutMs: number
+): void {
+  if (!wasInterrupted(r)) return;
+  const how = r.timedOut ? `ran past its ${timeoutMs / 1000}s timeout` : `was interrupted (exit ${r.code})`;
+  throw new Error(
+    [
+      `${what}: the docker build ${how}, so this run measured nothing.`,
+      '  It reaches the network -- `docker build --no-cache` with an npm install inside -- and a',
+      '  build that is cut off says nothing about --allow-scripts either way.',
+      '  This is a statement about the machine, not about the code under test.'
+    ].join('\n')
   );
 }
 

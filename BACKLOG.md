@@ -40,7 +40,7 @@ measured **764 MB from a 1.7 KB `.nar` carrying two 250 MB "classes"**, and the 
 Liquid container against an inbox the agents can write.
 
 **SETTLED 2026-10-17 against the finishing list's cut line**, which admits only a false claim or
-something touching what is not its own — and §3 of the feature document already states this residual
+something touching what is not its own — and §2, FR36, of the feature document already states this residual
 with its 764 MB measurement and calls streaming the open question, so nothing reads as settled that
 is not. The deferral reason below still holds and is the stronger one.
 
@@ -191,10 +191,10 @@ Recorded 2026-10-13.
 two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
 precondition could not reach the thing that failed: the registry was reachable in both failing runs
 and the machine was busy. `SP-3` asks whether a registry answers and skips them on an offline machine;
-their own **180-second** budget — ten minutes on #42 since 2026-10-21, below — answers the load, against a quiet build measured at **14 seconds** on
-one machine and **45** on another. The 60 they had failed twice under load on the first and held,
-unloaded, on the second. The cost is stated at the test: a genuinely broken build now takes three
-minutes to say so (ten on #42, which also makes a cut-off build say so). The original entry follows,
+their own budget of **600 s**, measured in `SP-5`, answers the load, against a quiet build measured at
+**14 seconds** on one machine and **45** on another. The 60 they had failed twice under load on the
+first and held, unloaded, on the second. The cost is that a genuinely broken build takes ten minutes
+to say so, and #42 makes a cut-off build say so. The original entry follows,
 as #42 annotated it. (Corrected 2026-10-21: this gave 14 seconds alone and
 "four times".)*
 
@@ -240,9 +240,8 @@ later. It asked `docker port` once, immediately after `docker run -d`. *Correcte
 the cause was that nobody had waited, and that was never shown. Under the stack's load `docker port`
 answered at the first ask in 40 runs of 40, and a container not yet started, or already removed,
 answers with text rather than nothing; the one empty answer measured is a `docker` call that ran out
-of its timeout. The helper now waits by the container's **id** against a clock — the fixtures have
-fixed names, and a second run reusing one would otherwise hand this one its port — and says how the
-last attempt ended.
+of its timeout. The helper now waits by the container's **id** against a clock — the id names exactly
+the container this `docker run` made, whatever the names do — and says how the last attempt ended.
 
 ---
 

@@ -42,24 +42,15 @@
  *           as two quiet skips here.
  *
  *           **And a budget of its own, because the precondition is not what the
- *           failures were.** These two failed twice by timing out at the suite's
- *           60s and passed twice on a quiet machine -- the registry was reachable
- *           every time and the machine was busy. Two measurements, because one
- *           machine's figure is not a budget: **14s** on the author's machine
- *           (2026-10-10) and **45s** on the reviewer's, both unloaded and both
- *           against the same image. 60s failed twice under load on the first and
- *           held on the second, which was not loaded; the second's figure is why
- *           one machine's duration is not a budget. 180s clears the slower by 4x;
- *           the cost is that a genuinely broken build takes that long to say so.
- *           SP-3, and the second finding of #22. Raised to ten minutes on #42,
- *           2026-10-21 -- BUILD_BUDGET_MS below, with its reasoning, and SP-5
- *           holding it; which figure stands is the reviewer's decision.
+ *           failures were.** These two timed out at the suite's 60s under load,
+ *           with the registry reachable every time. They carry 600 s; the figure
+ *           and its measurement are SP-5's.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { sh, wasInterrupted } from '../lib/shell';
+import { sh, refuseInterrupted } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { registryReachable } from '../lib/preconditions';
 
@@ -89,12 +80,8 @@ function baseImage(): string {
   return m[1];
 }
 
-// The case's budget, and the build's own timeout inside it. The build has to be
-// stopped by its own timeout rather than by bun's: bun 1.4.3 kills a spawnSync
-// child with SIGTERM when the budget fires, and docker then exits 255 and says
-// nothing about why -- measured 2026-10-21 -- so only a timeout the helper set
-// itself is known to have fired. Thirty seconds is the margin for the case to
-// read that and say so before bun's budget ends it.
+// bun's budget kills the child and docker exits 255 silently, so the build
+// carries its own timeout 30 s inside it. The figure is SP-5's.
 const BUILD_BUDGET_MS = 600_000;
 const BUILD_TIMEOUT_MS = BUILD_BUDGET_MS - 30_000;
 
@@ -102,39 +89,6 @@ function build(tag: string, run: string): { code: number; output: string; timedO
   const dir = mkdtempSync(join(workRoot, 'ctx-'));
   writeFileSync(join(dir, 'Dockerfile'), `FROM ${baseImage()}\nUSER root\n${run}\n`);
   return sh(['docker', 'build', '--no-cache', '--progress=plain', '-t', tag, dir], repoRoot, {}, BUILD_TIMEOUT_MS);
-}
-
-/**
- * A build that was cut off says nothing about the flag, and must not be read as
- * if it did.
- *
- * Both cases below run `docker build --no-cache` with an `npm install` inside, so
- * they reach the network. Under load or on a slow link the build outlives its
- * budget: under bun 1.3.13 docker returned **130** and `OC-15` read *"expected 0,
- * received 130"*, a statement about this machine presented as a verdict on
- * `--allow-scripts`; under bun 1.4.3 it returns 255 and says nothing, which is
- * why the build carries a timeout of its own. Measured twice on 2026-10-09 (`Received: 130`
- * and `this test timed out after 60000ms`), and both cases **passed in two later
- * runs on a quiet machine** -- which is what makes it the worse of the two
- * findings: a case whose colour depends on the load is how red stops meaning
- * anything.
- *
- * `OC-16` is worse still and in the other direction: it expects a **non-zero**
- * exit, so an interrupted build satisfies its first assertion by accident. Only
- * the second one -- that npm named the script it refused to run -- keeps it
- * honest. This guard makes the accident impossible rather than survivable.
- */
-function refuseInterrupted(r: { code: number; output: string; timedOut: boolean }, what: string): void {
-  if (!wasInterrupted(r)) return;
-  const how = r.timedOut ? `ran past its ${BUILD_TIMEOUT_MS / 1000}s timeout` : `was interrupted (exit ${r.code})`;
-  throw new Error(
-    [
-      `${what}: the docker build ${how}, so this run measured nothing.`,
-      '  It reaches the network -- `docker build --no-cache` with an npm install inside -- and a',
-      '  build that is cut off says nothing about --allow-scripts either way.',
-      '  This is a statement about the machine, not about the code under test.'
-    ].join('\n')
-  );
 }
 
 describe('OC-15/OC-16 the install script flag', () => {
@@ -145,17 +99,11 @@ describe('OC-15/OC-16 the install script flag', () => {
     expect(line).toContain('claude --version');
   });
 
-  // The budget: a docker build with an npm install in it does not belong in the
-  // suite's 60-second default, which is a figure for tests that do not reach the
-  // network. `m-b7`'s maven build carries 1_200_000 for the same reason. Ten
-  // minutes here turns a slow link into a slow suite rather than a red one, which
-  // is the first of the two ways out the backlog recorded -- and the guard above
-  // is what keeps a cut-off build from reading as a verdict either way.
   test.skipIf(!registryReachable())(
     'OC-15 with the flag, the image is built and the CLI reports a version',
     () => {
       const r = build('lu-oc15-with', installLine());
-      refuseInterrupted(r, 'OC-15');
+      refuseInterrupted(r, 'OC-15', BUILD_TIMEOUT_MS);
       expect(r.code).toBe(0);
       expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
     },
@@ -170,7 +118,7 @@ describe('OC-15/OC-16 the install script flag', () => {
       const r = build('lu-oc16-without', without);
       // Before the assertion, not after: this case expects a non-zero exit, so an
       // interrupted build would satisfy it by accident.
-      refuseInterrupted(r, 'OC-16');
+      refuseInterrupted(r, 'OC-16', BUILD_TIMEOUT_MS);
       expect(r.code).not.toBe(0);
       // npm names the script it refused to run; the build then dies on the version check.
       expect(r.output).toContain('install.cjs');

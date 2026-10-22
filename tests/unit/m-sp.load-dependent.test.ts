@@ -21,15 +21,17 @@
  *           What made it empty was never established (see the specification); the
  *           wait is now bounded by the clock, asks by the container's id, and says
  *           how the last attempt ended.
- * Given:    `wasInterrupted` and `parsePublishedPort`, pure functions of what a
- *           child said, fed the answers measured on 2026-10-21 (docker 29.8.1,
- *           bun 1.4.3); `sh()` with a timeout of its own, run against a real
- *           child; and `awaitPublishedPort` with an injected probe
+ * Given:    `wasInterrupted`, `refuseInterrupted` and `parsePublishedPort`, pure
+ *           functions of what a child said, fed the answers measured on
+ *           2026-10-21 (docker 29.8.1, bun 1.4.3); `sh()` with a timeout of its
+ *           own, run against a real child; and `awaitPublishedPort` with an
+ *           injected probe
  * When:     They are given a build cut off by its own timeout, one cut off by
  *           SIGINT, an ordinary failure, a success whose log says `context
  *           canceled`, and the answers `docker port` gives for a mapping, for a
  *           container not yet started, for one that is gone, and for nothing
- * Then:     Only the interruptions are called interruptions, only a real mapping
+ * Then:     Only the interruptions are called interruptions, and only they make
+ *           the guard throw, naming the timeout it was given; only a real mapping
  *           parses as a port, the wait stops on the clock and asks by the id it
  *           was given; and the two cases that reach the network carry a budget
  *           of their own, a build timeout inside it, and the guard before each
@@ -54,7 +56,7 @@ import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
-import { sh, wasInterrupted, type Result } from '../lib/shell';
+import { sh, wasInterrupted, refuseInterrupted, type Result } from '../lib/shell';
 import { parsePublishedPort, awaitPublishedPort } from '../lib/dashboardserver';
 
 // Measured 2026-10-21 against a `RUN sleep 40` build, docker 29.8.1.
@@ -102,6 +104,36 @@ describe('SP-5 an interrupted child is told apart from a failing one', () => {
   test('SP-5 and neither is success, not even one whose log mentions a cancellation', () => {
     expect(wasInterrupted({ code: 0, output: '1.2.3 (Claude Code)' })).toBe(false);
     expect(wasInterrupted({ code: 0, output: `${SIGINT_OUTPUT}\n1.2.3 (Claude Code)` })).toBe(false);
+  });
+});
+
+describe('SP-5 the guard refuses an interrupted run and lets a finished one through', () => {
+  const said = (r: Parameters<typeof refuseInterrupted>[0]): string | null => {
+    try {
+      refuseInterrupted(r, 'OC-1x', 570_000);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  };
+
+  test('SP-5 the negative: a build past its own timeout throws, naming that timeout', () => {
+    const m = said({ code: 255, output: '#5 0.131 start', timedOut: true });
+    expect({ timeout: m?.includes('ran past its 570s timeout'), nothing: m?.includes('this run measured nothing') }).toEqual({
+      timeout: true,
+      nothing: true
+    });
+  });
+
+  test('SP-5 the negative: a build cut off by SIGINT throws, with its exit', () => {
+    expect(said({ code: 130, output: SIGINT_OUTPUT })).toContain('was interrupted (exit 130)');
+  });
+
+  test('SP-5 the counterpart: an ordinary failure and a success pass through', () => {
+    expect([
+      said({ code: 1, output: 'npm error ... install.cjs ... not run' }),
+      said({ code: 0, output: '1.2.3 (Claude Code)' })
+    ]).toEqual([null, null]);
   });
 });
 
@@ -226,7 +258,7 @@ describe('SP-5 and the cases that reach the network say how long they may take',
     // Read inside the case, so one case's guard cannot be vouched for by the
     // other case's assertion further down the file.
     const src = caseOf(title);
-    const guard = src.indexOf(`refuseInterrupted(r, '${id}')`);
+    const guard = src.indexOf(`refuseInterrupted(r, '${id}', BUILD_TIMEOUT_MS)`);
     const verdict = src.indexOf('expect(r.code');
     expect(guard, `${id} does not guard`).toBeGreaterThan(0);
     expect(verdict, `${id} has no verdict`).toBeGreaterThan(0);

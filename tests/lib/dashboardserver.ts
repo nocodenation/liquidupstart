@@ -347,28 +347,12 @@ export function parsePublishedPort(stdout: string): number | null {
 export type PortProbe = (id: string) => Result;
 
 /**
- * Waited for, against a clock, and asked of the container's id.
- *
- * `startDashboard` asked `docker port` once, and on 2026-10-17, while a second
- * suite was running, the answer was empty. What makes it empty is not
- * established. Measured 2026-10-21 under the stack's load: the mapping was there
- * at the first ask in 40 runs of 40; a container created and not yet started
- * answers `no public port '3000' published`, a removed one `No such container`, and
- * neither is empty. The one empty answer measured is a `docker` call that ran out
- * of its timeout, which `docker()` returns as exit -1 with no output -- so the
- * message below says how the last attempt ended rather than guessing.
- *
- * The wait stays, because a mapping that is not visible yet costs a retry and not
- * a red. It ends when it has both asked `minAttempts` times and passed its
- * deadline: the clock, so a slow `docker` cannot turn it into forty slow calls,
- * and the count, because the other dashboards a case starts beside this one block
- * the same event loop with their own synchronous `docker` calls and can use up
- * the clock between two asks. Each ask keeps the 60 s it had, since a call that
- * runs out of its timeout is the one empty answer anyone has measured. And it
- * asks by **id**, as does everything after the start: the fixtures have fixed
- * names, and a second run's `docker rm -f` and `docker run` on the same name
- * would otherwise hand this one the other run's container -- per-run names are
- * #19's.
+ * Waited for, against a clock, and asked of the container's id. It ends once it
+ * has asked `minAttempts` times and passed its deadline: the clock, so a slow
+ * `docker` cannot multiply the wait, and at least three asks, because dashboards
+ * started beside this one can use up the clock between two asks. By id, because
+ * the id names exactly the container this `docker run` made, whatever the names do.
+ * An empty answer is a `docker` call that ran out of its 60 s (SP-5).
  */
 export async function awaitPublishedPort(
   id: string,
