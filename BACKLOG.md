@@ -40,6 +40,8 @@ in it.
 
 Recorded 2026-10-20.
 
+**Answered in part on #47, open, 2026-10-22.** `m-b5.hand-drop`'s two containers are per run and labelled, and `A8-34` finds a fixed container name anywhere in the tests. The image tags `lu-oc15-with` and `lu-oc16-without` wait for #42, which changes that file and holds the open budget decision. The sweep's entry point and a helper that hands back named and labelled objects are outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+
 ---
 
 **Two helpers report a harness fault as the product going silent.** Same review.
@@ -77,6 +79,8 @@ into files under review.
 
 Recorded 2026-10-20.
 
+**Answered on #47, open, 2026-10-22**: a reader that fails is reported as the harness's, by `until()` and `finished()`, each stream has its own decoder, a finished run is refused, and `awaitFile` reads once. `A16-31`. A `tsconfig` for `tests/` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+
 ---
 
 **`startDashboard`'s readiness loop has no timeout on its `fetch`.** Same review.
@@ -97,6 +101,8 @@ status 302, and a `Response` from `fetch` cannot carry 0, so `res.status > 0` is
 call resolves. What is left is the hung server, which is rarer than this said and still unbounded.
 
 Recorded 2026-10-20.
+
+**Recorded 2026-10-22**: a hang, not a false claim, so outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
@@ -120,6 +126,8 @@ a host-global assertion over every docker network, and the probe name is compose
 real `start.sh`, reports a probe the other process is about to remove.
 
 Recorded 2026-10-20.
+
+**Answered on #47, open, 2026-10-22**: a pair starts on an even third octet, so two pairs are the same or apart, which makes the comment's promise true; `A8-35`, and the comment's count is 100 x 127. The host-global probe assertion is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again: the probe name is the product's.
 
 ---
 
@@ -150,6 +158,8 @@ reclaimed by its label, through `sweepStaleFixtures`, once it is past the 3 h fl
 keeps the disk bounded is not measured.
 
 Recorded 2026-10-20.
+
+**Waits for #40**, which redesigns the builder's sweep; the entry is the one to act on once #40 is on `main`. 2026-10-22.
 
 ---
 
@@ -225,6 +235,8 @@ branch it was found from.
 
 Recorded 2026-10-20.
 
+**Answered in part on #47, open, 2026-10-22**: the stale `OC-56 / OC-57 / OC-58 / OC-59` heading, the one real finding, no longer lists OC-59 against files that do not carry it. The check itself is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+
 ---
 
 **A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.**
@@ -277,6 +289,8 @@ and will not clear. #44's section says where the loaded copy lives and how to ta
 sentences are outside its diff and are left here.
 
 Recorded 2026-10-21.
+
+**Answered on #44, open, 2026-10-22**: the three sentences say which two volumes Liquid keeps and what clears them.
 
 ---
 
@@ -339,6 +353,8 @@ the helper; until then it would mean editing three files outside that branch's d
 
 Recorded 2026-10-21.
 
+**Answered in part on #44, open, 2026-10-22**: `B1-2` reads live list items through `mountsLive`, which now cuts trailing comments, with two negatives. The two other filters are correct, and folding them into the helper is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+
 ---
 
 **Four calls hand `sh()` a timeout it never had, as its environment.** Found while repairing #42 on
@@ -383,6 +399,8 @@ conflict made on purpose.
 
 Recorded 2026-10-21.
 
+**Answered on #47, open, 2026-10-22**: both sentences carry a dated correction that names `TR-4` as what sees the collision.
+
 ---
 
 **Most specifications do not sign each scenario, which `CLAUDE.md` asks for.** Found by a local
@@ -414,6 +432,8 @@ one branch's correction round.
 
 Recorded 2026-10-21.
 
+**Answered in part on #47, open, 2026-10-22**: MU-21, MU-25, MU-50 and MU-53 have a positive row for their counterparts, and MU-50's `010` case its own row. Signing every specification, and where a generated table keeps its sign, is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+
 ---
 
 **A per-test budget lowers what `TEST_TIMEOUT_MS` was raised to.** Found by a local `/code-review`
@@ -430,6 +450,8 @@ form belongs with the choice of figure, not inside either branch.
 
 Recorded 2026-10-21.
 
+**Waits for #42**, with the 180 s / 600 s decision there. 2026-10-22.
+
 ---
 
 **The cases documented after the fact have rows and no detail blocks.** Found by a local
@@ -443,6 +465,8 @@ review rounds, not signed off with the rows around them. Writing their blocks is
 section as a whole, and doing it for `A16-30` alone would make one of twelve look finished.
 
 Recorded 2026-10-21.
+
+**Recorded 2026-10-22**: the section says why its cases are separate, so nothing in it is false; outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
@@ -518,6 +542,8 @@ will.
 
 Recorded 2026-10-21.
 
+**Recorded 2026-10-22**: `TR-4`'s list entry says truthfully that `A10-14` there is fixture source, so nothing claims something false; making the fixture stop looking like a title, and a route for `TR-1`, are outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+
 ---
 
 **Tables that GitHub renders as text, and nothing that checks a table renders.** Found on #17 on
@@ -545,6 +571,8 @@ a delimiter row as its second line. Not built on #17, because it would be red on
 above, which are not that branch's; after #24 it would be red for the two instruction files alone.
 
 Recorded 2026-10-21.
+
+**Answered in part on #47, open, 2026-10-22**: the two instruction files render their table. A contract case over every tracked `*.md` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
@@ -603,6 +631,8 @@ as a limit; the tests are older than that branch.
 
 Recorded 2026-10-21.
 
+**Answered on #47, open, 2026-10-22**: `OC-78` drives each bounded helper to expiry against a container that ignores the signal, and OC-61 reads every run named by a quoted variable, `$_mig` included.
+
 ---
 
 **Four of the mutation runner's cases trace to no requirement.** `docs/TEST-SPEC-mutation-runner.md`
@@ -616,6 +646,8 @@ added on #17 because the table's mapping is the reviewer's, made case by case in
 re-review of #18, and these four belong in the same hands.
 
 Recorded 2026-10-21.
+
+**Waits for Timur**: the mapping is the reviewer's. 2026-10-22.
 
 ---
 
@@ -634,6 +666,8 @@ and needs a build that succeeds. FR36a's table on #46 says so rather than claimi
 the bundle's own refusal.
 
 Recorded 2026-10-21.
+
+**Answered on #46, open, 2026-10-22**: both return 1, the server's 500. `B6-46` drives both arms; its `NOTCLOSED` mutation is registered and validated.
 
 ---
 
@@ -658,6 +692,24 @@ goes through — `childEnv`, with the fixture helpers made to use it, or the run
 every fixture command, which is why it is not A10-23's. Found by the local review of this entry.
 
 Recorded 2026-10-21.
+
+**Answered on #46, open, 2026-10-22**: the variables git lists as choosing a repository, less `GIT_CONFIG` and `GIT_CONFIG_COUNT`, are removed from the test process when `tests/lib/shell.ts` loads and by `tests/run.sh`. `A10-24`.
+
+---
+
+**`CLAUDE.md` gives `nar_extensions` as a directory rewritten on every start, and Liquid's load path is
+only ever added to.** Found by the local review of #44 on 2026-10-22. `CLAUDE.md`, under *Persist on
+host disk*: *"A directory a service rewrites from scratch on every start is not state, and the rule
+does not reach it — which is why `nar_extensions` has been a volume all along"*. Read on `main`:
+`config/liquid/entrypoint.sh:66` copies into `${NIFI_HOME}/nar_extensions` and
+`config/liquid/nar-watch.sh:85` renames into it, and nothing in either removes from it. On the running
+stack it is an anonymous volume, from the image's own `VOLUME` and not from `compose.yml`. A bundle
+taken out of the inbox stays loaded across `docker compose up`, which #44's README now says; after a
+plain `down` the next start gets a new, empty volume. By `CLAUDE.md`'s own test, *what a container
+would miss if it vanished*, it holds state, and its reason is written nowhere it is taken. `CLAUDE.md`
+is the operator's to change, so this is recorded and not edited.
+
+Recorded 2026-10-22.
 
 ## Open findings
 
