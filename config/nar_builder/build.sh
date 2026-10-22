@@ -954,7 +954,8 @@ before 2026-10-05 does not have it. Rebuild the builder image:
   ./config/scripts/build/nar-builder.sh && docker compose up -d nar_builder
 NOTCLOSED
     rm -rf "$work"
-    return 2
+    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.
+    return 1
   fi
 
   log="${work}/maven.log"
@@ -1054,10 +1055,11 @@ NONAR
 nar-build refused: the build of /repos/${rel} succeeded but ${base} could not be
 written to ${DROP}, so nothing was deployed and the artifact that was there
 before, if any, is untouched.
-Ask the operator whether ${DROP} is writable: docker compose exec nar_builder ls -ld /nar_extensions
+Ask the operator whether ${DROP} is writable: docker compose exec nar_builder ls -ld ${DROP}
 NOWRITE
     rm -rf "$work"
-    return 2
+    # 1, as a judged bundle that cannot be placed. B6-46.
+    return 1
   fi
   # Judge it here, while it is still a dot-file the autoload scanner ignores.
   # Measured 2026-09-14 in nifi-app.log, and this is why the check sits between

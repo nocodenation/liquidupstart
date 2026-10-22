@@ -38,17 +38,17 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR22 The answer is synchronous and determinate | B1-5, B1-7, B1-11 |
 | FR23 The target version is computed | B1-3, B1-4, B5-6, B5-7, B5-15, B5-16, B5-17, B5-18 |
 | FR24 A failed build leaves no artifact | B1-4, B1-7, B1-8, B3-4 |
-| FR25 The builder holds no credentials | B1-1, B1-12 |
+| FR25 The builder holds no credentials | B1-1, B1-12, B6-46 (its containment guard's status) |
 | FR26 The dependency cache lives under `volumes/` | B1-9, B3-3 |
 | FR27 The API compiled against is resolved and stated | B2-1, B2-2, B2-3, B2-4, **B2-11** |
 | FR28 The deployment cycle is one documented path | B2-7 |
 | FR29 The restart is the operator's, and the agent asks | B2-8, B2-9, B2-10 |
 | FR30 The drop directory reaches Liquid's load path | B2-5, B5-8, B5-9, B5-22, B5-23, B5-24, B5-28, B5-29, B5-30, B5-31, B5-32 |
-| FR31 A deployment step that fails says so | B2-6 |
+| FR31 A deployment step that fails says so | B2-6, B6-46 (a bundle the drop directory will not take) |
 | FR34 What is built is proven loadable | B3-1, B3-2 — both §4 checks, written out in full and not yet run |
 | FR35 Concurrent builds do not corrupt each other | B3-3, B3-4, B5-14 |
 | FR36 A bundle that cannot link is refused at deployment | B4-1, B4-2, B4-3, B4-4, B4-5, B4-6, B4-7, **B4-9, B4-10, B4-11** in the suite; B4-8 in §4, run by the operator because it restarts Liquid; B5-4 to B5-9, B5-25 to B5-32 |
-| FR36a The check's status says which of three things happened, and only a stated verdict deploys | B6-40, B6-42, B6-43, **B6-44**, **B6-45** — *row added 2026-10-21: FR36a had cases and no line here* |
+| FR36a The check's status says which of three things happened, and only a stated verdict deploys | B6-40, B6-42, B6-43, **B6-44**, **B6-45**, **B6-46** — *row added 2026-10-21: FR36a had cases and no line here* |
 | NFR1 The stack is reachable only where it should be | B5-10, B5-11, B5-12, B5-13, B5-14 |
 | U9 A checkout that has never run the stack can start it | B5-1, B5-2, B5-3, B5-19, B5-20, B5-21 |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
@@ -837,6 +837,10 @@ carried.
 | **B6-45** | positive | …while a refusal on merit still returns 2 | The distinction is the point; 5 for everything would erase it the other way |
 | **B6-45** | Integration **negative** | The build server answers exit 5 with **500**, a fault of the installation | Through its default, with no change to `BuildServer.java`. Not 503, which already means "two builds are running" and invites a retry that cannot help |
 | **B6-45** | positive | …and 0, 2, 3 and 4 with 200, 422, 409 and 400, and any other status with 500 | The whole map, so a change to one row cannot pass unseen |
+| **B6-46** | Integration **negative** | A builder whose drop directory the build user can write refuses every build with status **1**, not the refusal's 2, and the build never reaches Maven | *2026-10-22.* It returned 2, so the server's 422 told the caller its bundle was unprocessable when the builder was misconfigured |
+| **B6-46** | positive | …while with the drop directory closed the same build goes on to Maven, and a build Maven fails is still refused with 2 | Without it, refusing every build as misconfigured would pass, and 1 for every refusal would erase the distinction the other way |
+| **B6-46** | Integration **negative** | A bundle that was built and cannot be written to the drop directory gives status **1**, and nothing is left there | The same class as a judged bundle that cannot be placed, which returns 1 since 2026-10-21 |
+| **B6-46** | positive | …while to a writable drop directory the same bundle is written and goes on to the check | So the case cannot pass on a build that never writes anything |
 
 #### Detail per case
 
@@ -1099,6 +1103,20 @@ carried.
 | **Expected** | Exit 1 with `REFUSED <bundle>` from the checker: status **2**, the bundle under `refused/`. Exit 2, 3, 127, and the missing index: status **5**, nothing deployed, nothing under `refused/`. The server: 0 → 200, 2 → 422, 3 → 409, 4 → 400, **5 → 500**, and 1 and 7 → 500. *Decided while the first repair was reviewed: it mapped 5 to 503, and 503 is the server's answer to "two builds are already running" (`BuildServer.java:91`), so two kinds of no would have shared one status, and the one a caller may retry would have looked like the one it may not.* |
 | **Covers** | B6-45, **FR36a** as amended 2026-10-21. |
 | **Implemented by** | `tests/integration/m-b6.narcheck-unavailable.test.ts` for the gate, `tests/integration/m-b6.server-status.test.ts` for the server. |
+
+#### B6-46 — a fault of the installation is not a refusal, before the build or after it
+
+| | |
+|---|---|
+| **Premise** | `B6-45` took *cannot be judged* off status 2. Two more arms of `build_command` returned 2, the refusal's status, though neither is about the bundle: the refusal of a builder whose drop directory the build user could write (`NOTCLOSED`), and a bundle that was built and could not be written to the drop directory (`NOWRITE`). The server answered both with 422, *"your bundle is unprocessable"*. Read from the code on 2026-10-21 and recorded on #45; no case drove either arm. They return 1 now, the status of the third fault beside them, a judged bundle that cannot be placed. |
+| **Component** | `build_command` in `config/nar_builder/build.sh`, run whole as root in the builder image built from this tree, as the server runs it. Only Maven is replaced. |
+| **Steps** | In a throwaway container, write a runtime record and a stub `curl` as `B2-3` does, and a stub `mvn` over the real one. The stub fails the API probe, so an author pom goes on as `B2-11` shows, and then either builds or fails, as `/tmp/mvn-mode` says. Build `/repos/authored` four times: (1) with `/deploy` opened to the build user, `chmod 755 /deploy` and `chmod 777 /deploy/nar_extensions`, and `/tmp/mvn-mode` holding `fail`, so a Maven that ran would say so; (2) without the opening, `fail` again; (3) `/tmp/mvn-mode` holding `nar`, and the drop directory a read-only mount; (4) `nar` with a writable mount. |
+| **Test data, both sides** | The source `/repos/authored`: `src/main/java/p/C.java` holding `package p;` / `public class C {}`, the service descriptor holding `p.C`, and a `pom.xml` holding `this is not xml`. That is `B2-11`'s, and deliberately not XML, so a real Maven that ran in place of the stub would stop at the pom and build nothing. The runtime record: `nifi_version=2.11.0` and `java_version=21.0.12+10-LTS`. `NAR_BUILD_API_PROBE_VERSION=99.99.99`. The stub writes `target/probe-nar-1.0.0.nar` holding `not a zip` beside the pom it is handed, and prints `stub mvn: built probe-nar-1.0.0.nar`, or prints `stub mvn: build failed` and exits 1. Only the second is seen, because `build.sh` shows Maven's log when the build fails; a bundle that was built is read from `build.sh`'s own words about it. It fails every `dependency:list`, which is the API probe. In (3) and (4), the drop directory is a host directory mounted at `/deploy/nar_extensions`, with `:ro` in (3). In (1) and (2), it is the image's own. |
+| **Expected** | (1) status **1**, *"this builder is misconfigured"*, no line from the stub, and the drop directory empty. The API probe runs the stub before the guard and is silent; a line would come only from the build's Maven. (2) no *"this builder is misconfigured"*, the stub's *"build failed"* and *"the build of /repos/authored failed"*, status **2**. (3) status **1**, *"the build of /repos/authored succeeded but probe-nar-1.0.0.nar could not be"*, and the host directory empty, with no `.part` left. (4) no *"could not be written"*, and the run reaching the check: *"probe-nar-1.0.0.nar was built but cannot be judged"*. The checker is bind-mounted in the stack and is not in the image, so nothing can judge the bundle and the status is **5**. Nothing is left in the directory. |
+| **What it found** | Measured 2026-10-22 on #46 at `faf91a4`, before the change: (1) and (3) red, each with status **2**; (2) and (4) green. After it, 4 / 0. Each `return 1` set back to 2 turns its own negative red and nothing else. Two controls by the local review, run by hand: a guard that always refuses turns the counterpart (2) red, and a copy that is skipped turns (4) red. `tests/mutations.json` carries one mutation per case, and for B6-46 it is `NOTCLOSED`'s `return 1` set back to 2; `NOWRITE`'s was run by hand. And `NOWRITE`'s next step named `/nar_extensions`, a path the builder does not have. It names `${DROP}` now, `/deploy/nar_extensions`. |
+| **What is deliberately not here** | That the server answers 1 with 500. `B6-45` pins the server's whole map, 1 included. |
+| **Covers** | B6-46, **FR36a** as amended 2026-10-22, FR31 (the failed write says so, with the status of a fault), FR25's containment guard (`NOTCLOSED`). |
+| **Implemented by** | `tests/integration/m-b6.installation-faults.test.ts`. |
 
 #### B6-38 — the cache is handed over whole, and not through a symlink
 

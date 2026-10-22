@@ -270,11 +270,11 @@ mistake is available here and is cheaper to avoid than to repeat.
   | `build.sh` exits | Meaning | `BuildServer` answers |
   |---|---|---|
   | 0 | built, judged and placed | 200 |
-  | 2 | refused: the bundle cannot link (FR36a status 1), or the build itself failed — **and, still, two faults of this installation**: a builder whose drop directory the build user could write, and a drop directory the bundle cannot be written to. Those belong with 1 and are recorded on `docs/suite-fixture-findings` (#45); no case drives either arm yet | 422 |
+  | 2 | refused: the bundle cannot link (FR36a status 1), or the build itself failed, or it produced no bundle or more than one — each about the project and not the installation. *Amended 2026-10-22: two faults of this installation answered 2 as well, and return 1 now (`B6-46`)* | 422 |
   | 3 | the target could not be established — Liquid not answering, versions unreadable, the API unresolvable for a synthesised project | 409 |
   | 4 | the request names no buildable source | 400 |
   | **5** | **built, and nothing could judge it** — the checker or the index unavailable, or the check ending without a stated verdict | **500** |
-  | anything else | a fault of the installation, such as a judged bundle that could not be placed (1) | 500 |
+  | anything else | a fault of the installation: a judged bundle that could not be placed, **a builder whose drop directory the build user could write, and a bundle that was built and could not be written to the drop directory** — all three 1 | 500 |
   | — | the server itself: two builds already running | 503 |
 
   `nar-build` in the agents' containers prints the builder's words either way and exits 1 on any
