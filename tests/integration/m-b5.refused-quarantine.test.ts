@@ -36,11 +36,8 @@ import { test, expect, describe, beforeAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
-// S9, second half: the image tag is named in one place now, and the cases that
-// pin what it contains skip with a voice when an upstream release moves it --
-// `tests/lib/liquidimage.ts`, B5-33.
 const IMAGE = LIQUID_IMAGE;
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
@@ -82,7 +79,7 @@ EOF
   ]);
 }
 
-describe.skipIf(LIQUID_MOVED !== null)('B5-8 a bundle that could not be quarantined is reported as still in the inbox', () => {
+describe.skipIf(LIQUID_MOVED_ON.nifi)('B5-8 a bundle that could not be quarantined is reported as still in the inbox', () => {
   // In a hook rather than the describe body: bun runs the body of a skipped
   // describe while collecting, and only its hooks are skipped with it.
   let r = { output: '' };
@@ -112,7 +109,7 @@ describe.skipIf(LIQUID_MOVED !== null)('B5-8 a bundle that could not be quaranti
 });
 
 describe('B5-9 while a quarantine it can write is used quietly', () => {
-  test.skipIf(LIQUID_MOVED !== null)('B5-9 the counterpart: the ordinary refusal message, and no warning', () => {
+  test.skipIf(LIQUID_MOVED_ON.nifi)('B5-9 the counterpart: the ordinary refusal message, and no warning', () => {
     const r = runDeployment('directory');
     expect(r.output).toMatch(/Moved to .*refused/);
     expect(r.output).not.toContain('STILL IN THE INBOX');

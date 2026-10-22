@@ -74,7 +74,7 @@ export function liquidImageVersions(): Versions {
     r = sh(['docker', 'run', '--rm', '--entrypoint', 'sh', LIQUID_IMAGE, '-c', PROBE]);
   } catch {
     // No docker on PATH: Bun.spawnSync throws rather than returning a code, and a
-    // throw here is a throw at import in every file that reads LIQUID_MOVED.
+    // throw here is a throw at import in every file that reads LIQUID_MOVED_ON.
   }
   const read = (key: string) => r?.stdout.match(new RegExp(`^${key}=(.+)$`, 'm'))?.[1]?.trim() || null;
   cached = r && r.code === 0 ? { nifi: read('nifi'), api: read('api'), java: read('java') } : UNREADABLE;
@@ -88,8 +88,9 @@ const unreadable = (v: Versions) => v.nifi === null && v.api === null && v.java 
 // B6-40 applied before it could repeat: a decision that only runs inside a
 // container is a decision nobody measures.
 export function movedMessage(written: Versions, found: Versions): string | null {
-  if (unreadable(found)) return null; // could not read: not "moved"
-  if (found.nifi === written.nifi && found.api === written.api && found.java === written.java) return null;
+  // A move is what the flags say, so a reading that could not be taken is not
+  // one: the message and the skips cannot disagree.
+  if (!Object.values(movedOn(written, found)).some(Boolean)) return null;
   const show = (v: Versions) => `nifi ${v.nifi ?? 'unreadable'}, api ${v.api ?? 'unreadable'}, java ${v.java ?? 'unreadable'}`;
   return [
     `${LIQUID_IMAGE} has moved since these cases were written.`,
@@ -110,19 +111,27 @@ export function preflightLine(written: Versions, found: Versions): string {
   }
   const moved = movedMessage(written, found);
   if (moved === null) {
+    const unread = (['nifi', 'api', 'java'] as const).filter((k) => found[k] === null);
+    if (unread.length) {
+      return `liquid image: nifi ${found.nifi ?? 'unreadable'}, api ${found.api ?? 'unreadable'}, java ${found.java ?? 'unreadable'}; ` +
+        `${unread.join(' and ')} could not be read and ${unread.length > 1 ? 'are' : 'is'} not counted as moved; continuing`;
+    }
     return `liquid image: nifi ${found.nifi}, api ${found.api}, java ${found.java}, as the cases expect`;
   }
-  return `liquid image MOVED, and the M-B cases that pin it will skip:\n${moved}`;
+  return `liquid image MOVED, and the M-B cases that pin what moved will skip:\n${moved}`;
 }
 
-// Null when the image is the one the cases were written against, or when it could
-// not be read at all — "cannot measure" is not "moved", the same rule the disk
-// guard carries.
-export function liquidImageMoved(): string | null {
-  return movedMessage(WRITTEN_AGAINST, liquidImageVersions());
+export type MovedOn = Record<keyof Versions, boolean>;
+
+// Which readings moved, one by one, so a case skips only on the reading it pins: a
+// Java patch under an unchanged NiFi skipped every bundle case with a single flag.
+// A reading that was not taken has not moved.
+export function movedOn(written: Versions, found: Versions): MovedOn {
+  const on = (k: keyof Versions) => found[k] !== null && found[k] !== written[k];
+  return { nifi: on('nifi'), api: on('api'), java: on('java') };
 }
 
-export const LIQUID_MOVED = liquidImageMoved();
+export const LIQUID_MOVED_ON = movedOn(WRITTEN_AGAINST, liquidImageVersions());
 
 // Every code line in the test tree that names something inside the image by its
 // version: a bundle or the API jar under the image's `lib`, or the startup line

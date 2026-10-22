@@ -43,12 +43,9 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { builderImage } from '../lib/builderimage';
-import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
 const BUILDER = builderImage();
-// S9, second half: the image tag is named in one place now, and the cases that
-// pin what it contains skip with a voice when an upstream release moves it --
-// `tests/lib/liquidimage.ts`, B5-33.
 const LIQUID = LIQUID_IMAGE;
 const BUILD = join(repoRoot, 'config/nar_builder/build.sh');
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
@@ -171,7 +168,7 @@ describe('B5-18 the record is written from the distribution itself', () => {
     ]).output;
   }, 900_000);
 
-  test.skipIf(LIQUID_MOVED !== null)('B5-18 it names the versions the startup line carries', () => {
+  test.skipIf(LIQUID_MOVED_ON.nifi || LIQUID_MOVED_ON.java)('B5-18 it names the versions the startup line carries', () => {
     // START_LINE is the line as logged on 2026-09-28, so it pins both the NiFi
     // and the Java of that image, and the record is written by the image under
     // test. That is why this one skips on a move and B5-15 to B5-17, which read

@@ -52,11 +52,8 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { builderImage } from '../lib/builderimage';
-import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
-// S9, second half: the image tag is named in one place now, and the cases that
-// pin what it contains skip with a voice when an upstream release moves it --
-// `tests/lib/liquidimage.ts`, B5-33.
 const LIQUID = LIQUID_IMAGE;
 const BUILDER = builderImage();
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
@@ -96,7 +93,7 @@ open(dst, "wb").write(bytes(raw))
 print("corrupted " + target)
 `;
 
-describe.skipIf(LIQUID_MOVED !== null)('B5-25 a bundle that cannot be read is refused in a sentence', () => {
+describe.skipIf(LIQUID_MOVED_ON.nifi)('B5-25 a bundle that cannot be read is refused in a sentence', () => {
   let out = '';
   beforeAll(() => {
     out = sh([
@@ -131,7 +128,7 @@ PY
 });
 
 describe('B5-26 the count and the loop see the same files', () => {
-  test.skipIf(LIQUID_MOVED !== null)('B5-26 a dot-file is in neither', () => {
+  test.skipIf(LIQUID_MOVED_ON.nifi)('B5-26 a dot-file is in neither', () => {
     const r = sh([
       'docker', 'run', '--rm',
       '-v', `${ENTRY}:/probe/entrypoint.sh:ro`,

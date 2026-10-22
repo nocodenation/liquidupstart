@@ -563,12 +563,14 @@ satisfies is not guarding anything.
 since 2026-10-08.** Nine test files named `ghcr.io/nocodenation/liquid-nifi:latest` themselves, and
 six pinned what that tag happened to contain, so an upstream release reddened them over somebody
 else's work. A digest was the obvious repair; it buys a suite that tests an image the stack no longer
-runs until a hand re-pins. **The tag stays moving and an upgrade is made legible instead**: both
-versions are read out of the image, the nine files name the tag through one constant, `tests/run.sh`
-says before every run which state it is in — beside the disk line, because seventeen scattered skips
-are not a message — and the six version-pinning files skip rather than fail. Simulated, a moved tag
-takes the M-B5 tier to 27 pass / 17 skip / 0 fail with the cause printed above it. `B5-33`, eight
-scenarios, each shown able to fail.
+runs until a hand re-pins. **The tag stays moving and an upgrade is made legible instead**: NiFi, the
+API and Java are each read out of the image, the nine files name the tag through one constant,
+`tests/run.sh` says before every run which state the image is in — beside the disk line, because
+scattered skips are not a message — and each case that pins a reading skips when that reading moves,
+and only then. `B5-33` holds the reading and the flags; `B5-34` builds a release, an API move and a
+Java patch and runs the files against each, and reads every guard against what its case pins.
+*Corrected 2026-10-22 on #37, as its review asked: this paragraph described the branch's first shape
+— eight scenarios, and 27 pass / 17 skip from a simulation that did not survive a real move.*
 
 **What is deliberately not asserted there is the agreement itself** — that the image equals the
 pinned pair. That agreement is the question, and asserting it would make an upstream release red,

@@ -185,17 +185,8 @@ if command -v bun >/dev/null 2>&1; then
   fi
 fi
 
-# And whether the Liquid image is still the one the M-B cases were written
-# against. S9's second half: nine files ran `ghcr.io/nocodenation/liquid-nifi:latest`
-# and six pinned what that tag happened to contain, so an upstream release turned
-# them red over somebody else's work. The operator chose to keep the moving tag and
-# make the upgrade legible rather than pin a digest nobody would re-pin.
-#
-# Said here, once, for the same reason as the disk: six files' worth of skips
-# scattered through a run is not a message. It never stops the run -- an upgrade is
-# not a failure -- and "cannot read the image" is not "moved", so it says that in
-# words of its own. Asked only when a selected file reads the image: `m-oc` on a
-# fresh machine has no reason to pull several GB of Liquid first.
+# Whether the Liquid image has moved since the M-B cases were written. Asked only
+# when a selected file reads the image, and it never stops the run.
 if command -v bun >/dev/null 2>&1 && grep -qs 'lib/liquidimage' "${SELECTED[@]}"; then
   bun -e '
     const m = await import("./tests/lib/liquidimage.ts");

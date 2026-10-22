@@ -13,21 +13,24 @@
  *           testing what the stack actually runs, and make an upgrade **legible**
  *           instead. `tests/lib/liquidimage.ts` reads the versions out of the
  *           image, `tests/run.sh` says so once before the run, and the cases that
- *           pin them skip rather than fail. B5-34 runs them against a moved image.
- * Given:    `movedMessage` and `preflightLine`, pure functions of two readings, so
- *           every answer is measured without an image and without a network — the
- *           lesson of B6-40 applied before it could repeat; `pinnedLiterals`, the
- *           scan of the test tree for literals that name the image's contents
+ *           pin them skip rather than fail, each on the reading it pins. B5-34
+ *           runs them against a moved image.
+ * Given:    `movedMessage`, `movedOn` and `preflightLine`, pure functions of two
+ *           readings -- the lesson of B6-40 applied before it could repeat; and
+ *           `pinnedLiterals`, the scan of the test tree for literals that name the
+ *           image's contents. The pure scenarios need nothing; the import and one
+ *           scenario run the image.
  * When:     They are given a matching reading, one differing in NiFi, in the API
  *           or in Java alone, and one that could not be read — against the pin as
  *           it stands and against a re-pin, so following the message's own
  *           instruction cannot turn this file red
- * Then:     Only the differences produce a message; it names both readings and the
- *           one place to re-pin; an unreadable image is neither a move nor a match
- *           and the runner says so in words of its own; every literal in the tree
- *           that names the image agrees with the pin; and the runner only asks
- *           when a selected file reads the image
- * Covers:   B5-33, FR21, FR23
+ * Then:     Only the differences produce a message, and a difference in one
+ *           reading sets that reading's flag alone; the message names both readings
+ *           and the one place to re-pin; an unreadable image is neither a move nor a
+ *           match, sets no flag, and the runner says so in words of its own; every
+ *           literal in the tree that names the image agrees with the pin; and the
+ *           runner only asks when a selected file reads the image
+ * Covers:   B5-33, SP-FR1
  * Negative: The three differing readings; a literal one minor off the pin; a
  *           runner line for an image that was never read; and the contract that
  *           no test file names the tag directly any more.
@@ -56,6 +59,7 @@ import {
   LIQUID_IMAGE,
   WRITTEN_AGAINST,
   movedMessage,
+  movedOn,
   preflightLine,
   liquidImageVersions,
   pinnedLiterals,
@@ -105,6 +109,28 @@ for (const [when, pin] of PINS) {
       expect(movedMessage(pin, found)).toContain('java 21.0.99+1-LTS');
     });
 
+    // Per reading, so a case skips only on what it pins: one flag for all three
+    // skipped every bundle case on a Java patch under an unchanged NiFi.
+    const ALONE: Array<[keyof Versions, string]> = [
+      ['nifi', bump(pin.nifi!)],
+      ['api', bump(pin.api!)],
+      ['java', '21.0.99+1-LTS']
+    ];
+    for (const [key, value] of ALONE) {
+      test(`B5-33 a move on ${key} alone sets the ${key} flag and no other (${when})`, () => {
+        expect(movedOn(pin, { ...pin, [key]: value })).toEqual({
+          nifi: key === 'nifi',
+          api: key === 'api',
+          java: key === 'java'
+        });
+      });
+    }
+
+    test(`B5-33 the counterpart: the pin itself, and an image that could not be read, set none (${when})`, () => {
+      const none = { nifi: false, api: false, java: false };
+      expect({ pinned: movedOn(pin, { ...pin }), unread: movedOn(pin, UNREAD) }).toEqual({ pinned: none, unread: none });
+    });
+
     test(`B5-33 while an image that could not be read is not a move (${when})`, () => {
       // "Cannot measure" is not "moved" — the same rule SP-4 carries for the disk.
       // Without it, an image that cannot be pulled would skip M-B5 and call it an
@@ -141,6 +167,20 @@ describe('B5-33 the runner line says which of three states holds', () => {
     );
   });
 
+  test('B5-33 an image read in part is not a move, and the line names what could not be read', () => {
+    // The message and the flags used to disagree here: a Java that could not be
+    // read made the runner print MOVED while no case skipped.
+    const found = { ...WRITTEN_AGAINST, java: null };
+    const line = preflightLine(WRITTEN_AGAINST, found);
+    expect({
+      message: movedMessage(WRITTEN_AGAINST, found),
+      flags: movedOn(WRITTEN_AGAINST, found),
+      named: line.includes('java could not be read and is not counted as moved'),
+      moved: line.includes('MOVED'),
+      matched: line.includes('as the cases expect')
+    }).toEqual({ message: null, flags: { nifi: false, api: false, java: false }, named: true, moved: false, matched: false });
+  });
+
   test('B5-33 and a moved one is said to have moved', () => {
     const line = preflightLine(WRITTEN_AGAINST, { ...WRITTEN_AGAINST, api: bump(WRITTEN_AGAINST.api) });
     expect(line).toContain('liquid image MOVED');
@@ -161,7 +201,7 @@ describe('B5-33 and the reading itself works against the real image', () => {
 
   test('B5-33 with no docker on PATH it reads as unread, rather than failing every import', () => {
     // Bun.spawnSync throws on a missing executable instead of returning a code, and
-    // LIQUID_MOVED is computed at import, so the throw used to take every file that
+    // LIQUID_MOVED_ON is computed at import, so the throw used to take every file that
     // imports this module down at load — the docker-free cases in m-b6.minors too.
     const r = Bun.spawnSync(
       [process.execPath, '-e',

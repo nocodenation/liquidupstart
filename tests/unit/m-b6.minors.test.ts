@@ -46,7 +46,7 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { guard, fakeApiJar, scratch, discardScratch } from '../lib/narcheckfixture';
-import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
 const work = join(scratch(), 'b6-minors');
 mkdirSync(work, { recursive: true });
@@ -90,7 +90,7 @@ describe('B6-24 a bundle is refused unread when it declares more than the limit'
     expect(r.output).toContain('nothing here will unpack it');
   });
 
-  test.skipIf(LIQUID_MOVED !== null)('B6-24 the counterpart: the largest bundle the image ships still passes', () => {
+  test.skipIf(LIQUID_MOVED_ON.nifi)('B6-24 the counterpart: the largest bundle the image ships still passes', () => {
     // 187.2 MB declared, measured over all 118 NARs. Without this the limit could
     // be met by refusing everything, which the documents call worse than no
     // check -- and it is the reason the number is 512 MiB and not 256.

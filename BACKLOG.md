@@ -373,6 +373,13 @@ Java, which B5-18's startup line pins; the runner printed the pinned pair as a m
 down; and nothing tied `WRITTEN_AGAINST` to the literals. All repaired on the branch, each with a case
 that reddens when the repair is taken back; `B5-34` is 5 pass / 0 fail against the moved image.
 
+**Reviewed again 2026-10-21, and the skip was one flag for three readings.** A Java patch under an
+unchanged NiFi skipped every pinned case: measured by the reviewer, fifteen cases skipped against an
+image they pass on. Each case now skips on the reading it pins, and `B5-34` also runs a Java-only
+move. **And the scope stops at the image.** The stack-tier M-B4 cases `B4-4`, `B4-6` and
+`m-b4.placement-check` pin the API pair through the live installation rather than the tag, and are
+neither scanned nor skipped; they redden on an API release after a rebuild.
+
 What is deliberately *not* asserted is that the image agrees with the pinned pair: that agreement is
 the question, and asserting it would make an upstream release red — the defect being removed. And
 `B5-15` and `B5-16` still reach Maven Central, which this does not touch: that half of S9 is open.

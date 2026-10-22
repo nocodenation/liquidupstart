@@ -45,8 +45,6 @@ import { builderImage } from '../lib/builderimage';
 import { LIQUID_IMAGE } from '../lib/liquidimage';
 
 const IMAGE = builderImage();
-// Named in one place since S9: this file reads every version out of the image,
-// so an upstream release does not redden it and it needs no skip.
 const BASE = LIQUID_IMAGE;
 const SHARED = '/liquid/api';
 

@@ -48,8 +48,6 @@ import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { LIQUID_IMAGE } from '../lib/liquidimage';
 
-// Named in one place since S9: this file reads every version out of the image,
-// so an upstream release does not redden it and it needs no skip.
 const LIQUID = LIQUID_IMAGE;
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 

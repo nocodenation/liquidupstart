@@ -40,11 +40,8 @@ import { test, expect, describe, beforeAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-import { LIQUID_IMAGE, LIQUID_MOVED } from '../lib/liquidimage';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
-// S9, second half: the image tag is named in one place now, and the cases that
-// pin what it contains skip with a voice when an upstream release moves it --
-// `tests/lib/liquidimage.ts`, B5-33.
 const IMAGE = LIQUID_IMAGE;
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 const LIB = '/opt/nifi/nifi-current/lib';
@@ -81,7 +78,7 @@ describe('B5-4 the check accepts what Liquid already loads', () => {
 });
 
 describe('B5-5 but only because the parent is declared', () => {
-  test.skipIf(LIQUID_MOVED !== null)('B5-5 the same classes with no parent declaration are refused', () => {
+  test.skipIf(LIQUID_MOVED_ON.nifi)('B5-5 the same classes with no parent declaration are refused', () => {
     // The counterpart. Resolving against the parent chain must not become
     // resolving against everything: strip the declaration and the very same
     // bundle has to be refused again.
@@ -106,7 +103,7 @@ EOF
   }, 900_000);
 });
 
-describe.skipIf(LIQUID_MOVED !== null)('B5-6 a type named only in a signature is seen', () => {
+describe.skipIf(LIQUID_MOVED_ON.api)('B5-6 a type named only in a signature is seen', () => {
   let out = '';
   beforeAll(() => {
     out = inImage(`
