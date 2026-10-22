@@ -1,4 +1,4 @@
-# Handover — 2026-10-21
+# Handover — 2026-10-22
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,15 +9,160 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-21, evening: round one of #45* has the live picture. *…the end of the review series* under it
-gathers what the series found; the three sections below that are the series' other sessions, each as
-it ended, and *2026-10-20* under them is the day it began. Read the first two and the review bodies
-they point to; the rest of this file is the map and the lessons.
+2026-10-22, evening* has the live picture, and *2026-10-22* under it the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+the review series* below that gathers what the series found. The sections under those are the
+series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
+first four and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
-branches"; on 2026-10-21 ten of ours are open, and `./scripts/state.sh` on #43 gives the count. **Where an older section makes a claim about the present,
+branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-22, evening: Timur's six rounds answered, #37 and #38 merged
+
+`./scripts/state.sh` on `feature/computed-state` (`wt-st`) first. It now judges each pull request on
+its own head, fetched by number, and says what it does not check.
+
+**#37 and #38 are merged.** Timur's reviews of #39 to #44, submitted on 2026-10-22, each *request
+changes*, are answered on their branches. The operator asked to converge. Nothing new was opened,
+and only his items were answered, plus what keeping them green needed, each named in its comment.
+Each description was rewritten to its head at the push, and everything that touches docker ran
+against docker before it was called done. On each of the six he
+said he would check only his items and approve.
+
+### What this session did
+
+| PR | What | Head | Measured from a clean tree | Comment |
+|---|---|---|---|---|
+| #46 `fix/false-claims-round-1` | `main` merged in after #37 and #38; the SP-FR1 conflict kept on both sides | `d8e90fc` | **1233 / 25 / 0**, dashboard 32 / 0, no `oom` | [#46](https://github.com/nocodenation/liquidupstart/pull/46#issuecomment-6341446552) |
+| #44 `docs/readme-java-extensions` | A1 "Almost all state"; A2 two A0-11 cases on the named volume (two of the three mutations red; the third is a file compose refuses); A3 the description | `4a4cddd` | 1157 / 25 / 3, all three `B6-37` with an `oom` each; dashboard 32 / 0 | [#44](https://github.com/nocodenation/liquidupstart/pull/44#issuecomment-6341915521) |
+| #48 `fix/load-path-rebuilt`, stacked on #44 | #44's head merged in; the paragraph back to "All state", both volumes rebuilt on every start | `734fcb3` | 1162 / 25 / 3, all three `B6-37` with an `oom` each; dashboard 32 / 0 | [#48](https://github.com/nocodenation/liquidupstart/pull/48#issuecomment-6343051961) |
+| #41 `fix/teardown-orphans` | item 1 Timur's teardown pattern with his fixtures; A1 to A3 | `a6ed039` | 1197 / 25 / 3, all three `B6-37` with an `oom` each; dashboard 32 / 0 | [#41](https://github.com/nocodenation/liquidupstart/pull/41#issuecomment-6343686527) |
+| #39 `fix/default-tier-writes` | item 1 `chainFixture`'s host view in a temporary directory, an A7-3 case, the records; A1 the description and FINISH row 3 | `65d4473` | 1194 / 26 / 3, all three `B6-37` with an `oom` each; dashboard 32 / 0 | [#39](https://github.com/nocodenation/liquidupstart/pull/39#issuecomment-6344201499) |
+| #42 `fix/load-dependent-cases` | item 1 `refuseInterrupted` in `shell.ts` with SP-5 scenarios (2 and 3 red where 0 and 0 were); A1 to A5, the budget one figure, 600 s | `654269c` | 1223 / 25 / 3, all three `B6-37` with an `oom` each; dashboard 32 / 0; `m-oc.allow-scripts` alone afterwards 3 / 0 with real builds in 29 s | [#42](https://github.com/nocodenation/liquidupstart/pull/42#issuecomment-6344756243) |
+| #43 `feature/computed-state` | items 1 and 2: heads fetched by `refs/pull/<n>/head`, bases every time, the section says what it does not check; A1 the `jq` skip under SP-2; A2, A4, A5 | `0d232f3` | 1222 / 26 / 3, all three `B6-37` with an `oom` each; dashboard 32 / 0 | [#43](https://github.com/nocodenation/liquidupstart/pull/43#issuecomment-6345277341) |
+| #40 `fix/leaked-containers` | items 1 to 3: images read through `inspect`, `rm -f` for what the decision chose, `m-b6.builder-sweep` against docker; A1 to A6, one `parseDockerTime` in `tests/lib/dockertime.ts` | `5bb0671` | 1213 / 25 / 3, all three `B6-37` with an `oom` each; dashboard 32 / 0 | [#40](https://github.com/nocodenation/liquidupstart/pull/40#issuecomment-6345788149) |
+| `main` | this section | — | — | — |
+
+### What it found
+
+- **A case that only reads a file's text cannot hold what docker does with it.** On #40 both halves of
+  the builder sweep removed nothing real while 24 of 24 stayed green: the `docker images` format has no
+  label field, and `docker rm` refuses a running container. An integration case against docker
+  replaced the greps, and a local review of the repair found three more defects before the commit:
+  `docker rmi` of every tag would have taken a tag someone else gave the image, a killed run of the
+  case itself would have leaked, and FINISH and BACKLOG claimed more than the case shows.
+- **An image built from `FROM` alone reports its base image's `.Created`.** `FROM alpine:3` gave
+  2026-09-17 on 2026-10-22, so age by `.Created` and age by label agreed on the old image, and
+  Timur's mutation M5 stayed green until a third, fresh image told them apart.
+- **`git fetch origin <name>` does not mean `origin/<name>` is what was fetched.** Outside the
+  refspec it writes only `FETCH_HEAD`, and a fork's branch is not origin's. `state.sh` now fetches
+  `refs/pull/<n>/head` into refs it owns.
+- **A guard is only held when the function that refuses is tested, not its call site.** On #42,
+  `refuseInterrupted` could be emptied or inverted with every case green. It is in `tests/lib/shell.ts`
+  with scenarios of its own now.
+- **zsh does not split an unquoted `$T`.** A mutation loop that passed two test files in one variable
+  reported 0 red for every mutant, because `bun test` was given one path that does not exist. Write
+  the paths out, or loop in bash.
+- **`B6-37` is red, with an `oom`, on every branch without #46.** Expect it until #46 lands.
+
+### Open, and whose
+
+**Ours, and not started:** Timur's first reviews of **#46** (2026-10-22 13:46Z, one blocking item and
+five more, among them that B6-37's fixture writes 800 MB to `tmpdir()`, which is RAM on a tmpfs host)
+and **#45** (14:15Z, two blocking items and four more). #46's came forty minutes after its comment,
+between two suite runs, and #45's during one. Both were seen only in the closing check. They were left
+by the operator's end point: the seven pull requests answered, then stop. The bodies are on the pull
+requests.
+
+**Timur's:** checking his items on #39 to #44 and approving; first reviews of #47 and #48. His open
+question on #43, whether `state.sh` should also merge the open heads pairwise, is noted there and not
+taken.
+
+**The operator's:** the start-time race on #45 (a bundle judged at its inbox path and loaded from a
+second read) stays parked. Once #48 lands, rebuild Liquid for the running container:
+`./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`.
+
+**Whoever lands second** (each checked with `git merge-tree` between the heads, each kept on both
+sides):
+
+- #46 and #42: SP-5 and SP-6 in `docs/TEST-SPEC-suite-preconditions.md`.
+- #46 and #48: FR30/FR31 traceability and the B2-11/B2-12 rows in `docs/TEST-SPEC-liquid-java-extensions.md`.
+- #46 and #39: the A10-23 *Premise* and *Component* rows in `docs/TEST-SPEC-git-integration.md`.
+- `FINISH.md` rows between #39 to #43, as before.
+
+**Ours, when a merge happens:** #44: retarget #48 to `main`.
+
+### Housekeeping
+
+- **The Docker VM is at 94%: 3358 MB free**, from 9761 MiB this morning. `docker system df`: the build
+  cache holds 24.9 GB, 21.2 GB of it reclaimable, and images 30.8 GB. Nothing was pruned, because that
+  is a deletion and the operator's to approve. `docker builder prune` is the candidate. A full VM turns
+  builds red in a way that reads like a product failure.
+- No `lu-b641` container and no `b6-41` or `lu-b641` image is left behind, and the `oom` streams are
+  stopped.
+- Every worktree where the default tier ran holds an empty `volumes/repos`. Two writers make it:
+  `m-a10.fixture-ceiling` until #46 lands, and `chainFixture`'s host view (the two `m-a7` files) until
+  #39 lands. On #46's own worktree it is the second, on #39's the first.
+- `scratch.md` in the main checkout is untracked and not this session's.
+
+## Where it stands, 2026-10-22: #45 settled, and Timur's rounds on #37 and #38 answered
+
+`./scripts/state.sh` on `feature/computed-state` (`wt-st`) first, as before.
+
+**Every entry on #45 now has an answer, and the one new entry waits on the operator.** The operator asked for one more round that runs to the end, and for `FINISH.md`'s cut line of 2026-10-17 to decide what is repaired. Of the entries left open after round one:
+
+- **repaired:** entries 27 and 28 on #46, 9 and 12 in part on #44, and round two on #47 (1 in part, 2, 4, 7 in part, 14, 15 in part, 22 in part, 25);
+- **waiting:** on #40 (5), on #42 (16, the `sh()` half of 18, and `m-oc.allow-scripts`' image tags from 1), and on Timur (26);
+- **recorded as outside the cut line, and not to be raised again:** 3, 17 and 21, and the remaining parts of 1, 7, 12, 15 and 22.
+
+Each of those entries on #45 says which of these it is. **Timur's round on #37 is answered**: item 1 and A1 each with a case that goes red when it is taken back, A2 to A5 in the documents they name. **So is his round on #38**, which arrived at 2026-10-21 17:02Z, about an hour after the 2026-10-21 evening section was committed, and was noticed only in this session's closing check: the lock case is `A16-31` now, by his decision, and TR-1 holds it.
+
+### What this session did
+
+| PR | What | Head | Measured from a clean tree | Comment |
+|---|---|---|---|---|
+| #37 `fix/moving-image-tag` | Timur's round of 2026-10-21 13:23Z: blocking item 1 (a flag per reading, guards by what each case pins, a consistent release, an API move and a Java patch in B5-34), A1 to A5, and two local passes | `acecc10` | 1191 / 25 / 3, the three all `B6-37` with an `oom` each; dashboard 32 / 0 | [#37](https://github.com/nocodenation/liquidupstart/pull/37#issuecomment-6333934587) |
+| #46 `fix/false-claims-round-1` | entries 27 (`B6-46`) and 28 (`A10-24`); the scrub moved so it no longer meets #42's block | `f172c2b` | 1186 / 25 / 0, dashboard 32 / 0, no `oom`; at `a1fd5fc` 1186 / 25 / 0 | [#46](https://github.com/nocodenation/liquidupstart/pull/46#issuecomment-6334759753) |
+| #44 `docs/readme-java-extensions` | entries 9 (the README's named volumes) and 12 (`B1-2` and `mountsLive`) | `25abf5f` | 1155 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#44](https://github.com/nocodenation/liquidupstart/pull/44#issuecomment-6334216313) |
+| #38 `fix/a16-20-row` | Timur's round of 2026-10-21 17:02Z: the lock case renumbered `A16-20` → `A16-31`, retitled and rewritten, A1 to A4, two local passes | `8bc1414` | 1144 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#38](https://github.com/nocodenation/liquidupstart/pull/38#issuecomment-6335706209) |
+| #47 `fix/false-claims-round-2` | round two: entries 1 in part, 2, 4, 7 in part, 14, 15 in part, 22 in part, 25; new cases `A8-34`, `A8-35`, `A16-32`, `OC-78` | `0b4d83d` | 1164 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0; at `6173f43` 1166 / 25 / 1, the one `B6-37` with an `oom`; dashboard 32 / 0 | [#47](https://github.com/nocodenation/liquidupstart/pull/47#issuecomment-6336271706) |
+| #48 `fix/load-path-rebuilt`, **stacked on #44** | the operator's choice on #45's `CLAUDE.md` entry: every start empties Liquid's load path and refills it from the inbox, so taking a bundle out is the inbox `rm` and a restart; `B2-12`, README, A0-11, the skill, FR30; three local passes | `d368eb8` | 1160 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#48](https://github.com/nocodenation/liquidupstart/pull/48) |
+| #45 `docs/suite-fixture-findings` | every open entry marked answered, waiting, or outside the cut line; one new entry, `CLAUDE.md`'s `nar_extensions` | `07802b7` | not run: no test reads `BACKLOG.md` | [#45](https://github.com/nocodenation/liquidupstart/pull/45#issuecomment-6337379328) |
+| `main` | this section, and `FINISH.md` row 1's count | — | — | — |
+
+### What it found
+
+- **The cut line answered most of what looked like decisions.** Nineteen entries were open after round one; the operator's rule of 2026-10-17 settled each without asking, with three questions left: #37's round, the scope, and one deletion. Two of my own classifications were wrong and are corrected on #45: entry 21 claims nothing false (TR-4's list says the truth), and entry 22's tables were not a false claim either — repaired anyway because the operator had approved the list.
+- **`/code-review` found real defects in every branch again, and in every repair.** The ones that mattered: B5-34's rewrite had lost all its imports; A10-24's first design removed `GIT_DIR` in each helper and left four uncovered; A8-35's sequence ran in JS numbers past 2^53 and repeated; a NiFi guard where the API is pinned was invisible to a release that moves both; the README overstated what survives `docker compose down`; `movedMessage` printed MOVED where no flag was set.
+- **A reviewer's decision can take an id before any tree shows it.** Timur gave `A16-31` to #38's lock case on 2026-10-21; #47 took the same id the next morning because no tree carried it, and TR-1 to TR-4 read trees. Read the open reviews before taking the next free id. Caught by a local review of #38; #47's case is `A16-32`.
+- **Run the closing check before the handover is written, not after.** #38's review came at 2026-10-21 17:02Z, an hour after that evening's section. This session wrote and pushed the first version of this section (`de23ca7`) before running its own check, so it listed #38 among the pull requests still waiting for a review, fourteen hours after that had stopped being true; the check that followed showed the review.
+- **Every scripted text replacement asserts its count.** Three times this session one that did not went wrong: a header rewrite that dropped B5-34's imports, a cut at the first `});` that took the middle of a line, and a conflict resolution that replaced two rows with one. The assertion is what caught the rest.
+- **`B6-37` was red today on #37, #38, #44 and #47, and green on #46**: the old fixture's 1.6 GB setup, killed with `oom` while the stack runs, which #46 replaces. Expect it on any branch without #46.
+- **Git exports `GIT_DIR` to the hooks it runs in a linked worktree** (git 2.48.1), so a suite started from one bypassed the fixture ceiling. Repaired on #46; worth knowing for anything else run from a hook.
+- **Cheap moves of an image:** renaming the 22-byte NiFi symlink and the two jars the entrypoint reads its version from moves NiFi's reading for the probe and the product alike, a `java` shim moves Java's, and bun's `-t '^(?!B5-4 )'` skips a costly block and its hook. B5-34 runs three moves in about seven minutes.
+- **`CLAUDE.md` says `nar_extensions` is rewritten on every start; Liquid's load path is only ever added to.** Recorded on #45 for the operator, not edited.
+
+### Open, and whose
+
+**Timur's:** a look at #37's and #38's answers — on both he said he would check only the items of his round and approve; reviews of #39 to #47; and the decisions already listed: 180 s or 600 s on #42, the MU requirements (#45 entry 26), and #46's three (exit 5 as 500, the verdict line, an author pom going on). `A16-20` on #38 is decided.
+
+**The operator's:** the `CLAUDE.md` sentence on `nar_extensions` is decided — the behaviour now matches it, on #48. Open with you: whether the new #45 entry is repaired, that the start-time check judges a bundle at its inbox path and loads a second read of it (the gap `nar-watch.sh` closed for itself under S6); it is a narrow race, and a security one. And once #48 lands, Liquid has to be rebuilt for the running container to have the new entrypoint: `./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`.
+
+**Whoever lands second:**
+
+- #37 and #46: the traceability table of `docs/TEST-SPEC-suite-preconditions.md`. #37 adds B5-33 and B5-34 to SP-FR1, #46 adds SP-6 to SP-FR1 and SP-FR2 — two adjacent rows in one conflict. Keep all three additions; a merge of every branch of this session on a scratch tree, resolved that way, passed the scenario table, TR-1 to TR-4 and the 52 cases they share.
+- #46 and #42: SP-5 and SP-6 at the same place, as before.
+- `FINISH.md` rows between #39 to #43, as before.
+
+**Ours, when a merge happens:** #44 — retarget #48 to `main`; #46 — #48's two keep-both conflicts in the Java specification (FR30/FR31 traceability, B2-11/B2-12 rows); #40 — #45 entry 5; #42 — entry 16, the `sh()` half of 18, and `m-oc.allow-scripts`' image tags from entry 1.
+
+### Housekeeping
+
+- New worktree `wt-r2` for #47; the scratch worktree of the combined merge is removed. `wt-r1`'s empty `volumes/` was removed with the operator's agreement, and **today's suite runs made it again**: every checkout where the default tier ran — `wt-r1`, `wt-r2`, `wt-rm`, `wt-tag` — holds an empty `volumes/repos`, because the default tier still writes there until #39 lands (`FINISH.md` row 3). Removing them again would last until the next run.
+- No `liquidupstart/liquid-moved`, `oc78-probe` or fixture container left behind; the `oom` streams are stopped.
+- Docker VM: 9761 MiB (`df -m` in a container) free at the end. `scratch.md` in the main checkout is untracked and not this session's.
 
 ## Where it stands, 2026-10-21, evening: round one of #45
 
@@ -563,12 +708,14 @@ satisfies is not guarding anything.
 since 2026-10-08.** Nine test files named `ghcr.io/nocodenation/liquid-nifi:latest` themselves, and
 six pinned what that tag happened to contain, so an upstream release reddened them over somebody
 else's work. A digest was the obvious repair; it buys a suite that tests an image the stack no longer
-runs until a hand re-pins. **The tag stays moving and an upgrade is made legible instead**: both
-versions are read out of the image, the nine files name the tag through one constant, `tests/run.sh`
-says before every run which state it is in — beside the disk line, because seventeen scattered skips
-are not a message — and the six version-pinning files skip rather than fail. Simulated, a moved tag
-takes the M-B5 tier to 27 pass / 17 skip / 0 fail with the cause printed above it. `B5-33`, eight
-scenarios, each shown able to fail.
+runs until a hand re-pins. **The tag stays moving and an upgrade is made legible instead**: NiFi, the
+API and Java are each read out of the image, the nine files name the tag through one constant,
+`tests/run.sh` says before every run which state the image is in — beside the disk line, because
+scattered skips are not a message — and each case that pins a reading skips when that reading moves,
+and only then. `B5-33` holds the reading and the flags; `B5-34` builds a release, an API move and a
+Java patch and runs the files against each, and reads every guard against what its case pins.
+*Corrected 2026-10-22 on #37, as its review asked: this paragraph described the branch's first shape
+— eight scenarios, and 27 pass / 17 skip from a simulation that did not survive a real move.*
 
 **What is deliberately not asserted there is the agreement itself** — that the image equals the
 pinned pair. That agreement is the question, and asserting it would make an upstream release red,

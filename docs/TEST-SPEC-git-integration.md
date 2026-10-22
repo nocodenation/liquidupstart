@@ -3410,7 +3410,9 @@ them, and they were not — they were written after, during the rounds of review
 | A8-27 | Unit | positive | An update replaces every locally built image, the toolbox included: `update.sh` names all five, while the dashboard asks for the four that must already exist | `tests/unit/m-a8.built-images.test.ts` |
 | A14-7 | Contract | positive | A finished run refreshes what the page shows, and the refresh is **not** inside the success branch — `invalidateAll()` runs either way, while the success-only callback still means success | `tests/contract/m-a14.skip-button-shape.test.ts` |
 | A14-8 | Contract | positive | Each repository keeps its own test result: the state is a map keyed by slug rather than one answer per card, and starting one test clears only that repository's answer | `tests/contract/m-a14.skip-button-shape.test.ts` |
-| A16-21 | Integration | positive | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-31 | Integration **unhappy** | positive | A foreign lock older than any legitimate hold is taken over: the start exits 0 and clones | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-31 | Integration | positive | …and the run says it took the lock over. A takeover nobody is told about reads as a lock that was never there | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-21 | Integration | negative | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
 | A16-22 | Integration **unhappy** | positive + negative | An abandoned `mkdir` is not forever either — an empty pid file older than any hold is taken over, and a fresh one is still held | `tests/integration/m-a16.lock-identity.test.ts` |
 | A16-24 | Component **unhappy** | negative | A contradicted result line is dropped, not hidden: it does not come back when the clone state flips back | `tests/component/m-a16.result-line.test.ts` |
 | A16-25 | Integration | positive | A folder that appeared during the wait survives it, and the start says it left it alone | `tests/integration/m-a16.wait-cleanup.test.ts` |
@@ -3435,6 +3437,12 @@ either. **That side moved**, to `A16-30`, because there was nothing here to move
 somebody had approved — and its own header had never listed the id at all. Deciding *which* side
 moves looked arbitrary and was not: one of them had a signed-off row and the other had none.
 
+**`A16-20` was a second collision of the same kind, and it is resolved the same way.** The
+stale-foreign-lock case, which `3118ca8` gave the id on 2026-09-28 without a row of its own, moved to `A16-31`
+on 2026-10-22 by the reviewer's decision on #38, and the signed-off NUL counterpart of 2026-09-22
+(`2115193`) keeps `A16-20`. The side that moves is the one with no signed-off row, the rule A16-19
+set, and as with `OC-40` and `OC-42` the id stays with the case it was specified for first.
+
 #### Detail per case
 
 | | |
@@ -3444,7 +3452,7 @@ moves looked arbitrary and was not: one of them had a signed-off row and the oth
 | **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, clonable through the suite's `fakeSsh` from a local bare repository, and `git@github.com:nocodenation/liquid-flows.git\|write\|protected` with no route, so its clone fails and a deploy key is asked for. `SYSTEM_SIGNIN_WAIT_SECONDS=90`, so the start is measured inside its wait rather than past it. Lock holders written by hand: `some-other-container:7` (an identity this machine is not, naming a pid that is certainly alive here), `<this host>:999999` (dead), `<this host>:<a live sleep>` (alive and ours), and the empty string. The panel is driven by a task log carrying `::aiw-git-keys-pending::<a> <b>` and `::aiw-git-key-required::<b>`. |
 | **Expected** | As the rows above. |
 | **Measured against the unfixed code** | 18 fail, 9 pass. The 9 are A16-2's first half, A16-6's first two, A16-8, A16-13, A16-15, A16-17, A16-18 and A16-19's count guard — every one of them a counterpart or a control, which is what those are for. |
-| **What the instrument got wrong, 2026-10-02** | Three cases here waited on the clock and read the result afterwards. A16-11 slept 900ms and read `locks/<slug>/pid`: the holder lands after about 250ms idle and 1047 to 1342ms with eight starts at once, so eight of eight concurrent runs read an empty file and reported the identity as missing. A16-20's second case ran the start script inside bun's default 5s budget and timed out at 6055ms in all eight. And A16-27 released the lock after 3000ms, then asserted that 3000ms had passed — which its own sleep guarantees: with `lu_take_lock_waiting` removed from `git.sh` and the release brought forward, all four cases in that file passed. Each now waits on its subject — the holder on disk, the line the run prints — and the five cases that run the script carry `START_SCRIPT_BUDGET`. Eight concurrent runs of the three files: 22 / 0 each. |
+| **What the instrument got wrong, 2026-10-02** | Three cases here waited on the clock and read the result afterwards. A16-11 slept 900ms and read `locks/<slug>/pid`: the holder lands after about 250ms idle and 1047 to 1342ms with eight starts at once, so eight of eight concurrent runs read an empty file and reported the identity as missing. A16-31's second case (A16-20 then) ran the start script inside bun's default 5s budget and timed out at 6055ms in all eight. And A16-27 released the lock after 3000ms, then asserted that 3000ms had passed — which its own sleep guarantees: with `lu_take_lock_waiting` removed from `git.sh` and the release brought forward, all four cases in that file passed. Each now waits on its subject — the holder on disk, the line the run prints — and the five cases that run the script carry `START_SCRIPT_BUDGET`. Eight concurrent runs of the three files: 22 / 0 each. |
 | **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on both paths: toolbox → dashboard from the dashboard's Start button, and host → dashboard from a terminal. |
 | **Covers** | Findings 1 to 6 of 2026-09-21, FR3, FR11, NFR1, U1, U2, U11. |
 
@@ -3518,6 +3526,20 @@ model a world that does not exist.
 `…without this repository.Closing in 1…` — no space. Svelte trims the whitespace at the start of the
 `{#if holdingSkip}` block, and the markup puts that block immediately after the full stop. Present
 before M-A16; visible now because the sentence it belongs to is the one finding 4 corrected.
+
+#### A16-31 — a foreign lock nobody can ask about is not forever, documented after the fact
+
+| | |
+|---|---|
+| **Premise** | The blocker of the 2026-09-28 review. A foreign holder was honoured with no liveness check and no age limit, and the holder's identity is a container hostname that no later run can match, so a holder killed before its EXIT trap left the repository locked for good: every later start waited and recorded *another run is preparing*, every Test answered 409. |
+| **Component** | `lu_take_lock` in `config/scripts/start/git.sh`, driven by `runAgainst` in `tests/integration/m-a16.lock-identity.test.ts`. |
+| **Test data** | A lock directory under the fixture project's `volumes/_git-secrets/locks/<slug>/` holding `pid` = `some-other-container:7` — an identity no run on this machine has. For A16-31, the directory and the `pid` file have their mtime set **36 hours** back, past the longest legitimate hold (the deploy-key wait plus the clone timeout). For the counterpart A16-21, the same holder with the mtime left at now. |
+| **Expected** | A16-31: the start exits `0`, the clone exists, and the output matches `/stale\|took over\|abandoned/i`. A16-21: exit `4` and no clone — without it, A16-31 could be met by ignoring foreign locks entirely, which is the concurrency M-A15 exists to prevent. |
+| **What it found** | Measured by the reviewer on 2026-10-21 and again here on 2026-10-22: with the stale takeover for a foreign holder turned off (`config/scripts/start/git.sh:375`, `if (( age > LOCK_MAX_AGE_SECONDS ))` made `if false`), both A16-31 cases are red and A16-21 stays green — `m-a16.lock-identity` 9 pass / 2 fail. |
+| **Dependencies** | The suite's `fakeSsh`, the local bare repository `seedRepo` makes, and `START_SCRIPT_BUDGET` as each case's budget. No Docker, no network. |
+| **The id** | Renumbered from A16-20 on 2026-10-22; the signed-off A16-20 is the NUL case. |
+| **Implemented by** | `tests/integration/m-a16.lock-identity.test.ts`: `describe('A16-31 a foreign lock nobody can ask about is not forever')` and its two tests, and the counterpart under `describe('A16-21 but a fresh foreign lock is still honoured')`. |
+| **Covers** | The blocker of the 2026-09-28 review, and the guarantee M-A15 introduced the lock for: two runs do not clone one repository at once. |
 
 ---
 

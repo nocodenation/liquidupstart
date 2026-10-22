@@ -23,8 +23,10 @@
  *          files: **no id is carried by two test files unless that is on record.**
  *          Two further halves named in `BACKLOG.md` are still unbuilt -- one id
  *          twice inside a single document, and one id declared by two documents --
- *          and `A16-20` is the class `TR-4` cannot see at all: one file, one id,
- *          and a specification row that is not its case. The specification's
+ *          and one class `TR-4` cannot see at all: an id specified for one case
+ *          and later given to another, where the specified case carries a
+ *          different id in its title -- `A16-20`, resolved by renumbering the
+ *          later case to `A16-31`. The specification's
  *          *No id is carried by two test files unless that is on record* carries
  *          all three with their measurements.
  *
