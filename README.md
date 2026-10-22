@@ -340,17 +340,18 @@ agent-side workflow is §6.3–6.5 of the `liquid` skill.
 
 ## Data & persistence
 
-Almost all state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
-files, Liquid repositories, etc.). The exception is Liquid's, and so is the one other volume not
-under it:
-`liquidupstart_liquid_api`, the API index Liquid writes on every start for the NAR builder, and an
+All state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
+files, Liquid repositories, etc.). Two Docker volumes are not under it, both Liquid's, and both are
+rebuilt on every start, so neither holds state: `liquidupstart_liquid_api`, the API index Liquid
+writes on every start for the NAR builder, and an
 anonymous volume at its NAR load path, `/opt/nifi/nifi-current/nar_extensions`, which Liquid
 empties and fills again from the inbox, `./volumes/nar_extensions`, on every start. So deleting a
 bundle from the inbox takes it out at the next start, and deleting `./volumes/nar_extensions` itself
 unloads every bundle at the next start; the index is rewritten on every start either way.
 `docker compose down` leaves the old load-path volume on disk until `docker volume prune` — which
-Compose documents for anonymous volumes, and which this project has not measured. `docker compose down --volumes`, which
-`liquidupstart --cleanup` (`./cleanup.sh`) runs, removes both. To reset:
+Compose documents for anonymous volumes, and which this project has not measured.
+`docker compose down --volumes`, which `liquidupstart --cleanup` (`./cleanup.sh`) runs, removes
+both. To reset:
 
 - `./scripts/linux/down.sh` — stop the stack (data preserved).
 - `./scripts/linux/cleanup.sh` — remove rendered config (templates are re-rendered on next build).
