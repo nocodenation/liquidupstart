@@ -83,6 +83,13 @@ const agreesWithBuild = (c: { count: number; listed: string[] }) =>
   c.count === built.length && JSON.stringify(c.listed) === JSON.stringify(built);
 
 // `main`'s line until this branch, verbatim — the real defect, not an invented one.
+// The top-level named volumes compose declares, read from the `volumes:` block.
+const namedVolumes = (text: string): string[] => {
+  const block = text.split(/^volumes:\s*$/m)[1]?.split(/^\S/m)[0] ?? '';
+  return [...block.matchAll(/^  ([A-Za-z0-9_.-]+):/gm)].map((m) => m[1]);
+};
+const projectName = compose.match(/^name:\s*(\S+)/m)?.[1];
+
 const FOUR_IMAGE_LINE = 'Four images are built locally — `liquidupstart/{opencode,bun-runner,liquid,openclaw}` —';
 
 describe('A0-11 the README section on Java extensions is backed by the configuration', () => {
@@ -160,6 +167,18 @@ describe('A0-11 the README section on Java extensions is backed by the configura
     expect(claim.count, 'the sentence naming the locally built images').toBe(built.length);
     expect(claim.listed).toEqual(built);
     expect(agreesWithBuild(claim)).toBe(true);
+  });
+
+  test('A0-11 and the named volume it names is the only one compose declares, and Liquid\'s', () => {
+    expect(namedVolumes(compose)).toEqual(['liquid_api']);
+    expect(readme).toContain(`\`${projectName}_liquid_api\``);
+    expect(mountsLive(serviceBlock('liquid', compose), 'liquid_api:')).toBe(true);
+  });
+
+  test('A0-11 the negative: a compose file with a second named volume is refused by the same predicate', () => {
+    const extra = compose.replace(/^volumes:\s*$/m, (v) => `${v}\n  extra_state:`);
+    expect(extra).not.toBe(compose);
+    expect(namedVolumes(extra)).not.toEqual(['liquid_api']);
   });
 
   test('A0-11 the negative: the four-image line main carried is refused by the same predicate', () => {
