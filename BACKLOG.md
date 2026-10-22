@@ -482,8 +482,11 @@ case", and it cannot: `git clean -x` does not read ignore rules — measured, `W
 with the file and without. The read-only dry run over the checkout's real clones had gone with the
 probe, and is back. The guard asserted one name was absent, so a probe left behind by the old file
 made it red for good with nothing to clear it — reproduced, 2 pass / 1 fail — and is a before/after
-listing now. And the forced clean the header had to leave out is run, in a second host. A sixth file,
-`m-a10.fixture-ceiling`, still writes into the checkout from the default tier; that one is on #45.
+listing now. And the forced clean the header had to leave out is run, in a second host. Two more
+default-tier files wrote whole repositories into the checkout through `chainFixture`'s host view,
+`m-a7.two-clones` and `m-a7.overlapping-publish` (found by the review of 2026-10-22, 480 paths in one
+run); that view roots in a temporary directory now. With `m-a10.fixture-ceiling` moved out on #46,
+nothing in the default tier writes into the checkout.
 
 *What this entry said while it was open, 2026-10-07 to 2026-10-12:* the file built `reposDir` from
 `repoRoot` and ran `git init -q -b main <reposDir>/.a5-nested-probe`; it was green because it created

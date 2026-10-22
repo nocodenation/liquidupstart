@@ -94,9 +94,9 @@ describe('SP-1 each discriminator answers for the state in front of it', () => {
       writeFileSync(join(p, 'volumes', '_git-secrets', 'id_ed25519'), 'not a key\n');
     });
     // `volumes/repos` is deliberately present in the bare one: it is what the
-    // obvious discriminator would have used, and two other places create it --
-    // m-a10.fixture-ceiling and gitfixture -- so it is there
-    // after any run of the suite and says nothing about a start.
+    // obvious discriminator would have used, and the stack tier's chain fixtures
+    // create it through gitfixture's container view, so it says nothing about a
+    // start.
     mkdirSync(join(bare, 'volumes', 'repos'), { recursive: true });
     expect({ bare: startedIn(bare), started: startedIn(started) }).toEqual({
       bare: false,

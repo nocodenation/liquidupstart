@@ -2213,6 +2213,7 @@ test that pretends.
 | A7-1 | **End-to-end** | The whole path in one chain, in the container | Declaration to published commit without a step being simulated: the clone the start made, the hook it installed, the identity it configured, `git-publish` |
 | A7-2 | **End-to-end** **unhappy** | The same chain aimed at the protected default branch | Refused by the hook, in its own words, and the remote unchanged — the chain stops where it should rather than at its end |
 | A7-3 | Integration | Two clones publishing at the same time | Both land. They share no token, and the case exists to prove that rather than to assume it |
+| A7-3 | Integration **negative** | …and the fixture is built outside this working copy | *2026-10-22, item 1 of the review of #39.* `chainFixture`'s host view rooted in the checkout's `volumes/repos`, so a default-tier run wrote 480 paths of real repositories there |
 | A7-4 | Integration **unhappy** | One clone, two publications overlapping | The second does not travel on the first's permission. Either it mints its own or it is refused; what must not happen is a push admitted by a token it did not create |
 | A7-5 | **Manual** | A cold start from a clean checkout | Build, start, and the workspace, keys, clones, hook and commands are all there — the path every new operator takes first, and the only one nothing has ever run |
 
@@ -3065,7 +3066,7 @@ first, so each one is known to fail for the reason it names.
 
 | | |
 |---|---|
-| **Premise** | Found by running the suite, not by review. The chain fixtures build under `volumes/repos/.a7-<tag>-<pid>`, inside this working copy, because the containers reach them through the `/repos` mount. They create the directories first and clone into them afterwards; when the clone does not happen the directory exists and holds no repository, and git's upward search finds the enclosing repository — this one. |
+| **Premise** | Found by running the suite, not by review. The chain fixtures build under `volumes/repos/.a7-<tag>-<pid>`, inside this working copy, when containers use them, because the containers reach them through the `/repos` mount; the host view builds in a temporary directory since 2026-10-22. They create the directories first and clone into them afterwards; when the clone does not happen the directory exists and holds no repository, and git's upward search finds the enclosing repository — this one. |
 | **Component** | `FIXTURE_IDENTITY` in `tests/lib/gitfixture.ts`, which every fixture command goes through. |
 | **Test data** | `volumes/repos/.a10-ceiling-probe`, created empty — the same shape and place as `.a7-race-<pid>` — and the commands `git status --short` and `git commit --allow-empty -m probe`, the second being what actually happened. |
 | **Expected** | git answers "not a git repository"; this working copy's `HEAD` and branch are unchanged; and a real fixture clone, inside the tree or outside it, still works. |
