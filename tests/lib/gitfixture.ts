@@ -472,7 +472,7 @@ const isStream = (s: unknown): s is ReadableStream<Uint8Array> =>
 // A Bun.spawnSync result passes for a running child by shape -- `exitCode` a
 // number, its output Buffers -- and nothing type-checks tests/, so the helpers
 // went on to report a run that had ended, or said nothing, about a harness that
-// handed them the wrong thing. A16-31.
+// handed them the wrong thing. A16-32.
 function mustBeRunning(run: object, helper: string): void {
   if (!('exited' in run)) {
     throw new Error(`${helper} needs a child from Bun.spawn, and was handed a finished run (Bun.spawnSync?): a fault of the test, not of the run`);

@@ -1,5 +1,5 @@
 /**
- * A16-31 · Unit · The helpers the lock cases wait with report their own faults
+ * A16-32 · Unit · The helpers the lock cases wait with report their own faults
  *
  * Purpose:  `watchOutput` and `awaitFile` in tests/lib/gitfixture.ts are how
  *           A15-1, A16-11 and A16-27 wait for a running `git.sh`. Both reported a
@@ -23,7 +23,7 @@
  *           `finished()`; the character arrives
  *           whole; a finished run is refused as a fault of the test. A real child
  *           is still read, and a real file still awaited.
- * Covers:   A16-31
+ * Covers:   A16-32
  * Negative: the failed reader, the split character and the finished run.
  * Counterpart: a real child whose line arrives, and a real file awaited, so a
  *           helper that refused everything cannot pass.
@@ -72,8 +72,8 @@ const running = (stdout: ReadableStream<Uint8Array>, stderr: ReadableStream<Uint
 const work = mkdtempSync(join(tmpdir(), 'lu-a16-31-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
 
-describe('A16-31 a reader that fails is the harness, not the run going quiet', () => {
-  test('A16-31 a line still to come on the other stream is found', async () => {
+describe('A16-32 a reader that fails is the harness, not the run going quiet', () => {
+  test('A16-32 a line still to come on the other stream is found', async () => {
     const out = watchOutput(
       running(timed([[0, 'partial']], { at: 10, fail: 'probe read failure' }), timed([[60, `${LINE}\n`]], { at: 80 }))
     );
@@ -81,7 +81,7 @@ describe('A16-31 a reader that fails is the harness, not the run going quiet', (
     expect(out.text).toContain(LINE);
   });
 
-  test('A16-31 and when it never comes, the failure is reported as the harness\'s, with what was read', async () => {
+  test('A16-32 and when it never comes, the failure is reported as the harness\'s, with what was read', async () => {
     const out = watchOutput(running(timed([[0, 'partial']], { at: 10, fail: 'probe read failure' }), timed([], { at: 40 })));
     let said = '';
     await out.until(LINE, 5).catch((e: Error) => (said = e.message));
@@ -89,7 +89,7 @@ describe('A16-31 a reader that fails is the harness, not the run going quiet', (
     expect(said).toContain('partial');
   });
 
-  test('A16-31 and finished() says so too, rather than handing back what it read as the whole', async () => {
+  test('A16-32 and finished() says so too, rather than handing back what it read as the whole', async () => {
     const out = watchOutput(running(timed([[0, 'partial']], { at: 10, fail: 'probe read failure' }), timed([[20, 'more']], { at: 30 })));
     let said = '';
     await out.finished().catch((e: Error) => (said = e.message));
@@ -97,7 +97,7 @@ describe('A16-31 a reader that fails is the harness, not the run going quiet', (
     expect(said).toContain('partial');
   });
 
-  test('A16-31 and so does until() when the other stream stays open past its deadline', async () => {
+  test('A16-32 and so does until() when the other stream stays open past its deadline', async () => {
     const open = new ReadableStream<Uint8Array>({ start() {} });
     const out = watchOutput(running(timed([[0, 'partial']], { at: 10, fail: 'probe read failure' }), open));
     let said = '';
@@ -106,8 +106,8 @@ describe('A16-31 a reader that fails is the harness, not the run going quiet', (
   });
 });
 
-describe('A16-31 each stream is decoded on its own', () => {
-  test('A16-31 a character split across two chunks arrives whole, with the other stream in between', async () => {
+describe('A16-32 each stream is decoded on its own', () => {
+  test('A16-32 a character split across two chunks arrives whole, with the other stream in between', async () => {
     const out = watchOutput(
       running(timed([[0, new Uint8Array([0xc3])], [50, new Uint8Array([0xa9])]], { at: 70 }), timed([[20, 'x']], { at: 30 }))
     );
@@ -116,29 +116,29 @@ describe('A16-31 each stream is decoded on its own', () => {
   });
 });
 
-describe('A16-31 a finished run is refused as a fault of the test', () => {
+describe('A16-32 a finished run is refused as a fault of the test', () => {
   const finished = () => Bun.spawnSync(['sh', '-c', `echo out; echo ${LINE} >&2`], { stdout: 'pipe', stderr: 'pipe' });
 
-  test('A16-31 watchOutput, handed one, says so rather than that the run said nothing', () => {
+  test('A16-32 watchOutput, handed one, says so rather than that the run said nothing', () => {
     expect(() => watchOutput(finished())).toThrow('needs a child from Bun.spawn');
   });
 
-  test('A16-31 and awaitFile too', async () => {
+  test('A16-32 and awaitFile too', async () => {
     let said = '';
     await awaitFile(join(work, 'never'), finished(), undefined, 1).catch((e: Error) => (said = e.message));
     expect(said).toContain('needs a child from Bun.spawn');
   });
 });
 
-describe('A16-31 the counterpart: a real child is still read', () => {
-  test('A16-31 its line is found', async () => {
+describe('A16-32 the counterpart: a real child is still read', () => {
+  test('A16-32 its line is found', async () => {
     const run = Bun.spawn(['sh', '-c', `echo out; echo ${LINE} >&2`], { stdout: 'pipe', stderr: 'pipe' });
     const out = watchOutput(run);
     await out.until(LINE, 10);
     expect(await out.finished()).toContain('out');
   });
 
-  test('A16-31 and a file it writes is awaited', async () => {
+  test('A16-32 and a file it writes is awaited', async () => {
     const run = Bun.spawn(['sh', '-c', 'printf 4242 > held; sleep 1'], { cwd: work, stdout: 'pipe', stderr: 'pipe' });
     expect(await awaitFile(join(work, 'held'), run, undefined, 10)).toBe('4242');
     await run.exited;

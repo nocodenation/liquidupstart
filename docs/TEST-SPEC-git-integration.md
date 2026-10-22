@@ -3481,23 +3481,23 @@ moves looked arbitrary and was not: one of them had a signed-off row and the oth
 | **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on both paths: toolbox → dashboard from the dashboard's Start button, and host → dashboard from a terminal. |
 | **Covers** | Findings 1 to 6 of 2026-09-21, FR3, FR11, NFR1, U1, U2, U11. |
 
-#### A16-31 — the helpers the lock cases wait with report their own faults
+#### A16-32 — the helpers the lock cases wait with report their own faults
 
-*Written 2026-10-22, with the case.* `watchOutput` and `awaitFile` in `tests/lib/gitfixture.ts` are how
+*Written 2026-10-22, with the case, and numbered A16-32: A16-31 is the lock case of #38, renumbered from A16-20 by the reviewer's decision of 2026-10-21.* `watchOutput` and `awaitFile` in `tests/lib/gitfixture.ts` are how
 A15-1, A16-11 and A16-27 wait for a running `git.sh`. Found by a local review of #19 on 2026-10-20 and
 recorded on #45.
 
 | Case | Level | Polarity | What it proves |
 |---|---|---|---|
-| A16-31 | Unit | **negative** | A reader that fails is the harness's fault: a line still to come on the other stream is found |
-| A16-31 | Unit | **negative** | …and when it never comes, the failure is reported as the harness's, with what was read before it |
-| A16-31 | Unit | **negative** | …and `finished()` reports it too, rather than handing back what it read as the whole |
-| A16-31 | Unit | **negative** | …and so does `until()` when the other stream stays open past its deadline |
-| A16-31 | Unit | **negative** | A two-byte character split across two chunks of one stream arrives whole, with a chunk of the other stream in between |
-| A16-31 | Unit | **negative** | A finished run handed to `watchOutput` is refused as a fault of the test |
-| A16-31 | Unit | **negative** | …and handed to `awaitFile` |
-| A16-31 | Unit | positive | A real child's line is still found |
-| A16-31 | Unit | positive | …and a file it writes is still awaited |
+| A16-32 | Unit | **negative** | A reader that fails is the harness's fault: a line still to come on the other stream is found |
+| A16-32 | Unit | **negative** | …and when it never comes, the failure is reported as the harness's, with what was read before it |
+| A16-32 | Unit | **negative** | …and `finished()` reports it too, rather than handing back what it read as the whole |
+| A16-32 | Unit | **negative** | …and so does `until()` when the other stream stays open past its deadline |
+| A16-32 | Unit | **negative** | A two-byte character split across two chunks of one stream arrives whole, with a chunk of the other stream in between |
+| A16-32 | Unit | **negative** | A finished run handed to `watchOutput` is refused as a fault of the test |
+| A16-32 | Unit | **negative** | …and handed to `awaitFile` |
+| A16-32 | Unit | positive | A real child's line is still found |
+| A16-32 | Unit | positive | …and a file it writes is still awaited |
 
 | | |
 |---|---|
@@ -3508,7 +3508,7 @@ recorded on #45.
 | **Expected** | The line found; *"could not be read (Error: probe read failure), a fault of the test"* with `partial` after it, from `until()` when the other stream closes and when it stays open, and from `finished()`; `é` whole and no U+FFFD; both helpers throwing *"needs a child from Bun.spawn"*; the real child's line found and `4242` read. |
 | **What it found** | Against the helpers as they were, every negative red and the two counterparts green. |
 | **What is deliberately not here** | The file removed between a check and a read. The window was two system calls wide, and the helper now makes one call. |
-| **Covers** | A16-31, and the waits of A15-1, A16-11 and A16-27. |
+| **Covers** | A16-32, and the waits of A15-1, A16-11 and A16-27. |
 | **Implemented by** | `tests/unit/m-a16.watch-helpers.test.ts`. |
 
 #### A16-M1 — manual: the crossing between two process tables
