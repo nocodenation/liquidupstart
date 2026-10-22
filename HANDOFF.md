@@ -9,15 +9,119 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-21, the end of the review series* has the live picture and gathers what the series found.
-The three sections below it are the series' other sessions, each as it ended, and *2026-10-20* under
-them is the day it began. Read the first and the review bodies it points to; the rest of this file
-is the map and the lessons.
+2026-10-21, evening: round one of #45* has the live picture. *…the end of the review series* under it
+gathers what the series found; the three sections below that are the series' other sessions, each as
+it ended, and *2026-10-20* under them is the day it began. Read the first two and the review bodies
+they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
-branches"; on 2026-10-21 nine of ours are open, and `./scripts/state.sh` on #43 gives the count. **Where an older section makes a claim about the present,
+branches"; on 2026-10-21 ten of ours are open, and `./scripts/state.sh` on #43 gives the count. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-21, evening: round one of #45
+
+`./scripts/state.sh` on `feature/computed-state` (`wt-st`) first, as before.
+
+After the series, the operator chose to act on #45's entries in rounds. **Round one is #46,
+`fix/false-claims-round-1`**: the nine entries where code, a test or a document claimed something
+false, which is `FINISH.md`'s cut line, and entry 8, `m-a10.fixture-ceiling`, which the operator
+decided should stop writing into the checkout. The specification came first (`0fe75a2`), the code
+second (`b63de36`), A10-23 third (`faf91a4`). `/code-review` ran before each commit: three passes
+over the first two, two over the third. Ten of ours are open now, #37 to #46.
+
+**And Timur has reviewed #37**, at 13:23:16Z, after the section below was committed at 13:07:44Z:
+*changes requested*. So two of that section's sentences stopped being true at 13:23Z: *nothing a
+reviewer asked for is open on our side*, and *#37 to #45 have had no first review*. This session
+noticed only in its closing `state.sh` and has not started the round.
+
+### What this session did
+
+| PR | What | Head | Measured from a clean tree | Comment |
+|---|---|---|---|---|
+| #46 `fix/false-claims-round-1` | opened. #45's entries 6, 10, 11, 13, 19, 20, 23 and 24, the preconditions half of 18, and entry 8 the way the operator chose: A10-23 now proves the ceiling in throwaway hosts | `faf91a4` | `b63de36`: 1168 / 25 / 0, dashboard 32 / 0, no `oom` in the streamed events. `faf91a4`: 1173 / 25 / 0, dashboard 32 / 0, no `oom` | [#46](https://github.com/nocodenation/liquidupstart/pull/46#issuecomment-6320258286) |
+| #45 `docs/suite-fixture-findings` | ten entries marked *Answered on #46, open*; two new: two installation faults that still answer 422, and an inherited `GIT_DIR` that walks past the ceiling | `4d86c48` | not run: no test reads `BACKLOG.md` | [#45](https://github.com/nocodenation/liquidupstart/pull/45#issuecomment-6319267461), [then](https://github.com/nocodenation/liquidupstart/pull/45#issuecomment-6319962772) |
+| `main` | `HANDOFF.md` and `FINISH.md` at `a3ef20f`; this section, and `FINISH.md` row 1's count | — | — | — |
+
+### What it found
+
+- **What killed `B6-37` was its own fixture's setup.** `setup.py` held 800 MB of zeros, then the
+  jar in a `BytesIO`, then its copy, and peaked at 1.6 GB before narcheck ran. With the stack holding
+  most of the VM, that was enough for the kernel to kill it (exit 137, `oom`). It now streams to disk
+  and peaks at 16 MB, and was green in `b63de36`'s run with the stack up and no `oom` in the stream.
+  The series' bullet below, *load-dependent, and when it is red it is OOM*, is right about the event.
+  The repair was in the fixture.
+- **A gate that reads silence as a verdict deploys on an empty checker.** A 0-byte `narcheck.py`
+  and one that exits 0 printing nothing were both deployed as judged, and a truncated one, a
+  `SyntaxError` and so exit 1, filed the bundle as refused. The gate now takes an exit status as a
+  verdict only together with a line naming the bundle (`JUDGED` / `REFUSED`).
+- **A status number can collide.** 503 was the first choice for "nothing could judge it" and is
+  already the server's *two builds are running*, which a caller may retry. It is 500.
+- **Three places never reached what they were there for.** OC-60 asserted an object equal to
+  itself when its image was absent, and bun reports that as a pass. Four `sh()` calls handed over a
+  timeout as the environment, which bounds nothing, and no case can tell that from no timeout.
+  OC-62's watchdog branch never ran on Linux, because `/usr/bin/timeout` exists there, and it was red
+  there.
+- **Git exports `GIT_DIR` to hooks in a linked worktree** (git 2.48.1: `pre-commit`, `commit-msg`,
+  `post-commit`, `pre-push`, `post-checkout`). A suite started from such a hook would bypass
+  `GIT_CEILING_DIRECTORIES` entirely, because git does no discovery once `GIT_DIR` is set, and every
+  review checkout here is a linked worktree. Measured, and on #45.
+- **Six things were wrong in a draft, each caught before publishing by the local review or by
+  measuring.** Two were in A10-23's rewrite: it compared the ceiling with the constant it is taken
+  from, and its beneath-check could not fail. Four were claims. The installation-fault entry said
+  both arms sit after Maven, and one sits before. The `GIT_DIR` entry said git sets it for every hook,
+  and in a plain repository it does not; that every checkout here is a worktree, and the main one is
+  not; and it named one helper where six pass the environment on.
+
+### Open, and whose
+
+**Ours: Timur's round on #37**, against `7060506`, [the review](https://github.com/nocodenation/liquidupstart/pull/37#pullrequestreview-5600379683).
+One item blocks and five more go into the same push; he will check only those and approve.
+
+- **1, blocking:** `LIQUID_MOVED` is one value, so a move on any one reading skips every pinned case.
+  Measured with a Java-only shim image: 15 cases skipped that pass against that image. The fix he
+  asks for is a flag per reading (`LIQUID_MOVED_ON`), each case guarded by what it pins, B5-33 with
+  one scenario per reading, and B5-34 made consistent (the NiFi directory is a 22-byte symlink, so
+  renaming it costs nothing) plus a Java-only move as the over-skip control.
+- **A1** B5-34's pass list computed from `isPinned` instead of named by hand; **A2** *Covers* to
+  `SP-FR1` instead of FR21, and the premise row labelled; **A3** one sentence that B4-4, B4-6 and
+  `m-b4.placement-check` pin the API through the live installation; **A4** the PR body, B5-33's header,
+  and `HANDOFF.md`'s paragraph on #37 (in *Where it stands, 2026-10-16*, the one with *27 pass / 17
+  skip*; he asks for it to be corrected in #37); **A5** the nine pasted history comments and `tests/run.sh`'s 11-line block.
+- It does not touch the operator's decision on finding 13. He calls skipping on a moved tag *the trade
+  the operator chose*, and asks for it per reading.
+
+**Timur's:** a review of #46, and three decisions it asks for: exit 5 as 500, the verdict line as a
+contract between `check-index` and the gate, and an author pom with an unresolvable API going on to
+Maven. #38 to #45 are still unreviewed, and the decisions listed under *the end of the review
+series* stand.
+
+**Whoever lands second:**
+
+- #46 and #42 conflict in `docs/TEST-SPEC-suite-preconditions.md`, where SP-5 and SP-6 go in at the
+  same place. Keep both.
+- #46 and #39: the comment in `tests/lib/preconditions.ts` and SP-1's *Test data* still name
+  `m-a10.fixture-ceiling` among the places that create `volumes/repos`. That is false on #46, and #39
+  rewrites those lines, so #46 leaves them alone. Once both have landed, only `gitfixture` remains.
+
+**The operator's:** what round two is. Open on #45 and not answered anywhere: entries 1 to 4, 7, 9,
+12, 14, 15, 17, 21, 22, 25, 27 and 28 (the `GIT_DIR` entry). Waiting on a merge: 5 waits for #40;
+16, the form of a per-test budget, and the `sh()` half of 18 wait for #42. 26 is Timur's question.
+Entry numbers are their order in #45's `BACKLOG.md`, as #46's description uses them.
+
+**Also the operator's:** `wt-r1` still has the empty `volumes/repos/` that the old A10-23 left
+there. `rmdir volumes/repos volumes` in that checkout removes it, and nothing was deleted without
+asking.
+
+### Housekeeping
+
+- `wt-17`, `wt-24` and `wt-hook` are deleted, with the operator's agreement and after the same checks
+  as the five before them. Their local branch refs remain. The worktrees standing are the ten open
+  branches' and `main`'s.
+- `FINISH.md` row 1 now says eight of ten open pull requests touch `BACKLOG.md`. They are the same
+  eight as before; #44 and #46 do not touch it. No open branch edits that row.
+- Docker VM: 14553 MiB free at the end (`df -m` in a container), against the 2 GB floor. `scratch.md` in the main checkout is untracked and not this
+  session's.
 
 ## Where it stands, 2026-10-21, the end of the review series
 
