@@ -79,7 +79,7 @@ into files under review.
 
 Recorded 2026-10-20.
 
-**Answered on #47, open, 2026-10-22**: a reader that fails is reported as the harness's, by `until()` and `finished()`, each stream has its own decoder, a finished run is refused, and `awaitFile` reads once. `A16-31`. A `tsconfig` for `tests/` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+**Answered on #47, open, 2026-10-22**: a reader that fails is reported as the harness's, by `until()` and `finished()`, each stream has its own decoder, a finished run is refused, and `awaitFile` reads once. `A16-32`. A `tsconfig` for `tests/` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
