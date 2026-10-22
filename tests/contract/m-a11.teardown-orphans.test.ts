@@ -23,18 +23,21 @@
  *           checkout outside `.git`, `node_modules` and `volumes/`.
  * When:     The script is run once; each shell file is read for compose `down`
  *           calls — `docker compose`, any global options, then `down`, at the start
- *           of a command — and only the command itself is read, not a message
- *           after `||` or a trailing comment
+ *           of a command, after a keyword or behind a wrapper such as
+ *           `with_timeout` — and only the command itself is read, not a message
+ *           after `||` or a trailing comment. An option value quoted with a
+ *           space in it, `-f "my file.yml"`, is out of scope: none is used here
  * Then:     down.sh makes exactly one docker call, `compose down
  *           --remove-orphans`; the scan finds `cleanup.sh`, `update.sh` and
  *           `down.sh`; and every call it finds carries the flag
  * Covers:   A11-11
  * Negative: The scan's own fixture lines: a bare teardown, one whose only
  *           `--remove-orphans` is in the warning after `||`, one with it in a
- *           trailing comment, and one with global options before `down` — each
- *           found and each refused. The counterpart: a comment and the `run.sh`
- *           usage text are not counted as calls, and a teardown with the flag
- *           after global options is accepted.
+ *           trailing comment, one with global options before `down`, and ones
+ *           behind `if !`, `with_timeout 120`, `exec` and `timeout -k 5 60` —
+ *           each found and each refused. The counterpart: a comment and the
+ *           `run.sh` usage text are not counted as calls, and a teardown with the
+ *           flag after global options, or behind `with_timeout`, is accepted.
  *
  * Why not a behavioural case against real compose: it would act on the
  *           installation running on this machine, which is what the stack tier is
@@ -54,9 +57,11 @@ const DOWN = join(repoRoot, 'scripts/linux/down.sh');
 type Teardown = { line: number; command: string; removesOrphans: boolean };
 
 // `docker compose` (or `docker-compose`), global options with or without a value,
-// then `down`, where a command begins. The command ends at the first `|`, `&`,
-// `;` or `#`, so a flag that is only named in what follows does not count.
-const CALL = /(?:^\s*|(?:&&|\|\||;|\bthen|\bdo)\s+)(docker(?:-compose|\s+compose)(?:\s+-{1,2}[\w-]+(?:[ =](?!down\b)[^\s|&;#]+)?)*\s+down\b[^|&;#]*)/g;
+// then `down`, where a command begins -- after a keyword such as `if !`, or behind
+// `exec`, `sudo`, `command`, `timeout` or `with_timeout`. The command ends at the
+// first `|`, `&`, `;`, `#` or `)`, so a flag that is only named in what follows
+// does not count.
+const CALL = /(?:^\s*|(?:&&|\|\||;|\bthen|\bdo|\belse|\$\()\s*)(?:(?:if|elif|while|until|!|exec|sudo|command|(?:with_)?timeout(?:\s+-\S+(?:\s+\d\S*)?)*\s+\S+)\s+)*(docker(?:-compose|\s+compose)(?:\s+-{1,2}[\w-]+(?:[ =][^\s|&;#]+)?)*\s+down\b[^|&;#)]*)/g;
 
 export function teardownCalls(text: string): Teardown[] {
   const found: Teardown[] = [];
@@ -148,9 +153,13 @@ describe('A11-11 and every teardown in the repository carries the flag', () => {
         'docker compose down',
         '  docker compose down || warn "docker compose down --remove-orphans failed"',
         'docker compose down # TODO --remove-orphans',
-        'docker compose -p lu-x --ansi never down'
+        'docker compose -p lu-x --ansi never down',
+        'if ! docker compose down; then warn x; fi',
+        'with_timeout 120 docker compose down',
+        'exec docker compose down',
+        'timeout -k 5 60 docker compose down'
       ].map((l) => teardownCalls(l).map((c) => c.removesOrphans))
-    ).toEqual([[false], [false], [false], [false]]);
+    ).toEqual([[false], [false], [false], [false], [false], [false], [false], [false]]);
   });
 
   test('A11-11 the counterpart: what is not a teardown is not counted, and the flag after options is accepted', () => {
@@ -158,7 +167,8 @@ describe('A11-11 and every teardown in the repository carries the flag', () => {
       comment: teardownCalls('# docker compose down').length,
       usage: teardownCalls('  -s, --stop      Stop the stack (docker compose down), exactly like the Stop').length,
       withOptions: teardownCalls('docker compose -p lu-x down --volumes --remove-orphans').map((c) => c.removesOrphans),
-      afterThen: teardownCalls('if up; then docker compose down --remove-orphans; fi').map((c) => c.removesOrphans)
-    }).toEqual({ comment: 0, usage: 0, withOptions: [true], afterThen: [true] });
+      afterThen: teardownCalls('if up; then docker compose down --remove-orphans; fi').map((c) => c.removesOrphans),
+      wrapped: teardownCalls('with_timeout 120 docker compose down --remove-orphans').map((c) => c.removesOrphans)
+    }).toEqual({ comment: 0, usage: 0, withOptions: [true], afterThen: [true], wrapped: [true] });
   });
 });
