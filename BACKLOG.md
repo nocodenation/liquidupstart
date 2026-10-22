@@ -711,6 +711,26 @@ is the operator's to change, so this is recorded and not edited.
 
 Recorded 2026-10-22.
 
+**Answered on #48, open, 2026-10-22, by the operator's choice of the behaviour.** Every start now
+empties the load path and refills it from the inbox, so `CLAUDE.md`'s sentence holds and stays as
+it is. `B2-12`; measured in two throwaway Liquid containers, with `main`'s entrypoint and with the
+new one.
+
+---
+
+**The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
+by the local review of #48 on 2026-10-22. `config/liquid/entrypoint.sh` runs `narcheck.py check
+"$NAR"` on the inbox file and then `cp -v "$NAR" "${LOAD_DIR}/"`, so the bytes judged and the bytes
+loaded are two reads of a file the agents' containers can replace in between: they hold the inbox
+read-write at `/opt/nar_extensions`. `nar-watch.sh` closed the same gap for itself under S6 of the
+2026-10-01 review by copying first and judging the copy; the entrypoint never got that change. Read
+from the code, not run. FR30 and the `liquid` skill say everything in the inbox is judged before
+anything is loaded, which holds of a read here, not of the file. The repair is `nar-watch.sh`'s
+shape: copy to a dot-name in the load directory, judge that, rename it into place. Not done on
+#48, which only empties the directory first.
+
+Recorded 2026-10-22.
+
 ## Open findings
 
 **The mutation runner's bound does not reach a process the spec itself started.** `tests/mutate.sh`
