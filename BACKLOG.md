@@ -113,9 +113,14 @@ schemes this file has used. Three separate processes now share one image, measur
 one never did; `docker rmi` refuses an image a container holds, so the image sweep above ran,
 failed on that tag and said nothing — by design, since a concurrent run may hold one. About a
 gigabyte stayed alive with nothing reporting it, and the docker-chosen name said nothing about
-which suite it belonged to. `sweepableContainers` now takes containers on the suite's own tags
-before the images, never the run in flight and never anything else; `B6-41`, four scenarios,
-verified against real docker with the operator's stack running beside it.
+which suite it belonged to. `sweepableObjects` now decides for containers and images alike: every
+builder object carries the `lu-builder` labels, each listing is filtered by them at the daemon, and
+an object is removed only if it is not this run's and older than two hours. Containers go first and
+with `-f`, because what a killed run leaves is running. `B6-41`: eighteen unit cases and an
+integration case that removes a running labelled container and its image against docker, keeps the
+run in flight's and a tag the suite did not give, and leaves no other container or image gone. *Corrected 2026-10-22: this
+named `sweepableContainers` and four scenarios, and said a version without `-f` was verified, which
+removed nothing real. Items 1 to 3 and A2 of the review of #40.*
 ---
 
 **Answered in part 2026-10-20 by #28, and the two halves it does not cover are stated below rather

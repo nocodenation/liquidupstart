@@ -174,10 +174,7 @@ writeFileSync(probe, PROBE, { mode: 0o755 });
 
 let out = '';
 beforeAll(() => {
-  // Labelled, so the sweep in `builderimage.ts` can reclaim this image and any
-  // container from it when a run is killed before `afterAll`. Measured
-  // 2026-10-20: this file's tag scheme was one of four the sweep could not see,
-  // and a 1.02 GB image from it had been on the host five days.
+  // Labelled so the builder sweep can reclaim it after a killed run.
   const built = sh([
     'docker', 'build', '-q', '-t', IMAGE,
     ...builderLabels(),

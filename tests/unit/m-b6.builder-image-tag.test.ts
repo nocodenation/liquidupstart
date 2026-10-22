@@ -12,18 +12,22 @@
  *           100% (57 of 59 GB), and a build failing with `No space left on
  *           device` is indistinguishable from a product failure in that output —
  *           which cost one measurement round.
- * Given:    `builderContextDigest` and `sweepable`, the two decisions behind the
- *           tag, as pure functions
- * When:     the build context's content changes, and when a list of images on the
- *           host is offered for sweeping
- * Then:     the digest follows the content and not the path; and the sweep never
- *           takes the image in use, never takes a recent one, and never takes
- *           something that is not ours
- * Covers:   B6-39, B6-41
- * Unhappy:  The sweep's three refusals are the negative halves, and they are the
- *           point: a sweep that removed the image in use, or a concurrent run's,
- *           would turn a disk problem into a flaky suite. The positive halves
- *           keep it from being a sweep that removes nothing.
+ * Given:    `builderContextDigest`, `sweepableObjects` and `parseDockerTime`, the
+ *           decisions behind the tag and the sweep, as pure functions; and
+ *           `builderLabels` and `builderImage`'s source, read
+ * When:     the build context's content changes; labelled objects of this run, of
+ *           a concurrent run, of an abandoned one and of none are offered for
+ *           sweeping; and docker's own time strings are read
+ * Then:     the digest follows the content and not the path; the sweep takes an
+ *           abandoned object, even on this run's tree tag, and never one of this
+ *           run's, a recent one or one whose age cannot be read; docker's times
+ *           are read and anything else is not; every object carries the three labels;
+ *           and the sweep runs before the build
+ * Covers:   B6-39, B6-41; `m-b6.builder-sweep` puts the sweep to docker
+ * Unhappy:  The sweep's refusals are the negative halves, and they are the point:
+ *           a sweep that removed this run's objects, or a concurrent run's, would
+ *           turn a disk problem into a flaky suite. The positive halves keep it
+ *           from being a sweep that removes nothing.
  *
  * Why not an `afterAll`: `dropBuilderImage` says it, and it was measured — every
  *           file captures the tag at module load, so the first file's `afterAll`
@@ -39,12 +43,12 @@ import { repoRoot } from '../lib/paths';
 import {
   builderContextDigest,
   sweepableObjects,
-  parseDockerTime,
   builderLabels,
   BUILDER_LABEL,
   BUILDER_RUN_LABEL,
   BUILDER_RUN_ID
 } from '../lib/builderimage';
+import { parseDockerTime } from '../lib/dockertime';
 import { readFileSync } from 'node:fs';
 
 const dirs: string[] = [];
@@ -166,33 +170,10 @@ describe('B6-41 ownership is a label, so the leak that recurs is reachable', () 
   });
 });
 
-describe('B6-41 the daemon does the narrowing, so the operator\'s stack is never listed', () => {
-  // The scope violation, as a contract assertion: this runs in the DEFAULT tier,
-  // where tests/run.sh promises a bare `docker` touches nothing of the
-  // operator's. A machine-wide `docker ps -a` broke that promise -- 21 live stack
-  // containers were enumerated and only a `startsWith` stood between them and
-  // removal. The label filter is passed to docker, so the answer never contains
-  // them in the first place.
+describe('B6-41 what the sweep reads is labelled, and it runs before the build', () => {
+  // That the daemon narrows each listing by the label, and that the sweep removes
+  // what it chose, is m-b6.builder-sweep's, against docker.
   const body = readFileSync(join(repoRoot, 'tests/lib/builderimage.ts'), 'utf8');
-
-  test('B6-41 every listing is filtered by the label, at the daemon', () => {
-    const listings = body.match(/'docker', 'ps', '-a'|'docker', 'images'/g) ?? [];
-    expect(listings.length).toBeGreaterThan(0);
-    // No listing without the filter: the filter is in the shared helper, so the
-    // count of label filters is at least the count of listings.
-    const filters = body.match(/label=\$\{BUILDER_LABEL\}=1/g) ?? [];
-    expect(filters.length).toBeGreaterThanOrEqual(1);
-    expect(body).not.toMatch(/'docker', 'ps', '-a', '--format'/);
-  });
-
-  test('B6-41 the negative: nothing removes with -f any more', () => {
-    // `docker rm -f` removed the daemon's own refusal, which is the second guard
-    // the image half always had: a mistake went from a no-op to a SIGKILL of
-    // somebody else's build. The comment two lines below still claimed docker
-    // would refuse.
-    expect(body).not.toContain("'docker', 'rm', '-f'");
-    expect(body).toContain("'docker', 'rm', id");
-  });
 
   test('B6-41 and the three labels every created object carries', () => {
     const args = builderLabels();
