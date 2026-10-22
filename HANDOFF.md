@@ -19,7 +19,7 @@ unless a paragraph carries its own later date. It still says "three features and
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-22: #45 settled, and Timur's round on #37 answered
+## Where it stands, 2026-10-22: #45 settled, and Timur's rounds on #37 and #38 answered
 
 `./scripts/state.sh` on `feature/computed-state` (`wt-st`) first, as before.
 
@@ -29,7 +29,7 @@ believe the dated one.**
 - **waiting:** on #40 (5), on #42 (16, the `sh()` half of 18, and `m-oc.allow-scripts`' image tags from 1), and on Timur (26);
 - **recorded as outside the cut line, and not to be raised again:** 3, 17 and 21, and the remaining parts of 1, 7, 12, 15 and 22.
 
-Each of those entries on #45 says which of these it is. **Timur's round on #37 is answered**: item 1 and A1 each with a case that goes red when it is taken back, A2 to A5 in the documents they name.
+Each of those entries on #45 says which of these it is. **Timur's round on #37 is answered**: item 1 and A1 each with a case that goes red when it is taken back, A2 to A5 in the documents they name. **So is his round on #38**, which arrived at 2026-10-21 17:02Z, about an hour after the 2026-10-21 evening section was committed, and was noticed only in this session's closing check: the lock case is `A16-31` now, by his decision, and TR-1 holds it.
 
 ### What this session did
 
@@ -38,23 +38,26 @@ Each of those entries on #45 says which of these it is. **Timur's round on #37 i
 | #37 `fix/moving-image-tag` | Timur's round of 2026-10-21 13:23Z: blocking item 1 (a flag per reading, guards by what each case pins, a consistent release, an API move and a Java patch in B5-34), A1 to A5, and two local passes | `acecc10` | 1191 / 25 / 3, the three all `B6-37` with an `oom` each; dashboard 32 / 0 | [#37](https://github.com/nocodenation/liquidupstart/pull/37#issuecomment-6333934587) |
 | #46 `fix/false-claims-round-1` | entries 27 (`B6-46`) and 28 (`A10-24`); the scrub moved so it no longer meets #42's block | `f172c2b` | 1186 / 25 / 0, dashboard 32 / 0, no `oom`; at `a1fd5fc` 1186 / 25 / 0 | [#46](https://github.com/nocodenation/liquidupstart/pull/46#issuecomment-6334759753) |
 | #44 `docs/readme-java-extensions` | entries 9 (the README's named volumes) and 12 (`B1-2` and `mountsLive`) | `25abf5f` | 1155 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#44](https://github.com/nocodenation/liquidupstart/pull/44#issuecomment-6334216313) |
-| #47 `fix/false-claims-round-2` | round two: entries 1 in part, 2, 4, 7 in part, 14, 15 in part, 22 in part, 25; new cases `A8-34`, `A8-35`, `A16-31`, `OC-78` | `6173f43` | 1166 / 25 / 1, the one `B6-37` with an `oom`; dashboard 32 / 0 | [#47](https://github.com/nocodenation/liquidupstart/pull/47#issuecomment-6334765279) |
-| #45 `docs/suite-fixture-findings` | every open entry marked answered, waiting, or outside the cut line; one new entry, `CLAUDE.md`'s `nar_extensions` | `114c3f6` | not run: no test reads `BACKLOG.md` | [#45](https://github.com/nocodenation/liquidupstart/pull/45#issuecomment-6334511471) |
+| #38 `fix/a16-20-row` | Timur's round of 2026-10-21 17:02Z: the lock case renumbered `A16-20` → `A16-31`, retitled and rewritten, A1 to A4, two local passes | `8bc1414` | 1144 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#38](https://github.com/nocodenation/liquidupstart/pull/38#issuecomment-6335706209) |
+| #47 `fix/false-claims-round-2` | round two: entries 1 in part, 2, 4, 7 in part, 14, 15 in part, 22 in part, 25; new cases `A8-34`, `A8-35`, `A16-32`, `OC-78` | `0b4d83d` | 1164 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0; at `6173f43` 1166 / 25 / 1, the one `B6-37` with an `oom`; dashboard 32 / 0 | [#47](https://github.com/nocodenation/liquidupstart/pull/47#issuecomment-6336271706) |
+| #45 `docs/suite-fixture-findings` | every open entry marked answered, waiting, or outside the cut line; one new entry, `CLAUDE.md`'s `nar_extensions` | `81b8d7f` | not run: no test reads `BACKLOG.md` | [#45](https://github.com/nocodenation/liquidupstart/pull/45#issuecomment-6334511471) |
 | `main` | this section, and `FINISH.md` row 1's count | — | — | — |
 
 ### What it found
 
 - **The cut line answered most of what looked like decisions.** Nineteen entries were open after round one; the operator's rule of 2026-10-17 settled each without asking, with three questions left: #37's round, the scope, and one deletion. Two of my own classifications were wrong and are corrected on #45: entry 21 claims nothing false (TR-4's list says the truth), and entry 22's tables were not a false claim either — repaired anyway because the operator had approved the list.
 - **`/code-review` found real defects in every branch again, and in every repair.** The ones that mattered: B5-34's rewrite had lost all its imports; A10-24's first design removed `GIT_DIR` in each helper and left four uncovered; A8-35's sequence ran in JS numbers past 2^53 and repeated; a NiFi guard where the API is pinned was invisible to a release that moves both; the README overstated what survives `docker compose down`; `movedMessage` printed MOVED where no flag was set.
+- **A reviewer's decision can take an id before any tree shows it.** Timur gave `A16-31` to #38's lock case on 2026-10-21; #47 took the same id the next morning because no tree carried it, and TR-1 to TR-4 read trees. Read the open reviews before taking the next free id. Caught by a local review of #38; #47's case is `A16-32`.
+- **Run the closing check before the handover is written, not after.** #38's review came at 2026-10-21 17:02Z, an hour after that evening's section. This session wrote and pushed the first version of this section (`de23ca7`) before running its own check, so it listed #38 among the pull requests still waiting for a review, fourteen hours after that had stopped being true; the check that followed showed the review.
 - **Every scripted text replacement asserts its count.** Three times this session one that did not went wrong: a header rewrite that dropped B5-34's imports, a cut at the first `});` that took the middle of a line, and a conflict resolution that replaced two rows with one. The assertion is what caught the rest.
-- **`B6-37` was red today on #37, #44 and #47, and green on #46**: the old fixture's 1.6 GB setup, killed with `oom` while the stack runs, which #46 replaces. Expect it on any branch without #46.
+- **`B6-37` was red today on #37, #38, #44 and #47, and green on #46**: the old fixture's 1.6 GB setup, killed with `oom` while the stack runs, which #46 replaces. Expect it on any branch without #46.
 - **Git exports `GIT_DIR` to the hooks it runs in a linked worktree** (git 2.48.1), so a suite started from one bypassed the fixture ceiling. Repaired on #46; worth knowing for anything else run from a hook.
 - **Cheap moves of an image:** renaming the 22-byte NiFi symlink and the two jars the entrypoint reads its version from moves NiFi's reading for the probe and the product alike, a `java` shim moves Java's, and bun's `-t '^(?!B5-4 )'` skips a costly block and its hook. B5-34 runs three moves in about seven minutes.
 - **`CLAUDE.md` says `nar_extensions` is rewritten on every start; Liquid's load path is only ever added to.** Recorded on #45 for the operator, not edited.
 
 ### Open, and whose
 
-**Timur's:** a look at #37's answer — he said he would check only the six items and approve; reviews of #38 to #46 and #47; and the decisions already listed: 180 s or 600 s on #42, `A16-20` on #38, the MU requirements (#45 entry 26), and #46's three (exit 5 as 500, the verdict line, an author pom going on).
+**Timur's:** a look at #37's and #38's answers — on both he said he would check only the items of his round and approve; reviews of #39 to #47; and the decisions already listed: 180 s or 600 s on #42, the MU requirements (#45 entry 26), and #46's three (exit 5 as 500, the verdict line, an author pom going on). `A16-20` on #38 is decided.
 
 **The operator's:** whether `CLAUDE.md`'s sentence on `nar_extensions` is corrected — the load path holds state by its own test (#45, last entry).
 
