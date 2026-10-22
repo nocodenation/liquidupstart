@@ -120,12 +120,14 @@ describe('A0-11 the README section on Java extensions is backed by the configura
     expect(entrypoint).toContain('REFUSED_DIR="${DROP_DIR}/refused"');
   });
 
-  test('A0-11 its removal procedure deletes from the load directory, and clears the inbox copy the start promotes again', () => {
-    // The entrypoint copies every inbox bundle that passes into the load
-    // directory at each start, so removing only the loaded copy and restarting
-    // brings it back.
-    expect(readme).toContain('docker compose exec liquid rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar');
+  test('A0-11 its removal procedure is the inbox copy and a restart, because every start empties the load directory', () => {
+    // Since 2026-10-22 the entrypoint empties the load directory before it
+    // copies back what the inbox holds and passes, so the second rm inside the
+    // container that the procedure used to carry is gone with it.
     expect(readme).toContain('rm ./volumes/nar_extensions/<bundle>.nar');
+    expect(readme).toContain('docker compose restart liquid');
+    expect(readme).not.toContain('docker compose exec liquid rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar');
+    expect(entrypoint).toContain('find "$LOAD_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +');
     expect(narWatch).toContain('LOAD_DIR="${NIFI_HOME}/nar_extensions"');
     expect(entrypoint).toContain('LOAD_DIR="${NIFI_HOME}/nar_extensions"');
     expect(entrypoint).toContain('for NAR in "$DROP_DIR"/*.nar; do');

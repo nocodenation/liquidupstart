@@ -26,6 +26,30 @@ NAR_WATCH="$(cd "$(dirname "$0")" && pwd)/nar-watch.sh"
 echo "Liquid Playground - Starting..."
 
 if [ -d "$DROP_DIR" ]; then
+    # Emptied first, so the load directory holds what the inbox holds and passes
+    # and nothing else: it is an anonymous volume, kept across a restart and a
+    # recreate, and until 2026-10-22 it was only ever added to -- a bundle taken
+    # out of the inbox stayed loaded. NiFi removes a stale unpacked copy itself
+    # at boot (FR30, measured 2026-10-07). What is removed is named, so a bundle
+    # that does not come back is in the log; a failure is said and does not end
+    # the start.
+    if [ -d "$LOAD_DIR" ]; then
+        BEFORE="$(ls -A "$LOAD_DIR" 2>/dev/null | tr '\n' ' ')"
+        if ! find "$LOAD_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null; then
+            echo "Warning: ${LOAD_DIR} could not be emptied, so a bundle taken out of the inbox" >&2
+            echo "  may still be loaded. It held: ${BEFORE}" >&2
+            echo "  and still holds: $(ls -A "$LOAD_DIR" 2>/dev/null | tr '\n' ' ')" >&2
+        elif [ -n "$BEFORE" ]; then
+            echo "Emptied ${LOAD_DIR} to rebuild it from the inbox; it held: ${BEFORE}"
+        fi
+    fi
+    # The image carries this directory, so it is there without the bind as well,
+    # empty, and the load path then ends empty. Said, so a lost bind is visible.
+    if command -v mountpoint >/dev/null 2>&1 && ! mountpoint -q "$DROP_DIR"; then
+        echo "Warning: ${DROP_DIR} is not a mount, so the inbox is the image's own and" >&2
+        echo "  nothing from ./volumes/nar_extensions is loaded. Is the bind in compose.yml?" >&2
+    fi
+
     # Counted the way the loop below iterates. `find -name "*.nar"` matches
     # dot-files that the `"$DROP_DIR"/*.nar` glob skips, so a directory holding
     # good.nar, .x.nar and a refused bad.nar reported "1 of 3" for two bundles.
@@ -96,7 +120,7 @@ if [ -d "$DROP_DIR" ]; then
         echo "No NAR files found in the inbox"
     fi
 else
-    echo "the NAR inbox is not mounted at ${DROP_DIR}"
+    echo "there is no NAR inbox at ${DROP_DIR}, so the load directory is left as it was"
 fi
 
 # Publish what the nar_builder needs to make the same decision this entrypoint
