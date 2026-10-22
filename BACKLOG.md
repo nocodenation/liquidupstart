@@ -126,7 +126,9 @@ whose block has come to claim its files is reported as redundant — so entries 
 check is **not buildable as stated**, because one row per scenario means 50 of 459 id/document pairs
 legitimately carry several rows; the cross-document check **finds exactly one id, `SP-2`**, which is
 by design and would need an exemption on its first run. A third class neither check reaches is
-`A16-20`: one file, one id, and a specification row that is not its case.
+an id specified for one case and later given to another, where the specified case carries a
+different id in its title; `A16-20` was its instance, resolved by renumbering the later case to
+`A16-31`.
 
 *The original entry follows, as written on 2026-10-12; its "Not built here" is that day's.*
 
@@ -252,7 +254,12 @@ Recorded 2026-10-09, alongside the thirteen ids that *were* documented.
 
 ---
 
-**`A16-20` names two cases as well, and the specification had it first.** Its row in
+**~~`A16-20` names two cases as well, and the specification had it first.~~** *Resolved 2026-10-22 on
+#38, by the reviewer's decision: the signed-off row keeps `A16-20`, and the lock case moved to
+`A16-31`. Its two rows marked † became plain `A16-31` rows. The original entry follows, as written on
+2026-10-20.*
+
+Its row in
 `docs/TEST-SPEC-git-integration.md`, signed off on 2026-09-22 in `2115193`, is the NUL counterpart
 A16-19 leans on — the datum `'a\0b'`, whose case runs inside A13-6's `describe` in
 `tests/unit/m-a13.skip-step-names.test.ts`. On 2026-09-28 `3118ca8` gave the same id to three titles
@@ -261,11 +268,7 @@ until 2026-10-20 and now has two, marked †, under *Cases documented after the 
 it: the id in the titles is declared, only not for that case. Renumbering is the reviewer's decision,
 as it was for A16-19, which #24 resolved on 2026-10-21 by moving the side with no signed-off row; and
 the precedent — `OC-40` and `OC-42` in `docs/TEST-SPEC-case-id-traceability.md` — kept the id where it
-was specified first and renumbered the later tests.
-
-A first version of this entry, on 2026-10-16, read the row as one describing the wrong case and moved
-the signed-off id to the lock case, on the claim that no signed-off id moved. The history above says
-one did. A local review found it on 2026-10-20, and the move is withdrawn. Recorded 2026-10-20.
+was specified first and renumbered the later tests. Recorded 2026-10-20.
 
 ---
 

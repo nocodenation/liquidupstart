@@ -23,8 +23,8 @@
  *           runs inside A13-6's `describe` in `m-a13.skip-step-names.test.ts`:
  *           the case that needed a NUL still refuses one, written as the escape
  *           `'a\0b'` rather than the byte, so this rule cannot be met by giving
- *           up the test data. `m-a16.lock-identity.test.ts` carries A16-20 on a
- *           different case; the collision is recorded in the specification.
+ *           up the test data. `m-a16.lock-identity.test.ts` carried A16-20 on a
+ *           different case until it was renumbered to A16-31.
  *
  * Precondition: IN_GIT_REPO -- this checkout is a git repository. Skipped where it does not,
  *           because a release installation at `~/.liquidupstart` is not one, and the

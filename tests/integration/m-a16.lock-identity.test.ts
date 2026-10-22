@@ -22,13 +22,17 @@
  * Then:     A holder from another identity is honoured without the pid being
  *           consulted at all; an empty pid file counts as held; and the file the
  *           fix writes carries `<identity>:<pid>` so there is something to
- *           compare.
- * Covers:   A16-7, A16-8, A16-9, A16-10, A16-11, FR3, NFR1
+ *           compare. A foreign holder older than any legitimate hold is taken
+ *           over, and the run says so, while a fresh one is still honoured; and an
+ *           abandoned `mkdir` is taken over the same way.
+ * Covers:   A16-7, A16-8, A16-9, A16-10, A16-11, A16-21, A16-22, A16-31, FR3, NFR1
  * Unhappy:  A16-8 is the positive counterpart and it is the one that matters:
  *           a lock left by a dead process on *this* identity is still taken
  *           over. Without it the fix could satisfy every other case here by
  *           never releasing anything, which is A15-4's failure — one killed
- *           start sealing a repository forever.
+ *           start sealing a repository forever. And A16-21 is the refusing
+ *           counterpart of A16-31: a fresh foreign lock is still honoured, so
+ *           the takeover cannot be met by ignoring foreign locks.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync, chmodSync, utimesSync } from 'node:fs';
@@ -157,7 +161,7 @@ describe('A16-11 the lock names an identity, not a bare number', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A16-20 to A16-22 — the blocker of the 2026-09-28 review, and a regression of
+// A16-31, A16-21 and A16-22 — the blocker of the 2026-09-28 review, and a regression of
 // A15-4 introduced by A16-10. A foreign holder was honoured with no liveness
 // check and no age limit. The identity is the hostname, and every run gets a
 // fresh container: a dashboard start runs in a new `aiw-toolbox-start`, a Test
@@ -169,7 +173,7 @@ describe('A16-11 the lock names an identity, not a bare number', () => {
 
 // Every case below runs the start script inside its own body, so each carries
 // START_SCRIPT_BUDGET. bun's default is 5s, and a start takes about 1s on an idle
-// host: measured 2026-10-02, A16-20's second case timed out at 6055ms in eight of
+// host: measured 2026-10-02, A16-31's second case timed out at 6055ms in eight of
 // eight concurrent runs of this file. The default is a bet on the machine, which
 // is the same mistake as the fixed sleep A16-11 used to make.
 const OLD = new Date(Date.now() - 36 * 3600 * 1000);
@@ -185,8 +189,8 @@ function seedLock(holder: string | null, when?: Date) {
   }
 }
 
-describe('A16-20 a foreign lock nobody can ask about is not forever', () => {
-  test('A16-20 one older than any legitimate hold is taken over', () => {
+describe('A16-31 a foreign lock nobody can ask about is not forever', () => {
+  test('A16-31 one older than any legitimate hold is taken over', () => {
     // The longest a lock may honestly be held is the deploy-key wait plus the
     // clone timeout. Past that, the holder is gone and nothing in the stack
     // clears the directory -- so every later start waited 300s and recorded
@@ -198,7 +202,7 @@ describe('A16-20 a foreign lock nobody can ask about is not forever', () => {
     expect(r.cloned).toBe(true);
   }, START_SCRIPT_BUDGET);
 
-  test('A16-20 and the run says it did so', () => {
+  test('A16-31 and the run says it did so', () => {
     seedLock('some-other-container:7', OLD);
     const r = runAgainst(null, true);
     expect(r.output).toMatch(/stale|took over|abandoned/i);
@@ -207,7 +211,7 @@ describe('A16-20 a foreign lock nobody can ask about is not forever', () => {
 
 describe('A16-21 but a fresh foreign lock is still honoured', () => {
   test('A16-21 the counterpart: a lock being held right now is left alone', () => {
-    // Without this, A16-20 could be met by ignoring foreign locks entirely,
+    // Without this, A16-31 could be met by ignoring foreign locks entirely,
     // which is the concurrency A15 exists to prevent.
     seedLock('some-other-container:7');
     const r = runAgainst(null, true);
