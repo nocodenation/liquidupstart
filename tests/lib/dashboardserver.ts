@@ -72,18 +72,23 @@ export const fixtureLabels = (): string[] => labels();
  * allocation needs a lock and the whole point is that runs do not coordinate.
  *
  * 10.128–10.227 keeps clear of the stack's own 10.99.0.0/24 and of docker's
- * default pools. Two concurrent runs can still land on one pair; at 100 x 256
- * starting points that is rare enough to be worth less than a lock, and the
- * failure is a loud `docker network create` error rather than a wrong verdict.
- * B3 of the 2026-10-01 review.
+ * default pools. A pair starts on an even third octet, so two runs' pairs are the
+ * same or apart, never neighbours: with adjacent starts one run's `free` was the
+ * next one's `taken`, and the probe of a free range failed on "Pool overlaps" and
+ * read as the preflight refusing it -- a wrong verdict, and the likelier clash of
+ * the two (A8-35). Two runs can still land on one pair; at 100 x 127 starting
+ * points that is rare enough to be worth less than a lock, and the failure is a
+ * loud `docker network create` error. B3 of the 2026-10-01 review.
  */
-export function runSubnets(): { taken: string; free: string } {
+export function subnetsFor(id: string): { taken: string; free: string } {
   let h = 0;
-  for (const ch of RUN_ID) h = (h * 31 + ch.charCodeAt(0)) % 100000;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 100000;
   const a = 128 + (h % 100);
-  const b = Math.floor(h / 100) % 255;
+  const b = 2 * (Math.floor(h / 100) % 127);
   return { taken: `10.${a}.${b}.0/24`, free: `10.${a}.${b + 1}.0/24` };
 }
+
+export const runSubnets = (): { taken: string; free: string } => subnetsFor(RUN_ID);
 
 function docker(args: string[], timeout = 600_000): Result {
   const p = spawnSync('docker', args, { encoding: 'utf8', timeout });

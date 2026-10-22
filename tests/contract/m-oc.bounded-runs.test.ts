@@ -118,15 +118,24 @@ describe('OC-61 a named container is removed when its run does not end by itself
     // `--rm` fires on container exit, which is precisely what does not happen
     // when the bound expires. Declaring rc and cname without using them — which
     // is what the previous round did — looks like the pattern and is not it.
+    // Any variable that is the whole quoted value, as the script writes them, and
+    // `docker compose run` too: the scan read `name` and `cname` only, so the
+    // state migration's `--name "$_mig"` was outside it and its removal replaced
+    // by `true` left this green (#45, 2026-10-21). The removal has to name the
+    // same container the run did.
     const named = lines
-      .map((text, i) => ({ line: i + 1, text }))
-      .filter(({ text }) => /docker run .*--name "\$\{?c?name\}?"/.test(text));
-    expect(named.length).toBeGreaterThan(2);
+      .map((text, i) => ({ line: i + 1, text, v: text.match(/docker (?:compose )?run .*--name "\$\{?(\w+)\}?"/)?.[1] }))
+      .filter((r): r is { line: number; text: string; v: string } => !!r.v && !/^\s*#/.test(r.text));
+    const vars = new Set(named.map((r) => r.v));
+    expect({ count: named.length >= 4, missing: ['_mig', 'cname', 'name'].filter((v) => !vars.has(v)) }).toEqual({
+      count: true,
+      missing: []
+    });
 
     const offenders = named
-      .filter(({ line }) => {
+      .filter(({ line, v }) => {
         const window = lines.slice(line - 1, line + 14).join('\n');
-        return !/docker rm -f "\$\{?c?name\}?"/.test(window);
+        return !new RegExp(`docker rm -f "\\$\\{?${v}\\}?"`).test(window);
       })
       .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
     expect(offenders).toEqual([]);

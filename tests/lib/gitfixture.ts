@@ -464,10 +464,20 @@ export function gitOnHost(dir: string, args: string[], pathPrefix: string): Resu
   return git(dir, args, { PATH: `${pathPrefix}:${process.env.PATH}` });
 }
 
-type WatchedRun = { exitCode: number | null };
+type WatchedRun = { exitCode: number | null; exited?: Promise<number> };
 
 const isStream = (s: unknown): s is ReadableStream<Uint8Array> =>
   !!s && typeof s === 'object' && 'getReader' in (s as object);
+
+// A Bun.spawnSync result passes for a running child by shape -- `exitCode` a
+// number, its output Buffers -- and nothing type-checks tests/, so the helpers
+// went on to report a run that had ended, or said nothing, about a harness that
+// handed them the wrong thing. A16-31.
+function mustBeRunning(run: object, helper: string): void {
+  if (!('exited' in run)) {
+    throw new Error(`${helper} needs a child from Bun.spawn, and was handed a finished run (Bun.spawnSync?): a fault of the test, not of the run`);
+  }
+}
 
 /**
  * Wait until `file` holds something, and give back what it holds.
@@ -492,7 +502,17 @@ export async function awaitFile(
   seen?: { text: string },
   seconds = 20
 ): Promise<string> {
-  const read = () => (existsSync(file) ? readFileSync(file, 'utf8').trim() : '');
+  mustBeRunning(run, 'awaitFile');
+  // One call, not a check and then a read: git.sh's EXIT trap removes the lock
+  // directory whole, and a file gone between the two threw ENOENT out of here.
+  const read = () => {
+    try {
+      return readFileSync(file, 'utf8').trim();
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return '';
+      throw e;
+    }
+  };
   const said = () => (seen ? `. It said:\n${seen.text}` : '');
   const deadline = Date.now() + seconds * 1000;
   while (Date.now() < deadline) {
@@ -521,25 +541,38 @@ export async function awaitFile(
  * waited for anything and the case passed anyway.
  */
 export function watchOutput(run: { stdout?: unknown; stderr?: unknown }) {
-  const dec = new TextDecoder();
+  mustBeRunning(run, 'watchOutput');
+  if (!isStream(run.stdout) || !isStream(run.stderr)) {
+    throw new Error('watchOutput needs both stdout and stderr piped: a fault of the test, not of the run');
+  }
   let text = '';
   let ended = false;
-  const pump = async (s: unknown) => {
-    if (!isStream(s)) return;
+  let failure = '';
+  // A decoder each: one shared, a character split across two chunks of one
+  // stream was decoded against the other stream's bytes in between.
+  const pump = async (s: ReadableStream<Uint8Array>) => {
+    const dec = new TextDecoder();
     const reader = s.getReader();
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      if (value) text += dec.decode(value, { stream: true });
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) text += dec.decode(value, { stream: true });
+      }
+      text += dec.decode();
+    } catch (e) {
+      // Noted at once, so a deadline reached while the other stream is still
+      // open names it too.
+      failure += `${failure ? '; ' : ''}${String(e)}`;
     }
   };
-  // Caught, because a rejected pump would otherwise surface as an unhandled
-  // rejection in a test run that is about something else entirely.
-  const drained = Promise.all([pump(run.stdout), pump(run.stderr)])
-    .catch(() => undefined)
-    .then(() => {
-      ended = true;
-    });
+  // Ended once both are done, and a reader that failed is said to have failed.
+  // With `Promise.all` one rejection ended the output while the other stream --
+  // stderr, where git.sh says what it is waiting for -- was still delivering,
+  // and the swallowed error left `until` reporting a run that said nothing.
+  const drained = Promise.all([pump(run.stdout), pump(run.stderr)]).then(() => {
+    ended = true;
+  });
   return {
     get text() {
       return text;
@@ -552,13 +585,17 @@ export function watchOutput(run: { stdout?: unknown; stderr?: unknown }) {
         if (ended) break;
         await Bun.sleep(20);
       }
+      if (failure) {
+        throw new Error(`the output of the run could not be read (${failure}), a fault of the test; before that it said:\n${text}`);
+      }
       throw new Error(
         `the run never said ${JSON.stringify(needle)}${ended ? ' and has ended' : ` within ${seconds}s`}. It said:\n${text}`
       );
     },
-    /** Everything it printed, once there is no more of it. */
+    /** Everything it printed, once there is no more of it -- or the harness's fault. */
     async finished(): Promise<string> {
       await drained;
+      if (failure) throw new Error(`the output of the run could not be read (${failure}), a fault of the test; before that it said:\n${text}`);
       return text;
     }
   };

@@ -210,9 +210,11 @@ precondition it deliberately does not cover. Recorded 2026-10-09.
 `tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
 space')` and `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so
 there is something to judge')`. They are unrelated. `--gaps` reads ids out of specifications, so a
-registry entry naming A16-19 would be ambiguous in exactly the way #18's own finding 1 describes --
-and `mutate.sh` refuses a `mustFail` that resolves to more than one test, so the collision would
-surface as a refusal rather than a wrong answer. That is the good case; the bad one is a reader.
+registry entry naming A16-19 would be ambiguous in exactly the way #18's own finding 1 describes.
+*Corrected 2026-10-22: this went on to say that `mutate.sh` refuses such an entry, so the collision
+would surface as a refusal. It cannot see it: an entry names one spec file and the runner reads only
+that file's record, and `mustFail` is a test title, not an id. Measured on #18's head and recorded on
+#45. What does see one id on two titles across files is `TR-4`.*
 
 Found alongside: the A16 tests run to **A16-29** while `docs/TEST-SPEC-git-integration.md` documents
 only to **A16-20**, so eight ids have no row and `--gaps` cannot see them. Both were reported during
@@ -242,9 +244,9 @@ space')`; `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks 
 is something to judge')`. They share nothing but the number.
 
 `TR-1` does not catch it, by construction: both resolve to a declared row, which is all that case
-asserts. What does catch it is `mutate.sh`, which refuses a `mustFail` resolving to more than one
-test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer. That is
-the good failure mode, and it is why this is recorded rather than urgent.
+asserts. *Corrected 2026-10-22: this said `mutate.sh` catches it and called that the good failure
+mode, the reason the collision could wait. It cannot see it, as the entry above now says; `TR-4`
+does.*
 
 The row in `docs/TEST-SPEC-git-integration.md` describes the `text-only` one. Whichever is renumbered,
 its id moves in a signed-off specification and in a test title at once, which is an operator decision.
