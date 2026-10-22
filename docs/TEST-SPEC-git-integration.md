@@ -1537,10 +1537,10 @@ difference in outcome is attributable to the one setting the case names.
 | **Premise** | Deletion destroys work no local copy may hold, and no use case asks an agent to do it. |
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; push a branch; then `git push origin --delete` it. |
-| **Expected** | Non-zero exit; `feature/probe` still listed by `git ls-remote remote.git`; the message names `feature/probe`. |
+| **Expected** | Non-zero exit; `feature/probe` still listed by `git ls-remote remote.git`; the message names `feature/probe` and says **`this would delete`**, the deletion rule's own words. *Corrected 2026-10-21: the row stopped at the branch name. The test was strengthened on 2026-10-09 and this row was not, and the three conditions it listed are all met by the ancestor check as well — with the deletion rule gone, that check refuses the same push with `holds commits your branch does not`.* |
 | **Test data** | `hookFixture()` with `feature/probe` already pushed successfully, so the deletion is the only operation under test. |
 | **Covers** | U4. |
-| **What it found** | Passed. The deletion arrives with an all-zero local sha, which is the only signal git gives, and the case fixes that reading in place. |
+| **What it found** | Passed. The deletion arrives with an all-zero local sha, which is the only signal git gives, and the case fixes that reading in place. *Added 2026-10-21:* its registered mutation turns `if is_zero "$local_sha"; then` in `config/agents/hooks/pre-push` into `if false; then`. Against the case as first written that mutation came back **unresolved**, because the next guard refused the push and the case could not tell the two rules apart. With the `this would delete` assertion it validates `(1 red, 0 green)`. |
 
 ##### A4-7 — a private key in the pushed commits is refused
 
@@ -1585,10 +1585,10 @@ difference in outcome is attributable to the one setting the case names.
 | **Premise** | The declaration already distinguishes read from write, and a read-only repository should not depend on its branch policy to be safe. Checked before any other rule, so the message is about access rather than about branches. |
 | **Component** | The `pre-push` hook. |
 | **Steps** | Clone; set `access=read` and `policy=direct` — the most permissive branch setting; commit on a feature branch; push. |
-| **Expected** | Non-zero exit; the message contains `read` and does not mention the branch, so it is clear the access rule fired first. |
+| **Expected** | Non-zero exit; the message contains the phrase **`declared with access read`**, does not mention the branch — none of `feature branch`, `protected`, `default branch` — and does not carry the git-publish gate's `did not come through git-publish`, so it is clear the access rule fired first and not the gate. *Corrected 2026-10-09: this said "the message contains `read`", which is what the test asserted until those four letters were found inside the word "reads" — a vacuous match. The assertion was strengthened then and this row was not. B4 of the 2026-10-01 re-review. Corrected again 2026-10-21: the rewrite dropped "does not mention the branch", which the test still asserts.* |
 | **Test data** | `hookFixture()` with two settings changed: `liquidupstart.access=read` and `liquidupstart.policy=direct` — the most permissive branch setting, so a refusal cannot be attributed to the branch. Commit `add probe note` on `feature/probe`. |
 | **Covers** | U1, U4, §1.3. |
-| **What it found** | Passed, including the negative half: with `policy=direct` and the push aimed at a feature branch, the output names neither the branch nor a branch policy, so the access rule is demonstrably the one that fired. |
+| **What it found** | Passed, including the negative half: with `policy=direct` and the push aimed at a feature branch, the output names neither the branch nor a branch policy, so the access rule is demonstrably the one that fired. *Amended 2026-10-09.* What this row did not say is the thing worth recording: the first version of the case asserted `toContain('read')` and passed against a message that never mentioned access at all, because the four letters sit inside "reads". A case that cannot fail is the defect this whole practice exists to find, and it was found by the mutation runner rather than by the suite: mutations of the access rule left the case green, and a manual run showed why. The assertion is the phrase now, plus the absence of the gate's own sentence, which is what makes "the access rule fired first" an observation instead of an inference. *Corrected 2026-10-21: this sat in a third cell of a two-column table, which GitHub does not render, and it said the case was found "by reading"; `FEATURE-test-mutation.md` §15 and the test's own comment both say the runner.* |
 
 ##### A4-11 — a branch behind the remote is refused rather than integrated
 
@@ -3278,10 +3278,11 @@ with their numbers, because "it reproduced" is worth more than "it looked wrong"
 | | |
 |---|---|
 | **Premise** | `TaskRunner.svelte` opened the Claude panel on `task.log.includes('ACTION REQUIRED')`, and `authProbe` stays `unknown` while the stack is down. M-A9 taught `git.sh` to print exactly that banner for a missing deploy key, so the two met for the first time and the panel opened for a provider switched off in `.env`. |
-| **Component** | `config/scripts/start/openclaw.sh` and `TaskRunner.svelte` as text, plus a real `git.sh` run. |
-| **Test data** | The marker `::aiw-claude-auth-required::`; the three markers the other providers already use; and a `git.sh` run declaring `git@github.com:nocodenation/agent-skills.git\|read\|protected` against a refusing ssh stand-in with `SYSTEM_SIGNIN_WAIT_SECONDS=0`. |
-| **Expected** | The panel's condition names the marker and not the banner; the marker appears exactly once in `openclaw.sh`, within a few lines of the Claude banner it belongs to; the other three providers are untouched; and a run that only wants a deploy key prints the banner and not the marker. |
+| **Component** | `config/scripts/start/openclaw.sh` and `TaskRunner.svelte` as text; `openclaw.sh` again as bash itself nests it, for A13-8's guard clause; plus a real `git.sh` run. |
+| **Test data** | The marker `::aiw-claude-auth-required::`; the three markers the other providers already use; for the guard clause, `openclaw.sh` checked with `bash -n`, wrapped in a function by `eval`, printed by `declare -f` with `PATH=/nonexistent`, and never run; and a `git.sh` run declaring `git@github.com:nocodenation/agent-skills.git\|read\|protected` against a refusing ssh stand-in with `SYSTEM_SIGNIN_WAIT_SECONDS=0`. |
+| **Expected** | The panel's condition names the marker and not the banner; the marker appears exactly once in `openclaw.sh`, within a few lines of the Claude banner it belongs to, and **inside the branch `if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then` opens** — read from bash's own parse, `openclaw.sh` wrapped in a function and printed back by `declare -f`, never run: the marker is nested deeper than the guard, and no `fi`, `else` or `elif` at the guard's depth comes between them; the other three providers are untouched; and a run that only wants a deploy key prints the banner and not the marker. *Corrected 2026-10-21: the row had no guard clause. The test gained one on 2026-10-09 and the row did not, and the clause then looked for a column-0 `fi` in the text.* |
 | **Covers** | Finding 4 of the #9 follow-up. |
+| **What it found** | *Added 2026-10-21.* A13-8's registered mutation renamed the marker, which the presence check catches before the guard clause is reached, so the clause had never been shown able to fail. The entry now empties the guarded branch and opens an unconditional one after it — `if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then :` / `fi` / `if true; then`, valid bash that prints the marker whatever the setting — and validates `(1 red, 6 green)`: only the guard clause sees it. The clause itself was too weak twice in one day, and each time a shape of the same regression went through: under its text-only form a column-0 `else`, a `fi  # end claude`, a `fi` on the guard's own line (`then :; fi; if true; then`) and an indented `fi` all left the case green. Read from bash's parse, every one of those reddens it — measured by hand with bash 3.2 on the host; bash 5.2 in `liquidupstart/dashboard:latest` nests the unmutated script the same way, guard at depth 4 and marker at 24. **What the clause does not hold:** it reads structure, so `ENABLE_CLAUDE_CLI=1` assigned on the line above the guard leaves the case green while the marker prints whatever `.env` says (measured); and literal text — a heredoc body, a multi-line string — keeps its own indentation in `declare -f`'s output, so a marker moved into a heredoc inside the guard, or a line of literal text starting with `fi`, `else` or `elif` at exactly the guard's depth, reads red without a regression. |
 
 ##### A13-9 — the card is keyed by slug
 
@@ -3409,7 +3410,9 @@ them, and they were not — they were written after, during the rounds of review
 | A8-27 | Unit | positive | An update replaces every locally built image, the toolbox included: `update.sh` names all five, while the dashboard asks for the four that must already exist | `tests/unit/m-a8.built-images.test.ts` |
 | A14-7 | Contract | positive | A finished run refreshes what the page shows, and the refresh is **not** inside the success branch — `invalidateAll()` runs either way, while the success-only callback still means success | `tests/contract/m-a14.skip-button-shape.test.ts` |
 | A14-8 | Contract | positive | Each repository keeps its own test result: the state is a map keyed by slug rather than one answer per card, and starting one test clears only that repository's answer | `tests/contract/m-a14.skip-button-shape.test.ts` |
-| A16-21 | Integration | positive | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-31 | Integration **unhappy** | positive | A foreign lock older than any legitimate hold is taken over: the start exits 0 and clones | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-31 | Integration | positive | …and the run says it took the lock over. A takeover nobody is told about reads as a lock that was never there | `tests/integration/m-a16.lock-identity.test.ts` |
+| A16-21 | Integration | negative | The counterpart to taking over a stale lock: **a lock being held right now is left alone** | `tests/integration/m-a16.lock-identity.test.ts` |
 | A16-22 | Integration **unhappy** | positive + negative | An abandoned `mkdir` is not forever either — an empty pid file older than any hold is taken over, and a fresh one is still held | `tests/integration/m-a16.lock-identity.test.ts` |
 | A16-24 | Component **unhappy** | negative | A contradicted result line is dropped, not hidden: it does not come back when the clone state flips back | `tests/component/m-a16.result-line.test.ts` |
 | A16-25 | Integration | positive | A folder that appeared during the wait survives it, and the start says it left it alone | `tests/integration/m-a16.wait-cleanup.test.ts` |
@@ -3434,6 +3437,12 @@ either. **That side moved**, to `A16-30`, because there was nothing here to move
 somebody had approved — and its own header had never listed the id at all. Deciding *which* side
 moves looked arbitrary and was not: one of them had a signed-off row and the other had none.
 
+**`A16-20` was a second collision of the same kind, and it is resolved the same way.** The
+stale-foreign-lock case, which `3118ca8` gave the id on 2026-09-28 without a row of its own, moved to `A16-31`
+on 2026-10-22 by the reviewer's decision on #38, and the signed-off NUL counterpart of 2026-09-22
+(`2115193`) keeps `A16-20`. The side that moves is the one with no signed-off row, the rule A16-19
+set, and as with `OC-40` and `OC-42` the id stays with the case it was specified for first.
+
 #### Detail per case
 
 | | |
@@ -3443,7 +3452,7 @@ moves looked arbitrary and was not: one of them had a signed-off row and the oth
 | **Test data** | `git@github.com:nocodenation/agent-skills.git\|read\|protected`, clonable through the suite's `fakeSsh` from a local bare repository, and `git@github.com:nocodenation/liquid-flows.git\|write\|protected` with no route, so its clone fails and a deploy key is asked for. `SYSTEM_SIGNIN_WAIT_SECONDS=90`, so the start is measured inside its wait rather than past it. Lock holders written by hand: `some-other-container:7` (an identity this machine is not, naming a pid that is certainly alive here), `<this host>:999999` (dead), `<this host>:<a live sleep>` (alive and ours), and the empty string. The panel is driven by a task log carrying `::aiw-git-keys-pending::<a> <b>` and `::aiw-git-key-required::<b>`. |
 | **Expected** | As the rows above. |
 | **Measured against the unfixed code** | 18 fail, 9 pass. The 9 are A16-2's first half, A16-6's first two, A16-8, A16-13, A16-15, A16-17, A16-18 and A16-19's count guard — every one of them a counterpart or a control, which is what those are for. |
-| **What the instrument got wrong, 2026-10-02** | Three cases here waited on the clock and read the result afterwards. A16-11 slept 900ms and read `locks/<slug>/pid`: the holder lands after about 250ms idle and 1047 to 1342ms with eight starts at once, so eight of eight concurrent runs read an empty file and reported the identity as missing. A16-20's second case ran the start script inside bun's default 5s budget and timed out at 6055ms in all eight. And A16-27 released the lock after 3000ms, then asserted that 3000ms had passed — which its own sleep guarantees: with `lu_take_lock_waiting` removed from `git.sh` and the release brought forward, all four cases in that file passed. Each now waits on its subject — the holder on disk, the line the run prints — and the five cases that run the script carry `START_SCRIPT_BUDGET`. Eight concurrent runs of the three files: 22 / 0 each. |
+| **What the instrument got wrong, 2026-10-02** | Three cases here waited on the clock and read the result afterwards. A16-11 slept 900ms and read `locks/<slug>/pid`: the holder lands after about 250ms idle and 1047 to 1342ms with eight starts at once, so eight of eight concurrent runs read an empty file and reported the identity as missing. A16-31's second case (A16-20 then) ran the start script inside bun's default 5s budget and timed out at 6055ms in all eight. And A16-27 released the lock after 3000ms, then asserted that 3000ms had passed — which its own sleep guarantees: with `lu_take_lock_waiting` removed from `git.sh` and the release brought forward, all four cases in that file passed. Each now waits on its subject — the holder on disk, the line the run prints — and the five cases that run the script carry `START_SCRIPT_BUDGET`. Eight concurrent runs of the three files: 22 / 0 each. |
 | **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on both paths: toolbox → dashboard from the dashboard's Start button, and host → dashboard from a terminal. |
 | **Covers** | Findings 1 to 6 of 2026-09-21, FR3, FR11, NFR1, U1, U2, U11. |
 
@@ -3517,6 +3526,20 @@ model a world that does not exist.
 `…without this repository.Closing in 1…` — no space. Svelte trims the whitespace at the start of the
 `{#if holdingSkip}` block, and the markup puts that block immediately after the full stop. Present
 before M-A16; visible now because the sentence it belongs to is the one finding 4 corrected.
+
+#### A16-31 — a foreign lock nobody can ask about is not forever, documented after the fact
+
+| | |
+|---|---|
+| **Premise** | The blocker of the 2026-09-28 review. A foreign holder was honoured with no liveness check and no age limit, and the holder's identity is a container hostname that no later run can match, so a holder killed before its EXIT trap left the repository locked for good: every later start waited and recorded *another run is preparing*, every Test answered 409. |
+| **Component** | `lu_take_lock` in `config/scripts/start/git.sh`, driven by `runAgainst` in `tests/integration/m-a16.lock-identity.test.ts`. |
+| **Test data** | A lock directory under the fixture project's `volumes/_git-secrets/locks/<slug>/` holding `pid` = `some-other-container:7` — an identity no run on this machine has. For A16-31, the directory and the `pid` file have their mtime set **36 hours** back, past the longest legitimate hold (the deploy-key wait plus the clone timeout). For the counterpart A16-21, the same holder with the mtime left at now. |
+| **Expected** | A16-31: the start exits `0`, the clone exists, and the output matches `/stale\|took over\|abandoned/i`. A16-21: exit `4` and no clone — without it, A16-31 could be met by ignoring foreign locks entirely, which is the concurrency M-A15 exists to prevent. |
+| **What it found** | Measured by the reviewer on 2026-10-21 and again here on 2026-10-22: with the stale takeover for a foreign holder turned off (`config/scripts/start/git.sh:375`, `if (( age > LOCK_MAX_AGE_SECONDS ))` made `if false`), both A16-31 cases are red and A16-21 stays green — `m-a16.lock-identity` 9 pass / 2 fail. |
+| **Dependencies** | The suite's `fakeSsh`, the local bare repository `seedRepo` makes, and `START_SCRIPT_BUDGET` as each case's budget. No Docker, no network. |
+| **The id** | Renumbered from A16-20 on 2026-10-22; the signed-off A16-20 is the NUL case. |
+| **Implemented by** | `tests/integration/m-a16.lock-identity.test.ts`: `describe('A16-31 a foreign lock nobody can ask about is not forever')` and its two tests, and the counterpart under `describe('A16-21 but a fresh foreign lock is still honoured')`. |
+| **Covers** | The blocker of the 2026-09-28 review, and the guarantee M-A15 introduced the lock for: two runs do not clone one repository at once. |
 
 ---
 

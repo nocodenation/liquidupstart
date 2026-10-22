@@ -282,7 +282,7 @@ the detail block says what was measured instead.
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, B5-33, B5-34 — *the Liquid image's versions, read rather than assumed; added 2026-10-22* |
 | SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3** |
 | SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2, **SP-3** |
 | SP-FR4 a condition of the machine is never reported as a verdict on the code | **SP-5** |
