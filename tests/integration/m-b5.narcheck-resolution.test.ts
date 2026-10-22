@@ -40,8 +40,9 @@ import { test, expect, describe, beforeAll } from 'bun:test';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
-const IMAGE = 'ghcr.io/nocodenation/liquid-nifi:latest';
+const IMAGE = LIQUID_IMAGE;
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 const LIB = '/opt/nifi/nifi-current/lib';
 
@@ -77,7 +78,7 @@ describe('B5-4 the check accepts what Liquid already loads', () => {
 });
 
 describe('B5-5 but only because the parent is declared', () => {
-  test('B5-5 the same classes with no parent declaration are refused', () => {
+  test.skipIf(LIQUID_MOVED_ON.nifi)('B5-5 the same classes with no parent declaration are refused', () => {
     // The counterpart. Resolving against the parent chain must not become
     // resolving against everything: strip the declaration and the very same
     // bundle has to be refused again.
@@ -102,7 +103,7 @@ EOF
   }, 900_000);
 });
 
-describe('B5-6 a type named only in a signature is seen', () => {
+describe.skipIf(LIQUID_MOVED_ON.api)('B5-6 a type named only in a signature is seen', () => {
   let out = '';
   beforeAll(() => {
     out = inImage(`

@@ -224,7 +224,7 @@ reachability check cannot reach.
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, **SP-6** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, **SP-6**, B5-33, B5-34 — *the Liquid image's versions, read rather than assumed; added 2026-10-22* |
 | SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3**, **SP-6** |
 | SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2, **SP-3** |
 
