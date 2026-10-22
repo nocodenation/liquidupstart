@@ -57,13 +57,15 @@ let dir = '';
 /** Python that builds the fixtures and a peak-RSS harness, all in the container. */
 const SETUP = `
 import os, zipfile, sys
-# On disk, a mebibyte at a time. This held 800 MB of zeros, then the 800 MB jar
-# in a BytesIO, then its getvalue() copy, and with the stack up the container
-# was killed for memory before narcheck ran: every red of B6-37 on 2026-10-20 and
-# 2026-10-21 was the fixture, not the checker. Same zip structure as before --
-# the blob stored in the jar, the jar deflated in the bundle.
+# A mebibyte at a time, so the RSS stays at 17 MB; it held 800 MB of zeros, then
+# the jar in a BytesIO, then its copy, and was killed for memory before narcheck
+# ran. The 800 MB inner jar goes to the container's own /tmp, the overlay: /w is
+# bun's tmpdir(), a tmpfs on many Linux hosts, where it is memory charged to this
+# container, and the setup was killed at 600 MB there all the same. Only the
+# finished bundle goes to /w. Same zip structure as before -- the blob stored in
+# the jar, the jar deflated in the bundle.
 def nar(path, stored_blob):
-    inner = path + '.inner.jar'
+    inner = '/tmp/' + os.path.basename(path) + '.inner.jar'
     mode = zipfile.ZIP_STORED if stored_blob else zipfile.ZIP_DEFLATED
     with zipfile.ZipFile(inner, 'w', mode) as z:
         z.writestr('org/apache/nifi/processor/Processor.class', b'\\xca\\xfe\\xba\\xbe')

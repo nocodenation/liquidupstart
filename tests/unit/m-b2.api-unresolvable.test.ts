@@ -28,8 +28,9 @@
  *           source directory, used unchanged; no version is printed as if it had
  *           been resolved; and nothing reached the drop directory.
  * Covers:   B2-3, B2-11, FR27, FR24, FR20's property
- * Unhappy:  This is the negative case. Its positive counterparts are B2-1 and
- *           B2-2, which still run against the stack.
+ * Unhappy:  B2-3 is the negative case. Its positive counterparts are B2-1 and
+ *           B2-2, which still run against the stack. B2-11 is a positive half, and
+ *           its negative is `resolve_target synthesised`, still refused with 3.
  *
  * B2-11, added 2026-10-21: the way out B2-3 names was not open. The same source
  * with its own `pom.xml` got the same refusal and the same advice, because the
@@ -40,6 +41,12 @@
  * and no advice to add a pom, but the notice that the project's own pom declares
  * its version, then Maven's `Non-parseable POM` and the build's own refusal,
  * exit 2 rather than the target's 3, and nothing in the drop directory.
+ *
+ * And `resolve_target` alone, evaluated out of the shipped script on the host
+ * with a runtime record naming NiFi 2.11.0 and Java 21.0.12+10-LTS, `curl` and
+ * `run_maven` stubbed, and the probe at the same unresolvable version: for
+ * `author` it prints `nifi_api_version not resolved` and the notice and returns
+ * 0; for `synthesised`, the negative, it returns 3 with the advice to add a pom.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { join } from 'node:path';
@@ -167,43 +174,52 @@ describe('B2-11 with its own pom, an unresolvable API does not stop the build', 
     expect(authoredAfter).toEqual([]);
   });
 
-  test('B2-11 and resolve_target reports the API as not resolved, while a synthesised project still stops', () => {
+  describe('B2-11 resolve_target alone', () => {
     // The report a successful author build prints, which the Maven refusal above
     // never reaches. `resolve_target` is evaluated out of the shipped script, as
     // B6-42 does with judge_and_place, with curl answering and Maven failing:
     // the resolution fails for both, and only the source of the pom differs.
-    const idx = mkdtempSync(join(tmpdir(), 'lu-b2-11-'));
-    writeFileSync(join(idx, 'runtime'), 'nifi_version=2.11.0\njava_version=21.0.12+10-LTS\n');
-    const run = (source: string) =>
-      sh([
-        'bash',
-        '-c',
-        [
-          'set -u',
-          `eval "$(sed -n '/^out() {/p;/^resolve_api_version() {/,/^}/p;/^resolve_target() {/,/^}/p' ${JSON.stringify(BUILD)})"`,
-          'curl() { return 0; }',
-          'run_maven() { return 1; }',
-          'work_dir_for_build() { mktemp -d; }',
-          'repo_for() { echo /nonexistent; }',
-          `LIQUID_HOST=liquid LIQUID_PORT=8833 LIQUID_INDEX=${JSON.stringify(idx)} LIQUID_LOGS=/nonexistent DROP=/nonexistent`,
-          `NAR_BUILD_API_PROBE_VERSION=${UNRESOLVABLE}`,
-          `resolve_target ${source}; echo "rc=$?"`
-        ].join('\n')
-      ]);
-    try {
-      const authored = run('author');
-      const synthesised = run('synthesised');
+    let idx = '';
+    const got: Record<'author' | 'synthesised', { stdout: string; stderr: string }> = {
+      author: { stdout: '', stderr: '' },
+      synthesised: { stdout: '', stderr: '' }
+    };
+    beforeAll(() => {
+      idx = mkdtempSync(join(tmpdir(), 'lu-b2-11-'));
+      writeFileSync(join(idx, 'runtime'), 'nifi_version=2.11.0\njava_version=21.0.12+10-LTS\n');
+      for (const source of ['author', 'synthesised'] as const) {
+        got[source] = sh([
+          'bash',
+          '-c',
+          [
+            'set -u',
+            `eval "$(sed -n '/^out() {/p;/^resolve_api_version() {/,/^}/p;/^resolve_target() {/,/^}/p' ${JSON.stringify(BUILD)})"`,
+            'curl() { return 0; }',
+            'run_maven() { return 1; }',
+            'work_dir_for_build() { mktemp -d; }',
+            'repo_for() { echo /nonexistent; }',
+            `LIQUID_HOST=liquid LIQUID_PORT=8833 LIQUID_INDEX=${JSON.stringify(idx)} LIQUID_LOGS=/nonexistent DROP=/nonexistent`,
+            `NAR_BUILD_API_PROBE_VERSION=${UNRESOLVABLE}`,
+            `resolve_target ${source}; echo "rc=$?"`
+          ].join('\n')
+        ]);
+      }
+    });
+    afterAll(() => idx && rmSync(idx, { recursive: true, force: true }));
+
+    test('B2-11 for an author pom it reports the API as not resolved, and goes on', () => {
       expect({
-        rc: authored.stdout.match(/rc=(\d+)/)?.[1],
-        reported: authored.stdout.includes('nifi_api_version not resolved\n'),
-        noticed: authored.stderr.includes('This project has its own pom.xml')
+        rc: got.author.stdout.match(/rc=(\d+)/)?.[1],
+        reported: got.author.stdout.includes('nifi_api_version not resolved\n'),
+        noticed: got.author.stderr.includes('This project has its own pom.xml')
       }).toEqual({ rc: '0', reported: true, noticed: true });
+    });
+
+    test('B2-11 the negative: a synthesised project still stops with 3, and the advice', () => {
       expect({
-        rc: synthesised.stdout.match(/rc=(\d+)/)?.[1],
-        advice: synthesised.stdout.includes('Add a pom.xml to the source directory')
+        rc: got.synthesised.stdout.match(/rc=(\d+)/)?.[1],
+        advice: got.synthesised.stdout.includes('Add a pom.xml to the source directory')
       }).toEqual({ rc: '3', advice: true });
-    } finally {
-      rmSync(idx, { recursive: true, force: true });
-    }
+    });
   });
 });

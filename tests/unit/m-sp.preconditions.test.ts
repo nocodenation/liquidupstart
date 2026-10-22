@@ -334,6 +334,7 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     ['tests/contract/m-a5.nested-clone.test.ts', 'IN_GIT_REPO'],
     ['tests/component/m-a6.operator-repository.test.ts', 'IN_GIT_REPO'],
     ['tests/contract/m-a16.text-only.test.ts', 'IN_GIT_REPO'],
+    ['tests/unit/m-a10.fixture-ceiling.test.ts', 'IN_GIT_REPO'],
     ...domFiles.map((f) => [f, 'DASHBOARD_DEPS'] as [string, string]),
     ...registryFiles.map((f) => [f, 'registryReachable()'] as [string, string])
   ];

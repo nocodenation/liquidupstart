@@ -58,12 +58,19 @@
  * without one, and git reads an empty list as no ceiling.
  *
  * Requirements covered: A10-23, and the 2026-09-17 incident.
+ *
+ * Precondition: IN_GIT_REPO -- this checkout is a git repository -- for the first
+ *           case alone, which asks git for this checkout's toplevel. Skipped where
+ *           there is none, a release installation at `~/.liquidupstart`: there
+ *           is nothing for the ceiling to protect, and an SP-2 case says so. The
+ *           other cases build hosts of their own and run everywhere. SP-1, SP-2.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { git, seedRepo, tempProject } from '../lib/gitfixture';
 import { REPOS_HOST } from '../lib/narfixture';
+import { IN_GIT_REPO } from '../lib/preconditions';
 
 // Paths are filled in beforeAll, so nothing is created while the file loads.
 const at: { work: string; plain: string; worktree: string } = { work: '', plain: '', worktree: '' };
@@ -94,8 +101,14 @@ beforeAll(() => {
   for (const [, key] of HOSTS) mkdirSync(probeIn(at[key]), { recursive: true });
 });
 
+// Filed under SP-2, not A10-23, so a run without a checkout shows no pass under
+// A10-23's id; it asserts the absence, so a checkout brings the case back.
+test.skipIf(IN_GIT_REPO)('SP-2 A10-23\'s ceiling case needs a git checkout, which is absent here', () => {
+  expect(IN_GIT_REPO).toBe(false);
+});
+
 describe('A10-23 a directory that is not a repository is not the repository above it', () => {
-  test('the helper hands git a ceiling at this checkout, as git itself names it', () => {
+  test.skipIf(!IN_GIT_REPO)('the helper hands git a ceiling at this checkout, as git itself names it', () => {
     // What the helper's git process receives: a shell alias prints the variable
     // from inside it, in a directory that is no repository. The expected value is
     // not repoRoot -- the helper takes its ceiling from that same constant -- but

@@ -109,10 +109,10 @@ like a suite that ran.
 | | |
 |---|---|
 | **Premise** | The drift this exists against is what the findings were: a case reading the installation while its header described something else. A reviewer signing a case off has to see the dependency without running it. |
-| **Component** | The eight dependent test files, read as text. |
+| **Component** | The nine dependent test files, read as text. |
 | **Steps** | For each, read the header comment and assert it names the precondition; then assert the file actually uses `skipIf(!<name>)`, so the header is not a claim about nothing. |
-| **Test data** | `m-a3.known-hosts`, `m-a4.clones-governed` and `m-a1.workspace-dir` against `STARTED`; `m-a5.nested-clone`, `m-a6.operator-repository` and `m-a16.text-only` against `IN_GIT_REPO`; `m-a16.result-line` and `m-a16.skip-panel` against `DASHBOARD_DEPS`. |
-| **Expected** | Eight passes. |
+| **Test data** | `m-a3.known-hosts`, `m-a4.clones-governed` and `m-a1.workspace-dir` against `STARTED`; `m-a5.nested-clone`, `m-a6.operator-repository`, `m-a16.text-only` and, since 2026-10-22, `m-a10.fixture-ceiling`'s first case against `IN_GIT_REPO`; `m-a16.result-line` and `m-a16.skip-panel` against `DASHBOARD_DEPS`. |
+| **Expected** | Nine passes. |
 | **What it found** | Green — and writing it found two things the guards alone did not cover, both in the component tier. A **skipped describe still has its body evaluated**, because bun has to run it to register the tests inside, and these bodies `await` a mount at that point; and `m-a16.skip-panel` calls `setupComponentTier()` at **file level**, where nothing inside a describe can reach it. Both now return early on the precondition, and the file-level hooks with them, because `task` is null without the dependencies. Two measurements had reported that failure as an unhandled error between tests without naming a case. |
 | **And a silent skip is not acceptable either** | With the bodies returning early those files register nothing, so a run would not mention them at all. Each carries one test that runs **only** in that case and names it: `SP-2 the cases in this file need the dashboard dependencies, which are absent here`. It asserts the absence rather than nothing, so it is a reading and not a label. |
 | **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
@@ -217,6 +217,8 @@ reachability check cannot reach.
 | **Steps** | In a child bun started by its absolute path, with a `PATH` that is an empty scratch directory, import the module and print `IN_GIT_REPO`. Then, in this process, ask `inGitRepoAt` of a directory `git init` made. |
 | **Test data, both sides** | The child's `PATH`: an empty scratch directory, so no host can supply `git` by accident; the expected line `IN_GIT_REPO=false`, and the child's exit 0. The real repository: a fresh `git init` in a scratch directory, expected `true` — what must still be found. |
 | **Expected** | The child prints `IN_GIT_REPO=false`, never `Executable not found`, and exits 0; the initialised directory answers `true`. |
+| **Dependencies** | bun, started by its absolute path for the child, and git for the counterpart. |
+| **What it found** | Measured on `main`: the child printed `Executable not found in $PATH: "git"` and exited non-zero, so every file importing the module errored at collection where git is missing. After the change it prints `IN_GIT_REPO=false` and exits 0. Controls, each alone, measured by the review of 2026-10-22: `inGitRepoAt` without its `catch` → **1** red, the negative; `inGitRepoAt` answering false always → **2**, SP-1's git case and the positive. |
 | **Covers** | SP-6, SP-FR1, SP-FR2. |
 | **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
 
