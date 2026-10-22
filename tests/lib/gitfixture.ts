@@ -463,3 +463,103 @@ export function publishOnHost(
 export function gitOnHost(dir: string, args: string[], pathPrefix: string): Result {
   return git(dir, args, { PATH: `${pathPrefix}:${process.env.PATH}` });
 }
+
+type WatchedRun = { exitCode: number | null };
+
+const isStream = (s: unknown): s is ReadableStream<Uint8Array> =>
+  !!s && typeof s === 'object' && 'getReader' in (s as object);
+
+/**
+ * Wait until `file` holds something, and give back what it holds.
+ *
+ * A start writes its lock holder when it reaches the repository, and that is not
+ * a fixed distance away. Measured 2026-10-02 against this fixture: 241ms and
+ * 251ms on an idle host, 1047ms to 1342ms with eight starts running at once --
+ * eight of eight past the 900ms two cases had been reading at. An empty read was
+ * then asserted on as though it were the holder, so a busy machine and a missing
+ * identity failed identically. A16-11 and A15-1 of the 2026-10-01 review.
+ *
+ * The run is watched with it: one that ends without ever writing says so, rather
+ * than producing the same empty string for a different reason. Its pipes are left
+ * alone -- a `new Response(run.stdout).text()` here consumes the stream the case
+ * reads afterwards, which cost one `ReadableStream has already been used` on the
+ * first failure path this helper took. Pass a `watchOutput` handle as `seen` to
+ * get the output into the message.
+ */
+export async function awaitFile(
+  file: string,
+  run: WatchedRun,
+  seen?: { text: string },
+  seconds = 20
+): Promise<string> {
+  const read = () => (existsSync(file) ? readFileSync(file, 'utf8').trim() : '');
+  const said = () => (seen ? `. It said:\n${seen.text}` : '');
+  const deadline = Date.now() + seconds * 1000;
+  while (Date.now() < deadline) {
+    const held = read();
+    if (held !== '') return held;
+    if (run.exitCode !== null) {
+      // It may have written and released between two polls, so the file decides
+      // before the ending does.
+      const last = read();
+      if (last !== '') return last;
+      throw new Error(`the run ended with ${run.exitCode} before it wrote ${file}${said()}`);
+    }
+    await Bun.sleep(20);
+  }
+  throw new Error(`${file} was still empty after ${seconds}s, with the run still going${said()}`);
+}
+
+/**
+ * Follow a running child's output, so a case can wait for a line it prints.
+ *
+ * `await new Response(run.stdout).text()` only answers once the child is gone,
+ * which is no use to a case whose subject is what is true *while* it runs. The
+ * alternative a case reaches for is a sleep, and A16-27 showed what that costs:
+ * it released a lock after 3000ms and asserted the elapsed time was over 3000ms,
+ * which its own sleep guarantees. A run that had not reached the lock yet never
+ * waited for anything and the case passed anyway.
+ */
+export function watchOutput(run: { stdout?: unknown; stderr?: unknown }) {
+  const dec = new TextDecoder();
+  let text = '';
+  let ended = false;
+  const pump = async (s: unknown) => {
+    if (!isStream(s)) return;
+    const reader = s.getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      if (value) text += dec.decode(value, { stream: true });
+    }
+  };
+  // Caught, because a rejected pump would otherwise surface as an unhandled
+  // rejection in a test run that is about something else entirely.
+  const drained = Promise.all([pump(run.stdout), pump(run.stderr)])
+    .catch(() => undefined)
+    .then(() => {
+      ended = true;
+    });
+  return {
+    get text() {
+      return text;
+    },
+    /** Resolve once the child has said this, or fail naming everything it did say. */
+    async until(needle: string, seconds = 60): Promise<void> {
+      const deadline = Date.now() + seconds * 1000;
+      while (Date.now() < deadline) {
+        if (text.includes(needle)) return;
+        if (ended) break;
+        await Bun.sleep(20);
+      }
+      throw new Error(
+        `the run never said ${JSON.stringify(needle)}${ended ? ' and has ended' : ` within ${seconds}s`}. It said:\n${text}`
+      );
+    },
+    /** Everything it printed, once there is no more of it. */
+    async finished(): Promise<string> {
+      await drained;
+      return text;
+    }
+  };
+}

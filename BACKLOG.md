@@ -9,6 +9,28 @@ are kept under their own heading below rather than mixed in.
 
 ## Open findings
 
+**The mutation runner's bound does not reach a process the spec itself started.** `tests/mutate.sh`
+spawns the spec with `exec` inside its subshell, so the run budget and the TERM handler reach `bun`
+itself — which is finding 2 of the third re-review, and `MU-48` to `MU-51` hold it. What they do not
+reach is a **grandchild**: a spec that starts a process of its own, say a container or a server,
+leaves it running when the budget fires, and if that process holds the `--reporter-outfile` it can
+write the record after the handler has removed it. That is the shape finding 2 was about, one level
+further down.
+
+The repair is to put the spec in its own process group — `setsid` or `set -m`, then signal `-$pid` —
+which is what `dashboard/src/lib/server/pairing.ts` does for the same reason (A2 of #15's
+2026-10-01 review, where an orphaned `docker run` held the pipes). It is deferred because no entry in
+either registry starts such a process today, so the exposure is reachable only by a case nobody has
+written, and because signalling a group from a script that is itself run under a test runner needs its
+own measurement — the runner must not take its own parent down.
+
+**Recorded 2026-10-14, after N3 of the fourth re-review found that two places pointed here and
+nothing was here.** `tests/mutate.sh:370` and `tests/integration/m-mu.runner.test.ts` both said it was
+in this file. `PROCEDURE-mutation-control.md`, corrected in that same round, says that *"a pointer to
+a file the reader cannot open is worse than no pointer"* — which is exactly what those two were.
+
+---
+
 **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
 2026-10-14 re-review closed the way past them — `zf.read` inflated a member whole before truncating
 it to a declared size, so an entry that *claimed* 1000 bytes cost 1610 MB from an 815,695-byte file,
@@ -42,15 +64,18 @@ entry above: the reply of 2026-10-13 said it was already here.
 
 ---
 
-**After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
-`cleanup.sh` has no leg for it.** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
+**~~After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
+`cleanup.sh` has no leg for it.~~** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
 host directory ends up owned by `101499` with every Maven-written subdirectory `101499:100998`, so
 `rm -rf volumes/nar_builder/m2` as the host user fails with `Permission denied` and the tree has to
 be removed from a container. That contradicts CLAUDE.md's *"a reset is just deleting `volumes/`"*. It
 is a consequence of B1's build user and only becomes reachable with C2's `chown`, because before it
 the build user could write nothing there.
 
-**Recorded against #25 rather than fixed here, by decision.** #25 removes `/m2` altogether — each
+**~~Recorded against #25 rather than fixed here, by decision.~~ #25 merged on 2026-10-16, so both
+entries above describe a mount that no longer exists** — `grep volumes/nar_builder/m2 compose.yml`
+on `main` finds nothing. Kept struck through rather than deleted, because the reasoning is the
+record of a decision that held: #25 removed `/m2` altogether — each
 build resolves into its own repository under its own work directory, discarded with the build — so
 there is no shared cache for the host to be locked out of. Adding a containerised `rm -rf` to
 `cleanup.sh`, which is a destructive script, for a directory the next branch deletes would be code
@@ -83,9 +108,33 @@ never the image in use, never one built in the last two hours, and never a tag o
 schemes this file has used. Three separate processes now share one image, measured.
 ---
 
-**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
+**Answered in part 2026-10-20 by #28, and the two halves it does not cover are stated below rather
+than closed.** `TR-4` is built for the third of the three checks sketched here — *across test files,
+no id on two different titles* — and that is the one this entry called the one that mattered. It was
+written against #27's parent, where the `A8-24`/`A8-25`/`A8-26` collision still existed, so it has
+been seen to fail against a real one: it reports those three ids there and is green on the repair.
+Its detail block is `TR-4` in [`docs/TEST-SPEC-case-id-traceability.md`](docs/TEST-SPEC-case-id-traceability.md),
+and the shape is **two routes rather than one**: an id carried by several test files is accepted when
+its own detail block's *Implemented by* names every one of them, which is the computed answer the
+house rule asks for, and otherwise only through a reviewed entry naming that exact file set. Of 15
+such ids on the tree of 2026-10-20, the computed route takes 4 and the list carries 11, and an entry
+whose block has come to claim its files is reported as redundant — so entries leave as blocks catch up.
+*(It said "the list can only shrink"; nothing stops an entry being added. Corrected 2026-10-21.)*
+
+**The other two checks are still open, with what they would find today measured** in that document's
+*No id is carried by two test files unless that is on record* section: the per-document duplicate
+check is **not buildable as stated**, because one row per scenario means 50 of 459 id/document pairs
+legitimately carry several rows; the cross-document check **finds exactly one id, `SP-2`**, which is
+by design and would need an exemption on its first run. A third class neither check reaches is
+an id specified for one case and later given to another, where the specified case carries a
+different id in its title; `A16-20` was its instance, resolved by renumbering the later case to
+`A16-31`.
+
+*The original entry follows, as written on 2026-10-12; its "Not built here" is that day's.*
+
+~~**Nothing checks that a case id is used once.** `TR-1` compares the ids in test titles against the
 ids in `TEST-SPEC-*.md` rows, in both directions, and has nothing to say about two different cases
-sharing one id.
+sharing one id.~~
 
 That is not hypothetical. `OC-40` and `OC-42` were specified on #15 on 2026-09-19 — two signed detail
 blocks, a traceability row, test headers and a comment in `config/scripts/start/openclaw.sh` — and the
@@ -108,8 +157,40 @@ the repair together would leave the check never having been seen to fail against
 collision still exists to catch.
 
 Recorded 2026-10-12.
+**The embedding credential gate speaks for two providers out of six.** `openclaw.sh` can say whether
+an embedding backend has a credential for `openai` (is `OPENAI_API_KEY` set) and for `github-copilot`
+(is the harness on). The schema also allows `ollama`, `local`, `gemini` and `lmstudio`, and for those
+the start deliberately writes nothing and leaves `memory.search.enabled` as the operator set it —
+blocker 3 of the 2026-09-28 review on #16, where writing it unconditionally had been switching their
+memory off on every start.
+
+**That is correct and it is not complete.** On those four the stack cannot tell the operator whether
+memory search will do anything, because nothing checks the backend is reachable. The operator decided
+on 2026-10-13 to fix the boundary first and document it, and to extend later.
+
+**What extending needs, and why it is not one change.** "Has a credential" is an API key for `openai`
+and a live harness for Copilot; for `ollama` or `lmstudio` it is a reachable endpoint, for `local` a
+model on disk, for `gemini` another key. So it is **one measurement per provider** rather than one
+condition, and the shape that fits is the one `registryReachable()` uses on #24: ask, cheaply, once,
+and cache the answer. The log line should then name what it asked and what answered, because a gate
+that silently decides is what blocker 3 was.
+
+Not built with the repair because the repair is the operator's setting being left alone, which needs
+no knowledge of any backend, and because each provider's check wants a live instance to be measured
+against rather than reasoned about.
+
+Recorded 2026-10-13.
 
 ---
+**~~OC-15 and OC-16 depend on what else the machine is doing.~~** *Answered 2026-10-10, and it took
+two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
+precondition could not reach the thing that failed: the registry was reachable in both failing runs
+and the machine was busy. `SP-3` asks whether a registry answers and skips them on an offline machine;
+their own **180-second** budget answers the load, against a quiet build measured at **14 seconds** on
+one machine and **45** on another. The 60 they had failed twice under load on the first and held,
+unloaded, on the second. The cost is stated at the test: a genuinely broken build now takes three
+minutes to say so. The original entry follows. (Corrected 2026-10-21: this gave 14 seconds alone and
+"four times".)*
 
 **OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
@@ -142,6 +223,21 @@ branch's subject is the suite's preconditions. Recorded 2026-10-09.
 
 ---
 
+**~~Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.~~**
+*Resolved 2026-10-10 on the operator's word, and the entry below got one thing wrong that is worth
+keeping visible.*
+
+It said `text-only`'s two A16-19 tests were half of the collision. They are not: that file carries
+two tests under one id **legitimately** — "git tracks test files, so there is something to judge" is
+the premise "no test file is binary to git" needs, the same shape as `TR-2`. The signed-off row
+describes the second of those, not the first, which this entry also had backwards.
+
+The real collision was `tests/component/m-a16.skip-panel.test.ts`, unrelated to either. **It moved,
+to `A16-30`**, because there was nothing on that side to move in an approved document — and its own
+header had never listed the id at all, which is the drift `TR-1` exists for and is how this was found.
+Asked whether the choice of side mattered, the answer was almost no: one had a signed-off row and the
+other had none. The original entry follows.
+
 **Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.**
 `tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
 space')`; `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so there
@@ -155,6 +251,24 @@ the good failure mode, and it is why this is recorded rather than urgent.
 The row in `docs/TEST-SPEC-git-integration.md` describes the `text-only` one. Whichever is renumbered,
 its id moves in a signed-off specification and in a test title at once, which is an operator decision.
 Recorded 2026-10-09, alongside the thirteen ids that *were* documented.
+
+---
+
+**~~`A16-20` names two cases as well, and the specification had it first.~~** *Resolved 2026-10-22 on
+#38, by the reviewer's decision: the signed-off row keeps `A16-20`, and the lock case moved to
+`A16-31`. Its two rows marked † became plain `A16-31` rows. The original entry follows, as written on
+2026-10-20.*
+
+Its row in
+`docs/TEST-SPEC-git-integration.md`, signed off on 2026-09-22 in `2115193`, is the NUL counterpart
+A16-19 leans on — the datum `'a\0b'`, whose case runs inside A13-6's `describe` in
+`tests/unit/m-a13.skip-step-names.test.ts`. On 2026-09-28 `3118ca8` gave the same id to three titles
+of the stale-foreign-lock case in `tests/integration/m-a16.lock-identity.test.ts`, which had no row
+until 2026-10-20 and now has two, marked †, under *Cases documented after the fact*. `TR-1` cannot see
+it: the id in the titles is declared, only not for that case. Renumbering is the reviewer's decision,
+as it was for A16-19, which #24 resolved on 2026-10-21 by moving the side with no signed-off row; and
+the precedent — `OC-40` and `OC-42` in `docs/TEST-SPEC-case-id-traceability.md` — kept the id where it
+was specified first and renumbered the later tests. Recorded 2026-10-20.
 
 ---
 
@@ -231,7 +345,13 @@ produces references the index does not have and is refused; one that is too **lo
 deploys, compiled against an older API than the instance runs. *Read out of `narcheck.py:396`, where
 a reference whose package is not in the judged set is skipped — reasoned from the code, not run.*
 
-**So the decision left is one the operator has to take, and it is not about the pom.** Carry
+**~~So the decision left is one the operator has to take, and it is not about the pom.~~ Taken, and
+merged.** `480455b`, *"M2 answered by moving the index out of the host’s reach, not by validating
+it"*, went in with #25 on 2026-10-16: `compose.yml` declares `liquid_api` as a volume shared between
+`liquid` and `nar_builder`, `volumes/liquid/api` is no longer a host bind, and `CLAUDE.md` carries
+the narrowed rule — *"all **state** lives in browsable `./volumes/` bind mounts; never use named
+Docker volumes **for it**"* — which is the argument the paragraph below records as the one for it.
+The host write path this entry is about is closed. What it said, and what was decided: carry
 `volumes/liquid/api` as a volume shared between `liquid` and `nar_builder` instead of a host bind,
 the way `nar_extensions` already is — which closes the host's write path completely and contradicts
 CLAUDE.md's *"all state lives in browsable ./volumes/ bind mounts; never use named Docker volumes"*.
@@ -243,7 +363,7 @@ Recorded 2026-10-08, measured and rewritten 2026-10-09.
 
 ---
 
-**S9's machine dependencies are half closed.** The builder image is no longer taken from whatever
+**S9's machine dependencies: the moving tag is answered, and B5-15 and B5-16 still reach Maven Central.** The builder image is no longer taken from whatever
 `liquidupstart/nar-builder:latest` happens to be on the host: `tests/lib/builderimage.ts` builds it
 from the tree under test and tags it per run, eight files use it, and the specification records the
 change. What is still true of the default-tier M-B5 cases is the rest of the reviewer's sentence:
@@ -252,6 +372,37 @@ they pin `ghcr.io/nocodenation/liquid-nifi:latest`, which is a moving tag, and `
 B5-15 and B5-16 reach Maven Central. Pinning the image by digest is the obvious half of the repair
 and would need re-pinning on every upgrade, which is the trade the operator should make rather than
 a branch under review. Recorded 2026-10-08.
+
+**The operator made it on 2026-10-16, and chose neither half of that sentence.** A digest stops the
+surprise and buys a different cost: until a hand re-pins, the suite tests an image the stack no
+longer runs. Keeping the tag and letting the red arrive was the other option, and it is the shape
+three separate hours went into today — an environment reading as a product defect. So: **the tag
+stays moving, and an upgrade is made legible.** `tests/lib/liquidimage.ts` reads the versions out of
+the image, the nine files name the tag through one constant instead of nine copies, `tests/run.sh`
+says before every run which state the image is in, and the cases that pin the image **skip** rather
+than fail. `B5-33`.
+
+**Reviewed 2026-10-20, and the first shape did not survive a real move.** It had been simulated by
+moving `WRITTEN_AGAINST` with the image unchanged, so every bundle the cases name was still there.
+Against an image with those bundles renamed — `B5-34`, which runs the nine files in a child process
+against one — `m-b5.hand-drop`'s file-level `beforeAll` still ran, found no bundle to rewrite and threw
+`ENOENT`: 0 pass / 1 fail, the red this exists to remove. The skips were also too wide: thirteen cases
+that pin nothing of the image, among them B5-4 over every shipped bundle and B6-26's contract check,
+skipped on any move, so a release that broke them would have shipped green. And the detector read no
+Java, which B5-18's startup line pins; the runner printed the pinned pair as a match with the daemon
+down; and nothing tied `WRITTEN_AGAINST` to the literals. All repaired on the branch, each with a case
+that reddens when the repair is taken back; `B5-34` is 5 pass / 0 fail against the moved image.
+
+**Reviewed again 2026-10-21, and the skip was one flag for three readings.** A Java patch under an
+unchanged NiFi skipped every pinned case: measured by the reviewer, fifteen cases skipped against an
+image they pass on. Each case now skips on the reading it pins, and `B5-34` also runs a Java-only
+move. **And the scope stops at the image.** The stack-tier M-B4 cases `B4-4`, `B4-6` and
+`m-b4.placement-check` pin the API pair through the live installation rather than the tag, and are
+neither scanned nor skipped; they redden on an API release after a rebuild.
+
+What is deliberately *not* asserted is that the image agrees with the pinned pair: that agreement is
+the question, and asserting it would make an upstream release red — the defect being removed. And
+`B5-15` and `B5-16` still reach Maven Central, which this does not touch: that half of S9 is open.
 
 ---
 
@@ -843,9 +994,9 @@ than the papercut warrants. Every fallback on a path the stack actually walks wa
 migration; these two are what is left.
 
 **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
-Suggested in the third review of #11 as an optional improvement to N1, and deferred here on the
+Suggested in the third review of #11 as an optional improvement to N1 (OC-60 since the 2026-09-30 rename), and deferred here on the
 grounds that the situation justifying it could not be produced. It produced itself two days later: a
-suite run hung fifteen minutes on the N1 case itself, a hand-run of the same command sat attached to
+suite run hung fifteen minutes on the N1 (OC-60) case itself, a hand-run of the same command sat attached to
 a live container for eight minutes, and an outer `timeout 40` around the whole thing did not return
 either — GNU timeout waits for its child after signalling. In that window three of four attempts
 needed the kill (rc 137 after the grace) rather than the signal (rc 124). It is **intermittent and
@@ -960,6 +1111,26 @@ the reason it is here is that `docs/FEATURE-git-integration.md` and the test spe
 it is, and a document that claims a record must have one.
 
 ---
+
+## Does the mid-term memory remember the right things? — deferred 2026-09-20, with a trigger
+
+**The mechanism is measured and works; the value is unmeasurable until the stack is used.**
+`docs/FEATURE-memory-midterm.md` §2.2 has the detail. In short: `memory-core` indexes, ranks, and
+explains its decisions, and promotion into `MEMORY.md` requires an entry to be recalled **three times
+across three distinct queries** within thirty days. This installation has produced one session
+summary ever and asked no questions, so nothing has been promoted, and nothing will be.
+
+**Do not wait for it.** Days accumulate and recalls do not, and `maxAgeDays=30` means the fifteen
+entries now in the store drop out on 2026-10-19 unpromoted. A daily look would show the same zero
+until then — the accumulating-nothing that looks like accumulating evidence.
+
+**The trigger:** once OpenClaw has been used in earnest for about a week, run
+`openclaw memory promote --json` and read `recalls`, `uniqueQueries` and `score`. Promotions happening
+would give M-M3 a baseline to beat and might remove the need for it; thresholds never being reached
+under real use makes the thresholds the thing to tune, and they are readable rather than guessed.
+
+**A synthetic conversation was considered and refused.** It would answer only what was put into it,
+and this project has enough of those.
 
 ## `operator.admin` is reachable from any container on the stack network
 
@@ -1194,7 +1365,7 @@ Recorded 2026-09-30.
 
 ---
 
-## A checker that cannot be opened is reported as a bundle that cannot link
+## ~~A checker that cannot be opened is reported as a bundle that cannot link~~ — repaired
 
 `config/nar_builder/build.sh:776` gates deployment on `[ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]`.
 Both tests stat. When `narcheck.py` is present but unreadable, the first test passes, `python3 "$NAR_CHECK"`
@@ -1218,5 +1389,15 @@ not look".
 Not fixed with the measurement because the measurement is what #25 is in review for, and this changes the gate
 that decides what reaches Liquid's autoloader — the one place on this branch where a quick edit is the wrong
 shape. It needs its own case: a negative control that makes the checker unreadable and reads the message.
+
+**Repaired 2026-10-16**, same day, in `fix/narcheck-unavailable`. The gate now reads the checker
+rather than stating it — `narcheck_available` in `config/nar_builder/build.sh` — and a checker it
+cannot open takes the honest arm, which now says *"this is about the check, not about the code"*.
+The repair also found a second instance of the same class: `narcheck` returns 1 both for a bundle
+the index refuses and for anything it could not read, and the headline above it asserted the first
+over whatever followed — including over its own words *"the index of what Liquid can load is not
+readable"*. The headline now names both and lets the check give the reason. `B6-40`, seven
+scenarios, each shown able to fail. *(Superseded on 2026-10-20: `check-index` answers 3 for an index
+it cannot read, and the headline for status 1 is the specific one again — FR36a.)*
 
 Recorded 2026-10-16.

@@ -36,7 +36,8 @@
  * sign-in, which is the branch guarded by `ENABLE_CLAUDE_CLI`.
  *
  * Test data: `config/scripts/start/openclaw.sh` and
- * `dashboard/src/lib/components/TaskRunner.svelte` as text; and a `git.sh` run
+ * `dashboard/src/lib/components/TaskRunner.svelte` as text; `openclaw.sh` as bash
+ * itself nests it, printed back by `declare -f` and never run; and a `git.sh` run
  * declaring `git@github.com:nocodenation/agent-skills.git|read|protected`
  * against a refusing ssh stand-in, with `SYSTEM_SIGNIN_WAIT_SECONDS=0` so it
  * prints its banner and returns.
@@ -47,7 +48,12 @@ import { test, expect, describe, afterAll } from 'bun:test';
 import { readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
+import { sh } from '../lib/shell';
 import { tempProject, seedKnownHosts, fakeSsh, runStart } from '../lib/gitfixture';
+
+// An absolute path, because the guard check below hands bash a PATH that leads
+// nowhere.
+const BASH = Bun.which('bash') ?? '/bin/bash';
 
 const OPENCLAW = readFileSync(join(repoRoot, 'config/scripts/start/openclaw.sh'), 'utf8');
 const RUNNER = readFileSync(
@@ -94,6 +100,54 @@ describe('A13-8 and the marker is printed where a Claude sign-in is actually wai
     // Within a few lines of the banner it belongs to.
     expect(banner - at).toBeLessThan(400);
     expect(banner).toBeGreaterThan(at);
+
+    // **And inside the branch, which this case claimed in its own title and never
+    // asserted.** Strengthened 2026-10-09: the three assertions above are a
+    // presence check and a distance, both of which a marker printed outside the
+    // guard would satisfy -- which is the finding this case exists against. The
+    // reviewer named it in B3 of the 2026-10-01 re-review: the registered mutation
+    // renamed the marker, so the presence check carried the entry and the title's
+    // claim was carried by nothing. Since 2026-10-21 the registered mutation
+    // empties the guarded branch and runs the rest unconditionally, which only
+    // the assertion below can see.
+    //
+    // "Inside it" is read from bash's own parse, not from a pattern over the
+    // text. The script is wrapped in a function and printed back with
+    // `declare -f`, which re-indents by depth: the marker must sit deeper than
+    // the guard, and nothing at the guard's own depth may close or turn it on the
+    // way -- a `fi`, or an `else`/`elif`, which would put the marker where Claude
+    // is off. Nothing is run: `bash -n` passes first, so only the wrapper's own
+    // brace can close it, and PATH leads nowhere. Literal text -- a heredoc body,
+    // a multi-line string -- keeps its own indentation in that output, so a marker
+    // moved into a heredoc reads red; the error is a red, not a pass. And it is
+    // structure only: an assignment of ENABLE_CLAUDE_CLI above the guard is not
+    // seen. Until 2026-10-21 this looked for
+    // a column-0 `fi` in the text, and an `else` before the marker, a `fi` with a
+    // comment, a `fi` on the guard's own line and an indented `fi` all left the
+    // case green: the local reviews of that day.
+    const parsed = sh(
+      [
+        BASH,
+        '-c',
+        '"$BASH" -n "$1" || exit 2; eval "__lu_body() {\n$(<"$1")\n}" && declare -f __lu_body',
+        'nest',
+        join(repoRoot, 'config/scripts/start/openclaw.sh')
+      ],
+      repoRoot,
+      { PATH: '/nonexistent' }
+    );
+    expect({ code: parsed.code, stderr: parsed.stderr }).toEqual({ code: 0, stderr: '' });
+    const norm = parsed.stdout.split('\n');
+    const depth = (l: string) => l.length - l.trimStart().length;
+    const guard = norm.findIndex((l) => l.trim() === 'if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then');
+    const marker = norm.findIndex((l) => l.includes(MARKER));
+    expect(guard).toBeGreaterThan(-1);
+    expect(marker).toBeGreaterThan(guard);
+    expect(depth(norm[marker])).toBeGreaterThan(depth(norm[guard]));
+    const turns = norm
+      .slice(guard + 1, marker)
+      .filter((l) => depth(l) === depth(norm[guard]) && /^(fi|else|elif)\b/.test(l.trim()));
+    expect(turns).toEqual([]);
   });
 
   test('and it appears only in the Claude branch, not once per banner', () => {

@@ -185,6 +185,15 @@ if command -v bun >/dev/null 2>&1; then
   fi
 fi
 
+# Whether the Liquid image has moved since the M-B cases were written. Asked only
+# when a selected file reads the image, and it never stops the run.
+if command -v bun >/dev/null 2>&1 && grep -qs 'lib/liquidimage' "${SELECTED[@]}"; then
+  bun -e '
+    const m = await import("./tests/lib/liquidimage.ts");
+    console.log(m.preflightLine(m.WRITTEN_AGAINST, m.liquidImageVersions()));
+  ' 2>&1 || true
+fi
+
 status=0
 bun test --timeout "$TEST_TIMEOUT_MS" "${SELECTED[@]}" || status=$?
 

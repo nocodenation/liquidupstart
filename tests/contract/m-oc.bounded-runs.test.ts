@@ -1,5 +1,5 @@
 /**
- * N1, N4 — a bound that returns, and a container that is cleaned up when it does not.
+ * OC-60, OC-61 — a bound that returns, and a container that is cleaned up when it does not.
  *
  * Purpose: `with_timeout` could not bound a plain `docker run`. coreutils
  * `timeout` signals the docker *client*; the client is supposed to forward it to
@@ -33,14 +33,15 @@
  * Then   each carries --init, each named container is removed when the run
  *        fails, and the bound comes back inside its limit plus the grace
  *
- * The text half and the behaviour half are both here on purpose. N1 is the case
+ * The text half and the behaviour half are both here on purpose. OC-60 is the case
  * where the text looked right — the bound was in the right place, with the right
  * number — and the mechanism did nothing. A contract case alone would have
  * passed over it exactly as the previous review's fix did.
  *
- * Requirements covered: OC-G4, N1 and N4 of the #11 second review, and the
- * 2026-09-14 correction to N1 above.
+ * Requirements covered: OC-G4, OC-60 (N1) and OC-61 (N4) of the #11 second review, and the
+ * 2026-09-14 correction to OC-60 above.
  */
+import { containerName, fixtureLabels } from '../lib/dashboardserver';
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -61,7 +62,7 @@ function boundedRuns(): { line: number; text: string }[] {
     .filter(({ text }) => !/^\s*(#|\/\/|\*)/.test(text));
 }
 
-describe('N1 every bounded docker run can actually be bounded', () => {
+describe('OC-60 every bounded docker run can actually be bounded', () => {
   test('the scan finds the bounded runs', () => {
     expect(boundedRuns().length).toBeGreaterThan(4);
   });
@@ -82,11 +83,16 @@ describe('N1 every bounded docker run can actually be bounded', () => {
       expect({ skipped: 'image absent', image }).toEqual({ skipped: 'image absent', image });
       return;
     }
-    const name = `lu-bound-probe-${process.pid}`;
+    const name = containerName('lu-bound-probe');
+    // Labelled too. This case's own premise is that `--rm` does not fire when the
+    // client is SIGKILLed, so an interrupted run leaves this container running --
+    // and with a per-run name and no label, nothing names it and the sweep cannot
+    // find it. The label is what makes it reclaimable.
+    const LABELS = fixtureLabels().join(' ');
     const snippet = `
       set -uo pipefail
 . ${LIB}
-      with_timeout 8 docker run --rm --init --name ${name} --entrypoint node ${image} \
+      with_timeout 8 docker run --rm --init --name ${name} ${LABELS} --entrypoint node ${image} \
         -e 'setInterval(()=>{},1000)'
       echo "rc=$?"
     `;
@@ -107,7 +113,7 @@ describe('N1 every bounded docker run can actually be bounded', () => {
   }, 90_000);
 });
 
-describe('N4 a named container is removed when its run does not end by itself', () => {
+describe('OC-61 a named container is removed when its run does not end by itself', () => {
   test('every helper that names a container also force-removes it on failure', () => {
     // `--rm` fires on container exit, which is precisely what does not happen
     // when the bound expires. Declaring rc and cname without using them — which

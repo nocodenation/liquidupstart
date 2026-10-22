@@ -79,6 +79,70 @@ export function dashboardDepsIn(root: string): boolean {
   return existsSync(join(root, 'dashboard', 'node_modules'));
 }
 
+/**
+ * Is a package registry reachable? The fourth precondition, and the one
+ * `TEST-SPEC-suite-preconditions.md` first recorded as uncovered.
+ *
+ * **A function and not a constant, deliberately.** It costs a network round trip,
+ * and a constant would charge every file that imports this module for a question
+ * only two cases ask. Memoised per process, so the two pay once between them.
+ *
+ * **And it is not the whole answer to what was measured**, which is worth saying
+ * here rather than in a commit nobody re-reads. `OC-15` and `OC-16` failed twice
+ * by *timing out* at 60s and passed twice on a quiet machine: the registry was
+ * reachable both times and the machine was busy. So this skips them where there is
+ * no registry -- an offline machine, which is a real and common case -- while the
+ * load-dependence is answered by their own budget: the quiet build took 14s on one
+ * machine and 45s on another, against the 60s that was not enough under load.
+ *
+ * It asks from the host, with the host's curl. A daemon behind a different proxy
+ * or resolver can disagree with it, and so can a base image that has not been
+ * pulled yet; what it settles is the offline machine.
+ */
+// Memoised **per url**, which the first version was not: it cached one answer and
+// returned it whatever it was asked about. SP-3's own case caught that -- the
+// `skipIf` on its counterpart is evaluated at registration time, so the default
+// url's `true` was already cached when the test for an unreachable host ran, and
+// that test was green against a host that does not exist.
+const registrySeen = new Map<string, boolean>();
+
+// The seam the memoisation claim needs. Two calls return the same answer whether
+// or not anything is cached, so a case comparing them asserts nothing -- removing
+// the cache left it 3 pass / 0 fail, which the reviewer measured as M2 of his
+// round on #24. What is observable is the **cost**, so the probe is counted and
+// the count is readable. It is not a performance figure and no case asserts a
+// duration: it is how many times the question left this process.
+let registryProbes = 0;
+export function registryProbeCount(): number {
+  return registryProbes;
+}
+
+export function registryReachable(url = 'https://registry.npmjs.org/'): boolean {
+  const seen = registrySeen.get(url);
+  if (seen !== undefined) return seen;
+  registryProbes += 1;
+  // A machine without curl cannot ask, and that is an answer, not a crash:
+  // Bun.spawnSync throws `Executable not found in $PATH`, and since skipIf runs at
+  // registration that took the whole of m-oc.allow-scripts down at collection,
+  // installLine() included. Measured 2026-10-21 with a PATH holding git and no
+  // curl. SP-3 holds it.
+  //
+  // Only ENOENT, which is what bun throws for a missing curl, a non-executable
+  // one and one whose interpreter is gone -- all three measured. Anything else
+  // (EMFILE under a loaded run, say) is a fault of the machine and is thrown,
+  // because read as "no registry" it would skip two cases with the offline
+  // explanation. No scenario reaches that branch: nothing found on a PATH throws
+  // anything but ENOENT.
+  let ok = false;
+  try {
+    ok = sh(['curl', '-fsS', '--max-time', '5', '-o', '/dev/null', '-I', url]).code === 0;
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'ENOENT') throw e;
+  }
+  registrySeen.set(url, ok);
+  return ok;
+}
+
 export const STARTED = startedIn(repoRoot);
 export const IN_GIT_REPO = inGitRepoAt(repoRoot);
 export const DASHBOARD_DEPS = dashboardDepsIn(repoRoot);

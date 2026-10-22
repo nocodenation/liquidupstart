@@ -1,0 +1,183 @@
+#!/bin/sh
+# Refuse a commit message that would close the reference it only meant to name.
+#
+# Why this exists. On 2026-10-16 a documentation commit on `main` carried the
+# line "both are merged and resolved: #18, where both sides appended an item".
+# It was prose about a pull request. GitHub read `resolved: #18` as an
+# instruction, closed pull request #18 -- four answered review rounds -- and
+# attributed the act to whoever pushed, so the timeline accused a person while
+# the cause sat in a commit message nobody had reason to re-read. It took three
+# wrong readings to find, and the `closed` event had carried the commit id all
+# along.
+#
+# What GitHub actually does: `close`, `fix` and `resolve`, in every form, with
+# an optional colon, applied to the reference that follows -- `#12`, `GH-12`,
+# `owner/repo#12`, or a full issue or pull URL -- and it applies them to pull
+# requests as well as issues. Only commit messages on the default branch and
+# pull request descriptions trigger it; ordinary comments do not.
+#
+# A commit may of course mean to close an issue. That is what the override is
+# for: a guard that forbids a real workflow gets worked around rather than used.
+set -u
+
+# **Byte semantics, and a refusal when the tools cannot answer.**
+#
+# This guard failed **open**. Under a UTF-8 locale -- the operator's normal state
+# in Terminal.app -- one byte that is invalid in that locale makes BSD `sed` exit
+# with `RE error: illegal byte sequence`; `body` was then empty, nothing matched,
+# and the hook permitted the message. Measured 2026-10-20 on git 2.48.1 with BSD
+# sed: a message carrying one Latin-1 byte in its subject and the incident's own
+# sentence, pure ASCII, in its body commits with **rc 0** under
+# `LC_ALL=en_US.UTF-8` and is refused under `LC_ALL=C`. GNU sed handles the same
+# file, so the hole is specific to the machine the guard was written and reviewed
+# on -- and `tests/lib/shell.ts` pins `LC_ALL=C` for every case, so no test in
+# the suite could see it in either direction.
+#
+# Two answers, because the locale is one cause and not the class. `LC_ALL=C`
+# makes both tools work on bytes, which is what a pattern of ASCII keywords
+# wants. And every step's status is now read: **a guard that cannot read the
+# message refuses it.** A commit refused for an unreadable message costs a
+# rephrase; a commit permitted because the guard broke costs what this hook
+# exists to prevent.
+export LC_ALL=C
+
+msg_file="$1"
+
+# **Comment lines are read, and that is a correction.** This dropped every line
+# beginning with `#`, on the premise that git strips them. Git strips them only
+# under `--cleanup=strip`, which is the default **when the message comes from an
+# editor**. With `-m` or `-F` -- which is how an agent commits -- the default is
+# `whitespace` and those lines are stored verbatim. Measured 2026-10-20:
+# `git commit -m 'docs: x' -m '#18 is merged, and this closes #20'` committed
+# with rc 0 and the line intact. A 72-column paragraph wraps onto a `#NN` often
+# enough for that to matter, and `core.commentChar` can be something else again.
+#
+# So the hook reads what might be stored. Editor mode still passes, because
+# git's template carries no keyword in front of a reference, and the
+# `--verbose` diff sits below the scissors, which is still cut. Verified across
+# all 510 non-merge messages on `main`: the verdicts are unchanged, and the one
+# refusal is still 5aa5bc9.
+#
+# The line numbers now match the file, which they did not while lines were
+# being dropped.
+# **The scissors line carries the comment character, and this did not.** git
+# writes `# ------------------------ >8 ------------------------`, measured on
+# git 2.48.1 out of `.git/COMMIT_EDITMSG` after an aborted `git commit -v`, so a
+# pattern anchored at `^------` never matched and nothing was ever cut. Harmless
+# while `#` lines were being dropped -- they covered for it -- and not harmless
+# afterwards: with the `#` filter gone, `git commit -v` fed the whole appended
+# diff to the pattern below, and 50 lines of this feature's own diff match it.
+# So committing this change verbosely was refused on a diff line the author
+# cannot edit, and the only way out was the override, which disarms the guard
+# for the real message at the same time.
+#
+# The character is `core.commentChar`, which may be any of git's documented
+# alternatives, so the class covers them rather than assuming `#`.
+if ! body=$(sed -e '/^[#;@!$%^&|:]\{0,1\} *-\{3,\} >8 -\{3,\}/,$d' "$msg_file" 2>/dev/null); then
+  cat >&2 <<CANNOT
+
+commit-msg refused this message: the guard could not read it.
+
+sed failed on ${msg_file}, so this hook cannot say whether the message would
+close a reference. It refuses rather than permit, because a guard that fails
+open is worse than no guard: a rephrase costs a minute, a closed pull request
+costs its review rounds.
+
+The usual cause is a byte that is not valid text. Check the message for one,
+or commit deliberately with:
+
+    ALLOW_CLOSING_KEYWORD=1 git commit ...
+
+The message is kept in ${msg_file}; nothing was committed.
+CANNOT
+  [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ] || exit 1
+  body=""
+fi
+
+# `(^|[^[:alnum:]_])` because the alternation had no left anchor, so any word
+# **ending** in one of these counted: `prefix #12`, `hotfix #12`, `bugfix #12`,
+# `the unresolved #12 thread`, `disclosed: #12`, `enclosed #12` were all
+# refused. GitHub's keywords are words, and "unresolved" beside a reference is
+# ordinary prose in this repository's own reviews.
+keywords='(^|[^[:alnum:]_])(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)'
+ref='(#|[Gg][Hh]-|[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#)[0-9]+'
+url='https?://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/(issues|pull)/[0-9]+'
+pattern="${keywords}[[:space:]]*:?[[:space:]]*(${ref}|${url})"
+
+# `|| true` on grep, because exit 1 means "found nothing" -- but a *failure* to
+# run is not "found nothing", so the status is separated from the no-match case.
+hits=$(printf '%s\n' "$body" | grep -niE "$pattern")
+rc=$?
+if [ "$rc" -gt 1 ]; then
+  printf 'commit-msg refused this message: grep failed (%s), so nothing judged it.\n' "$rc" >&2
+  [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ] || exit 1
+fi
+
+# **A second pass over adjacent pairs**, used only when the first finds nothing.
+# `grep` reads one line at a time, so the incident's own sentence wrapped two
+# words earlier -- `resolved:` ending a line and `#18, where both sides` opening
+# the next -- went straight through. Whether GitHub closes across a line break
+# is **not verified**: measuring it needs a commit pushed to a default branch.
+# The costs are lopsided, which is what decides it. A false refusal costs a
+# rephrase; a false pass costs a closed pull request with its review rounds.
+#
+# The reported line number is the **first** of the pair, which is where the
+# keyword is and so where the edit goes.
+if [ -z "$hits" ]; then
+  hits=$(printf '%s\n' "$body" \
+    | awk 'NR > 1 { print NR - 1 ":" prev " " $0 } { prev = $0 }' \
+    | grep -iE "$pattern")
+  rc=$?
+  if [ "$rc" -gt 1 ]; then
+    printf 'commit-msg refused this message: the line-pair pass failed (%s).\n' "$rc" >&2
+    [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ] || exit 1
+  fi
+fi
+
+# Is this copy still the one `main` carries? Computed, not assumed -- the whole
+# point of installing a copy into the shared hooks directory is that no checkout
+# can switch it off, and the price of a copy is that it can fall behind. The
+# installer writes the source blob id beside it; a missing file, a missing
+# `origin/main` or an agent clone that has neither simply says nothing.
+guard_dir=$(dirname "$0")
+if [ -f "${guard_dir}/commit-msg.blob" ]; then
+  installed=$(cat "${guard_dir}/commit-msg.blob" 2>/dev/null || true)
+  current=$(git rev-parse --verify -q 'origin/main:config/agents/hooks/commit-msg' 2>/dev/null || true)
+  if [ -n "$installed" ] && [ -n "$current" ] && [ "$installed" != "$current" ]; then
+    echo "commit-msg: this guard is older than main's -- re-run scripts/hooks/install.sh" >&2
+  fi
+fi
+
+[ -n "$hits" ] || exit 0
+
+if [ "${ALLOW_CLOSING_KEYWORD:-0}" = "1" ]; then
+  printf 'commit-msg: closing keyword allowed by ALLOW_CLOSING_KEYWORD=1:\n%s\n' "$hits" >&2
+  exit 0
+fi
+
+cat >&2 <<MSG
+
+commit-msg refused this message: it would close the reference it names.
+
+$hits
+
+GitHub reads close, fix and resolve -- in any form, with or without a colon --
+as an instruction to close whatever reference follows, on pull requests as well
+as issues, and it names whoever pushes as the actor rather than the commit. A
+sentence that merely talks about a pull request closes it.
+
+To describe one, put a word between the verb and the number: "the #18 conflict",
+"on #18", "answered on #18".
+
+If the line above starts with a comment character, note that git strips those
+only when the message comes from an editor -- with -m or -F it stores them, and
+this hook cannot tell which will happen. It refuses either way, because a
+rephrase costs less than a pull request.
+
+To close an issue on purpose:
+
+    ALLOW_CLOSING_KEYWORD=1 git commit ...
+
+The message is kept in ${msg_file}; nothing was committed.
+MSG
+exit 1
