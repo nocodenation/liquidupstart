@@ -43,9 +43,10 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { builderImage } from '../lib/builderimage';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
 const BUILDER = builderImage();
-const LIQUID = 'ghcr.io/nocodenation/liquid-nifi:latest';
+const LIQUID = LIQUID_IMAGE;
 const BUILD = join(repoRoot, 'config/nar_builder/build.sh');
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
@@ -167,9 +168,11 @@ describe('B5-18 the record is written from the distribution itself', () => {
     ]).output;
   }, 900_000);
 
-  test('B5-18 it names the versions the startup line carries', () => {
-    // Tied to the line itself rather than to a constant: if the image is
-    // upgraded, both move together and the case still says something.
+  test.skipIf(LIQUID_MOVED_ON.nifi || LIQUID_MOVED_ON.java)('B5-18 it names the versions the startup line carries', () => {
+    // START_LINE is the line as logged on 2026-09-28, so it pins both the NiFi
+    // and the Java of that image, and the record is written by the image under
+    // test. That is why this one skips on a move and B5-15 to B5-17, which read
+    // records written by hand, do not.
     const logged = START_LINE.match(/Starting NiFi (\S+) using Java (\S+)/);
     expect(logged).not.toBeNull();
     expect(published).toContain(`nifi_version=${logged![1]}`);

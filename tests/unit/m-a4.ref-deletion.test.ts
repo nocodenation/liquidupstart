@@ -10,7 +10,9 @@
  *           operation under test.
  * When:     `git push origin --delete feature/probe` runs.
  * Then:     Non-zero exit, the branch still listed on the remote, and the
- *           message names it.
+ *           message names it and says `this would delete` -- the deletion rule's
+ *           own words. The other three hold for the ancestor check too, which
+ *           refuses the same push when the deletion rule is gone; see the test.
  * Covers:   A4-6, U4
  * Unhappy:  The whole case. Its counterweight is the push in its own first
  *           step: the same branch, the same clone, allowed.
@@ -34,5 +36,15 @@ test('A4-6 deleting a remote branch is refused and the branch survives', () => {
   const r = git(fx.clone, ['push', 'origin', '--delete', 'feature/probe']);
   expect(r.code).not.toBe(0);
   expect(r.output).toContain('feature/probe');
+  // **The deletion rule, and not merely some refusal.** Strengthened 2026-10-09:
+  // the three assertions above are all satisfied by the *next* guard in the same
+  // hook. A deletion sends a zero local sha, so with the deletion branch disabled
+  // the ancestor check refuses the same push -- `${REMOTE}/${branch} holds commits
+  // your branch does not` -- which is non-zero, names the branch, and leaves it
+  // standing. Measured: with `if is_zero "$local_sha"` turned into `if false`, the
+  // registered mutation for this case came back UNRESOLVED, because this test
+  // could not tell the two rules apart. The reviewer suggested that mutation from
+  // reading; running it is what showed the test was the weak half.
+  expect(r.output).toContain('this would delete');
   expect(remoteHas(fx, 'refs/heads/feature/probe')).toBe(true);
 });
