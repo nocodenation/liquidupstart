@@ -7,18 +7,24 @@ Until 2026-09-14 each feature branch carried its own file and none repeated anot
 `main` on that day, so the entries the OpenClaw 2026.9.1 migration deferred arrived here with it and
 are kept under their own heading below rather than mixed in.
 
+The entries labelled `[45-1]` to `[45-30]` came in with #45, and the label stays with an entry for good;
+a struck entry keeps it, and none is given again. **An entry marked *Answered on #N, open* is struck
+through, `**~~…~~**`, by #N's own diff once #45 is on `main`, or by #45's last push if #N is on `main`
+first**, with a note on what repaired it, as the struck entries below have. One marked *Answered in
+part on #N, open* gets a note from the same diff on what #N repaired and what is left open.
+
 ---
 
-**The suite's fixture reclaim is built per file, and two tiers still use fixed names.** Found by a
+**[45-1]** **The suite's fixture reclaim is built per file, and two tiers still use fixed names.** Found by a
 local multi-angle review of `fix/fixture-names-per-run` on 2026-10-20, after that branch had already
 been pushed and reported as done. The three defects in the branch's own new code were fixed there;
 these are wider than it and are left here rather than widened into it.
 
-- **`tests/system/m-b5.hand-drop.test.ts:121` and `:134`** are `docker rm -f lu-b5-live` followed
+- **`tests/system/m-b5.hand-drop.test.ts:121` and `:134`** (at `3a2ef0f`; `:126` and `:139` on `main` since #37) are `docker rm -f lu-b5-live` followed
   immediately by `docker run -d --name lu-b5-live`, and the same for `lu-b5-boot`: fixed names, no
   labels, inside a `beforeAll` of 1 800 000 ms with a NiFi boot of up to 400 s. Two checkouts running
   the system tier therefore still destroy each other, half an hour in, and the failure reads as a NAR
-  loader timeout rather than as a name collision. `tests/component/m-oc.allow-scripts.test.ts:46` is
+  loader timeout rather than as a name collision. `tests/component/m-oc.allow-scripts.test.ts:46` (at `3a2ef0f`; `:65` on `main` since #24) is
   the image counterpart, with the fixed tags `lu-oc15-with` and `lu-oc16-without` and an `afterAll`
   that `docker rmi -f`s both.
 - **The sweep's only entry point is `buildDashboardImage()`**, reached by two integration files. A
@@ -44,7 +50,7 @@ Recorded 2026-10-20.
 
 ---
 
-**Two helpers report a harness fault as the product going silent.** Same review.
+**[45-2]** **Two helpers report a harness fault as the product going silent.** Same review.
 `watchOutput`'s drain in `tests/lib/gitfixture.ts:538` is
 `Promise.all(...).catch(() => undefined).then(() => ended = true)`, so one rejected reader marks the
 whole output ended while the other stream is still delivering, and the swallowed error leaves nothing
@@ -83,7 +89,7 @@ Recorded 2026-10-20.
 
 ---
 
-**`startDashboard`'s readiness loop has no timeout on its `fetch`.** Same review.
+**[45-3]** **`startDashboard`'s readiness loop has no timeout on its `fetch`.** Same review.
 `tests/lib/dashboardserver.ts` gained `AbortSignal.timeout` on `get()` for `B1a` of the 2026-10-01
 round, and the identical unbounded `fetch` in the readiness loop twenty lines above was left
 without one — so the 150-attempt budget is not a time budget against a server that accepts a
@@ -106,7 +112,7 @@ Recorded 2026-10-20.
 
 ---
 
-**`runSubnets` hands out adjacent /24s, so one run's `free` is another's `taken`.** Same review. The
+**[45-4]** **`runSubnets` hands out adjacent /24s, so one run's `free` is another's `taken`.** Same review. The
 docstring concedes the exact clash and claims *"the failure is a loud `docker network create` error
 rather than a wrong verdict"* — true for `taken`, which the run creates, and **false for `free`**,
 which it only probes: the probe create fails on "Pool overlaps" and
@@ -131,7 +137,7 @@ Recorded 2026-10-20.
 
 ---
 
-**Two age-floor sweeps answer one question in one directory, differently.** Same review.
+**[45-5]** **Two age-floor sweeps answer one question in one directory, differently.** Same review.
 `tests/lib/builderimage.ts` has `sweepable()` with a 2 h floor and a strict `>`;
 `tests/lib/dashboardserver.ts` now has `staleIds()` with 3 h and `>=`. So a 2.5 h-old labelled
 fixture is litter to one and live to the other, and at exactly the floor `staleIds` sweeps — `A8-31`
@@ -163,7 +169,7 @@ Recorded 2026-10-20.
 
 ---
 
-**`B6-37` is killed for memory on this host while the stack runs, with no second suite.** Found on
+**[45-6]** **`B6-37` is killed for memory on this host while the stack runs, with no second suite.** Found on
 2026-10-20 running the suite for `fix/moving-image-tag` (#37), whose diff does not touch
 `tests/unit/m-b6.bundled-jar-read.test.ts` or `config/liquid/narcheck.py` — both are byte-identical to
 `main` there. `./tests/run.sh` on the committed head: 904 pass / 25 skip / **1 fail**, the one being
@@ -199,11 +205,11 @@ names for `OC-15` and `OC-16`.
 
 Recorded 2026-10-20.
 
-**Answered on #46, open, 2026-10-21, and the cause was not the one this entry gives.** The container killed was the fixture's: `setup.py` held 800 MB of zeros, then the jar in a `BytesIO`, then its copy, and was killed before narcheck ran. It streams to disk now and peaks at 16 MB; the suite on #46 had no `oom` event.
+**Answered on #46, open, 2026-10-21; corrected 2026-10-22.** As this entry said, the container killed was the fixture's: `setup.py` held 800 MB of zeros, then the jar in a `BytesIO`, then its copy, and was killed before narcheck ran. #46 streams the inner jar instead, so the setup's RSS falls from 1.6 GB to 17 MB. Where the jar is written to a tmpfs, as bun's `tmpdir()` is on many Linux hosts, the 800 MB jar is memory too: the review of #46 measured a cgroup peak of 825 MB, and the setup killed at 600 MB. Reproduced on #46 with `/w` a tmpfs: `Killed` at 600 MiB, 615 MB of inner jar left behind. #46 now writes the inner jar to the container's own `/tmp` and only the bundle to `/w`, and measured the same way the setup passes at 600 MB and at 256 MB, with an RSS of 17 MB. *This note said the setup "streams to disk and peaks at 16 MB", which was the RSS, and that the cause was not the one this entry gives, which it was. Item 1 of the review of #45.*
 
 ---
 
-**"A row about a different case than the test that carries its id" can be checked where a row names
+**[45-7]** **"A row about a different case than the test that carries its id" can be checked where a row names
 its file, and that is a third of the detail blocks.** Found by a local review of `fix/a16-20-row`
 (#38) on 2026-10-20. That branch and #28 both say the class needs a convention before it can be
 checked, because whether a row's words are about a test's case is a judgement. The reviewer's point
@@ -239,7 +245,7 @@ Recorded 2026-10-20.
 
 ---
 
-**A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.**
+**[45-8]** **A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.**
 Found by a local review of `fix/default-tier-writes` (#39) on 2026-10-20, which repairs the fifth.
 `tests/unit/m-a10.fixture-ceiling.test.ts:53` runs `mkdirSync(<repoRoot>/volumes/repos/.a10-ceiling-probe)`
 in a `describe` body — at collection, before any hook — and removes it in `afterAll`. Measured with
@@ -274,7 +280,7 @@ each with the no-ceiling counterpart. The checkout's `volumes/repos` is not touc
 
 ---
 
-**The README still says there are no named volumes, and the Java feature runs on two.** Found by
+**[45-9]** **The README still says there are no named volumes, and the Java feature runs on two.** Found by
 `/code-review` of `docs/readme-java-extensions` (#44) on 2026-10-21. `README.md` says *"no hidden
 named volumes"* in Features, *"there are no hidden named Docker volumes"* above its reset
 instructions, and *"no named volumes"* in Contributing. Measured on the running stack with
@@ -294,11 +300,11 @@ Recorded 2026-10-21.
 
 ---
 
-**`nar-build`'s advice for an unresolvable `nifi-api` cannot get past the refusal it is printed
+**[45-10]** **`nar-build`'s advice for an unresolvable `nifi-api` cannot get past the refusal it is printed
 in.** Same review. When `org.apache.nifi:nifi-utils:<nifi>` resolves no `nifi-api`, `build.sh`
 refuses with *"Add a pom.xml to the source directory naming the nifi-api version you mean —
-nar-build uses it unchanged"*. But `build_command` calls `resolve_target` (`build.sh:553`) before
-it decides between a synthesised and an author pom (`:574`), so the same refusal stops a directory
+nar-build uses it unchanged"*. But `build_command` calls `resolve_target` (`build.sh:553` at `3a2ef0f`, `:781` on `main` at `36fd967`) before
+it decides between a synthesised and an author pom (`:574`, now `:802`), so the same refusal stops a directory
 that has one.
 
 Measured in the running `nar_builder`, on a copy of `build.sh` in `/tmp` with `REPOS` pointed at a
@@ -318,7 +324,7 @@ Recorded 2026-10-21.
 
 ---
 
-**FR30's removal procedure leaves the inbox copy, and the next start loads it again.** Found by the
+**[45-11]** **FR30's removal procedure leaves the inbox copy, and the next start loads it again.** Found by the
 second review of #44's repair, on 2026-10-21. FR30 documents taking a bundle out as
 `rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar` inside the container and a restart.
 `config/liquid/entrypoint.sh` judges every `"$DROP_DIR"/*.nar` at each start and runs
@@ -339,7 +345,7 @@ Recorded 2026-10-21.
 
 ---
 
-**Whether a compose line is live is decided three ways, and `B1-2` does not decide it at all.**
+**[45-12]** **Whether a compose line is live is decided three ways, and `B1-2` does not decide it at all.**
 Same review. `tests/contract/m-b1.command-mounted.test.ts` holds that every agent service mounts
 `nar-build` with `serviceBlock(s).includes(MOUNT)`, and a YAML comment holding the mount contains it.
 Measured: with `openclaw-cli`'s mount turned into `# - ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro`,
@@ -357,7 +363,7 @@ Recorded 2026-10-21.
 
 ---
 
-**Four calls hand `sh()` a timeout it never had, as its environment.** Found while repairing #42 on
+**[45-13]** **Four calls hand `sh()` a timeout it never had, as its environment.** Found while repairing #42 on
 2026-10-21. `sh(argv, cwd, extraEnv)` takes no timeout, and these pass a number in the third place:
 `tests/unit/m-b6.bundled-jar-read.test.ts:107` (`600_000`),
 `tests/integration/m-b6.refusal-injection.test.ts:106` and `:157` (`120_000` each), and
@@ -377,7 +383,7 @@ Recorded 2026-10-21.
 
 ---
 
-**Two entries say `mutate.sh` catches the A16-19 collision. It cannot see it.** Found by a local
+**[45-14]** **Two entries say `mutate.sh` catches the A16-19 collision. It cannot see it.** Found by a local
 `/code-review` of `feature/mutation-registry` (#18) on 2026-10-21. Both A16-19 entries under *Open
 findings* rank the collision as not urgent because `mutate.sh` *"refuses a `mustFail` resolving to more
 than one test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer"*.
@@ -403,27 +409,40 @@ Recorded 2026-10-21.
 
 ---
 
-**Most specifications do not sign each scenario, which `CLAUDE.md` asks for.** Found by a local
+**[45-15]** **Three of six specifications sign every scenario; the other three leave some rows a bare level, and a generated table has no place for a sign.** Found by a local
 `/code-review` of `feature/mutation-registry` (#18) on 2026-10-21. `CLAUDE.md`, since 2026-08-31:
 *"Every scenario gets its own row, labelled positive or negative."* On #18,
 `docs/TEST-SPEC-mutation-runner.md` signs its overview — 83 rows — while its 123 scenarios sit in a
 generated table, several to a row and unsigned; MU-21, MU-25, MU-50 and MU-53 are labelled
 **negative** though each holds a positive counterpart.
 
-That specification is not the outlier. Counted on `main` at `3a2ef0f` — rows whose first cell is a
-case id, against rows carrying a sign. The first column also counts detail and traceability rows, so
-it overstates the cases; the second is exact.
+Most of the others do sign. Counted on `main` at `3a2ef0f`, by a rule written down: a **case row** is
+a table row with three cells or more whose first cell, bold or not, is a case id whose part after the
+dash is a number, with at most one lower-case letter after it (`B6-41`, `**A10-23**`, `A3c-8`; not
+`M-A12` or `A16-M1`). It is **signed** when its second cell holds `positive`, `negative`, `happy` or
+`unhappy`, alone or after a level such as `Integration`, or when its third cell is one of them alone or
+`positive + **negative**`, which is a *Kind* column. A **bare level**, such as `Unit` or `Integration` with no sign, is counted
+apart, because one specification uses it for the positive by convention.
 
-| Specification | Rows with a case id first | Signed rows |
-|---|---|---|
-| `TEST-SPEC-git-integration.md` | 250 | 2 |
-| `TEST-SPEC-liquid-java-extensions.md` | 137 | 27 |
-| `TEST-SPEC-openclaw-2026-9-1.md` | 134 | 47 |
-| `TEST-SPEC-suite-preconditions.md` | 16 | 13 |
-| `TEST-SPEC-bind-address.md` | 11 | 0 |
-| `TEST-SPEC-case-id-traceability.md` | 4 | 3 |
+| Specification | Case rows | Signed | Bare level | Neither |
+|---|---|---|---|---|
+| `TEST-SPEC-git-integration.md` | 250 | 116: 101 negative, 15 positive | 134 | 0 |
+| `TEST-SPEC-liquid-java-extensions.md` | 137 | 75 | 59 | 3 |
+| `TEST-SPEC-openclaw-2026-9-1.md` | 134 | 123 | 11 | 0 |
+| `TEST-SPEC-suite-preconditions.md` | 16 | 16 | 0 | 0 |
+| `TEST-SPEC-bind-address.md` | 11 | 11 | 0 | 0 |
+| `TEST-SPEC-case-id-traceability.md` | 4 | 4 | 0 | 0 |
 
-**Why not on #18.** Signing its 123 scenarios would make one specification meet a rule most do not,
+So three of the six sign every row. `git-integration` signs mostly its negatives, 101 against 15
+positives, and leaves 134 rows a bare level, which reads there as the positive although no rule says
+so. `openclaw` leaves 11 rows a bare level, and `liquid-java-extensions` 59, with 3 rows neither. The generated MU table on #18 has no place for a sign. *Corrected 2026-10-22, item 2 of the
+review of #45: this table counted a row as signed only when its second cell was exactly `positive` or
+`**negative**`, which missed a *Kind* column, `positive + **negative**` and a sign after a level. It
+gave 2, 27, 47, 13, 0 and 3, and the headline "most specifications do not sign" rested on it. The
+review's recount, with a different row rule, gives 222 case rows and 112 signed for `git-integration`,
+138 and 75, 135 and 122, and the same as here for the other three.*
+
+**Why not on #18.** Signing its 123 scenarios would make it meet a rule three of six already meet,
 and for a generated table it needs a decision first: where a sign lives when the scenario row is
 derived from a test title. Two shapes are open — the sign carried in the title, or a sign column the
 generator keeps from the existing table and refuses to emit while a scenario has none. Either is the
@@ -436,7 +455,7 @@ Recorded 2026-10-21.
 
 ---
 
-**A per-test budget lowers what `TEST_TIMEOUT_MS` was raised to.** Found by a local `/code-review`
+**[45-16]** **A per-test budget lowers what `TEST_TIMEOUT_MS` was raised to.** Found by a local `/code-review`
 of `fix/fourth-precondition` (#24) on 2026-10-21. `tests/run.sh` passes `--timeout $TEST_TIMEOUT_MS`
 and says the suite's budget is *"raised in one place rather than per test"*. A literal on a test wins
 over it in both directions: measured on bun 1.4.3, a test given `1000` that sleeps 2000 ms times out
@@ -454,7 +473,7 @@ Recorded 2026-10-21.
 
 ---
 
-**The cases documented after the fact have rows and no detail blocks.** Found by a local
+**[45-17]** **The cases documented after the fact have rows and no detail blocks.** Found by a local
 `/code-review` of #24 on 2026-10-21, about `A16-30`, which that branch renumbered from `A16-19`. It is
 right about `A16-30` and the gap is not that row's: *Cases documented after the fact* in
 `docs/TEST-SPEC-git-integration.md` carries eleven rows on `main` at `3a2ef0f` — `A8-27`, `A14-7`,
@@ -470,7 +489,7 @@ Recorded 2026-10-21.
 
 ---
 
-**`sh()` lets a missing executable throw, and the preconditions module runs it as it loads.** Found
+**[45-18]** **`sh()` lets a missing executable throw, and the preconditions module runs it as it loads.** Found
 by the second pass of a local `/code-review` over #24's repair on 2026-10-21. `tests/lib/shell.ts`'s
 `sh()` hands `argv` to `Bun.spawnSync`, which throws `ENOENT` — *"Executable not found in $PATH"* —
 rather than returning a code. `tests/lib/preconditions.ts` computes `IN_GIT_REPO =
@@ -489,11 +508,11 @@ Recorded 2026-10-21.
 
 ---
 
-**An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.** Found
+**[45-19]** **An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.** Found
 by a local `/code-review` of `fix/narcheck-unavailable` (#36) on 2026-10-21. The gate's read probe is
 `head -c 1`, which exits 0 on an empty file, and `python3` runs an empty file and exits 0 — both
 measured in the builder image. So a checker truncated to nothing, or presented at 0 bytes by a partial
-mount, deploys every bundle as judged. `main` has the same through its `[ -f ]`, and three cases on
+mount, deploys every bundle as judged. `main` had the same through its `[ -f ]` at `3a2ef0f`, and since #36 its gate is that `head -c 1` (`build.sh:523` at `36fd967`); three cases on
 `main` use exactly this as their stand-in: `m-b6.ordinary-projects`, `m-b5.stale-artifact` and
 `m-b6.concurrent-and-strays` each write `: > /opt/builder/narcheck.py` as *"a checker that permits"*.
 
@@ -507,7 +526,7 @@ Recorded 2026-10-21.
 
 ---
 
-**A check that could not run still reaches the client as a refusal.** Found by the same review of #36.
+**[45-20]** **A check that could not run still reaches the client as a refusal.** Found by the same review of #36.
 `nar-build` now tells *refused on merit* from *cannot be judged* in its own words, and returns 2 from
 both arms; `config/nar_builder/BuildServer.java` maps 2 to **422** (`case 2 -> 422`, beside 3 → 409,
 4 → 400, anything else 500), so an agent reading the status sees *"your bundle is unprocessable"* for
@@ -522,7 +541,7 @@ Recorded 2026-10-21.
 
 ---
 
-**The case-id reader reads fixture source as cases, and only `TR-4` has a way to say so.** Found on
+**[45-21]** **The case-id reader reads fixture source as cases, and only `TR-4` has a way to say so.** Found on
 2026-10-21 when #18 reached `main` and #28 was merged with it: `TR-4` went red on `A10-14`, carried
 by `tests/unit/m-a10.scan-paths.test.ts` and `tests/integration/m-mu.runner.test.ts`. The second is
 MU-42's fixture spec — source held in a template literal whose column-0 line is
@@ -546,7 +565,7 @@ Recorded 2026-10-21.
 
 ---
 
-**Tables that GitHub renders as text, and nothing that checks a table renders.** Found on #17 on
+**[45-22]** **Tables that GitHub renders as text, and nothing that checks a table renders.** Found on #17 on
 2026-10-21 by the reviewer (N2): a note inserted between two rows of
 `docs/TEST-SPEC-openclaw-2026-9-1.md`'s Suite 1 overview turned every row after it — 88 of them,
 `main`'s `OC-63` to `OC-77` and `SP-2` among them — into literal `| … |` text. Repaired on #17. The
@@ -576,7 +595,7 @@ Recorded 2026-10-21.
 
 ---
 
-**OC-60's behaviour half passes when the image it needs is absent.** The case is `N1` on `main`,
+**[45-23]** **OC-60's behaviour half passes when the image it needs is absent.** The case is `N1` on `main`,
 `OC-60` from #17 on. `tests/contract/m-oc.bounded-runs.test.ts`, *and the bound really returns,
 rather than blocking past its limit*: when `docker image inspect liquidupstart/openclaw:latest` fails, the test runs
 `expect({ skipped: 'image absent', image }).toEqual({ skipped: 'image absent', image })` and returns —
@@ -592,7 +611,7 @@ Recorded 2026-10-21.
 
 ---
 
-**OC-62 is red on a Linux host, and its watchdog branch has never run there.** The case is `N1b` on
+**[45-24]** **OC-62 is red on a Linux host, and its watchdog branch has never run there.** The case is `N1b` on
 `main`, `OC-62` from #17 on. `tests/unit/m-oc.bound-without-coreutils.test.ts` takes coreutils away by running the helper under
 `PATH=<scratch dir>:/usr/bin:/bin`, and its first test asserts that `command -v timeout gtimeout` then
 finds neither. On macOS that holds. On Linux `/usr/bin/timeout` is there: in
@@ -609,7 +628,7 @@ Recorded 2026-10-21.
 
 ---
 
-**OC-61 and OC-3 hold that a forced removal is there, not when it runs — and OC-61 sees two names.**
+**[45-25]** **OC-61 and OC-3 hold that a forced removal is there, not when it runs — and OC-61 sees two names.**
 `OC-61` is `N4` on `main`. Measured 2026-10-21 on #17 against `config/scripts/start/openclaw.sh`, each
 mutation by hand:
 
@@ -635,7 +654,7 @@ Recorded 2026-10-21.
 
 ---
 
-**Four of the mutation runner's cases trace to no requirement.** `docs/TEST-SPEC-mutation-runner.md`
+**[45-26]** **Four of the mutation runner's cases trace to no requirement.** `docs/TEST-SPEC-mutation-runner.md`
 §*Traceability* lists the cases that cover each MU-FR and MU-NFR id. MU-5, MU-11, MU-14 and MU-59 have
 overview rows and appear in no row of that table — measured 2026-10-21 on #17's head by comparing the
 ids in the overview with the ids in the table. MU-5, *a mutation that reddens every test is refused as
@@ -651,7 +670,7 @@ Recorded 2026-10-21.
 
 ---
 
-**Two faults of the installation still answer with a refusal's status.** Found by the local review of
+**[45-27]** **Two faults of the installation still answer with a refusal's status.** Found by the local review of
 #46 on 2026-10-21, which moved "cannot be judged" off status 2. Two more arms of
 `config/nar_builder/build.sh` return 2, which the server answers with 422, *"your bundle is
 unprocessable"*, though neither is about the bundle: the refusal of a builder whose drop directory the
@@ -671,7 +690,7 @@ Recorded 2026-10-21.
 
 ---
 
-**The suite passes an inherited `GIT_DIR` to its git commands, and that overrides the ceiling.**
+**[45-28]** **The suite passes an inherited `GIT_DIR` to its git commands, and that overrides the ceiling.**
 Found by the local review of #46's A10-23 on 2026-10-21. `git()` in `tests/lib/gitfixture.ts` runs git
 with `{ ...process.env, ...FIXTURE_IDENTITY, ...env }`, so `GIT_DIR`, `GIT_WORK_TREE` and
 `GIT_INDEX_FILE` from the environment the suite was started in reach every fixture command, and git
@@ -697,7 +716,7 @@ Recorded 2026-10-21.
 
 ---
 
-**`CLAUDE.md` gives `nar_extensions` as a directory rewritten on every start, and Liquid's load path is
+**[45-29]** **`CLAUDE.md` gives `nar_extensions` as a directory rewritten on every start, and Liquid's load path is
 only ever added to.** Found by the local review of #44 on 2026-10-22. `CLAUDE.md`, under *Persist on
 host disk*: *"A directory a service rewrites from scratch on every start is not state, and the rule
 does not reach it — which is why `nar_extensions` has been a volume all along"*. Read on `main`:
@@ -718,7 +737,7 @@ new one.
 
 ---
 
-**The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
+**[45-30]** **The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
 by the local review of #48 on 2026-10-22. `config/liquid/entrypoint.sh` runs `narcheck.py check
 "$NAR"` on the inbox file and then `cp -v "$NAR" "${LOAD_DIR}/"`, so the bytes judged and the bytes
 loaded are two reads of a file the agents' containers can replace in between: they hold the inbox
@@ -729,7 +748,8 @@ anything is loaded, which holds of a read here, not of the file. The repair is `
 shape: copy to a dot-name in the load directory, judge that, rename it into place. Not done on
 #48, which only empties the directory first.
 
-Recorded 2026-10-22.
+Recorded 2026-10-22, and open with the operator: a narrow race, and a security one, so whether it is
+repaired is theirs to say.
 
 ## Open findings
 
