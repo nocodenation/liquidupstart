@@ -96,7 +96,9 @@ M-A3b to M-A3e took four milestones to learn. The same property is asserted here
 | # | Level | Case | Expectation |
 |---|---|---|---|
 | B1-1 | Contract | The service is declared with the mounts it needs and none it does not | `volumes/repos` and `volumes/nar_extensions` present; `_git-secrets` and the `.env` secrets absent |
-| B1-2 | Contract | `nar-build` is on the `PATH` of every service that carries `git-repo-info` | The third command in the same row, mounted the same way |
+| B1-2 | Contract **positive** | `nar-build` is on the `PATH` of every service that carries `git-repo-info` | The third command in the same row, mounted the same way |
+| B1-2 | Contract **negative** | …and a mount that is only a YAML comment is a missing mount | *2026-10-22.* The check read the service block as text, so a commented-out mount passed while compose mounted nothing |
+| B1-2 | Contract **negative** | …and so is one in a trailing comment, or named by a value under `environment:` | The same substring reading, one shape further |
 | B1-3 | Unit | The target version is resolved from the running Liquid | It reports NiFi `2.11.0` and Java `21`, read and not declared |
 | B1-4 | Unit **unhappy** | The version cannot be read | The build refuses, says the version is unknown, names what to do, and produces nothing |
 | B1-5 | Integration | A Java source in the workspace, no `pom.xml` | A `.nar` appears in `nar_extensions`, and it contains the SPI descriptor naming the processor |
@@ -134,11 +136,11 @@ says why not.
 |---|---|
 | **Premise** | M-A3b to M-A3e spent four milestones on the discovery problem, and the answer that worked was a command on the `PATH`, not a document. `nar-build` inherits that answer rather than re-testing it. |
 | **Component** | `compose.yml`. |
-| **Test data** | Every service that mounts `git-repo-info` today — three of them — read out of the file rather than listed by hand, so a service added later cannot be forgotten. |
-| **Expected** | Each also mounts `nar-build`, read-only, at `/usr/local/bin/nar-build`. |
+| **Test data** | Every service that mounts `git-repo-info` today — three of them — read out of the file rather than listed by hand, so a service added later cannot be forgotten. For the negatives, the same text with `openclaw-cli`'s line `- ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro` turned into `# - …`, into `- /dev/null:/tmp/x:ro  # …` and into `NAR_HINT: …`. |
+| **Expected** | Each also mounts `nar-build`, read-only, at `/usr/local/bin/nar-build`, on a list item compose acts on. In each of the three edits, `openclaw-cli` is named as missing. |
 | **Covers** | FR21. |
 | **Implemented by** | `tests/contract/m-b1.command-mounted.test.ts`. |
-| **What it found** | Green. Three services carry `git-repo-info` — `openclaw-gateway`, `openclaw-cli`, `opencode` — and all three now carry `nar-build` at `/usr/local/bin/nar-build`, read-only and single-file. |
+| **What it found** | Green. Three services carry `git-repo-info` — `openclaw-gateway`, `openclaw-cli`, `opencode` — and all three now carry `nar-build` at `/usr/local/bin/nar-build`, read-only and single-file. *2026-10-21, a local `/code-review` of #44*: with the mount commented out in `compose.yml` itself, the substring check stayed 3 pass / 0 fail. It reads each list item through `mountsLive` since 2026-10-22, the helper #44 added for its own case, with trailing comments cut off. |
 
 ##### B1-3 — the version is read, not written down
 
