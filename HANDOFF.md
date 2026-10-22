@@ -40,7 +40,8 @@ Each of those entries on #45 says which of these it is. **Timur's round on #37 i
 | #44 `docs/readme-java-extensions` | entries 9 (the README's named volumes) and 12 (`B1-2` and `mountsLive`) | `25abf5f` | 1155 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#44](https://github.com/nocodenation/liquidupstart/pull/44#issuecomment-6334216313) |
 | #38 `fix/a16-20-row` | Timur's round of 2026-10-21 17:02Z: the lock case renumbered `A16-20` → `A16-31`, retitled and rewritten, A1 to A4, two local passes | `8bc1414` | 1144 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#38](https://github.com/nocodenation/liquidupstart/pull/38#issuecomment-6335706209) |
 | #47 `fix/false-claims-round-2` | round two: entries 1 in part, 2, 4, 7 in part, 14, 15 in part, 22 in part, 25; new cases `A8-34`, `A8-35`, `A16-32`, `OC-78` | `0b4d83d` | 1164 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0; at `6173f43` 1166 / 25 / 1, the one `B6-37` with an `oom`; dashboard 32 / 0 | [#47](https://github.com/nocodenation/liquidupstart/pull/47#issuecomment-6336271706) |
-| #45 `docs/suite-fixture-findings` | every open entry marked answered, waiting, or outside the cut line; one new entry, `CLAUDE.md`'s `nar_extensions` | `81b8d7f` | not run: no test reads `BACKLOG.md` | [#45](https://github.com/nocodenation/liquidupstart/pull/45#issuecomment-6334511471) |
+| #48 `fix/load-path-rebuilt`, **stacked on #44** | the operator's choice on #45's `CLAUDE.md` entry: every start empties Liquid's load path and refills it from the inbox, so taking a bundle out is the inbox `rm` and a restart; `B2-12`, README, A0-11, the skill, FR30; three local passes | `d368eb8` | 1160 / 25 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#48](https://github.com/nocodenation/liquidupstart/pull/48) |
+| #45 `docs/suite-fixture-findings` | every open entry marked answered, waiting, or outside the cut line; one new entry, `CLAUDE.md`'s `nar_extensions` | `07802b7` | not run: no test reads `BACKLOG.md` | [#45](https://github.com/nocodenation/liquidupstart/pull/45#issuecomment-6337379328) |
 | `main` | this section, and `FINISH.md` row 1's count | — | — | — |
 
 ### What it found
@@ -59,7 +60,7 @@ Each of those entries on #45 says which of these it is. **Timur's round on #37 i
 
 **Timur's:** a look at #37's and #38's answers — on both he said he would check only the items of his round and approve; reviews of #39 to #47; and the decisions already listed: 180 s or 600 s on #42, the MU requirements (#45 entry 26), and #46's three (exit 5 as 500, the verdict line, an author pom going on). `A16-20` on #38 is decided.
 
-**The operator's:** whether `CLAUDE.md`'s sentence on `nar_extensions` is corrected — the load path holds state by its own test (#45, last entry).
+**The operator's:** the `CLAUDE.md` sentence on `nar_extensions` is decided — the behaviour now matches it, on #48. Open with you: whether the new #45 entry is repaired, that the start-time check judges a bundle at its inbox path and loads a second read of it (the gap `nar-watch.sh` closed for itself under S6); it is a narrow race, and a security one. And once #48 lands, Liquid has to be rebuilt for the running container to have the new entrypoint: `./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`.
 
 **Whoever lands second:**
 
@@ -67,7 +68,7 @@ Each of those entries on #45 says which of these it is. **Timur's round on #37 i
 - #46 and #42: SP-5 and SP-6 at the same place, as before.
 - `FINISH.md` rows between #39 to #43, as before.
 
-**Ours, when a merge happens:** #40 — #45 entry 5; #42 — entry 16, the `sh()` half of 18, and `m-oc.allow-scripts`' image tags from entry 1.
+**Ours, when a merge happens:** #44 — retarget #48 to `main`; #46 — #48's two keep-both conflicts in the Java specification (FR30/FR31 traceability, B2-11/B2-12 rows); #40 — #45 entry 5; #42 — entry 16, the `sh()` half of 18, and `m-oc.allow-scripts`' image tags from entry 1.
 
 ### Housekeeping
 
