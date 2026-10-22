@@ -340,8 +340,9 @@ agent-side workflow is §6.3–6.5 of the `liquid` skill.
 
 ## Data & persistence
 
-All state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
-files, Liquid repositories, etc.). Two Docker volumes are not under it, and both are Liquid's:
+Almost all state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
+files, Liquid repositories, etc.). The exception is Liquid's, and so is the one other volume not
+under it:
 `liquidupstart_liquid_api`, the API index Liquid writes on every start for the NAR builder, and an
 anonymous volume at its NAR load path, `/opt/nifi/nifi-current/nar_extensions`, which Liquid
 empties and fills again from the inbox, `./volumes/nar_extensions`, on every start. So deleting a
