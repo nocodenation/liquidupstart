@@ -7,19 +7,22 @@ because something answered quietly once.
 
 **Where the rest is.** The practice — why mutation control, what the 2026-09-19 sample measured, the
 four outcomes and the registry's contract — is `docs/PROCEDURE-mutation-control.md` beside this file.
-MU-1 to MU-12 were specified before the work, in `docs/TEST-SPEC-test-mutation.md` on
-`feature/test-mutation-control`, and are listed here as well so `mutate.sh --gaps` can see them: the
-report reads case ids out of `TEST-SPEC-*.md`, and a case with no row is invisible to the tool that
-counts coverage. That is why this file exists at all — a reviewer found that the runner's own cases,
-MU-13 upward, were in no specification.
+MU-1 to MU-12 were specified before the work, in `docs/TEST-SPEC-test-mutation.md`, and listed here
+as well so that `mutate.sh --gaps` could see them on a branch that did not carry that file: the report
+reads case ids out of `TEST-SPEC-*.md`, and a case with no row is invisible to the tool that counts
+coverage. That is why this file exists at all — a reviewer found that the runner's own cases, MU-13
+upward, were in no specification. Since 2026-10-09 MU-1 to MU-12 are specified here only, because A1
+of the 2026-10-01 re-review of #17 found the two copies disagreeing.
 
-**That file is not in this tree, and neither is the feature document.** `docs/TEST-SPEC-test-mutation.md`
-and `docs/FEATURE-test-mutation.md` live on `feature/test-mutation-control` (#17), which this branch is
-not stacked on — it is cut from `main`. So the `MU-FR*` and `MU-NFR*` ids the traceability table below
-uses cannot be looked up here. Their wording is restated in that table for exactly that reason: this
-file is readable on its own, and a reader who wants the reasoning behind a requirement follows it to
-#17. Finding 9 of the 2026-10-01 re-review named the dangling reference; it is a cross-branch fact and
-not something this file can fix by itself.
+**The `MU-FR*` and `MU-NFR*` ids the traceability table below uses are defined in §8 of
+`docs/FEATURE-test-mutation.md`, and only there.** The table's labels are short forms of that wording,
+so the table reads on its own; where a label and §8 differ, §8 is right. *Rewritten 2026-10-21, R1 of
+that day's re-review of #17, which brought the feature document into this tree. Until then this
+paragraph said neither document was here and restated the wording for that reason — finding 9 of the
+2026-10-01 re-review had named the dangling reference. Six labels were brought into line with §8 at
+the same time: MU-FR3, MU-FR4, MU-FR6, MU-FR7, MU-NFR1 and MU-NFR2. MU-5, MU-11, MU-14 and MU-59 are in no
+row of the table; that is older than this paragraph and recorded on #45, because which requirement
+each serves is a judgement the table's author made for the others.*
 
 **Level.** Every case here is integration: each one runs `tests/mutate.sh` as a process against a
 throwaway directory holding one subject and a spec. A unit test of the loader would assert the shape of
@@ -431,11 +434,11 @@ about the named test failing and the subject going back.
 |---|---|
 | MU-FR1 an entry names case, file, from, to and the test that must fail | MU-1, MU-19, MU-32 |
 | MU-FR2 one entry at a time, only the owning test file, restored | MU-1, MU-6, MU-31 |
-| MU-FR3 a `from` that does not occur exactly once fails and names the entry | MU-2, MU-3, MU-35 |
-| MU-FR4 the named test must fail, and at least one other must pass | MU-4, MU-12, MU-22, MU-24, MU-27, MU-30, MU-40, MU-41, MU-42, MU-44, MU-45, **MU-46, MU-47, MU-52, MU-54, MU-57, MU-61, MU-62, MU-63** |
+| MU-FR3 a `from` that does not occur exactly once fails and names the entry, unless `all` declares every occurrence meant | MU-2, MU-3, MU-35 |
+| MU-FR4 the named test must fail, and at least one other must pass, unless the file holds a single test | MU-4, MU-12, MU-22, MU-24, MU-27, MU-30, MU-40, MU-41, MU-42, MU-44, MU-45, **MU-46, MU-47, MU-52, MU-54, MU-57, MU-61, MU-62, MU-63** |
 | MU-FR5 restored on success, on failure and on interrupt | MU-6, MU-23, MU-25, MU-26, MU-33, MU-37, MU-39, MU-43, **MU-48, MU-49, MU-51, MU-56** |
-| MU-FR6 it refuses a subject with uncommitted changes | MU-7 |
-| MU-FR7 the report lists each entry, its mutation and its outcome, and the gap separately | MU-8, MU-13, MU-20, MU-29, MU-34, MU-36, **MU-55, MU-58, MU-60** |
-| MU-NFR1 the gap is computed, not counted | MU-8, MU-36, **MU-60** |
-| MU-NFR2 the run is bounded | MU-37, MU-38, MU-39, **MU-48, MU-49, MU-50, MU-51** |
+| MU-FR6 it refuses the entry whose subject has uncommitted changes, and carries on with the rest | MU-7 |
+| MU-FR7 the report lists each entry's outcome, case and named test, and ends every run with the gap | MU-8, MU-13, MU-20, MU-29, MU-34, MU-36, **MU-55, MU-58, MU-60** |
+| MU-NFR1 the gap is computed, not counted — its other half, running in the milestone cycle, is not built | MU-8, MU-36, **MU-60** |
+| MU-NFR2 the run is bounded, and an entry that does not finish is refused | MU-37, MU-38, MU-39, **MU-48, MU-49, MU-50, MU-51** |
 | MU-NFR3 the registry may not edit the assertions | MU-9, MU-21, MU-28, **MU-53** |
