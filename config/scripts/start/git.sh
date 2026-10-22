@@ -93,6 +93,30 @@ mkdir -p "$HOOKS_DIR"
 chmod 755 "$HOOKS_DIR"
 install -m 755 "${SCRIPT_DIR}/../../agents/hooks/pre-push" "${HOOKS_DIR}/pre-push"
 
+# The commit-message guard, beside pre-push and for the same reason: the agents
+# in this stack push to declared GitHub repositories and write the same prose
+# about pull requests that closed one from a `main` commit on 2026-10-16. They
+# were neither covered nor named as uncovered, which is A3 of the first review
+# of #35. One line, because `core.hooksPath` below already points every agent
+# clone at this directory.
+#
+# **From inside `config/`, like every other path here.** It read
+# `../../../scripts/hooks/commit-msg` for one commit, and a fixture project
+# carries only parts of `config/` -- so the install failed, `set -euo pipefail`
+# aborted two lines above the gitconfig, and 11 unrelated cases went red while
+# the agents lost the pre-push scanner too.
+# Warned about rather than fatal. This runs 118 lines after down.sh, so an
+# install that aborts here leaves the stack torn down and nothing started -- and
+# a missing guard is a far smaller harm than a stack that will not come up. The
+# operator's own clone has it either way.
+if [[ -f "${SCRIPT_DIR}/../../agents/hooks/commit-msg" ]]; then
+  install -m 755 "${SCRIPT_DIR}/../../agents/hooks/commit-msg" "${HOOKS_DIR}/commit-msg"
+else
+  echo "warning: no commit-message guard at ${SCRIPT_DIR}/../../agents/hooks/commit-msg;" >&2
+  echo "         the agents can commit prose that closes a pull request. See" >&2
+  echo "         docs/FEATURE-commit-message-guard.md." >&2
+fi
+
 cat > "$GITCONFIG" <<EOF
 [core]
 	hooksPath = ${HOOKS_MOUNT}
@@ -380,6 +404,14 @@ lu_take_lock_waiting() {  # lu_take_lock_waiting <slug> <seconds>
   local slug="$1" budget="$2" waited=0
   while ! lu_take_lock "$slug"; do
     (( waited >= budget )) && return 1
+    # At the first refusal, not only once 30s have gone. This wait may legitimately
+    # run the whole 300s, and for its first half minute a start that is waiting
+    # and a start that is hung looked identical to the operator. It is also the
+    # only evidence the wait happened, which is what A16-27 now reads instead of
+    # the clock it was reading.
+    if (( waited == 0 )); then
+      echo "Waiting for another run to finish preparing ${slug}..." >&2
+    fi
     sleep 5
     waited=$(( waited + 5 ))
     [[ $(( waited % 30 )) -eq 0 ]] &&
