@@ -2986,6 +2986,15 @@ first, so each one is known to fail for the reason it names.
 | A10-23 | Unit **unhappy** | …and a commit there leaves the repository's `HEAD` and branch as they were | The command that did the damage |
 | A10-23 | Unit | …while without a ceiling the same directory resolves to the repository above it | So the refusal is the ceiling's, not the directory's |
 | A10-23 | Unit | A clone, and a repository inside the empty directory, still work | A ceiling that broke every fixture would pass the negatives |
+| A10-24 | Unit positive (premise) | A child started with `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and `GIT_COMMON_DIR` at a repository has them, and has none once the fixture library is loaded | Without it, every refusal below could come from a child that never had the variables |
+| A10-24 | Unit positive | …and what is removed is git's own list of the variables that choose a repository, `GIT_CONFIG_PARAMETERS` among them, less `GIT_CONFIG` and `GIT_CONFIG_COUNT` | What a person sets on purpose, a `safe.directory` on a CI host, stays; the `-c` git hands a hook from its parent goes |
+| A10-24 | Unit **unhappy** | With `GIT_DIR` inherited, a commit through `git()` in an empty fixture directory finds no repository | *2026-10-22.* Git does no discovery when `GIT_DIR` is set, so the ceiling never came into it, and git exports `GIT_DIR` to the hooks it runs in a linked worktree |
+| A10-24 | Unit **unhappy** | …and through `sh()` neither | |
+| A10-24 | Unit **unhappy** | …and through a spawn whose environment is built from `process.env` by hand neither | The doors outside the helpers, which a scrub in each helper did not reach |
+| A10-24 | Unit **unhappy** | …and the repository it names keeps its `HEAD` and branch, after a `seedRepo` as well | The 2026-09-17 incident by another door |
+| A10-24 | Unit positive | …while the seeded repository holds its commit | A scrub that broke the helpers would pass the four above |
+| A10-24 | Unit positive | …and `GIT_DIR` passed on purpose still reaches git | A scrub that refused the variable everywhere would pass them too |
+| A10-24 | Unit **unhappy** | A file run by `tests/run.sh` started with `GIT_DIR`, which loads no library, does not see it | So the order files load in does not decide |
 
 #### Detail per case
 
@@ -3074,6 +3083,20 @@ first, so each one is known to fail for the reason it names.
 | **Covers** | The 2026-09-17 incident, and the same standard as the `.start-skip` and system-tier entries in `BACKLOG.md`: a test may not change the installation it runs on. |
 
 ---
+
+##### A10-24 — an inherited `GIT_DIR` does not reach a fixture's git
+
+| | |
+|---|---|
+| **Premise** | A10-23 holds the ceiling that stops git walking up from a fixture into this working copy. Git does no discovery when `GIT_DIR` is set, so the ceiling never comes into it, and the fixture helpers handed git the environment the suite was started in. Measured 2026-10-21 with git 2.48.1: git exports `GIT_DIR` to `pre-commit`, `commit-msg`, `post-commit`, `pre-push` and `post-checkout` hooks in a linked worktree, and only `GIT_INDEX_FILE` in a plain repository. Every review checkout here is a linked worktree. A fixture-shaped commit, ceiling set, run from a worktree's `pre-push` hook exited 0 and landed on that worktree's branch; outside the hook it answered "not a git repository". Found by the local review of A10-23 on #46 and recorded on #45. |
+| **Component** | `tests/lib/shell.ts`, which removes the variables in `REPO_LOCAL_GIT` from the test process when it loads: what `git rev-parse --local-env-vars` prints, less `GIT_CONFIG` and `GIT_CONFIG_COUNT`. Every child started afterwards goes without them, through `sh()`, the fixture helpers in `tests/lib/gitfixture.ts` or a spawn of a test's own; a variable a case passes on purpose is applied over that. And `tests/run.sh`, which unsets the same list before `bun` starts. `seedRepo`'s four git calls go through `git()` since the same day, for its identity and its ceiling, and it throws when one fails. |
+| **Steps** | Make the victim repository. Start a child `bun` with `GIT_DIR` at the victim's `.git`. In it, note `GIT_DIR`, load the fixture library and note it again; commit in the empty probe, ceiling at its host, through `git()`, through `sh()` and through `Bun.spawnSync` with `{ ...process.env, … }`; seed a repository; and ask `git rev-parse --git-dir` with `GIT_DIR` passed on purpose. Then read the victim's `HEAD` and branch. Last, run `tests/run.sh --root` over a one-file tree with `GIT_DIR` at the victim. |
+| **Test data** | The victim, `git init` in `mkdtemp` with one empty commit `base`. The host `<tmp>/host` and its empty probe `volumes/repos/.a10-24-probe`, the shape that walked up on 2026-09-17. The commit `git -c commit.gpgsign=false commit --allow-empty -m probe`; `sh()` is given the identity `Fixture <fixture@local>` as well, so a missing identity cannot stand in for the refusal. `seedRepo(<tmp>, 'seeded')`. The child's four variables: `GIT_DIR` and `GIT_COMMON_DIR` at the victim's `.git`, `GIT_WORK_TREE` at the victim, `GIT_INDEX_FILE` at its `.git/index`. The runner's tree: `unit/m-fx.git-dir.test.ts`, whose one test prints `git-dir=` and the variable, or `unset`. |
+| **Expected** | All four at the victim before the library loads, and absent after. `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR` and `GIT_CONFIG_PARAMETERS` among the variables removed, and neither `GIT_CONFIG` nor `GIT_CONFIG_COUNT`. All three commits non-zero with *"not a git repository"*. The victim's `HEAD` and branch unchanged. The seeded repository's last commit `seed`. The victim's `.git` from `rev-parse` when it is passed on purpose. `git-dir=unset` from the runner's file. |
+| **What it found** | With `shell.ts`'s removal taken back, seven of nine red; green stay the list and the runner, whose own `unset` still holds. With `run.sh`'s `unset` taken back, the runner's case alone. With every `GIT_CONFIG*` kept, the list's case alone. Two local reviews shaped it: the first version removed the variables in each helper, which left four helpers that run product scripts uncovered and every other spawn unreached; the second found the order of loading deciding, and `GIT_CONFIG_PARAMETERS` let through. |
+| **What is deliberately not here** | A file run by `bun test` directly, outside `tests/run.sh`, that starts git before any file in its process has loaded `tests/lib/shell.ts`. And `seedRepo` after a failed `git init`, which is where its new ceiling matters: not driven. |
+| **Covers** | A10-24, and the 2026-09-17 incident by another door. |
+| **Implemented by** | `tests/unit/m-a10.inherited-git-dir.test.ts`. |
 
 ### M-A11 — the suite does not change the installation it runs on
 
