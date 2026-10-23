@@ -417,7 +417,7 @@ branches conflict with each other in `FINISH.md`**, though each merges clean int
 neighbouring rows, and `git merge-file` over their copies gives a conflict for #39×#40, #40×#41,
 #40×#42, #41×#42 and #42×#43. So whichever lands second needs `main` merged in and both rows kept —
 each branch owns its own row — and for row 7, #42's row already carries what #40 adds to it.
-`state.sh` cannot show this: it judges each branch against `main` alone. Today's update leaves rows 3 to 10 as `main` has them,
+`state.sh` cannot show this: it judges each branch alone, against its own base, and never two branches against each other. Today's update leaves rows 3 to 10 as `main` has them,
 because a second copy would conflict with those five branches; trial-merged with each, it is clean.
 *The first version of this paragraph, and of that update, said 6, 8 and 9 were on no branch. It was
 written from `main`'s copy of the file without reading the branches' copies.*
@@ -719,7 +719,18 @@ this morning, so `B7-5`'s figures below reached `main` the same day they were ta
 opened with *"nothing merged today"* when it was written two hours earlier, which is why each claim
 here now carries its time.
 
-**Nine of ours are open**: #15, #16, #17, #18, #19, #21, #24, #28 and #35.
+**Which pull requests are open, whose they are, and where each one stands: `./scripts/state.sh`.** It
+prints `main`'s head, every open pull request with its author and the forge's own review state,
+whether each branch still merges into its base, and the worktrees. **This paragraph used to carry that list, and it was wrong twice in two days** — on
+2026-10-16 the tables below said #21 was *"never reviewed"* while a review of it was being answered,
+which the reviewer raised as `F4`; and the sentence that stood here said nine were open when twelve
+were, hours after it was written. `CLAUDE.md` asks for a computed answer rather than a remembered one,
+and a count of open pull requests is a fact. `A17-1` holds the command, including that it refuses
+rather than printing an empty picture when `gh` is absent or the forge does not answer.
+
+**The dated tables further down are history, not state.** They record what was true on their date and
+are worth keeping for that; they are not to be read as the present, and from today the present has a
+command.
 
 **#21 was reviewed and answered today too**, in `fa23a3e`: one blocking item — the specification
 claimed `seed_known_hosts` was exercised by no case, which `m-a10` disproves — plus four follow-ups.
