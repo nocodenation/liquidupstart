@@ -186,6 +186,52 @@ mistake is available here and is cheaper to avoid than to repeat.
   reattaches the anonymous volume rather than minting a new one. A recreate does not empty
   the load path. **Still unmeasured:** `docker compose down` without `-v`, which stops the
   whole stack and is a heavier intervention than this question is worth.
+
+  **Rebuilt on every start, since 2026-10-22.** The load path was only ever added to, so it held
+  state: a bundle taken out of the inbox stayed loaded across a restart and a recreate, and the
+  procedure needed a second `rm` inside the container. `CLAUDE.md` meanwhile names `nar_extensions`
+  as a directory rewritten from scratch on every start, and on that ground as no state. The
+  operator chose the behaviour that makes the sentence true. Before it judges the inbox, the
+  entrypoint now empties the load directory — every entry, a leftover `.part` from a killed watcher
+  included — names what it removed, and then copies back what the inbox holds and passes. A failure
+  to empty it is reported and does not end the start. The image always carries an inbox directory,
+  so in the stack this always runs: without the bind, the inbox is the image's empty directory and
+  the load path ends empty, which is what that inbox holds. `nar-watch.sh` is unchanged; it still
+  promotes arrivals while Liquid runs. A restart then rebuilds what the inbox holds and passes, and
+  two cases follow from that, read from the code rather than run. A loaded bundle whose inbox copy
+  was replaced by one the watcher refused is unloaded at the next restart, because `nar-watch.sh`
+  moves a refused arrival to `refused/` and the inbox then holds no copy that passes; the start
+  names it among what it removed. And a bundle the start-time check refuses — after an image upgrade
+  changes `lib/`, say — is unloaded at that start as well, where before its old copy stayed loaded
+  unjudged against the new API; it goes to `refused/` with the reason, as any start-time refusal
+  does. When the inbox is not a mount, the start says so.
+
+  So **taking a bundle out is the inbox `rm` and a restart**. This replaces the procedure above,
+  whose `docker compose exec … rm -f` line is no longer needed:
+
+  ```bash
+  docker compose exec liquid ls -A /opt/nifi/nifi-current/nar_extensions
+  rm ./volumes/nar_extensions/<bundle>.nar
+  docker compose restart liquid
+  ```
+
+  NiFi then drops the unpacked copy itself, as measured on 2026-10-07. Whether a plain
+  `docker compose down` keeps the volume no longer decides what loads, since the start empties it
+  either way; that `down` leaves anonymous volumes on disk is Compose's documented behaviour, not
+  measured here. A `tmpfs` at the load path
+  would empty it by construction, but it costs memory for bundles that can run to hundreds of MB,
+  and it was not taken. Measured on 2026-10-22 in two throwaway Liquid containers, each with
+  `probe-sound-1.0.0.nar` in the inbox; for each, the bundle was taken out of the inbox and the
+  container restarted, then the bundle put back and the container restarted again:
+
+  | Entrypoint | After the bundle is taken out of the inbox and the container restarted | After it is put back and the container restarted |
+  |---|---|---|
+  | `main`'s | still loaded: in the load path, and its unpacked copy in `work/nar/extensions` | loaded |
+  | this one | not loaded: the load path empty, no unpacked copy | loaded again |
+
+  `B2-12` holds the entrypoint's half. The running `liquid` container keeps its old copy until the
+  image is rebuilt and the container recreated (`./config/scripts/build/liquid.sh && docker compose
+  up -d --no-deps liquid`), which `B4-7` reports.
 - **FR31 — A deployment step that fails says so.** The copy in the entrypoint currently ends in
   `|| true`, so a failure is swallowed and Liquid starts without the processor with nothing to read.
   A step whose failure is invisible is worse than one that has none.

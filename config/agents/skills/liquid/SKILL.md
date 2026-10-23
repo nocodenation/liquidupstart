@@ -442,10 +442,10 @@ container writes to, and NiFi picks it up within seconds. One that fails is move
    the operator to paste it when a bundle is missing and the API does not say why.
 
 A bundle in the inbox is loaded within seconds, with no restart, and asking for one is a defect
-(FR29). A restart is needed only to **replace** a version already loaded, as step 3 says, because
+(FR29). A restart is needed to **replace** a version already loaded, as step 3 says, because
 the framework keeps the bundle it has already loaded under those coordinates for the life of the
 process: the promoted file is overwritten in the load directory and the running Liquid goes on
-serving the one it has.
+serving the one it has. Taking one out needs a restart too, for the reason below.
 
 *Corrected 2026-10-05.* This read "because the entrypoint's copy into `lib/` wins over the
 auto-load directory", which the 2026-09-29 split made false: what passes the check is promoted
@@ -453,12 +453,12 @@ into `${NIFI_HOME}/nar_extensions`, the auto-load directory itself, and nothing 
 any more. `lib/` is read and never written — it is what a bundle is judged against, not where one
 is deployed. The reason given for the restart was wrong; the restart itself is not.
 
-**Taking a bundle out is the operator's, and deleting it from the inbox does nothing.**
-`./volumes/nar_extensions` is the inbox: the watcher reads what *arrives* there, so removing a
-file from it leaves the bundle loaded. The load path is inside the container, in a Docker volume
-no path you can see reaches. Removal is one command plus a restart, both the operator's, and the
-procedure is in `docs/FEATURE-liquid-java-extensions.md` under FR30. Ask for it the way step 4
-asks for a restart, and do not report a bundle as removed because you deleted the inbox copy.
+**Taking a bundle out ends with a restart, and the restart is the operator's.** The bundle leaves
+the inbox — `/opt/nar_extensions` in your container, `./volumes/nar_extensions` on the host — and
+stays loaded until Liquid restarts: every start empties the load path and copies back what the inbox
+holds and passes, so after the restart it is gone. Ask for the restart the way step 4 does, and do
+not report the bundle as removed before it has happened. The operator has the procedure in the
+project's README.
 
 **Two sizes the check refuses on, before it reads anything.** The check reads your bundle to judge
 it, and it will not read an unbounded amount:

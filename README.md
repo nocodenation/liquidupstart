@@ -44,7 +44,7 @@ sandbox they can spin up, throw away, and spin up again.
   the running instance loads it; a controller service brings its own `pom.xml`. Checked against the
   version Liquid actually runs before anything is deployed.
 - 💾 **Browsable state** — state persists in host `./volumes/` bind mounts. Liquid also keeps two
-  Docker volumes, an index it rewrites and the bundles it has loaded;
+  Docker volumes, its API index and its NAR load path, and writes both afresh when it starts;
   [Data & persistence](#data--persistence) says what clears them.
 
 ## Architecture
@@ -309,15 +309,13 @@ new bundle is loaded within seconds, without a restart.
 **Replacing or removing a loaded bundle takes a restart.** NiFi keeps a bundle it has loaded for the
 life of the process, and a synthesised bundle is always version `1.0.0` — so rebuilding one that is
 already loaded deploys the new file while the running Liquid goes on serving the old classes, until
-`docker compose restart liquid`. Deleting a bundle from `./volumes/nar_extensions` unloads nothing:
-the loaded copy is in the container's load path, an anonymous volume that survives a restart and a
-recreate by `docker compose up`; after `docker compose down` the next start begins from an empty one. Taking one out means removing both copies, because every start judges the inbox again and
-copies what passes back into the load path:
+`docker compose restart liquid`. Taking one out is the same: delete it from `./volumes/nar_extensions`
+and restart. Every start empties the load path, which is the container's own, and copies back what
+the inbox holds and passes, so a bundle no longer in the inbox is not loaded again:
 
 ```bash
 docker compose exec liquid ls -A /opt/nifi/nifi-current/nar_extensions
 rm ./volumes/nar_extensions/<bundle>.nar
-docker compose exec liquid rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar
 docker compose restart liquid
 ```
 
@@ -342,16 +340,18 @@ agent-side workflow is §6.3–6.5 of the `liquid` skill.
 
 ## Data & persistence
 
-Almost all state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
-files, Liquid repositories, etc.). The exception is Liquid's, and so is the one other volume not
-under it:
-`liquidupstart_liquid_api`, the API index Liquid writes on every start for the NAR builder, and an
-anonymous volume at its NAR load path, `/opt/nifi/nifi-current/nar_extensions`, which holds the
-bundles it has loaded and is only ever added to. Deleting a directory under `./volumes/` clears
-neither, so a bundle in the load path survives it. `docker compose down` leaves the load-path volume
-behind, unattached, and the next start gives Liquid an empty one, into which it copies what the
-inbox holds; the old one stays on disk until `docker volume prune`. `docker compose down --volumes`,
-which `liquidupstart --cleanup` (`./cleanup.sh`) runs, removes both. To reset:
+All state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
+files, Liquid repositories, etc.). Two Docker volumes are not under it, both Liquid's, and both are
+rebuilt on every start, so neither holds state: `liquidupstart_liquid_api`, the API index Liquid
+writes on every start for the NAR builder, and an
+anonymous volume at its NAR load path, `/opt/nifi/nifi-current/nar_extensions`, which Liquid
+empties and fills again from the inbox, `./volumes/nar_extensions`, on every start. So deleting a
+bundle from the inbox takes it out at the next start, and deleting `./volumes/nar_extensions` itself
+unloads every bundle at the next start; the index is rewritten on every start either way.
+`docker compose down` leaves the old load-path volume on disk until `docker volume prune` — which
+Compose documents for anonymous volumes, and which this project has not measured.
+`docker compose down --volumes`, which `liquidupstart --cleanup` (`./cleanup.sh`) runs, removes
+both. To reset:
 
 - `./scripts/linux/down.sh` — stop the stack (data preserved).
 - `./scripts/linux/cleanup.sh` — remove rendered config (templates are re-rendered on next build).
