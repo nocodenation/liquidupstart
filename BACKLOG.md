@@ -280,7 +280,7 @@ each with the no-ceiling counterpart. The checkout's `volumes/repos` is not touc
 
 ---
 
-**[45-9]** **The README still says there are no named volumes, and the Java feature runs on two.** Found by
+**[45-9]** **~~The README still says there are no named volumes, and the Java feature runs on two.~~ Repaired on #44, on `main` since 2026-10-23.** *What this entry said while it was open, 2026-10-21 to 2026-10-23:* Found by
 `/code-review` of `docs/readme-java-extensions` (#44) on 2026-10-21. `README.md` says *"no hidden
 named volumes"* in Features, *"there are no hidden named Docker volumes"* above its reset
 instructions, and *"no named volumes"* in Contributing. Measured on the running stack with
@@ -296,7 +296,7 @@ sentences are outside its diff and are left here.
 
 Recorded 2026-10-21.
 
-**Answered on #44, open, 2026-10-22**: the three sentences say which two volumes Liquid keeps and what clears them.
+**Repaired on #44, on `main` since 2026-10-23**: *Features* and *Data & persistence* name the two volumes Liquid keeps and say what clears them, and *Contributing* says state lives on bind mounts rather than in named volumes. A0-11 holds the one named volume the README names, `liquidupstart_liquid_api`; the anonymous load-path volume and the count are read by no case.
 
 ---
 
@@ -359,7 +359,7 @@ the helper; until then it would mean editing three files outside that branch's d
 
 Recorded 2026-10-21.
 
-**Answered in part on #44, open, 2026-10-22**: `B1-2` reads live list items through `mountsLive`, which now cuts trailing comments, with two negatives. The two other filters are correct, and folding them into the helper is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+**Answered in part on #44, on `main` since 2026-10-23, the rest recorded**: `B1-2` reads live list items through `mountsLive`, which now cuts trailing comments, with two negatives. The two other filters are correct, and folding them into the helper is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
