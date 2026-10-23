@@ -44,6 +44,7 @@ import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { mkdtempSync, rmSync, chmodSync, copyFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { containerName, fixtureLabels } from '../lib/dashboardserver';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
@@ -100,6 +101,12 @@ function waitForLog(name: string, needle: string, seconds: number): boolean {
   return false;
 }
 
+// Per run and labelled, as every other fixture container is: under the fixed names
+// two checkouts on one host removed each other's Liquid half an hour in, and it
+// read as a NAR loader timeout. A8-34.
+const LIVE = containerName('lu-b5-live');
+const BOOT = containerName('lu-b5-boot');
+
 const work = mkdtempSync(join(tmpdir(), 'lu-b5-drop-'));
 const bundles = join(work, 'bundles');
 const inboxLive = join(work, 'inbox-live');
@@ -123,32 +130,32 @@ beforeAll(() => {
     `python3 - <<'PY'\n${MAKE}\nPY`]);
 
   // Route one: dropped by hand into a Liquid that is already running.
-  sh(['docker', 'rm', '-f', 'lu-b5-live']);
-  sh(['docker', 'run', '-d', '--name', 'lu-b5-live', ...mounts(inboxLive),
+  sh(['docker', 'rm', '-f', LIVE]);
+  sh(['docker', 'run', '-d', '--name', LIVE, ...fixtureLabels(), ...mounts(inboxLive),
     '--entrypoint', '/opt/nifi/scripts/entrypoint.sh', IMAGE]);
-  expect(waitForLog('lu-b5-live', 'Starting NAR Auto-Loader Thread', 400)).toBe(true);
+  expect(waitForLog(LIVE, 'Starting NAR Auto-Loader Thread', 400)).toBe(true);
   for (const n of [SOUND, REFUSED]) copyFileSync(join(bundles, n), join(inboxLive, n));
-  waitForLog('lu-b5-live', `Loaded extensions for org.nocodenation.review:probe-sound-nar`, 120);
-  liveLog = sh(['docker', 'logs', 'lu-b5-live']).output;
-  liveInbox = sh(['docker', 'exec', 'lu-b5-live', 'sh', '-c',
+  waitForLog(LIVE, `Loaded extensions for org.nocodenation.review:probe-sound-nar`, 120);
+  liveLog = sh(['docker', 'logs', LIVE]).output;
+  liveInbox = sh(['docker', 'exec', LIVE, 'sh', '-c',
     'echo load=$(ls -A /opt/nifi/nifi-current/nar_extensions | tr "\\n" ",") ' +
     'refused=$(ls -A /opt/nifi/nifi-current/nar_inbox/refused | tr "\\n" ",")']).output;
 
   // Route two: both already in the inbox when the container starts.
   for (const n of [SOUND, REFUSED]) copyFileSync(join(bundles, n), join(inboxBoot, n));
-  sh(['docker', 'rm', '-f', 'lu-b5-boot']);
-  sh(['docker', 'run', '-d', '--name', 'lu-b5-boot', ...mounts(inboxBoot),
+  sh(['docker', 'rm', '-f', BOOT]);
+  sh(['docker', 'run', '-d', '--name', BOOT, ...fixtureLabels(), ...mounts(inboxBoot),
     '--entrypoint', '/opt/nifi/scripts/entrypoint.sh', IMAGE]);
-  waitForLog('lu-b5-boot', 'Found 1 initial NARs from directory nar_extensions', 400);
-  bootLog = sh(['docker', 'logs', 'lu-b5-boot']).output;
-  bootDirs = sh(['docker', 'exec', 'lu-b5-boot', 'sh', '-c',
+  waitForLog(BOOT, 'Found 1 initial NARs from directory nar_extensions', 400);
+  bootLog = sh(['docker', 'logs', BOOT]).output;
+  bootDirs = sh(['docker', 'exec', BOOT, 'sh', '-c',
     'echo load=$(ls -A /opt/nifi/nifi-current/nar_extensions | tr "\\n" ",") ' +
     'refused=$(ls -A /opt/nifi/nifi-current/nar_inbox/refused | tr "\\n" ",")']).output;
 }, 1_800_000);
 
 afterAll(() => {
-  sh(['docker', 'rm', '-f', 'lu-b5-live']);
-  sh(['docker', 'rm', '-f', 'lu-b5-boot']);
+  sh(['docker', 'rm', '-f', LIVE]);
+  sh(['docker', 'rm', '-f', BOOT]);
   rmSync(work, { recursive: true, force: true });
 });
 

@@ -75,11 +75,13 @@ difference ever reached a verdict, and it is gone.
 | **MU-14** | positive | A file holding a single test is validated when that test reddens: a survivor is required only where one can exist. **`--case` naming nothing is MU-55** |
 | **MU-19** | **negative** | An empty `to` — which is what a deletion looks like — stays its own field on the wire |
 | **MU-20** | **negative** | A spec path matching no file is refused, and the message is the baseline's — "did not run in". **The `no test executed` branch is MU-57** |
-| **MU-21** | **negative** | The subject guard is about the file being a **test**, not about living under `tests/` |
+| **MU-21** | **negative** | The subject guard is about the file being a **test**, not about living under `tests/`: a test reached by a roundabout path, and one outside `tests/`, are refused |
+| **MU-21** | positive | …while a script that merely lives under `tests/` is a subject — *its own row since 2026-10-22; it was folded into the negative above* |
 | **MU-22** | **negative** | The named test is matched as a whole name, not as a substring |
 | **MU-23** | **negative** | A backup that could not be taken stops the mutation, and the subject is untouched |
 | **MU-24** | **negative** | A named test that is already red before the mutation validates nothing |
 | **MU-25** | **negative** | An edit that leaves the subject unchanged is refused |
+| **MU-25** | positive | …while an edit that does land is measured — *its own row since 2026-10-22; it was folded into the negative above* |
 | **MU-26** | positive | A restore that failed keeps its backup, and says where it is |
 | **MU-27** | **negative** | A sibling whose name ends with the named test does not stand in for it |
 | **MU-28** | **negative** | The guard covers helpers, snapshots and every test-file shape — and still admits `tests/run.sh` |
@@ -112,12 +114,15 @@ difference ever reached a verdict, and it is gone.
 | **MU-48** | **negative** | A run the budget stops takes bun with it, and leaves no record behind |
 | **MU-49** | **negative** | A signal while the subject is mutated takes bun with it, and nothing writes the record afterwards |
 | **MU-49** | **negative** | …including a spec that **handles** TERM, which survived the signal path — *N6 of 2026-10-14* |
-| **MU-50** | **negative** | `MUTATE_RUN_BUDGET_MS` is milliseconds: zero, a word and a unit are each refused with exit 2, while a whole number is accepted |
+| **MU-50** | **negative** | `MUTATE_RUN_BUDGET_MS` is milliseconds: zero, a word and a unit are each refused with exit 2 |
 | **MU-50** | **negative** | …and a leading zero with them: bash reads `08` as octal, the comparison then fails open, and the run was unbounded — *N4 of 2026-10-14* |
+| **MU-50** | **negative** | …and so is one that bash would read as a smaller number: `010` is 8 — *its own row since 2026-10-22* |
 | **MU-50** | **negative** | …and the bun `--timeout` is held to the same rule — *the local review of 2026-10-21, finding 6* |
+| **MU-50** | positive | …while a whole number is still accepted — *its own row since 2026-10-22; it was folded into the negative above* |
 | **MU-51** | **negative** | A signal during the baseline leaves neither the backup nor the record behind |
 | **MU-52** | **negative** | The counts come from the JUnit record, so a line the spec itself prints cannot change a verdict |
-| **MU-53** | **negative** | A subject is judged by where it leads: a link to a test file, a directory link into `tests/lib` and an upper-case test name are refused, and a link to an ordinary file is not |
+| **MU-53** | **negative** | A subject is judged by where it leads: a link to a test file, a directory link into `tests/lib` and an upper-case test name are refused |
+| **MU-53** | positive | …while a link to an ordinary file is not — *its own row since 2026-10-22; it was folded into the negative above* |
 | **MU-54** | **negative** | A spec that is red before the mutation is refused and its red tests are named, rather than the mutation being blamed |
 | **MU-55** | **negative** | `--case` naming nothing is an error, not a run that found nothing |
 | **MU-56** | positive | A mutation may span several lines: a `from` carrying a newline is applied byte-exactly, and a multi-line `from` that is absent is still refused |
