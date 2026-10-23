@@ -81,7 +81,7 @@ Most images are pulled; five are built locally as
 ./run.sh                       # dashboard UI (recommended)
 ./scripts/linux/build.sh       # build the four custom images
 ./scripts/linux/start.sh       # start the stack (prints all URLs & credentials)
-./scripts/linux/down.sh        # docker compose down
+./scripts/linux/down.sh        # docker compose down --remove-orphans
 ```
 
 ## Writing into files

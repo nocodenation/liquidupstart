@@ -96,9 +96,9 @@ describe('SP-1 each discriminator answers for the state in front of it', () => {
       writeFileSync(join(p, 'volumes', '_git-secrets', 'id_ed25519'), 'not a key\n');
     });
     // `volumes/repos` is deliberately present in the bare one: it is what the
-    // obvious discriminator would have used, and three other places create it --
-    // m-a5.nested-clone, m-a10.fixture-ceiling and gitfixture -- so it is there
-    // after any run of the suite and says nothing about a start.
+    // obvious discriminator would have used, and the stack tier's chain fixtures
+    // create it through gitfixture's container view, so it says nothing about a
+    // start.
     mkdirSync(join(bare, 'volumes', 'repos'), { recursive: true });
     expect({ bare: startedIn(bare), started: startedIn(started) }).toEqual({
       bare: false,
@@ -325,9 +325,9 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
   const registryFiles = registryNamers.filter((l) => l !== 'tests/unit/m-sp.preconditions.test.ts');
 
   const dependent: Array<[string, string]> = [
-    // These two have no single grep that finds them: `STARTED` is read through a
-    // helper and `IN_GIT_REPO` through another, so they stay enumerated and the
-    // enumeration is the thing SP-2 then checks.
+    // These three have no single grep that finds them: `STARTED` is read through a
+    // helper, `IN_GIT_REPO` through another, and `JQ` is m-a17's own constant, so
+    // they stay enumerated and the enumeration is the thing SP-2 then checks.
     ['tests/contract/m-a3.known-hosts.test.ts', 'STARTED'],
     ['tests/contract/m-a4.clones-governed.test.ts', 'STARTED'],
     ['tests/integration/m-a1.workspace-dir.test.ts', 'STARTED'],
@@ -335,6 +335,7 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     ['tests/component/m-a6.operator-repository.test.ts', 'IN_GIT_REPO'],
     ['tests/contract/m-a16.text-only.test.ts', 'IN_GIT_REPO'],
     ['tests/unit/m-a10.fixture-ceiling.test.ts', 'IN_GIT_REPO'],
+    ['tests/contract/m-a17.computed-state.test.ts', 'JQ'],
     ...domFiles.map((f) => [f, 'DASHBOARD_DEPS'] as [string, string]),
     ...registryFiles.map((f) => [f, 'registryReachable()'] as [string, string])
   ];

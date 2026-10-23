@@ -47,9 +47,9 @@ import { sh } from './shell';
  * hooks directory and `volumes/repos` are each a separate artefact of the same
  * start.
  *
- * `volumes/repos` was already ruled out as the discriminator and still is: three
- * other places create it -- `m-a5.nested-clone`, `m-a10.fixture-ceiling` and
- * `gitfixture` itself -- so it is there after any run of the suite.
+ * `volumes/repos` was already ruled out as the discriminator and still is: the
+ * stack tier's chain fixtures create it, through `gitfixture`'s container view,
+ * so it is there after a run of that tier.
  */
 export function startedIn(root: string): boolean {
   return existsSync(join(root, 'volumes', '_git-secrets', 'id_ed25519'));

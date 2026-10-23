@@ -49,8 +49,8 @@
  *
  * Test data: the host repository, `git init` in `mkdtemp` with one empty commit
  * `base`; the worktree host, `git worktree add` of it on a branch `wt`; in each,
- * the probe `volumes/repos/.a10-ceiling-probe`, the same shape and place as
- * `.a7-race-<pid>`, which is what walked up. The commands are `git status --short`
+ * the probe `volumes/repos/.a10-ceiling-probe`, the shape and place
+ * `.a7-race-<pid>` had when it walked up, and a container-view chain fixture has. The commands are `git status --short`
  * and `git commit --allow-empty -m probe`, the second being what actually
  * happened; the alias `alias.ceil=!printenv GIT_CEILING_DIRECTORIES`; and, for no
  * ceiling, `GIT_CEILING_DIRECTORIES=''` -- empty rather than unset, because the
@@ -122,8 +122,8 @@ describe('A10-23 a directory that is not a repository is not the repository abov
     expect({ code: r.code, absolute: isAbsolute(ceiling) }).toEqual({ code: 0, absolute: true });
     expect(realpathSync(ceiling)).toBe(toplevel);
     // And the root the fixtures build under lies beneath it, so it is the walk
-    // from there that the ceiling stops. REPOS_HOST is narfixture's; chainFixture
-    // builds the same path at tests/lib/gitfixture.ts.
+    // from there that the ceiling stops. REPOS_HOST is narfixture's; chainFixture's
+    // container view builds the same path at tests/lib/gitfixture.ts.
     const fixtures = join(realpathSync(join(REPOS_HOST, '..', '..')), 'volumes', 'repos');
     expect(relative(toplevel, fixtures).startsWith('..')).toBe(false);
   });

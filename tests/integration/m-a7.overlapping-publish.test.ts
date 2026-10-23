@@ -13,7 +13,7 @@
  *           one being refused are equally acceptable outcomes, so counting
  *           successes would assert the timing of the run rather than the rule.
  * Given:    A throwaway declaration `git@localhost:e2e.git|write|protected` in a
- *           temporary project under `volumes/repos/.a7-race-<pid>`, its remote a
+ *           temporary project in a `mkdtemp` directory `.a7-race-<pid>-…`, its remote a
  *           local bare repository seeded from `README.md` holding `seed` on
  *           `main`, and the clone the start script made from it — the same
  *           arrangement as A7-1, viewed from the host rather than the container,

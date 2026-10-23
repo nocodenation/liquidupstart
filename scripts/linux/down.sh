@@ -7,4 +7,11 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_DIR}"
 
 echo "Stopping existing containers..."
-docker compose down
+
+# --remove-orphans: a bare `down` acts only on the services the current
+# compose.yml declares, so another branch's container (nar_builder, 2026-09-08)
+# survived it and compose warned about it on every call. This removes the
+# project's containers for services the file does not declare; their state is in
+# ./volumes/. A one-off `docker compose run` container that is still running is
+# not removed -- measured 2026-10-20. A11-11 holds every teardown to the flag.
+docker compose down --remove-orphans
