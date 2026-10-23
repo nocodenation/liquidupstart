@@ -551,7 +551,7 @@ SIZE_NEXT_STEP = (
 
 
 def check_index(nar, index_dir):
-    """`check-index`: 0 judged and linkable, 1 refused on merit, 3 could not judge."""
+    """`check-index`: 0 judged and linkable, ending with `JUDGED <nar>`; 1 refused on merit; 3 could not judge."""
     try:
         with open(os.path.join(index_dir, CLASSES_FILE)) as fh:
             resolvable = set(fh.read().split())
@@ -650,6 +650,10 @@ def check_index(nar, index_dir):
             sys.stdout.write(line + "\n")
         sys.stdout.write("  %s\n" % NEXT_STEP)
         return 1
+    # **A verdict is said, not left to silence.** The gate deploys on 0 only with
+    # this line, because 0 is also what an empty file gives: python3 runs one and
+    # exits 0 saying nothing. FR36a, B6-44.
+    sys.stdout.write("JUDGED %s\n" % nar)
     return 0
 
 
