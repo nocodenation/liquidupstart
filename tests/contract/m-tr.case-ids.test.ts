@@ -388,9 +388,10 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
       'tests/component/m-a16.result-line.test.ts',
       'tests/component/m-a16.skip-panel.test.ts',
       'tests/component/m-oc.pairing-card.test.ts',
+      'tests/contract/m-a17.computed-state.test.ts',
       'tests/unit/m-sp.preconditions.test.ts'
     ],
-    why: 'SP-2 is a rule rather than a single case: the unit file holds the rule, and each DOM file carries the voiced skip the rule requires -- so the id is the rule plus one instance per file the computation finds'
+    why: 'SP-2 is a rule rather than a single case: the unit file holds the rule, and each DOM file carries the voiced skip the rule requires, as m-a17 does for its stub forge without a jq -- so the id is the rule plus one instance per file that skips'
   }
 ];
 

@@ -507,21 +507,28 @@ Found while answering D2 and M6 of the 2026-10-01 review. Recorded 2026-10-07.
 
 ---
 
-**A fifth file writes into the operator's `volumes/repos` from the default tier. Still open, and
-`main` no longer records it.** `tests/contract/m-a5.nested-clone.test.ts` builds `reposDir` from
-`repoRoot` and writes a git repository into it — `git init -q -b main <reposDir>/.a5-nested-probe`,
-read out of the file on 2026-10-12. It is green, because it creates everything it asserts against, so
-it was never in the failure set above — but a default-tier run leaves state in whichever checkout it
-was started from, which `tests/run.sh:18-23` says is the stack levels' privilege and not the default
-tier's.
+**~~A fifth file writes into the operator's `volumes/repos` from the default tier.~~ Repaired
+2026-10-17, corrected 2026-10-20.** `tests/contract/m-a5.nested-clone.test.ts` makes its nested
+repositories in `mkdtemp` hosts of its own, and asserts that the checkout's `volumes/repos` lists the
+same entries after the case as before. Measured both ways with a watcher on the path during the run:
+seen against the old file, never against the new one.
 
-**#22 does not close it, and it is worth saying why rather than assuming the merge did.** That branch
-*did* change this file — it gave it `IN_GIT_REPO` — but a precondition decides whether a case **runs**,
-not whether it **writes**. The `git init` is unchanged. And when #22 rewrote `BACKLOG.md` this
-paragraph went with the rest of the entry, so on `main` the concern is recorded nowhere: checked
-2026-10-12, `grep -c "fifth file writes into the operator"` against `origin/main:BACKLOG.md` is **0**.
-It survives here, which is the only copy that still has it. Recorded 2026-10-07, confirmed open
-2026-10-12.
+A local review on 2026-10-20 found the first repair claimed more than it did, and three things it
+lost. The project's `.gitignore` was copied into the host "so a change to that file still reddens the
+case", and it cannot: `git clean -x` does not read ignore rules — measured, `Would skip repository`
+with the file and without. The read-only dry run over the checkout's real clones had gone with the
+probe, and is back. The guard asserted one name was absent, so a probe left behind by the old file
+made it red for good with nothing to clear it — reproduced, 2 pass / 1 fail — and is a before/after
+listing now. And the forced clean the header had to leave out is run, in a second host. Two more
+default-tier files wrote whole repositories into the checkout through `chainFixture`'s host view,
+`m-a7.two-clones` and `m-a7.overlapping-publish` (found by the review of 2026-10-22, 480 paths in one
+run); that view roots in a temporary directory now. With `m-a10.fixture-ceiling` moved out on #46,
+nothing in the default tier writes into the checkout.
+
+*What this entry said while it was open, 2026-10-07 to 2026-10-12:* the file built `reposDir` from
+`repoRoot` and ran `git init -q -b main <reposDir>/.a5-nested-probe`; it was green because it created
+everything it asserted against; #22 gave it `IN_GIT_REPO`, which decides whether a case runs and not
+whether it writes; and #22's rewrite of this file had dropped the entry from `main`.
 
 ---
 
@@ -941,7 +948,8 @@ not later read as an observation.
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
 their origin stays readable.*
 
-**`down.sh` leaves behind every container the current branch does not declare.**
+**~~`down.sh` leaves behind every container the current branch does not declare.~~ Repaired
+2026-10-17.**
 Met on 2026-09-08 while switching from `feature/liquid-java-extensions` to this branch: `nar_builder`
 survived the teardown and kept running alongside a stack that has no such service, because
 `docker compose down` acts on the services in the **current** `compose.yml` and that branch's service
@@ -955,12 +963,30 @@ reconsidered.
 also the risk: a warning on every call that nobody acts on is how a project learns to read past
 warnings, which is the failure `HANDOFF.md` records as *a check that cries wolf*.
 
-**Not fixed here on purpose.** `scripts/linux/down.sh` is **byte-identical on `main`, #9, #10 and
+**Not fixed then, on purpose, and the reason is why it took five weeks.** `scripts/linux/down.sh` was **byte-identical on `main`, #9, #10 and
 #13** — one `docker compose down`, ten lines. Adding `--remove-orphans` on this branch alone leaves
 the other three, and the same repair arriving separately in several places is how one file becomes
 two that differ. It also changes what teardown means for every stack: `--remove-orphans` removes
 whatever the current file does not declare, which is right here and worth a deliberate decision
 rather than a drive-by. The orphan itself was removed by hand with `docker rm -f nar_builder`.
+
+**Repaired 2026-10-17, and the waiting had stopped paying.** Measured across every branch:
+`down.sh` is identical (`08fa75a66f`) on **17 of 18**, the exception being `feature/privacy-gateway`,
+which is not one of ours — so one change on `main` reaches all of them by merge. And
+`scripts/install/update.sh:181` **already** passed `--remove-orphans`, so the two teardown paths had
+drifted apart anyway, which is the state the caution was meant to prevent. The deliberate decision the
+entry asked for is written at the line: teardown removes this project's containers for services the
+current file does not declare; every stack's state is in `./volumes/` on the host, so nothing is lost,
+and one stack runs per host by design. Measured against real compose in a throwaway project: the orphan
+was removed, the operator's twenty containers kept running, because the flag is scoped to the compose
+project.
+
+**Corrected 2026-10-20, after a local review.** There were three teardown paths, not two: `cleanup.sh:18`
+was outside the list `A11-11` held, and the list was line text that a flag named in a warning after
+`||` satisfied. `A11-11` now finds every compose `down` call in the checkout's shell scripts and reads
+only the command. And one thing the flag does not do, measured: a one-off `docker compose run`
+container of an undeclared service that is still running survives `down --remove-orphans` and keeps
+the network in use.
 
 **The Claude login expires, and the one idea that might remove the expiry is unmeasured.**
 The login lives only in `volumes/_openclaw-claude` and does not survive a reset; the migration cost
@@ -1020,11 +1046,26 @@ and the whole class of problem disappears. That is the right shape regardless of
 why establishing the cause is worth little — recorded so that the next person to meet it does not
 spend an hour on it as this run did.
 
-**Two `:latest` fallbacks remain in the `ingest-pdf` plugin build scripts.**
+**Two `:latest` fallbacks remain in the `ingest-pdf` plugin build scripts. SETTLED 2026-10-17.**
 `${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}`, in scripts neither `build.sh` nor `start.sh`
 invokes. The plugin's bundle is checked in, so rebuilding it to remove a papercut carries more risk
 than the papercut warrants. Every fallback on a path the stack actually walks was removed during the
 migration; these two are what is left.
+
+**Measured 2026-10-17, and it is sharper than "papercut" — and still settled.** Nothing in the
+repository invokes either script: neither `build.sh` is called from anywhere outside its own
+directory. *(Corrected 2026-10-20: this said the only references to `ingest-pdf` were this entry,
+`FINISH.md` and the plugin's own files. `config/scripts/start/openclaw.sh` names the plugin path and the
+Claude tool four times, and five documents mention it; none of them runs a build script.)* And the fallback does not
+merely float: the stack's gateway is built `FROM ghcr.io/openclaw/openclaw:2026.9.1`, pinned, so a
+hand-run build with `OPENCLAW_IMAGE` unset would build the bundle inside **a different OpenClaw than
+the stack runs** — not a newer one by accident, a different one by default.
+
+It stays settled against the finishing list's cut line of 2026-10-17: nothing here claims anything
+false and nothing touches what is not its own. The remedy for whoever next edits those two scripts is
+one line each — `${OPENCLAW_IMAGE:?set it to the image this stack runs}` in place of the default, so a
+hand-run refuses instead of guessing. Written down rather than done, because doing it means rebuilding
+a checked-in bundle to change a script nothing calls.
 
 **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
 Suggested in the third review of #11 as an optional improvement to N1 (OC-60 since the 2026-09-30 rename), and deferred here on the
@@ -1040,7 +1081,7 @@ at all, and that without `-k` the start then hangs forever. The lesson is not ab
 **"I cannot reproduce it" is a statement about the attempt, not about the system**, and it is a weak
 reason to defer something whose cost was one flag.
 
-**`HANDOFF.md` mixes two kinds of content, and only one of them ages.**
+**`HANDOFF.md` mixes two kinds of content, and only one of them ages. HALF DONE 2026-10-17.**
 It carries durable project knowledge — the lessons, which four other documents already cite as rules
 (*"`HANDOFF.md` records the general rule"*) — alongside the state of one machine at one moment. The
 second kind goes stale, and because both live in one file, all of it reads as stale. Splitting the
@@ -1051,6 +1092,18 @@ Deferred on 2026-09-15 rather than done: it touches four cross-references while 
 review, and moving files under a reviewer mid-review is how a review gets read twice. The cheap half
 was done instead — the file and `CLAUDE.md` now say what the handover is, what it is not, and which
 copy is current.
+
+**2026-10-17: the half that actually ages is gone, and the split is still deferred.** The kind of
+content that goes stale is the *state* — which pull requests are open, which were reviewed — and it
+was wrong twice in two days: the tables said #21 was "never reviewed" while a review of it was being
+answered, which the reviewer raised as `F4`, and the current section said nine were open when twelve
+were, hours after being written. That half is a command now, `scripts/state.sh`, held by `A17-1` and
+`A17-2`, and the document points at it. What stays in the file is the map and the lessons, which do
+not age.
+
+The split itself remains deferred, for the original reason and a sharper one: four documents cite the
+handover as the place a rule lives, and #19 carries an older copy of this very file on its branch.
+Moving files under a reviewer mid-review is how a review gets read twice.
 
 **~~The repositories card contradicts the key panel while the start is waiting.~~** *Done
 2026-09-17, as M-A12 -- the manifest is written after pass 1 as well, and again at the end.* Kept for
