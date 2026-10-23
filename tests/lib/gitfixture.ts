@@ -381,7 +381,13 @@ export function chainFixture(
   view: 'container' | 'host' = 'container'
 ): ChainFixture {
   const dir = `${CHAIN_ROOT_PREFIX}${tag}-${process.pid}`;
-  const root = join(repoRoot, 'volumes', 'repos', dir);
+  // Under the checkout's volumes/repos only for the containers, which reach it
+  // through the /repos mount; the host view needs no such place and must not
+  // write into the checkout.
+  const root =
+    view === 'host'
+      ? mkdtempSync(join(tmpdir(), `${dir}-`))
+      : join(repoRoot, 'volumes', 'repos', dir);
   const containerRoot = `/repos/${dir}`;
   const project = join(root, 'project');
 
