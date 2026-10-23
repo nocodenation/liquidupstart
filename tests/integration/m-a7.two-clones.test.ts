@@ -32,7 +32,10 @@
  *           publication has returned. The raw push in beta is refused by the
  *           hook naming `git-publish`, and alpha's hand-written permission is
  *           still there afterwards: it was neither honoured nor consumed by a
- *           push in another clone.
+ *           push in another clone. And the fixture is built outside this
+ *           working copy: on the host it needs no `/repos` mount, and until
+ *           2026-10-22 it wrote whole repositories into the checkout's
+ *           `volumes/repos`.
  * Covers:   A7-3, FR33, FR18
  * Unhappy:  The closing probe is the unhappy half and it is what makes the case
  *           more than an assumption: without it, "they share no token" would be
@@ -46,6 +49,8 @@
  */
 import { test, expect, afterAll } from 'bun:test';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { relative } from 'node:path';
+import { repoRoot } from '../lib/paths';
 import {
   chainFixture,
   dropChainFixture,
@@ -95,6 +100,10 @@ git(clones.beta, ['branch', '-q', 'agent/second']);
 const crossPush = gitOnHost(clones.beta, ['push', 'origin', 'agent/second'], fx.hostBin);
 const alphaTokenAfter = existsSync(tokenPath(clones.alpha));
 rmSync(tokenPath(clones.alpha), { force: true });
+
+test('A7-3 the fixture is built outside this working copy', () => {
+  expect(relative(repoRoot, fx.root).startsWith('..')).toBe(true);
+});
 
 test('A7-3 the start script made both clones from one declaration', () => {
   expect(fx.start.code).toBe(0);
