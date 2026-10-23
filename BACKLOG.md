@@ -105,7 +105,24 @@ file captures the tag at module load and the first file's `afterAll` pulls the i
 the rest (8 fail across three files). It is to **mint fewer** — the tag is now a hash of the build
 context, so two runs over one tree share an image, and a bounded sweep takes superseded ones but
 never the image in use, never one built in the last two hours, and never a tag outside the two
-schemes this file has used. Three separate processes now share one image, measured.
+schemes this file has used. Three separate processes now share one image, measured. *Since #40 the
+sweep decides by label and not by tag: an object is taken only if it carries `lu-builder`, is not
+this run's, and is older than two hours, because the tag allow-list missed four sibling schemes.*
+
+**And the other half, found 2026-10-16 and repaired on #40 on 2026-10-22: a killed run leaks a**
+**container.** `festive_wescoff` had been up for two days holding
+`liquidupstart/nar-builder:run-47099-xoirn1`. `--rm` removes a container when it *exits*, and that
+one never did; `docker rmi` refuses an image a container holds, so the image sweep above ran,
+failed on that tag and said nothing — by design, since a concurrent run may hold one. About a
+gigabyte stayed alive with nothing reporting it, and the docker-chosen name said nothing about
+which suite it belonged to. `sweepableObjects` now decides for containers and images alike: every
+builder object carries the `lu-builder` labels, each listing is filtered by them at the daemon, and
+an object is removed only if it is not this run's and older than two hours. Containers go first and
+with `-f`, because what a killed run leaves is running. `B6-41`: eighteen unit cases and an
+integration case that removes a running labelled container and its image against docker, keeps the
+run in flight's and a tag the suite did not give, and leaves no other container or image gone. *Corrected 2026-10-22: this
+named `sweepableContainers` and four scenarios, and said a version without `-f` was verified, which
+removed nothing real. Items 1 to 3 and A2 of the review of #40.*
 ---
 
 **Answered in part 2026-10-20 by #28, and the two halves it does not cover are stated below rather
