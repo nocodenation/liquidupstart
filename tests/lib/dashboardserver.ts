@@ -88,7 +88,9 @@ export function runSubnets(): { taken: string; free: string } {
 function docker(args: string[], timeout = 600_000): Result {
   const p = spawnSync('docker', args, { encoding: 'utf8', timeout });
   const stdout = p.stdout ?? '';
-  const stderr = p.stderr ?? '';
+  // A spawn that failed, or ran out of its timeout, has no status and often no
+  // output; the error is the only account of why, so it is kept.
+  const stderr = (p.stderr ?? '') + (p.error ? `${p.error.message}\n` : '');
   return { code: p.status ?? -1, stdout, stderr, output: stdout + stderr };
 }
 
@@ -326,6 +328,51 @@ export type Dashboard = {
   stop: () => void;
 };
 
+/**
+ * The published port, read out of `docker port`'s answer.
+ *
+ * A pure function of the text, so both answers can be measured without docker.
+ * The first line has to be what docker prints for a mapping -- an IPv4 address, a
+ * bracketed IPv6 one (an IPv4-mapped one included), or the bare `::` older daemons
+ * print, then a colon and a port from 1 to 65535 -- and anything else
+ * is null rather than whatever `Number()` makes of the last colon's tail, which
+ * read `127.0.0.1:1.5` as 1.5 and `nonsense:1` as 1.
+ */
+export function parsePublishedPort(stdout: string): number | null {
+  const m = stdout.trim().split('\n')[0].match(/^(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:.]*\]|::):(\d{1,5})$/);
+  const port = m ? Number(m[1]) : 0;
+  return port >= 1 && port <= 65535 ? port : null;
+}
+
+export type PortProbe = (id: string) => Result;
+
+/**
+ * Waited for, against a clock, and asked of the container's id. It ends once it
+ * has asked `minAttempts` times and passed its deadline: the clock, so a slow
+ * `docker` cannot multiply the wait, and at least three asks, because dashboards
+ * started beside this one can use up the clock between two asks. By id, because
+ * the id names exactly the container this `docker run` made, whatever the names do.
+ * An empty answer is a `docker` call that ran out of its 60 s (SP-5).
+ */
+export async function awaitPublishedPort(
+  id: string,
+  probe: PortProbe = (c) => docker(['port', c, '3000'], 60_000),
+  deadlineMs = 15_000,
+  waitMs = 50,
+  minAttempts = 3
+): Promise<{ last: Result; attempts: number }> {
+  const until = Date.now() + deadlineMs;
+  let attempts = 0;
+  let last: Result;
+  for (;;) {
+    last = probe(id);
+    attempts++;
+    if (parsePublishedPort(last.stdout) !== null) return { last, attempts };
+    if (attempts >= minAttempts && Date.now() >= until) return { last, attempts };
+    await Bun.sleep(waitMs);
+  }
+}
+
 export async function startDashboard(
   project: string,
   logicalName: string,
@@ -348,21 +395,26 @@ export async function startDashboard(
   // running, and the caller never got a handle to clean up: on 2026-09-07 one
   // throw inside a Promise.all left three containers and an image behind, and
   // the next run started from that state.
-  const mapped = docker(['port', name, '3000'], 60_000);
-  const port = Number(mapped.stdout.trim().split('\n')[0]?.split(':').pop());
-  if (!Number.isFinite(port) || port === 0) {
-    const logs = docker(['logs', name], 60_000).output;
-    docker(['rm', '-f', name], 60_000);
-    throw new Error(`no published port for ${name}: ${mapped.output}\n${logs}`);
+  const id = started.stdout.trim();
+  const { last: mapped, attempts } = await awaitPublishedPort(id);
+  const port = parsePublishedPort(mapped.stdout);
+  if (port === null) {
+    const logs = docker(['logs', id], 60_000).output;
+    docker(['rm', '-f', id], 60_000);
+    const how =
+      mapped.code === -1 ? 'no exit status -- it timed out, was killed, or could not be started' : `exit ${mapped.code}`;
+    throw new Error(
+      `no published port for ${name} after ${attempts} attempts; the last \`docker port\` ended with ${how}: ${mapped.output}\n${logs}`
+    );
   }
 
   const dashboard: Dashboard = {
     container: name,
     port,
     url: (path: string) => `http://127.0.0.1:${port}${path}`,
-    logs: () => docker(['logs', name], 60_000).output,
+    logs: () => docker(['logs', id], 60_000).output,
     stop: () => {
-      docker(['rm', '-f', name], 60_000);
+      docker(['rm', '-f', id], 60_000);
     }
   };
 
