@@ -22,6 +22,17 @@ export function serviceBlock(service: string, text: string = composeText()): str
   return lines.slice(start, end).join('\n');
 }
 
+// Whether a block mounts `entry` on a line compose acts on: a list item, with any
+// trailing comment cut off. A YAML comment that still holds the mount, whole or
+// after another mount, reads as the mount to a substring check, and so does an
+// environment value naming it, while compose mounts nothing.
+export function mountsLive(block: string, entry: string): boolean {
+  return block.split(/\r?\n/).some((l) => {
+    const live = l.replace(/\s+#.*$/, '');
+    return /^\s*-\s/.test(live) && live.includes(entry);
+  });
+}
+
 export function envExampleText(): string {
   return readFileSync(join(repoRoot, '.env.example'), 'utf8');
 }
