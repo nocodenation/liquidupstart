@@ -1,4 +1,4 @@
-# Handover — 2026-10-23
+# Handover — 2026-10-25
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,15 +9,56 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-23* has the live picture, *2026-10-22, late* under it, then *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-25* has the live picture, *2026-10-23* under it, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first six and the review bodies they point to; the rest of this file is the map and the lessons.
+first seven and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-25: #40, #42, #45, #46 and #48 merged; #47 answered and waiting
+
+Timur merged #40, #45 and #46, asked in Slack for #42's merge conflict to be resolved, and reviewed #47 and #48,
+each *request changes*. All three were answered and pushed, each with its suite from a clean tree and a
+comment per item, and Timur merged #42 and #48 the same evening. **#47 is the last open pull request
+of ours.** It merges clean into `main` at `16c7dd2`. On that merge, tried here and not committed or logged,
+the cases this round touched, TR-1 to TR-4 and the scenario table were green, 106 / 0.
+
+| PR | What | Head | Suite (clean tree) | Comment |
+|---|---|---|---|---|
+| #42 | `main` merged in (row 7 of `FINISH.md` is #42's struck row; SP-5 before SP-6); sentences that said #42 was still to come corrected; then `FINISH.md` and `45-13`/`45-18` brought to 2026-10-25 | `93db37d` | 1342 / 28 / 0 at `6393ae9`, no `oom`; the head adds documentation only | [#42](https://github.com/nocodenation/liquidupstart/pull/42#issuecomment-6400981642), merged |
+| #48 | item 1: what a restart costs is said in the README and the skill, held by A0-11 and B2-8; A1: a bundle not yet an archive waits for the watcher, keyed on the bundle's own name; A2 to A5; `45-29` struck | `34ccf48` | 1323 / 28 / 0, no `oom` | [#48](https://github.com/nocodenation/liquidupstart/pull/48#issuecomment-6401180075), merged |
+| #47 | item 1: OC-78 asks for the name each helper gave docker, sees it up, wants 124 or 137; item 2: OC-61 reads each run's guard, `_mrc` included; A1 to A5; four of its entries struck and four noted as answered in part | `7671c82` | 1332 / 28 / 0, no `oom` | [#47](https://github.com/nocodenation/liquidupstart/pull/47#issuecomment-6401413173) |
+
+`main` also strikes the ten entries #46 answered (`00ff80e`), by the rule in BACKLOG's introduction, which
+#46 did not apply because it landed after #45 without carrying the strikes.
+
+**What it found.**
+
+- **A refused replacement used to cost nothing; with the load path rebuilt on every start, it costs the
+  loaded bundle at the next restart.** A change that makes a sentence true can make another one
+  dangerous, and the reader to protect is the agent who asks for the restart.
+- **A test that matches the watcher's text matches more than the watcher meant.** narcheck uses the same
+  words for a partial bundle and for a broken jar inside a finished one, so the start keys on the
+  bundle's own name.
+- **A check that runs once at a fixed time measures the host's speed.** OC-78's "was it up" missed
+  every container at one second; a container shows as running about 1.2 s after its `docker run`.
+- **Docker Desktop was off for part of the day.** The B6-37 failures in 120 ms were a missing socket,
+  not the fixture; check `docker info` before reading a red as a finding.
+- **zsh again:** a suite loop with `set -- $pair` ran nothing. The loops are bash scripts now.
+
+**Open, and whose.** Timur's: checking his items on #47, and merging it. Ours: nothing. Once #47 is in,
+`FINISH.md` rows 1 and 2 can be done on `main`, since no open branch touches `BACKLOG.md` any more. The
+watcher's own broad match on *could not be opened as an archive* is named on #48 and left alone.
+
+**Housekeeping.** Docker Desktop was started for the suites, with the operator's approval; the stack
+came up with it. The Docker VM had 19 981 MB free right after, by `df -m` in a container, and 18 609 MB
+when the last suite began. No probe container or image from today's runs is left. One older image is:
+`liquidupstart/nar-builder:b6c-10699-o4032x`, 1.02 GB, from 2026-10-15, built before the sweep's labels
+existed, so no sweep takes it; it is the operator's to remove.
 
 ## Where it stands, 2026-10-23: #39, #41, #43 and #44 merged, three conflicts resolved
 
