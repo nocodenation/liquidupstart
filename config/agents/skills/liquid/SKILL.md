@@ -419,9 +419,16 @@ container writes to, and NiFi picks it up within seconds. One that fails is move
 
    **A restart is required when you are replacing a version that is already loaded**, because
    NiFi keeps the bundle it has loaded under those coordinates. That is the case where the
-   auto-loader will not help you.
+   auto-loader will not help you. The API listing the type is no evidence that the replacement
+   passed: it lists the version already loaded. Step 4 says what to look at instead.
 
 4. **When a restart is needed, it is the operator's — ask, and never take it yourself.**
+   Before you ask for one to replace a loaded bundle, check that
+   `/opt/nar_extensions/refused/<file>.nar` is not there, or is older than your build: nothing
+   deletes an old refusal. If a newer one is there, the replacement was refused and
+   the restart would remove the processor, not replace it: every start rebuilds the load path from
+   the inbox, and the refused file is no longer in it. Tell the operator that instead of asking for
+   the restart.
    It interrupts every running flow in this Liquid — every flow anyone else is running, not
    only yours — so it is not a step an agent takes on its own timing, and you have no way to
    take it in any case: no Docker socket is mounted in your container.

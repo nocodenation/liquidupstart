@@ -31,8 +31,9 @@
  * Then:     The builder is a declared service; `nar-build` is mounted read-only,
  *           on a line that is not a comment, into every agent service; the
  *           refusal directory and the load directory the section names are the
- *           ones both scripts use, and its removal procedure clears the inbox
- *           copy the start would promote again; the two limits it quotes are the
+ *           ones both scripts use; its removal procedure is the inbox copy and a
+ *           restart, because every start empties the load directory, and it says
+ *           that a replacement filed under `refused/` is unloaded by that restart; the two limits it quotes are the
  *           two the checker enforces, in a file the `liquid` image carries its
  *           own copy of; and the count and the list of locally built images both
  *           match what the build script builds
@@ -139,6 +140,18 @@ describe('A0-11 the README section on Java extensions is backed by the configura
     expect(entrypoint).toContain('LOAD_DIR="${NIFI_HOME}/nar_extensions"');
     expect(entrypoint).toContain('for NAR in "$DROP_DIR"/*.nar; do');
     expect(entrypoint).toContain('cp -v "$NAR" "${LOAD_DIR}/"');
+  });
+
+  test('A0-11 and it says that a refused replacement unloads the running version at the next restart', () => {
+    // Since every start rebuilds the load path from the inbox, a replacement the
+    // watcher refused leaves nothing to copy back. Review of #48, item 1.
+    const prose = readme.replace(/\s+/g, ' ');
+    expect(prose).toContain('A replacement that ends up in `./volumes/nar_extensions/refused/` is not a replacement.');
+    expect(prose).toContain('the next restart unloads the version that is running. Look in `refused/` before restarting.');
+    expect(prose).toContain('a bundle the new `lib/` refuses is unloaded at that start.');
+    expect(prose).toContain('a bundle that is not yet a whole archive when Liquid starts is left for the watcher');
+    expect(entrypoint).toContain('REFUSED_DIR="${DROP_DIR}/refused"');
+    expect(entrypoint).toContain('find "$LOAD_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +');
   });
 
   test('A0-11 the two limits it quotes are the two the checker enforces', () => {

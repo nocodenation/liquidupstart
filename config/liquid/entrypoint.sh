@@ -65,8 +65,25 @@ if [ -d "$DROP_DIR" ]; then
 
         FAILED=0
         STUCK=0
+        ARRIVING=0
         for NAR in "$DROP_DIR"/*.nar; do
             if ! REFUSAL="$(python3 "$NAR_CHECK" check "$NAR" "$LIB_DIR" 2>&1)"; then
+                # The watcher's case: a bundle that is no archive yet may still be
+                # arriving, so it stays in the inbox and the watcher judges it once
+                # it stops changing. Filed as a refusal, a copy in progress lost its
+                # loaded predecessor and finished in refused/. The bundle itself,
+                # not a jar inside it: narcheck names those `<bundle>!<entry>`, and
+                # a finished bundle with a broken jar is refused.
+                case "$REFUSAL" in
+                    *"$(basename "$NAR"): could not be opened as an archive"*)
+                        ARRIVING=$((ARRIVING + 1))
+                        echo "NAR NOT JUDGED YET: ${NAR} cannot be opened as an archive, so it is not loaded." >&2
+                        echo "$REFUSAL" >&2
+                        echo "  It stays in the inbox: if it is still being copied in, the watcher judges it" >&2
+                        echo "  as soon as it stops changing; if it is corrupt, replace it or remove it." >&2
+                        continue
+                        ;;
+                esac
                 FAILED=$((FAILED + 1))
                 echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LOAD_DIR}/" >&2
                 echo "$REFUSAL" >&2
@@ -114,7 +131,11 @@ if [ -d "$DROP_DIR" ]; then
             echo "    is written by Liquid alone, so this means its filesystem is full or read-only." >&2
             echo "Liquid is starting anyway, because every other flow it hosts depends on it." >&2
         else
-            echo "NAR deployment complete: ${NAR_COUNT} file(s) copied to ${LOAD_DIR}/"
+            echo "NAR deployment complete: $((NAR_COUNT - ARRIVING)) file(s) copied to ${LOAD_DIR}/"
+        fi
+        if [ "$ARRIVING" -gt 0 ]; then
+            echo "Not judged yet: ${ARRIVING} file(s) stay in ${DROP_DIR} for the watcher, which judges them" >&2
+            echo "  once they stop changing." >&2
         fi
     else
         echo "No NAR files found in the inbox"

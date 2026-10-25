@@ -319,6 +319,13 @@ rm ./volumes/nar_extensions/<bundle>.nar
 docker compose restart liquid
 ```
 
+**A replacement that ends up in `./volumes/nar_extensions/refused/` is not a replacement.** The watcher
+moved it out of the inbox, so nothing is copied back, and the next restart unloads the version that is
+running. Look in `refused/` before restarting. After rebuilding the `liquid` image, look there again:
+a bundle the new `lib/` refuses is unloaded at that start. And let a copy into the inbox finish first:
+a bundle that is not yet a whole archive when Liquid starts is left for the watcher, and the version
+it replaces is not loaded in the meantime.
+
 A restart interrupts every flow the instance is running, which is why it is the operator's step and
 never one `nar-build` takes.
 
@@ -347,9 +354,13 @@ writes on every start for the NAR builder, and an
 anonymous volume at its NAR load path, `/opt/nifi/nifi-current/nar_extensions`, which Liquid
 empties and fills again from the inbox, `./volumes/nar_extensions`, on every start. So deleting a
 bundle from the inbox takes it out at the next start, and deleting `./volumes/nar_extensions` itself
-unloads every bundle at the next start; the index is rewritten on every start either way.
-`docker compose down` leaves the old load-path volume on disk until `docker volume prune` — which
-Compose documents for anonymous volumes, and which this project has not measured.
+unloads every bundle at the next start, which then has to be `./scripts/linux/start.sh`: it recreates
+the directory with `refused/` and a mode Liquid can write. A bare `docker compose restart` has the
+daemon recreate it owned by root with mode 0755, which Liquid, running as `nifi`, cannot write:
+measured under rootless Docker, where root is the host user. The index is
+rewritten on every start either way. `docker compose restart` keeps the load-path volume and what it
+holds; `docker compose down` leaves it on disk until `docker volume prune`, and the next `up` mounts
+a new, empty one. Both measured on 2026-10-23 in a throwaway compose project on the Liquid base image.
 `docker compose down --volumes`, which `liquidupstart --cleanup` (`./cleanup.sh`) runs, removes
 both. To reset:
 
