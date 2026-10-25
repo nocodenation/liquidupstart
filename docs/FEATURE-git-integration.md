@@ -550,7 +550,8 @@ the key header was never grepped for — the push went through. The scan now spl
 globbing off and `core.quotePath=false`, in both copies of it.
 
 *And one the suite found about itself.* The chain fixtures build under `volumes/repos/.a7-…`, inside
-this working copy, because the containers reach them through the `/repos` mount. When their clone
+this working copy, when containers use them, because the containers reach them through the `/repos`
+mount; the host view builds in a temporary directory since 2026-10-22. When their clone
 does not happen, the directory exists and holds no repository, and git's upward search finds the
 enclosing repository — this one. On 2026-09-17 a suite run committed the working tree onto the
 current branch, created two `agent/probe-*` branches and left HEAD on one of them. Nothing was lost

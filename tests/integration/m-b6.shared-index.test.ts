@@ -42,9 +42,10 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { builderImage } from '../lib/builderimage';
+import { LIQUID_IMAGE } from '../lib/liquidimage';
 
 const IMAGE = builderImage();
-const BASE = 'ghcr.io/nocodenation/liquid-nifi:latest';
+const BASE = LIQUID_IMAGE;
 const SHARED = '/liquid/api';
 
 describe('B6-33 the number in one Dockerfile tracks the name in the other', () => {

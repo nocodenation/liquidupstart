@@ -57,7 +57,8 @@
  */
 
 import { test, expect, describe } from 'bun:test';
-import { staleIds, isOwn, parseDockerTime, STALE_AFTER_MS } from '../lib/dashboardserver';
+import { staleIds, isOwn, STALE_AFTER_MS } from '../lib/dashboardserver';
+import { parseDockerTime } from '../lib/dockertime';
 
 const NOW = Date.parse('2026-10-20T12:00:00Z');
 const at = (iso: string) => `2026-10-20T${iso}Z`;

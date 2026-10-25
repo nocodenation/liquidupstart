@@ -20,11 +20,13 @@
  * Given    three throwaway roots: one empty, one carrying `volumes/_git-secrets`,
  *          one carrying `dashboard/node_modules`, plus this checkout; for SP-3, the
  *          registry and two `.invalid` hosts, and a child bun whose whole PATH is
- *          a directory linking `git` and no `curl`
+ *          a directory linking `git` and no `curl`; for SP-6, a child bun whose
+ *          PATH is an empty directory, so there is no `git` at all
  * When     each discriminator is asked about each
  * Then     it answers for the state in front of it, and the headers of the cases
- *          that depend on it say which precondition they need
- * Covers:  SP-1, SP-2, SP-3
+ *          that depend on it say which precondition they need; and where `git` is
+ *          missing the module still loads and says `IN_GIT_REPO=false`
+ * Covers:  SP-1, SP-2, SP-3, SP-6
  *
  * SP-3 is the fourth precondition -- whether a package registry answers -- which
  *          `OC-15` and `OC-16` need because they run `npm install -g` inside a
@@ -94,9 +96,9 @@ describe('SP-1 each discriminator answers for the state in front of it', () => {
       writeFileSync(join(p, 'volumes', '_git-secrets', 'id_ed25519'), 'not a key\n');
     });
     // `volumes/repos` is deliberately present in the bare one: it is what the
-    // obvious discriminator would have used, and three other places create it --
-    // m-a5.nested-clone, m-a10.fixture-ceiling and gitfixture -- so it is there
-    // after any run of the suite and says nothing about a start.
+    // obvious discriminator would have used, and the stack tier's chain fixtures
+    // create it through gitfixture's container view, so it says nothing about a
+    // start.
     mkdirSync(join(bare, 'volumes', 'repos'), { recursive: true });
     expect({ bare: startedIn(bare), started: startedIn(started) }).toEqual({
       bare: false,
@@ -233,6 +235,38 @@ describe('SP-3 the fourth precondition: a registry answers', () => {
   });
 });
 
+describe('SP-6 a precondition that cannot be asked answers no', () => {
+  test('SP-6 where git is not installed, the module still loads and IN_GIT_REPO is false', () => {
+    // Measured on main at a3ef20f, before the repair: importing this module with
+    // no git on PATH threw `Executable not found in $PATH: "git"` from
+    // inGitRepoAt, which runs as the module loads -- so every file importing it
+    // errored at collection instead of skipping. The child bun is started by its
+    // absolute path and its PATH is an empty directory.
+    const bin = root();
+    const probe = [
+      `import { IN_GIT_REPO } from ${JSON.stringify(join(repoRoot, 'tests/lib/preconditions.ts'))};`,
+      `console.log('IN_GIT_REPO=' + IN_GIT_REPO);`
+    ].join('\n');
+    const p = Bun.spawnSync([process.execPath, '-e', probe], {
+      env: { PATH: bin, HOME: process.env.HOME ?? '' },
+      stdout: 'pipe',
+      stderr: 'pipe'
+    });
+    const out = p.stdout.toString() + p.stderr.toString();
+    expect(out).toContain('IN_GIT_REPO=false');
+    expect(out).not.toContain('Executable not found');
+    expect(p.exitCode).toBe(0);
+  });
+
+  test('SP-6 while a real repository, with git present, answers true', () => {
+    // The counterpart: a catch that answered false for everything would pass the
+    // case above and make every checkout look like a release installation.
+    const dir = root();
+    expect(sh(['git', 'init', '-q'], dir).code).toBe(0);
+    expect(inGitRepoAt(dir)).toBe(true);
+  });
+});
+
 describe('SP-2 a case that needs a precondition says so in its header', () => {
   // The drift this exists against is the one the findings were: a case reading
   // the installation while its header described something else. A reader signing
@@ -291,15 +325,17 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
   const registryFiles = registryNamers.filter((l) => l !== 'tests/unit/m-sp.preconditions.test.ts');
 
   const dependent: Array<[string, string]> = [
-    // These two have no single grep that finds them: `STARTED` is read through a
-    // helper and `IN_GIT_REPO` through another, so they stay enumerated and the
-    // enumeration is the thing SP-2 then checks.
+    // These three have no single grep that finds them: `STARTED` is read through a
+    // helper, `IN_GIT_REPO` through another, and `JQ` is m-a17's own constant, so
+    // they stay enumerated and the enumeration is the thing SP-2 then checks.
     ['tests/contract/m-a3.known-hosts.test.ts', 'STARTED'],
     ['tests/contract/m-a4.clones-governed.test.ts', 'STARTED'],
     ['tests/integration/m-a1.workspace-dir.test.ts', 'STARTED'],
     ['tests/contract/m-a5.nested-clone.test.ts', 'IN_GIT_REPO'],
     ['tests/component/m-a6.operator-repository.test.ts', 'IN_GIT_REPO'],
     ['tests/contract/m-a16.text-only.test.ts', 'IN_GIT_REPO'],
+    ['tests/unit/m-a10.fixture-ceiling.test.ts', 'IN_GIT_REPO'],
+    ['tests/contract/m-a17.computed-state.test.ts', 'JQ'],
     ...domFiles.map((f) => [f, 'DASHBOARD_DEPS'] as [string, string]),
     ...registryFiles.map((f) => [f, 'registryReachable()'] as [string, string])
   ];

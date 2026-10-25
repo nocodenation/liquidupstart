@@ -52,8 +52,9 @@ import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { builderImage } from '../lib/builderimage';
+import { LIQUID_IMAGE, LIQUID_MOVED_ON } from '../lib/liquidimage';
 
-const LIQUID = 'ghcr.io/nocodenation/liquid-nifi:latest';
+const LIQUID = LIQUID_IMAGE;
 const BUILDER = builderImage();
 const NARCHECK = join(repoRoot, 'config/liquid/narcheck.py');
 const ENTRY = join(repoRoot, 'config/liquid/entrypoint.sh');
@@ -92,7 +93,7 @@ open(dst, "wb").write(bytes(raw))
 print("corrupted " + target)
 `;
 
-describe('B5-25 a bundle that cannot be read is refused in a sentence', () => {
+describe.skipIf(LIQUID_MOVED_ON.nifi)('B5-25 a bundle that cannot be read is refused in a sentence', () => {
   let out = '';
   beforeAll(() => {
     out = sh([
@@ -127,7 +128,7 @@ PY
 });
 
 describe('B5-26 the count and the loop see the same files', () => {
-  test('B5-26 a dot-file is in neither', () => {
+  test.skipIf(LIQUID_MOVED_ON.nifi)('B5-26 a dot-file is in neither', () => {
     const r = sh([
       'docker', 'run', '--rm',
       '-v', `${ENTRY}:/probe/entrypoint.sh:ro`,
