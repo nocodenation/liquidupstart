@@ -12,6 +12,13 @@ STACK_LEVELS="system e2e"
 # to ignore red. Raised in one place rather than per test.
 TEST_TIMEOUT_MS="${TEST_TIMEOUT_MS:-60000}"
 
+# The variables that tell git which repository to use, as tests/lib/shell.ts
+# removes them, and here for every file whatever order they load in: git exports
+# GIT_DIR to the hooks it runs in a linked worktree, and a fixture's git then
+# skips its ceiling. A10-24.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars 2>/dev/null | grep -v -e '^GIT_CONFIG$' -e '^GIT_CONFIG_COUNT$') 2>/dev/null || true
+
 MILESTONE=""
 ROOT="$SCRIPT_DIR"
 LIST=0
@@ -183,6 +190,15 @@ if command -v bun >/dev/null 2>&1; then
     echo "Nothing was run. Reclaim space and start again." >&2
     exit 2
   fi
+fi
+
+# Whether the Liquid image has moved since the M-B cases were written. Asked only
+# when a selected file reads the image, and it never stops the run.
+if command -v bun >/dev/null 2>&1 && grep -qs 'lib/liquidimage' "${SELECTED[@]}"; then
+  bun -e '
+    const m = await import("./tests/lib/liquidimage.ts");
+    console.log(m.preflightLine(m.WRITTEN_AGAINST, m.liquidImageVersions()));
+  ' 2>&1 || true
 fi
 
 status=0

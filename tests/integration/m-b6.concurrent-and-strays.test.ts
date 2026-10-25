@@ -74,6 +74,7 @@ import { join } from 'node:path';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
+import { builderLabels } from '../lib/builderimage';
 import { repoRoot } from '../lib/paths';
 
 const RUN = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
@@ -98,16 +99,18 @@ const PROBE =
     "printf \"nifi_version=2.6.0\\njava_version=21.0.5\\n\" > /liquid/api/runtime",
     "# The deployment gate, stood down on purpose.",
     "#",
-    "# Since D2 build.sh refuses with 2 when it cannot judge a bundle, instead of",
+    "# Since D2 build.sh refuses when it cannot judge a bundle -- with 5 since",
+    "# 2026-10-21, with 2 before that -- instead of",
     "# deploying it with a warning. The gate runs when /opt/builder/narcheck.py and",
     "# the load index are both present -- in the stack narcheck is mounted from",
     "# config/liquid/narcheck.py (compose.yml) and Liquid writes the index on every",
     "# start, and in a throwaway container neither is there. This case is about",
     "# project shapes, not about narcheck, so it supplies a checker that permits and",
-    "# an empty index rather than the real pair: an EMPTY file, because build.sh runs",
-    "# the checker as `python3 narcheck.py`, under which an empty file exits 0.",
+    "# an empty index rather than the real pair: one that states its verdict, because",
+    "# the gate deploys a 0 only with JUDGED <bundle> since 2026-10-21 (B6-44) -- the",
+    "# EMPTY file this was until then is what that rule exists to refuse.",
     "# B6-29 and B6-30 are where the real gate is measured, with the real checker.",
-    ": > /opt/builder/narcheck.py",
+    "printf 'import sys\\nprint(\"JUDGED \" + sys.argv[2])\\n' > /opt/builder/narcheck.py",
     ": > /liquid/api/lib-classes.txt",
     "# The stubs are written OVER the real binaries rather than put first on PATH:",
     "# run_maven goes through `su`, and `su` resets PATH to the system default even",
@@ -190,7 +193,12 @@ writeFileSync(probe, PROBE, { mode: 0o755 });
 
 let out = '';
 beforeAll(() => {
-  const built = sh(['docker', 'build', '-q', '-t', IMAGE, join(repoRoot, 'config/nar_builder')]);
+  // Labelled so the builder sweep can reclaim it after a killed run.
+  const built = sh([
+    'docker', 'build', '-q', '-t', IMAGE,
+    ...builderLabels(),
+    join(repoRoot, 'config/nar_builder')
+  ]);
   if (built.code !== 0) throw new Error(`the builder image did not build:\n${built.output}`);
   const r = sh([
     'docker', 'run', '--rm',

@@ -19,10 +19,12 @@
  * Then:     None contains a NUL byte in the window git judges by — the first
  *           8000 bytes — so none is binary, and every one shows up as a diff.
  * Covers:   A16-19, and the header rule in CLAUDE.md § Writing into files
- * Unhappy:  The negative is the whole case. Its counterpart is A16-20 in
- *           `m-a13.skip-step-names.test.ts`: the case that needed a NUL still
- *           refuses one, written as the escape `'a\0b'` rather than the byte,
- *           so this rule cannot be met by giving up the test data.
+ * Unhappy:  The negative is the whole case. Its counterpart, specified as A16-20,
+ *           runs inside A13-6's `describe` in `m-a13.skip-step-names.test.ts`:
+ *           the case that needed a NUL still refuses one, written as the escape
+ *           `'a\0b'` rather than the byte, so this rule cannot be met by giving
+ *           up the test data. `m-a16.lock-identity.test.ts` carried A16-20 on a
+ *           different case until it was renumbered to A16-31.
  *
  * Precondition: IN_GIT_REPO -- this checkout is a git repository. Skipped where it does not,
  *           because a release installation at `~/.liquidupstart` is not one, and the

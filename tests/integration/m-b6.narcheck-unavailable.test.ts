@@ -30,13 +30,21 @@
  *           index, and `/proc/self/mem` -- as `builder`, and the last as root too,
  *           because root is who runs the gate. B6-42: `judge_and_place`, also
  *           evaluated out of the script, is driven once per exit status of a stub
- *           checker, and once with a drop directory it cannot place the bundle in
+ *           checker, and once with a drop directory it cannot place the bundle in.
+ *           B6-44: a stub that exits 0 saying nothing, a 0-byte checker, a
+ *           truncated one that python3 ends with 1, one that states a verdict for
+ *           another bundle, and one that states `JUDGED <bundle>`. B6-45: the
+ *           cannot-judge arms and a refusal, for the status each returns
  * Then:     Only a readable checker with an index is available, for either user;
- *           status 0 deploys, 1 is refused on merit under the link headline and
- *           kept under `refused/`, anything else is *cannot be judged* and names
- *           the bundle the operator dropped; a bundle that cannot be placed is not
- *           reported as deployed; and the messages say what they established
- * Covers:   B6-40, B6-42, FR36, FR36a
+ *           status 0 **with `JUDGED <bundle>`** deploys, 1 **with `REFUSED
+ *           <bundle>`** is refused on merit under the link headline and kept under
+ *           `refused/`, and anything else -- either status without its line, for
+ *           this bundle, included -- is *cannot be judged*, gives the checker's
+ *           remedy where the line was missing, and names the
+ *           bundle the operator dropped; a bundle that cannot be placed is not
+ *           reported as deployed; cannot-be-judged returns 5 and a refusal 2; and
+ *           the messages say what they established
+ * Covers:   B6-40, B6-42, B6-44, B6-45, FR36, FR36a
  * Negative: The unreadable checker is the case the defect was. The absent checker
  *           and the missing index are the two states that were already handled and
  *           must stay handled.
@@ -313,7 +321,11 @@ describe('B6-42 what each exit status of the check means, one row per status', (
   // status under test, so there is a row per status and no Maven run. It is
   // `eval`-ed out of the real script -- `B6-3`'s idiom -- so no reimplementation
   // can satisfy these.
-  function judge(status: number, says = 'stub says so', opts: { echoArg?: boolean; blockPlace?: boolean } = {}): {
+  function judge(
+    status: number,
+    says = 'stub says so',
+    opts: { echoArg?: boolean; blockPlace?: boolean; verdict?: boolean; refuse?: boolean; empty?: boolean; noIndex?: boolean; source?: string } = {}
+  ): {
     code: number;
     output: string;
     deployed: boolean;
@@ -328,7 +340,7 @@ describe('B6-42 what each exit status of the check means, one row per status', (
       const idx = join(dir, 'idx');
       mkdirSync(drop, { recursive: true });
       mkdirSync(idx, { recursive: true });
-      writeFileSync(join(idx, 'lib-classes.txt'), 'java/lang/String\n');
+      if (!opts.noIndex) writeFileSync(join(idx, 'lib-classes.txt'), 'java/lang/String\n');
       const part = join(dir, 'probe.nar.part');
       writeFileSync(part, 'not really a nar\n');
       const stub = join(dir, 'narcheck-stub.py');
@@ -340,11 +352,22 @@ describe('B6-42 what each exit status of the check means, one row per status', (
       // accident. A stub that fails for its own reasons measures nothing.
       // `echoArg` makes the stub print the path it was handed, the way narcheck
       // names the bundle, so a case can see which name reaches the operator.
+      // `verdict` makes it state one, `JUDGED <the path it was handed>`, as the
+      // real `check-index` ends a 0 since 2026-10-21; `empty` makes it a 0-byte
+      // file, which python3 runs and exits 0 on, saying nothing (B6-44).
       writeFileSync(
         stub,
-        opts.echoArg
-          ? `import sys\nsys.stdout.write("CANNOT JUDGE " + sys.argv[2] + "\\n")\nsys.exit(${status})\n`
-          : `import sys\nsys.stdout.write(${JSON.stringify(says + '\n')})\nsys.exit(${status})\n`
+        opts.source !== undefined
+          ? opts.source
+          : opts.empty
+          ? ''
+          : opts.refuse
+            ? `import sys\nsys.stdout.write("REFUSED " + sys.argv[2] + "\\n" + ${JSON.stringify(says + '\n')})\nsys.exit(${status})\n`
+            : opts.verdict
+            ? `import sys\nsys.stdout.write("JUDGED " + sys.argv[2] + "\\n")\nsys.exit(${status})\n`
+            : opts.echoArg
+              ? `import sys\nsys.stdout.write("CANNOT JUDGE " + sys.argv[2] + "\\n")\nsys.exit(${status})\n`
+              : `import sys\nsys.stdout.write(${JSON.stringify(says + '\n')})\nsys.exit(${status})\n`
       );
       // `blockPlace` puts a directory where the bundle goes, holding a non-empty
       // directory of the dot-copy's name, so the final rename fails for root as
@@ -390,7 +413,8 @@ describe('B6-42 what each exit status of the check means, one row per status', (
   }
 
   test('B6-42 the positive: exit 0 deploys', () => {
-    const r = judge(0);
+    // With its verdict line, which a 0 needs since 2026-10-21 (B6-44).
+    const r = judge(0, '', { verdict: true });
     expect({ code: r.code, deployed: r.deployed, refused: r.refused }).toEqual({
       code: 0,
       deployed: true,
@@ -399,7 +423,7 @@ describe('B6-42 what each exit status of the check means, one row per status', (
   });
 
   test('B6-42 the negative: exit 1 is refused on merit, with the link headline, and kept under refused/', () => {
-    const r = judge(1, 'REFUSED probe.nar\n  it references org/example/Missing');
+    const r = judge(1, '  it references org/example/Missing', { refuse: true });
     expect({ code: r.code, deployed: r.deployed, refused: r.refused }).toEqual({
       code: 2,
       deployed: false,
@@ -416,8 +440,10 @@ describe('B6-42 what each exit status of the check means, one row per status', (
     ['127, no python3 at all', 127]
   ])('B6-42 the negative: exit %s is not a verdict, so nothing is deployed and nothing is filed as refused', (_name, status) => {
     const r = judge(status as number);
+    // 5, not the refusal's 2, since 2026-10-21: the server answers 2 with 422,
+    // "your bundle is unprocessable", and nothing judged this one (B6-45).
     expect({ code: r.code, deployed: r.deployed, refused: r.refused }).toEqual({
-      code: 2,
+      code: 5,
       deployed: false,
       refused: false
     });
@@ -444,7 +470,7 @@ describe('B6-42 what each exit status of the check means, one row per status', (
     // `mv` fell through to `return 0`: measured 2026-10-21, the caller reported
     // success, nothing was placed, and the dot-copy stayed behind. Status 0 from
     // the check, then a rename that cannot succeed.
-    const r = judge(0, 'stub says so', { blockPlace: true });
+    const r = judge(0, '', { blockPlace: true, verdict: true });
     expect({ code: r.code, partLeft: r.partLeft, says: r.output.includes('could not be placed') }).toEqual({
       code: 1,
       partLeft: false,
@@ -473,5 +499,89 @@ describe('B6-42 what each exit status of the check means, one row per status', (
       const r = judge(status);
       expect({ status, deployed: r.deployed }).toEqual({ status, deployed: false });
     }
+  });
+
+  describe('B6-44 a verdict is said, not read from silence', () => {
+    // **Measured on main at a3ef20f, before the repair**: a 0-byte checker and one
+    // that exits 0 saying nothing both returned 0 and left the bundle in the drop
+    // directory. `head -c 1` passes on an empty file and python3 runs one and
+    // exits 0, so the gate read silence as a pass. A 0 deploys only with
+    // `JUDGED <bundle>` now, which the real check-index prints (B6-43's file).
+    test('B6-44 a checker that exits 0 saying nothing is not a verdict', () => {
+      const r = judge(0, '');
+      expect({ code: r.code, deployed: r.deployed, refused: r.refused }).toEqual({
+        code: 5,
+        deployed: false,
+        refused: false
+      });
+      expect(r.output).toContain('silence is not a verdict');
+      // And the next step for it, which is about the checker and not the index.
+      expect(r.output).toContain('docker compose exec nar_builder wc -c');
+    });
+
+    test('B6-44 and a verdict for another bundle is not one for this bundle', () => {
+      // The line names the bundle it was handed, and the gate reads it for this
+      // one: a checker that says JUDGED about something else has not judged it.
+      const r = judge(0, '', { source: 'import sys\nsys.stdout.write("JUDGED /elsewhere/other.nar\\n")\n' });
+      expect({ code: r.code, deployed: r.deployed }).toEqual({ code: 5, deployed: false });
+      expect(r.output).toContain('docker compose exec nar_builder wc -c');
+    });
+
+    test('B6-44 and a 0-byte checker is not one either', () => {
+      const r = judge(0, '', { empty: true });
+      expect({ code: r.code, deployed: r.deployed, refused: r.refused }).toEqual({
+        code: 5,
+        deployed: false,
+        refused: false
+      });
+      expect(r.output).toContain('silence is not a verdict');
+      expect(r.output).toContain('docker compose exec nar_builder wc -c');
+    });
+
+    test('B6-44 and a truncated checker, which python3 ends with 1, is not a refusal', () => {
+      // A checker cut off mid-statement is a SyntaxError, and python3 exits 1 --
+      // the status of a refusal on merit. Measured before this rule covered 1:
+      // the bundle went under refused/ with the link headline. A 1 counts only
+      // with `REFUSED <bundle>`, which the real check-index prints.
+      const r = judge(1, '', { source: 'import sys\ndef judged(:\n' });
+      expect({ code: r.code, deployed: r.deployed, refused: r.refused }).toEqual({
+        code: 5,
+        deployed: false,
+        refused: false
+      });
+      expect(r.output).not.toContain('because it cannot link');
+      expect(r.output).toContain('docker compose exec nar_builder wc -c');
+    });
+
+    test('B6-44 while a 0 with its verdict line deploys', () => {
+      // The counterpart: "never deploy" would satisfy both negatives above.
+      const r = judge(0, '', { verdict: true });
+      expect({ code: r.code, deployed: r.deployed }).toEqual({ code: 0, deployed: true });
+    });
+  });
+
+  describe('B6-45 "cannot be judged" is a status of its own', () => {
+    // Every cannot-judge arm returned 2, the refusal's status, so the server's 422
+    // told a caller its bundle was unprocessable when nothing had judged it.
+    // Measured on main at a3ef20f: a checker exiting 3 gave 2. The server's half
+    // -- 5 answered with 500, through its default -- is tests/integration/m-b6.server-status.test.ts.
+    test.each([
+      ['the checker exiting 2', 2, {}],
+      ['the checker exiting 3', 3, {}],
+      ['no python3, 127', 127, {}],
+      ['the index missing', 0, { noIndex: true, verdict: true }]
+    ])('B6-45 every cannot-judge arm returns 5: %s', (_name, status, opts) => {
+      const r = judge(status as number, 'stub says so', opts as { noIndex?: boolean; verdict?: boolean });
+      expect({ code: r.code, deployed: r.deployed, refused: r.refused }).toEqual({
+        code: 5,
+        deployed: false,
+        refused: false
+      });
+    });
+
+    test('B6-45 while a refusal on merit still returns 2', () => {
+      const r = judge(1, '  it references org/example/Missing', { refuse: true });
+      expect({ code: r.code, refused: r.refused }).toEqual({ code: 2, refused: true });
+    });
   });
 });

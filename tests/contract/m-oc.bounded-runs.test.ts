@@ -28,7 +28,9 @@
  * and nothing left running afterwards. A case that demands 124 rejects the very
  * fix that makes the bound reliable — the same mistake OC-3 was re-founded for.
  *
- * Given  config/scripts/start/openclaw.sh, and a real docker
+ * Given  config/scripts/start/openclaw.sh, and a real docker with
+ *        liquidupstart/openclaw:latest for the behaviour half, which is
+ *        skipped, and reported as skipped, where that image is absent
  * When   every bounded `docker run` is read, and `with_timeout` itself is run
  * Then   each carries --init, each named container is removed when the run
  *        fails, and the bound comes back inside its limit plus the grace
@@ -53,6 +55,18 @@ const SCRIPT = 'config/scripts/start/openclaw.sh';
 // carried a copy, and both ended in a branch that ran the command unbounded.
 const LIB = JSON.stringify(join(repoRoot, 'config/scripts/start/lib/with-timeout.sh'));
 const body = readFileSync(join(repoRoot, SCRIPT), 'utf8');
+const PROBE_IMAGE = 'liquidupstart/openclaw:latest';
+// Asked as the file loads, so it must not throw: sh() hands argv to Bun.spawnSync,
+// which throws for a missing executable, and on a host with no docker that would
+// take the static half of OC-60 down with it. No docker is no image. SP-6's shape.
+const PROBE_IMAGE_PRESENT = (() => {
+  try {
+    return sh(['docker', 'image', 'inspect', PROBE_IMAGE]).code === 0;
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'ENOENT') throw e;
+    return false;
+  }
+})();
 const lines = body.split('\n');
 
 function boundedRuns(): { line: number; text: string }[] {
@@ -74,15 +88,14 @@ describe('OC-60 every bounded docker run can actually be bounded', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('and the bound really returns, rather than blocking past its limit', () => {
+  // Skipped, and reported as skipped, where the image is absent. Until 2026-10-21
+  // it asserted an object equal to itself and returned, which bun reports as a
+  // pass -- the silent green this suite exists to prevent.
+  test.skipIf(!PROBE_IMAGE_PRESENT)('and the bound really returns, rather than blocking past its limit', () => {
     // The behaviour half, and it runs with_timeout out of the script rather than
     // a copy of the line: -k is part of what is under test, and a copy would go
     // on passing after the original lost it.
-    const image = 'liquidupstart/openclaw:latest';
-    if (sh(['docker', 'image', 'inspect', image]).code !== 0) {
-      expect({ skipped: 'image absent', image }).toEqual({ skipped: 'image absent', image });
-      return;
-    }
+    const image = PROBE_IMAGE;
     const name = containerName('lu-bound-probe');
     // Labelled too. This case's own premise is that `--rm` does not fire when the
     // client is SIGKILLed, so an interrupted run leaves this container running --

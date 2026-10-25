@@ -61,16 +61,18 @@ beforeAll(() => {
     `
     mkdir -p /liquid/logs /liquid/api /repos /deploy/nar_extensions
     printf 'nifi_version=2.11.0\\njava_version=21.0.12+10-LTS\\n' > /liquid/api/runtime
-    # The deployment gate, stood down on purpose. Since D2 build.sh refuses with 2
-    # when it cannot judge a bundle, instead of deploying it with a warning; the gate
+    # The deployment gate, stood down on purpose. Since D2 build.sh refuses when it
+    # cannot judge a bundle -- with 5 since 2026-10-21, with 2 before that -- instead
+    # of deploying it with a warning; the gate
     # runs when /opt/builder/narcheck.py and the load index are both there, which in
     # the stack they are (narcheck mounted by compose.yml, the index written by Liquid
     # on every start) and in a throwaway container neither is. This case is about a
     # stale artefact in the source tree, not about narcheck, so it supplies a checker
-    # that permits and an empty index: an EMPTY file, because build.sh runs the
-    # checker as python3 narcheck.py, under which an empty file exits 0. B6-29 and
+    # that permits and an empty index: one that states its verdict, because the
+    # gate deploys a 0 only with JUDGED <bundle> since 2026-10-21 (B6-44) -- the
+    # EMPTY file this was until then is what that rule exists to refuse. B6-29 and
     # B6-30 are where the real gate is measured, against the real checker.
-    : > /opt/builder/narcheck.py
+    printf 'import sys\\nprint("JUDGED " + sys.argv[2])\\n' > /opt/builder/narcheck.py
     : > /liquid/api/lib-classes.txt
     openssl req -x509 -newkey rsa:2048 -keyout /tmp/k.pem -out /tmp/c.pem -days 1 \\
       -nodes -subj /CN=liquid >/dev/null 2>&1
