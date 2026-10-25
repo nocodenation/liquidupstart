@@ -165,11 +165,11 @@ keeps the disk bounded is not measured.
 
 Recorded 2026-10-20.
 
-**Waits for #40**, which redesigns the builder's sweep; the entry is the one to act on once #40 is on `main`. 2026-10-22.
+**Waits for #40**, which redesigns the builder's sweep; the entry is the one to act on once #40 is on `main`. 2026-10-22. *#40 is on `main` since 2026-10-25: one `parseDockerTime` now, in `tests/lib/dockertime.ts`, and still two floors, 2 h strict in `builderimage.ts` and 3 h with `>=` in `dashboardserver.ts`, and two run ids, `BUILDER_RUN_ID` and `RUN_ID`. Open.*
 
 ---
 
-**[45-6]** **`B6-37` is killed for memory on this host while the stack runs, with no second suite.** Found on
+**[45-6]** **~~`B6-37` is killed for memory on this host while the stack runs, with no second suite.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found on
 2026-10-20 running the suite for `fix/moving-image-tag` (#37), whose diff does not touch
 `tests/unit/m-b6.bundled-jar-read.test.ts` or `config/liquid/narcheck.py` — both are byte-identical to
 `main` there. `./tests/run.sh` on the committed head: 904 pass / 25 skip / **1 fail**, the one being
@@ -205,7 +205,7 @@ names for `OC-15` and `OC-16`.
 
 Recorded 2026-10-20.
 
-**Answered on #46, open, 2026-10-21; corrected 2026-10-22.** As this entry said, the container killed was the fixture's: `setup.py` held 800 MB of zeros, then the jar in a `BytesIO`, then its copy, and was killed before narcheck ran. #46 streams the inner jar instead, so the setup's RSS falls from 1.6 GB to 17 MB. Where the jar is written to a tmpfs, as bun's `tmpdir()` is on many Linux hosts, the 800 MB jar is memory too: the review of #46 measured a cgroup peak of 825 MB, and the setup killed at 600 MB. Reproduced on #46 with `/w` a tmpfs: `Killed` at 600 MiB, 615 MB of inner jar left behind. #46 now writes the inner jar to the container's own `/tmp` and only the bundle to `/w`, and measured the same way the setup passes at 600 MB and at 256 MB, with an RSS of 17 MB. *This note said the setup "streams to disk and peaks at 16 MB", which was the RSS, and that the cause was not the one this entry gives, which it was. Item 1 of the review of #45.*
+**Repaired on #46, on `main` since 2026-10-25.** As this entry said, the container killed was the fixture's: `setup.py` held 800 MB of zeros, then the jar in a `BytesIO`, then its copy, and was killed before narcheck ran. #46 streams the inner jar instead, so the setup's RSS falls from 1.6 GB to 17 MB. Where the jar is written to a tmpfs, as bun's `tmpdir()` is on many Linux hosts, the 800 MB jar is memory too: the review of #46 measured a cgroup peak of 825 MB, and the setup killed at 600 MB. Reproduced on #46 with `/w` a tmpfs: `Killed` at 600 MiB, 615 MB of inner jar left behind. #46 now writes the inner jar to the container's own `/tmp` and only the bundle to `/w`, and measured the same way the setup passes at 600 MB and at 256 MB, with an RSS of 17 MB. *This note said the setup "streams to disk and peaks at 16 MB", which was the RSS, and that the cause was not the one this entry gives, which it was. Item 1 of the review of #45.*
 
 ---
 
@@ -245,7 +245,7 @@ Recorded 2026-10-20.
 
 ---
 
-**[45-8]** **A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.**
+**[45-8]** **~~A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:*
 Found by a local review of `fix/default-tier-writes` (#39) on 2026-10-20, which repairs the fifth.
 `tests/unit/m-a10.fixture-ceiling.test.ts:53` runs `mkdirSync(<repoRoot>/volumes/repos/.a10-ceiling-probe)`
 in a `describe` body — at collection, before any hook — and removes it in `afterAll`. Measured with
@@ -271,7 +271,7 @@ provided nothing else in the tier writes there, which no one has measured over a
 
 Recorded 2026-10-20.
 
-**Answered on #46, open, 2026-10-21, as the operator chose: the case moved out of the checkout.** It
+**Repaired on #46, on `main` since 2026-10-25, as the operator chose: the case moved out of the checkout.** It
 now reads the ceiling the helper's git process receives, through a git alias in a directory that is
 no repository, and compares it with the toplevel git reports from the test file's own directory; and
 it shows git honouring a ceiling given that way in two throwaway hosts, a repository and a worktree,
@@ -300,8 +300,8 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-10]** **`nar-build`'s advice for an unresolvable `nifi-api` cannot get past the refusal it is printed
-in.** Same review. When `org.apache.nifi:nifi-utils:<nifi>` resolves no `nifi-api`, `build.sh`
+**[45-10]** **~~`nar-build`'s advice for an unresolvable `nifi-api` cannot get past the refusal it is printed
+in.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Same review. When `org.apache.nifi:nifi-utils:<nifi>` resolves no `nifi-api`, `build.sh`
 refuses with *"Add a pom.xml to the source directory naming the nifi-api version you mean —
 nar-build uses it unchanged"*. But `build_command` calls `resolve_target` (`build.sh:553` at `3a2ef0f`, `:781` on `main` at `36fd967`) before
 it decides between a synthesised and an author pom (`:574`, now `:802`), so the same refusal stops a directory
@@ -320,11 +320,11 @@ instance either way — or keep the resolution for both and drop the advice.
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21**, by the first of the two ways: an author pom is not stopped by an unresolvable API, and the refusal stays for a synthesised project. `B2-11`.
+**Repaired on #46, on `main` since 2026-10-25**, by the first of the two ways: an author pom is not stopped by an unresolvable API, and the refusal stays for a synthesised project. `B2-11`.
 
 ---
 
-**[45-11]** **FR30's removal procedure leaves the inbox copy, and the next start loads it again.** Found by the
+**[45-11]** **~~FR30's removal procedure leaves the inbox copy, and the next start loads it again.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the
 second review of #44's repair, on 2026-10-21. FR30 documents taking a bundle out as
 `rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar` inside the container and a restart.
 `config/liquid/entrypoint.sh` judges every `"$DROP_DIR"/*.nar` at each start and runs
@@ -341,7 +341,7 @@ version.
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21.** FR30 removes the inbox copy first, and the promotion at start is measured in a throwaway Liquid container: two seconds from start to the load path.
+**Repaired on #46, on `main` since 2026-10-25.** FR30 removes the inbox copy first, and the promotion at start is measured in a throwaway Liquid container: two seconds from start to the load path.
 
 ---
 
@@ -508,7 +508,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-19]** **An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.** Found
+**[45-19]** **~~An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found
 by a local `/code-review` of `fix/narcheck-unavailable` (#36) on 2026-10-21. The gate's read probe is
 `head -c 1`, which exits 0 on an empty file, and `python3` runs an empty file and exits 0 — both
 measured in the builder image. So a checker truncated to nothing, or presented at 0 bytes by a partial
@@ -522,11 +522,11 @@ it, which is why it is not #36's. Until then the probe could at least require on
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21.** `check-index` ends a 0 with `JUDGED <bundle>`, the gate takes a 0 as judged only with that line and a 1 as refused only with `REFUSED <bundle>` — a truncated checker is a 1 — and the three fixtures state their verdict. `B6-44`.
+**Repaired on #46, on `main` since 2026-10-25.** `check-index` ends a 0 with `JUDGED <bundle>`, the gate takes a 0 as judged only with that line and a 1 as refused only with `REFUSED <bundle>` — a truncated checker is a 1 — and the three fixtures state their verdict. `B6-44`.
 
 ---
 
-**[45-20]** **A check that could not run still reaches the client as a refusal.** Found by the same review of #36.
+**[45-20]** **~~A check that could not run still reaches the client as a refusal.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the same review of #36.
 `nar-build` now tells *refused on merit* from *cannot be judged* in its own words, and returns 2 from
 both arms; `config/nar_builder/BuildServer.java` maps 2 to **422** (`case 2 -> 422`, beside 3 → 409,
 4 → 400, anything else 500), so an agent reading the status sees *"your bundle is unprocessable"* for
@@ -537,7 +537,7 @@ touches.
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21.** Both cannot-judge arms return 5, which the server answers with **500** through its default — not 503, which is already *"two builds are already running"*. `B6-45`. Two installation faults still return 2; see the entry below.
+**Repaired on #46, on `main` since 2026-10-25.** Both cannot-judge arms return 5, which the server answers with **500** through its default — not 503, which is already *"two builds are already running"*. `B6-45`. Two installation faults still return 2; see the entry below.
 
 ---
 
@@ -595,7 +595,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-23]** **OC-60's behaviour half passes when the image it needs is absent.** The case is `N1` on `main`,
+**[45-23]** **~~OC-60's behaviour half passes when the image it needs is absent.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* The case is `N1` on `main`,
 `OC-60` from #17 on. `tests/contract/m-oc.bounded-runs.test.ts`, *and the bound really returns,
 rather than blocking past its limit*: when `docker image inspect liquidupstart/openclaw:latest` fails, the test runs
 `expect({ skipped: 'image absent', image }).toEqual({ skipped: 'image absent', image })` and returns —
@@ -607,11 +607,11 @@ local review of #17 on 2026-10-21, and recorded in #17's new OC-60 detail block 
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21.** `test.skipIf`, and the load-time probe answers *absent* where there is no `docker` instead of throwing.
+**Repaired on #46, on `main` since 2026-10-25.** `test.skipIf`, and the load-time probe answers *absent* where there is no `docker` instead of throwing.
 
 ---
 
-**[45-24]** **OC-62 is red on a Linux host, and its watchdog branch has never run there.** The case is `N1b` on
+**[45-24]** **~~OC-62 is red on a Linux host, and its watchdog branch has never run there.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* The case is `N1b` on
 `main`, `OC-62` from #17 on. `tests/unit/m-oc.bound-without-coreutils.test.ts` takes coreutils away by running the helper under
 `PATH=<scratch dir>:/usr/bin:/bin`, and its first test asserts that `command -v timeout gtimeout` then
 finds neither. On macOS that holds. On Linux `/usr/bin/timeout` is there: in
@@ -624,7 +624,7 @@ it builds must hold only what the case runs, so that no host can supply a `timeo
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21.** Its `PATH` is built from the five tools it needs; in `liquidupstart/dashboard:latest` `main`'s file is 4 pass / 3 fail and #46's 7 / 0.
+**Repaired on #46, on `main` since 2026-10-25.** Its `PATH` is built from the five tools it needs; in `liquidupstart/dashboard:latest` `main`'s file is 4 pass / 3 fail and #46's 7 / 0.
 
 ---
 
@@ -670,7 +670,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-27]** **Two faults of the installation still answer with a refusal's status.** Found by the local review of
+**[45-27]** **~~Two faults of the installation still answer with a refusal's status.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the local review of
 #46 on 2026-10-21, which moved "cannot be judged" off status 2. Two more arms of
 `config/nar_builder/build.sh` return 2, which the server answers with 422, *"your bundle is
 unprocessable"*, though neither is about the bundle: the refusal of a builder whose drop directory the
@@ -686,11 +686,11 @@ the bundle's own refusal.
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-22**: both return 1, the server's 500. `B6-46` drives both arms; its `NOTCLOSED` mutation is registered and validated.
+**Repaired on #46, on `main` since 2026-10-25**: both return 1, the server's 500. `B6-46` drives both arms; its `NOTCLOSED` mutation is registered and validated.
 
 ---
 
-**[45-28]** **The suite passes an inherited `GIT_DIR` to its git commands, and that overrides the ceiling.**
+**[45-28]** **~~The suite passes an inherited `GIT_DIR` to its git commands, and that overrides the ceiling.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:*
 Found by the local review of #46's A10-23 on 2026-10-21. `git()` in `tests/lib/gitfixture.ts` runs git
 with `{ ...process.env, ...FIXTURE_IDENTITY, ...env }`, so `GIT_DIR`, `GIT_WORK_TREE` and
 `GIT_INDEX_FILE` from the environment the suite was started in reach every fixture command, and git
@@ -712,7 +712,7 @@ every fixture command, which is why it is not A10-23's. Found by the local revie
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-22**: the variables git lists as choosing a repository, less `GIT_CONFIG` and `GIT_CONFIG_COUNT`, are removed from the test process when `tests/lib/shell.ts` loads and by `tests/run.sh`. `A10-24`.
+**Repaired on #46, on `main` since 2026-10-25**: the variables git lists as choosing a repository, less `GIT_CONFIG` and `GIT_CONFIG_COUNT`, are removed from the test process when `tests/lib/shell.ts` loads and by `tests/run.sh`. `A10-24`.
 
 ---
 
