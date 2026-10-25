@@ -261,5 +261,13 @@
     "from": "[ \"$policy\" = protected ]",
     "to": "[ \"$policy\" = protectedx ]",
     "mustFail": "A6-2 the protected default branch is refused, naming the branch, the policy and the way forward"
+  },
+  {
+    "case": "B6-46",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b6.installation-faults.test.ts",
+    "from": "    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.\n    return 1",
+    "to": "    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.\n    return 2",
+    "mustFail": "B6-46 the negative: status 1, not the refusal's 2, and the build never reaches Maven"
   }
 ]

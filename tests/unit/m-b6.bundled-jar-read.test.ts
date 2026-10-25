@@ -56,16 +56,27 @@ let dir = '';
 
 /** Python that builds the fixtures and a peak-RSS harness, all in the container. */
 const SETUP = `
-import io, zipfile, sys
+import os, zipfile, sys
+# A mebibyte at a time, so the RSS stays at 17 MB; it held 800 MB of zeros, then
+# the jar in a BytesIO, then its copy, and was killed for memory before narcheck
+# ran. The 800 MB inner jar goes to the container's own /tmp, the overlay: /w is
+# bun's tmpdir(), a tmpfs on many Linux hosts, where it is memory charged to this
+# container, and the setup was killed at 600 MB there all the same. Only the
+# finished bundle goes to /w. Same zip structure as before -- the blob stored in
+# the jar, the jar deflated in the bundle.
 def nar(path, stored_blob):
-    inner = io.BytesIO()
+    inner = '/tmp/' + os.path.basename(path) + '.inner.jar'
     mode = zipfile.ZIP_STORED if stored_blob else zipfile.ZIP_DEFLATED
     with zipfile.ZipFile(inner, 'w', mode) as z:
         z.writestr('org/apache/nifi/processor/Processor.class', b'\\xca\\xfe\\xba\\xbe')
         if stored_blob:
-            z.writestr('blob.bin', b'\\0' * (800 * 1024 * 1024))
+            chunk = b'\\0' * (1024 * 1024)
+            with z.open('blob.bin', 'w') as blob:
+                for _ in range(800):
+                    blob.write(chunk)
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as n:
-        n.writestr('META-INF/bundled-dependencies/j.jar', inner.getvalue())
+        n.write(inner, 'META-INF/bundled-dependencies/j.jar')
+    os.remove(inner)
 nar('/w/bomb.nar', True)
 nar('/w/ok.nar', False)
 
@@ -104,7 +115,9 @@ const run = (which: string) =>
     '-v', `${dir}:/w`,
     '--entrypoint', 'sh', 'python:3.12-slim', '-c',
     `mkdir -p /w/lib && python3 /w/setup.py && python3 /w/measure.py ${which}`
-  ], undefined, 600_000);
+  ]);
+  // No bound but the test's own: sh() takes no timeout, and the 600_000 that stood
+  // here was its extraEnv, which copies nothing from a number. B6-37's block.
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'm-b6-n3-'));

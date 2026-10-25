@@ -67,7 +67,9 @@ const inBuilder = (script: string) =>
   sh(['docker', 'run', '--rm', '--entrypoint', 'sh', IMAGE, '-c',
       `mkdir -p /stub && printf '#!/bin/sh\\nexit 0\\n' > /stub/java && chmod +x /stub/java
        export PATH=/stub:$PATH
-       ${script}`], undefined, 600_000);
+       ${script}`]);
+       // No bound but the test's own: sh() takes no timeout, and the 600_000 that stood
+       // here was its extraEnv, which copies nothing from a number. B6-37's block.
 
 const POM =
   '<project><modelVersion>4.0.0</modelVersion><groupId>g</groupId>' +

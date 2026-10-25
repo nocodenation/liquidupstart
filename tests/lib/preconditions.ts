@@ -55,10 +55,23 @@ export function startedIn(root: string): boolean {
   return existsSync(join(root, 'volumes', '_git-secrets', 'id_ed25519'));
 }
 
-/** Is this checkout a git repository at all? A release installation is not. */
+/**
+ * Is this checkout a git repository at all? A release installation is not.
+ *
+ * And a machine without git answers no rather than throwing. This runs as the
+ * module loads (`IN_GIT_REPO` below), and `Bun.spawnSync` throws for a missing
+ * executable, so every file importing this module errored while bun collected
+ * it -- measured on main at a3ef20f. Only ENOENT, as `registryReachable` does for
+ * curl: anything else is a fault of the machine and is thrown. SP-6.
+ */
 export function inGitRepoAt(root: string): boolean {
-  const r = sh(['git', 'rev-parse', '--is-inside-work-tree'], root);
-  return r.code === 0 && r.stdout.trim() === 'true';
+  try {
+    const r = sh(['git', 'rev-parse', '--is-inside-work-tree'], root);
+    return r.code === 0 && r.stdout.trim() === 'true';
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'ENOENT') throw e;
+    return false;
+  }
 }
 
 /**

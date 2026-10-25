@@ -377,8 +377,8 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
     files: ['tests/component/m-oc.config-shape.test.ts', 'tests/system/m-oc.codex-plugin.test.ts'],
     why: 'the codex plugin: component asserts it does not stay enabled unasked, system reads the error it raises'
   },
-  // By design, and the design is in SP-2 itself. **Four files since #15**, not the
-  // three this entry used to describe: the rule is "a case that needs a
+  // By design, and the design is in SP-2 itself. **Six files since #43 and #46**,
+  // four since #15, three before: the rule is "a case that needs a
   // precondition says so in its header", so every file the rule reaches carries
   // the id, and the DOM list it checks is itself computed. The fourth arrived
   // without anyone judging it, which is why the entry now names the set.
@@ -389,9 +389,10 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
       'tests/component/m-a16.skip-panel.test.ts',
       'tests/component/m-oc.pairing-card.test.ts',
       'tests/contract/m-a17.computed-state.test.ts',
+      'tests/unit/m-a10.fixture-ceiling.test.ts',
       'tests/unit/m-sp.preconditions.test.ts'
     ],
-    why: 'SP-2 is a rule rather than a single case: the unit file holds the rule, and each DOM file carries the voiced skip the rule requires, as m-a17 does for its stub forge without a jq -- so the id is the rule plus one instance per file that skips'
+    why: 'SP-2 is a rule rather than a single case: the unit file holds the rule, each DOM file carries the voiced skip the rule requires, and m-a17 and m-a10.fixture-ceiling carry one for a precondition of their own, JQ and IN_GIT_REPO -- so the id is the rule plus one instance per file that voices a skip'
   }
 ];
 

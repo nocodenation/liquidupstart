@@ -71,6 +71,8 @@ like a suite that ran.
 | **SP-4** | **negative** | The guard throws with that message when the VM is empty |
 | **SP-4** | positive | …and does not throw when it is healthy |
 | **SP-4** | positive | The live reading is of the VM and is a number, or an honest `null` |
+| **SP-6** | **negative** | Where `git` is not installed, the preconditions module still loads, and `IN_GIT_REPO` answers `false` |
+| **SP-6** | positive | …while in a real repository with `git` present it answers `true` |
 
 ## Detail
 
@@ -109,7 +111,7 @@ like a suite that ran.
 | **Premise** | The drift this exists against is what the findings were: a case reading the installation while its header described something else. A reviewer signing a case off has to see the dependency without running it. |
 | **Component** | The eight dependent test files, read as text. |
 | **Steps** | For each, read the header comment and assert it names the precondition; then assert the file actually uses `skipIf(!<name>)`, so the header is not a claim about nothing. |
-| **Test data** | `m-a3.known-hosts`, `m-a4.clones-governed` and `m-a1.workspace-dir` against `STARTED`; `m-a5.nested-clone`, `m-a6.operator-repository` and `m-a16.text-only` against `IN_GIT_REPO`; `m-a16.result-line` and `m-a16.skip-panel` against `DASHBOARD_DEPS`. |
+| **Test data** | `m-a3.known-hosts`, `m-a4.clones-governed` and `m-a1.workspace-dir` against `STARTED`; `m-a5.nested-clone`, `m-a6.operator-repository` and `m-a16.text-only` against `IN_GIT_REPO`; `m-a16.result-line` and `m-a16.skip-panel` against `DASHBOARD_DEPS`. *Added by hand since: `m-a17.computed-state`'s stub-forge cases against `JQ` (#43) and `m-a10.fixture-ceiling`'s first case against `IN_GIT_REPO` (#46), both 2026-10-22. With the DOM and registry files the widened block computes, the run on 2026-10-23 holds twelve of these scenarios.* |
 | **Expected** | Eight passes. |
 | **What it found** | Green — and writing it found two things the guards alone did not cover, both in the component tier. A **skipped describe still has its body evaluated**, because bun has to run it to register the tests inside, and these bodies `await` a mount at that point; and `m-a16.skip-panel` calls `setupComponentTier()` at **file level**, where nothing inside a describe can reach it. Both now return early on the precondition, and the file-level hooks with them, because `task` is null without the dependencies. Two measurements had reported that failure as an unhandled error between tests without naming a case. |
 | **And a silent skip is not acceptable either** | With the bodies returning early those files register nothing, so a run would not mention them at all. Each carries one test that runs **only** in that case and names it: `SP-2 the cases in this file need the dashboard dependencies, which are absent here`. It asserts the absence rather than nothing, so it is a reading and not a label. |
@@ -206,12 +208,26 @@ reachability check cannot reach.
 | **Implemented by** | `tests/unit/m-sp.docker-space.test.ts`. |
 | **Covers** | SP-4, SP-FR1. |
 
+### SP-6 — a precondition that cannot be asked answers no, instead of stopping every file
+
+| | |
+|---|---|
+| **Premise** | `tests/lib/preconditions.ts` computes `IN_GIT_REPO = inGitRepoAt(repoRoot)` when it loads, and `inGitRepoAt` runs `git` through `sh()`, which hands `argv` to `Bun.spawnSync`. That throws *"Executable not found in $PATH"* where there is no `git`, so on such a machine importing the module throws, and every file that imports it errors while bun collects it — the opposite of a precondition, which exists to let a case say why it cannot run. Measured on `main` at `a3ef20f`: with a `PATH` holding only `bun`, the import fails with `Executable not found in $PATH: "git"`. `registryReachable()` already catches the same error for `curl`, because that was the call it added. |
+| **Component** | `inGitRepoAt` in `tests/lib/preconditions.ts`. `sh()` itself is left as it is: #42 changes it, and whether every caller of it should get 127 for a missing executable is a question for every caller, recorded on #45. |
+| **Steps** | In a child bun started by its absolute path, with a `PATH` that is an empty scratch directory, import the module and print `IN_GIT_REPO`. Then, in this process, ask `inGitRepoAt` of a directory `git init` made. |
+| **Test data, both sides** | The child's `PATH`: an empty scratch directory, so no host can supply `git` by accident; the expected line `IN_GIT_REPO=false`, and the child's exit 0. The real repository: a fresh `git init` in a scratch directory, expected `true` — what must still be found. |
+| **Expected** | The child prints `IN_GIT_REPO=false`, never `Executable not found`, and exits 0; the initialised directory answers `true`. |
+| **Dependencies** | bun, started by its absolute path for the child, and git for the counterpart. |
+| **What it found** | Measured on `main`: the child printed `Executable not found in $PATH: "git"` and exited non-zero, so every file importing the module errored at collection where git is missing. After the change it prints `IN_GIT_REPO=false` and exits 0. Controls, each alone, measured by the review of 2026-10-22: `inGitRepoAt` without its `catch` → **1** red, the negative; `inGitRepoAt` answering false always → **2**, SP-1's git case and the positive. |
+| **Covers** | SP-6, SP-FR1, SP-FR2. |
+| **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
+
 ## Traceability
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, B5-33, B5-34 — *the Liquid image's versions, read rather than assumed; added 2026-10-22* |
-| SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, **SP-6**, B5-33, B5-34 — *the Liquid image's versions, read rather than assumed; added 2026-10-22* |
+| SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3**, **SP-6** |
 | SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2, **SP-3** |
 
 *`SP-3` added to all three rows 2026-10-20.* Its detail block claimed them and the table listed it

@@ -36,11 +36,18 @@ export function seedRepo(root: string, name: string): string {
   const bare = join(root, `${name}.git`);
   mkdirSync(work, { recursive: true });
   writeFileSync(join(work, 'README.md'), `# ${name}\n`);
-  const env = { GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@local', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@local' };
-  sh(['git', 'init', '-q', '-b', 'main', work], root);
-  Bun.spawnSync(['git', '-C', work, 'add', 'README.md'], { env: { ...process.env, ...env } });
-  Bun.spawnSync(['git', '-C', work, 'commit', '-qm', 'seed'], { env: { ...process.env, ...env } });
-  sh(['git', 'clone', '-q', '--bare', work, bare], root);
+  // Through git(), for its identity and its ceiling, and said when it fails: a
+  // seed that did not commit was cloned bare and empty, and the case it served
+  // failed later over something else.
+  for (const [dir, args] of [
+    [root, ['init', '-q', '-b', 'main', work]],
+    [work, ['add', 'README.md']],
+    [work, ['-c', 'commit.gpgsign=false', 'commit', '-qm', 'seed']],
+    [root, ['clone', '-q', '--bare', work, bare]]
+  ] as Array<[string, string[]]>) {
+    const r = git(dir, args);
+    if (r.code !== 0) throw new Error(`seedRepo ${name}: git ${args.join(' ')} failed: ${r.output}`);
+  }
   return bare;
 }
 
