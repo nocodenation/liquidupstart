@@ -21,10 +21,12 @@
  * Then:     The line that arrives later is still found; a failure is reported as
  *           the harness's, with what was read before it, by `until()` and by
  *           `finished()`; the character arrives
- *           whole; a finished run is refused as a fault of the test. A real child
+ *           whole; a finished run, and a child whose stdout or stderr is not piped, are
+ *           refused as a fault of the test. A real child
  *           is still read, and a real file still awaited.
  * Covers:   A16-32
- * Negative: the failed reader, the split character and the finished run.
+ * Negative: the failed reader, the split character, the finished run and a
+ *           child whose stdout or stderr is not piped.
  * Counterpart: a real child whose line arrives, and a real file awaited, so a
  *           helper that refused everything cannot pass.
  *
@@ -35,8 +37,9 @@
  * of one second;
  * `é` as the bytes 0xC3 and 0xA9 on stdout with `x` on stderr between them,
  * at 0, 50 and 20 ms; for the real child, `sh -c 'echo out; echo waiting for the
- * lock >&2'`; and a file `held` holding `4242`, written by `sh -c 'printf 4242 >
- * held; sleep 1'`.
+ * lock >&2'`; for the unpiped child, the hand-built child with its stderr, then its
+ * stdout, left undefined;
+ * and a file `held` holding `4242`, written by `sh -c 'printf 4242 > held; sleep 1'`.
  *
  * Deliberately not driven: the file removed between a check and a read in
  * `awaitFile`. The window was two system calls wide, and the helper now makes
@@ -69,7 +72,7 @@ const running = (stdout: ReadableStream<Uint8Array>, stderr: ReadableStream<Uint
   exited: new Promise<number>(() => {})
 });
 
-const work = mkdtempSync(join(tmpdir(), 'lu-a16-31-'));
+const work = mkdtempSync(join(tmpdir(), 'lu-a16-32-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
 
 describe('A16-32 a reader that fails is the harness, not the run going quiet', () => {
@@ -121,6 +124,14 @@ describe('A16-32 a finished run is refused as a fault of the test', () => {
 
   test('A16-32 watchOutput, handed one, says so rather than that the run said nothing', () => {
     expect(() => watchOutput(finished())).toThrow('needs a child from Bun.spawn');
+  });
+
+  test('A16-32 and watchOutput refuses a child whose stdout or stderr is not piped', () => {
+    // A decision in the helper, so both sides: the real child below is the one
+    // it permits. Review of #47, A2.
+    const piped = () => timed([], { at: 1 });
+    expect(() => watchOutput({ ...running(piped(), piped()), stderr: undefined })).toThrow('needs both stdout and stderr piped');
+    expect(() => watchOutput({ ...running(piped(), piped()), stdout: undefined })).toThrow('needs both stdout and stderr piped');
   });
 
   test('A16-32 and awaitFile too', async () => {

@@ -11,14 +11,16 @@
  *           2026-10-20 and recorded on #45. Nothing stopped the next one, because
  *           the rule was a convention to remember; this is it computed.
  * Given:    Every `*.test.ts` under tests/, and a fixture tree of its own.
- * When:     Each code line is searched for a container name written into the
- *           file: `'--name', 'x'` or a backtick literal in an argument list;
- *           `--name x`, `--name "x"`, `--name 'x'` or `--name=x` in a command line;
- *           or `'--name', X` where the file has `const X = 'x'`.
- * Then:     None in the tree; in the fixture, exactly the seven fixed names, and
+ * When:     Each file's code, comment lines blanked, is searched as one text for
+ *           a container name written into it: `'--name', 'x'` or a backtick
+ *           literal in an argument list, also when the name is wrapped onto the
+ *           next line; `--name x`, `--name "x"`, `--name 'x'` or `--name=x` in a
+ *           command line; or `'--name', X` where the file has `const X = 'x'`, in
+ *           any of the three quotes.
+ * Then:     None in the tree; in the fixture, exactly the nine fixed names, and
  *           none of the three names a run computes.
  * Covers:   A8-34
- * Negative: the fixture's seven fixed names are found, so a search that matched
+ * Negative: the fixture's nine fixed names are found, so a search that matched
  *           nothing cannot pass the tree.
  * Counterpart: the fixture's `containerName('lu-x')` and `` `lu-x-${RUN_ID}` ``
  *           are not, so a search that matched every `--name` cannot either.
@@ -30,7 +32,9 @@
  * 'lu-kept';` with `'--name', KEPT`, and `const RAN = containerName('lu-ran');`
  * with `'--name', RAN`; the command lines `docker run --name "lu-dq" img`,
  * `docker run --name 'lu-sq' img` and `docker run --name=lu-eq img`; and
- * `` '--name', `lu-tick` `` -- and a header line naming `'--name', 'lu-prose'`, which
+ * `` '--name', `lu-tick` ``; `'--name',` and on the next line `'lu-wrap'`, as a
+ * formatter wraps an argument list; and `` const TICK = `lu-tick-const` `` with
+ * `'--name', TICK` -- and a header line naming `'--name', 'lu-prose'`, which
  * is prose and must not count. Not read: tests/lib, whose helpers are where the
  * computed names come from, and tests/verify, which holds hand-run scripts.
  * This file carries those lines and is excluded from the tree by name.
@@ -51,7 +55,7 @@ const IN_COMMAND = /--name(?:\s+|=)(["']?)([a-z][\w.-]*)\1(?=[\s'"`]|$)/g;
 // And a constant holding one: `const LIVE = 'lu-b5-live'` and then `'--name', LIVE`
 // is the same fixed name one line removed.
 const BY_NAME = /['"]--name['"]\s*,\s*([A-Za-z_$][\w$]*)\s*[,\]]/g;
-const CONSTANT = (id: string) => new RegExp(`\\bconst ${id}\\s*=\\s*(['"])([^'"]*)\\1`);
+const CONSTANT = (id: string) => new RegExp(`\\bconst ${id}\\s*=\\s*(['"\`])([^'"\`$]*)\\1`);
 
 function fixedNames(testsDir: string): string[] {
   const found: string[] = [];
@@ -65,15 +69,19 @@ function fixedNames(testsDir: string): string[] {
     }
     for (const name of names) {
       const body = readFileSync(join(dir, name), 'utf8');
-      body.split('\n').forEach((line, i) => {
-        if (/^\s*(\*|\/\/|\/\*)/.test(line)) return;
-        for (const m of line.matchAll(QUOTED)) found.push(`${tier}/${name}:${i + 1} ${m[2]}`);
-        for (const m of line.matchAll(IN_COMMAND)) found.push(`${tier}/${name}:${i + 1} ${m[2]}`);
-        for (const m of line.matchAll(BY_NAME)) {
-          const c = body.match(CONSTANT(m[1]));
-          if (c) found.push(`${tier}/${name}:${i + 1} ${c[2]}`);
-        }
-      });
+      // Comment lines blanked, not dropped, so an offset still maps to its line;
+      // and searched as one text, so an argument a formatter wrapped onto the
+      // next line is still read.
+      const code = body.replace(/^[ \t]*(\*|\/\/|\/\*).*$/gm, '');
+      const lineOf = (at: number) => code.slice(0, at).split('\n').length;
+      const hits: Array<[number, string]> = [];
+      for (const m of code.matchAll(QUOTED)) hits.push([lineOf(m.index! + m[0].length - m[2].length - 1), m[2]]);
+      for (const m of code.matchAll(IN_COMMAND)) hits.push([lineOf(m.index!), m[2]]);
+      for (const m of code.matchAll(BY_NAME)) {
+        const c = code.match(CONSTANT(m[1]));
+        if (c) hits.push([lineOf(m.index!), c[2]]);
+      }
+      hits.sort((x, y) => x[0] - y[0]).forEach(([line, n]) => found.push(`${tier}/${name}:${line} ${n}`));
     }
   }
   return found;
@@ -105,7 +113,11 @@ describe('A8-34 every container a test starts carries a name of its run', () => 
         `sh(['bash', '-c', 'docker run --name "lu-dq" img']);`,
         `sh(['bash', '-c', "docker run --name 'lu-sq' img"]);`,
         "sh(['bash', '-c', 'docker run --name=lu-eq img']);",
-        "sh(['docker', 'run', '--name', `lu-tick`, IMAGE]);"
+        "sh(['docker', 'run', '--name', `lu-tick`, IMAGE]);",
+        "sh(['docker', 'run', '--name',",
+        "  'lu-wrap', IMAGE]);",
+        'const TICK = `lu-tick-const`;',
+        "sh(['docker', 'run', '--name', TICK, IMAGE]);"
       ].join('\n')
     );
     expect(fixedNames(fixture)).toEqual([
@@ -115,7 +127,9 @@ describe('A8-34 every container a test starts carries a name of its run', () => 
       'integration/m-zz.names.test.ts:10 lu-dq',
       'integration/m-zz.names.test.ts:11 lu-sq',
       'integration/m-zz.names.test.ts:12 lu-eq',
-      'integration/m-zz.names.test.ts:13 lu-tick'
+      'integration/m-zz.names.test.ts:13 lu-tick',
+      'integration/m-zz.names.test.ts:15 lu-wrap',
+      'integration/m-zz.names.test.ts:17 lu-tick-const'
     ]);
   });
 });
