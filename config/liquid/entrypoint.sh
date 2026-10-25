@@ -26,6 +26,30 @@ NAR_WATCH="$(cd "$(dirname "$0")" && pwd)/nar-watch.sh"
 echo "Liquid Playground - Starting..."
 
 if [ -d "$DROP_DIR" ]; then
+    # Emptied first, so the load directory holds what the inbox holds and passes
+    # and nothing else: it is an anonymous volume, kept across a restart and a
+    # recreate, and until 2026-10-22 it was only ever added to -- a bundle taken
+    # out of the inbox stayed loaded. NiFi removes a stale unpacked copy itself
+    # at boot (FR30, measured 2026-10-07). What is removed is named, so a bundle
+    # that does not come back is in the log; a failure is said and does not end
+    # the start.
+    if [ -d "$LOAD_DIR" ]; then
+        BEFORE="$(ls -A "$LOAD_DIR" 2>/dev/null | tr '\n' ' ')"
+        if ! find "$LOAD_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null; then
+            echo "Warning: ${LOAD_DIR} could not be emptied, so a bundle taken out of the inbox" >&2
+            echo "  may still be loaded. It held: ${BEFORE}" >&2
+            echo "  and still holds: $(ls -A "$LOAD_DIR" 2>/dev/null | tr '\n' ' ')" >&2
+        elif [ -n "$BEFORE" ]; then
+            echo "Emptied ${LOAD_DIR} to rebuild it from the inbox; it held: ${BEFORE}"
+        fi
+    fi
+    # The image carries this directory, so it is there without the bind as well,
+    # empty, and the load path then ends empty. Said, so a lost bind is visible.
+    if command -v mountpoint >/dev/null 2>&1 && ! mountpoint -q "$DROP_DIR"; then
+        echo "Warning: ${DROP_DIR} is not a mount, so the inbox is the image's own and" >&2
+        echo "  nothing from ./volumes/nar_extensions is loaded. Is the bind in compose.yml?" >&2
+    fi
+
     # Counted the way the loop below iterates. `find -name "*.nar"` matches
     # dot-files that the `"$DROP_DIR"/*.nar` glob skips, so a directory holding
     # good.nar, .x.nar and a refused bad.nar reported "1 of 3" for two bundles.
@@ -41,8 +65,25 @@ if [ -d "$DROP_DIR" ]; then
 
         FAILED=0
         STUCK=0
+        ARRIVING=0
         for NAR in "$DROP_DIR"/*.nar; do
             if ! REFUSAL="$(python3 "$NAR_CHECK" check "$NAR" "$LIB_DIR" 2>&1)"; then
+                # The watcher's case: a bundle that is no archive yet may still be
+                # arriving, so it stays in the inbox and the watcher judges it once
+                # it stops changing. Filed as a refusal, a copy in progress lost its
+                # loaded predecessor and finished in refused/. The bundle itself,
+                # not a jar inside it: narcheck names those `<bundle>!<entry>`, and
+                # a finished bundle with a broken jar is refused.
+                case "$REFUSAL" in
+                    *"$(basename "$NAR"): could not be opened as an archive"*)
+                        ARRIVING=$((ARRIVING + 1))
+                        echo "NAR NOT JUDGED YET: ${NAR} cannot be opened as an archive, so it is not loaded." >&2
+                        echo "$REFUSAL" >&2
+                        echo "  It stays in the inbox: if it is still being copied in, the watcher judges it" >&2
+                        echo "  as soon as it stops changing; if it is corrupt, replace it or remove it." >&2
+                        continue
+                        ;;
+                esac
                 FAILED=$((FAILED + 1))
                 echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LOAD_DIR}/" >&2
                 echo "$REFUSAL" >&2
@@ -90,13 +131,17 @@ if [ -d "$DROP_DIR" ]; then
             echo "    is written by Liquid alone, so this means its filesystem is full or read-only." >&2
             echo "Liquid is starting anyway, because every other flow it hosts depends on it." >&2
         else
-            echo "NAR deployment complete: ${NAR_COUNT} file(s) copied to ${LOAD_DIR}/"
+            echo "NAR deployment complete: $((NAR_COUNT - ARRIVING)) file(s) copied to ${LOAD_DIR}/"
+        fi
+        if [ "$ARRIVING" -gt 0 ]; then
+            echo "Not judged yet: ${ARRIVING} file(s) stay in ${DROP_DIR} for the watcher, which judges them" >&2
+            echo "  once they stop changing." >&2
         fi
     else
         echo "No NAR files found in the inbox"
     fi
 else
-    echo "the NAR inbox is not mounted at ${DROP_DIR}"
+    echo "there is no NAR inbox at ${DROP_DIR}, so the load directory is left as it was"
 fi
 
 # Publish what the nar_builder needs to make the same decision this entrypoint

@@ -716,8 +716,9 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-29]** **`CLAUDE.md` gives `nar_extensions` as a directory rewritten on every start, and Liquid's load path is
-only ever added to.** Found by the local review of #44 on 2026-10-22. `CLAUDE.md`, under *Persist on
+**[45-29]** **~~`CLAUDE.md` gives `nar_extensions` as a directory rewritten on every start, and Liquid's load path is
+only ever added to.~~ Repaired on #48, which carries this strike.** *What this entry said while it was open,
+2026-10-22 until #48:* Found by the local review of #44 on 2026-10-22. `CLAUDE.md`, under *Persist on
 host disk*: *"A directory a service rewrites from scratch on every start is not state, and the rule
 does not reach it — which is why `nar_extensions` has been a volume all along"*. Read on `main`:
 `config/liquid/entrypoint.sh:66` copies into `${NIFI_HOME}/nar_extensions` and
@@ -730,7 +731,7 @@ is the operator's to change, so this is recorded and not edited.
 
 Recorded 2026-10-22.
 
-**Answered on #48, open, 2026-10-22, by the operator's choice of the behaviour.** Every start now
+**Repaired on #48, by the operator's choice of the behaviour.** Every start now
 empties the load path and refills it from the inbox, so `CLAUDE.md`'s sentence holds and stays as
 it is. `B2-12`; measured in two throwaway Liquid containers, with `main`'s entrypoint and with the
 new one.

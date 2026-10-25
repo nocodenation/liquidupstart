@@ -13,7 +13,10 @@
  * Then:     It says the restart is the operator's to take, that it interrupts
  *           every running flow, and that the agent reports what it placed and
  *           where instead of performing it — and it does not tell the agent to
- *           run the restart itself.
+ *           run the restart itself. Before asking for a restart to replace a
+ *           loaded bundle, the agent checks `/opt/nar_extensions/refused/`,
+ *           because a refused replacement makes that restart remove the
+ *           processor, and the API listing the type is no evidence.
  * Note:     REQUIRED lists phrasings of four properties, not the properties
  *           themselves, which is as close as a test on prose can get. It cost a
  *           false red on 2026-09-05: §6.4 was rewritten to say "ask, and never
@@ -47,6 +50,15 @@ const REQUIRED = [
 test('B2-8 the restart step states whose it is and why', () => {
   const missing = REQUIRED.filter((r) => !r.pattern.test(section)).map((r) => r.term);
   expect(missing).toEqual([]);
+});
+
+test('B2-8 and before asking for a restart to replace a bundle, the agent looks in refused/', () => {
+  // Every start rebuilds the load path from the inbox, so a restart after a
+  // refused replacement removes the processor; the API still lists the old one.
+  // Review of #48, item 1.
+  expect(section).toContain('check that `/opt/nar_extensions/refused/<file>.nar` is not there, or is older than your build');
+  expect(section).toContain('the restart would remove the processor, not replace it');
+  expect(section).toContain('The API listing the type is no evidence that the replacement passed');
 });
 
 test('B2-8 the section does not instruct the agent to restart Liquid itself', () => {
