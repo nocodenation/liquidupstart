@@ -363,7 +363,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-13]** **Four calls hand `sh()` a timeout it never had, as its environment.** Found while repairing #42 on
+**[45-13]** **~~Four calls hand `sh()` a timeout it never had, as its environment.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found while repairing #42 on
 2026-10-21. `sh(argv, cwd, extraEnv)` takes no timeout, and these pass a number in the third place:
 `tests/unit/m-b6.bundled-jar-read.test.ts:107` (`600_000`),
 `tests/integration/m-b6.refusal-injection.test.ts:106` and `:157` (`120_000` each), and
@@ -379,7 +379,7 @@ change to make, not #42's.
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21**, the honest way this entry names: the numbers are deleted. Moving them into a real timeout waits for #42's `timeoutMs`.
+**Repaired on #46, on `main` since 2026-10-25**, the honest way this entry names: the numbers are deleted. Moving them into a real timeout waited for #42's `timeoutMs`; with #42 it is there, and the four runs are not yet given one.
 
 ---
 
@@ -469,7 +469,7 @@ form belongs with the choice of figure, not inside either branch.
 
 Recorded 2026-10-21.
 
-**Waits for #42**, with the 180 s / 600 s decision there. 2026-10-22.
+**Waits for #42**, with the 180 s / 600 s decision there. 2026-10-22. *Decided on #42, by the reviewer on 2026-10-22: 600 s, with the build's own timeout 30 s inside it. The form, a literal that wins over `TEST_TIMEOUT_MS`, is as this entry describes; `600_000` is the larger of the two unless an operator raises the suite's timeout past ten minutes.*
 
 ---
 
@@ -504,7 +504,7 @@ too.
 
 Recorded 2026-10-21.
 
-**Answered in part on #46, open, 2026-10-21**: `inGitRepoAt` answers false on ENOENT, so the module loads without `git` (`SP-6`). `sh()` returning 127 for every caller is still open here, and waits for #42, which changes `sh()`.
+**Answered in part on #46, on `main` since 2026-10-25**: `inGitRepoAt` answers false on ENOENT, so the module loads without `git` (`SP-6`). `sh()` returning 127 for every caller is still open here. #42 changed `sh()` for its timeout and its signal and left the throw on a missing executable as it was.
 
 ---
 
@@ -783,6 +783,11 @@ may still cost up to 256 MiB of bundled jar **plus** up to 512 MiB of held class
 measured **764 MB from a 1.7 KB `.nar` carrying two 250 MB "classes"**, and the check runs inside the
 Liquid container against an inbox the agents can write.
 
+**SETTLED 2026-10-17 against the finishing list's cut line**, which admits only a false claim or
+something touching what is not its own — and §2, FR36, of the feature document already states this residual
+with its 764 MB measurement and calls streaming the open question, so nothing reads as settled that
+is not. The deferral reason below still holds and is the stronger one.
+
 The fix is to stream the class parse instead of holding each class's bytes — `class_references`
 already walks the constant pool linearly, so it does not need the whole array in memory, and
 `MAX_CLASS_BYTES` would then bound nothing that matters. It is deferred because it changes the one
@@ -947,13 +952,15 @@ Recorded 2026-10-13.
 two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
 precondition could not reach the thing that failed: the registry was reachable in both failing runs
 and the machine was busy. `SP-3` asks whether a registry answers and skips them on an offline machine;
-their own **180-second** budget answers the load, against a quiet build measured at **14 seconds** on
-one machine and **45** on another. The 60 they had failed twice under load on the first and held,
-unloaded, on the second. The cost is stated at the test: a genuinely broken build now takes three
-minutes to say so. The original entry follows. (Corrected 2026-10-21: this gave 14 seconds alone and
+their own budget of **600 s**, measured in `SP-5`, answers the load, against a quiet build measured at
+**14 seconds** on one machine and **45** on another. The 60 they had failed twice under load on the
+first and held, unloaded, on the second. The cost is that a genuinely broken build takes ten minutes
+to say so, and #42 makes a cut-off build say so. The original entry follows,
+as #42 annotated it. (Corrected 2026-10-21: this gave 14 seconds alone and
 "four times".)*
 
-**OC-15 and OC-16 depend on what else the machine is doing.** Both build an image inside a 60-second
+**~~OC-15 and OC-16 depend on what else the machine is doing.~~ Repaired 2026-10-17 on #42, by the
+first of the two ways below and a guard; #24 takes the second.** Both build an image inside a 60-second
 budget. They failed in two measurements -- `Received: 130` and `this test timed out after 60000ms` --
 and **passed in two later runs taken on a quiet machine**, so the budget is not simply too small.
 *Corrected 2026-10-09: this entry first said "on this machine it is not enough", which was a
@@ -966,6 +973,36 @@ network a slow suite rather than a red one. Or give them a precondition of their
 registry -- and skip them where it is absent, which is what `SP-1` would extend to. Measured
 2026-10-09 on bun 1.3.13, macOS; `docs/TEST-SPEC-suite-preconditions.md` records it as the fourth
 precondition it deliberately does not cover. Recorded 2026-10-09.
+
+**Repaired 2026-10-17, and both of those ways leave the actual defect standing.** The defect is not
+the budget: it is that an interrupted run **returned a verdict on the code**. `OC-15` expects exit 0,
+so a cut-off build read as *"expected 0, received 130"* -- the machine, presented as a judgement on
+`--allow-scripts`. `OC-16` expects a non-zero exit, so a cut-off build satisfied its first assertion
+**by accident**, and only its second one kept it honest. One defect, two opposite false readings.
+
+So: a ten-minute budget each, because a `docker build --no-cache` with an `npm install` inside does
+not belong in a figure meant for cases that never touch the network -- **and** `wasInterrupted` in
+`tests/lib/shell.ts`, which makes a cut-off run say so instead of judging. #42 adds no precondition;
+#24's `SP-3` is one, for a machine where no registry answers at all, and the two stand side by side
+as `docs/TEST-SPEC-suite-preconditions.md` divides them. `SP-5` holds the budget, the guard **and its
+order**, because for `OC-16` a guard that runs after the first assertion guards nothing.
+
+**2026-10-21: the guard as first written would not have fired.** It recognised exit 130 and two
+phrases. Under bun 1.4.3 a case's budget ends its `spawnSync` child with SIGTERM, and a
+`docker build` cut off that way exits **255** and says nothing — measured with docker 29.8.1 — so the
+one interruption the guard was written for went past it. Each build now carries a timeout of its own
+inside the budget, and the guard reads that. 130 and `context canceled` are what SIGINT gives, also
+measured, and the second phrase, `signal: interrupt`, was never seen and is gone.
+
+**A third instance of the same class came with it, walked into rather than looked for.** On
+2026-10-17 `startDashboard` threw `no published port for lu-a8-unprepared` with an empty answer while
+a second suite was running -- and the container was up and publishing `127.0.0.1:55047->3000` seconds
+later. It asked `docker port` once, immediately after `docker run -d`. *Corrected 2026-10-21*: this said
+the cause was that nobody had waited, and that was never shown. Under the stack's load `docker port`
+answered at the first ask in 40 runs of 40, and a container not yet started, or already removed,
+answers with text rather than nothing; the one empty answer measured is a `docker` call that ran out
+of its timeout. The helper now waits by the container's **id** against a clock — the id names exactly
+the container this `docker run` made, whatever the names do — and says how the last attempt ended.
 
 ---
 

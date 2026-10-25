@@ -158,8 +158,8 @@ describe('SP-3 the fourth precondition: a registry answers', () => {
   // **It is not what the measured failures were, and the case says so.** Those two
   // failed twice by timing out at the suite's 60s and passed twice on a quiet
   // machine: the registry was reachable every time. So this precondition answers
-  // the offline machine, and their own 180s budget answers the load -- the quiet
-  // build is 14s on one machine and 45s on another, both measured.
+  // the offline machine, and their own budget answers the load: 600 s,
+  // `BUILD_BUDGET_MS` in that file, measured in SP-5.
   test('SP-3 an unreachable host answers false', () => {
     // The half that can be measured anywhere. `.invalid` is reserved by RFC 2606
     // precisely so that it cannot resolve, which is why it is used rather than a

@@ -104,8 +104,8 @@ describe('B6-35 the builder leg: the replacement it uses treats a name as text',
        printf 'OUT=%s\\n' "$out"
        printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
     ]);
-    // No bound but the test's own: sh() takes no timeout, and the 120_000 that stood
-    // here was its extraEnv, which copies nothing from a number. B6-37's block.
+    // No bound but the test's own: the 120_000 that stood here was sh()'s extraEnv,
+    // which copies nothing from a number. B6-37's block.
 
   test('B6-35 the payload runs nothing and the dot-path is gone', () => {
     const r = run(PAYLOAD);
@@ -157,8 +157,8 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
        printf 'OUT=%s\\n' "$REFUSAL"
        printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
     ]);
-    // No bound but the test's own: sh() takes no timeout, and the 120_000 that stood
-    // here was its extraEnv, which copies nothing from a number. B6-37's block.
+    // No bound but the test's own: the 120_000 that stood here was sh()'s extraEnv,
+    // which copies nothing from a number. B6-37's block.
 
   test('B6-35 the payload runs nothing through the watcher substitution', () => {
     const r = run(PAYLOAD);

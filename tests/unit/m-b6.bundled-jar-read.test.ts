@@ -116,8 +116,8 @@ const run = (which: string) =>
     '--entrypoint', 'sh', 'python:3.12-slim', '-c',
     `mkdir -p /w/lib && python3 /w/setup.py && python3 /w/measure.py ${which}`
   ]);
-  // No bound but the test's own: sh() takes no timeout, and the 600_000 that stood
-  // here was its extraEnv, which copies nothing from a number. B6-37's block.
+  // No bound but the test's own: the 600_000 that stood here was sh()'s extraEnv,
+  // which copies nothing from a number. B6-37's block.
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'm-b6-n3-'));
