@@ -363,7 +363,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-13]** **Four calls hand `sh()` a timeout it never had, as its environment.** Found while repairing #42 on
+**[45-13]** **~~Four calls hand `sh()` a timeout it never had, as its environment.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found while repairing #42 on
 2026-10-21. `sh(argv, cwd, extraEnv)` takes no timeout, and these pass a number in the third place:
 `tests/unit/m-b6.bundled-jar-read.test.ts:107` (`600_000`),
 `tests/integration/m-b6.refusal-injection.test.ts:106` and `:157` (`120_000` each), and
@@ -379,7 +379,7 @@ change to make, not #42's.
 
 Recorded 2026-10-21.
 
-**Answered on #46, open, 2026-10-21**, the honest way this entry names: the numbers are deleted. Moving them into a real timeout waited for #42's `timeoutMs`; with #42 it is there, and the four runs are not yet given one.
+**Repaired on #46, on `main` since 2026-10-25**, the honest way this entry names: the numbers are deleted. Moving them into a real timeout waited for #42's `timeoutMs`; with #42 it is there, and the four runs are not yet given one.
 
 ---
 
@@ -504,7 +504,7 @@ too.
 
 Recorded 2026-10-21.
 
-**Answered in part on #46, open, 2026-10-21**: `inGitRepoAt` answers false on ENOENT, so the module loads without `git` (`SP-6`). `sh()` returning 127 for every caller is still open here. #42 changed `sh()` for its timeout and its signal and left the throw on a missing executable as it was.
+**Answered in part on #46, on `main` since 2026-10-25**: `inGitRepoAt` answers false on ENOENT, so the module loads without `git` (`SP-6`). `sh()` returning 127 for every caller is still open here. #42 changed `sh()` for its timeout and its signal and left the throw on a missing executable as it was.
 
 ---
 

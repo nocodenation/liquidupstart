@@ -2,9 +2,10 @@
 
 **One list, worked from the top. When it is empty, nothing is open on our side and the only thing
 left is review.** Written 2026-10-17, because the question *"why is there always something new?"*
-has a structural answer and this file is it. **Checked against the tree on 2026-10-21**, with `main`
-at `8476389`. Rows 3 to 10 are left as `main` has them: the branches that answer them carry their
-own update of each row, and a second copy here would be a conflict with each of them.
+has a structural answer and this file is it. **Checked against the tree on 2026-10-25**, on #42 with `main`
+at `dc35763` merged in; `main`'s later documentation commit `00ff80e` merges clean with it. Items 3 to 6
+and the first half of 9 were answered by pull requests now on `main`, 7 and 8 on #42. The branches
+still open, #42, #47 and #48, each carry their own updates.
 
 ## Why this file exists
 
@@ -36,8 +37,8 @@ That is the whole rule. A new item joins this list only if it meets it.
 
 | # | Item | Where | State |
 |---|---|---|---|
-| 1 | Mark every `BACKLOG.md` entry `OPEN` / `SETTLED` / `RECORD` / `DONE-ON-#N`, so the file becomes the queue it is read as | `BACKLOG.md` | **deferred to last, still**: on 2026-10-22 **nine** of our eleven open pull requests touch that file — #37, #38, #39, #40, #41, #42, #43, #45 and #47; #44 and #46 do not — so marking every entry now buys nine conflicts. It said nine on 2026-10-17 and eight on 2026-10-21. #45 carries a dated note on each entry it records, saying where that entry stands, which is the queue this item asks for until it can be done on `main`. Done when those have merged. |
-| 2 | Strike what open branches already closed, so `main`'s copy stops reading as open | `BACKLOG.md` | with 1, same reason |
+| 1 | Mark every `BACKLOG.md` entry `OPEN` / `SETTLED` / `RECORD` / `DONE-ON-#N`, so the file becomes the queue it is read as | `BACKLOG.md` | **deferred to last, still**: on 2026-10-25 the three open pull requests of ours, #42, #47 and #48, all touch that file, so marking every entry now buys three conflicts. It said nine on 2026-10-22. The thirty entries #45 recorded carry a label and a status each on `main` since 2026-10-25, which is most of what this item asks. Done when those three have merged. |
+| 2 | Strike what open branches already closed, so `main`'s copy stops reading as open | `BACKLOG.md` | **in part, 2026-10-25**: `main` strikes what #44 and #46 answered, #42 the two #46 entries its own diff edits, and #47 and #48 strike their own. The rest with 1 |
 | 3 | ~~`m-a5.nested-clone` writes into `volumes/repos` from the **default tier**~~ | `tests/contract/m-a5.nested-clone.test.ts` | **done on #39 (`fecc9ff`), corrected 2026-10-20**, measured both ways with a watcher on the path during the run. The review of 2026-10-22 found two more default-tier files writing there through `chainFixture`'s host view, which roots in a temporary directory since 2026-10-22 |
 | 4 | ~~A test run leaked a **container**, not only an image~~ | `tests/lib/builderimage.ts` | **done on #40, 2026-10-22**, `B6-41`. Shown against docker by `m-b6.builder-sweep`: a running labelled container another run abandoned, and its image, are removed in one sweep; the run in flight's are kept; no other container or image disappears. *Corrected 2026-10-22: this said done on 2026-10-17, measured with `rm -f`, which the branch had since dropped, so no real container was removed. The review of #40* |
 | 5 | ~~`down.sh` leaves behind every container the current branch does not declare~~ | `scripts/linux/down.sh` | **done 2026-10-17**, `A11-11`. It still held: identical on 17 of 18 branches, and `update.sh` had already drifted to the flag. Measured against real compose |
@@ -70,14 +71,9 @@ defect `A1` on #17 was.
 ## What finishing means
 
 When items 3 to 10 are done: every pull request of ours waiting on review, nothing waiting on us.
-Review comments then arrive, are worked in, and that is the end of development. *On 2026-10-21, nine
-pull requests of ours are open, and items 3 to 9 are answered on five of them, each of which updates
-its own row here when it merges: 3 on #39, 4 on #40, 5 and 6 on #41, 7 and 8 on #42 — #40 adds to
-row 7 as well, and #42's struck row 7 stands, since it repairs what #40 added — and the first half of 9 on #43. The five conflict with each other here in
-neighbouring rows, though each merges clean into `main`, so whichever lands second keeps both rows.
-6 and 8 are answered by settling them, which the operator accepted that day. 1 and 2 wait for the
-eight that touch `BACKLOG.md`. Of 10, two thirds held that day: every open pull request of ours
-carried a comment of ours newer than its head, compared in UTC, and every branch of ours merged
-clean. It said "twelve pull requests" on 2026-10-17, when the twelve were different ones; the count
-is the forge's to give, and `./scripts/state.sh` on #43, `feature/computed-state`, gives it.* **This
+Review comments then arrive, are worked in, and that is the end of development. *On 2026-10-25, three pull
+requests of ours are open, #42, #47 and #48. Items 3 to 9 are answered: 3 to 6 and the first half of 9
+on `main`, 7 and 8 on #42. Of 10: each of the three, as pushed on 2026-10-25, merges clean into `main`
+and with the other two, checked with `git merge-tree` between the heads. Whether each carries a comment newer than its head,
+and how many are open, is the forge's to say, and `./scripts/state.sh` asks it.* **This
 file is the only place a new item may be added, and only if it meets the cut line above.**
