@@ -20,8 +20,10 @@
  *           index lacks
  * Then:     each of the first three exits **3** and says it cannot judge; the
  *           readable index yields a verdict instead, 0 and 1 -- which is the
- *           distinction the caller branches on
- * Covers:   B6-43
+ *           distinction the caller branches on. B6-44: a 0 ends with the line
+ *           `JUDGED <bundle>`, which the gate requires since 2026-10-21, and
+ *           neither a refusal nor a 3 carries one
+ * Covers:   B6-43, B6-44
  * Unhappy:  Both are refusals, and the distinction between them is the subject:
  *           a checker that answered 3 for everything would satisfy the first
  *           scenario and take every real refusal out of the operator's reach, so
@@ -190,5 +192,26 @@ describe('B6-43 check-index answers 3 when it cannot read the index', () => {
       code: 0,
       cannotJudge: false
     });
+  });
+});
+
+describe('B6-44 the real check-index states its verdict', () => {
+  // The gate deploys a 0 only with `JUDGED <bundle>` since 2026-10-21, because a
+  // 0-byte checker is a 0 too. B6-44's gate half drives a stub that prints the
+  // line; this is what holds that the real checker prints it.
+  test('B6-44 a 0 ends with JUDGED and the bundle it was handed', () => {
+    const r = checkIndex();
+    const last = r.output.trimEnd().split('\n').pop() ?? '';
+    expect({ code: r.code, last: /^JUDGED \/.*\/probe\.nar$/.test(last) }).toEqual({ code: 0, last: true });
+  });
+
+  test('B6-44 and neither a refusal nor a cannot-judge carries one', () => {
+    // A verdict line on a refusal would be the same lie the other way round.
+    const refused = checkIndex({ packages: 'org/apache/nifi/processor\n', bundle: 'refs', lib: 'java/lang/String\njava/lang/Object\n' });
+    const unreadable = checkIndex({ libAsDir: true });
+    expect({
+      refused: [refused.code, refused.output.includes('JUDGED')],
+      unreadable: [unreadable.code, unreadable.output.includes('JUDGED')]
+    }).toEqual({ refused: [1, false], unreadable: [3, false] });
   });
 });

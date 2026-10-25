@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { repoRoot } from './paths';
 import type { Result } from './shell';
+import { parseDockerTime } from './dockertime';
 
 export const dashboardDir = join(repoRoot, 'dashboard');
 
@@ -169,34 +170,6 @@ export function isOwn(id: string, mine: Set<string>): boolean {
   return false;
 }
 
-/**
- * When docker says a thing was made, in milliseconds, or `null` if it will not say.
- *
- * **`Date.parse` on what `{{.Created}}` prints is not enough, and the shape
- * differs by kind.** A container and an image answer RFC 3339
- * (`2026-10-20T15:04:44.737Z`); a **network** answers a Go `time.Time`,
- * `2026-10-20 15:04:44.637957344 +0000 UTC`, with spaces in it. The first reader
- * here took `l.split(' ')[1]`, which on a network keeps `2026-10-20` alone --
- * midnight UTC -- so after 03:00 UTC every foreign `lu-test=1` network read as
- * older than the floor and was swept. That is the defect this whole branch
- * exists against, reintroduced for networks by the repair for it, and it was
- * found by a review of this branch on 2026-10-20 and reproduced end to end: a
- * network four seconds old was removed by one `sweepStaleFixtures()`.
- *
- * It was believed to be RFC 3339 for all three kinds because the measurement was
- * taken through `cut -c1-70`, which hid the rest of the network's line. The
- * reading is a function now, with all three real strings as cases.
- */
-export function parseDockerTime(stamp: string): number | null {
-  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s*(Z|[+-]\d{2}:?\d{2})/.exec(
-    stamp.trim()
-  );
-  if (!m) return null;
-  const zone = m[3] === 'Z' ? 'Z' : m[3].length === 5 ? `${m[3].slice(0, 3)}:${m[3].slice(3)}` : m[3];
-  const ms = Date.parse(`${m[1]}T${m[2]}${zone}`);
-  return Number.isFinite(ms) ? ms : null;
-}
-
 const lines = (out: string): string[] =>
   out
     .split('\n')
@@ -207,10 +180,10 @@ const lines = (out: string): string[] =>
  * `<id> <created>` for the ids given, from docker's own record.
  *
  * `inspect` rather than `ps --format`, because `{{.CreatedAt}}` prints
- * `2026-10-20 14:03:11 +0200 CEST`, whose parse is engine-dependent, while
- * `{{.Created}}` is RFC 3339 -- `2026-10-20T12:22:29.90022963Z`, measured on
- * docker 29.8.1 for all three object kinds. A row that inspect does not answer
- * for is simply absent, and an absent row is not swept.
+ * `2026-10-20 14:03:11 +0200 CEST`, whose parse is engine-dependent. A
+ * container's `{{.Created}}` is RFC 3339, a network's a Go `time.Time` with
+ * spaces (A8-32). A row that inspect does not answer for is simply absent, and
+ * an absent row is not swept.
  */
 function createdAt(kind: 'container' | 'image' | 'network', ids: string[]): Array<{ id: string; created: string }> {
   if (ids.length === 0) return [];
@@ -232,7 +205,7 @@ function createdAt(kind: 'container' | 'image' | 'network', ids: string[]): Arra
   const r = docker([kind, 'inspect', '-f', `{{${field}}} ${stamp}`, ...ids], 120_000);
   // **The remainder of the line, not `split(' ')[1]`.** A network's `.Created`
   // is a Go `time.Time` with spaces in it, so the second field alone is the bare
-  // date -- see `parseDockerTime`, where that defect is recorded.
+  // date -- see `A8-32`, where that defect is recorded.
   return lines(r.stdout).map((l) => {
     const at = l.indexOf(' ');
     return at === -1

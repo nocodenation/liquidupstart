@@ -240,7 +240,8 @@ POM
   return 0
 }
 
-resolve_target() {
+resolve_target() {  # resolve_target [author|synthesised]
+  pom_source="${1:-synthesised}"
   # The Host header, and -f, and both were measured rather than reasoned.
   #
   # Without the header NiFi answers **400** -- `NIFI_WEB_PROXY_HOST` makes it
@@ -322,7 +323,30 @@ UNREADABLE
   fi
 
   if ! resolve_api_version "$nifi"; then
-    cat <<UNRESOLVED
+    # **An author's pom declares its own API, so an unresolvable one is reported
+    # rather than refused.** The resolution exists to write a version into a
+    # project this script synthesises; an author pom is used unchanged, and the
+    # check against the running Liquid judges the result either way. Refusing it
+    # made the advice below -- add a pom.xml -- a dead end for anyone who had one:
+    # measured on main at a3ef20f. FR27 as amended 2026-10-21, B2-11.
+    if [ "$pom_source" = author ]; then
+      cat >&2 <<AUTHORPOM
+nar-build: the nifi-api version could not be resolved through
+org.apache.nifi:nifi-utils:${NAR_BUILD_API_PROBE_VERSION:-$nifi}. This project has its own pom.xml, which
+declares the version it builds against, so the build goes on. Before anything is
+deployed, the classes it references are checked against the ones the running
+Liquid loads; a method that exists only in a newer nifi-api is not caught by that
+check, so the version in the pom is the author's to get right.
+If what Maven says below is that it could not reach a repository, that is the
+builder's network and not the project -- ask the operator:
+docker compose exec nar_builder curl -sSI https://repo.maven.apache.org/maven2/
+Maven said:
+${API_ERROR}
+AUTHORPOM
+      API_VERSION="not resolved"
+      API_SOURCE="the project's own pom.xml declares it"
+    else
+      cat <<UNRESOLVED
 nar-build refused: the nifi-api version could not be resolved through
 org.apache.nifi:nifi-utils:${NAR_BUILD_API_PROBE_VERSION:-$nifi}, and this build will not
 guess it. NiFi versions nifi-api on its own line — ${nifi} does not ship nifi-api ${nifi} —
@@ -337,7 +361,8 @@ it unchanged — or ask the operator whether the builder can reach Maven Central
 docker compose exec nar_builder curl -sSI https://repo.maven.apache.org/maven2/
 Nothing was built and nothing was written to ${DROP}.
 UNRESOLVED
-    return 3
+      return 3
+    fi
   fi
 
   out "nifi_version ${nifi}"
@@ -543,6 +568,16 @@ On Docker Desktop a stale file-sharing mount answers ENOENT for a file that
 cleared it.
 CHECKER
       ;;
+    unsaid)
+      cat >&2 <<UNSAIDCHECK
+The checker ran and its output, above, carries no JUDGED line with a 0 or
+REFUSED line with a 1 for this bundle, which the real one prints every time. It is mounted read-only from
+config/liquid/narcheck.py; ask the operator to compare the two -- an empty,
+cut-off or older file gives exactly this:
+    docker compose exec nar_builder wc -c ${NAR_CHECK}
+    wc -c config/liquid/narcheck.py
+UNSAIDCHECK
+      ;;
     noindex)
       cat >&2 <<INDEX
 The index is what is missing, and Liquid writes it on every start. Ask the
@@ -572,7 +607,7 @@ INDEX
 # caller, since only the caller's trap reads it.
 judge_and_place() {  # judge_and_place <part> <base>
   local part="$1" base="$2"
-  local rc refusal kept reason what
+  local rc refusal kept reason what verdict
   reason="$(narcheck_unavailable_reason)"
   if [ "$reason" = none ]; then
     # **The status decides, not only the pre-check.** Any non-zero landed in the
@@ -583,19 +618,48 @@ judge_and_place() {  # judge_and_place <part> <base>
     # the field state was a Docker Desktop placeholder, which is exactly the kind
     # of state that can change between `head` and `python3`.
     #
-    # So: 0 deploys, 1 is refused on merit and gets its specific headline back,
-    # and anything else takes the same arm as an unavailable checker -- not
-    # deployed, not filed under `refused/`, and "nothing here has judged your
-    # bundle". Still fail-closed, because only 0 deploys. The contract is written
-    # beside FR36 in docs/FEATURE-liquid-java-extensions.md.
+    # So: 0 with `JUDGED <bundle>` deploys, 1 with `REFUSED <bundle>` is refused on
+    # merit and gets its specific headline back, and anything else -- either
+    # status without its line included, since 2026-10-21 -- takes the same arm as
+    # an unavailable checker: not deployed, not filed under `refused/`, status 5,
+    # and "nothing here has judged your bundle". Still fail-closed, because only
+    # a 0 with its line deploys. The contract is written beside FR36 in
+    # docs/FEATURE-liquid-java-extensions.md, as FR36a.
     refusal="$(python3 "$NAR_CHECK" check-index "$part" "$LIQUID_INDEX" 2>&1)" && rc=0 || rc=$?
-    if [ "$rc" -gt 1 ]; then
+    # **A verdict counts only when it is said.** An empty checker is a 0 too:
+    # `head -c 1` passes on a 0-byte file and python3 runs one and exits 0, so
+    # silence deployed every bundle as judged -- measured on main at a3ef20f, a
+    # 0-byte checker and one that exits 0 saying nothing were both deployed. And a
+    # truncated one is a 1: python3 exits 1 for a SyntaxError, and that filed the
+    # bundle under refused/ with the link headline. So 0 needs `JUDGED <bundle>`
+    # and 1 needs `REFUSED <bundle>`, which are what check-index prints, and
+    # anything else is not a verdict. FR36a as amended 2026-10-21, B6-44.
+    verdict=said
+    if [ "$rc" -eq 0 ] && ! printf '%s\n' "$refusal" | grep -qxF "JUDGED ${part}"; then
+      verdict=unsaid
+    elif [ "$rc" -eq 1 ] && ! printf '%s\n' "$refusal" | grep -qxF "REFUSED ${part}"; then
+      verdict=unsaid
+    fi
+    if [ "$rc" -gt 1 ] || [ "$verdict" = unsaid ]; then
       # The name the operator dropped, not the dot-copy -- as the refused arm
       # below has always done. This arm printed narcheck's output raw, so it
       # named a `.part` file deleted two lines later. Found by a local review,
       # 2026-10-21.
       refusal="$(literal_replace "$refusal" "$part" "${DROP}/${base}")"
-      cat >&2 <<CANNOTJUDGE
+      if [ "$verdict" = unsaid ]; then
+        cat >&2 <<UNSAID
+
+nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
+The check exited ${rc} without the verdict line for this bundle that goes with
+that status -- which is what an empty, truncated or foreign checker does -- and
+silence is not a verdict. Nothing here has judged it: this is about the check,
+not the code.
+
+${refusal}
+UNSAID
+        narcheck_remedy unsaid
+      else
+        cat >&2 <<CANNOTJUDGE
 
 nar-build refused: ${base} was built but cannot be judged, so it is not deployed.
 The check itself did not complete -- it exited ${rc}, which is not a verdict on
@@ -603,6 +667,7 @@ your bundle. Nothing here has judged it: this is about the check, not the code.
 
 ${refusal}
 CANNOTJUDGE
+      fi
       # 3 is narcheck saying the index is what it could not use -- unreadable,
       # not text, or naming no API package -- and Liquid writes that index, so
       # the remedy is the missing index's. Any other status is the check itself
@@ -610,7 +675,9 @@ CANNOTJUDGE
       [ "$rc" -eq 3 ] && narcheck_remedy noindex
       rm -f "$part"
       part=""
-      return 2
+      # 5, not the refusal's 2: the server answers 2 with 422, "your bundle is
+      # unprocessable", and nothing has judged this one. FR36a, B6-45.
+      return 5
     fi
     if [ "$rc" -ne 0 ]; then
       # Only after the status is known: a `| sed` in the line above would hand the
@@ -685,7 +752,7 @@ NOINDEX
     narcheck_remedy "$reason"
     rm -f "$part"
     part=""
-    return 2
+    return 5
   fi
 
   # **Checked, because `set -e` does not reach here.** The caller runs this as a
@@ -778,7 +845,11 @@ NOSPI
     fi
   fi
 
-  if ! TARGET="$(resolve_target)"; then
+  # Whether the project brings its own pom decides what an unresolvable API
+  # means; the pom test further down is the same one, so the two cannot disagree.
+  pom_source=synthesised
+  [ -f "${src}/pom.xml" ] && pom_source=author
+  if ! TARGET="$(resolve_target "$pom_source")"; then
     printf '%s\n' "$TARGET" >&2
     return 3
   fi
@@ -883,7 +954,8 @@ before 2026-10-05 does not have it. Rebuild the builder image:
   ./config/scripts/build/nar-builder.sh && docker compose up -d nar_builder
 NOTCLOSED
     rm -rf "$work"
-    return 2
+    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.
+    return 1
   fi
 
   log="${work}/maven.log"
@@ -983,10 +1055,11 @@ NONAR
 nar-build refused: the build of /repos/${rel} succeeded but ${base} could not be
 written to ${DROP}, so nothing was deployed and the artifact that was there
 before, if any, is untouched.
-Ask the operator whether ${DROP} is writable: docker compose exec nar_builder ls -ld /nar_extensions
+Ask the operator whether ${DROP} is writable: docker compose exec nar_builder ls -ld ${DROP}
 NOWRITE
     rm -rf "$work"
-    return 2
+    # 1, as a judged bundle that cannot be placed. B6-46.
+    return 1
   fi
   # Judge it here, while it is still a dot-file the autoload scanner ignores.
   # Measured 2026-09-14 in nifi-app.log, and this is why the check sits between
@@ -1003,8 +1076,9 @@ NOWRITE
   # everything nar-build itself writes, which is the path agents actually take.
   # Readable, not merely present, and then the status decides: see
   # `judge_and_place`, which carries both and is driven per status by a case.
-  # The status is the function's: 2 for a bundle not deployed by the gate, 1 for
-  # a bundle that could not be placed.
+  # The status is the function's: 2 for a bundle refused on merit, 5 for one
+  # nothing could judge (since 2026-10-21; it was 2 as well), 1 for a bundle that
+  # could not be placed.
   #
   # **The bundle is placed by `judge_and_place`**, so nothing is moved here. The
   # `mv` that used to follow stayed behind when that function was extracted, and
@@ -1035,7 +1109,9 @@ NOWRITE
   out "pom ${pom_mode}"
   out "downloads ${downloads}"
   out "repository ${build_repo}, seeded from ${SEED}"
-  seed_notice "$nifi" "$api"
+  # Nothing to compare a seed with when the API was not resolved: the author's
+  # pom names it, and this script never read it.
+  [ "$api" = "not resolved" ] || seed_notice "$nifi" "$api"
   out ""
   out "Liquid watches ${DROP}, judges what arrives there, and loads what passes:"
   out "the processor is in the catalogue within seconds. No restart, and none"

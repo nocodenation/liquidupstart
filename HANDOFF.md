@@ -1,4 +1,4 @@
-# Handover — 2026-10-22
+# Handover — 2026-10-23
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,15 +9,52 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-22, late* has the live picture, *…evening* under it the six rounds, and *2026-10-22* under that the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-23* has the live picture, *2026-10-22, late* under it, then *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first five and the review bodies they point to; the rest of this file is the map and the lessons.
+first six and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-23: #39, #41, #43 and #44 merged, three conflicts resolved
+
+Timur merged #39, #41, #43 and #44 and said in Slack that he had approved them; on GitHub his last
+review of each still reads *changes requested*. In the same messages he asked for the merge conflicts on
+#40, #42 and #46 to be resolved. Each of those has `main` (`e9d8f9a`) merged in, with every line both
+sides added kept, checked line by line, except where two lines were combined into one or a statement was
+corrected; each comment names those. Each then ran a full suite from a clean tree:
+
+| PR | Merge | Conflicts | Suite | Comment |
+|---|---|---|---|---|
+| #46 | `7daab60` | A10-23's block, kept as this branch's with #39's *Premise*; SP-2's `SPANS_FILES` entry and `dependent` list, which hold #43's `m-a17` and #46's `m-a10.fixture-ceiling` | 1288 / 28 / 0, dashboard 32 / 0, no `oom` | [#46](https://github.com/nocodenation/liquidupstart/pull/46#issuecomment-6360209162) |
+| #42 | `ebccdb1` | `FINISH.md`, row by row | 1276 / 27 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#42](https://github.com/nocodenation/liquidupstart/pull/42#issuecomment-6361004942) |
+| #40 | `076b4d7` | `FINISH.md`, row by row | 1266 / 27 / 3, all `B6-37` with an `oom` each; dashboard 32 / 0 | [#40](https://github.com/nocodenation/liquidupstart/pull/40#issuecomment-6361006862) |
+
+#45 has `main` merged in too (`006d31e`). By its own rule it strikes `45-9` and notes `45-12`, because
+#44 landed first. #48 was retargeted to `main` by GitHub when #44's branch went. All six open pull
+requests merge clean into `main`.
+
+**What it found.** A resolved conflict is not a finished merge: the text around it has to be read
+again, with both sides in. SP-2's file counts were stale on #43 already, which had added `m-a17` to the
+lists and not to the counts, and #46 counted only its own file; one of the figures is one SP-2's own
+block declares historical, which this session had changed the day before. A10-23's text and
+`m-a7.overlapping-publish`'s header named a place #39 had moved the fixture from and left them. A
+`/code-review` of each resolution before its commit found them. Also, zsh does not
+split `set -- $pair` either: a loop of two suites ran neither.
+
+**Between the open branches,** each resolved by keeping both sides, whichever lands second:
+
+- #40 and #42: `FINISH.md` row 7. #42's row, which strikes it, and #40's row 4.
+- #42 and #46: SP-5 and SP-6 in `TEST-SPEC-suite-preconditions.md`.
+- #46 and #48: FR30/FR31 and B2-11/B2-12 in `TEST-SPEC-liquid-java-extensions.md`.
+
+**Ours, once #40 and #42 have landed:** `FINISH.md`'s header, row 1's count and its closing paragraph
+still describe the day before these merges, on `main`. Correct them there. With #40 on `main` there is
+one `parseDockerTime`, in `tests/lib/dockertime.ts`. The sections below that speak of two describe the
+time before.
 
 ## Where it stands, 2026-10-22, late: Timur's first reviews of #45 and #46 answered
 

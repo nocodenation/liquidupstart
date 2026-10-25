@@ -121,3 +121,23 @@ export function shAsync(
 export function runner(args: string[], cwd: string = repoRoot): Result {
   return sh([runnerPath, ...args], cwd);
 }
+
+// The variables that tell git which repository to use, as git itself lists them.
+// Inherited, they send a child's git straight to the repository the suite was
+// started from, and GIT_CEILING_DIRECTORIES never comes into it: git exports
+// GIT_DIR to the hooks it runs in a linked worktree. Kept: GIT_CONFIG and
+// GIT_CONFIG_COUNT, which a person sets -- a `safe.directory` on a CI host --
+// while GIT_CONFIG_PARAMETERS is how git hands a hook its parent's `-c`, and goes.
+// Removed from this process once, here, so every child started after any file
+// loads this module goes without them, and by tests/run.sh before any loads; a
+// case that passes one on purpose still can. A10-24.
+export const REPO_LOCAL_GIT: string[] = (() => {
+  try {
+    const p = Bun.spawnSync(['git', 'rev-parse', '--local-env-vars'], { stdout: 'pipe', stderr: 'pipe' });
+    if (p.exitCode !== 0) return [];
+    return p.stdout.toString().split('\n').filter((k) => k && k !== 'GIT_CONFIG' && k !== 'GIT_CONFIG_COUNT');
+  } catch {
+    return []; // no git, so nothing for it to be sent anywhere by
+  }
+})();
+for (const k of REPO_LOCAL_GIT) delete process.env[k];

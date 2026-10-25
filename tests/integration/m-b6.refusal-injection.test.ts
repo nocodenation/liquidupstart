@@ -103,7 +103,9 @@ describe('B6-35 the builder leg: the replacement it uses treats a name as text',
        out="$(literal_replace "refused $part: a reason, and again $part" "$part" "$DROP/$base")"
        printf 'OUT=%s\\n' "$out"
        printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
-    ], undefined, 120_000);
+    ]);
+    // No bound but the test's own: the 120_000 that stood here was sh()'s extraEnv,
+    // which copies nothing from a number. B6-37's block.
 
   test('B6-35 the payload runs nothing and the dot-path is gone', () => {
     const r = run(PAYLOAD);
@@ -154,7 +156,9 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
        eval "$line"
        printf 'OUT=%s\\n' "$REFUSAL"
        printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
-    ], undefined, 120_000);
+    ]);
+    // No bound but the test's own: the 120_000 that stood here was sh()'s extraEnv,
+    // which copies nothing from a number. B6-37's block.
 
   test('B6-35 the payload runs nothing through the watcher substitution', () => {
     const r = run(PAYLOAD);
