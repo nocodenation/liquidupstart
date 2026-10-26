@@ -68,7 +68,7 @@ resolve_setting() {
 # Resolve the effective SYSTEM_DEPENDENCIES and POST_INSTALLATION_COMMANDS for a
 # given image by applying its per-image overrides on top of the generic values,
 # then assign them back to those two globals (consumed by render_dockerfile).
-#   $1 = image env prefix: NIFI, OPENCODE, OPENCLAW or HERMES
+#   $1 = image env prefix: LIQUID, OPENCODE, OPENCLAW or HERMES
 resolve_image_settings() {
     local prefix="$1"
     local var
@@ -80,6 +80,24 @@ resolve_image_settings() {
 
     SYSTEM_DEPENDENCIES="$(resolve_setting "${SYSTEM_DEPENDENCIES:-}" "$spec_deps" "$deps_mode" "${prefix}_SYSTEM_DEPENDENCIES_MODE")"
     POST_INSTALLATION_COMMANDS="$(resolve_setting "${POST_INSTALLATION_COMMANDS:-}" "$spec_cmds" "$cmds_mode" "${prefix}_POST_INSTALLATION_COMMANDS_MODE")"
+}
+
+# Say which per-image settings are set under a prefix an image no longer reads,
+# so a renamed key fails loudly rather than installing nothing. A mode left at
+# "add" is the default every .env carries and changes nothing, so it is not said.
+#   $1 = the retired prefix, $2 = the prefix the image reads now
+warn_retired_prefix() {
+    local old="$1" new="$2" suffix var value
+    for suffix in SYSTEM_DEPENDENCIES SYSTEM_DEPENDENCIES_MODE POST_INSTALLATION_COMMANDS POST_INSTALLATION_COMMANDS_MODE; do
+        var="${old}_${suffix}"
+        value="${!var:-}"
+        [ -n "$value" ] || continue
+        if [ "${suffix%_MODE}" != "$suffix" ]; then
+            value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+            [ "$value" != add ] || continue
+        fi
+        print_warning "${var} is set and no longer read; this image reads ${new}_${suffix}."
+    done
 }
 
 render_dockerfile() {

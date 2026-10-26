@@ -32,6 +32,11 @@
  * is that same line with `--allow-scripts=@anthropic-ai/claude-code ` removed and
  * nothing else changed.
  *
+ * The two images are tagged for this run and labelled, as every other fixture
+ * object the suite makes: the tags were `lu-oc15-with` and `lu-oc16-without`, and
+ * the `afterAll` removed both by name, whichever checkout had built them. `45-1`
+ * of #45; A8-36 holds the rule.
+ *
  * Requirements covered: OC-G4, FEATURE-openclaw-2026-9-1.md §5.5; the budget and
  * the guard are held by SP-5.
  *
@@ -53,13 +58,16 @@ import { tmpdir } from 'node:os';
 import { sh, refuseInterrupted } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { registryReachable } from '../lib/preconditions';
+import { throwawayTag, fixtureLabels } from '../lib/dashboardserver';
 
+const WITH = throwawayTag('lu-oc15-with');
+const WITHOUT = throwawayTag('lu-oc16-without');
 let workRoot: string;
 
 beforeAll(() => { workRoot = mkdtempSync(join(tmpdir(), 'lu-oc16-')); });
 afterAll(() => {
   rmSync(workRoot, { recursive: true, force: true });
-  for (const tag of ['lu-oc15-with', 'lu-oc16-without']) {
+  for (const tag of [WITH, WITHOUT]) {
     sh(['docker', 'rmi', '-f', tag]);
   }
 });
@@ -88,7 +96,7 @@ const BUILD_TIMEOUT_MS = BUILD_BUDGET_MS - 30_000;
 function build(tag: string, run: string): { code: number; output: string; timedOut: boolean } {
   const dir = mkdtempSync(join(workRoot, 'ctx-'));
   writeFileSync(join(dir, 'Dockerfile'), `FROM ${baseImage()}\nUSER root\n${run}\n`);
-  return sh(['docker', 'build', '--no-cache', '--progress=plain', '-t', tag, dir], repoRoot, {}, BUILD_TIMEOUT_MS);
+  return sh(['docker', 'build', '--no-cache', '--progress=plain', ...fixtureLabels(), '-t', tag, dir], repoRoot, {}, BUILD_TIMEOUT_MS);
 }
 
 describe('OC-15/OC-16 the install script flag', () => {
@@ -102,7 +110,7 @@ describe('OC-15/OC-16 the install script flag', () => {
   test.skipIf(!registryReachable())(
     'OC-15 with the flag, the image is built and the CLI reports a version',
     () => {
-      const r = build('lu-oc15-with', installLine());
+      const r = build(WITH, installLine());
       refuseInterrupted(r, 'OC-15', BUILD_TIMEOUT_MS);
       expect(r.code).toBe(0);
       expect(r.output).toMatch(/\d+\.\d+\.\d+ \(Claude Code\)/);
@@ -115,7 +123,7 @@ describe('OC-15/OC-16 the install script flag', () => {
     () => {
       const without = installLine().replace('--allow-scripts=@anthropic-ai/claude-code ', '');
       expect(without).not.toContain('--allow-scripts');
-      const r = build('lu-oc16-without', without);
+      const r = build(WITHOUT, without);
       // Before the assertion, not after: this case expects a non-zero exit, so an
       // interrupted build would satisfy it by accident.
       refuseInterrupted(r, 'OC-16', BUILD_TIMEOUT_MS);

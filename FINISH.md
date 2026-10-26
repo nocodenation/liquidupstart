@@ -5,7 +5,7 @@ left is review.** Written 2026-10-17, because the question *"why is there always
 has a structural answer and this file is it. **Checked against the tree on 2026-10-26**, from `main` at
 `4224ff9`, when no pull request of ours was open, with items 1 and 2 answered on top of it. Items 3 to 8
 and the first half of 9 were answered by pull requests merged before. Items 11 to 13 were added that day
-and are open.
+and are answered on #49.
 
 ## Why this file exists
 
@@ -47,9 +47,9 @@ That is the whole rule. A new item joins this list only if it meets it.
 | 8 | ~~N6's residual: stream the class parse in `narcheck.py`~~ | — | **settled 2026-10-17**, see the table below. Measured against the cut line, not against appetite: nothing claims anything false |
 | 9 | Split `HANDOFF.md` into the map and the log — **the half that ages is gone** | `scripts/state.sh`, `HANDOFF.md` | **half done 2026-10-17**, `A17-1`, `A17-2`. The state is a command now, because the narrated copy was wrong twice in two days — once raised by the reviewer as `F4`. The file split stays deferred, as `BACKLOG.md` says: four documents cite the handover, and #19 carries an older copy |
 | 10 | Closing sweep: every pull request carries a message newer than its head, every branch merges clean, no entry left unmarked | — | last, after 11 to 13. On 2026-10-26 no pull request of ours is open and every entry is marked |
-| 11 | `m-oc.allow-scripts` builds under the fixed tags `lu-oc15-with` and `lu-oc16-without`, and its `afterAll` removes both by name, whichever checkout built them | `tests/component/m-oc.allow-scripts.test.ts` | **open, ours**, added 2026-10-26 from `BACKLOG.md` `45-1`. It waited for #42, which changed that file and merged on 2026-10-25 with the tags as they were. It meets the cut line: it touches what is not its own |
-| 12 | FR30 and the `liquid` skill say everything in the inbox is judged before anything is loaded, and the start judges the inbox file and then copies a second read of it | `config/liquid/entrypoint.sh`, `docs/FEATURE-liquid-java-extensions.md`, the `liquid` skill | **open, ours**, added 2026-10-26 from `BACKLOG.md` `45-30`: a narrow race, and a security one. The operator chose the repair the same day, the shape `nar-watch.sh` already has: copy, judge the copy, rename it into place. It meets the cut line: a document claims something false |
-| 13 | `.env.example` declares `OPENCLAW_GATEWAY_TOKEN`, and nothing reads it | `.env.example` | **open, ours**, added 2026-10-26 from the carried-over `BACKLOG.md` entry on the OpenClaw CLI, which calls a declared key nothing consumes a promise the contract does not keep. That meets the cut line, and the table below had settled it on 2026-10-17 with two other entries. The operator chose the same day to remove the key; giving the gateway a token would change its authentication model |
+| 11 | ~~`m-oc.allow-scripts` builds under the fixed tags `lu-oc15-with` and `lu-oc16-without`, and its `afterAll` removes both by name, whichever checkout built them~~ | `tests/component/m-oc.allow-scripts.test.ts` | **done on #49, 2026-10-26**: per-run tags with labels, and `A8-36` reads every removal in the tree. Added 2026-10-26 from `BACKLOG.md` `45-1`. It waited for #42, which changed that file and merged on 2026-10-25 with the tags as they were. It meets the cut line: it touches what is not its own |
+| 12 | ~~FR30 and the `liquid` skill say everything in the inbox is judged before anything is loaded, and the start judges the inbox file and then copies a second read of it~~ | `config/liquid/entrypoint.sh`, `docs/FEATURE-liquid-java-extensions.md`, the `liquid` skill | **done on #49, 2026-10-26**: the start judges its own copy, `B2-13`. Added 2026-10-26 from `BACKLOG.md` `45-30`: a narrow race, and a security one. The operator chose the repair the same day, the shape `nar-watch.sh` already has: copy, judge the copy, rename it into place. It meets the cut line: a document claims something false |
+| 13 | ~~`.env.example` declares `OPENCLAW_GATEWAY_TOKEN`, and nothing reads it~~ | `.env.example` | **done on #49, 2026-10-26**: the key is removed, and `OC-79` holds that every key has a reader; it found the four `LIQUID_*` image settings unread as well, and `liquid.sh` reads them now. Added 2026-10-26 from the carried-over `BACKLOG.md` entry on the OpenClaw CLI, which calls a declared key nothing consumes a promise the contract does not keep. That meets the cut line, and the table below had settled it on 2026-10-17 with two other entries. The operator chose the same day to remove the key; giving the gateway a token would change its authentication model |
 
 ## Settled, with the reason, and not raised again
 
@@ -85,8 +85,8 @@ operator decided both.
 
 When items 3 to 13 are done: every pull request of ours waiting on review, nothing waiting on us.
 Review comments then arrive, are worked in, and that is the end of development. *On 2026-10-26 no pull
-request of ours is open, and items 1 to 8 and the first half of 9 are answered on `main`. Open: items
-11 to 13, ours, the operator having chosen for 12 and 13 on 2026-10-26; and the one entry in the table
-above, Timur's. How many pull requests are open is the forge's to say, and
+request of ours is open, and items 1 to 8 and the first half of 9 are answered on `main`. Items 11 to
+13 are answered on #49, the operator having chosen for 12 and 13 on 2026-10-26. Open, once #49 is
+merged: the one entry in the table above, Timur's. How many pull requests are open is the forge's to say, and
 `./scripts/state.sh` asks it.* **This
 file is the only place a new item may be added, and only if it meets the cut line above.**

@@ -39,7 +39,7 @@
  * computed names come from, and tests/verify, which holds hand-run scripts.
  * This file carries those lines and is excluded from the tree by name.
  * The image tags `m-oc.allow-scripts` fixes are left to #42, which changes that
- * file; this holds container names.
+ * file; this holds container names. Since 2026-10-26 A8-36 holds the tags.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';

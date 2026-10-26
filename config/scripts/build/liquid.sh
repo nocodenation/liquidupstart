@@ -29,7 +29,10 @@ SYSTEM_DEPENDENCIES="${SYSTEM_DEPENDENCIES:-}"
 POST_INSTALLATION_COMMANDS="${POST_INSTALLATION_COMMANDS:-}"
 
 # Apply LIQUID_* per-image overrides (add/override) on top of the generic values.
-resolve_image_settings "NIFI"
+# NIFI until 2026-10-26: the rebrand of 2026-06-19 renamed the keys and not this,
+# so an .env from before it may still set NIFI_*, which is said.
+warn_retired_prefix "NIFI" "LIQUID"
+resolve_image_settings "LIQUID"
 
 # Render the Dockerfile from the template, injecting the deps/commands.
 DOCKERFILE="$(mktemp)"

@@ -139,7 +139,9 @@ describe('A0-11 the README section on Java extensions is backed by the configura
     expect(narWatch).toContain('LOAD_DIR="${NIFI_HOME}/nar_extensions"');
     expect(entrypoint).toContain('LOAD_DIR="${NIFI_HOME}/nar_extensions"');
     expect(entrypoint).toContain('for NAR in "$DROP_DIR"/*.nar; do');
-    expect(entrypoint).toContain('cp -v "$NAR" "${LOAD_DIR}/"');
+    // The copy it judged, put in place by name, since 2026-10-26 (B2-13); it was
+    // `cp -v "$NAR" "${LOAD_DIR}/"`.
+    expect(entrypoint).toContain('mv "$PART" "${LOAD_DIR}/${BASE}"');
   });
 
   test('A0-11 and it says that a refused replacement unloads the running version at the next restart', () => {
