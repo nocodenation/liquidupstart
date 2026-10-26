@@ -9,17 +9,45 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-26* has the live picture, *2026-10-25* under it, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-26, later* has the live picture, *2026-10-26, morning* under it, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first seven and the review bodies they point to; the rest of this file is the map and the lessons.
+first eight and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-26: no pull request of ours is open, and `BACKLOG.md` is a queue
+## Where it stands, 2026-10-26, later: #49 carries the last three rows, and waits on Timur
+
+The operator answered one round of questions and chose: repair `45-30`, remove the gateway token's
+key, leave `S3` and the `operator.admin` rule unbuilt, and rebuild Liquid. **#49** carries `FINISH.md`
+rows 11 to 13 and strikes them, with `45-1`, `45-30` and the token entry in `BACKLOG.md`. Head
+`a25af3c`: `./tests/run.sh` from a clean tree **1391 / 28 / 0**, dashboard 32 / 0, no `oom`; it merges
+clean into `main`. `main` carries the four decisions about the backlog in `0bb8bfe`; the rebuild is
+under *Housekeeping*.
+
+**What it found beyond the rows.** OC-79, every `.env.example` key has a reader, found the four
+`LIQUID_*` image settings unread since the rebrand of 2026-06-19, because `liquid.sh` asked for
+`NIFI`; #49 reads `LIQUID` and warns about a leftover `NIFI_*` value. The local review of #49 found
+B5-34 removing a content-addressed tag every checkout shares, row 11's defect without a literal;
+#49 tags it per run. And the B2 cases caught two defects in the row-12 repair before it was
+committed: `rm -f` ending the start under `set -e`, which B2-6 caught, and bash 3.2 keeping the
+quotes of a replacement that bash 5.2 needs, which two B2-12 cases caught and B2-13 now holds.
+
+**Open, and whose.** Timur's: reviewing and merging #49, and the mapping in `45-26`. Ours: `FINISH.md`
+row 10, the closing sweep, once #49 has merged.
+Once #49 is on `main`, rebuild Liquid again for its entrypoint:
+`./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`, which B4-7 confirms.
+
+**Housekeeping.** Liquid was rebuilt from `main` at `0bb8bfe` on 2026-10-26, 08:42Z, with the
+operator's approval; B4-7 4 / 0 against it, and Liquid answered 200. Its first start under #48's
+entrypoint emptied the load path of `b1-noversion-nar-1.0.0.nar`, a bundle that was loaded with no
+copy in the inbox. The Docker VM had 17 422 MB free before the suite. No probe container is left.
+The worktree `../liquidupstart-wt-f` holds #49's branch.
+
+## 2026-10-26, morning: no pull request of ours is open, and `BACKLOG.md` is a queue
 
 Timur merged #47 on 2026-10-26 at 02:04Z. Every pull request of this series is on `main`, and the
 worktrees are removed. The three older pull requests still open are not ours: #5, Timur's privacy
@@ -49,7 +77,8 @@ were done and never struck, and are struck now.
 **Housekeeping.** The running `liquid` container runs an image built on 2026-10-09. The entrypoint,
 `narcheck.py` and `nar-watch.sh` are baked into it, so every change #10, #36, #46 and #48 made to
 `config/liquid/` after that date is missing from the running stack. Rebuilding is the operator's call:
-`./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`.
+`./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`. *Rebuilt later that day,
+as the section above says.*
 
 ## 2026-10-25: #40, #42, #45, #46 and #48 merged; #47 answered and waiting
 
