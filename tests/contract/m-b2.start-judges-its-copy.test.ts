@@ -18,21 +18,30 @@
  *           file while the start is at it.
  * When:     The entrypoint runs once with the sandbox archive in the inbox, and
  *           once with a bundle the check refuses; then twice with the archive and
- *           an `mv` that fails, the second time with an `rm` that fails as well.
+ *           an `mv` that fails, the second time with an `rm` that fails as well;
+ *           and once in `B2-6`'s sandbox, whose load directory is a file, so the
+ *           copy fails before anything is judged; and once with a `cp` that writes
+ *           part of the copy and fails, as a full disk does.
  * Then:     The load directory holds the archive as it was judged, byte for
  *           byte, and no dot-copy; a refused bundle is filed under `refused/`,
  *           leaves no dot-copy, and its reason names the inbox's file, never the
  *           dot-copy. A judged copy that cannot be renamed into place is a failed
  *           deployment, is removed, and NiFi still starts; one that cannot be
- *           removed either is said, and under its dot-name it is not loaded.
- * Covers:   B2-13, FR30
+ *           removed either is said, and under its dot-name it is not loaded. A
+ *           bundle that cannot be copied to be judged is a failed deployment named
+ *           with `cp`'s own error, is not refused, and stays in the inbox, and a
+ *           copy cut off partway is removed.
+ * Covers:   B2-13, FR30, FR31
  * Negative: neither of the texts written over the inbox file is what is judged
  *           or loaded, so an entrypoint that reads the inbox file at either moment
  *           is red; a refused bundle's dot-copy is not left behind; a rename that
- *           fails is counted and cleaned up, and a removal that fails is said.
+ *           fails is counted and cleaned up, and a removal that fails is said; a
+ *           copy that fails is not filed as a refusal.
  * Counterpart: the judged bundle is loaded under its own name, so an entrypoint
  *           that loaded nothing would not pass; the refusal still names the
- *           bundle, as it did when the inbox file was judged.
+ *           bundle, as it did when the inbox file was judged; and a bundle that
+ *           could not be copied stays in the inbox while NiFi still starts, so a
+ *           start that kept bundles by ending early would not pass.
  *
  * Test data: the sandbox archive `b2-probe.nar`, one entry `probe.txt` holding
  * `probe`. The stand-in writes `swapped as the check began` over it before the
@@ -46,6 +55,11 @@
  * `python3` the suite itself found. The failing `mv` and `rm` are `#!/bin/sh` /
  * `exit 1`, first on PATH through the sandbox's stubs, as `B2-12`'s `find` is: a
  * permission bit would not stop root, and a reviewer may run the suite as root.
+ * The copy that fails is `B2-6`'s: `nifi-current/nar_extensions` a regular file
+ * holding `not a directory`, so `cp` fails with ENOTDIR for every user, and the
+ * inbox holds `b2-probe.nar` and `b2-second.nar`. The copy cut off partway is a
+ * `cp` stub that writes `partial` to its second argument, the dot-copy, and exits
+ * 1: ENOTDIR leaves nothing behind, a full disk leaves a truncated file.
  *
  * Dependencies: bun, `python3` for the sandbox archives and the real
  * `narcheck.py`. No docker, no stack.
@@ -54,7 +68,7 @@ import { test, expect, describe, afterAll } from 'bun:test';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
-import { sandbox, runEntrypoint, loadContents, discard, type Sandbox } from '../lib/entrypointfixture';
+import { sandbox, runEntrypoint, loadContents, discard, NAR_NAMES, type Sandbox } from '../lib/entrypointfixture';
 
 const BEGAN = 'swapped as the check began';
 const ENDED = 'swapped as the check ended';
@@ -154,5 +168,51 @@ describe('B2-13 and a dot-copy that cannot be removed either is said', () => {
       said: r.stderr.includes(`${join(sb.load, '.b2-probe.nar.part')} could not be removed; under its dot-name it is not loaded.`),
       started: r.stdout.includes('Starting Liquid...')
     }).toEqual({ code: 0, said: true, started: true });
+  });
+});
+
+describe('B2-13 a bundle that cannot be copied to be judged is not refused, and stays in the inbox', () => {
+  const sb = sandbox({ nars: NAR_NAMES, loadIsFile: true });
+  boxes.push(sb);
+  const r = runEntrypoint(sb);
+  const lines = r.stderr.split('\n');
+  // The line that names the bundle, and the one after it, which is cp's own.
+  const said = (nar: string) => {
+    const at = lines.indexOf(
+      `NAR DEPLOYMENT FAILED: ${join(sb.drop, nar)} did not reach ${sb.load}/: it could not be copied there to be judged`
+    );
+    return { named: at > -1, cp: at > -1 && /^  cp: /.test(lines[at + 1] ?? '') };
+  };
+
+  test('B2-13 the negative: each is a failed deployment named with cp\'s error, and none is refused', () => {
+    expect({
+      code: r.code,
+      probe: said('b2-probe.nar'),
+      second: said('b2-second.nar'),
+      refused: existsSync(join(sb.drop, 'refused'))
+    }).toEqual({ code: 0, probe: { named: true, cp: true }, second: { named: true, cp: true }, refused: false });
+  });
+
+  test('B2-13 the counterpart: both stay in the inbox, and NiFi is started', () => {
+    expect({
+      inbox: readdirSync(sb.drop).sort(),
+      started: r.stdout.includes('Starting Liquid...')
+    }).toEqual({ inbox: ['b2-probe.nar', 'b2-second.nar'], started: true });
+  });
+});
+
+describe('B2-13 a copy cut off partway is removed', () => {
+  const sb = sandbox({ nars: ['b2-probe.nar'] });
+  boxes.push(sb);
+  writeFileSync(join(sb.stubs, 'cp'), '#!/bin/sh\nprintf partial > "$2"\nexit 1\n', { mode: 0o755 });
+  const r = runEntrypoint(sb);
+
+  test('B2-13 the negative: the truncated dot-copy is gone, and the bundle stays in the inbox', () => {
+    expect({
+      code: r.code,
+      load: readdirSync(sb.load),
+      inbox: readdirSync(sb.drop).sort(),
+      failed: r.stderr.includes('it could not be copied there to be judged')
+    }).toEqual({ code: 0, load: [], inbox: ['b2-probe.nar'], failed: true });
   });
 });

@@ -1793,6 +1793,19 @@ no local `user.name` or `user.email` and the identity coming from the environmen
 `Tool error Bash` row in OpenClaw would confirm or refute it. Low value, recorded so the inference is
 not later read as an observation.
 
+---
+
+`SETTLED` **A8-36 reads fixed tags as text, and cannot see a computed one.** Raised by the reviewer
+on #49 on 2026-10-26, as a note, not a request. A8-36 is a text scan over 13 shapes, and it says
+itself that a computed tag is not judged; `B5-34`'s recipe hash was exactly that case, found by
+reading, not by the scan. The computed form would be a guard in `tests/lib/shell.ts`'s `sh()` that
+refuses `docker rmi` and `docker image rm` of any operand not ending in the run's id, which would have
+caught `B5-34` as well. It would have to let flags through, and the removals that take other runs'
+objects on purpose: `sweepAbandonedBuilderObjects` in `tests/lib/builderimage.ts` removes abandoned
+runs' images, and `dropBuilderImage` a tag named by the build context's digest. Found by the local
+review of the answer on #49. Not built: nothing claims something false, since A8-36's block names the
+limit, and after #49 a new finding is recorded rather than worked unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
