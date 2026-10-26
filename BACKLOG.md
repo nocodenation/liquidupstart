@@ -13,9 +13,25 @@ through, `**~~…~~**`, by #N's own diff once #45 is on `main`, or by #45's last
 first**, with a note on what repaired it, as the struck entries below have. One marked *Answered in
 part on #N, open* gets a note from the same diff on what #N repaired and what is left open.
 
+**Each entry opens with its state**, marked on 2026-10-26 against `main` at `4224ff9`, when every pull
+request that touched this file had merged:
+
+- `OPEN` — inside `FINISH.md`'s cut line and not done, or waiting on someone's decision; the marker
+  names whose.
+- `SETTLED` — nothing waits on it: decided against, or left outside the cut line. The reason is in the
+  entry, or in `FINISH.md`'s table of settled entries where that names it, and it is not raised again.
+- `RECORD` — nothing left to do or decide; kept for what it records.
+- `DONE-ON-#N` — closed by #N, the last pull request it needed, which is on `main`; struck.
+
+An entry under a heading of its own carries the marker on the first paragraph below it. A `SETTLED`
+entry that says it was deferred, and gives its reason, with no note of 2026-10-26, was read against
+the cut line that day and its reason stands.
+
+``grep -n '^`OPEN' BACKLOG.md`` lists the queue.
+
 ---
 
-**[45-1]** **The suite's fixture reclaim is built per file, and two tiers still use fixed names.** Found by a
+`OPEN, ours` **[45-1]** **The suite's fixture reclaim is built per file, and two tiers still use fixed names.** Found by a
 local multi-angle review of `fix/fixture-names-per-run` on 2026-10-20, after that branch had already
 been pushed and reported as done. The three defects in the branch's own new code were fixed there;
 these are wider than it and are left here rather than widened into it.
@@ -48,9 +64,13 @@ Recorded 2026-10-20.
 
 **Answered in part on #47; the rest as this note says.** `m-b5.hand-drop`'s two containers are per run and labelled, and `A8-34` finds a fixed container name in each shape its block lists. The image tags `lu-oc15-with` and `lu-oc16-without` wait for #42, which changes that file and holds the open budget decision. The sweep's entry point and a helper that hands back named and labelled objects are outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
+*#42 is on `main` since 2026-10-25 and left both tags as they were, so that half is open, and ours:
+the `afterAll` removes `lu-oc15-with` and `lu-oc16-without` by name, whichever checkout built them.
+`FINISH.md` row 11. 2026-10-26.*
+
 ---
 
-**[45-2]** **~~Two helpers report a harness fault as the product going silent.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Same review.
+`DONE-ON-#47` **[45-2]** **~~Two helpers report a harness fault as the product going silent.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Same review.
 `watchOutput`'s drain in `tests/lib/gitfixture.ts:538` is
 `Promise.all(...).catch(() => undefined).then(() => ended = true)`, so one rejected reader marks the
 whole output ended while the other stream is still delivering, and the swallowed error leaves nothing
@@ -89,7 +109,7 @@ Recorded 2026-10-20.
 
 ---
 
-**[45-3]** **`startDashboard`'s readiness loop has no timeout on its `fetch`.** Same review.
+`SETTLED` **[45-3]** **`startDashboard`'s readiness loop has no timeout on its `fetch`.** Same review.
 `tests/lib/dashboardserver.ts` gained `AbortSignal.timeout` on `get()` for `B1a` of the 2026-10-01
 round, and the identical unbounded `fetch` in the readiness loop twenty lines above was left
 without one — so the 150-attempt budget is not a time budget against a server that accepts a
@@ -112,7 +132,7 @@ Recorded 2026-10-20.
 
 ---
 
-**[45-4]** **~~`runSubnets` hands out adjacent /24s, so one run's `free` is another's `taken`.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Same review. The
+`DONE-ON-#47` **[45-4]** **~~`runSubnets` hands out adjacent /24s, so one run's `free` is another's `taken`.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Same review. The
 docstring concedes the exact clash and claims *"the failure is a loud `docker network create` error
 rather than a wrong verdict"* — true for `taken`, which the run creates, and **false for `free`**,
 which it only probes: the probe create fails on "Pool overlaps" and
@@ -137,7 +157,7 @@ Recorded 2026-10-20.
 
 ---
 
-**[45-5]** **Two age-floor sweeps answer one question in one directory, differently.** Same review.
+`SETTLED` **[45-5]** **Two age-floor sweeps answer one question in one directory, differently.** Same review.
 `tests/lib/builderimage.ts` has `sweepable()` with a 2 h floor and a strict `>`;
 `tests/lib/dashboardserver.ts` now has `staleIds()` with 3 h and `>=`. So a 2.5 h-old labelled
 fixture is litter to one and live to the other, and at exactly the floor `staleIds` sweeps — `A8-31`
@@ -167,9 +187,15 @@ Recorded 2026-10-20.
 
 **Waits for #40**, which redesigns the builder's sweep; the entry is the one to act on once #40 is on `main`. 2026-10-22. *#40 is on `main` since 2026-10-25: one `parseDockerTime` now, in `tests/lib/dockertime.ts`, and still two floors, 2 h strict in `builderimage.ts` and 3 h with `>=` in `dashboardserver.ts`, and two run ids, `BUILDER_RUN_ID` and `RUN_ID`. Open.*
 
+**Settled 2026-10-26**, against `FINISH.md`'s cut line. The two sweeps act on disjoint labels,
+`lu-builder` in `builderimage.ts` and `lu-test` in `dashboardserver.ts`, so each object meets one floor
+only, and the 2.5 h fixture above is litter or live to one of them, never to both. Two implementations
+of one rule claim nothing false and take nothing of each other's. Bringing them together, and
+measuring whether the per-run dashboard tag keeps the disk bounded, are recorded and not raised again.
+
 ---
 
-**[45-6]** **~~`B6-37` is killed for memory on this host while the stack runs, with no second suite.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found on
+`DONE-ON-#46` **[45-6]** **~~`B6-37` is killed for memory on this host while the stack runs, with no second suite.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found on
 2026-10-20 running the suite for `fix/moving-image-tag` (#37), whose diff does not touch
 `tests/unit/m-b6.bundled-jar-read.test.ts` or `config/liquid/narcheck.py` — both are byte-identical to
 `main` there. `./tests/run.sh` on the committed head: 904 pass / 25 skip / **1 fail**, the one being
@@ -209,7 +235,7 @@ Recorded 2026-10-20.
 
 ---
 
-**[45-7]** **"A row about a different case than the test that carries its id" can be checked where a row names
+`SETTLED` **[45-7]** **"A row about a different case than the test that carries its id" can be checked where a row names
 its file, and that is a third of the detail blocks.** Found by a local review of `fix/a16-20-row`
 (#38) on 2026-10-20. That branch and #28 both say the class needs a convention before it can be
 checked, because whether a row's words are about a test's case is a judgement. The reviewer's point
@@ -245,7 +271,7 @@ Recorded 2026-10-20.
 
 ---
 
-**[45-8]** **~~A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:*
+`DONE-ON-#46` **[45-8]** **~~A sixth default-tier file writes into the checkout it was started from: `m-a10.fixture-ceiling`.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:*
 Found by a local review of `fix/default-tier-writes` (#39) on 2026-10-20, which repairs the fifth.
 `tests/unit/m-a10.fixture-ceiling.test.ts:53` runs `mkdirSync(<repoRoot>/volumes/repos/.a10-ceiling-probe)`
 in a `describe` body — at collection, before any hook — and removes it in `afterAll`. Measured with
@@ -280,7 +306,7 @@ each with the no-ceiling counterpart. The checkout's `volumes/repos` is not touc
 
 ---
 
-**[45-9]** **~~The README still says there are no named volumes, and the Java feature runs on two.~~ Repaired on #44, on `main` since 2026-10-23.** *What this entry said while it was open, 2026-10-21 to 2026-10-23:* Found by
+`DONE-ON-#44` **[45-9]** **~~The README still says there are no named volumes, and the Java feature runs on two.~~ Repaired on #44, on `main` since 2026-10-23.** *What this entry said while it was open, 2026-10-21 to 2026-10-23:* Found by
 `/code-review` of `docs/readme-java-extensions` (#44) on 2026-10-21. `README.md` says *"no hidden
 named volumes"* in Features, *"there are no hidden named Docker volumes"* above its reset
 instructions, and *"no named volumes"* in Contributing. Measured on the running stack with
@@ -300,7 +326,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-10]** **~~`nar-build`'s advice for an unresolvable `nifi-api` cannot get past the refusal it is printed
+`DONE-ON-#46` **[45-10]** **~~`nar-build`'s advice for an unresolvable `nifi-api` cannot get past the refusal it is printed
 in.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Same review. When `org.apache.nifi:nifi-utils:<nifi>` resolves no `nifi-api`, `build.sh`
 refuses with *"Add a pom.xml to the source directory naming the nifi-api version you mean —
 nar-build uses it unchanged"*. But `build_command` calls `resolve_target` (`build.sh:553` at `3a2ef0f`, `:781` on `main` at `36fd967`) before
@@ -324,7 +350,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-11]** **~~FR30's removal procedure leaves the inbox copy, and the next start loads it again.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the
+`DONE-ON-#46` **[45-11]** **~~FR30's removal procedure leaves the inbox copy, and the next start loads it again.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the
 second review of #44's repair, on 2026-10-21. FR30 documents taking a bundle out as
 `rm -f /opt/nifi/nifi-current/nar_extensions/<bundle>.nar` inside the container and a restart.
 `config/liquid/entrypoint.sh` judges every `"$DROP_DIR"/*.nar` at each start and runs
@@ -345,7 +371,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-12]** **Whether a compose line is live is decided three ways, and `B1-2` does not decide it at all.**
+`SETTLED` **[45-12]** **Whether a compose line is live is decided three ways, and `B1-2` does not decide it at all.**
 Same review. `tests/contract/m-b1.command-mounted.test.ts` holds that every agent service mounts
 `nar-build` with `serviceBlock(s).includes(MOUNT)`, and a YAML comment holding the mount contains it.
 Measured: with `openclaw-cli`'s mount turned into `# - ./config/agents/bin/nar-build.sh:/usr/local/bin/nar-build:ro`,
@@ -363,7 +389,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-13]** **~~Four calls hand `sh()` a timeout it never had, as its environment.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found while repairing #42 on
+`DONE-ON-#46` **[45-13]** **~~Four calls hand `sh()` a timeout it never had, as its environment.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found while repairing #42 on
 2026-10-21. `sh(argv, cwd, extraEnv)` takes no timeout, and these pass a number in the third place:
 `tests/unit/m-b6.bundled-jar-read.test.ts:107` (`600_000`),
 `tests/integration/m-b6.refusal-injection.test.ts:106` and `:157` (`120_000` each), and
@@ -383,7 +409,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-14]** **~~Two entries say `mutate.sh` catches the A16-19 collision. It cannot see it.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Found by a local
+`DONE-ON-#47` **[45-14]** **~~Two entries say `mutate.sh` catches the A16-19 collision. It cannot see it.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Found by a local
 `/code-review` of `feature/mutation-registry` (#18) on 2026-10-21. Both A16-19 entries under *Open
 findings* rank the collision as not urgent because `mutate.sh` *"refuses a `mustFail` resolving to more
 than one test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer"*.
@@ -409,7 +435,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-15]** **Three of six specifications sign every scenario; the other three leave some rows a bare level, and a generated table has no place for a sign.** Found by a local
+`SETTLED` **[45-15]** **Three of six specifications sign every scenario; the other three leave some rows a bare level, and a generated table has no place for a sign.** Found by a local
 `/code-review` of `feature/mutation-registry` (#18) on 2026-10-21. `CLAUDE.md`, since 2026-08-31:
 *"Every scenario gets its own row, labelled positive or negative."* On #18,
 `docs/TEST-SPEC-mutation-runner.md` signs its overview — 83 rows — while its 123 scenarios sit in a
@@ -455,7 +481,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-16]** **A per-test budget lowers what `TEST_TIMEOUT_MS` was raised to.** Found by a local `/code-review`
+`SETTLED` **[45-16]** **A per-test budget lowers what `TEST_TIMEOUT_MS` was raised to.** Found by a local `/code-review`
 of `fix/fourth-precondition` (#24) on 2026-10-21. `tests/run.sh` passes `--timeout $TEST_TIMEOUT_MS`
 and says the suite's budget is *"raised in one place rather than per test"*. A literal on a test wins
 over it in both directions: measured on bun 1.4.3, a test given `1000` that sleeps 2000 ms times out
@@ -471,9 +497,12 @@ Recorded 2026-10-21.
 
 **Waits for #42**, with the 180 s / 600 s decision there. 2026-10-22. *Decided on #42, by the reviewer on 2026-10-22: 600 s, with the build's own timeout 30 s inside it. The form, a literal that wins over `TEST_TIMEOUT_MS`, is as this entry describes; `600_000` is the larger of the two unless an operator raises the suite's timeout past ten minutes.*
 
+*#42 is on `main` since 2026-10-25 with that figure and that form, so this is settled by the
+reviewer's decision. 2026-10-26.*
+
 ---
 
-**[45-17]** **The cases documented after the fact have rows and no detail blocks.** Found by a local
+`SETTLED` **[45-17]** **The cases documented after the fact have rows and no detail blocks.** Found by a local
 `/code-review` of #24 on 2026-10-21, about `A16-30`, which that branch renumbered from `A16-19`. It is
 right about `A16-30` and the gap is not that row's: *Cases documented after the fact* in
 `docs/TEST-SPEC-git-integration.md` carries eleven rows on `main` at `3a2ef0f` — `A8-27`, `A14-7`,
@@ -489,7 +518,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-18]** **`sh()` lets a missing executable throw, and the preconditions module runs it as it loads.** Found
+`SETTLED` **[45-18]** **`sh()` lets a missing executable throw, and the preconditions module runs it as it loads.** Found
 by the second pass of a local `/code-review` over #24's repair on 2026-10-21. `tests/lib/shell.ts`'s
 `sh()` hands `argv` to `Bun.spawnSync`, which throws `ENOENT` — *"Executable not found in $PATH"* —
 rather than returning a code. `tests/lib/preconditions.ts` computes `IN_GIT_REPO =
@@ -506,9 +535,14 @@ Recorded 2026-10-21.
 
 **Answered in part on #46, on `main` since 2026-10-25**: `inGitRepoAt` answers false on ENOENT, so the module loads without `git` (`SP-6`). `sh()` returning 127 for every caller is still open here. #42 changed `sh()` for its timeout and its signal and left the throw on a missing executable as it was.
 
+*#42 is on `main` since 2026-10-25 and left the throw. Settled 2026-10-26 against the cut line: a
+missing executable stops the call with bun's own message, `Executable not found in $PATH: "<name>"`,
+which names it, and the module this entry found calling `sh()` as it loads answers false since
+`SP-6`.*
+
 ---
 
-**[45-19]** **~~An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found
+`DONE-ON-#46` **[45-19]** **~~An empty `narcheck.py` is a checker that permits everything, and three cases rely on that.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found
 by a local `/code-review` of `fix/narcheck-unavailable` (#36) on 2026-10-21. The gate's read probe is
 `head -c 1`, which exits 0 on an empty file, and `python3` runs an empty file and exits 0 — both
 measured in the builder image. So a checker truncated to nothing, or presented at 0 bytes by a partial
@@ -526,7 +560,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-20]** **~~A check that could not run still reaches the client as a refusal.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the same review of #36.
+`DONE-ON-#46` **[45-20]** **~~A check that could not run still reaches the client as a refusal.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the same review of #36.
 `nar-build` now tells *refused on merit* from *cannot be judged* in its own words, and returns 2 from
 both arms; `config/nar_builder/BuildServer.java` maps 2 to **422** (`case 2 -> 422`, beside 3 → 409,
 4 → 400, anything else 500), so an agent reading the status sees *"your bundle is unprocessable"* for
@@ -541,7 +575,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-21]** **The case-id reader reads fixture source as cases, and only `TR-4` has a way to say so.** Found on
+`SETTLED` **[45-21]** **The case-id reader reads fixture source as cases, and only `TR-4` has a way to say so.** Found on
 2026-10-21 when #18 reached `main` and #28 was merged with it: `TR-4` went red on `A10-14`, carried
 by `tests/unit/m-a10.scan-paths.test.ts` and `tests/integration/m-mu.runner.test.ts`. The second is
 MU-42's fixture spec — source held in a template literal whose column-0 line is
@@ -565,7 +599,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-22]** **Tables that GitHub renders as text, and nothing that checks a table renders.** Found on #17 on
+`SETTLED` **[45-22]** **Tables that GitHub renders as text, and nothing that checks a table renders.** Found on #17 on
 2026-10-21 by the reviewer (N2): a note inserted between two rows of
 `docs/TEST-SPEC-openclaw-2026-9-1.md`'s Suite 1 overview turned every row after it — 88 of them,
 `main`'s `OC-63` to `OC-77` and `SP-2` among them — into literal `| … |` text. Repaired on #17. The
@@ -595,7 +629,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-23]** **~~OC-60's behaviour half passes when the image it needs is absent.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* The case is `N1` on `main`,
+`DONE-ON-#46` **[45-23]** **~~OC-60's behaviour half passes when the image it needs is absent.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* The case is `N1` on `main`,
 `OC-60` from #17 on. `tests/contract/m-oc.bounded-runs.test.ts`, *and the bound really returns,
 rather than blocking past its limit*: when `docker image inspect liquidupstart/openclaw:latest` fails, the test runs
 `expect({ skipped: 'image absent', image }).toEqual({ skipped: 'image absent', image })` and returns —
@@ -611,7 +645,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-24]** **~~OC-62 is red on a Linux host, and its watchdog branch has never run there.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* The case is `N1b` on
+`DONE-ON-#46` **[45-24]** **~~OC-62 is red on a Linux host, and its watchdog branch has never run there.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* The case is `N1b` on
 `main`, `OC-62` from #17 on. `tests/unit/m-oc.bound-without-coreutils.test.ts` takes coreutils away by running the helper under
 `PATH=<scratch dir>:/usr/bin:/bin`, and its first test asserts that `command -v timeout gtimeout` then
 finds neither. On macOS that holds. On Linux `/usr/bin/timeout` is there: in
@@ -628,7 +662,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-25]** **~~OC-61 and OC-3 hold that a forced removal is there, not when it runs — and OC-61 sees two names.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:*
+`DONE-ON-#47` **[45-25]** **~~OC-61 and OC-3 hold that a forced removal is there, not when it runs — and OC-61 sees two names.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:*
 `OC-61` is `N4` on `main`. Measured 2026-10-21 on #17 against `config/scripts/start/openclaw.sh`, each
 mutation by hand:
 
@@ -654,7 +688,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-26]** **Four of the mutation runner's cases trace to no requirement.** `docs/TEST-SPEC-mutation-runner.md`
+`OPEN, Timur's` **[45-26]** **Four of the mutation runner's cases trace to no requirement.** `docs/TEST-SPEC-mutation-runner.md`
 §*Traceability* lists the cases that cover each MU-FR and MU-NFR id. MU-5, MU-11, MU-14 and MU-59 have
 overview rows and appear in no row of that table — measured 2026-10-21 on #17's head by comparing the
 ids in the overview with the ids in the table. MU-5, *a mutation that reddens every test is refused as
@@ -670,7 +704,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-27]** **~~Two faults of the installation still answer with a refusal's status.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the local review of
+`DONE-ON-#46` **[45-27]** **~~Two faults of the installation still answer with a refusal's status.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:* Found by the local review of
 #46 on 2026-10-21, which moved "cannot be judged" off status 2. Two more arms of
 `config/nar_builder/build.sh` return 2, which the server answers with 422, *"your bundle is
 unprocessable"*, though neither is about the bundle: the refusal of a builder whose drop directory the
@@ -690,7 +724,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-28]** **~~The suite passes an inherited `GIT_DIR` to its git commands, and that overrides the ceiling.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:*
+`DONE-ON-#46` **[45-28]** **~~The suite passes an inherited `GIT_DIR` to its git commands, and that overrides the ceiling.~~ Repaired on #46, on `main` since 2026-10-25.** *What this entry said while it was open, until #46:*
 Found by the local review of #46's A10-23 on 2026-10-21. `git()` in `tests/lib/gitfixture.ts` runs git
 with `{ ...process.env, ...FIXTURE_IDENTITY, ...env }`, so `GIT_DIR`, `GIT_WORK_TREE` and
 `GIT_INDEX_FILE` from the environment the suite was started in reach every fixture command, and git
@@ -716,7 +750,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-29]** **~~`CLAUDE.md` gives `nar_extensions` as a directory rewritten on every start, and Liquid's load path is
+`DONE-ON-#48` **[45-29]** **~~`CLAUDE.md` gives `nar_extensions` as a directory rewritten on every start, and Liquid's load path is
 only ever added to.~~ Repaired on #48, which carries this strike.** *What this entry said while it was open,
 2026-10-22 until #48:* Found by the local review of #44 on 2026-10-22. `CLAUDE.md`, under *Persist on
 host disk*: *"A directory a service rewrites from scratch on every start is not state, and the rule
@@ -738,7 +772,7 @@ new one.
 
 ---
 
-**[45-30]** **The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
+`OPEN, the operator's` **[45-30]** **The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
 by the local review of #48 on 2026-10-22. `config/liquid/entrypoint.sh` runs `narcheck.py check
 "$NAR"` on the inbox file and then `cp -v "$NAR" "${LOAD_DIR}/"`, so the bytes judged and the bytes
 loaded are two reads of a file the agents' containers can replace in between: they hold the inbox
@@ -754,7 +788,9 @@ repaired is theirs to say.
 
 ## Open findings
 
-**The mutation runner's bound does not reach a process the spec itself started.** `tests/mutate.sh`
+*Open when they were found; each entry's marker says what it is now.*
+
+`SETTLED` **The mutation runner's bound does not reach a process the spec itself started.** `tests/mutate.sh`
 spawns the spec with `exec` inside its subshell, so the run budget and the TERM handler reach `bun`
 itself — which is finding 2 of the third re-review, and `MU-48` to `MU-51` hold it. What they do not
 reach is a **grandchild**: a spec that starts a process of its own, say a container or a server,
@@ -776,7 +812,7 @@ a file the reader cannot open is worse than no pointer"* — which is exactly wh
 
 ---
 
-**The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
+`SETTLED` **The read limits bound the cost of judging a bundle; they do not make it small.** N6 of the
 2026-10-14 re-review closed the way past them — `zf.read` inflated a member whole before truncating
 it to a declared size, so an entry that *claimed* 1000 bytes cost 1610 MB from an 815,695-byte file,
 and the read is now bounded by what the directory declares. What remains is the honest case: a bundle
@@ -801,7 +837,7 @@ re-review found that by looking, which is the only way a claim like that gets ch
 
 ---
 
-**#10's controls are run by hand and are not in the mutation registry.** Every case on that branch
+`SETTLED` **#10's controls are run by hand and are not in the mutation registry.** Every case on that branch
 earns its green by reverting the code it guards and watching it redden — written up per case in
 `docs/TEST-SPEC-liquid-java-extensions.md` — but the reverts are performed by a person, recorded in
 prose, and nothing re-runs them. #18 builds the runner and lands it with an **empty** registry, which
@@ -812,9 +848,11 @@ Deferred until #18 is merged, because registering mutations against a tool that 
 would have to be rewritten when its format settles. **Also recorded late**, for the same reason as the
 entry above: the reply of 2026-10-13 said it was already here.
 
+*Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
 ---
 
-**~~After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
+`DONE-ON-#25` **~~After a build, the host user cannot delete `volumes/nar_builder/m2` on rootless Docker — and
 `cleanup.sh` has no leg for it.~~** N7(2) of the 2026-10-14 re-review, measured by the reviewer: the
 host directory ends up owned by `101499` with every Maven-written subdirectory `101499:100998`, so
 `rm -rf volumes/nar_builder/m2` as the host user fails with `Permission denied` and the tree has to
@@ -837,7 +875,7 @@ rootless Linux measurement and on `cleanup.sh` having no such leg, which is read
 
 ---
 
-**~~`tests/lib/builderimage.ts` leaks its per-run image on normal exits, not only on killed runs.~~**
+`DONE-ON-#40` **~~`tests/lib/builderimage.ts` leaks its per-run image on normal exits, not only on killed runs.~~**
 *Fixed 2026-10-14 as `B6-39`, the same day it was recorded. Kept because the measurement is the
 interesting part and because the first explanation of it, in the reply to the 2026-10-13 review, was
 wrong.*
@@ -875,7 +913,7 @@ named `sweepableContainers` and four scenarios, and said a version without `-f` 
 removed nothing real. Items 1 to 3 and A2 of the review of #40.*
 ---
 
-**Answered in part 2026-10-20 by #28, and the two halves it does not cover are stated below rather
+`SETTLED` **Answered in part 2026-10-20 by #28, and the two halves it does not cover are stated below rather
 than closed.** `TR-4` is built for the third of the three checks sketched here — *across test files,
 no id on two different titles* — and that is the one this entry called the one that mattered. It was
 written against #27's parent, where the `A8-24`/`A8-25`/`A8-26` collision still existed, so it has
@@ -896,6 +934,10 @@ by design and would need an exemption on its first run. A third class neither ch
 an id specified for one case and later given to another, where the specified case carries a
 different id in its title; `A16-20` was its instance, resolved by renumbering the later case to
 `A16-31`.
+
+*Settled 2026-10-26 against `FINISH.md`'s cut line. Neither of the two checks would find anything
+false today: the first is not buildable as stated, and the second finds `SP-2`, by design. The third
+class needs a convention, as `FINISH.md`'s table says.*
 
 *The original entry follows, as written on 2026-10-12; its "Not built here" is that day's.*
 
@@ -924,7 +966,10 @@ the repair together would leave the check never having been seen to fail against
 collision still exists to catch.
 
 Recorded 2026-10-12.
-**The embedding credential gate speaks for two providers out of six.** `openclaw.sh` can say whether
+
+---
+
+`SETTLED` **The embedding credential gate speaks for two providers out of six.** `openclaw.sh` can say whether
 an embedding backend has a credential for `openai` (is `OPENAI_API_KEY` set) and for `github-copilot`
 (is the harness on). The schema also allows `ollama`, `local`, `gemini` and `lmstudio`, and for those
 the start deliberately writes nothing and leaves `memory.search.enabled` as the operator set it —
@@ -948,8 +993,11 @@ against rather than reasoned about.
 
 Recorded 2026-10-13.
 
+*Settled 2026-10-26 against the cut line: `docs/FEATURE-memory-midterm.md` states the boundary, so
+nothing claims something false, and extending the gate is the operator's to ask for.*
+
 ---
-**~~OC-15 and OC-16 depend on what else the machine is doing.~~** *Answered 2026-10-10, and it took
+`DONE-ON-#42` **~~OC-15 and OC-16 depend on what else the machine is doing.~~** *Answered 2026-10-10, and it took
 two repairs rather than one. The operator chose "a precondition of its own", and measurement showed a
 precondition could not reach the thing that failed: the registry was reachable in both failing runs
 and the machine was busy. `SP-3` asks whether a registry answers and skips them on an offline machine;
@@ -1007,7 +1055,7 @@ the container this `docker run` made, whatever the names do — and says how the
 
 ---
 
-**Two different cases are both called A16-19, and eight A16 ids are in no specification.**
+`DONE-ON-#24` **~~Two different cases are both called A16-19, and eight A16 ids are in no specification.~~ Repaired on #23 and #24, struck 2026-10-26:** the eight ids have rows since #23, merged 2026-10-10, under *Cases documented after the fact*, and the collision moved to `A16-30` on #24, merged 2026-10-21. *What this entry said while it was open:*
 `tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
 space')` and `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so
 there is something to judge')`. They are unrelated. `--gaps` reads ids out of specifications, so a
@@ -1024,7 +1072,7 @@ branch's subject is the suite's preconditions. Recorded 2026-10-09.
 
 ---
 
-**~~Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.~~**
+`DONE-ON-#24` **~~Two unrelated cases are both called A16-19, and renumbering a signed-off id is not mine to do.~~**
 *Resolved 2026-10-10 on the operator's word, and the entry below got one thing wrong that is worth
 keeping visible.*
 
@@ -1055,7 +1103,7 @@ Recorded 2026-10-09, alongside the thirteen ids that *were* documented.
 
 ---
 
-**~~`A16-20` names two cases as well, and the specification had it first.~~** *Resolved 2026-10-22 on
+`DONE-ON-#38` **~~`A16-20` names two cases as well, and the specification had it first.~~** *Resolved 2026-10-22 on
 #38, by the reviewer's decision: the signed-off row keeps `A16-20`, and the lock case moved to
 `A16-31`. Its two rows marked † became plain `A16-31` rows. The original entry follows, as written on
 2026-10-20.*
@@ -1073,7 +1121,7 @@ was specified first and renumbered the later tests. Recorded 2026-10-20.
 
 ---
 
-**The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
+`OPEN, the operator's` **The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
 has two halves, and only one is closed. The nginx vhost no longer admits the LAN — the gateway is
 denied before the subnet is allowed, and B6-21 to B6-23 measure it — but the reviewer's second
 half stands untouched: *"every container on the compose network can POST to
@@ -1093,7 +1141,7 @@ Recorded 2026-10-08, after the decision had been sitting only in the body of com
 
 ---
 
-**~~The runtime values still go into the synthesised pom unvalidated.~~** *Answered 2026-10-09 by
+`DONE-ON-#10` **~~The runtime values still go into the synthesised pom unvalidated.~~** *Answered 2026-10-09 by
 moving the directory, not by validating the values. Kept because how the answer was reached is the
 point: two proposed fixes were measured and both were wrong before the third worked.*
 
@@ -1148,7 +1196,8 @@ a reference whose package is not in the judged set is skipped — reasoned from 
 
 **~~So the decision left is one the operator has to take, and it is not about the pom.~~ Taken, and
 merged.** `480455b`, *"M2 answered by moving the index out of the host’s reach, not by validating
-it"*, went in with #25 on 2026-10-16: `compose.yml` declares `liquid_api` as a volume shared between
+it"*, went in with #25 on 2026-10-16 *(it reached `main` with #10, merged 27 minutes before #25 that day;
+corrected 2026-10-26)*: `compose.yml` declares `liquid_api` as a volume shared between
 `liquid` and `nar_builder`, `volumes/liquid/api` is no longer a host bind, and `CLAUDE.md` carries
 the narrowed rule — *"all **state** lives in browsable `./volumes/` bind mounts; never use named
 Docker volumes **for it**"* — which is the argument the paragraph below records as the one for it.
@@ -1164,7 +1213,7 @@ Recorded 2026-10-08, measured and rewritten 2026-10-09.
 
 ---
 
-**S9's machine dependencies: the moving tag is answered, and B5-15 and B5-16 still reach Maven Central.** The builder image is no longer taken from whatever
+`SETTLED` **S9's machine dependencies: the moving tag is answered, and B5-15 and B5-16 still reach Maven Central.** The builder image is no longer taken from whatever
 `liquidupstart/nar-builder:latest` happens to be on the host: `tests/lib/builderimage.ts` builds it
 from the tree under test and tags it per run, eight files use it, and the specification records the
 change. What is still true of the default-tier M-B5 cases is the rest of the reviewer's sentence:
@@ -1205,9 +1254,13 @@ What is deliberately *not* asserted is that the image agrees with the pinned pai
 the question, and asserting it would make an upstream release red — the defect being removed. And
 `B5-15` and `B5-16` still reach Maven Central, which this does not touch: that half of S9 is open.
 
+**Settled 2026-10-26** against the cut line: the moving tag is answered on #37, merged 2026-10-22, and
+the specification says the builder still reaches Maven Central, under *What this milestone does not
+claim* in M-B5's second review, so nothing claims something false.
+
 ---
 
-**~~Four milestone-A cases read the live installation without saying so, and are red in any bare
+`DONE-ON-#22` **~~Four milestone-A cases read the live installation without saying so, and are red in any bare
 checkout.~~** *Answered by #22, merged into `main` on 2026-10-10 and present on this branch since the
 merge of 2026-10-12.* The repair is `tests/lib/preconditions.ts`: three values a case asks for —
 `STARTED`, `IN_GIT_REPO`, `DASHBOARD_DEPS` — computed from current state rather than a rule somebody
@@ -1271,7 +1324,7 @@ Found while answering D2 and M6 of the 2026-10-01 review. Recorded 2026-10-07.
 
 ---
 
-**~~A fifth file writes into the operator's `volumes/repos` from the default tier.~~ Repaired
+`DONE-ON-#39` **~~A fifth file writes into the operator's `volumes/repos` from the default tier.~~ Repaired
 2026-10-17, corrected 2026-10-20.** `tests/contract/m-a5.nested-clone.test.ts` makes its nested
 repositories in `mkdtemp` hosts of its own, and asserts that the checkout's `volumes/repos` lists the
 same entries after the case as before. Measured both ways with a watcher on the path during the run:
@@ -1296,7 +1349,7 @@ whether it writes; and #22's rewrite of this file had dropped the entry from `ma
 
 ---
 
-**~~The shared Maven cache stays writable by build-time code.~~** *Closed 2026-10-11 on
+`DONE-ON-#25` **~~The shared Maven cache stays writable by build-time code.~~** *Closed 2026-10-11 on
 `feature/builder-seeded-cache`: there is no shared cache. Each build resolves into its own local
 repository, copied from a seed the image build owns, and discarded with the build. FR26 is rewritten,
 FR37 to FR40 are new, M-B7 carries the cases and B1-9 is rewritten because its premise was the mount.
@@ -1407,7 +1460,7 @@ the deploy keys. Recorded 2026-10-04.
 
 ---
 
-**~~Liquid autoloads from the drop directory, and everything this feature says about deployment is
+`DONE-ON-#10` **~~Liquid autoloads from the drop directory, and everything this feature says about deployment is
 built on the assumption that it does not.~~** *Answered 2026-09-14/15. Kept because how the answer
 was reached is the point; FR29, FR30 and FR36 in `docs/FEATURE-liquid-java-extensions.md` carry the
 outcome, and `docs/verification/M-B4-verification.md` the evidence. The decision was not to argue
@@ -1452,7 +1505,7 @@ the third is the first that rests on a measured configuration value rather than 
 behaviour. The right next step is to decide what the deployment path *should* be, not to adjust a
 guard until a check goes green.
 
-**~~Nothing in the stack notices a NAR built against an API Liquid does not provide.~~** *Closed
+`DONE-ON-#10` **~~Nothing in the stack notices a NAR built against an API Liquid does not provide.~~** *Closed
 2026-09-15: `nar-build` now refuses such a bundle before it enters the drop directory, judging it
 against an index of the running distribution's `lib/`. The entrypoint keeps its own check for
 bundles placed by hand. What follows was the case for doing it, and it still reads true.*
@@ -1489,7 +1542,7 @@ renaming it into place, and a refused bundle is moved to `refused/` — a subdir
 does not descend into. Measured on 2026-09-15: placed 06:43:13, loaded 06:43:18, `500` at 06:43:37
 with the real error in `nifi-user.log` and nothing in `nifi-app.log`.
 
-**Nothing sweeps a staging file the builder abandoned.**
+`SETTLED` **Nothing sweeps a staging file the builder abandoned.**
 Introduced by M-B3's own fix on 2026-09-08, and recorded because it is a property the milestone
 changed rather than one it found. `config/nar_builder/build.sh` used to stage into
 `${DROP}/.${base}.part`, a name derived from the artifact alone: two concurrent builds of one source
@@ -1513,7 +1566,10 @@ depends on when you look, which this project has already removed once. The hones
 the builder itself owns, or leaving the directory's hygiene to `cleanup.sh`, and neither is worth
 deciding under a milestone that is otherwise closed.
 
-**A locally built image can belong to another branch, and nothing on this one says so.**
+*Settled 2026-10-26 against the cut line: the leftover is litter, as checked above, and touches
+nothing of anyone else's.*
+
+`SETTLED` **A locally built image can belong to another branch, and nothing on this one says so.**
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
 version takes. The image on the machine, `liquidupstart/openclaw:latest`, was **2026.9.1** — built
@@ -1540,7 +1596,11 @@ OC-20 had built it from a `main`-shaped checkout and it carried no `ssh`, so A3-
 A cheap first move is a start-time line naming what each locally built image was built from —
 `.liquidupstart-version` and the build manifest already exist for exactly this kind of question.
 
-**The toolbox image had no `git` and no `openssh`, and the start script's git step runs inside it.**
+*Settled 2026-10-26 against the cut line: the OpenClaw probe reached `main` with #11 on 2026-09-14,
+and a line for every locally built image is recorded and not raised again.*
+
+`DONE-ON-#9` **~~The toolbox image had no `git` and no `openssh`, and the start script's git step runs inside it.~~
+Repaired on #9, merged 2026-09-30; struck 2026-10-26.**
 *Observed and fixed 2026-09-07. Kept because how it was found is the point.*
 `scripts/linux/start.sh` runs `config/scripts/start/git.sh` at line 139; the dashboard's Build and
 Start buttons run those scripts in the **toolbox** container
@@ -1567,7 +1627,7 @@ dependency fails there too. The same gap existed in `dashboard/Dockerfile` and w
 M-A3 found it in the agent images. Three images, one mistake, three separate discoveries: nothing
 compares what the scripts invoke against what the images carry.
 
-**nginx appends to `X-Forwarded-For` instead of overwriting it.**
+`SETTLED` **nginx appends to `X-Forwarded-For` instead of overwriting it.**
 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` has been in this repository since
 2026-06-01, arriving with the original webdb-playground base, and appears seventeen times: sixteen in
 `config/nginx/templates/nginx.conf` and once in the generator that emits the hundred Liquid ingress
@@ -1586,7 +1646,10 @@ that stands a real cost: overwriting discards the true client address for an ope
 own reverse proxy in front of this stack. Decide it on those two facts, not on the tidiness of the
 directive.
 
-**`cleanup.sh` asks for a sudo password in the middle of a long run, and need not ask at all.**
+*Settled 2026-10-26 against the cut line: nothing has been shown to trust the first entry, and no
+one waits on the decision.*
+
+`SETTLED` **`cleanup.sh` asks for a sudo password in the middle of a long run, and need not ask at all.**
 Noticed during A7-5 on 2026-09-05. Under rootless Docker the host user maps to container root, so
 files the containers wrote belong to subordinate UIDs and the host user cannot remove them; the plain
 `rm -rf volumes/` fails and the script falls back to `sudo`.
@@ -1603,7 +1666,11 @@ minutes in, where it arrives long after the operator has looked away — and whe
 half-cleared directory. `cleanup.sh` lives on `main`, so this is stack work rather than this
 feature's, and is recorded rather than fixed here.
 
-**The Claude CLI install could not fail, and shipped a broken image.** *Fixed 2026-09-05.*
+*Settled 2026-10-26 against the cut line: `cleanup.sh` still falls back to `sudo` as described, and
+says why before it asks.*
+
+`DONE-ON-#11` **~~The Claude CLI install could not fail, and shipped a broken image.~~ Repaired on #11,
+merged 2026-09-14; struck 2026-10-26.** *Fixed 2026-09-05.*
 Found by A7-5's cold start — the first rebuild of `liquidupstart/openclaw:latest` in weeks. The start
 reported `EXIT=0`, printed every URL and password, and OpenClaw could not serve a single request:
 `Error: claude native binary not installed`.
@@ -1632,7 +1699,7 @@ checking something adjacent to it, and the remaining theory was then written dow
 the install is what corrected it, which is the same discipline this project applies everywhere else:
 reproduce before concluding.
 
-**`bun_runner` reports unhealthy with no app, and says nothing about it.** *The first half was fixed by #12 on 2026-09-06; the second half stands.*
+`SETTLED` **`bun_runner` reports unhealthy with no app, and says nothing about it.** *The first half was fixed by #12 on 2026-09-06; the second half stands.*
 Seen during A7-5 on 2026-09-05, thirty minutes into a cold start. Its healthcheck probes port 3000;
 `volumes/bun_app` is empty because the reset removed it, so nothing listens and the container is
 marked unhealthy. Its log is **completely empty** — not a line about starting, about finding no app,
@@ -1664,7 +1731,13 @@ What is left is the silence: the log still says nothing, and the check still inf
 of reading one the entrypoint publishes. That alternative is on `feature/openclaw-2026-9-1`'s
 `BACKLOG.md`, where #12's own record could reach a backlog file.
 
-**The harness models one precondition where there are two.**
+*Settled 2026-10-26. #12 was closed unmerged, and its line reached `main` with #11 on 2026-09-14.
+The silence left is the carried-over entry below on the entrypoint publishing its state, settled with
+it.*
+
+`DONE-ON-#22` **~~The harness models one precondition where there are two.~~ Repaired on #22, merged
+2026-10-10: `STARTED` in `tests/lib/preconditions.ts` skips A3-3, A4-16 and A1-4 with a voice where no
+start has run; struck 2026-10-26.**
 Found during A7-5 on 2026-09-05, in the window between `cleanup.sh` and the first `start.sh`. Four
 cases fail there that `--no-system` does not skip: A3-3 twice (`known_hosts` seeded), A4-16 (the
 shared hook present and executable) and A1-4 (the live workspace). None of them needs the containers
@@ -1681,7 +1754,7 @@ artefacts, with that message, would fix both halves.
 Deferred rather than fixed because it is harness work discovered mid-procedure, and A7-5's own record
 should carry it once the case completes.
 
-**One unreproduced intermittent failure in the full suite.**
+`RECORD` **One unreproduced intermittent failure in the full suite.**
 Recorded in the amendment to A5-3's detail block. The M-A5 fixture failed to build once during the
 operator's second verification run and has not reproduced since — four consecutive runs, the
 aside-and-restore sequence repeated by hand, and the setup executed by hand in the container were all
@@ -1689,7 +1762,7 @@ green. No cause is claimed. Two changes narrowed its surface: the probe director
 run, and the setup's output is asserted before its exit code, so the next occurrence will say what
 git said instead of only `received: 1`.
 
-**The proof of passage is per clone, not per publication.**
+`SETTLED` **The proof of passage is per clone, not per publication.**
 Found by A7-4 on 2026-09-04, and recorded rather than fixed. `git-publish` writes
 `.git/liquidupstart-publish` immediately before pushing and removes it afterwards whether or not the
 push was accepted, and the hook consumes whatever it finds there. With two publications in flight in
@@ -1700,7 +1773,7 @@ publications succeeds is decided by timing. A per-invocation permission (a token
 or the ref and sha it was minted for, checked by the hook) would remove the interaction. It is
 deferred because it changes the mechanism M-A6 signed off, and no requirement asks for it.
 
-**The `git config` error in the A5-9 transcript is inferred, not observed.**
+`RECORD` **The `git config` error in the A5-9 transcript is inferred, not observed.**
 OpenClaw showed `Bash failed: run git config` and the exact argument list is not in the screenshots.
 The reading — a `git config --get` on an unset key, which exits 1 — follows from the clone carrying
 no local `user.name` or `user.email` and the identity coming from the environment. Expanding the
@@ -1712,7 +1785,7 @@ not later read as an observation.
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
 their origin stays readable.*
 
-**~~`down.sh` leaves behind every container the current branch does not declare.~~ Repaired
+`DONE-ON-#41` **~~`down.sh` leaves behind every container the current branch does not declare.~~ Repaired
 2026-10-17.**
 Met on 2026-09-08 while switching from `feature/liquid-java-extensions` to this branch: `nar_builder`
 survived the teardown and kept running alongside a stack that has no such service, because
@@ -1752,7 +1825,7 @@ only the command. And one thing the flag does not do, measured: a one-off `docke
 container of an undeclared service that is still running survives `down --remove-orphans` and keeps
 the network in use.
 
-**The Claude login expires, and the one idea that might remove the expiry is unmeasured.**
+`SETTLED` **The Claude login expires, and the one idea that might remove the expiry is unmeasured.**
 The login lives only in `volumes/_openclaw-claude` and does not survive a reset; the migration cost
 four interactive sign-ins in two days. A long-lived `CLAUDE_CODE_OAUTH_TOKEN` was measured and
 **refused** — the in-process Agent SDK that serves turns on 2026.9.1 does not authenticate from it,
@@ -1766,7 +1839,9 @@ start an unattended path to valid credentials. Nobody has measured that, and the
 inferences about this bundle were both wrong. Measure before building: one command in a throwaway
 container decides it.
 
-**The `bun_runner` entrypoint should publish its own state instead of being inferred.**
+*Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
+`SETTLED` **The `bun_runner` entrypoint should publish its own state instead of being inferred.**
 *The finding itself is not here.* It is on `feature/git-integration` and
 `feature/liquid-java-extensions` as *"`bun_runner` reports unhealthy with no app, and says nothing
 about it"*, found by A7-5 on 2026-09-05 — and **#12 has since fixed the half that made a healthy
@@ -1785,7 +1860,11 @@ runs, `package.json` exists and nothing listens yet, so the check fails. Bounded
 `interval: 30s` — a false negative of the same family, only narrower. And the empty log the original
 finding named is still empty; one line on startup would settle what the state means either way.
 
-**The OpenClaw CLI cannot reach its own gateway here, and `OPENCLAW_GATEWAY_TOKEN` is a dangling
+*Settled 2026-10-26 against the cut line. #12 was closed unmerged; its one line reached `main` with
+#11 on 2026-09-14, and the check skips while `/bun_app/package.json` is absent. What is left is a change
+to the entrypoint and its image.*
+
+`OPEN, ours` **The OpenClaw CLI cannot reach its own gateway here, and `OPENCLAW_GATEWAY_TOKEN` is a dangling
 contract key.** Triggering a turn from inside the container fails both ways: without `--local` the
 gateway answers `unauthorized`, and with `--local` it refuses because a gateway is already running
 for the same state directory. The cause is the same one behind the September `openclaw devices
@@ -1795,11 +1874,17 @@ configured token/password path for machine clients."*
 
 Worked around by stopping the gateway and running `--local` in a throwaway container. Not fixed:
 giving the gateway a token changes the authentication model, which is not what a version migration
-should carry. `.env.example` line 53 already declares `OPENCLAW_GATEWAY_TOKEN` and **nothing reads
+should carry. `.env.example` line 53 (111 on 2026-10-26) already declares `OPENCLAW_GATEWAY_TOKEN` and **nothing reads
 it** — the obvious place to start if this is taken up, and worth removing if it is not, because a
 declared key nothing consumes is a promise the contract does not keep.
 
-**`volumes/_openclaw-claude/skills` cannot be removed, and the cause was not established.**
+*Open 2026-10-26, and ours: the key. By this entry's own words a declared key nothing reads is a
+promise the contract does not keep, which meets the cut line, and on 2026-10-26 nothing outside the
+documents reads it. `FINISH.md` had settled it on 2026-10-17 with two other carried-over entries, and
+is corrected; it is row 13 there. Giving the gateway a token changes its authentication model, which
+stays the operator's to decide.*
+
+`SETTLED` **`volumes/_openclaw-claude/skills` cannot be removed, and the cause was not established.**
 An empty directory that resists deletion by its owner with a writable parent, by `rmdir`, and by `rm`
 inside a privileged container, which answers `Operation not permitted`. It carries no macOS flags and
 is not a mount point.
@@ -1810,7 +1895,9 @@ and the whole class of problem disappears. That is the right shape regardless of
 why establishing the cause is worth little — recorded so that the next person to meet it does not
 spend an hour on it as this run did.
 
-**Two `:latest` fallbacks remain in the `ingest-pdf` plugin build scripts. SETTLED 2026-10-17.**
+*Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
+`SETTLED` **Two `:latest` fallbacks remain in the `ingest-pdf` plugin build scripts. SETTLED 2026-10-17.**
 `${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}`, in scripts neither `build.sh` nor `start.sh`
 invokes. The plugin's bundle is checked in, so rebuilding it to remove a papercut carries more risk
 than the papercut warrants. Every fallback on a path the stack actually walks was removed during the
@@ -1831,7 +1918,7 @@ one line each — `${OPENCLAW_IMAGE:?set it to the image this stack runs}` in pl
 hand-run refuses instead of guessing. Written down rather than done, because doing it means rebuilding
 a checked-in bundle to change a script nothing calls.
 
-**~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
+`DONE-ON-#9` **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
 Suggested in the third review of #11 as an optional improvement to N1 (OC-60 since the 2026-09-30 rename), and deferred here on the
 grounds that the situation justifying it could not be produced. It produced itself two days later: a
 suite run hung fifteen minutes on the N1 (OC-60) case itself, a hand-run of the same command sat attached to
@@ -1845,7 +1932,7 @@ at all, and that without `-k` the start then hangs forever. The lesson is not ab
 **"I cannot reproduce it" is a statement about the attempt, not about the system**, and it is a weak
 reason to defer something whose cost was one flag.
 
-**`HANDOFF.md` mixes two kinds of content, and only one of them ages. HALF DONE 2026-10-17.**
+`SETTLED` **`HANDOFF.md` mixes two kinds of content, and only one of them ages. HALF DONE 2026-10-17.**
 It carries durable project knowledge — the lessons, which four other documents already cite as rules
 (*"`HANDOFF.md` records the general rule"*) — alongside the state of one machine at one moment. The
 second kind goes stale, and because both live in one file, all of it reads as stale. Splitting the
@@ -1869,7 +1956,10 @@ The split itself remains deferred, for the original reason and a sharper one: fo
 handover as the place a rule lives, and #19 carries an older copy of this very file on its branch.
 Moving files under a reviewer mid-review is how a review gets read twice.
 
-**~~The repositories card contradicts the key panel while the start is waiting.~~** *Done
+*Settled 2026-10-26: the half that ages is `scripts/state.sh` on `main` since #43, merged
+2026-10-23, and the split stays deferred, as `FINISH.md` row 9 says.*
+
+`DONE-ON-#9` **~~The repositories card contradicts the key panel while the start is waiting.~~** *Done
 2026-09-17, as M-A12 -- the manifest is written after pass 1 as well, and again at the end.* Kept for
 what it records: the entry below was written as a deferral and built four hours later, which is the
 right order round. The original text:
@@ -1890,7 +1980,7 @@ Deferred on 2026-09-17 rather than done: M-A9 had just been observed end to end,
 4 of #9 were answered, and the reply to the review had been waiting since that morning. The
 contradiction is visible but harmless, and it lasts only as long as a wait does.
 
-**~~A system case did not give the operator's gateway configuration back.~~** *Done 2026-09-17, as
+`DONE-ON-#9` **~~A system case did not give the operator's gateway configuration back.~~** *Done 2026-09-17, as
 M-A11.* `tests/system/m-oc.{codex-plugin,proxy-attribution,device-scopes}.test.ts` write
 `volumes/_openclaw/openclaw.json` and restart the gateway. After a run the file had lost
 `"claude-cli/*"` from `agents.defaults.models` — the entry `openclaw.sh` writes so that the model
@@ -1909,7 +1999,7 @@ so `--system` is now how you ask for it, `--no-system` describes the default, an
 many files it did not run and how to run them.
 
 
-**The start waits on one missing deploy key at a time, and the panel shows it that way.**
+`SETTLED` **The start waits on one missing deploy key at a time, and the panel shows it that way.**
 Proposed by the operator on 2026-09-18, watching the queue: *"die 1. Karte wird zu schnell von der
 2. überdeckt ... vielleicht wäre eine Anordnung als Tabs sinnvoller"*. The immediate complaint is
 fixed -- the panel now stays on the repository that was skipped for five seconds, and the queue
@@ -1942,7 +2032,9 @@ questions have to be answered first -- by the operator, before any case is writt
 
 Recorded 2026-09-18.
 
-**A run killed mid-clone leaves a clone that the next run adopts.**
+*Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
+`SETTLED` **A run killed mid-clone leaves a clone that the next run adopts.**
 M-A15 stops two runs from preparing one repository at the same time, which is what produced a
 dashboard Test reporting a repository as reachable while a start was still trying to clone it. It
 does not cover the leftovers: `git clone` writes `dest/.git` and the remote within 20 ms, so a run
@@ -1960,11 +2052,13 @@ Recorded 2026-09-18, when the lock was built. The window is narrow and needs a r
 the reason it is here is that `docs/FEATURE-git-integration.md` and the test specification both say
 it is, and a document that claims a record must have one.
 
+*Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
 ---
 
 ## Does the mid-term memory remember the right things? — deferred 2026-09-20, with a trigger
 
-**The mechanism is measured and works; the value is unmeasurable until the stack is used.**
+`SETTLED` **The mechanism is measured and works; the value is unmeasurable until the stack is used.**
 `docs/FEATURE-memory-midterm.md` §2.2 has the detail. In short: `memory-core` indexes, ranks, and
 explains its decisions, and promotion into `MEMORY.md` requires an entry to be recalled **three times
 across three distinct queries** within thirty days. This installation has produced one session
@@ -1982,9 +2076,13 @@ under real use makes the thresholds the thing to tune, and they are readable rat
 **A synthetic conversation was considered and refused.** It would answer only what was put into it,
 and this project has enough of those.
 
+*Settled 2026-10-26 against the cut line, since nothing claims something false. The trigger above is
+left for whoever uses OpenClaw in earnest. The fifteen entries this said would drop out unpromoted on
+2026-10-19 were not checked; by its `maxAgeDays=30`, a measurement now starts from fresh use.*
+
 ## `operator.admin` is reachable from any container on the stack network
 
-**Not a defect of the git integration, and not of the pairing recovery either — it predates both.**
+`OPEN, the operator's` **Not a defect of the git integration, and not of the pairing recovery either — it predates both.**
 Raised by the reviewer on 2026-09-28 against #9's base `e33d1e6`, measured live, and recorded here at
 their request. It is a design question, and the answer changes nginx.
 
@@ -2197,7 +2295,7 @@ and the binding coupling added 2026-10-10.
 
 ## The toolbox image does not follow its own Dockerfile
 
-Raised by the reviewer on 2026-09-30 as "not asked for", alongside the blocking finding it belongs to.
+`SETTLED` Raised by the reviewer on 2026-09-30 as "not asked for", alongside the blocking finding it belongs to.
 `update.sh` now removes the toolbox so an update replaces it (A8-27), and the git step refuses before the
 teardown when the tools are missing (A8-24) — but the image still only changes when something removes
 it.
@@ -2213,11 +2311,13 @@ the dashboard's build path, which no case currently drives.
 
 Recorded 2026-09-30.
 
+*Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
 ---
 
 ## ~~A checker that cannot be opened is reported as a bundle that cannot link~~ — repaired
 
-`config/nar_builder/build.sh:776` gates deployment on `[ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]`.
+`DONE-ON-#36` `config/nar_builder/build.sh:776` gates deployment on `[ -f "$NAR_CHECK" ] && [ -f "${LIQUID_INDEX}/lib-classes.txt" ]`.
 Both tests stat. When `narcheck.py` is present but unreadable, the first test passes, `python3 "$NAR_CHECK"`
 fails to open it, the non-zero status is read as a refusal, and the operator is told the bundle *"cannot link
 against the NiFi API the running Liquid loads"* — a verdict about their code that nothing reached. The

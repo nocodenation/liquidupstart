@@ -19,12 +19,36 @@ unless a paragraph carries its own later date. It still says "three features and
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-26: #47 merged, and no pull request of ours is open
+## Where it stands, 2026-10-26: no pull request of ours is open, and `BACKLOG.md` is a queue
 
 Timur merged #47 on 2026-10-26 at 02:04Z. Every pull request of this series is on `main`, and the
-worktrees are removed. What is left is `FINISH.md` rows 1 and 2, which nothing blocks now that no open
-branch touches `BACKLOG.md`, and the three older pull requests that are not ours: #5, Timur's privacy
+worktrees are removed. The three older pull requests still open are not ours: #5, Timur's privacy
 gateway, and #7 and #8, opened from the organisation account by the stack's OpenClaw agent on 2026-08-17.
+
+**`FINISH.md` rows 1 and 2 are done**, on `main`, as documentation only. Every `BACKLOG.md` entry opens
+with `OPEN`, `SETTLED`, `RECORD` or `DONE-ON-#N`, checked against `main`'s tree and the merged pull
+requests, and ``grep -n '^`OPEN' BACKLOG.md`` lists the queue:
+
+- `45-1`, **ours**: `m-oc.allow-scripts`' fixed image tags, now `FINISH.md` row 11. By the 2026-10-22
+  section it was to follow #42's merge, and the 2026-10-25 section's *"Ours: nothing"* missed it.
+- **Ours**, from the carried-over entries: `.env.example` declares `OPENCLAW_GATEWAY_TOKEN` and nothing
+  reads it, now `FINISH.md` row 13. `FINISH.md` had settled it on 2026-10-17; the entry's own words
+  put it inside the cut line.
+- `45-26`, **Timur's**: mapping four mutation-runner cases to their requirements.
+- **The operator's**, three: `45-30`, whether the start-time race is repaired, parked since
+  2026-10-22 and now `FINISH.md` row 12, because either answer makes work for us; `S3`, whether the
+  builder's port gets a shared secret; and the rule for `operator.admin`. `FINISH.md` moved the last
+  two out of its settled table into a new one, *Waiting on someone else*, beside `45-26`.
+
+Fourteen entries that read as open are settled against the cut line, each with a dated note, and six
+whose reason is in `FINISH.md`'s settled table point there. One of the fourteen is `45-5`: the two
+sweeps keep different floors, but they act on disjoint labels, so no object meets both. Four entries
+were done and never struck, and are struck now.
+
+**Housekeeping.** The running `liquid` container runs an image built on 2026-10-09. The entrypoint,
+`narcheck.py` and `nar-watch.sh` are baked into it, so every change #10, #36, #46 and #48 made to
+`config/liquid/` after that date is missing from the running stack. Rebuilding is the operator's call:
+`./config/scripts/build/liquid.sh && docker compose up -d --no-deps liquid`.
 
 ## 2026-10-25: #40, #42, #45, #46 and #48 merged; #47 answered and waiting
 
