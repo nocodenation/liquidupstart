@@ -772,7 +772,7 @@ new one.
 
 ---
 
-`OPEN, the operator's` **[45-30]** **The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
+`OPEN, ours` **[45-30]** **The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
 by the local review of #48 on 2026-10-22. `config/liquid/entrypoint.sh` runs `narcheck.py check
 "$NAR"` on the inbox file and then `cp -v "$NAR" "${LOAD_DIR}/"`, so the bytes judged and the bytes
 loaded are two reads of a file the agents' containers can replace in between: they hold the inbox
@@ -785,6 +785,9 @@ shape: copy to a dot-name in the load directory, judge that, rename it into plac
 
 Recorded 2026-10-22, and open with the operator: a narrow race, and a security one, so whether it is
 repaired is theirs to say.
+
+*No longer open with the operator: they chose the repair on 2026-10-26, `nar-watch.sh`'s shape, as
+above. `FINISH.md` row 12.*
 
 ## Open findings
 
@@ -1121,7 +1124,7 @@ was specified first and renumbered the later tests. Recorded 2026-10-20.
 
 ---
 
-`OPEN, the operator's` **The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
+`SETTLED` **The builder's own port trusts any container on the stack network.** S3 of the 2026-10-01 review
 has two halves, and only one is closed. The nginx vhost no longer admits the LAN — the gateway is
 denied before the subnet is allowed, and B6-21 to B6-23 measure it — but the reviewer's second
 half stands untouched: *"every container on the compose network can POST to
@@ -1138,6 +1141,9 @@ the contract every caller uses.
 
 Until then the honest statement is the one above: on this stack, any container can trigger a build.
 Recorded 2026-10-08, after the decision had been sitting only in the body of commit `03f5620`.
+
+*Settled 2026-10-26 by the operator: not built, as `FINISH.md`'s settled table records. The statement
+above stays the honest one.*
 
 ---
 
@@ -1882,7 +1888,7 @@ declared key nothing consumes is a promise the contract does not keep.
 promise the contract does not keep, which meets the cut line, and on 2026-10-26 nothing outside the
 documents reads it. `FINISH.md` had settled it on 2026-10-17 with two other carried-over entries, and
 is corrected; it is row 13 there. Giving the gateway a token changes its authentication model, which
-stays the operator's to decide.*
+stays the operator's to decide.* *The operator chose removing the key on 2026-10-26.*
 
 `SETTLED` **`volumes/_openclaw-claude/skills` cannot be removed, and the cause was not established.**
 An empty directory that resists deletion by its owner with a writable parent, by `rmdir`, and by `rm`
@@ -2082,7 +2088,7 @@ left for whoever uses OpenClaw in earnest. The fifteen entries this said would d
 
 ## `operator.admin` is reachable from any container on the stack network
 
-`OPEN, the operator's` **Not a defect of the git integration, and not of the pairing recovery either — it predates both.**
+`SETTLED` **Not a defect of the git integration, and not of the pairing recovery either — it predates both.**
 Raised by the reviewer on 2026-09-28 against #9's base `e33d1e6`, measured live, and recorded here at
 their request. It is a design question, and the answer changes nginx.
 
@@ -2290,6 +2296,9 @@ features, and every case for it has to be written against a live gateway.
 
 Recorded 2026-09-30, direction decided the same day, corrected here 2026-10-02, second measurement
 and the binding coupling added 2026-10-10.
+
+*Settled 2026-10-26 by the operator: not built, as `FINISH.md`'s settled table records. This entry
+stays the record of what building it would take.*
 
 ---
 

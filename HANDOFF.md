@@ -29,19 +29,20 @@ gateway, and #7 and #8, opened from the organisation account by the stack's Open
 with `OPEN`, `SETTLED`, `RECORD` or `DONE-ON-#N`, checked against `main`'s tree and the merged pull
 requests, and ``grep -n '^`OPEN' BACKLOG.md`` lists the queue:
 
-- `45-1`, **ours**: `m-oc.allow-scripts`' fixed image tags, now `FINISH.md` row 11. By the 2026-10-22
+- `45-1`, **ours**: `m-oc.allow-scripts`' fixed image tags, `FINISH.md` row 11. By the 2026-10-22
   section it was to follow #42's merge, and the 2026-10-25 section's *"Ours: nothing"* missed it.
+- `45-30`, **ours**: the start-time race, `FINISH.md` row 12, to be repaired.
 - **Ours**, from the carried-over entries: `.env.example` declares `OPENCLAW_GATEWAY_TOKEN` and nothing
-  reads it, now `FINISH.md` row 13. `FINISH.md` had settled it on 2026-10-17; the entry's own words
-  put it inside the cut line.
+  reads it, `FINISH.md` row 13, the key to be removed. `FINISH.md` had settled it on 2026-10-17; the
+  entry's own words put it inside the cut line.
 - `45-26`, **Timur's**: mapping four mutation-runner cases to their requirements.
-- **The operator's**, three: `45-30`, whether the start-time race is repaired, parked since
-  2026-10-22 and now `FINISH.md` row 12, because either answer makes work for us; `S3`, whether the
-  builder's port gets a shared secret; and the rule for `operator.admin`. `FINISH.md` moved the last
-  two out of its settled table into a new one, *Waiting on someone else*, beside `45-26`.
+
+The operator decided four things the same day: `45-30` is repaired, the key is removed, and `S3` and
+the rule for `operator.admin` are not built, both `SETTLED` with that decision.
 
 Fourteen entries that read as open are settled against the cut line, each with a dated note, and six
-whose reason is in `FINISH.md`'s settled table point there. One of the fourteen is `45-5`: the two
+whose reason is in `FINISH.md`'s settled table point there; `S3` and `operator.admin` joined them by
+the operator's decision. One of the fourteen is `45-5`: the two
 sweeps keep different floors, but they act on disjoint labels, so no object meets both. Four entries
 were done and never struck, and are struck now.
 

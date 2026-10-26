@@ -48,8 +48,8 @@ That is the whole rule. A new item joins this list only if it meets it.
 | 9 | Split `HANDOFF.md` into the map and the log — **the half that ages is gone** | `scripts/state.sh`, `HANDOFF.md` | **half done 2026-10-17**, `A17-1`, `A17-2`. The state is a command now, because the narrated copy was wrong twice in two days — once raised by the reviewer as `F4`. The file split stays deferred, as `BACKLOG.md` says: four documents cite the handover, and #19 carries an older copy |
 | 10 | Closing sweep: every pull request carries a message newer than its head, every branch merges clean, no entry left unmarked | — | last, after 11 to 13. On 2026-10-26 no pull request of ours is open and every entry is marked |
 | 11 | `m-oc.allow-scripts` builds under the fixed tags `lu-oc15-with` and `lu-oc16-without`, and its `afterAll` removes both by name, whichever checkout built them | `tests/component/m-oc.allow-scripts.test.ts` | **open, ours**, added 2026-10-26 from `BACKLOG.md` `45-1`. It waited for #42, which changed that file and merged on 2026-10-25 with the tags as they were. It meets the cut line: it touches what is not its own |
-| 12 | FR30 and the `liquid` skill say everything in the inbox is judged before anything is loaded, and the start judges the inbox file and then copies a second read of it | `config/liquid/entrypoint.sh`, `docs/FEATURE-liquid-java-extensions.md`, the `liquid` skill | **waits on the operator**, added 2026-10-26 from `BACKLOG.md` `45-30`: a narrow race, and a security one, so whether it is repaired is the operator's to say. Either answer makes it ours: the repair `nar-watch.sh` already has, or the two sentences corrected. It meets the cut line: a document claims something false |
-| 13 | `.env.example` declares `OPENCLAW_GATEWAY_TOKEN`, and nothing reads it | `.env.example` | **open, ours**, added 2026-10-26 from the carried-over `BACKLOG.md` entry on the OpenClaw CLI, which calls a declared key nothing consumes a promise the contract does not keep. That meets the cut line, and the table below had settled it on 2026-10-17 with two other entries. Either the key goes or something reads it; giving the gateway a token changes its authentication model, which is the operator's |
+| 12 | FR30 and the `liquid` skill say everything in the inbox is judged before anything is loaded, and the start judges the inbox file and then copies a second read of it | `config/liquid/entrypoint.sh`, `docs/FEATURE-liquid-java-extensions.md`, the `liquid` skill | **open, ours**, added 2026-10-26 from `BACKLOG.md` `45-30`: a narrow race, and a security one. The operator chose the repair the same day, the shape `nar-watch.sh` already has: copy, judge the copy, rename it into place. It meets the cut line: a document claims something false |
+| 13 | `.env.example` declares `OPENCLAW_GATEWAY_TOKEN`, and nothing reads it | `.env.example` | **open, ours**, added 2026-10-26 from the carried-over `BACKLOG.md` entry on the OpenClaw CLI, which calls a declared key nothing consumes a promise the contract does not keep. That meets the cut line, and the table below had settled it on 2026-10-17 with two other entries. The operator chose the same day to remove the key; giving the gateway a token would change its authentication model |
 
 ## Settled, with the reason, and not raised again
 
@@ -66,18 +66,19 @@ defect `A1` on #17 was.
 | A run killed mid-clone leaves a clone the next run adopts | Narrow window, never observed, and the record says so |
 | The toolbox image not following its own Dockerfile | Raised by the reviewer as *"not asked for"*; the durable form is a label and it touches the dashboard's build path |
 | `A16-19` naming two cases | #24 renumbered it to `A16-30`, on `main` since 2026-10-21 |
+| `S3` — the builder's port trusts any container on the stack network | **Decided by the operator on 2026-10-26: not built.** A trust boundary, not a defect, and `BACKLOG.md` keeps the honest statement that any container on the stack can trigger a build |
+| The `operator.admin` rule | **Decided by the operator on 2026-10-26: not built.** The direction is specified and reviewed on #15, merged 2026-10-20, and `BACKLOG.md` keeps what building the rule would take |
 | Two `:latest` fallbacks in the `ingest-pdf` build scripts | **Added to this table on 2026-10-17, from the work list.** Measured: nothing in the repository invokes either script, the bundles are checked in, and the fallback does not meet the cut line — it claims nothing and touches nothing of anyone else's. The measurement did sharpen the finding, and it is in `BACKLOG.md`: the stack's gateway is built `FROM …openclaw:2026.9.1`, pinned, so a hand-run build with the variable unset builds against **a different OpenClaw than the stack runs**. The remedy is one line per script — `${OPENCLAW_IMAGE:?…}` instead of a default — for whoever next edits them |
 | N6's residual: 764 MB from a 1.7 KB bundle | Moved here from the work list on 2026-10-17, against the cut line: `docs/FEATURE-liquid-java-extensions.md` §2, FR36, already states it, so nothing claims anything false. The reasoning is in `BACKLOG.md`. Raise it by asking |
 
 ## Waiting on someone else, with nothing of ours open
 
-Moved out of the table above on 2026-10-26, when `BACKLOG.md` was marked: each waits on a decision, so
-it is `OPEN` there, and nothing of ours is open on it until that decision is taken.
+Each waits on someone else's decision or work, so it is `OPEN` in `BACKLOG.md`, and nothing of ours is
+open on it until that is done. `S3` and the `operator.admin` rule stood here for part of 2026-10-26, until the
+operator decided both.
 
 | Entry | Whose | What it waits on |
 |---|---|---|
-| `S3` — the builder's port trusts any container on the stack network | the operator's | A trust boundary, not a defect: whether the port gets a shared secret. It was to go with the pairing work on #15, which merged on 2026-10-20 without it |
-| The `operator.admin` rule | the operator's | The direction is specified and reviewed on #15, merged 2026-10-20; the rule that fits the stack is the operator's decision, and the entry says it is open |
 | `45-26` — four mutation-runner cases trace to no requirement | Timur's | The mapping is the reviewer's, made case by case on #18 |
 
 ## What finishing means
@@ -85,7 +86,7 @@ it is `OPEN` there, and nothing of ours is open on it until that decision is tak
 When items 3 to 13 are done: every pull request of ours waiting on review, nothing waiting on us.
 Review comments then arrive, are worked in, and that is the end of development. *On 2026-10-26 no pull
 request of ours is open, and items 1 to 8 and the first half of 9 are answered on `main`. Open: items
-11 and 13, ours; item 12, which waits on the operator and is ours after; and the three entries in the
-table above. How many pull requests are open is the forge's to say, and
+11 to 13, ours, the operator having chosen for 12 and 13 on 2026-10-26; and the one entry in the table
+above, Timur's. How many pull requests are open is the forge's to say, and
 `./scripts/state.sh` asks it.* **This
 file is the only place a new item may be added, and only if it meets the cut line above.**
