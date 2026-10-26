@@ -46,11 +46,11 @@ in it.
 
 Recorded 2026-10-20.
 
-**Answered in part on #47, open, 2026-10-22.** `m-b5.hand-drop`'s two containers are per run and labelled, and `A8-34` finds a fixed container name anywhere in the tests. The image tags `lu-oc15-with` and `lu-oc16-without` wait for #42, which changes that file and holds the open budget decision. The sweep's entry point and a helper that hands back named and labelled objects are outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+**Answered in part on #47; the rest as this note says.** `m-b5.hand-drop`'s two containers are per run and labelled, and `A8-34` finds a fixed container name in each shape its block lists. The image tags `lu-oc15-with` and `lu-oc16-without` wait for #42, which changes that file and holds the open budget decision. The sweep's entry point and a helper that hands back named and labelled objects are outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
-**[45-2]** **Two helpers report a harness fault as the product going silent.** Same review.
+**[45-2]** **~~Two helpers report a harness fault as the product going silent.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Same review.
 `watchOutput`'s drain in `tests/lib/gitfixture.ts:538` is
 `Promise.all(...).catch(() => undefined).then(() => ended = true)`, so one rejected reader marks the
 whole output ended while the other stream is still delivering, and the swallowed error leaves nothing
@@ -85,7 +85,7 @@ into files under review.
 
 Recorded 2026-10-20.
 
-**Answered on #47, open, 2026-10-22**: a reader that fails is reported as the harness's, by `until()` and `finished()`, each stream has its own decoder, a finished run is refused, and `awaitFile` reads once. `A16-32`. A `tsconfig` for `tests/` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+**Repaired on #47**: a reader that fails is reported as the harness's, by `until()` and `finished()`, each stream has its own decoder, a finished run is refused, and `awaitFile` reads once. `A16-32`. A `tsconfig` for `tests/` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
@@ -112,7 +112,7 @@ Recorded 2026-10-20.
 
 ---
 
-**[45-4]** **`runSubnets` hands out adjacent /24s, so one run's `free` is another's `taken`.** Same review. The
+**[45-4]** **~~`runSubnets` hands out adjacent /24s, so one run's `free` is another's `taken`.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Same review. The
 docstring concedes the exact clash and claims *"the failure is a loud `docker network create` error
 rather than a wrong verdict"* — true for `taken`, which the run creates, and **false for `free`**,
 which it only probes: the probe create fails on "Pool overlaps" and
@@ -133,7 +133,7 @@ real `start.sh`, reports a probe the other process is about to remove.
 
 Recorded 2026-10-20.
 
-**Answered on #47, open, 2026-10-22**: a pair starts on an even third octet, so two pairs are the same or apart, which makes the comment's promise true; `A8-35`, and the comment's count is 100 x 127. The host-global probe assertion is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again: the probe name is the product's.
+**Repaired on #47**: a pair starts on an even third octet, so two pairs are the same or apart, which makes the comment's promise true; `A8-35`, and the comment's count is 100 x 127. The host-global probe assertion is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again: the probe name is the product's.
 
 ---
 
@@ -241,7 +241,7 @@ branch it was found from.
 
 Recorded 2026-10-20.
 
-**Answered in part on #47, open, 2026-10-22**: the stale `OC-56 / OC-57 / OC-58 / OC-59` heading, the one real finding, no longer lists OC-59 against files that do not carry it. The check itself is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+**Answered in part on #47; the rest as this note says**: the stale `OC-56 / OC-57 / OC-58 / OC-59` heading, the one real finding, no longer lists OC-59 against files that do not carry it. The check itself is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
@@ -383,7 +383,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-14]** **Two entries say `mutate.sh` catches the A16-19 collision. It cannot see it.** Found by a local
+**[45-14]** **~~Two entries say `mutate.sh` catches the A16-19 collision. It cannot see it.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:* Found by a local
 `/code-review` of `feature/mutation-registry` (#18) on 2026-10-21. Both A16-19 entries under *Open
 findings* rank the collision as not urgent because `mutate.sh` *"refuses a `mustFail` resolving to more
 than one test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer"*.
@@ -405,7 +405,7 @@ conflict made on purpose.
 
 Recorded 2026-10-21.
 
-**Answered on #47, open, 2026-10-22**: both sentences carry a dated correction that names `TR-4` as what sees the collision.
+**Repaired on #47**: both sentences carry a dated correction that names `TR-4` as what sees the collision.
 
 ---
 
@@ -451,7 +451,7 @@ one branch's correction round.
 
 Recorded 2026-10-21.
 
-**Answered in part on #47, open, 2026-10-22**: MU-21, MU-25, MU-50 and MU-53 have a positive row for their counterparts, and MU-50's `010` case its own row. Signing every specification, and where a generated table keeps its sign, is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+**Answered in part on #47; the rest as this note says**: MU-21, MU-25, MU-50 and MU-53 have a positive row for their counterparts, and MU-50's `010` case its own row. Signing every specification, and where a generated table keeps its sign, is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
@@ -591,7 +591,7 @@ above, which are not that branch's; after #24 it would be red for the two instru
 
 Recorded 2026-10-21.
 
-**Answered in part on #47, open, 2026-10-22**: the two instruction files render their table. A contract case over every tracked `*.md` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
+**Answered in part on #47; the rest as this note says**: the two instruction files render their table. A contract case over every tracked `*.md` is outside `FINISH.md`'s cut line of 2026-10-17 — nothing in it claims something false or touches what is not its own — so recorded and not raised again.
 
 ---
 
@@ -628,7 +628,7 @@ Recorded 2026-10-21.
 
 ---
 
-**[45-25]** **OC-61 and OC-3 hold that a forced removal is there, not when it runs — and OC-61 sees two names.**
+**[45-25]** **~~OC-61 and OC-3 hold that a forced removal is there, not when it runs — and OC-61 sees two names.~~ Repaired on #47, which carries this strike.** *What this entry said while it was open, until #47:*
 `OC-61` is `N4` on `main`. Measured 2026-10-21 on #17 against `config/scripts/start/openclaw.sh`, each
 mutation by hand:
 
@@ -650,7 +650,7 @@ as a limit; the tests are older than that branch.
 
 Recorded 2026-10-21.
 
-**Answered on #47, open, 2026-10-22**: `OC-78` drives each bounded helper to expiry against a container that ignores the signal, and OC-61 reads every run named by a quoted variable, `$_mig` included.
+**Repaired on #47**: `OC-78` drives each bounded helper to expiry against a container that ignores the signal, and OC-61 reads every run named by a quoted variable, `$_mig` included; and OC-61 reads, for every named run, that its removal runs on that run's own failure, the migration's `_mrc` included, which OC-78 does not drive.
 
 ---
 
@@ -1011,9 +1011,11 @@ the container this `docker run` made, whatever the names do — and says how the
 `tests/component/m-a16.skip-panel.test.ts` has `describe('A16-19 skip-all says it too, with the
 space')` and `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks test files, so
 there is something to judge')`. They are unrelated. `--gaps` reads ids out of specifications, so a
-registry entry naming A16-19 would be ambiguous in exactly the way #18's own finding 1 describes --
-and `mutate.sh` refuses a `mustFail` that resolves to more than one test, so the collision would
-surface as a refusal rather than a wrong answer. That is the good case; the bad one is a reader.
+registry entry naming A16-19 would be ambiguous in exactly the way #18's own finding 1 describes.
+*Corrected 2026-10-22: this went on to say that `mutate.sh` refuses such an entry, so the collision
+would surface as a refusal. It cannot see it: an entry names one spec file and the runner reads only
+that file's record, and `mustFail` is a test title, not an id. Measured on #18's head and recorded on
+#45. What does see one id on two titles across files is `TR-4`.*
 
 Found alongside: the A16 tests run to **A16-29** while `docs/TEST-SPEC-git-integration.md` documents
 only to **A16-20**, so eight ids have no row and `--gaps` cannot see them. Both were reported during
@@ -1043,9 +1045,9 @@ space')`; `tests/contract/m-a16.text-only.test.ts` has `test('A16-19 git tracks 
 is something to judge')`. They share nothing but the number.
 
 `TR-1` does not catch it, by construction: both resolve to a declared row, which is all that case
-asserts. What does catch it is `mutate.sh`, which refuses a `mustFail` resolving to more than one
-test -- so a registry entry naming A16-19 surfaces as a refusal rather than a wrong answer. That is
-the good failure mode, and it is why this is recorded rather than urgent.
+asserts. *Corrected 2026-10-22: this said `mutate.sh` catches it and called that the good failure
+mode, the reason the collision could wait. It cannot see it, as the entry above now says; `TR-4`
+does.*
 
 The row in `docs/TEST-SPEC-git-integration.md` describes the `text-only` one. Whichever is renumbered,
 its id moves in a signed-off specification and in a test title at once, which is an operator decision.

@@ -131,18 +131,46 @@ describe('OC-61 a named container is removed when its run does not end by itself
     // `--rm` fires on container exit, which is precisely what does not happen
     // when the bound expires. Declaring rc and cname without using them — which
     // is what the previous round did — looks like the pattern and is not it.
+    // Any variable that is the whole quoted value, as the script writes them, and
+    // `docker compose run` too: the scan read `name` and `cname` only, so the
+    // state migration's `--name "$_mig"` was outside it and its removal replaced
+    // by `true` left this green (#45, 2026-10-21). The removal has to name the
+    // same container the run did.
     const named = lines
-      .map((text, i) => ({ line: i + 1, text }))
-      .filter(({ text }) => /docker run .*--name "\$\{?c?name\}?"/.test(text));
-    expect(named.length).toBeGreaterThan(2);
+      .map((text, i) => ({ line: i + 1, text, v: text.match(/docker (?:compose )?run .*--name "\$\{?(\w+)\}?"/)?.[1] }))
+      .filter((r): r is { line: number; text: string; v: string } => !!r.v && !/^\s*#/.test(r.text));
+    const vars = new Set(named.map((r) => r.v));
+    expect({ count: named.length >= 4, missing: ['_mig', 'cname', 'name'].filter((v) => !vars.has(v)) }).toEqual({
+      count: true,
+      missing: []
+    });
 
     const offenders = named
-      .filter(({ line }) => {
+      .filter(({ line, v }) => {
         const window = lines.slice(line - 1, line + 14).join('\n');
-        return !/docker rm -f "\$\{?c?name\}?"/.test(window);
+        return !new RegExp(`docker rm -f "\\$\\{?${v}\\}?"`).test(window);
       })
       .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
     expect(offenders).toEqual([]);
+  });
+
+  test('and each removal runs on the failure of its own run, the state migration included', () => {
+    // The removal being there is not enough: inverted, it runs only after a run
+    // that succeeded. OC-78 drives that for the three helpers; the migration's
+    // `_mrc` was held by nothing, 15 / 0 with it inverted (review of #47, item 2).
+    // Read per run: the variable `|| <v>=$?` sets after it, and the removal of the
+    // run's own name guarded by that variable being non-zero.
+    const named = lines
+      .map((text, i) => ({ line: i + 1, text, v: text.match(/docker (?:compose )?run .*--name "\$\{?(\w+)\}?"/)?.[1] }))
+      .filter((r): r is { line: number; text: string; v: string } => !!r.v && !/^\s*#/.test(r.text));
+    const offenders = named
+      .filter(({ line, v }) => {
+        const window = lines.slice(line - 1, line + 14).join('\n');
+        const status = window.match(/\|\| (\w+)=\$\?/)?.[1];
+        return !status || !new RegExp(`if \\(\\( ${status} != 0 \\)\\); then docker rm -f "\\$\\{?${v}\\}?"`).test(window);
+      })
+      .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
+    expect({ runs: named.length >= 4, offenders }).toEqual({ runs: true, offenders: [] });
   });
 
   test('and no helper declares rc or cname without using them', () => {

@@ -2455,6 +2455,11 @@ render, on a page that must answer while the stack is down — so it is recorded
 | **A8-32** | **negative** | …and an answer that is not a time, including the **bare date** the old reader produced, is no time at all | A bare date parses, to midnight, which is why the defect was silent |
 | **A8-33** | positive | An id is ours whichever way docker spells it — short, long, or `sha256:`-prefixed | The own-run exemption could not fire in production |
 | **A8-33** | **negative** | …and another run's id is not ours, so the exemption does not swallow everything | Otherwise the sweep takes nothing |
+| **A8-34** | Contract **negative** | No test starts a container under a fixed name: none in the tree, and in a fixture every fixed name is found, in each of the shapes the detail block lists, a wrapped argument and a backtick constant among them | *2026-10-22.* `m-b5.hand-drop` started `lu-b5-live` and `lu-b5-boot` by name, so a second checkout removed the first one's Liquid half an hour in, and it read as a NAR loader timeout |
+| **A8-34** | positive | …while a name a run computes, `containerName()` or one carrying `RUN_ID`, directly or through a constant, is not, and neither is prose | Without it, a search that matched every `--name` would pass the tree only once nothing started a container |
+| **A8-35** | Unit positive (premise) | The ids are twenty thousand different ones, of all 36 base-36 characters | Without it, a sequence that repeated would test far fewer runs than it says |
+| **A8-35** | Unit **negative** | No run's free subnet is another run's taken one | *2026-10-22.* Pairs started on any third octet, so a run one above another took its `free`, and the probe of a free range read as the preflight refusing it |
+| **A8-35** | positive | …while every pair stays a taken /24 and the one after it, inside 10.128 to 10.227, and `runSubnets` is this run's | So the clash cannot be avoided by handing out nonsense |
 |  |  |  |  |
 | *A8-28 to A8-30 were `A8-24`, `A8-25` and `A8-26` until 2026-10-13* | | | Three ids that already belonged to three other cases — `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. The whole file was using them and **none of its own cases had a row**. `TR-1` passed throughout, because the ids *are* declared, by those other cases |
 
@@ -2785,6 +2790,36 @@ drive it, which is a thing worth knowing before reaching for one.
 | **What is still not covered** | That `inspect` answers at all for a given id. A row it does not answer for is simply absent from the record, and an absent row is never swept — which is the safe direction, and is the one claim of this kind that survives. |
 | **Implemented by** | `tests/unit/m-a8.stale-sweep.test.ts`. |
 | **Covers** | A8-31, A8-32, A8-33, **FR12**, **U7** — the suite's own fixtures are governed from one place, which is what `A4-13` asks of the agents' hooks. |
+
+##### A8-34 — every container a test starts carries a name of its run
+
+| | |
+|---|---|
+| **Premise** | `A2` of the 2026-10-01 review measured two checkouts destroying each other's fixtures through fixed names, and the default and integration tiers moved to `containerName()` and `fixtureLabels()`. The system tier did not: `m-b5.hand-drop` ran `docker rm -f lu-b5-live` and then `docker run -d --name lu-b5-live`, and the same for `lu-b5-boot`, inside a `beforeAll` of 1 800 000 ms with a NiFi boot of up to 400 s. Found by a local review on 2026-10-20 and recorded on #45. The rule was a convention to remember, and this is it computed. |
+| **Component** | Every `*.test.ts` under `tests/`, read as text; and `m-b5.hand-drop`, whose two containers are now `containerName('lu-b5-live')` and `containerName('lu-b5-boot')` and carry `fixtureLabels()`. |
+| **Steps** | Blank each file's comment lines, keeping its line count, and search the rest as one text for a container name written into it, so an argument a formatter wrapped onto the next line is read: `'--name', 'x'` or `` '--name', `x` `` in an argument list, `--name x`, `--name "x"`, `--name 'x'` or `--name=x` in a command line, or `'--name', X` where the file holds `const X = 'x'`, in any of the three quotes. Each match is reported at the line of its offset. Then the same search over a fixture tree. |
+| **Test data, both sides** | The fixture `integration/m-zz.names.test.ts`: a header line `* a header naming '--name', 'lu-prose'`; `sh(['docker', 'run', '--name', 'lu-fixed', IMAGE]);`; `` sh(['sh', '-c', `docker run --name lu-shell ${IMAGE}`]); ``; `sh(['docker', 'run', '--name', containerName('lu-x'), IMAGE]);`; `` sh(['docker', 'run', '--name', `lu-x-${RUN_ID}`, IMAGE]); ``; `const KEPT = 'lu-kept';` with `'--name', KEPT`; `const RAN = containerName('lu-ran');` with `'--name', RAN`; and the command lines `docker run --name "lu-dq" img`, `docker run --name 'lu-sq' img` and `docker run --name=lu-eq img`, and `` '--name', `lu-tick` ``. The test file carries these lines itself and excludes itself by name. Not read: `tests/lib`, where the computed names come from, and `tests/verify`, which holds hand-run scripts. Since 2026-10-23 also `sh(['docker', 'run', '--name',` with `'lu-wrap', IMAGE]);` on the next line, and `` const TICK = `lu-tick-const`; `` with `sh(['docker', 'run', '--name', TICK, IMAGE]);`. |
+| **Expected** | Nothing in the tree. In the fixture, exactly `lu-fixed`, `lu-shell`, `lu-kept`, `lu-dq`, `lu-sq`, `lu-eq`, `lu-tick`, `lu-wrap` and `lu-tick-const`, each on its line. |
+| **Dependencies** | bun only: it reads `tests/` as text. |
+| **What it found** | Before the change, at `527a426`: `system/m-b5.hand-drop.test.ts:122 lu-b5-live` and `:135 lu-b5-boot`, and no other; on `main` since #37 the lines are `:127` and `:140`, and that is what the scan reports. *2026-10-23, A1 of the review of #47:* a name wrapped onto the next line and a constant in backticks went unseen, each measured with `hand-drop` changed that way, 2 / 0; with the search over the whole text both are red. |
+| **What is deliberately not here** | The fixed image tags `lu-oc15-with` and `lu-oc16-without` in `m-oc.allow-scripts`, the same defect for images. #42 changes that file. |
+| **Covers** | A8-34, the suite's own fixtures as `A8-31` has them. |
+| **Implemented by** | `tests/contract/m-a8.run-names.test.ts`. |
+
+##### A8-35 — two runs' subnet pairs are the same or apart, never neighbours
+
+| | |
+|---|---|
+| **Premise** | `runSubnets` gives each run a `taken` /24 it creates and a `free` /24 it only probes, the next one up. It started a pair on any third octet, so a run one above another created the other's `free`, and that run's probe failed on "Pool overlaps" and `m-oc.subnet-preflight` read it as the preflight refusing a free range. Its comment promised *"a loud `docker network create` error rather than a wrong verdict"*. Recomputed on #45 on 2026-10-21: exact clash 0.0039%, neighbour clash 0.0079%, so the case the comment denied was the likelier one. |
+| **Component** | `subnetsFor` in `tests/lib/dashboardserver.ts`, the choice as a function of the run id; `runSubnets` is it applied to `RUN_ID`. A pair now starts on an even third octet. |
+| **Steps** | Compute the pair for 20 000 ids, and compare every `free` with every `taken`. Check each pair's shape and range. Compare `runSubnets()` with `subnetsFor(RUN_ID)`. |
+| **Test data** | 20 000 different ids of `RUN_ID`'s shape, `<pid>-<six base-36 characters>`, from a fixed linear congruential sequence: seed `20261022`, multiplier `1103515245`, increment `12345`, modulus 2^31, computed in BigInt and read from bit 15 up, so 0 to 65535, and pids 1000 to 66535. *The first version computed it in JS numbers, which round past 2^53: the sequence fell into a cycle and gave 11 274 distinct ids of 13 characters. Found by the local review.* |
+| **Expected** | No `free` among the `taken`. Every pair `10.a.b.0/24` and `10.a.(b+1).0/24` with `a` from 128 to 227. `runSubnets()` equal to `subnetsFor(RUN_ID)`. |
+| **What it found** | With the old start, `b` from 0 to 254, the negative is red over these ids: 7474 of their free ranges are another id's taken one. |
+| **What is deliberately not here** | The host-global assertion in `m-oc.subnet-preflight` over every `lu-subnet-probe-` network, which a concurrent run or a real `start.sh` can trip with a probe it is about to remove. The name is composed by `start.sh`, so the test cannot narrow it to its own; recorded on #45 and left outside this round. |
+| **Dependencies** | bun only. |
+| **Covers** | A8-35, the suite's own fixtures as `A8-31` has them. |
+| **Implemented by** | `tests/unit/m-a8.run-subnets.test.ts`. |
 
 ##### A8-28 / A8-29 / A8-30 — the tools the git step needs, and a setup that must not be mistaken for the product
 
@@ -3520,6 +3555,38 @@ set, and as with `OC-40` and `OC-42` the id stays with the case it was specified
 | **What the instrument got wrong, 2026-10-02** | Three cases here waited on the clock and read the result afterwards. A16-11 slept 900ms and read `locks/<slug>/pid`: the holder lands after about 250ms idle and 1047 to 1342ms with eight starts at once, so eight of eight concurrent runs read an empty file and reported the identity as missing. A16-31's second case (A16-20 then) ran the start script inside bun's default 5s budget and timed out at 6055ms in all eight. And A16-27 released the lock after 3000ms, then asserted that 3000ms had passed — which its own sleep guarantees: with `lu_take_lock_waiting` removed from `git.sh` and the release brought forward, all four cases in that file passed. Each now waits on its subject — the holder on disk, the line the run prints — and the five cases that run the script carry `START_SCRIPT_BUDGET`. Eight concurrent runs of the three files: 22 / 0 each. |
 | **What it leaves uncovered** | The crossing itself, which needs a waiting start and a Test in a different container at the same moment. Held as A16-M1, a documented manual walk, by the operator's decision of 2026-09-21 rather than by a system-tier case that writes into `volumes/` on this machine. Walked 2026-09-22 on both paths: toolbox → dashboard from the dashboard's Start button, and host → dashboard from a terminal. |
 | **Covers** | Findings 1 to 6 of 2026-09-21, FR3, FR11, NFR1, U1, U2, U11. |
+
+#### A16-32 — the helpers the lock cases wait with report their own faults
+
+*Written 2026-10-22, with the case, and numbered A16-32: A16-31 is the lock case of #38, renumbered from A16-20 by the reviewer's decision of 2026-10-21.* `watchOutput` and `awaitFile` in `tests/lib/gitfixture.ts` are how
+A15-1, A16-11 and A16-27 wait for a running `git.sh`. Found by a local review of #19 on 2026-10-20 and
+recorded on #45.
+
+| Case | Level | Polarity | What it proves |
+|---|---|---|---|
+| A16-32 | Unit | **negative** | A reader that fails is the harness's fault: a line still to come on the other stream is found |
+| A16-32 | Unit | **negative** | …and when it never comes, the failure is reported as the harness's, with what was read before it |
+| A16-32 | Unit | **negative** | …and `finished()` reports it too, rather than handing back what it read as the whole |
+| A16-32 | Unit | **negative** | …and so does `until()` when the other stream stays open past its deadline |
+| A16-32 | Unit | **negative** | A two-byte character split across two chunks of one stream arrives whole, with a chunk of the other stream in between |
+| A16-32 | Unit | **negative** | A finished run handed to `watchOutput` is refused as a fault of the test |
+| A16-32 | Unit | **negative** | …and handed to `awaitFile` |
+| A16-32 | Unit | **negative** | A child whose stderr is not piped, handed to `watchOutput`, is refused as a fault of the test. *2026-10-23, A2 of the review of #47: the refusal had no case, and with it removed the file stayed 9 / 0* |
+| A16-32 | Unit | positive | A real child's line is still found |
+| A16-32 | Unit | positive | …and a file it writes is still awaited |
+
+| | |
+|---|---|
+| **Premise** | `watchOutput` drained both streams with `Promise.all(...).catch(() => undefined)`, so one rejected reader marked the output ended while the other was still delivering, and `until()` threw *"has ended. It said:"* with nothing after the colon. The awaited line is on stderr. Both streams shared one stateful decoder. A `Bun.spawnSync` result passes for a running child by shape, measured on #19's head `fe85e1b`: `text` stayed `""` and `until()` said the run *"has ended"*. Nothing type-checks `tests/`. And `awaitFile` read `existsSync(file) ? readFileSync(file) : ''`, which throws `ENOENT` when git.sh's EXIT trap removes the lock directory between the two calls. |
+| **Component** | `watchOutput` and `awaitFile` in `tests/lib/gitfixture.ts`. |
+| **Steps** | Hand `watchOutput` children made of streams that deliver chunks at set times and then close or fail, and wait for a line. Hand both helpers a `Bun.spawnSync` result. Then a real `Bun.spawn` child for each. And a real `Bun.spawn` of `sh -c 'echo x'` with stderr inherited, handed to `watchOutput`. |
+| **Test data** | The line `waiting for the lock` on stderr. A stdout that delivers `partial` and fails with `Error: probe read failure` at 10 ms, beside a stderr that delivers the line at 60 ms, or that closes at 40 ms without it. For `finished()`, the same failing stdout beside a stderr that delivers `more` at 20 ms and closes at 30 ms; for the deadline, the failing stdout beside a stderr that never closes, and a deadline of one second. `é` as the bytes `0xC3` at 0 ms and `0xA9` at 50 ms on stdout, with `x` on stderr at 20 ms. For the finished run, `sh -c 'echo out; echo waiting for the lock >&2'` through `Bun.spawnSync`; for the real child, the same through `Bun.spawn`; and `sh -c 'printf 4242 > held; sleep 1'` for the file. |
+| **Expected** | The line found; *"could not be read (Error: probe read failure), a fault of the test"* with `partial` after it, from `until()` when the other stream closes and when it stays open, and from `finished()`; `é` whole and no U+FFFD; both helpers throwing *"needs a child from Bun.spawn"*; the real child's line found and `4242` read. The unpiped child refused with *"needs both stdout and stderr piped"*. |
+| **Dependencies** | bun, and `sh` for the real children. No docker. |
+| **What it found** | Against the helpers as they were, every negative red and the two counterparts green: seven red, measured by the review of 2026-10-23. *Added 2026-10-23, A2 of that review:* the refusal of an unpiped stream removed, the new case red. |
+| **What is deliberately not here** | The file removed between a check and a read. The window was two system calls wide, and the helper now makes one call. |
+| **Covers** | A16-32, and the waits of A15-1, A16-11 and A16-27. |
+| **Implemented by** | `tests/unit/m-a16.watch-helpers.test.ts`. |
 
 #### A16-M1 — manual: the crossing between two process tables
 
