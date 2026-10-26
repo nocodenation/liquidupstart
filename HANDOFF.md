@@ -1,4 +1,4 @@
-# Handover — 2026-10-25
+# Handover — 2026-10-26
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,7 +9,7 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-25* has the live picture, *2026-10-23* under it, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-26* has the live picture, *2026-10-25* under it, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
 first seven and the review bodies they point to; the rest of this file is the map and the lessons.
@@ -19,7 +19,14 @@ unless a paragraph carries its own later date. It still says "three features and
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-25: #40, #42, #45, #46 and #48 merged; #47 answered and waiting
+## Where it stands, 2026-10-26: #47 merged, and no pull request of ours is open
+
+Timur merged #47 on 2026-10-26 at 02:04Z. Every pull request of this series is on `main`, and the
+worktrees are removed. What is left is `FINISH.md` rows 1 and 2, which nothing blocks now that no open
+branch touches `BACKLOG.md`, and the three older pull requests that are not ours: #5, Timur's privacy
+gateway, and #7 and #8, opened from the organisation account by the stack's OpenClaw agent on 2026-08-17.
+
+## 2026-10-25: #40, #42, #45, #46 and #48 merged; #47 answered and waiting
 
 Timur merged #40, #45 and #46, asked in Slack for #42's merge conflict to be resolved, and reviewed #47 and #48,
 each *request changes*. All three were answered and pushed, each with its suite from a clean tree and a
