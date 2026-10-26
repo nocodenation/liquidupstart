@@ -21,6 +21,18 @@ believe the dated one.**
 
 ## Where it stands, 2026-10-26, later: #49 carries the last three rows, and waits on Timur
 
+*Review round 1, the same afternoon.* Timur asked for one thing: a case for the copy that fails before
+it is judged, which B2-6 ran without holding. Answered at `9501c5d` with two B2-13 scenarios, and
+`./tests/run.sh` from a clean tree **1394 / 28 / 0**, dashboard 32 / 0, no `oom`
+([comment](https://github.com/nocodenation/liquidupstart/pull/49#issuecomment-6417580786)). He will
+check only that. His note on a guard in `sh()` is one `SETTLED` entry in `BACKLOG.md`, not built,
+by the operator's rule of that day: **after #49, a new finding is one BACKLOG line, and no new pull
+request without the operator's word.**
+
+**For the merge note.** The rebuild after #49 applies the `LIQUID_*` image settings for the first
+time. With `.env.example`'s defaults that changes nothing; an installation whose `.env` set them,
+expecting nothing to happen, will now get them installed.
+
 The operator answered one round of questions and chose: repair `45-30`, remove the gateway token's
 key, leave `S3` and the `operator.admin` rule unbuilt, and rebuild Liquid. **#49** carries `FINISH.md`
 rows 11 to 13 and strikes them, with `45-1`, `45-30` and the token entry in `BACKLOG.md`. Head
