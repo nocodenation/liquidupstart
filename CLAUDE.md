@@ -16,13 +16,28 @@ from the browser.
 > `docs/FEATURE-*.md` and `docs/TEST-SPEC-*.md`, written and signed off before the work they
 > describe, and they are the documents the code answers to.
 
+> **Privacy Proxy:** the service lives in its own repository
+> (`ghcr.io/nocodenation/privacy-proxy`, source at `nocodenation/privacy-proxy`). This repo only
+> deploys it: `config/privacy-proxy/templates/Dockerfile` derives a local image from the released
+> one, and `compose.yml`/`.env.example` §7 hold the wiring. Do not add its source back here — it is
+> proprietary and this repo is Apache-2.0. `.env.example` §13 (`PRIVACY_PROXY_DEV_SRC`) points the
+> build at a local checkout instead of the release image, for working on the service itself.
+> It signs upstream requests with the shared §5 keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+> `XAI_API_KEY`, passed unprefixed in compose) and the agents reach it as `privacy-openai` /
+> `privacy-anthropic` carrying the providers' own catalogues — `config/scripts/start/openclaw.sh`
+> mirrors the bundled plugin manifests, `config/opencode/entrypoint.sh` discovers from the proxy's
+> `GET /{provider}/v1/models`. The built-in `anthropic`/`openai` providers are never pointed at it.
+> Details: `docs/SPECIFICATION.md` §7.
+
 ## Layout
 
 - `compose.yml` — all services. The compose project is named `liquidupstart`; a single
   instance of the stack runs per host (fixed container names, no suffixes).
 - `run.sh` — build & launch the dashboard container (first free port from 7777).
-- `scripts/linux/{build,start,down,cleanup}` — CLI alternative to the dashboard. Windows
-  users run these inside WSL2; there is no separate Windows script path.
+- `scripts/linux/{build,start,down,clean-rendered-config}` — CLI alternative to the dashboard. Windows
+  users run these inside WSL2; there is no separate Windows script path. The root `cleanup.sh` is
+  the full reset (`run.sh --cleanup`); `clean-rendered-config.sh` deletes only rendered config.
+- `scripts/tests/*.test.sh` — shell tests, no Docker needed: `bash scripts/tests/<name>.test.sh`.
 - `config/scripts/{build,start}/*.sh` — per-service build/prep steps invoked by the top
   scripts. Build steps render Dockerfiles via `config/scripts/build/lib/dockerfile-render.sh`.
 - `config/<service>/` — per-service config, templates, and (for agents) skills/plugins.
@@ -33,6 +48,10 @@ from the browser.
 
 Most images are pulled; five are built locally as
 `liquidupstart/{opencode,bun-runner,liquid,openclaw,nar-builder}:latest`.
+`liquidupstart/privacy-proxy:latest` is a sixth, built only when `PRIVACY_PROXY_ENABLE=1`: a thin
+derivation of the released `ghcr.io/nocodenation/privacy-proxy:latest` that adds the Claude Code
+CLI when `ENABLE_ANTHROPIC_CLAUDE_CODE=1` (the released image omits it — proprietary, no
+redistribution grant — so it is installed here, on the operator's own machine).
 `hermes` exists in config but is **disabled** (commented out in `compose.yml`, `build.sh`,
 `start.sh`). Service UIs are reached at `http://<name>.localhost:${SYSTEM_HTTP_PORT}`
 (HTTP default 8888; Liquid over HTTPS on `${SYSTEM_HTTPS_PORT}`, default 8833).

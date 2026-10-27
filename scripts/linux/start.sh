@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+# Start the stack: stop what runs, prepare each service's configuration, and bring compose up.
+#
+# What it does, in order
+#   1. Reads the privacy routing mode from .env and stops on an unknown value, before anything
+#      is stopped (config/scripts/start/lib/privacy-routing.sh). Warns when "only" leaves the AI
+#      agents without a cloud model.
+#   2. Stops the running stack (down.sh) and checks that the proxy's host ports are free.
+#   3. Runs the per-service start steps under config/scripts/start/ (nginx, Liquid, OpenClaw).
+#   4. With PRIVACY_PROXY_ENABLE=1, activates the privacy-proxy compose profile and exports
+#      PRIVACY_PROXY_URL; with PRIVACY_PROXY_ROUTING=only, also adds the compose override
+#      config/privacy-proxy/compose.routing-only.yml, which withholds the provider keys and
+#      logins from the agent containers.
+#   5. Starts the containers with compose and prints the URLs and credentials.
+#
+# Callers
+#   The operator, and the dashboard's Start action.
+#
+# Usage
+#   ./scripts/linux/start.sh      (from anywhere; it changes into the project root)
+#
+# Exit status
+#   0 when the stack is up; 1 when .env is missing, PRIVACY_PROXY_ROUTING is unknown, a port
+#   is taken, or compose fails.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +34,21 @@ NGINX_OUTPUT_DIR="${PROJECT_DIR}/config/nginx"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: .env file not found at ${ENV_FILE}" >&2
   exit 1
+fi
+
+# --- Privacy routing mode: checked before anything is stopped ----------------
+# An unknown PRIVACY_PROXY_ROUTING value stops here, so that a typo neither takes the running
+# stack down nor starts it with the direct provider routes open.
+# shellcheck source=../../config/scripts/start/lib/privacy-routing.sh
+. "${PROJECT_DIR}/config/scripts/start/lib/privacy-routing.sh"
+PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
+if [[ "$PRIVACY_ROUTING" == only \
+      && -z "$(env_value "$ENV_FILE" OPENAI_API_KEY)" && -z "$(env_value "$ENV_FILE" ANTHROPIC_API_KEY)" \
+      && "$(env_value "$ENV_FILE" ENABLE_ANTHROPIC_CLAUDE_CODE)" != 1 ]]; then
+  # Not an error: the local LLM may be all the operator wants. But the agents will have no cloud
+  # model at all, and that should not come as a surprise.
+  echo "Warning: PRIVACY_PROXY_ROUTING=only, but neither OPENAI_API_KEY nor ANTHROPIC_API_KEY is set and the Claude CLI is off." >&2
+  echo "         The AI agents will have no cloud model, only the local LLM if one is configured." >&2
 fi
 
 # A skip is a decision about this run. Clearing the directory here is what keeps
@@ -309,6 +347,28 @@ fi
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
 
+# The privacy proxy runs under its own compose profile, so it is invisible to
+# `docker compose up` unless PRIVACY_PROXY_ENABLE=1 adds the profile here; the
+# agents' start scripts read PRIVACY_PROXY_URL to register its doors.
+PRIVACY_PROXY_ENABLE="$(get_env PRIVACY_PROXY_ENABLE)"
+if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
+  # The proxy listens on its built-in port 8080 inside the stack network.
+  export PRIVACY_PROXY_URL="http://privacy-proxy:8080"
+fi
+# In only mode the override withholds the provider keys and logins from the agent containers.
+# The empty directories it mounts in place of the real ones are created here, so that Docker does
+# not create them root-owned (see openclaw.sh).
+if [[ "$PRIVACY_ROUTING" == only ]]; then
+  for dir in "${PROJECT_DIR}/volumes/_openclaw-claude-routing-only" \
+             "${PROJECT_DIR}/volumes/_openclaw-auth-profile-secrets-routing-only"; do
+    mkdir -p "$dir"
+    chmod 700 "$dir"
+  done
+  export COMPOSE_FILE="compose.yml:config/privacy-proxy/compose.routing-only.yml"
+  echo "Privacy routing: only. The AI agents get the privacy providers and the local LLM, and no provider key or login."
+fi
+
 echo "Starting containers..."
 set +e
 docker compose up -d
@@ -377,6 +437,8 @@ echo "${HDR}=== Web interfaces = AI Harnesses ================================${
 # hermes disabled: url_line "Hermes"      "http://hermes.localhost:${HTTP_PORT}"
 url_line "OpenClaw"    "http://openclaw.localhost:${HTTP_PORT}   - recommended"
 url_line "OpenCode"    "http://opencode.localhost:${HTTP_PORT}"
+[[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]] && \
+  url_line "Privacy settings" "http://privacy.localhost:${HTTP_PORT}/policy/ui"
 echo ""
 echo "${HDR}=== Logins, passwords & tokens ===================================${RST}"
 # hermes disabled: echo "  Hermes API/Webhooks token:  ${CRED}${HERMES_API_KEY}${RST}"
@@ -426,3 +488,51 @@ if [[ -n "$ATTENTION" ]]; then
   done <<< "$ATTENTION"
   echo ""
 fi
+
+_copilot_reauth() {
+  echo "  ${CRED}GitHub Copilot: $1.${RST}"
+  local cmd="docker exec -it openclaw-gateway openclaw infer model auth login --provider github-copilot"
+  if [[ -t 0 ]]; then
+    read -r -p "  Authorize GitHub Copilot now? [y/N] " ans
+    [[ "$ans" =~ ^[Yy]$ ]] && eval "$cmd"
+  else
+    echo "  ${DIM}To authorize, run:${RST} ${URL}${cmd}${RST}"
+  fi
+}
+
+check_copilot_auth() {
+  local enabled probe i=0
+  enabled="$(get_env ENABLE_GITHUB_COPILOT)"
+  [[ "${enabled:-0}" == "1" ]] || return 0
+  while ! docker exec openclaw-gateway true 2>/dev/null && [ "$i" -lt 30 ]; do i=$((i+1)); sleep 1; done
+  probe="$(docker exec -i openclaw-gateway node 2>/dev/null <<'NODE'
+const db=require('node:sqlite'),fs=require('fs'),cp=require('child_process');
+const base='/home/node/.openclaw/agents';
+let tok=null;
+try{for(const a of fs.readdirSync(base)){
+  const p=base+'/'+a+'/agent/openclaw-agent.sqlite';
+  if(!fs.existsSync(p))continue;
+  const d=new db.DatabaseSync(p,{readOnly:true});
+  for(const r of d.prepare('select * from auth_profile_store').all()){
+    const m=JSON.stringify(r).match(/ghu_[A-Za-z0-9]+/);if(m){tok=m[0];break}
+  }
+  if(tok)break;
+}}catch(e){}
+if(!tok){console.log('none');process.exit(0)}
+try{
+  const out=cp.execSync("curl -s -m 10 -o /dev/null -w '%{http_code}' -H 'authorization: token "+tok+"' https://api.github.com/copilot_internal/v2/token").toString().trim();
+  console.log(out==='200'?'valid':'invalid');
+}catch(e){console.log('unknown')}
+NODE
+)"
+  echo "${HDR}=== GitHub Copilot ===============================================${RST}"
+  case "${probe:-unknown}" in
+    valid)   echo "  ${SVC}GitHub Copilot:${RST} authorized" ;;
+    none)    _copilot_reauth "no saved login found" ;;
+    invalid) _copilot_reauth "saved token expired or revoked" ;;
+    *)       echo "  ${DIM}GitHub Copilot: auth check skipped (openclaw-gateway or GitHub unreachable)${RST}" ;;
+  esac
+  echo ""
+}
+
+check_copilot_auth

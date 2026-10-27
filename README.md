@@ -39,6 +39,10 @@ sandbox they can spin up, throw away, and spin up again.
 - 🧩 **Batteries included** — Postgres + pgvector, PostgREST, Swagger, pgAdmin, OpenProject,
   Nextcloud + Collabora, Liquid (data flows), and AI agents.
 - 🤖 **AI coding agents with skills** — pre-wired to Postgres/pgvector RAG, PostgREST, Liquid, Nextcloud, and OpenProject.
+- 🕵️ **Privacy Proxy (optional)** — a stand-in model between the agents and the cloud: names,
+  IDs and secrets are swapped for stand-ins before a message leaves the machine and put back in
+  the reply. Appears in the agents as `privacy-openai` / `privacy-anthropic` with those
+  providers' own models.
 - 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro.
 - ☕ **Java extensions for Liquid** — write a NiFi processor in the workspace, run one command, and
   the running instance loads it; a controller service brings its own `pom.xml`. Checked against the
@@ -56,7 +60,8 @@ sandbox they can spin up, throw away, and spin up again.
    │  Data             │  Apps / PM            │  Flow      │  AI agents  │
    │  Postgres+pgvector│  OpenProject          │  Liquid    │  OpenClaw   │
    │  PostgREST        │  Nextcloud+Collabora  │            │  OpenCode   │
-   │  Swagger, pgAdmin │  bun_runner (apps)    │            │             │
+   │  Swagger, pgAdmin │  bun_runner (apps)    │            │  ↳ privacy- │
+   │                   │                       │            │    proxy    │
    └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -180,7 +185,7 @@ latest version it does nothing.
 
    | | Build | Start | Stop | Clean rendered config |
    |---|---|---|---|---|
-   | **Linux / macOS / Windows (WSL2)** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/cleanup.sh` |
+   | **Linux / macOS / Windows (WSL2)** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/clean-rendered-config.sh` |
 
    On Windows, run these inside your WSL2 shell.
 
@@ -204,9 +209,11 @@ Default HTTP port is `8888` (`SYSTEM_HTTP_PORT`); Liquid is served over HTTPS on
 | **Liquid** | `https://liquid.localhost:HTTPS_PORT` | Data-flow automation (Apache NiFi-based); HTTP ingress on `https://{port}.liquid.localhost` (ports 8900–8999) |
 | **NAR builder** | `nar_builder:8770` (internal) | Compiles Java extensions for Liquid, for `nar-build` in the agent containers. Refused from the host and the LAN; inside the stack network it is not limited to the agents — see [Java extensions](#java-extensions-for-liquid) |
 | **Postgres** | `postgres:5432` (internal) | Postgres 17 with pgvector — user `api_user`, db `postgres` |
+| **Privacy Proxy** | `privacy-proxy:8080` (internal, optional) | Anonymizing stand-in model for the agents — see [Privacy Proxy](#privacy-proxy-optional) |
 
 Five images are built locally — `liquidupstart/{opencode,bun-runner,nar-builder,liquid,openclaw}` —
-the rest are pulled. (`hermes` exists in config but is disabled.)
+the rest are pulled; a sixth, `liquidupstart/privacy-proxy`, is built only when the Privacy
+Proxy is enabled. (`hermes` exists in config but is disabled.)
 
 ## Configuration
 
@@ -219,11 +226,13 @@ edits it for you; you can also edit it by hand. It's organized into sections:
 | 2. Auto-generated secrets | Internal passwords/tokens — generated automatically if left empty |
 | 3. User-settable credentials | Logins you may want to set before first start |
 | 4. Script-generated secrets | Managed by scripts; not shown in the UI |
-| 5. LLM provider API keys | Shared keys used by the AI agents (all optional) |
-| 6. OpenClaw configuration | Model & backend selection for the OpenClaw agent |
-| 7. OpenCode configuration | Model, Ollama endpoint, and timeout settings |
-| 8. Liquid authentication | Login + TLS keystore credentials for Liquid |
-| 9. Image build configuration | Extra packages/commands baked into the custom images |
+| 5. LLM provider API keys | Shared keys used by the AI agents and the Privacy Proxy (all optional) |
+| 6. Self-hosted local LLM | An OpenAI-compatible endpoint of your own (Ollama, llama.cpp, …) for the agents and for the Privacy Proxy's local checks |
+| 7. Privacy Proxy | The on/off switch and behaviour knobs of the anonymizing stand-in model |
+| 8. OpenClaw configuration | Subscription backends (Claude CLI, Copilot, ChatGPT/Codex, Grok) for the OpenClaw agent |
+| 9. Liquid authentication | Login + TLS keystore credentials for Liquid |
+| 10. Image build configuration | Extra packages/commands baked into the custom images |
+| 11. Developer options | Local-source overrides; not shown in the UI |
 
 > **Contract rule:** start scripts only inject a root `.env` key into a service if that
 > service's template already declares it. To add a new key, add it to `.env.example` first.
@@ -237,8 +246,8 @@ edits it for you; you can also edit it by hand. It's organized into sections:
 
 Two coding agents run inside the stack and can operate the platform directly:
 
-- **OpenClaw** — the recommended harness (configured in `.env` section 6).
-- **OpenCode** — a web-based agent UI at `opencode.localhost` (section 7).
+- **OpenClaw** — the recommended harness (subscription backends in `.env` section 8).
+- **OpenCode** — a web-based agent UI at `opencode.localhost`.
 
 Both ship with **skills** that encode how to use this environment:
 
@@ -265,6 +274,61 @@ Add at least one LLM provider key (section 5) to enable the agents.
 
 The `.env` section 5 configures API keys; the OAuth login happens inside the respective
 agent. Both can coexist.
+
+### Privacy Proxy (optional)
+
+Set `PRIVACY_PROXY_ENABLE=1` (section 7), rebuild, start. A small service then sits between the
+agents and the cloud: every message is scanned for names, addresses, ID numbers, passwords and
+keys, each is swapped for a realistic stand-in, the cleaned message goes to the real provider,
+and the real values are put back into the reply. State — the encrypted mapping — stays on this
+machine under `volumes/privacy-proxy/`.
+
+- **No extra keys.** The proxy signs upstream requests with the section 5 keys you already
+  entered (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) and strips whatever key the agent sends.
+- **What you see in the agents:** one extra provider per real provider you have a key for —
+  `privacy-openai` and `privacy-anthropic` — each listing that provider's **own models**
+  (`privacy-openai/gpt-5.4-mini`, `privacy-anthropic/claude-sonnet-5`, …). Pick one of those to
+  go through the proxy; the plain `openai/*` / `anthropic/*` entries still go direct.
+- **Or make it the only way out** (`PRIVACY_PROXY_ROUTING=only`, section 7; default `opt-in`).
+  The agents are then offered the privacy providers and your local LLM and nothing else, and they
+  no longer receive the section 5 keys, your Claude login or any Copilot, Codex or Grok sign-in —
+  the proxy keeps what it needs. Earlier sign-ins are set aside, not deleted, and return when you
+  start in `opt-in` again. Providers without a door in the proxy (OpenRouter, Google, Grok, …) are
+  unavailable in this mode. A value other than `opt-in` or `only` stops the start.
+- **With the Claude subscription on** (`ENABLE_ANTHROPIC_CLAUDE_CODE=1`, section 8),
+  `privacy-anthropic` runs through your Claude login, not the API key — exactly as OpenClaw's own
+  `anthropic/*` does. The Anthropic key is then used only to list the catalogue.
+- **How it is meant to run** (section 7): your local model (section 6) is part of every
+  message — it reads what the built-in detectors cannot, rewords what would still identify
+  someone, and judges every outgoing message for trickery. When a reworded message is still
+  too identifying, the proxy pauses and asks you in the chat; when the egress judge rates a
+  message high, it pauses and asks the same way and `send-original` sends it as masked — one
+  honest turn held
+  in twenty-four over two draws (the question then names what the privacy check found
+  identifying), both injection probes held and, once released, refused by the cloud model itself.
+  Which models fill those seats is your choice; nothing ties the proxy to a particular one. For
+  an easy start we recommend `google/gemma-4-31b-it` for the second pass and the rewording,
+  `z-ai/glm-5.3-flash` for checking that a rewording kept the meaning, and
+  `minimax/minimax-m2.5` for the privacy and security judgements — the combination the numbers
+  above were drawn on. The decision stays yours. Section 7 asks only for what is yours to
+  choose: the switch, the routing, the local model, how long the vault keeps entries, and
+  optionally the two judge models. Everything else is built in; the switches that turn parts
+  of the chain off exist to debug the detectors and the judge on their own, and sit in the
+  hidden developer options of `.env`, not on the dashboard.
+- **What it catches, and when.** Built-in detectors (names, e-mails, phones, IBANs, ids,
+  dates) run on every message; the local-LLM second pass adds what a model notices on
+  that call, which varies from call to call. Anything masked once stays masked for the whole
+  conversation. For the terms that matter to you — project names, codes, study ids — name them
+  on the settings page (`privacy.localhost`), which catches them on first sight instead of
+  relying on the model to find them; a document you upload there also proposes every code and
+  study id it carries, whatever the model made of it, for you to tick. The page tells you when
+  your description mentions an identifier the term list does not carry, and when it names what
+  is confidential without naming a single term. The harness's own plumbing — OpenClaw's turn stamp and its
+  sender id — is never treated as your data: the stamp goes through unchanged and the sender id
+  is a stable placeholder.
+- **The local model is the trust boundary.** The second pass and the judges read your messages
+  in full before anything is masked, so whatever `LOCAL_LLM_API_BASE` (section 6) points at sees
+  the real data. Keep it on your own machine or network; only the masked text goes to the cloud.
 
 ## Java extensions for Liquid
 
@@ -365,7 +429,7 @@ a new, empty one. Both measured on 2026-10-23 in a throwaway compose project on 
 both. To reset:
 
 - `./scripts/linux/down.sh` — stop the stack (data preserved).
-- `./scripts/linux/cleanup.sh` — remove rendered config (templates are re-rendered on next build).
+- `./scripts/linux/clean-rendered-config.sh` — remove rendered config (templates are re-rendered on next build).
 - Delete the relevant `./volumes/<service>/` directory to wipe a service's data.
 - `liquidupstart --cleanup` (or `./cleanup.sh`) — **full reset:** stops the stack and removes all
   containers, `volumes/`, `.env`, and the built images. Add `--keep-images` to keep images and

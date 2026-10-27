@@ -35,9 +35,13 @@ export function sectionModeFromTitle(title: string): { mode: SectionMode; displa
 
 // Changing any of these requires rebuilding images (IMAGE BUILD CONFIGURATION
 // knobs consumed by build.sh, plus the OpenClaw build switch).
+// A key whose change needs the stack built and started again before it takes effect: the save
+// redirects with rebuild=1. PRIVACY_PROXY_ROUTING changes which providers, keys and logins the AI
+// agents are given, which only a fresh start applies.
 export function isBuildAffecting(key: string): boolean {
   return (
     key === 'ENABLE_ANTHROPIC_CLAUDE_CODE' ||
+    key === 'PRIVACY_PROXY_ROUTING' ||
     /SYSTEM_DEPENDENCIES(_MODE)?$/.test(key) ||
     /POST_INSTALLATION_COMMANDS(_MODE)?$/.test(key)
   );
@@ -49,13 +53,27 @@ export function looksSecret(key: string): boolean {
 
 export type InputType = 'text' | 'password' | 'number' | 'checkbox' | 'select-mode';
 
-export function inputType(key: string): InputType {
-  // ENABLE_* provider toggles are 0/1 flags — render as checkboxes.
-  if (/^ENABLE_/.test(key)) return 'checkbox';
-  if (/_MODE$/.test(key)) return 'select-mode';
+export function inputType(key: string, inlineComment = ''): InputType {
+  // 0/1 flags — ENABLE_* provider toggles and *_ENABLE settings (e.g. the
+  // PRIVACY_PROXY_* switches) — render as checkboxes.
+  if (/^ENABLE_|_ENABLE$/.test(key)) return 'checkbox';
+  // A key that declares its choices (see selectOptions) becomes a dropdown.
+  if (selectOptions(key, inlineComment).length) return 'select-mode';
   if (/PORT$|TIMEOUT$/.test(key)) return 'number';
   if (looksSecret(key)) return 'password';
   return 'text';
+}
+
+// Dropdown choices for a field, taken from the key's inline
+// `# a | b | c` comment in .env.example. The build-config *_MODE keys predate
+// that notation, so they fall back to their add/override pair.
+export function selectOptions(key: string, inlineComment = ''): string[] {
+  const body = inlineComment.replace(/^#\s*/, '').trim();
+  if (body.includes('|')) {
+    const opts = body.split('|').map((o) => o.trim());
+    if (opts.every((o) => /^[A-Za-z0-9_.-]+$/.test(o))) return opts;
+  }
+  return /_MODE$/.test(key) ? ['add', 'override'] : [];
 }
 
 // Sections rendered collapsed by default (matched against the full banner
@@ -66,7 +84,7 @@ export function isCollapsedSection(title: string): boolean {
 
 // Subheadings that fold the rest of their section into a nested collapsible.
 export function isCollapsedSubheading(text: string): boolean {
-  return /PER-IMAGE OVERRIDES/i.test(text);
+  return /PER-IMAGE OVERRIDES|^ADVANCED\b/i.test(text);
 }
 
 // One-liners shown in a section header so a collapsed card still describes its
@@ -80,12 +98,14 @@ const SECTION_DESCRIPTIONS: [RegExp, string][] = [
   [/LLM PROVIDER API KEYS/i, 'API keys of LLM providers, used by the AI services (optional).'],
   [/OPENCLAW CONFIGURATION/i, 'Model & backend selection for OpenClaw, the recommended AI harness.'],
   [/OPENCODE CONFIGURATION/i, 'Self-hosted local LLM endpoint, shared by OpenCode and OpenClaw.'],
+  [/PRIVACY PROXY/i, 'Privacy model for AI tools — connect to it like a local model; it cleans messages before the cloud AI sees them and restores the reply.'],
   [/LIQUID AUTHENTICATION/i, 'Login and TLS keystore credentials for Liquid.'],
   [/IMAGE BUILD CONFIGURATION/i, 'Extra packages & commands baked into the Docker images by build.sh.']
 ];
 
 const SUBHEADING_DESCRIPTIONS: [RegExp, string][] = [
-  [/PER-IMAGE OVERRIDES/i, 'Extend or replace the global build settings for a single image.']
+  [/PER-IMAGE OVERRIDES/i, 'Extend or replace the global build settings for a single image.'],
+  [/^ADVANCED: SEPARATE JUDGE MODELS/i, 'Optional: other local models for the two privacy judgements.']
 ];
 
 function firstSentence(text: string): string {

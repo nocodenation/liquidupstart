@@ -136,7 +136,7 @@
       <div class="control">
         {#if item.type === 'select-mode'}
           <select id={item.key} name={item.key}>
-            {#each ['add', 'override'] as opt}
+            {#each item.options as opt}
               <option value={opt} selected={fieldValue(item) === opt}>{opt}</option>
             {/each}
           </select>

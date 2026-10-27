@@ -56,7 +56,7 @@ beforeEach(() => {
 test('A8-1 the view offers section 10 with all three git fields', () => {
   const git = sectionTitled('GIT INTEGRATION');
 
-  expect(git.title).toBe('10. GIT INTEGRATION');
+  expect(git.title).toBe('11. GIT INTEGRATION');
   expect(git.autogen).toBe(false);
   expect(git.collapsed).toBe(false);
   expect(git.description).toContain('./volumes/repos');
@@ -86,7 +86,7 @@ test('A8-1 each field carries the help text .env.example gives it', () => {
 
 test('A8-1 the section survives the whole view, not just the parser', () => {
   const titles = configSections().map((s) => s.title);
-  expect(titles).toContain('10. GIT INTEGRATION');
+  expect(titles).toContain('11. GIT INTEGRATION');
 });
 
 test('A8-2 a declaration typed into the view reaches .env in the form git-repos.sh parses', async () => {

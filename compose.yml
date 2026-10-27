@@ -84,8 +84,6 @@ services:
           condition: service_healthy
         postgres:
           condition: service_healthy
-#    ports:
-#      - "8100:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
@@ -320,6 +318,8 @@ services:
       SYNTHETIC_API_KEY: ${SYNTHETIC_API_KEY:-}
       LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
       LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+      PRIVACY_PROXY_URL: ${PRIVACY_PROXY_URL:-}
+      ENABLE_ANTHROPIC_CLAUDE_CODE: ${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-}
       POSTGREST_API_KEY: ${API_KEY:-}
       LIQUID_USERNAME: ${LIQUID_USERNAME:-}
@@ -859,6 +859,7 @@ services:
         mkdir -p /home/node/openclaw-plugins
         cp -a /opt/plugins/. /home/node/openclaw-plugins/
         chmod -R go-w /home/node/openclaw-plugins
+        [ -d /home/node/.openclaw/npm ] && chmod -R go-w /home/node/.openclaw/npm 2>/dev/null || true
         exec node dist/index.js gateway --bind lan --port 18789
     healthcheck:
       test:
@@ -877,12 +878,12 @@ services:
 
   openclaw-cli:
     image: liquidupstart/openclaw:latest
-    network_mode: "service:openclaw-gateway"
-    user: "0:0"
-    container_name: openclaw-cli
     profiles:
       - "cli"
       - "full"
+    network_mode: "service:openclaw-gateway"
+    user: "0:0"
+    container_name: openclaw-cli
     env_file:
       - path: config/openclaw/.env
         required: false
@@ -954,6 +955,47 @@ services:
     entrypoint: ["node", "dist/index.js"]
     depends_on:
       - openclaw-gateway
+
+  privacy-proxy:
+    image: liquidupstart/privacy-proxy:latest
+    container_name: privacy-proxy
+    profiles: ["privacy-proxy"]
+    restart: unless-stopped
+    extra_hosts:
+      - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
+    environment:
+      PRIVACY_PROXY_SECURITY_JUDGE_ENABLE: ${PRIVACY_PROXY_SECURITY_JUDGE_ENABLE:-1}
+      PRIVACY_PROXY_LOCAL_LLM_TIMEOUT: ${PRIVACY_PROXY_LOCAL_LLM_TIMEOUT:-180}
+      PRIVACY_PROXY_CLAUDE_CLI_MODEL: ${PRIVACY_PROXY_CLAUDE_CLI_MODEL:-}
+      PRIVACY_PROXY_LOG_LEVEL: ${PRIVACY_PROXY_LOG_LEVEL:-INFO}
+      PRIVACY_PROXY_LOCAL_LLM_ENABLE: ${PRIVACY_PROXY_LOCAL_LLM_ENABLE:-1}
+      PRIVACY_PROXY_LOCAL_LLM_MODEL: ${PRIVACY_PROXY_LOCAL_LLM_MODEL:-}
+      PRIVACY_PROXY_GATE_MODE: ${PRIVACY_PROXY_GATE_MODE:-ask}
+      PRIVACY_PROXY_GATE_SCOPE: ${PRIVACY_PROXY_GATE_SCOPE:-request}
+      PRIVACY_PROXY_MASK_SCAFFOLDING_ENABLE: ${PRIVACY_PROXY_MASK_SCAFFOLDING_ENABLE:-0}
+      PRIVACY_PROXY_SUFFICIENCY_LOW: ${PRIVACY_PROXY_SUFFICIENCY_LOW:-0.8}
+      PRIVACY_PROXY_SUFFICIENCY_MEDIUM: ${PRIVACY_PROXY_SUFFICIENCY_MEDIUM:-0.5}
+      PRIVACY_PROXY_SEMANTIC_ENABLE: ${PRIVACY_PROXY_SEMANTIC_ENABLE:-1}
+      PRIVACY_PROXY_SEMANTIC_MODE: ${PRIVACY_PROXY_SEMANTIC_MODE:-interactive}
+      PRIVACY_PROXY_REWRITER_MODEL: ${PRIVACY_PROXY_REWRITER_MODEL:-}
+      PRIVACY_PROXY_JUDGE_MODEL: ${PRIVACY_PROXY_JUDGE_MODEL:-}
+      PRIVACY_PROXY_ADVERSARY_MODEL: ${PRIVACY_PROXY_ADVERSARY_MODEL:-}
+      PRIVACY_PROXY_RESPEC_MODEL: ${PRIVACY_PROXY_RESPEC_MODEL:-}
+      PRIVACY_GATEWAY_LLM_CAPTURE: ${PRIVACY_GATEWAY_LLM_CAPTURE:-}
+      PRIVACY_PROXY_VAULT_DIR: /data
+      PRIVACY_PROXY_VAULT_TTL: ${PRIVACY_PROXY_VAULT_TTL-604800}
+      ENABLE_ANTHROPIC_CLAUDE_CODE: ${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}
+      LOCAL_LLM_API_BASE: ${LOCAL_LLM_API_BASE:-}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+    volumes:
+      - ./volumes/privacy-proxy:/data
+      - ./volumes/_openclaw-claude:/root/.claude
+      - ./config/agents/skills:/root/.claude/skills:ro
+    networks:
+      - nocodenation_liquid_upstart_network
 
 networks:
   nocodenation_liquid_upstart_network:

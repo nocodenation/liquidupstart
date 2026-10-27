@@ -27,7 +27,10 @@ export function fixtureValue(key: string): string {
   // otherwise copy. 0 means do not wait; a case that is about the wait sets its
   // own value. Found by running the suite: one case took 906 seconds.
   if (key === 'SYSTEM_SIGNIN_WAIT_SECONDS') return '0';
-  if (/^ENABLE_/.test(key)) return '1';
+  // The dashboard renders ENABLE_* and *_ENABLE keys as checkboxes
+  // (dashboard/src/lib/env-meta.ts) and saves a checkbox as 0 or 1, so a flag
+  // gets a flag's value here or a save would rewrite it.
+  if (/^ENABLE_|_ENABLE$/.test(key)) return '1';
   return `fixture-${key}`;
 }
 

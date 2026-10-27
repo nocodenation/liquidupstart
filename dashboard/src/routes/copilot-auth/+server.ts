@@ -10,6 +10,7 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { json } from '@sveltejs/kit';
 import { parseEnvValues } from '$lib/env-file';
+import { requireSameOrigin } from '$lib/server/origin';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? 'liquidupstart/openclaw:latest';
@@ -125,10 +126,8 @@ export async function GET() {
 }
 
 export async function POST({ request }) {
-  const origin = request.headers.get('origin');
-  if (process.env.ORIGIN && origin !== process.env.ORIGIN) {
-    return new Response('Forbidden', { status: 403 });
-  }
+  const blocked = requireSameOrigin(request);
+  if (blocked) return blocked;
 
   const body = await request.json();
   if (body.action !== 'start') return new Response('Unknown action', { status: 400 });

@@ -28,6 +28,21 @@ print_warning() {
     echo "${c_warn}WARNING: $*${c_reset}" >&2
 }
 
+load_env_file() {
+    local file="$1" key val
+    [ -f "$file" ] || return 0
+    while IFS='=' read -r key val || [ -n "$key" ]; do
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        val="${val%$'\r'}"
+        if [[ ${#val} -ge 2 && "$val" == \"*\" ]]; then
+            val="${val:1:${#val}-2}"
+        elif [[ ${#val} -ge 2 && "$val" == \'*\' ]]; then
+            val="${val:1:${#val}-2}"
+        fi
+        export "$key=$val"
+    done < "$file"
+}
+
 # Combine a generic value with a per-image value according to a mode.
 #   $1 = generic value (e.g. SYSTEM_DEPENDENCIES)
 #   $2 = per-image value (e.g. LIQUID_SYSTEM_DEPENDENCIES)

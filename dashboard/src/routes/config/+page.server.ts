@@ -11,6 +11,7 @@ import {
   isCollapsedSubheading,
   isSystemPort,
   sectionDescription,
+  selectOptions,
   subheadingDescription
 } from '$lib/env-meta';
 import { ENV_FILE, RESULT_FILE, isConfigured, readEnvFile } from '$lib/server/project';
@@ -35,7 +36,8 @@ export const load: PageServerLoad = () => {
               kind: 'field' as const,
               key: item.field.key,
               help: item.field.help,
-              type: inputType(item.field.key),
+              type: inputType(item.field.key, item.field.inlineComment),
+              options: selectOptions(item.field.key, item.field.inlineComment),
               buildAffecting: isBuildAffecting(item.field.key),
               value: envValues.get(item.field.key)?.value ?? item.field.defaultValue
             }

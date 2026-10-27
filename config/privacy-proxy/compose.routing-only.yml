@@ -1,0 +1,48 @@
+# Compose override for PRIVACY_PROXY_ROUTING=only.
+#
+# scripts/linux/start.sh adds this file after compose.yml (through COMPOSE_FILE) when the privacy
+# proxy is on and set as the only cloud route. It withholds from the AI agents every credential
+# with which they could reach a cloud model provider directly, so that the privacy proxy is the
+# only way out. The privacy-proxy service itself is not changed: it keeps the provider keys and
+# the Claude login it signs upstream requests with.
+#
+# Compose merges this file into compose.yml: an environment entry given here replaces the one of
+# the same name, and a volume given here replaces the one mounted at the same container path.
+# Relative paths resolve against the project root, like compose.yml's own.
+
+services:
+  opencode:
+    environment:
+      # The provider keys of .env section 5, blanked. OpenCode registers a direct provider only
+      # for a key that is set, so it offers the privacy providers and the local LLM only.
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      OPENROUTER_API_KEY: ""
+      GOOGLE_API_KEY: ""
+      GEMINI_API_KEY: ""
+      ZAI_API_KEY: ""
+      AI_GATEWAY_API_KEY: ""
+      MINIMAX_API_KEY: ""
+      SYNTHETIC_API_KEY: ""
+
+  openclaw-gateway: &openclaw-withheld
+    environment:
+      # The Claude subscription login and Claude web session credentials, blanked. The provider
+      # keys never reach OpenClaw in this mode: openclaw.sh writes none into config/openclaw/.env.
+      OPENCLAW_CLAUDE_OAUTH_TOKEN: ""
+      CLAUDE_AI_SESSION_KEY: ""
+      CLAUDE_WEB_SESSION_KEY: ""
+      CLAUDE_WEB_COOKIE: ""
+      # The subscription backends are off, so OpenClaw does not try to use them.
+      ENABLE_GITHUB_COPILOT: "0"
+      ENABLE_OPENAI_CODEX: "0"
+      ENABLE_XAI_GROK: "0"
+    volumes:
+      # The Claude CLI login stays in volumes/_openclaw-claude for the privacy proxy; OpenClaw
+      # gets an empty directory of its own at the same path.
+      - ./volumes/_openclaw-claude-routing-only:/home/node/.claude
+      # OpenClaw's auth-profile key material, likewise replaced by an empty directory, so that
+      # it returns untouched when the stack is started in opt-in again.
+      - ./volumes/_openclaw-auth-profile-secrets-routing-only:/home/node/.config/openclaw
+
+  openclaw-cli: *openclaw-withheld

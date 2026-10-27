@@ -327,8 +327,8 @@ the real stack through `docker compose exec`, and their probe repositories are n
 |---|---|
 | **Premise** | `.env.example` is not only documentation, it is the schema the dashboard renders its configuration form from. A section that reads well to a human but does not parse is a silent failure: the keys simply never appear in the UI. |
 | **Component** | `parseExample` and `listFields` from `dashboard/src/lib/env-file`, run over the real `.env.example` rather than a fixture. |
-| **Test data** | The repository's own `.env.example`, section `10. GIT INTEGRATION`, declaring `GIT_USER_NAME` and `GIT_USER_EMAIL`. |
-| **Positive — section** | Parse the file and find the section whose title matches `GIT INTEGRATION`. Expected: it exists and its title begins `10.`. |
+| **Test data** | The repository's own `.env.example`, section `11. GIT INTEGRATION`, declaring `GIT_USER_NAME` and `GIT_USER_EMAIL`. |
+| **Positive — section** | Parse the file and find the section whose title matches `GIT INTEGRATION`. Expected: it exists and its title begins `11.`. |
 | **Positive — fields** | List the fields of that section. Expected: both keys present, each carrying non-empty help text. |
 | **Dependencies** | The dashboard library. The coupling was accepted at sign-off: it tests the integration nothing else covers. |
 | **Covers** | U1, FR10. |
@@ -962,7 +962,7 @@ read `compose.yml` and the clones the fixture produced. Only A3c-9 touches the r
 |---|---|
 | **Premise** | Same reasoning as A1-1: `.env.example` is the schema the dashboard renders. A key that does not parse never reaches the operator. |
 | **Component** | `parseExample` and `sectionModeFromTitle` over the real `.env.example`. |
-| **Test data** | Section `10. GIT INTEGRATION` and its `GIT_REPOSITORIES` field. |
+| **Test data** | Section `11. GIT INTEGRATION` and its `GIT_REPOSITORIES` field. |
 | **Positive — field** | Expected: the key is listed as a field of that section. |
 | **Positive — help** | Expected: it carries help text explaining the `<ssh-url>\|<access>\|<policy>` format. |
 | **Positive — visible** | Expected: the section mode is still `normal`, so adding the key did not hide the section. |
@@ -4933,7 +4933,7 @@ card will tell you if it does not.
 The browser is the instrument here, so the evidence is screenshots. Save them under
 `ScreenCaps/Stills/A8-15` and name the step in the filename.
 
-1. Open `http://localhost:7777/config`. Scroll to **10. GIT INTEGRATION**.
+1. Open `http://localhost:7777/config`. Scroll to **11. GIT INTEGRATION**.
    *Expect:* the heading, the section's explanatory text, and three fields — `GIT_USER_NAME`,
    `GIT_USER_EMAIL`, `GIT_REPOSITORIES` — each with the help text `.env.example` gives it.
    *If a field is missing,* it parsed but does not render, which is precisely the class of failure

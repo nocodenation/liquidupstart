@@ -44082,7 +44082,7 @@ __export(typebox_exports, {
   Void: () => Void
 });
 
-// ../app/dist/string-coerce-mnp54Vah.js
+// ../app/dist/string-coerce-DW4mBlAt.js
 function normalizeNullableString(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -44098,7 +44098,7 @@ function normalizeLowercaseStringOrEmpty(value) {
   return normalizeOptionalLowercaseString(value) ?? "";
 }
 
-// ../app/dist/number-coercion-CJQ8TR--.js
+// ../app/dist/number-coercion-Crk_c9KW.js
 var MAX_TIMER_TIMEOUT_MS = 2147e6;
 var MAX_TIMER_TIMEOUT_SECONDS = Math.floor(MAX_TIMER_TIMEOUT_MS / 1e3);
 
@@ -44695,7 +44695,7 @@ function stripAnsi(input) {
   return input.replace(ANSI_OSC_REGEX, "").replace(ANSI_CSI_REGEX, "");
 }
 
-// ../app/dist/argv-BulIeC99.js
+// ../app/dist/argv-CWs4KnqJ.js
 import path2 from "node:path";
 var ROOT_BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["--dev", "--no-color"]);
 var ROOT_VALUE_FLAGS = /* @__PURE__ */ new Set([
@@ -45121,7 +45121,7 @@ function resolveHomeRelativePath(input, opts) {
   return path3.resolve(trimmed);
 }
 
-// ../app/dist/paths-mvMm5bYV.js
+// ../app/dist/paths-CViT2Nwu.js
 import fs3 from "node:fs";
 import path4 from "node:path";
 import os2 from "node:os";
@@ -45225,7 +45225,7 @@ function resolveDefaultConfigCandidates(env2 = process.env, homedir = envHomedir
   return candidates;
 }
 
-// ../app/dist/redact-DN0dJKIU.js
+// ../app/dist/redact-BFQyU94D.js
 var import_json5 = __toESM(require_lib(), 1);
 import fs4 from "node:fs";
 var SAFE_REGEX_CACHE_MAX = 256;
@@ -45593,12 +45593,16 @@ var ESCAPED_ENV_ASSIGNMENT_REDACT_PATTERN = String.raw`/\b[A-Z0-9_]*(?:KEY|TOKEN
 var STANDALONE_ASSIGNMENT_QUOTED_REDACT_PATTERN = String.raw`(^|[\s,;])(?:${STANDALONE_ASSIGNMENT_SECRET_KEYS})=(["'\x60])((?:(?!\2)[^\r\n])+)\2`;
 var STANDALONE_ASSIGNMENT_REDACT_PATTERN = String.raw`(^|[\s,;])(?:${STANDALONE_ASSIGNMENT_SECRET_KEYS})=(["'\x60]?[^\s&#"'\x60<>]+)`;
 var BASE64_SAFE_TOKEN_BOUNDARY = String.raw`(^|[^A-Za-z0-9])(?<!;base64,[A-Za-z0-9+/=]*)`;
+var IDENTIFIER_SAFE_TOKEN_BOUNDARY = String.raw`(^|[^A-Za-z0-9_])`;
+var TELEGRAM_BOT_TOKEN_REDACT_PATTERN = String.raw`\bbot(\d{6,}:[A-Za-z0-9_-]{20,})\b`;
+var TELEGRAM_TOKEN_REDACT_PATTERN = String.raw`\b(\d{6,}:[A-Za-z0-9_-]{20,})\b`;
 var SHELL_REFERENCE_PRESERVING_PATTERN_SOURCES = /* @__PURE__ */ new Set([
   ENV_ASSIGNMENT_REDACT_PATTERN,
   ESCAPED_ENV_ASSIGNMENT_REDACT_PATTERN,
   STANDALONE_ASSIGNMENT_QUOTED_REDACT_PATTERN,
   STANDALONE_ASSIGNMENT_REDACT_PATTERN
 ]);
+var CHUNK_UNSAFE_PATTERN_SOURCES = /* @__PURE__ */ new Set([TELEGRAM_BOT_TOKEN_REDACT_PATTERN, TELEGRAM_TOKEN_REDACT_PATTERN]);
 var shellReferencePreservingPatterns = /* @__PURE__ */ new WeakSet();
 var chunkUnsafePatterns = /* @__PURE__ */ new WeakSet();
 var DEFAULT_REDACT_PATTERNS = [
@@ -45685,6 +45689,9 @@ var DEFAULT_REDACT_PATTERNS = [
   String.raw`(mem0_[A-Za-z0-9]{10,})`,
   String.raw`(brv_[A-Za-z0-9]{10,})`,
   String.raw`(xai-[A-Za-z0-9]{30,})`,
+  String.raw`${IDENTIFIER_SAFE_TOKEN_BOUNDARY}(fw-[A-Za-z0-9]{30,})`,
+  String.raw`${IDENTIFIER_SAFE_TOKEN_BOUNDARY}(fw_[A-Za-z0-9]{30,})`,
+  String.raw`${IDENTIFIER_SAFE_TOKEN_BOUNDARY}(fpk_[A-Za-z0-9]{30,})`,
   String.raw`${BASE64_SAFE_TOKEN_BOUNDARY}(AKIA[A-Z0-9]{16})`,
   String.raw`${BASE64_SAFE_TOKEN_BOUNDARY}(ASIA[A-Z0-9]{16})`,
   String.raw`(AKID[A-Za-z0-9]{10,})`,
@@ -45692,8 +45699,8 @@ var DEFAULT_REDACT_PATTERNS = [
   String.raw`(hf_[A-Za-z0-9]{10,})`,
   String.raw`(api_org_[A-Za-z0-9]{20,})`,
   String.raw`(r8_[A-Za-z0-9]{10,})`,
-  String.raw`\bbot(\d{6,}:[A-Za-z0-9_-]{20,})\b`,
-  String.raw`\b(\d{6,}:[A-Za-z0-9_-]{20,})\b`
+  TELEGRAM_BOT_TOKEN_REDACT_PATTERN,
+  TELEGRAM_TOKEN_REDACT_PATTERN
 ];
 var defaultResolvedPatterns;
 var DEFAULT_REDACT_PREFILTER_SOURCES = [
@@ -45701,7 +45708,7 @@ var DEFAULT_REDACT_PREFILTER_SOURCES = [
   String.raw`security[-_]?code|\bpass=|jwt=|session=|code=`,
   String.raw`\bBearer\s+`,
   String.raw`:\/\/[^\/\s:@]*:[^\/\s@]+@`,
-  String.raw`sk-|gh[opsur]_|github_pat_|glpat-|gloas-|xox[baprs]-|xapp-|hooks\.slack\.com|discord|gsk_|AIza|ya29\.|1\/\/0|eyJ|pplx-|fal_|fc-|bb_live_|gAAAA|[sr]k_(?:live|test)_|\bSG\.|npm_|pypi-|do[opr]_v1_|dp\.(?:ct|pt|sa|st|scim|audit)\.|dckr_|bkua_|CCIPAT_|sbp_|dapi[0-9a-f]|dd[pw]_|glsa_|nfp_|CFPAT-|ATCTT3|ATATT|ATBB|BBDC-|HRKU-|pat-(?:eu|na)1-|apify_api_|FlyV1|fio-u-|tvly-|exa_|syt_|retaindb_|mem0_|brv_|xai-`,
+  String.raw`sk-|gh[opsur]_|github_pat_|glpat-|gloas-|xox[baprs]-|xapp-|hooks\.slack\.com|discord|gsk_|AIza|ya29\.|1\/\/0|eyJ|pplx-|fal_|fc-|bb_live_|gAAAA|[sr]k_(?:live|test)_|\bSG\.|npm_|pypi-|do[opr]_v1_|dp\.(?:ct|pt|sa|st|scim|audit)\.|dckr_|bkua_|CCIPAT_|sbp_|dapi[0-9a-f]|dd[pw]_|glsa_|nfp_|CFPAT-|ATCTT3|ATATT|ATBB|BBDC-|HRKU-|pat-(?:eu|na)1-|apify_api_|FlyV1|fio-u-|tvly-|exa_|syt_|retaindb_|mem0_|brv_|xai-|fw-|fw_|fpk_`,
   String.raw`(?:^|[^A-Za-z0-9_])(?:am_|sk_)`,
   String.raw`A[KS]IA[A-Z0-9]|AKID|LTAI|hf_|api_org_|r8_`,
   String.raw`\bbot\d{6,}:|\b\d{6,}:[A-Za-z0-9_-]{20,}`,
@@ -45724,7 +45731,7 @@ function parsePattern(raw) {
     } else pattern = compileConfigRegex(raw, "gi")?.regex ?? null;
   }
   if (pattern && typeof raw === "string" && SHELL_REFERENCE_PRESERVING_PATTERN_SOURCES.has(raw)) shellReferencePreservingPatterns.add(pattern);
-  if (pattern && typeof raw === "string" && raw.startsWith(BASE64_SAFE_TOKEN_BOUNDARY)) chunkUnsafePatterns.add(pattern);
+  if (pattern && typeof raw === "string" && (raw.startsWith(BASE64_SAFE_TOKEN_BOUNDARY) || raw.startsWith(IDENTIFIER_SAFE_TOKEN_BOUNDARY) || CHUNK_UNSAFE_PATTERN_SOURCES.has(raw))) chunkUnsafePatterns.add(pattern);
   return pattern;
 }
 function resolvePatterns(value) {
@@ -46255,7 +46262,7 @@ function isBlockedObjectKey(key) {
   return BLOCKED_OBJECT_KEYS.has(key);
 }
 
-// ../app/dist/diagnostic-events-DNqaP5x8.js
+// ../app/dist/diagnostic-events-CLCyIzm6.js
 import { AsyncLocalStorage } from "node:async_hooks";
 var TRACE_ID_RE = /^[0-9a-f]{32}$/;
 var SPAN_ID_RE = /^[0-9a-f]{16}$/;
@@ -46484,6 +46491,7 @@ function createInternalDiagnosticMetadata(trusted) {
 function emitDiagnosticEventWithTrust(event, trusted, options = {}) {
   const state2 = getDiagnosticEventsState();
   if (!state2.enabled) return;
+  if (event.type === "security.event" && options.allowSecurityEvent !== true) return;
   const enriched = enrichDiagnosticEvent(state2, event);
   const { internal = false, privateData } = options;
   const trustedTraceContext = options.trustedTraceContext === true;
@@ -46626,7 +46634,7 @@ function resolvePreferredOpenClawTmpDir(options = {}) {
   }
 }
 
-// ../app/dist/logger-563BnNMV.js
+// ../app/dist/logger-BEyzAj9T.js
 import fs8 from "node:fs";
 import path8 from "node:path";
 import os3 from "node:os";
@@ -48231,7 +48239,7 @@ var Logger = class extends BaseLogger {
   }
 };
 
-// ../app/dist/logger-563BnNMV.js
+// ../app/dist/logger-BEyzAj9T.js
 var ALLOWED_LOG_LEVELS = [
   "silent",
   "fatal",
@@ -48276,6 +48284,20 @@ function resolveEnvLogLevelOverride() {
     process.stderr.write(`[openclaw] Ignoring invalid OPENCLAW_LOG_LEVEL="${trimmed}" (allowed: ${ALLOWED_LOG_LEVELS.join("|")}).
 `);
   }
+}
+var LOG_PREFIX = "openclaw";
+var LOG_SUFFIX = ".log";
+function canUseNodeFs() {
+  const getBuiltinModule = process.getBuiltinModule;
+  if (typeof getBuiltinModule !== "function") return false;
+  try {
+    return getBuiltinModule("fs") !== void 0;
+  } catch {
+    return false;
+  }
+}
+function formatLocalDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 var validTimeZoneCache = /* @__PURE__ */ new Map();
 var timestampFormatterCache = /* @__PURE__ */ new Map();
@@ -48349,15 +48371,6 @@ function formatLocalIsoWithOffset(now, timeZone) {
     timeZone
   });
 }
-function canUseNodeFs() {
-  const getBuiltinModule = process.getBuiltinModule;
-  if (typeof getBuiltinModule !== "function") return false;
-  try {
-    return getBuiltinModule("fs") !== void 0;
-  } catch {
-    return false;
-  }
-}
 function resolveDefaultLogDir() {
   return canUseNodeFs() ? resolvePreferredOpenClawTmpDir() : POSIX_OPENCLAW_TMP_DIR;
 }
@@ -48366,8 +48379,6 @@ function resolveDefaultLogFile(defaultLogDir) {
 }
 var DEFAULT_LOG_DIR = resolveDefaultLogDir();
 var DEFAULT_LOG_FILE = resolveDefaultLogFile(DEFAULT_LOG_DIR);
-var LOG_PREFIX = "openclaw";
-var LOG_SUFFIX = ".log";
 var MAX_LOG_AGE_MS = 1440 * 60 * 1e3;
 var DEFAULT_MAX_LOG_FILE_BYTES = 100 * 1024 * 1024;
 var MAX_ROTATED_LOG_FILES = 5;
@@ -48762,9 +48773,6 @@ function getChildLogger(bindings, opts) {
     prefix: bindings ? [name ?? ""] : []
   });
 }
-function formatLocalDate(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
 function defaultRollingPathForToday() {
   return rollingPathForDate(DEFAULT_LOG_DIR, /* @__PURE__ */ new Date());
 }
@@ -48779,7 +48787,7 @@ function resolveActiveLogFile(file) {
 }
 function isRollingPath(file) {
   const base = path8.basename(file);
-  return base.startsWith(`${LOG_PREFIX}-`) && base.endsWith(LOG_SUFFIX) && base.length === `${LOG_PREFIX}-YYYY-MM-DD${LOG_SUFFIX}`.length;
+  return base.startsWith(`openclaw-`) && base.endsWith(".log") && base.length === `openclaw-YYYY-MM-DD.log`.length;
 }
 function pruneOldRollingLogs(dir) {
   try {
@@ -48787,7 +48795,7 @@ function pruneOldRollingLogs(dir) {
     const cutoff = Date.now() - MAX_LOG_AGE_MS;
     for (const entry of entries) {
       if (!entry.isFile()) continue;
-      if (!entry.name.startsWith(`${LOG_PREFIX}-`) || !entry.name.endsWith(LOG_SUFFIX)) continue;
+      if (!entry.name.startsWith(`openclaw-`) || !entry.name.endsWith(".log")) continue;
       const fullPath = path8.join(dir, entry.name);
       try {
         if (fs8.statSync(fullPath).mtimeMs < cutoff) fs8.rmSync(fullPath, { force: true });
@@ -48817,7 +48825,7 @@ function rotateLogFile(file) {
   }
 }
 
-// ../app/dist/console-D8buipzn.js
+// ../app/dist/console-C8iSzvkb.js
 var loadConfigFallbackDefault = () => void 0;
 var loadConfigFallback = loadConfigFallbackDefault;
 function normalizeConsoleLevel(level) {
@@ -49378,7 +49386,7 @@ Object.defineProperties(createChalk.prototype, styles2);
 var chalk = createChalk();
 var chalkStderr = createChalk({ level: stderrColor ? stderrColor.level : 0 });
 
-// ../app/dist/subsystem-BbA2Znit.js
+// ../app/dist/subsystem-CYwCorYs.js
 function normalizeSubsystemLabel(subsystem) {
   if (typeof subsystem !== "string") return "unknown";
   const normalized = subsystem.trim();
@@ -49615,6 +49623,16 @@ function createSubsystemLogger(subsystem) {
   };
 }
 
+// ../app/dist/sidecar-lock-Bv7C32CP.js
+var GLOBAL_STATE_KEY = Symbol.for("fsSafe.sidecarLockManagers");
+
+// ../app/dist/secret-file-PClaG9G0.js
+var DEFAULT_SECRET_FILE_MAX_BYTES = 16 * 1024;
+
+// ../app/dist/media-services-CG1_-bAI.js
+import { execFile as execFile3, spawn } from "node:child_process";
+import { promisify as promisify3 } from "node:util";
+
 // ../app/node_modules/rastermill/dist/index.js
 import { execFile as execFile2 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
@@ -49633,25 +49651,17 @@ var CRC_TABLE = (() => {
   return table;
 })();
 
-// ../app/dist/sidecar-lock-Bv7C32CP.js
-var GLOBAL_STATE_KEY = Symbol.for("fsSafe.sidecarLockManagers");
-
-// ../app/dist/secret-file-PClaG9G0.js
-var DEFAULT_SECRET_FILE_MAX_BYTES = 16 * 1024;
-
-// ../app/dist/media-services-DE3J1qM-.js
-import { execFile as execFile3, spawn } from "node:child_process";
-import { promisify as promisify3 } from "node:util";
+// ../app/dist/media-services-CG1_-bAI.js
 var MEDIA_FFMPEG_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 var execFileAsync3 = promisify3(execFile3);
 
 // ../app/dist/image-sanitization-CxLP0YN-.js
 var DEFAULT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
-// ../app/dist/tool-images-BFpKe8KD.js
+// ../app/dist/tool-images-BAmOjkZs.js
 var log = createSubsystemLogger("agents/tool-images");
 
-// ../app/dist/common-CEBsSh4n.js
+// ../app/dist/common-CiyB9F5_.js
 function textResult(text, details) {
   return {
     content: [{
@@ -49663,14 +49673,6 @@ function textResult(text, details) {
 }
 function jsonResult(payload) {
   return textResult(JSON.stringify(payload, null, 2), payload);
-}
-
-// ../app/dist/path-array-index-BDeCXbeb.js
-var CANONICAL_ARRAY_INDEX_SEGMENT = /^(0|[1-9]\d*)$/;
-function parseConfigPathArrayIndex(segment) {
-  if (!CANONICAL_ARRAY_INDEX_SEGMENT.test(segment)) return;
-  const index2 = Number(segment);
-  return Number.isSafeInteger(index2) && index2 <= 1e5 ? index2 : void 0;
 }
 
 // ../app/dist/plugin-cache-primitives-BaxqicKH.js
@@ -49739,6 +49741,15 @@ function sanitizeTerminalText(input) {
     if (!(code >= 0 && code <= 31 || code >= 127 && code <= 159)) sanitized += char;
   }
   return sanitized;
+}
+
+// ../app/dist/path-array-index-CvEcUJa-.js
+var MAX_CONFIG_PATH_ARRAY_INDEX = 1e5;
+var CANONICAL_ARRAY_INDEX_SEGMENT = /^(0|[1-9]\d*)$/;
+function parseConfigPathArrayIndex(segment) {
+  if (!CANONICAL_ARRAY_INDEX_SEGMENT.test(segment)) return;
+  const index2 = Number(segment);
+  return Number.isSafeInteger(index2) && index2 <= MAX_CONFIG_PATH_ARRAY_INDEX ? index2 : void 0;
 }
 
 // ../app/node_modules/typebox/build/schema/types/_guard.mjs
@@ -53958,7 +53969,7 @@ function Compile(...args) {
   return new Validator(context, type);
 }
 
-// ../app/dist/json-schema-defaults-BxlICyTl.js
+// ../app/dist/json-schema-defaults-DG6hRBqY.js
 var schemaResourceIds = /* @__PURE__ */ new WeakMap();
 var nextSchemaResourceId = 1;
 var schemaMapKeywords = /* @__PURE__ */ new Set([
@@ -54608,7 +54619,7 @@ function applyJsonSchemaDefaults(schema, value) {
   return applySchemaDefaults(schema, value);
 }
 
-// ../app/dist/schema-validator-BSHTSwuX.js
+// ../app/dist/schema-validator-CuWE829s.js
 var MAX_ALLOWED_VALUES_HINT = 12;
 var MAX_ALLOWED_VALUE_CHARS = 160;
 function truncateHintText(text, limit) {
@@ -54884,7 +54895,7 @@ function validateJsonSchemaValue(params) {
   };
 }
 
-// ../app/dist/config-schema-COe96Shy.js
+// ../app/dist/config-schema-nMrjYIPk.js
 function error(message) {
   return {
     success: false,
@@ -54959,7 +54970,7 @@ function emptyPluginConfigSchema() {
   };
 }
 
-// ../app/dist/plugin-entry-EMYYC62u.js
+// ../app/dist/plugin-entry-BZpzqykQ.js
 function createCachedLazyValueGetter(value, fallback) {
   let resolved = false;
   let cached;
@@ -54988,7 +54999,7 @@ function definePluginEntry({ id, name, description, kind, configSchema = emptyPl
   };
 }
 
-// ../app/dist/tool-plugin-CdzOZQD3.js
+// ../app/dist/tool-plugin-CYQKpbhu.js
 var EMPTY_TOOL_PLUGIN_CONFIG_SCHEMA = typebox_exports.Object({}, { additionalProperties: false });
 var toolPluginMetadataSymbol = Symbol.for("openclaw.plugin-sdk.tool-plugin.metadata");
 function wrapToolPluginResult(result) {

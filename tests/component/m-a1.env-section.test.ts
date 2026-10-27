@@ -7,7 +7,7 @@
  *           simply never appear in the UI. This runs the real parser over the
  *           real file rather than a fixture, which is why the coupling to the
  *           dashboard library was accepted when the case was signed off.
- * Given:    .env.example with the "10. GIT INTEGRATION" section.
+ * Given:    .env.example with the "11. GIT INTEGRATION" section.
  * When:     parseExample and sectionModeFromTitle are applied to it.
  * Then:     The section is recognised, both GIT_* keys are listed as fields with
  *           help text, and the section mode is normal so it is shown in the UI.
@@ -25,7 +25,7 @@ const git = sections.find((s) => /GIT INTEGRATION/i.test(s.title));
 
 test('A1-1 the git section is recognised by the parser', () => {
   expect(git).toBeDefined();
-  expect(git!.title).toMatch(/^10\./);
+  expect(git!.title).toMatch(/^11\./);
 });
 
 test('A1-1 both keys are listed as fields carrying help text', () => {

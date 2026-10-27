@@ -14,9 +14,8 @@ import { tmpdir } from 'node:os';
 const ENV_DIR = mkdtempSync(join(tmpdir(), 'liquidupstart-test-'));
 process.env.ENV_DIR = ENV_DIR;
 
-const { APP_PASSWORD_DIR, APP_PASSWORD_FILE, readAppPassword, writeAppPassword } = await import(
-  './project'
-);
+const { APP_PASSWORD_DIR, APP_PASSWORD_FILE, devSourceMounts, readAppPassword, writeAppPassword } =
+  await import('./project');
 
 afterAll(() => rmSync(ENV_DIR, { recursive: true, force: true }));
 
@@ -67,5 +66,49 @@ describe('app password', () => {
     writeAppPassword('second-value');
     expect(readAppPassword()).toBe('second-value');
     expect(readFileSync(APP_PASSWORD_FILE, 'utf8')).toBe('second-value\n');
+  });
+});
+
+describe('developer source mounts', () => {
+  const project = '/srv/umbrella/liquidupstart';
+  const mounts = (value: string) =>
+    devSourceMounts(new Map([['PRIVACY_PROXY_DEV_SRC', { value }]]), project);
+
+  test('a blank value mounts nothing', () => {
+    expect(mounts('')).toEqual([]);
+    expect(devSourceMounts(new Map(), project)).toEqual([]);
+  });
+
+  test('an absolute checkout outside the project is mounted read-only at its own path', () => {
+    expect(mounts('/opt/src/privacy-proxy')).toEqual([
+      '-v',
+      '/opt/src/privacy-proxy:/opt/src/privacy-proxy:ro'
+    ]);
+  });
+
+  test('a relative checkout beside the project is mounted at its resolved host path', () => {
+    expect(mounts('../privacy-proxy')).toEqual([
+      '-v',
+      '/srv/umbrella/privacy-proxy:/srv/umbrella/privacy-proxy:ro'
+    ]);
+  });
+
+  test('a trailing slash and surrounding spaces do not change the mount', () => {
+    expect(mounts('  ../privacy-proxy/ ')).toEqual([
+      '-v',
+      '/srv/umbrella/privacy-proxy:/srv/umbrella/privacy-proxy:ro'
+    ]);
+  });
+
+  test('a checkout inside the project needs no mount of its own', () => {
+    expect(mounts('vendor/privacy-proxy')).toEqual([]);
+    expect(mounts(`${project}/vendor/privacy-proxy`)).toEqual([]);
+  });
+
+  test('a sibling whose name starts with the project name is outside it', () => {
+    expect(mounts('../liquidupstart-src')).toEqual([
+      '-v',
+      '/srv/umbrella/liquidupstart-src:/srv/umbrella/liquidupstart-src:ro'
+    ]);
   });
 });
