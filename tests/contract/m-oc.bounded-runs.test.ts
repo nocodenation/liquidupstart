@@ -1,0 +1,188 @@
+/**
+ * OC-60, OC-61 — a bound that returns, and a container that is cleaned up when it does not.
+ *
+ * Purpose: `with_timeout` could not bound a plain `docker run`. coreutils
+ * `timeout` signals the docker *client*; the client is supposed to forward it to
+ * the container and instead stays attached. Reproduced on 2026-09-11:
+ *
+ *   timeout 15 docker run --rm --name X --entrypoint node <image> \
+ *     -e 'setInterval(()=>{},1000)' </dev/null
+ *   -> still blocked after 2 minutes, container Up
+ *
+ *   the same with --init
+ *   -> rc 124 after 16s, no container left
+ *
+ * **That second measurement was one observation, and this case was founded on it
+ * as though it were a property.** On 2026-09-14 the same call with `--init` hung
+ * a suite run for 15 minutes; a hand-run sat attached to a live container for
+ * eight minutes; an outer `timeout 40` around the whole thing did not return
+ * either, because GNU timeout waits for its child after signalling. In that
+ * window three of four attempts needed `-k`'s kill (rc 137) rather than the
+ * signal (rc 124). An hour later it was gone: four of four ended at SIGTERM in
+ * eight seconds, same host, same stack. So it is intermittent, the cause was not
+ * established, and neither observation is a property. `--init` was half the fix;
+ * the kill is what makes the bound return whichever way the day is going.
+ *
+ * So the property is not "returns 124". It is: **the bound returns at all**,
+ * within its limit plus the grace, with a status the caller reads as failure,
+ * and nothing left running afterwards. A case that demands 124 rejects the very
+ * fix that makes the bound reliable — the same mistake OC-3 was re-founded for.
+ *
+ * Given  config/scripts/start/openclaw.sh, and a real docker with
+ *        liquidupstart/openclaw:latest for the behaviour half, which is
+ *        skipped, and reported as skipped, where that image is absent
+ * When   every bounded `docker run` is read, and `with_timeout` itself is run
+ * Then   each carries --init, each named container is removed when the run
+ *        fails, and the bound comes back inside its limit plus the grace
+ *
+ * The text half and the behaviour half are both here on purpose. OC-60 is the case
+ * where the text looked right — the bound was in the right place, with the right
+ * number — and the mechanism did nothing. A contract case alone would have
+ * passed over it exactly as the previous review's fix did.
+ *
+ * Requirements covered: OC-G4, OC-60 (N1) and OC-61 (N4) of the #11 second review, and the
+ * 2026-09-14 correction to OC-60 above.
+ */
+import { containerName, fixtureLabels } from '../lib/dashboardserver';
+import { test, expect, describe } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { repoRoot } from '../lib/paths';
+import { sh } from '../lib/shell';
+
+const SCRIPT = 'config/scripts/start/openclaw.sh';
+// with_timeout moved into a library on 2026-09-17: openclaw.sh and git.sh each
+// carried a copy, and both ended in a branch that ran the command unbounded.
+const LIB = JSON.stringify(join(repoRoot, 'config/scripts/start/lib/with-timeout.sh'));
+const body = readFileSync(join(repoRoot, SCRIPT), 'utf8');
+const PROBE_IMAGE = 'liquidupstart/openclaw:latest';
+// Asked as the file loads, so it must not throw: sh() hands argv to Bun.spawnSync,
+// which throws for a missing executable, and on a host with no docker that would
+// take the static half of OC-60 down with it. No docker is no image. SP-6's shape.
+const PROBE_IMAGE_PRESENT = (() => {
+  try {
+    return sh(['docker', 'image', 'inspect', PROBE_IMAGE]).code === 0;
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'ENOENT') throw e;
+    return false;
+  }
+})();
+const lines = body.split('\n');
+
+function boundedRuns(): { line: number; text: string }[] {
+  return lines
+    .map((text, i) => ({ line: i + 1, text }))
+    .filter(({ text }) => /with_timeout\s+\S+\s+docker run/.test(text))
+    .filter(({ text }) => !/^\s*(#|\/\/|\*)/.test(text));
+}
+
+describe('OC-60 every bounded docker run can actually be bounded', () => {
+  test('the scan finds the bounded runs', () => {
+    expect(boundedRuns().length).toBeGreaterThan(4);
+  });
+
+  test('each carries --init, without which timeout only frees the client', () => {
+    const offenders = boundedRuns()
+      .filter(({ text }) => !text.includes('--init'))
+      .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
+    expect(offenders).toEqual([]);
+  });
+
+  // Skipped, and reported as skipped, where the image is absent. Until 2026-10-21
+  // it asserted an object equal to itself and returned, which bun reports as a
+  // pass -- the silent green this suite exists to prevent.
+  test.skipIf(!PROBE_IMAGE_PRESENT)('and the bound really returns, rather than blocking past its limit', () => {
+    // The behaviour half, and it runs with_timeout out of the script rather than
+    // a copy of the line: -k is part of what is under test, and a copy would go
+    // on passing after the original lost it.
+    const image = PROBE_IMAGE;
+    const name = containerName('lu-bound-probe');
+    // Labelled too. This case's own premise is that `--rm` does not fire when the
+    // client is SIGKILLed, so an interrupted run leaves this container running --
+    // and with a per-run name and no label, nothing names it and the sweep cannot
+    // find it. The label is what makes it reclaimable.
+    const LABELS = fixtureLabels().join(' ');
+    const snippet = `
+      set -uo pipefail
+. ${LIB}
+      with_timeout 8 docker run --rm --init --name ${name} ${LABELS} --entrypoint node ${image} \
+        -e 'setInterval(()=>{},1000)'
+      echo "rc=$?"
+    `;
+    const started = Date.now();
+    const r = sh(['bash', '-c', snippet]);
+    const elapsed = Date.now() - started;
+    // What every caller does, and must: a client killed with SIGKILL cleans up
+    // nothing, so --rm never fires and the container outlives the bound.
+    sh(['docker', 'rm', '-f', name]);
+
+    const rc = Number(r.output.match(/rc=(\d+)/)?.[1] ?? -1);
+    // 124 when SIGTERM was enough, 137 when the kill was needed. Both are the
+    // bound expiring; neither is zero, which is all a caller has to know.
+    expect({ expired: rc === 124 || rc === 137, rc }).toEqual({ expired: true, rc });
+    // 8s limit + 10s grace, with room for a loaded machine. The point is that it
+    // comes back at all: the unfixed version did not, in 15 minutes.
+    expect(elapsed).toBeLessThan(45_000);
+  }, 90_000);
+});
+
+describe('OC-61 a named container is removed when its run does not end by itself', () => {
+  test('every helper that names a container also force-removes it on failure', () => {
+    // `--rm` fires on container exit, which is precisely what does not happen
+    // when the bound expires. Declaring rc and cname without using them — which
+    // is what the previous round did — looks like the pattern and is not it.
+    // Any variable that is the whole quoted value, as the script writes them, and
+    // `docker compose run` too: the scan read `name` and `cname` only, so the
+    // state migration's `--name "$_mig"` was outside it and its removal replaced
+    // by `true` left this green (#45, 2026-10-21). The removal has to name the
+    // same container the run did.
+    const named = lines
+      .map((text, i) => ({ line: i + 1, text, v: text.match(/docker (?:compose )?run .*--name "\$\{?(\w+)\}?"/)?.[1] }))
+      .filter((r): r is { line: number; text: string; v: string } => !!r.v && !/^\s*#/.test(r.text));
+    const vars = new Set(named.map((r) => r.v));
+    expect({ count: named.length >= 4, missing: ['_mig', 'cname', 'name'].filter((v) => !vars.has(v)) }).toEqual({
+      count: true,
+      missing: []
+    });
+
+    const offenders = named
+      .filter(({ line, v }) => {
+        const window = lines.slice(line - 1, line + 14).join('\n');
+        return !new RegExp(`docker rm -f "\\$\\{?${v}\\}?"`).test(window);
+      })
+      .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
+    expect(offenders).toEqual([]);
+  });
+
+  test('and each removal runs on the failure of its own run, the state migration included', () => {
+    // The removal being there is not enough: inverted, it runs only after a run
+    // that succeeded. OC-78 drives that for the three helpers; the migration's
+    // `_mrc` was held by nothing, 15 / 0 with it inverted (review of #47, item 2).
+    // Read per run: the variable `|| <v>=$?` sets after it, and the removal of the
+    // run's own name guarded by that variable being non-zero.
+    const named = lines
+      .map((text, i) => ({ line: i + 1, text, v: text.match(/docker (?:compose )?run .*--name "\$\{?(\w+)\}?"/)?.[1] }))
+      .filter((r): r is { line: number; text: string; v: string } => !!r.v && !/^\s*#/.test(r.text));
+    const offenders = named
+      .filter(({ line, v }) => {
+        const window = lines.slice(line - 1, line + 14).join('\n');
+        const status = window.match(/\|\| (\w+)=\$\?/)?.[1];
+        return !status || !new RegExp(`if \\(\\( ${status} != 0 \\)\\); then docker rm -f "\\$\\{?${v}\\}?"`).test(window);
+      })
+      .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
+    expect({ runs: named.length >= 4, offenders }).toEqual({ runs: true, offenders: [] });
+  });
+
+  test('and no helper declares rc or cname without using them', () => {
+    const declared = lines
+      .map((text, i) => ({ line: i + 1, text }))
+      .filter(({ text }) => /local rc=0 cname=/.test(text));
+    const offenders = declared
+      .filter(({ line }) => {
+        const window = lines.slice(line - 1, line + 16).join('\n');
+        return !/rc=\$\?/.test(window) || !/return \$rc/.test(window);
+      })
+      .map(({ line, text }) => `${SCRIPT}:${line}  ${text.trim()}`);
+    expect(offenders).toEqual([]);
+  });
+});

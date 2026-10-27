@@ -1,0 +1,49 @@
+/**
+ * M-A4 · Unit · A repository declared read refuses every push, first
+ *
+ * Purpose:  The declaration already distinguishes read from write, and a
+ *           read-only repository must not depend on its branch policy to stay
+ *           safe. The rule is therefore consulted before any other, and the
+ *           refusal says so: it is about access, not about branches. If the
+ *           order were the other way round, a `read` repository with a `direct`
+ *           policy would be told its branch is fine and let through.
+ * Given:    hookFixture() with two settings changed — liquidupstart.access=read
+ *           and liquidupstart.policy=direct, the most permissive branch setting
+ *           there is, so a refusal cannot be attributed to the branch.
+ * When:     The ordinary commit on feature/probe is pushed.
+ * Then:     Non-zero exit; the message carries the phrase `declared with access
+ *           read`, mentions neither the branch nor the branch policy, and does not
+ *           carry the git-publish gate's own sentence, so the access rule is
+ *           demonstrably the one that fired.
+ *           Corrected 2026-10-09: this read "the message says `read`", which is
+ *           what the case asserted until those four letters turned up inside the
+ *           word "reads" -- a match that could not fail. B4 of the 2026-10-01
+ *           re-review; the assertion was strengthened then and this header was not.
+ * Covers:   A4-10, U1, U4, §1.3
+ * Unhappy:  The whole case. Its counterweight is A4-1, the same push in the same
+ *           fixture with access=write, which is allowed.
+ */
+import { test, expect, afterAll } from 'bun:test';
+import { rmSync } from 'node:fs';
+import { hookFixture, git, remoteHas } from '../lib/gitfixture';
+
+const fx = hookFixture('lu-a4-access-');
+afterAll(() => rmSync(fx.root, { recursive: true, force: true }));
+
+test('A4-10 access read refuses the push before any branch rule is consulted', () => {
+  git(fx.clone, ['config', 'liquidupstart.access', 'read']);
+  git(fx.clone, ['config', 'liquidupstart.policy', 'direct']);
+
+  const r = git(fx.clone, ['push', 'origin', 'feature/probe']);
+  expect(r.code).not.toBe(0);
+  expect(remoteHas(fx, 'refs/heads/feature/probe')).toBe(false);
+  // The whole refusal sentence, not the word `read`. Found on 2026-09-20 by the
+  // mutation runner: with the access rule disabled the push is still refused --
+  // by the git-publish gate, whose message says "it reads the declaration" --
+  // and `toContain('read')` matched those four letters inside "reads". The case
+  // passed over a hook that had lost the rule it exists to protect.
+  expect(r.output).toContain('declared with access read');
+  expect(r.output).not.toMatch(/feature branch|protected|default branch/i);
+  // And it must be this rule that refused, not another one that happened to.
+  expect(r.output).not.toContain('did not come through git-publish');
+});

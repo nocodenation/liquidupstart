@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+LEVELS="unit component contract integration system e2e"
+STACK_LEVELS="system e2e"
+
+# Bun defaults to five seconds per test. Tests here shell out to docker, to git
+# and to the network, and under the full suite that default is exceeded for
+# reasons unrelated to the code -- an intermittently red suite teaches everyone
+# to ignore red. Raised in one place rather than per test.
+TEST_TIMEOUT_MS="${TEST_TIMEOUT_MS:-60000}"
+
+# The variables that tell git which repository to use, as tests/lib/shell.ts
+# removes them, and here for every file whatever order they load in: git exports
+# GIT_DIR to the hooks it runs in a linked worktree, and a fixture's git then
+# skips its ceiling. A10-24.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars 2>/dev/null | grep -v -e '^GIT_CONFIG$' -e '^GIT_CONFIG_COUNT$') 2>/dev/null || true
+
+MILESTONE=""
+ROOT="$SCRIPT_DIR"
+LIST=0
+# Opt-in since 2026-09-17. The stack levels write into volumes/ and restart
+# containers -- that is what makes them the stack levels -- and they do it to the
+# installation on this machine, not to a fixture. `--no-system` was opt-out, so
+# `./tests/run.sh m-oc` ran them by accident: on 2026-09-17 that left the gateway
+# exited 127 and its configuration missing a key, and took 26 unrelated cases
+# down with it. Asking for them is now a decision someone makes.
+WITH_SYSTEM=0
+DASHBOARD_ONLY=0
+ROOT_GIVEN=0
+
+usage() {
+  cat <<'USAGE'
+Usage: tests/run.sh [milestone] [options]
+
+  milestone        run only files named m-<milestone>.*.test.ts
+  --list           print the files that would run, then exit
+  --system         ALSO run the levels that need the running stack (system, e2e).
+                   They write into volumes/ and restart containers on this
+                   machine, so they are not run unless you ask for them.
+  --no-system      accepted and unnecessary: it is the default
+  --dashboard      run only the dashboard suite
+  --root DIR       discover tests under DIR instead of tests/
+  -h, --help       this text
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --list) LIST=1 ;;
+    --system) WITH_SYSTEM=1 ;;
+    # Kept because documents, milestones and habits name it, and it still says
+    # exactly what it did: do not run the stack levels.
+    --no-system) WITH_SYSTEM=0 ;;
+    --dashboard) DASHBOARD_ONLY=1 ;;
+    --root)
+      [[ $# -ge 2 ]] || { echo "--root needs a directory" >&2; exit 2; }
+      ROOT="$2"; ROOT_GIVEN=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *) MILESTONE="$1" ;;
+  esac
+  shift
+done
+
+run_dashboard() {
+  echo "--- dashboard suite ---"
+  (cd "${REPO_DIR}/dashboard" && bun test --timeout "$TEST_TIMEOUT_MS" src)
+}
+
+if [[ $DASHBOARD_ONLY -eq 1 ]]; then
+  status=0
+  run_dashboard || status=$?
+  exit $status
+fi
+
+if [[ ! -d "$ROOT" ]]; then
+  echo "test root not found: ${ROOT}" >&2
+  exit 2
+fi
+
+if [[ -n "$MILESTONE" ]]; then
+  case "$MILESTONE" in
+    m-*) PATTERN="${MILESTONE}.*.test.ts" ;;
+    *) PATTERN="m-${MILESTONE}.*.test.ts" ;;
+  esac
+else
+  PATTERN="*.test.ts"
+fi
+
+# What a file needs, not where it sits. Sixteen M-B files live under unit/ and
+# integration/ and drive the running stack anyway -- `docker compose exec
+# opencode nar-build` and friends -- so a plain ./tests/run.sh built probe NARs
+# into the operator's live volumes/nar_extensions, which Liquid autoloads and
+# keeps loaded after the case deletes the file. That is the thing the opt-in of
+# 2026-09-17 was introduced to stop. Item 12 of the 2026-09-28 review.
+# Calls, not mentions: a bare `nar-build` matches twenty-two files, most of
+# them only naming it in a header, and skipping those would be its own silent
+# check that never runs.
+#
+# `docker compose` is a marker and a bare `docker` is not: `docker run --rm
+# <image>` is a throwaway container that touches nothing of the operator's,
+# which is how the M-B5 cases reach the real images without a stack. `compose`
+# acts on the installation that is running here.
+STACK_MARKERS='stackGuard|requireStack|narBuild\(|narBuildAsync\(|observeBuilds\(|buildNar\(|composeExec\(|restartAndWait\(|.docker., *.compose.'
+
+needs_stack() {
+  local level
+  for level in $STACK_LEVELS; do
+    [[ "$1" == "$level" ]] && return 0
+  done
+  return 1
+}
+
+file_needs_stack() {
+  grep -qE "$STACK_MARKERS" "$1" 2>/dev/null
+}
+
+SYSTEM_FILES=()
+OTHER_FILES=()
+for level in $LEVELS; do
+  dir="${ROOT}/${level}"
+  [[ -d "$dir" ]] || continue
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if needs_stack "$level" || file_needs_stack "$f"; then
+      SYSTEM_FILES+=("$f")
+    else
+      OTHER_FILES+=("$f")
+    fi
+  done < <(find "$dir" -type f -name "$PATTERN" | sort)
+done
+
+system_count=${#SYSTEM_FILES[@]}
+other_count=${#OTHER_FILES[@]}
+total=$((system_count + other_count))
+
+if [[ $total -eq 0 ]]; then
+  echo "no tests matched (root=${ROOT}, pattern=${PATTERN})" >&2
+  exit 2
+fi
+
+SELECTED=()
+[[ $other_count -gt 0 ]] && SELECTED=("${OTHER_FILES[@]}")
+if [[ $WITH_SYSTEM -eq 1 && $system_count -gt 0 ]]; then
+  SELECTED=(${SELECTED[@]+"${SELECTED[@]}"} "${SYSTEM_FILES[@]}")
+fi
+
+# Said out loud, every time, whether or not anything else matched: a tier that is
+# skipped silently is a tier nobody remembers exists.
+if [[ $WITH_SYSTEM -eq 0 && $system_count -gt 0 ]]; then
+  echo "SKIPPED: ${system_count} file(s) at the stack levels (${STACK_LEVELS}). They write into volumes/ and restart containers on this machine. Pass --system to run them."
+fi
+
+if [[ ${#SELECTED[@]} -eq 0 ]]; then
+  echo "nothing to run."
+  exit 0
+fi
+
+if [[ $LIST -eq 1 ]]; then
+  printf '%s\n' "${SELECTED[@]}"
+  exit 0
+fi
+
+# --- Pre-flight: the Docker VM must have room -------------------------------
+# **A full VM looks exactly like a product defect, and has been read as one
+# twice.** On 2026-10-14 and again on 2026-10-15 the filesystem reached 0 bytes
+# free and a real Maven inside the builder answered `No space left on device`,
+# which surfaced as 34 failing cases across M-B5 and M-B6 -- refusals that did
+# not refuse, builds exiting 2, `AFTER=0` where a build should have succeeded.
+# Most of an incompatibility analysis between two branches was written before
+# anybody probed the build by hand. `docker system df` said "20% reclaimable"
+# throughout, because it measures what images occupy and not what the VM has
+# left; the space was in the build cache, 39.7 GB of it.
+#
+# Asked once, here, rather than in each case: one sentence before the run is
+# worth more than the same condition arriving as forty different failures. It
+# does not skip anything -- a run that cannot measure must not look like a run
+# that passed -- and it is a floor, not a law: LU_DISK_FLOOR_BYTES moves it.
+if command -v bun >/dev/null 2>&1; then
+  if ! bun -e '
+    const m = await import("./tests/lib/dockerspace.ts");
+    const v = m.spaceVerdict(m.vmFreeBytes());
+    console.log((v.ok ? "disk: " : "STOPPED, and not because of the product: ") + v.message);
+    if (!v.ok) process.exit(1);
+  ' 2>&1; then
+    echo "Nothing was run. Reclaim space and start again." >&2
+    exit 2
+  fi
+fi
+
+# Whether the Liquid image has moved since the M-B cases were written. Asked only
+# when a selected file reads the image, and it never stops the run.
+if command -v bun >/dev/null 2>&1 && grep -qs 'lib/liquidimage' "${SELECTED[@]}"; then
+  bun -e '
+    const m = await import("./tests/lib/liquidimage.ts");
+    console.log(m.preflightLine(m.WRITTEN_AGAINST, m.liquidImageVersions()));
+  ' 2>&1 || true
+fi
+
+status=0
+bun test --timeout "$TEST_TIMEOUT_MS" "${SELECTED[@]}" || status=$?
+
+if [[ $status -eq 0 && -z "$MILESTONE" && $ROOT_GIVEN -eq 0 ]]; then
+  run_dashboard || status=$?
+fi
+
+exit $status

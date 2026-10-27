@@ -13,6 +13,168 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+# A skip is a decision about this run. Clearing the directory here is what keeps
+# it from becoming a permanent setting nobody remembers making.
+. "${PROJECT_DIR}/config/scripts/start/lib/wait-for-operator.sh"
+. "${PROJECT_DIR}/config/scripts/start/lib/bind-address.sh"
+. "${PROJECT_DIR}/config/scripts/start/lib/proxy-identity.sh"
+lu_clear_skips
+
+"${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
+
+# One reader for .env, tolerant and quote-agnostic. Two failures it removes:
+# a key that is absent makes grep exit 1, pipefail passes it through and set -e
+# ends the start without a word, after down.sh has already emptied the stack; and
+# `tr -d '"'` left single quotes in place, which compose accepts and this script
+# then carried into a network name. openclaw.sh has had this shape all along, and
+# the two scripts now agree because they derive the same network name.
+get_env() {
+  grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2- | tr -d "'\"" || true
+}
+
+HTTP_PORT="$(get_env SYSTEM_HTTP_PORT)"
+HTTP_PORT="${HTTP_PORT:-8888}"
+HTTPS_PORT="$(get_env SYSTEM_HTTPS_PORT)"
+HTTPS_PORT="${HTTPS_PORT:-8833}"
+
+# --- Pre-flight: the pinned network range has to be available ----------------
+# Before down.sh, not after. A range that is already taken ends this script, and
+# by then down.sh has emptied the stack -- which is how the previous version of
+# this block failed: it created the network at line 191 with no error handling.
+#
+# main's start script creates nocodenation_playground_network_<port> with no
+# --subnet, so docker hands it the first free range: 172.18.0.0/16 on an ordinary
+# host, which is exactly what this stack pinned until 2026-09-14. Nothing joins
+# that network and nothing removes it, so every host that ever ran main kept a
+# collision lying in wait.
+# Remove main's leftover when nothing is attached to it. Nothing joins it: it is
+# created under a name no service in this compose file references.
+lu_drop_legacy_network() {  # lu_drop_legacy_network <name>
+  docker network inspect "$1" >/dev/null 2>&1 || return 0
+  [[ "$(docker network inspect "$1" --format '{{len .Containers}}' 2>/dev/null)" == "0" ]] || return 0
+  echo "Removing $1: main's start script left it behind and nothing is attached."
+  docker network rm "$1" >/dev/null 2>&1 || true
+}
+
+# Ask docker whether the range is free instead of reimplementing its pool
+# arithmetic: create a throwaway network on it, then remove it again. Skipped
+# when the stack's own network already holds exactly that range -- the ordinary
+# case, which would otherwise be reported as overlapping with itself.
+lu_require_free_subnet() {  # lu_require_free_subnet <own-network> <cidr>
+  local own="$1" cidr="$2" have probe err
+  have="$(docker network inspect "$own" --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | awk '{print $1}')"
+  [[ "$have" == "$cidr" ]] && return 0
+  probe="lu-subnet-probe-$$-${RANDOM}"
+  if ! err="$(docker network create --subnet "$cidr" "$probe" 2>&1)"; then
+    echo "Error: the network range ${cidr} is not available on this host." >&2
+    echo "  docker: ${err}" >&2
+    echo "  Something else holds it: another project, a VPN, or a network an earlier" >&2
+    echo "  version of this stack left behind. Nothing has been stopped -- the stack" >&2
+    echo "  is as it was." >&2
+    echo "  Pick a free range for SYSTEM_NETWORK_SUBNET in .env, for example:" >&2
+    echo "    SYSTEM_NETWORK_SUBNET=10.99.1.0/24" >&2
+    echo "  'docker network ls' and 'docker network inspect <name>' show what is taken." >&2
+    return 1
+  fi
+  docker network rm "$probe" >/dev/null 2>&1 || true
+  return 0
+}
+
+LU_NETWORK="nocodenation_liquid_upstart_network_${HTTP_PORT}"
+LU_SUBNET_CIDR="$(get_env SYSTEM_NETWORK_SUBNET)"
+LU_SUBNET_CIDR="${LU_SUBNET_CIDR:-10.99.0.0/24}"
+LU_PROXY_IP="$(get_env SYSTEM_PROXY_IP)"
+LU_PROXY_IP="${LU_PROXY_IP:-10.99.0.2}"
+
+# The proxy takes a fixed address so the gateway can name it in trustedProxies.
+# Two keys that have to agree: compose refuses an ipv4_address outside the
+# network's subnet, and it refuses it at `up`, long after down.sh has emptied the
+# stack -- with a message that names neither key. Checked here instead, before
+# anything is stopped.
+#
+# Arithmetic rather than bit operations: macOS awk has no and()/compl().
+lu_ip_in_cidr() {  # lu_ip_in_cidr <ip> <cidr>
+  awk -v ip="$1" -v cidr="$2" '
+    function toint(a,  p) { split(a, p, "."); return p[1]*16777216 + p[2]*65536 + p[3]*256 + p[4] }
+    BEGIN {
+      split(cidr, c, "/")
+      bits = c[2] + 0
+      if (bits < 0 || bits > 32) exit 1
+      size = 2 ^ (32 - bits)
+      base = int(toint(c[1]) / size) * size
+      v = toint(ip)
+      exit (v >= base && v < base + size) ? 0 : 1
+    }'
+}
+
+LU_NETWORK_POOL="$(get_env SYSTEM_NETWORK_POOL)"
+LU_NETWORK_POOL="${LU_NETWORK_POOL:-10.99.0.128/25}"
+
+# Inside the pool docker allocates by itself, so a pinned address there is a
+# collision waiting for the right start order -- and the proxy starts last,
+# because everything else is its dependency.
+if lu_ip_in_cidr "$LU_PROXY_IP" "$LU_NETWORK_POOL"; then
+  echo "Error: SYSTEM_PROXY_IP ${LU_PROXY_IP} is inside SYSTEM_NETWORK_POOL ${LU_NETWORK_POOL}." >&2
+  echo "  That range is what docker hands out on its own; an address pinned there" >&2
+  echo "  is taken by whichever container starts first, and the proxy starts last." >&2
+  echo "  Measured 2026-09-16: 'Address already in use', with eurooffice holding it." >&2
+  echo "  Pick an address outside the pool -- for ${LU_SUBNET_CIDR} with the default" >&2
+  echo "  pool, anything from .2 to .127. Nothing has been stopped." >&2
+  exit 1
+fi
+
+if ! lu_ip_in_cidr "$LU_PROXY_IP" "$LU_SUBNET_CIDR"; then
+  echo "Error: SYSTEM_PROXY_IP ${LU_PROXY_IP} is not inside SYSTEM_NETWORK_SUBNET ${LU_SUBNET_CIDR}." >&2
+  echo "  The proxy takes that address on the stack network, and the OpenClaw gateway" >&2
+  echo "  trusts exactly it; the two keys have to agree or nothing starts." >&2
+  echo "  Change one of them in .env so the address falls inside the range -- for" >&2
+  echo "  ${LU_SUBNET_CIDR}, the first address docker leaves free is the .2." >&2
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
+
+# SYSTEM_BIND_ADDRESS is judged by compose exactly as the ipv4_address above is:
+# at `up`, long after down.sh has emptied the stack. The value an operator
+# reaches for first is `localhost`, and compose refuses it -- `invalid IP
+# address: localhost` -- so the start reported "this machine only" and then left
+# the host with nothing running. Found by the reviewer on 2026-10-16, as F1 of
+# the review of this branch; the same shape as the subnet check above and now in
+# the same place.
+#
+# The verdict is compose's own, and both decisions live in
+# config/scripts/start/lib/bind-address.sh so a case can put values through them
+# without running a start -- which is why the `::1` misreport below went unseen.
+#
+# Normalising `localhost` to 127.0.0.1 was the alternative and is deliberately
+# not done: the dashboard renders this compose file too, and a rewrite that lived
+# only in this script would make the two paths disagree about what .env means.
+LU_BIND_ADDRESS="$(get_env SYSTEM_BIND_ADDRESS)"
+LU_BIND_ERROR="$(lu_bind_invalid_address "$PROJECT_DIR" || true)"
+if [[ -n "$LU_BIND_ERROR" ]]; then
+  echo "Error: SYSTEM_BIND_ADDRESS=${LU_BIND_ADDRESS:-<empty>} is not an address compose accepts." >&2
+  echo "  compose says: ${LU_BIND_ERROR}" >&2
+  echo "  It has to be a literal address, not a name: 127.0.0.1 for this machine" >&2
+  echo "  only, 0.0.0.0 for every interface, or one interface address. \`localhost\`" >&2
+  echo "  is the one that looks right and is not -- compose resolves no names here." >&2
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
+
+lu_drop_legacy_network "nocodenation_playground_network_${HTTP_PORT}"
+lu_require_free_subnet "$LU_NETWORK" "$LU_SUBNET_CIDR" || exit 1
+
+# --- Pre-flight: the identity nginx vouches for must be readable --------------
+# Before down.sh, for the reason the subnet check is: `openclaw.sh` needs this
+# value and runs **after** the teardown, so a template it could not read ended
+# the start with the stack already emptied and a message about nginx. C4 of the
+# 2026-10-01 review. The value is not kept -- `openclaw.sh` asks the same
+# function again when it needs it -- because what belongs here is the verdict,
+# and a value carried across a teardown is a second place for it to be stale.
+if ! lu_proxy_identity "${PROJECT_DIR}/config/nginx/templates/nginx.conf" >/dev/null; then
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
+
 "${PROJECT_DIR}/scripts/linux/down.sh"
 
 # --- Pre-flight: the host ports the proxy publishes must be free -------------
@@ -20,12 +182,7 @@ fi
 # a half-started stack. Probe each via a throwaway container: the bind happens
 # on the real host, so this works from inside the toolbox container too. Our
 # proxy was just stopped by down.sh, so a conflict here is some other process.
-HTTP_PORT="$(grep -E '^SYSTEM_HTTP_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-HTTP_PORT="${HTTP_PORT:-8888}"
-HTTPS_PORT="$(grep -E '^SYSTEM_HTTPS_PORT=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-HTTPS_PORT="${HTTPS_PORT:-8833}"
-
-LOCAL_LLM_API_BASE="$(grep -E '^LOCAL_LLM_API_BASE=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"' || true)"
+LOCAL_LLM_API_BASE="$(get_env LOCAL_LLM_API_BASE)"
 LOCAL_LLM_HOST="${LOCAL_LLM_API_BASE#*://}"
 LOCAL_LLM_HOST="${LOCAL_LLM_HOST%%[:/]*}"
 export LOCAL_LLM_HOST="${LOCAL_LLM_HOST:-local_llm}"
@@ -136,20 +293,28 @@ fi
 "${PROJECT_DIR}/config/scripts/start/generate_api_key.sh"
 "${PROJECT_DIR}/config/scripts/start/pgadmin.sh"
 "${PROJECT_DIR}/config/scripts/start/opencode.sh"
+"${PROJECT_DIR}/config/scripts/start/git.sh"
 "${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
 "${PROJECT_DIR}/config/scripts/start/nginx.sh"
 "${PROJECT_DIR}/config/scripts/start/liquid.sh"
+"${PROJECT_DIR}/config/scripts/start/nar-builder.sh"
 # hermes disabled: not started
 # "${PROJECT_DIR}/config/scripts/start/hermes.sh"
+# No network is created here any more. It existed only so openclaw.sh could read
+# the subnet off the live network before compose brought it up; openclaw.sh reads
+# SYSTEM_NETWORK_SUBNET from .env now, which is the same value compose declares as
+# ipam, so compose can create the network at `up` like any other. That also
+# removes the ordering dependency between this script and openclaw.sh.
+
 "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
 
 
-docker network inspect nocodenation_playground_network_${HTTP_PORT} >/dev/null 2>&1 \
-  || docker network create nocodenation_playground_network_${HTTP_PORT}
-
-PRIVACY_PROXY_ENABLE="$(grep -E '^PRIVACY_PROXY_ENABLE=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
+# The privacy proxy runs under its own compose profile, so it is invisible to
+# `docker compose up` unless PRIVACY_PROXY_ENABLE=1 adds the profile here; the
+# agents' start scripts read PRIVACY_PROXY_URL to register its doors.
+PRIVACY_PROXY_ENABLE="$(get_env PRIVACY_PROXY_ENABLE)"
 if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
-  PP_PORT="$(grep -E '^PRIVACY_PROXY_PORT=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"")"
+  PP_PORT="$(get_env PRIVACY_PROXY_PORT)"
   PP_PORT="${PP_PORT:-8080}"
   export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
   export PRIVACY_PROXY_URL="http://privacy-proxy:${PP_PORT}"
@@ -174,9 +339,9 @@ if [[ $UP_RC -ne 0 ]]; then
   exit $UP_RC
 fi
 
-PGADMIN_DEFAULT_EMAIL="$(grep -E '^PGADMIN_DEFAULT_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-LIQUID_USERNAME="$(grep -E '^LIQUID_USERNAME=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-LIQUID_PASSWORD="$(grep -E '^LIQUID_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+PGADMIN_DEFAULT_EMAIL="$(get_env PGADMIN_DEFAULT_EMAIL)"
+LIQUID_USERNAME="$(get_env LIQUID_USERNAME)"
+LIQUID_PASSWORD="$(get_env LIQUID_PASSWORD)"
 # hermes disabled: HERMES_API_KEY="$(grep -E '^HERMES_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
 # Colors only when stdout is a terminal (stays plain when piped/redirected).
@@ -186,12 +351,26 @@ if [[ -t 1 ]]; then
   URL=$'\033[36m'     # cyan        - URLs
   CRED=$'\033[1;33m'  # bold yellow - passwords/tokens
   DIM=$'\033[2m'      # dim         - secondary info
+  WARN=$'\033[1;31m'  # bold red    - what did not come up
   RST=$'\033[0m'
 else
-  HDR='' SVC='' URL='' CRED='' DIM='' RST=''
+  HDR='' SVC='' URL='' CRED='' DIM='' WARN='' RST=''
 fi
 
 url_line() { printf "  ${SVC}%-13s${RST} ${URL}%s${RST}\n" "$1" "$2"; }
+
+unreachable_repositories() {
+  local manifest="${PROJECT_DIR}/volumes/_git-secrets/repositories.json"
+  [[ -f "$manifest" ]] || return 0
+  awk -F'"' '
+    /"host":/          { host = $4 }
+    /"path":/          { path = $4 }
+    /"publicKeyFile":/ { key  = $4 }
+    /"error":/         { err = $4 }
+    /"cloned": *false/ { bad = 1 }
+    /^    \}/          { if (bad) printf "%s/%s\t%s\t%s\n", host, path, key, err; bad = 0; err = "" }
+  ' "$manifest"
+}
 
 echo ""
 echo "${HDR}=== Web interfaces = Storage =====================================${RST}"
@@ -226,6 +405,41 @@ echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost
 echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
 echo ""
 
+# Both states, said out loud. The ports bind to this machine by default from the
+# merge of PR #20 onward, which the README had promised since July without
+# compose.yml doing it -- so an installation that was reaching the stack from a
+# phone will stop, and a silent stop is the worst way to learn about a default.
+# The other direction is worth a line too: reachable from the network is the
+# surprising state, and the two endpoints above are the only reason to want it.
+#
+# Every loopback form, not just the one in .env.example: `::1` was reported as
+# "your network" until the reviewer read it (F1, 2026-10-16), and 127.0.0.2 would
+# have been too. `localhost` is no longer a case here -- the pre-flight refuses it
+# before anything stops, because compose does not resolve names.
+BIND_ADDRESS="$(get_env SYSTEM_BIND_ADDRESS)"; BIND_ADDRESS="${BIND_ADDRESS:-127.0.0.1}"
+if lu_bind_is_loopback "$BIND_ADDRESS"; then
+  echo "  ${DIM}Reachable from: this machine only (SYSTEM_BIND_ADDRESS=${BIND_ADDRESS}).${RST}"
+  echo "  ${DIM}  Another device needs SYSTEM_BIND_ADDRESS=0.0.0.0, or an SSH tunnel.${RST}"
+else
+  echo "  ${WARN}Reachable from: your network (SYSTEM_BIND_ADDRESS=${BIND_ADDRESS}).${RST}"
+  echo "  ${DIM}  Every service above is, including the ones with no password, and the${RST}"
+  echo "  ${DIM}  OpenClaw gateway with admin rights: nginx asserts the operator identity${RST}"
+  echo "  ${DIM}  for whoever reaches it, so the network reaches it as the operator.${RST}"
+fi
+echo ""
+
+ATTENTION="$(unreachable_repositories)"
+if [[ -n "$ATTENTION" ]]; then
+  echo "${WARN}=== Needs your attention =========================================${RST}"
+  while IFS=$'\t' read -r label key err; do
+    [[ -n "$label" ]] || continue
+    echo "  ${WARN}${label} is not reachable${RST}"
+    [[ -n "$err" ]] && echo "    ${DIM}${err}${RST}"
+    echo "    Register ${URL}${key}${RST} as a deploy key, then test it on the dashboard."
+  done <<< "$ATTENTION"
+  echo ""
+fi
+
 _copilot_reauth() {
   echo "  ${CRED}GitHub Copilot: $1.${RST}"
   local cmd="docker exec -it openclaw-gateway openclaw infer model auth login --provider github-copilot"
@@ -239,7 +453,7 @@ _copilot_reauth() {
 
 check_copilot_auth() {
   local enabled probe i=0
-  enabled="$(grep -E '^ENABLE_GITHUB_COPILOT=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"")"
+  enabled="$(get_env ENABLE_GITHUB_COPILOT)"
   [[ "${enabled:-0}" == "1" ]] || return 0
   while ! docker exec openclaw-gateway true 2>/dev/null && [ "$i" -lt 30 ]; do i=$((i+1)); sleep 1; done
   probe="$(docker exec -i openclaw-gateway node 2>/dev/null <<'NODE'

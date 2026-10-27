@@ -200,7 +200,7 @@ Renders `config/privacy-proxy/templates/Dockerfile` and builds `liquidupstart/pr
 omits the CLI (proprietary, no redistribution grant), so it is installed on the operator's own
 machine.
 
-`PRIVACY_PROXY_DEV_SRC` (`.env` §11) redirects the base: given a path to a privacy-proxy checkout,
+`PRIVACY_PROXY_DEV_SRC` (`.env` §13) redirects the base: given a path to a privacy-proxy checkout,
 the script first builds `liquidupstart/privacy-proxy-base:dev` from that tree (validating that a
 `Dockerfile` is present, with an `::aiw-error::` diagnostic if not) and derives from it instead of
 pulling. `PRIVACY_PROXY_DEV_MODELS_EXTRA` and `PRIVACY_PROXY_DEV_SOURCE_OFFER_CONTACT` tune that

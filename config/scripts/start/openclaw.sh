@@ -5,6 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 ENV_FILE="${PROJECT_DIR}/.env"
 
+# Every `docker compose` below needs compose.yml, which compose looks for in the
+# working directory. This used to be set inside the first-run branch only -- the
+# one start where there is no state to migrate -- so the state migration, which
+# runs on every start after that, borrowed whatever directory the caller was in.
+# start.sh cds first, so it never fired through the ordinary path.
+cd "${PROJECT_DIR}"
+
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Error: .env file not found at ${ENV_FILE}" >&2
   exit 1
@@ -18,13 +25,62 @@ sed_inplace() {
   fi
 }
 
+# Bound a command (mirrors config/scripts/start/git.sh). Exit 124 means it hit
+# the limit. Without coreutils' timeout the command runs unbounded, as there.
+# The bound every `docker run` here is wrapped in. One implementation, in
+# lib/with-timeout.sh: this file carried its own, git.sh carried a second, and
+# both ended in a branch that ran the command unbounded when GNU coreutils was
+# absent -- which is every macOS host, the operator's included.
+#
+# Every caller treats any non-zero status as "the bound expired", not the literal
+# 124, and force-removes the container it named: a client killed with SIGKILL
+# cleans nothing up, so --rm never fires.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/with-timeout.sh"
+
 # Read a KEY=value from the project-root .env (empty if unset).
 # `|| true`: a missing key makes grep exit 1, aborting under set -e/pipefail.
 get_env() {
   grep -E "^${1}=" "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true
 }
 
+# One implementation of waiting on the operator: announce, poll, allow a skip,
+# stop at a deadline. Before it, each wait below carried its own copy of the
+# deadline and none of them could be skipped.
+. "${SCRIPT_DIR}/lib/wait-for-operator.sh"
+. "${SCRIPT_DIR}/lib/proxy-identity.sh"
+
 OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
+
+# The OpenClaw version the gateway will actually run, read from the image.
+# 2026.9.1 retired two config keys this stack writes and relocated a third, so
+# the config that is correct for one version fails validation on the other. The
+# version is a determinable fact, so it is read at the moment it is needed
+# rather than inferred from the Dockerfile's pin: a pin plus a comment can go
+# false when someone changes the pin, a value read from the image cannot.
+# Empty when it cannot be determined -- the caller must refuse, not guess.
+openclaw_version() {
+  local image="${1:-$OPENCLAW_IMAGE}" out
+  out="$(with_timeout 60 docker run --rm --init --entrypoint openclaw "$image" --version 2>/dev/null | head -n1)" || return 0
+  # "OpenClaw 2026.7.1" and "OpenClaw 2026.9.1 (ad6fe23)" both parse.
+  printf '%s' "$out" | sed -n 's/^OpenClaw \([0-9][0-9.]*\).*$/\1/p'
+}
+
+# Does the image resolve a bare `claude` to our wrapper? Checked the way the
+# gateway resolves it -- a login shell under HOME=/home/node -- not by testing the
+# path we would call ourselves, which is what made the gap invisible.
+claude_wrapper_shadowed() {
+  local image="${1:-$OPENCLAW_IMAGE}"
+  with_timeout 60 docker run --rm --init --user 0:0 -e HOME=/home/node \
+    --entrypoint /bin/sh "$image" -c \
+    'test -x /home/node/.local/bin/claude && [ "$(sh -lc "command -v claude")" = /home/node/.local/bin/claude ]' \
+    >/dev/null 2>&1
+}
+
+# True when $1 is at least $2, comparing as versions rather than as strings
+# (2026.10 must beat 2026.9, which a string comparison gets wrong).
+version_at_least() {
+  [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]
+}
 
 # Render config/openclaw/.env from the template, then inject model-provider keys
 # from the root .env. The template is the contract: only keys it already declares
@@ -113,48 +169,94 @@ PRIVACY_ANTHROPIC=0
 # source of truth for the primary model.
 CONFIG_JSON="${STATE_DIR}/openclaw.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
-  docker run --rm --user 0:0 --entrypoint openclaw \
-    -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
-    -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
-    -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
-    -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
-    -e OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace \
-    -v "${STATE_DIR}:/home/node/.openclaw" \
-    -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
-    -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-    "${OPENCLAW_IMAGE}" onboard --non-interactive --accept-risk --skip-health
+  docker compose run --rm -T --user 0:0 openclaw-cli onboard --non-interactive --accept-risk --skip-health
+  docker compose rm -sf openclaw-gateway >/dev/null 2>&1 || true
 else
   echo "OpenClaw config already present at ${CONFIG_JSON}; skipping setup."
 fi
 
-rm -f "${WORKSPACE_DIR}/BOOTSTRAP.md"
+# Which version last wrote this state, read out of the state itself. OpenClaw
+# records it in meta.lastTouchedVersion; empty when the config predates the field.
+openclaw_state_version() {
+  [[ -f "$CONFIG_JSON" ]] || return 0
+  # `|| return 0` for the same reason openclaw_version has it: under set -e a
+  # failing docker run -- image absent, daemon erroring, timeout 124/125 -- would
+  # end the script at the caller's assignment, with 2>/dev/null having discarded
+  # the reason and down.sh having emptied the stack a hundred lines earlier. An
+  # unreadable state version is "unknown", not a reason to stop without a word.
+  with_timeout 60 docker run --rm --init --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
+    try {
+      const c = JSON.parse(require("fs").readFileSync("/state/openclaw.json", "utf8"));
+      const v = c && c.meta && c.meta.lastTouchedVersion;
+      if (typeof v === "string") process.stdout.write(v);
+    } catch (e) {}
+  ' 2>/dev/null || return 0
+}
 
-IDENTITY_MD="${WORKSPACE_DIR}/IDENTITY.md"
-if [[ ! -f "$IDENTITY_MD" ]] || grep -q 'Fill this in during your first conversation' "$IDENTITY_MD"; then
-  cat > "$IDENTITY_MD" <<'IDENTITY_EOF'
-# IDENTITY.md - Who Am I?
+# Carry a state directory written by an older OpenClaw across to this one.
+#
+# 2026.9.1 refuses to start against 2026.7.1 state -- "Legacy workspace setup
+# state requires migration for /home/node/.openclaw/workspace" -- and restarts
+# until its own restart-loop breaker trips, so `docker compose up` fails with
+# "dependency failed to start" and the start script exits with the gateway down.
+#
+# The repair is `openclaw doctor --fix`, and it is not reachable the way its own
+# message implies. Doctor refuses while any config error stands, and one always
+# does here: plugins.load.paths names /home/node/openclaw-plugins/ingest-pdf,
+# which is not a mount. The gateway's compose `command:` copies it from
+# /opt/plugins at its own startup, so the directory exists in no other container
+# -- and not in the gateway either, while it is crash-looping. Every documented
+# route to the fix therefore leads nowhere. This replicates the copy first.
+openclaw_migrate_state() {
+  echo "OpenClaw: state was written by ${1}, image is ${2} — migrating before start."
+  local _mig="openclaw-migrate-$$-${RANDOM}" _mrc=0
+  with_timeout 600 docker compose run --rm --name "$_mig" --no-deps -T --user 0:0 --entrypoint /bin/sh openclaw-gateway -lc '
+        mkdir -p /home/node/openclaw-plugins
+        cp -a /opt/plugins/. /home/node/openclaw-plugins/ 2>/dev/null || true
+        chmod -R go-w /home/node/openclaw-plugins 2>/dev/null || true
+        openclaw doctor --fix
+      ' >/dev/null 2>&1 || _mrc=$?
+  # Any non-zero status, not 124: with -k an expired bound reports 137.
+  if (( _mrc != 0 )); then docker rm -f "$_mig" >/dev/null 2>&1 || true; fi
+  if (( _mrc == 0 )); then
+    echo "OpenClaw: state migrated."
+  else
+    echo "Warning: the OpenClaw state migration did not complete." >&2
+    echo "  The gateway will refuse to start against state an older version wrote." >&2
+    echo "  Run it by hand and read the output:" >&2
+    echo "    docker compose run --rm --no-deps --user 0:0 --entrypoint /bin/sh openclaw-gateway -lc '\\" >&2
+    echo "      mkdir -p /home/node/openclaw-plugins && cp -a /opt/plugins/. /home/node/openclaw-plugins/ && \\" >&2
+    echo "      chmod -R go-w /home/node/openclaw-plugins && openclaw doctor --fix'" >&2
+  fi
+}
 
-- **Name:** Assistant
-- **Creature:** AI assistant running in the Liquid Upstart stack
-- **Vibe:** direct and concise; gets on with the task
-
-Identity is already settled. Never open a session by asking who you are or who
-the user is — start on what they actually asked for. If they want any of this
-changed, they will say so, and you can update this file then.
-IDENTITY_EOF
-fi
-
-USER_MD="${WORKSPACE_DIR}/USER.md"
-if [[ ! -f "$USER_MD" ]] || grep -qE '^- \*\*Name:\*\*[[:space:]]*$' "$USER_MD"; then
-  cat > "$USER_MD" <<'USER_EOF'
-# USER.md - About Your Human
-
-Nothing recorded yet, and that is fine.
-
-Do not interview the user about themselves, and do not ask for a name, timezone
-or pronouns to get started. Pick these up from what they volunteer in the course
-of the work, and update this file when they do.
-USER_EOF
+if [[ -f "$CONFIG_JSON" ]]; then
+  STATE_VERSION="$(openclaw_state_version || true)"
+  IMAGE_VERSION="$(openclaw_version)"
+  if [[ -z "$IMAGE_VERSION" ]]; then
+    echo "Error: could not determine the OpenClaw version in ${OPENCLAW_IMAGE}." >&2
+    echo "  Build the image first: ./config/scripts/build/openclaw.sh" >&2
+    exit 1
+  fi
+  if [[ -z "$STATE_VERSION" ]]; then
+    # Predates meta.lastTouchedVersion, so it is older by definition.
+    openclaw_migrate_state "an older version" "$IMAGE_VERSION"
+  elif [[ "$STATE_VERSION" != "$IMAGE_VERSION" ]]; then
+    if version_at_least "$IMAGE_VERSION" "$STATE_VERSION"; then
+      openclaw_migrate_state "$STATE_VERSION" "$IMAGE_VERSION"
+    else
+      # A downgrade. OpenClaw refuses to run startup migrations backwards, and
+      # the failure is a crash loop rather than a message, so it is caught here.
+      echo "Error: ${STATE_DIR} was written by OpenClaw ${STATE_VERSION}, but ${OPENCLAW_IMAGE} is ${IMAGE_VERSION}." >&2
+      echo "  OpenClaw refuses to start on state a newer version wrote:" >&2
+      echo "  \"Refusing to run automatic gateway startup migrations\"." >&2
+      echo "  A downgrade is never only a tag change — the state has to go with it." >&2
+      echo "  Either build the image the state expects, or set the state aside:" >&2
+      echo "    mv ${STATE_DIR} ${STATE_DIR}.bak-${STATE_VERSION}" >&2
+      echo "  and start again, which creates a fresh one. Sessions in it are lost." >&2
+      exit 1
+    fi
+  fi
 fi
 
 # Patch openclaw.json on every start so the gateway works behind the proxy:
@@ -166,9 +268,9 @@ fi
 #      trustworthy because nothing but the proxy/CLI can reach the gateway.
 #   2. gateway.controlUi.allowedOrigins=["*"] — otherwise the dashboard's WebSocket
 #      origin is rejected. Safe (only a CSRF-style guard); no env var exists.
-#   3. gateway.auth.trustedProxy.deviceAutoApprove — behind the proxy the gateway
-#      sees the proxy IP not localhost, so allowInsecureAuth (localhost-only) can't
-#      apply and every browser would otherwise be forced to pair.
+#   3. removal of keys OpenClaw 2026.9.1 retired (see below) — the config is
+#      rewritten every start, so an upgraded install self-heals instead of
+#      tripping the validator.
 #   4. per-backend provider/runtime wiring — each enabled backend routes its
 #      provider/* through the right runtime and adds it to the picker. No primary
 #      model is pinned; the user chooses the model in OpenClaw's UI.
@@ -195,7 +297,24 @@ for _tp in \
   fi
 done
 
+# Is there an OpenAI key? memory.search defaults to the openai provider, so
+# without one every turn pays for a failed embedding call --
+# on an installation that .env.example:85 explicitly blesses: "Don't have any
+# keys? That's fine". Computed here, where the keys are read, rather than
+# inferred in the writer from MODEL_WILDCARDS, which also carries openai/* for
+# ENABLE_CODEX=1 and would answer yes without a key. F4 of the 2026-09-22 review.
+MEMORY_OPENAI_KEY=0
+[[ -n "$(get_env OPENAI_API_KEY)" ]] && MEMORY_OPENAI_KEY=1
+
+# The Claude CLI serves models under two provider ids: anthropic/* for the API
+# route and claude-cli/* for the CLI itself. 2026.7.1 had no model policy, so
+# only the routing map mattered and anthropic/* was enough. 2026.9.1 introduced
+# agents.defaults.modelPolicy.allow and built it from that map -- which never
+# mentioned claude-cli, so every claude-cli model was listed and none selectable:
+# "Failed to set model: model not allowed: claude-cli/claude-opus-5".
 for _bw in \
+  "${ENABLE_CLAUDE_CLI}:anthropic/*" \
+  "${ENABLE_CLAUDE_CLI}:claude-cli/*" \
   "${ENABLE_COPILOT}:github-copilot/*" \
   "${ENABLE_CODEX}:openai/*" \
   "${ENABLE_GROK}:xai/*" \
@@ -216,11 +335,11 @@ else
     _llm_host="${LOCAL_LLM_API_BASE#*://}"; _llm_host="${_llm_host%%[:/]*}"
     _addhost=()
     [[ -n "$_llm_host" && -n "$LOCAL_LLM_HOST_IP" ]] && _addhost=(--add-host "${_llm_host}:${LOCAL_LLM_HOST_IP}")
-    LOCAL_LLM_MODELS_JSON="$(docker run --rm ${_addhost[@]+"${_addhost[@]}"} \
+    LOCAL_LLM_MODELS_JSON="$(with_timeout 60 docker run --rm --init ${_addhost[@]+"${_addhost[@]}"} \
       -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
       -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
       --entrypoint node \
-      ghcr.io/openclaw/openclaw:latest \
+      "${OPENCLAW_IMAGE}" \
       -e '
         (async () => {
           const base = process.env.LOCAL_LLM_API_BASE.replace(/\/+$/, "");
@@ -244,10 +363,10 @@ else
   OPENROUTER_MODELS_JSON="[]"
   OPENROUTER_KEY="$(get_env OPENROUTER_API_KEY)"
   if [[ -n "$OPENROUTER_KEY" ]]; then
-    OPENROUTER_MODELS_JSON="$(docker run --rm \
+    OPENROUTER_MODELS_JSON="$(with_timeout 60 docker run --rm --init \
       -e OPENROUTER_API_KEY="${OPENROUTER_KEY}" \
       --entrypoint node \
-      ghcr.io/openclaw/openclaw:latest \
+      "${OPENCLAW_IMAGE}" \
       -e '
         (async () => {
           try {
@@ -269,8 +388,83 @@ else
 
   # Patch the JSON with the image's bundled node (no host jq/node, no gateway —
   # a throwaway container mounting only the state dir).
+  # OpenClaw 2026.9.1 refuses proxy-shaped traffic it cannot attribute. What it
+  # needs is not a *narrow* trustedProxies -- it is a list that does not contain
+  # the client. resolveForwardedClientIp walks X-Forwarded-For right to left and
+  # discards every hop that is loopback or trusted; whatever is left is the
+  # client, and if nothing is left the request is 403.
+  #
+  # So trust the proxy, not the network it sits in. Until 2026-09-16 this wrote
+  # the whole subnet, which works only while the client happens to be outside it:
+  #
+  #   from the host on Docker Desktop   192.168.65.1  outside 10.99.0.0/24  -> 200
+  #   from any container in the stack   10.99.0.11    inside               -> 403
+  #
+  # Both measured here on 2026-09-16, and the second is every agent in this stack
+  # that talks to the gateway through the proxy. On rootless docker with the
+  # builtin port driver the host arrives as 10.99.0.1 and even a browser gets the
+  # 403 -- which is how Timur found it, and why #11's §5.4 read the rule as being
+  # about width. It is not; it is about membership.
+  #
+  # Read from .env rather than off the live container: the address has to be known
+  # before anything is started, and compose gives the proxy the same fixed value.
+  LU_PROXY_IP="$(get_env SYSTEM_PROXY_IP)"
+  LU_PROXY_IP="${LU_PROXY_IP:-10.99.0.2}"
+  if [[ ! "$LU_PROXY_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: SYSTEM_PROXY_IP in ${ENV_FILE} is not an address: ${LU_PROXY_IP}" >&2
+    echo "  The gateway trusts this one address and treats every other hop as the" >&2
+    echo "  client; a malformed value makes every proxied request answer 403." >&2
+    echo "  Expected something like 10.99.0.2, inside SYSTEM_NETWORK_SUBNET." >&2
+    exit 1
+  fi
+
+  # The identity nginx puts on every proxied request, read out of the template
+  # that sets it rather than written down a second time here. Two files that must
+  # agree on a string will disagree eventually, and the failure is silent: the
+  # grant below simply never matches, and the CLI is refused for what looks like a
+  # scope problem. So it is computed, and a template that carries more than one
+  # identity fails the start rather than picking one.
+  #
+  # What the grant is for: gateway.auth.mode is trusted-proxy, so a CLI that
+  # reaches the gateway directly sends no header and is refused. Sent THROUGH
+  # nginx it is authenticated, and then it needs a scope -- which comes from
+  # nowhere, because scopes live on the device record and a fresh CLI has none.
+  # Without this, `openclaw devices approve` cannot run in this stack at all, and
+  # a browser whose device token was revoked has no way back. Measured 2026-09-19;
+  # the case is OC-41, and OC-42 is the half that shows this does not by itself
+  # release such a browser. See §9 of docs/FEATURE-openclaw-2026-9-1.md.
+  # One place computes this, and `scripts/linux/start.sh` asks it **before**
+  # down.sh so a template this cannot read does not end the start with the stack
+  # already emptied. C4 of the 2026-10-01 review; the function's own header has
+  # the reasoning and the spellings it refuses.
+  NGINX_TEMPLATE="${PROJECT_DIR}/config/nginx/templates/nginx.conf"
+  LU_PROXY_IDENTITY="$(lu_proxy_identity "$NGINX_TEMPLATE")" || exit 1
+
+  # Which config shape to write. 2026.9.1 removed agents.defaults.cliBackends,
+  # relocated agents.defaults.memorySearch to memory.search, and retired
+  # gateway.controlUi.dangerouslyDisableDeviceAuth in favour of
+  # gateway.auth.trustedProxy.deviceAutoApprove. None of the replacements exist
+  # in 2026.7.1's schema and none of the originals exist in 2026.9.1's, so there
+  # is no single shape that satisfies both.
+  OPENCLAW_VERSION="$(openclaw_version)"
+  if [[ -z "$OPENCLAW_VERSION" ]]; then
+    echo "Error: could not determine the OpenClaw version in ${OPENCLAW_IMAGE}." >&2
+    echo "  The configuration differs between 2026.7.1 and 2026.9.1 and writing the" >&2
+    echo "  wrong one makes the gateway refuse to start, so this does not guess." >&2
+    echo "  Build the image first:" >&2
+    echo "    ./config/scripts/build/openclaw.sh" >&2
+    exit 1
+  fi
+  OC_SCHEMA_NEW=0
+  version_at_least "$OPENCLAW_VERSION" "2026.9.0" && OC_SCHEMA_NEW=1
+  echo "openclaw: image reports ${OPENCLAW_VERSION}; writing the $([[ $OC_SCHEMA_NEW == 1 ]] && echo "2026.9" || echo "2026.7") config shape."
+
   docker run --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
+    -e LU_PROXY_IP="${LU_PROXY_IP}" \
+    -e LU_PROXY_IDENTITY="${LU_PROXY_IDENTITY}" \
+    -e OC_SCHEMA_NEW="${OC_SCHEMA_NEW}" \
+    -e OPENCLAW_VERSION="${OPENCLAW_VERSION}" \
     -e ENABLE_CLAUDE_CLI="${ENABLE_CLAUDE_CLI}" \
     -e ENABLE_COPILOT="${ENABLE_COPILOT}" \
     -e ENABLE_CODEX="${ENABLE_CODEX}" \
@@ -284,9 +478,10 @@ else
     -e LOCAL_LLM_MODELS_JSON="${LOCAL_LLM_MODELS_JSON}" \
     -e PLUGIN_PATHS="/home/node/openclaw-plugins/ingest-pdf" \
     -e MODEL_WILDCARDS="${MODEL_WILDCARDS}" \
+    -e MEMORY_OPENAI_KEY="${MEMORY_OPENAI_KEY}" \
     -e OPENROUTER_MODELS_JSON="${OPENROUTER_MODELS_JSON}" \
     --entrypoint node \
-    ghcr.io/openclaw/openclaw:latest \
+    "${OPENCLAW_IMAGE}" \
     -e '
       const fs = require("fs");
       const p = "/state/openclaw.json";
@@ -303,20 +498,106 @@ else
       c.gateway.auth.trustedProxy = c.gateway.auth.trustedProxy || {};
       c.gateway.auth.trustedProxy.userHeader = "x-forwarded-user";
       c.gateway.auth.trustedProxy.allowLoopback = true;
-      c.gateway.trustedProxies = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
-      c.gateway.allowRealIpFallback = true;
+      // No wide fallback: the range is read from .env and validated before we get
+      // here, so an empty value is a bug to fail on rather than to paper over
+      // with three RFC1918 ranges nobody chose.
+      // The proxy as a single address, not the range it lives in: a trusted hop
+      // is discarded, so anything the gateway trusts can never be the client.
+      c.gateway.trustedProxies = ["127.0.0.1/32", process.env.LU_PROXY_IP + "/32"];
 
       // Allow any browser origin (proxy guards access; only a CSRF-style guard).
       c.gateway.controlUi = c.gateway.controlUi || {};
       c.gateway.controlUi.allowedOrigins = ["*"];
 
-      // Auto-pair proxy-authenticated browsers (see header comment): allowInsecureAuth
-      // is localhost-only and useless behind the proxy.
-      delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
-      c.gateway.auth.trustedProxy.deviceAutoApprove = {
-        enabled: true,
-        scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals", "operator.questions", "operator.pairing", "operator.talk"]
-      };
+      const schemaNew = process.env.OC_SCHEMA_NEW === "1";
+
+      // Keeping browsers from having to pair, in the vocabulary of each version.
+      //
+      // 2026.7.1 reads gateway.controlUi.dangerouslyDisableDeviceAuth. 2026.9.1
+      // still accepts the key -- so nothing warns -- but only carries it in
+      // legacy-*.js: "retired and ignored. Control UI browsers pair through the
+      // normal device flow." The device flow cannot be completed here, because
+      // `openclaw devices approve` needs a gateway token this stack does not set.
+      //
+      // The 2026.9.1 replacement auto-approves a browser once the proxy has
+      // authenticated the user. Which scopes that may grant is the
+      // deviceAutoApprove block below; operator.admin is NOT among them since
+      // 2026-09-19 -- it is granted to the proxy identity instead, a few lines
+      // down. Corrected 2026-09-29: this said the list "includes operator.admin".
+      if (schemaNew) {
+        delete c.gateway.controlUi.dangerouslyDisableDeviceAuth;
+        // The way back into the Control UI. Scopes otherwise come only from a
+        // device record, so a CLI arriving through nginx is authenticated and
+        // still cannot approve anything -- which is how a browser with a revoked
+        // device token became unrecoverable on 2026-09-19. Granting them to the
+        // identity is what the gateway security warning itself recommends, and it
+        // is connection-only: it does not approve a device, it lets a caller that
+        // nginx has already authenticated act. R1 of §9.
+        //
+        // No apostrophes in this block: the whole program is one single-quoted
+        // bash string, and one of them ends it.
+        //
+        // Merged, not replaced. The rest of this writer preserves what the
+        // operator edited by hand and this line did not, so an identity they had
+        // granted anything to lost it on the next start. And nothing is written
+        // at all without a name for the proxy identity: assigning under
+        // [undefined] produced the literal key "undefined", a grant to nobody
+        // that read as a grant. Both minors of the 2026-09-29 review.
+        var proxyIdentity = process.env.LU_PROXY_IDENTITY;
+        if (proxyIdentity) {
+          c.gateway.auth.identityScopes = c.gateway.auth.identityScopes || {};
+          c.gateway.auth.identityScopes[proxyIdentity] = [
+            "operator.admin",
+            "operator.read",
+            "operator.write",
+            "operator.talk",
+            "operator.pairing",
+            "operator.approvals",
+            "operator.questions",
+          ];
+        }
+        // This list is a CAP on what an auto-approval may grant, not the set a
+        // device receives. operator.admin is deliberately NOT in it -- and that
+        // is a reversal of the decision taken on 2026-09-10, made on a
+        // measurement rather than on preference.
+        //
+        // What 2026-09-10 measured: with admin left out, a fresh browser could
+        // not connect at all, and no documented recovery worked. The second half
+        // of that was false. The recovery does work, through nginx, which is R1
+        // above -- so the reason for putting admin in the cap was gone, and what
+        // remained was the gateway telling us at every start to grant admin per
+        // identity instead.
+        //
+        // What 2026-09-19 measured, in a private window, end to end:
+        //
+        //   device auto-approved  scopes=approvals,pairing,questions,read,write
+        //   identity scope grant elevated connection  addedScopes=operator.admin
+        //   webchat connected  client=openclaw-control-ui
+        //
+        // Twelve milliseconds, no approval, and the admin-gated pages worked.
+        // The device is capped below admin and the CONNECTION is elevated by the
+        // identity, which is exactly the shape the warning asks for -- and the
+        // warning is gone from the startup log, which is what OC-11 now asserts.
+        // OC-46 is the case; OC-38 is its control.
+        c.gateway.auth.trustedProxy.deviceAutoApprove = {
+          enabled: true,
+          scopes: [
+            "operator.read",
+            "operator.write",
+            "operator.talk",
+            "operator.pairing",
+            "operator.approvals",
+            "operator.questions",
+          ],
+        };
+      } else {
+        delete c.gateway.auth.trustedProxy.deviceAutoApprove;
+        // Neither key exists in the 2026.7.1 schema, and a key that version does
+        // not know is a validation failure at start rather than a warning, which
+        // is the lesson of §5.1.
+        delete c.gateway.auth.identityScopes;
+        c.gateway.controlUi.dangerouslyDisableDeviceAuth = true;
+      }
 
       // Per-backend provider/runtime wiring. No primary model is pinned; each
       // enabled backend routes its provider/* through the right runtime and the
@@ -332,10 +613,29 @@ else
       c.agents.defaults = c.agents.defaults || {};
       c.agents.defaults.models = c.agents.defaults.models || {};
 
-      // The bundled model catalog of a provider plugin: every node with a string id and a
-      // numeric contextWindow, deduplicated to the widest entry per id.
-      const catalogOf = (pluginId) => {
-        const found = [];
+      let cliPinnedModels = [];
+
+      if (enableClaudeCli) {
+        c.agents.defaults.models["anthropic/*"] = c.agents.defaults.models["anthropic/*"] || {};
+        c.agents.defaults.models["anthropic/*"].agentRuntime = { id: "claude-cli" };
+        // Pointing OpenClaw at the openclaw-claude wrapper, which re-injects the
+        // CLAUDE_CONFIG_DIR, IS_SANDBOX and OAuth token that OpenClaw strips.
+        //
+        // 2026.9.1 removed agents.defaults.cliBackends from the schema entirely --
+        // writing it fails validation, and under a pty that failure becomes an
+        // unanswerable `doctor --fix? [Y/n]` prompt and an indefinite hang. The
+        // bundled anthropic plugin owns the backend and offers no command override.
+        // The wrapper is interposed in the image instead, as the `claude` first on
+        // PATH (config/openclaw/templates/Dockerfile), which works on both versions.
+        if (schemaNew) {
+          delete c.agents.defaults.cliBackends;
+        } else {
+          c.agents.defaults.cliBackends = c.agents.defaults.cliBackends || {};
+          c.agents.defaults.cliBackends["claude-cli"] = c.agents.defaults.cliBackends["claude-cli"] || {};
+          c.agents.defaults.cliBackends["claude-cli"].command = "/usr/local/bin/openclaw-claude";
+        }
+
+        let anthropicCatalog = [];
         try {
           const manifest = JSON.parse(fs.readFileSync("/app/dist/extensions/" + pluginId + "/openclaw.plugin.json", "utf8"));
           const collect = (node) => {
@@ -403,18 +703,241 @@ else
       }
 
       // Copilot embeddings for the RAG tools: expose /v1/embeddings and point
-      // memory.search at github-copilot.
+      // memory search at github-copilot. 2026.7.1 reads agents.defaults.memorySearch;
+      // 2026.9.1 relocated the whole subtree to the top-level memory.search and
+      // removed the old path from the schema. Neither path validates on both
+      // versions, so this is the one place a single configuration cannot serve both.
       if (enableCopilot) {
         c.gateway = c.gateway || {};
         c.gateway.http = c.gateway.http || {};
         c.gateway.http.endpoints = c.gateway.http.endpoints || {};
         c.gateway.http.endpoints.chatCompletions = c.gateway.http.endpoints.chatCompletions || {};
         c.gateway.http.endpoints.chatCompletions.enabled = true;
-        delete c.agents.defaults.memorySearch;
+        if (schemaNew) {
+          delete c.agents.defaults.memorySearch;
+          c.memory = c.memory || {};
+          c.memory.search = c.memory.search || {};
+          c.memory.search.provider = "github-copilot";
+          if (!c.memory.search.model) c.memory.search.model = "text-embedding-3-small";
+        } else {
+          if (c.memory) delete c.memory.search;
+          c.agents.defaults.memorySearch = c.agents.defaults.memorySearch || {};
+          c.agents.defaults.memorySearch.provider = "github-copilot";
+          if (!c.agents.defaults.memorySearch.model) c.agents.defaults.memorySearch.model = "text-embedding-3-small";
+        }
+      }
+
+      // The mid-term memory this stack already ships, switched on rather than
+      // built. docs/FEATURE-memory-midterm.md.
+      //
+      // active-memory implements Remember across conversations; memory-core
+      // indexes and ranks. Promotion into MEMORY.md is earned by use -- three
+      // recalls across three distinct queries inside thirty days, thresholds read
+      // out of `openclaw memory promote-explain` on 2026-09-20 -- so switching
+      // this on changes nothing until somebody asks questions. That is the point:
+      // it is here so the first week of real use is measured rather than missed.
+      //
+      // sources stays at ["memory"] deliberately. Adding "sessions" would index
+      // transcript history, which is what NFR-M1 forbids until the redaction of
+      // NFR-M4 exists: a conversation in this stack carries .env lines and keys.
+      //
+      // No provider is set here -- though one is sometimes deleted, which this
+      // comment did not say until N5 of the 2026-10-13 re-review: a
+      // github-copilot provider left by a harness that is now off is removed and
+      // the gate falls back to the openai credential. It defaults to openai, the
+      // gateway has OPENAI_API_KEY, and the Copilot branch above owns the
+      // provider when that harness is on -- writing one here would silently win
+      // or lose depending on
+      // block order.
+      //
+      // 2026.7.1 knows neither key, and an unknown key there is a failed start
+      // rather than a warning, which is the lesson of section 5.1.
+      if (schemaNew) {
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        // Merged, not replaced. The plugin manifest declares 29 config keys with
+        // additionalProperties:false, so assigning a fresh object discards every
+        // one an operator has tuned -- silently, on the next start. The codex and
+        // grok blocks below already merge; this one did not. F2 of 2026-09-22.
+        // Switched on only where an embedding backend has a credential. The
+        // guards below are written either way: they are what keeps transcripts
+        // out, and they have to be in place for whenever it is switched on.
+        // Which backend will do the embedding decides whether this gate has
+        // anything to say. It knows about openai and github-copilot; anything
+        // else -- ollama, local, gemini, lmstudio, all in the schema -- is the
+        // operator choice, and writing `enabled` over it switched their memory
+        // off on every start while claiming there was no credential. Blocker 3
+        // of 2026-09-28. And a github-copilot left behind by a harness that is
+        // now off has no auth either, which is blocker 4.
+        const searchNow = (c.memory && c.memory.search) || {};
+        const provider = typeof searchNow.provider === "string" ? searchNow.provider : "";
+        let embeddings = null;
+        // **A key the operator configured is a key.** The gate read
+        // MEMORY_OPENAI_KEY only, so an installation pointing memory.search at
+        // its own OpenAI-compatible endpoint -- provider "openai" with
+        // memory.search.remote.{baseUrl,apiKey} set, which the schema supports --
+        // was switched off on every start, with a line claiming there was no
+        // embedding credential. There was one; we looked in the wrong place.
+        // That is blocker 3 of 2026-09-28 for a supported configuration, and N3
+        // of the 2026-10-13 re-review.
+        const remoteKey = Boolean(
+          searchNow && searchNow.remote && typeof searchNow.remote.apiKey === "string" &&
+          searchNow.remote.apiKey.trim() !== ""
+        );
+        if (provider === "" || provider === "openai") {
+          embeddings = remoteKey || process.env.MEMORY_OPENAI_KEY === "1";
+        } else if (provider === "github-copilot") {
+          embeddings = enableCopilot;
+          if (!enableCopilot) {
+            delete searchNow.provider;
+            console.log("openclaw.json: removed a github-copilot embedding provider left by a harness that is now off");
+            embeddings = remoteKey || process.env.MEMORY_OPENAI_KEY === "1";
+          }
+        }
+        // The id the harness uses when nothing names one; the plugin calls it
+        // DEFAULT_AGENT_ID in its own types. It is the fallback, not the answer:
+        // see the roster below.
+        const DEFAULT_AGENT = "main";
+
+        // **Every agent the roster names, computed.** This wrote ["main"], so on
+        // an installation whose agent is called anything else -- or which has
+        // simply run `openclaw agents add ops` -- the config validated and
+        // isEnabledForAgent answered false for that agent. That is blocker 1
+        // again for every install off the stock roster: enabled written, nothing
+        // gathered, and it looks the same whether it ran or not. N1 of the
+        // 2026-10-13 re-review.
+        //
+        // Both representations, for the reason the NFR-M1 guard walks both: the
+        // keyed map is canonical in 2026.9.1 and agents.list is the legacy shape
+        // that doctor --fix migrates away. The operator decided this and the
+        // specification records it: the plugin covers every agent the roster
+        // names, because NFR-M1 closes transcripts and says nothing about which
+        // agents may have a memory -- and a second agent silently without one is
+        // a surprise rather than a protection.
+        const rosterIds = [];
+        if (c.agents && c.agents.entries && typeof c.agents.entries === "object") {
+          for (const id of Object.keys(c.agents.entries)) if (id) rosterIds.push(id);
+        }
+        if (c.agents && Array.isArray(c.agents.list)) {
+          for (const a of c.agents.list) if (a && a.id && rosterIds.indexOf(a.id) === -1) rosterIds.push(a.id);
+        }
+        const am = c.plugins.entries["active-memory"] || {};
+        if (embeddings !== null) am.enabled = embeddings;
+        else if (typeof am.enabled !== "boolean") am.enabled = true;
+        // The plugin acts before a reply only when one of two gates is open:
+        // its config.agents names the agent, or rememberAcrossConversations is
+        // on for it. NFR-M1 keeps the second shut until the redaction of NFR-M4
+        // exists -- so without this the entry said enabled:true and the plugin
+        // did nothing at all, which is the shape section 2.1 warns about: it
+        // looks the same whether it ran or not. config.agents defaults to an
+        // empty list, and an empty list names nobody. Blocker 1 of 2026-09-28.
+        am.config = am.config || {};
+        // An operator list is left alone; an empty or missing one is filled from
+        // the roster, falling back to the default id when the roster names
+        // nobody -- a fresh install has no agents block at all.
+        if (!Array.isArray(am.config.agents) || am.config.agents.length === 0) {
+          am.config.agents = rosterIds.length > 0 ? rosterIds.slice() : [DEFAULT_AGENT];
+        }
+        c.plugins.entries["active-memory"] = am;
+        // Like the codex and xai blocks: with an operator allowlist in place,
+        // a plugin that is not on it is not loaded however enabled it says it
+        // is. Onboarding writes no allowlist, so most installs never see this.
+        if (Array.isArray(c.plugins.allow) && !c.plugins.allow.includes("active-memory")) {
+          c.plugins.allow.push("active-memory");
+        }
         c.memory = c.memory || {};
         c.memory.search = c.memory.search || {};
-        c.memory.search.provider = "github-copilot";
-        if (!c.memory.search.model) c.memory.search.model = "text-embedding-3-small";
+        if (embeddings !== null) {
+          c.memory.search.enabled = embeddings;
+          if (!embeddings) {
+            console.log("openclaw.json: mid-term memory stays off -- no embedding credential (OPENAI_API_KEY unset and Copilot off)");
+          }
+        } else {
+          console.log("openclaw.json: memory.search.enabled left as it is -- the embedding provider is " + provider + ", which this stack does not hold credentials for");
+        }
+        // Written every start, not filled in when missing. The comment above
+        // states an invariant -- transcripts stay out until NFR-M4 redaction
+        // exists -- and a value that is only defaulted is not an invariant: a
+        // "sessions" that reached the file once, by hand or by an older version,
+        // survived every start after it. Measured on 2026-09-22 against a seeded
+        // ["memory","sessions"], which came back unchanged. F3.
+        const wanted = ["memory"];
+        const had = c.memory.search.sources;
+        if (!Array.isArray(had) || had.join(",") !== wanted.join(",")) {
+          if (Array.isArray(had) && had.length) {
+            console.log("openclaw.json: memory.search.sources was", JSON.stringify(had) + "; NFR-M1 allows only", JSON.stringify(wanted));
+          }
+          c.memory.search.sources = wanted;
+        }
+        // False, explicitly, rather than left out. This key is *transcript*
+        // recall across private conversations. The schema in the 2026.9.1 image
+        // describes it as relevant context from the other private conversations
+        // of this agent, through protected transcript recall -- and says that an
+        // explicit true or false always wins. (No apostrophes anywhere in this
+        // block: the whole writer is one single-quoted bash string, and a single
+        // apostrophe ends it. That cost a broken start once already.)
+        // It is the thing the sources line above exists to prevent, and NFR-M1
+        // forbids it until NFR-M4 redaction exists. Omitting it would not do:
+        // the schema default is on whenever session.dmScope is unset or "main",
+        // a setting this block does not own, so the guarantee would depend on a
+        // value somebody else can change. F1 of 2026-09-22, and it had been
+        // written `true` since 2026-09-20.
+        c.memory.search.rememberAcrossConversations = false;
+
+        // And the same keys wherever an agent can override them. OpenClaw
+        // resolves them as <agent>.memory.search.X ?? memory.search.X, so a
+        // per-agent block brought transcripts straight back past a guard that
+        // only ever wrote the defaults level. Blocker 2 of 2026-09-28.
+        //
+        // **Both rosters, and agents.entries is the one that matters.** This
+        // walked agents.list only. In 2026.9.1 that is the *legacy* shape:
+        // listAgentEntries reads cfg.agents.entries first, the validator reports
+        // agents.list problems under agents.entries.<id>, config validate warns
+        // about any agents.list at all, and the image calls the keyed map
+        // canonical. Worse, the stack migrates to it itself --
+        // openclaw_migrate_state runs doctor --fix before this writer whenever
+        // the state came from an older version, and that rule is literally
+        // "agents.list moved to keyed agents.entries". So the guard protected the
+        // one representation that cannot persist and missed the one every tool
+        // writes. Reproduced before this change: a seeded
+        // agents.entries.main.memory.search with rememberAcrossConversations
+        // true and sources ["memory","sessions"] came through untouched, the
+        // config validated, and the image resolver answered remembers true.
+        // C1 of the 2026-10-13 re-review.
+        //
+        // **And experimental.sessionMemory is a third key, not a detail.** The
+        // resolver turns transcript indexing on when that flag is true and
+        // "sessions" is in the agent sources, *even with
+        // rememberAcrossConversations false* -- so forcing two keys left a route
+        // that reaches the same outcome. Measured: remembers false, active true,
+        // with the flag surviving the writer.
+        const agentBlocks = [];
+        if (c.agents && Array.isArray(c.agents.list)) {
+          for (const a of c.agents.list) if (a) agentBlocks.push([a.id || "?", a]);
+        }
+        if (c.agents && c.agents.entries && typeof c.agents.entries === "object") {
+          for (const id of Object.keys(c.agents.entries)) {
+            const a = c.agents.entries[id];
+            if (a && typeof a === "object") agentBlocks.push([id, a]);
+          }
+        }
+        for (const pair of agentBlocks) {
+          const id = pair[0];
+          const as = pair[1] && pair[1].memory && pair[1].memory.search;
+          if (!as) continue;
+          if (as.rememberAcrossConversations === true) {
+            console.log("openclaw.json: agent " + id + " asked for transcript recall; NFR-M1 forbids it until redaction exists");
+          }
+          as.rememberAcrossConversations = false;
+          if (Array.isArray(as.sources) && as.sources.join(",") !== wanted.join(",")) {
+            console.log("openclaw.json: agent " + id + " memory.search.sources was " + JSON.stringify(as.sources) + "; NFR-M1 allows only " + JSON.stringify(wanted));
+            as.sources = wanted.slice();
+          }
+          if (as.experimental && as.experimental.sessionMemory === true) {
+            console.log("openclaw.json: agent " + id + " asked for experimental.sessionMemory; that indexes transcripts, which NFR-M1 forbids until redaction exists");
+            as.experimental.sessionMemory = false;
+          }
+        }
       }
 
       if (enableCodex) {
@@ -486,6 +1009,25 @@ else
         for (const w of modelWildcards) {
           if (!c.agents.defaults.models[w]) c.agents.defaults.models[w] = {};
         }
+
+        // 2026.9.1 introduced agents.defaults.modelPolicy.allow and populated it
+        // once, during its startup migration, by copying the legacy model map.
+        // A list built once from a map that predates it goes stale the moment
+        // anything changes -- and it did immediately: the map never mentioned
+        // claude-cli, so every claude-cli model was listed by /models and none
+        // could be selected ("model not allowed: claude-cli/claude-opus-5").
+        // Owned here instead, and merged rather than replaced so a model the
+        // operator allowed by hand survives.
+        if (schemaNew) {
+          c.agents.defaults.modelPolicy = c.agents.defaults.modelPolicy || {};
+          const allow = Array.isArray(c.agents.defaults.modelPolicy.allow)
+            ? c.agents.defaults.modelPolicy.allow
+            : [];
+          for (const w of modelWildcards) {
+            if (!allow.includes(w)) allow.push(w);
+          }
+          c.agents.defaults.modelPolicy.allow = allow;
+        }
       }
 
       const currentPrimary = typeof c.agents.defaults.model === "string"
@@ -538,15 +1080,106 @@ else
         c.tools = { profile: "full", web: { search: { enabled: false } } };
       }
 
+      // Sweep the keys the running version no longer accepts, whatever wrote them.
+      // The branches above only clean up inside the `if` of their own feature, so a key
+      // left by an earlier start whose feature has since been turned off would
+      // survive and fail validation. This runs every start, so an install upgraded
+      // underneath self-heals rather than staying broken.
+      const retired = schemaNew
+        ? [["agents", "defaults", "cliBackends"],
+           ["agents", "defaults", "memorySearch"],
+           ["gateway", "controlUi", "dangerouslyDisableDeviceAuth"]]
+        : [["memory", "search"],
+           // 2026.7.1 knows no active-memory plugin. Swept here rather than
+           // deleted inline beside the block that writes it, so a downgrade
+           // says what it removed instead of doing it silently. F8 of
+           // 2026-09-22.
+           ["plugins", "entries", "active-memory"],
+           ["gateway", "auth", "trustedProxy", "deviceAutoApprove"]];
+
+      // 2026.9.1 enables the codex plugin in the config by itself during its
+      // startup migration -- absent from a 2026.7.1 config, present after the
+      // first 2026.9.1 boot -- and then cannot load it, because @openai/codex is
+      // bundled in the 2026.7.1 image and gone from the 2026.9.1 one. An operator
+      // who left ENABLE_OPENAI_CODEX at 0 gets a permanent plugin error for a
+      // feature they never asked for. The enable is ours to own either way: the
+      // block above writes it when the flag is on, so this removes it when it is
+      // off, whoever put it there.
+      // Deleting the entry is not enough, and that was measured rather than
+      // assumed: applyPluginAutoEnable in the gateway runs on every boot and
+      // re-enables a harness whenever agents.defaults.models[<wildcard>]
+      // .agentRuntime.id names it. This script writes that route when the flag is
+      // on and used to leave it behind when the flag went off, so a boot not
+      // preceded by start.sh -- docker compose restart, a crash, a host reboot
+      // under restart: unless-stopped -- brought the plugin and its load error
+      // back. In the built image the only skip is an explicit
+      // `enabled === false`; a deleted entry has nothing to skip.
+      //
+      // So both halves: drop the route that makes it a candidate, and record the
+      // decision the auto-enable honours. Either alone leaves a hole. The route
+      // without the flag would resurrect it; the flag without the route would
+      // leave the config claiming codex handles openai/* turns.
+      // Drop only the codex ROUTE, not the wildcard: openai/* is also written by
+      // the plain OPENAI_API_KEY path (line 252 maps the key to openai, it lands
+      // in MODEL_WILDCARDS, and the loop above creates the entry). Deleting the
+      // whole entry took the API-key models away on every start and left
+      // modelPolicy.allow still listing openai/*, so the log claimed an allowlist
+      // for models the map no longer had. And create plugins.entries rather than
+      // guarding on it: with the map absent, both halves were skipped and the
+      // route stayed behind for applyPluginAutoEnable to find.
+      const unroute = (wildcard, runtimeId) => {
+        const models = c.agents && c.agents.defaults && c.agents.defaults.models;
+        const entry = models && models[wildcard];
+        if (!entry || !entry.agentRuntime || entry.agentRuntime.id !== runtimeId) return;
+        delete entry.agentRuntime;
+        if (Object.keys(entry).length === 0) models[wildcard] = {};
+      };
+      if (!enableCodex) {
+        unroute("openai/*", "codex");
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        c.plugins.entries.codex = { enabled: false };
+      }
+      if (!enableGrok) {
+        unroute("xai/*", "xai");
+        c.plugins = c.plugins || {};
+        c.plugins.entries = c.plugins.entries || {};
+        c.plugins.entries.xai = { enabled: false };
+      }
+      const sweptKeys = [];
+      for (const path of retired) {
+        let node = c;
+        for (const seg of path.slice(0, -1)) {
+          if (!node || typeof node !== "object") { node = null; break; }
+          node = node[seg];
+        }
+        const leaf = path[path.length - 1];
+        if (node && typeof node === "object" && leaf in node) {
+          delete node[leaf];
+          sweptKeys.push(path.join("."));
+        }
+      }
+      if (sweptKeys.length) {
+        console.log("openclaw.json: removed keys this version does not accept:", sweptKeys.join(", "));
+      }
+
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+      console.log("openclaw.json: OpenClaw " + process.env.OPENCLAW_VERSION + "; config shape " + (schemaNew ? "2026.9" : "2026.7"));
       console.log("openclaw.json: auth.mode =", c.gateway.auth.mode, "; trustedProxies =", JSON.stringify(c.gateway.trustedProxies));
       console.log("openclaw.json: allowedOrigins =", JSON.stringify(c.gateway.controlUi.allowedOrigins));
-      console.log("openclaw.json: trustedProxy.deviceAutoApprove =", JSON.stringify(c.gateway.auth.trustedProxy.deviceAutoApprove));
+      if (schemaNew) {
+        console.log("openclaw.json: deviceAutoApprove =", JSON.stringify(c.gateway.auth.trustedProxy.deviceAutoApprove));
+      } else {
+        console.log("openclaw.json: dangerouslyDisableDeviceAuth =", c.gateway.controlUi.dangerouslyDisableDeviceAuth);
+      }
       if (pluginPaths.length) {
         console.log("openclaw.json: plugins.load.paths =", JSON.stringify(c.plugins.load.paths));
       }
       if (modelWildcards.length) {
         console.log("openclaw.json: model allowlist wildcards =", JSON.stringify(modelWildcards));
+        if (schemaNew) {
+          console.log("openclaw.json: agents.defaults.modelPolicy.allow =", JSON.stringify(c.agents.defaults.modelPolicy.allow));
+        }
       }
       if (openrouterModels.length) {
         console.log("openclaw.json: added " + openrouterModels.length + " OpenRouter models to the picker allowlist");
@@ -559,7 +1192,9 @@ else
       }
       if (enableCopilot) {
         console.log("openclaw.json: routed github-copilot/* through the copilot runtime");
-        console.log("openclaw.json: enabled gateway /v1/embeddings + memory.search.provider = github-copilot (model", c.memory.search.model + ") for RAG embeddings");
+        const embedModel = schemaNew ? c.memory.search.model : c.agents.defaults.memorySearch.model;
+        const embedPath = schemaNew ? "memory.search" : "agents.defaults.memorySearch";
+        console.log("openclaw.json: enabled gateway /v1/embeddings + " + embedPath + ".provider = github-copilot (model", embedModel + ") for RAG embeddings");
       }
       if (enableCodex) {
         console.log("openclaw.json: routed openai/* through the codex runtime");
@@ -588,6 +1223,24 @@ fi
 if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   OAUTH_TOKEN="$(get_env CLAUDE_CODE_OAUTH_TOKEN)"
 
+  # On the 2026.9 schema the backend command is not configurable -- cliBackends is
+  # deleted above -- so the only thing that still routes claude through the wrapper
+  # is a file baked into the image at build time. An image built before that step
+  # existed has none, and nothing rebuilds on a Dockerfile change. Then bare claude
+  # is spawned as root with bypassPermissions and no IS_SANDBOX, which Claude Code
+  # refuses on every turn, while this start reports success: the preflight below
+  # names the wrapper by absolute path and so passes either way.
+  if [[ "${OC_SCHEMA_NEW:-0}" == "1" ]] && ! claude_wrapper_shadowed; then
+    echo "Error: ${OPENCLAW_IMAGE} runs OpenClaw ${OPENCLAW_VERSION}, where the Claude" >&2
+    echo "  backend command can no longer be configured, and the image has no" >&2
+    echo "  /home/node/.local/bin/claude to take its place." >&2
+    echo "  The gateway would run Claude Code directly instead of the wrapper, and it" >&2
+    echo "  refuses every request made that way -- with nothing in this start to say so." >&2
+    echo "  Rebuild the image, then start again:" >&2
+    echo "    ./config/scripts/build/openclaw.sh" >&2
+    exit 1
+  fi
+
   # Install instructions.md as Claude Code's global ~/.claude/CLAUDE.md. Copied
   # (not bind-mounted) because a nested single-FILE mount in the .claude volume
   # fails on Docker Desktop/macOS. Re-copied each start so edits propagate.
@@ -610,19 +1263,42 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   # Run the bundled claude through the wrapper in a throwaway container with the
   # credential volume mounted (no gateway needed). First arg is extra `docker run`
   # flags (e.g. "-it"); the rest are passed to claude.
+  CLAUDE_RUN_ARGS=(
+    --user 0:0
+    -e HOME=/home/node
+    -v "${CLAUDE_DIR}:/home/node/.claude"
+    --entrypoint /usr/local/bin/openclaw-claude
+    "${OPENCLAW_IMAGE}"
+  )
+
   claude_cli() {
     local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} --user 0:0 \
-      -e HOME=/home/node \
-      -v "${CLAUDE_DIR}:/home/node/.claude" \
-      --entrypoint /usr/local/bin/openclaw-claude \
-      "${OPENCLAW_IMAGE}" "$@"
+    docker run --rm ${docker_flags} "${CLAUDE_RUN_ARGS[@]}" "$@"
+  }
+
+  # Same, but bounded: no unattended step may wait forever on input that cannot
+  # arrive. `timeout` only kills the docker client, so name the container and
+  # force-remove it — otherwise it keeps running and holding the state dir.
+  claude_cli_bounded() {
+    local secs="$1" docker_flags="$2"; shift 2
+    local name="openclaw-claude-step-$$-${RANDOM}" rc=0
+    with_timeout "$secs" docker run --rm --init --name "$name" ${docker_flags} \
+      "${CLAUDE_RUN_ARGS[@]}" "$@" || rc=$?
+    if (( rc != 0 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
+    return $rc
   }
 
   if [[ -n "$OAUTH_TOKEN" ]]; then
     echo "Claude CLI: using CLAUDE_CODE_OAUTH_TOKEN from .env (forwarded to the CLI; no interactive login needed)."
-  elif claude_cli "" auth status >/dev/null 2>&1; then
+  elif claude_cli_bounded 60 "" auth status >/dev/null 2>&1; then
     echo "Claude CLI: already authenticated (login persists in ${CLAUDE_DIR})."
+  elif ! claude_cli_bounded 60 "" --version >/dev/null 2>&1; then
+    echo "Claude CLI: the binary in ${OPENCLAW_IMAGE} does not run — sign-in skipped." >&2
+    echo "  'auth status' fails both when unauthenticated and when the CLI is broken;" >&2
+    echo "  this is the second case, so there is nothing to sign in to." >&2
+    echo "  Rebuild the image, then start again:" >&2
+    echo "    ./config/scripts/build/openclaw.sh" >&2
+    echo "  OpenClaw requests will fail until this is fixed." >&2
   elif [[ -t 0 && -t 1 ]]; then
     echo "Claude CLI: not authenticated — starting interactive Claude Code sign-in."
     echo "  A sign-in URL appears below. Open it, authorize, then paste the code here."
@@ -672,7 +1348,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       return $rc
     }
 
-    if login_with_masked_paste || claude_cli "" auth status >/dev/null 2>&1; then
+    if login_with_masked_paste || claude_cli_bounded 60 "" auth status >/dev/null 2>&1; then
       echo "Claude CLI: login complete."
     elif claude_cli "-it" auth login --claudeai; then
       # Fallback when masked-paste didn't complete: run claude's own login directly.
@@ -690,6 +1366,12 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     # completes, so the auth-profile registration below runs against a live login
     # (mirrors the Copilot/Codex/Grok branches).
     echo "" >&2
+    # A marker of its own, like Copilot, Codex and Grok have. The dashboard used
+    # to open the Claude panel on the bare "ACTION REQUIRED" text, which any step
+    # may print -- and since M-A9 the git step prints it for a missing deploy key,
+    # so a missing key opened the Claude sign-in panel on an installation with
+    # ENABLE_ANTHROPIC_CLAUDE_CODE=0. Finding 4 of the 2026-09-18 follow-up.
+    echo "::aiw-claude-auth-required::"
     echo "=============================== ACTION REQUIRED ===============================" >&2
     echo "OpenClaw is set to use the Claude Code CLI, but it is not authenticated yet" >&2
     echo "and this start run has no terminal attached for interactive sign-in." >&2
@@ -705,20 +1387,25 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
     echo "===============================================================================" >&2
     echo "" >&2
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until claude_cli "" auth status >/dev/null 2>&1; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
-        echo "  Anthropic models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    claude_cli "" auth status >/dev/null 2>&1 && echo "Claude CLI: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint claude)"
+    _wait_rc=0
+    lu_wait_for_operator claude 8 claude_cli_bounded 60 "" auth status || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "Claude CLI: sign-in detected — continuing startup." ;;
+      1) echo "Warning: Claude Code sign-in skipped; starting without it." >&2
+         echo "  Anthropic models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: Claude Code sign-in not completed in time; starting without it." >&2
+         echo "  Anthropic models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 
+  # `models auth login` refuses to run without a TTY, so it gets a pty from
+  # `script`. That pty is also what lets OpenClaw offer interactive prompts (e.g.
+  # 'Run "openclaw doctor --fix" now? [Y/n]' on a config it rejects) that nothing
+  # can answer here — hence the timeout and the forced container removal.
   register_anthropic_cli_profile() {
-    timeout 120 docker run --rm --user 0:0 \
+    local name="openclaw-anthropic-profile-$$" rc=0
+    with_timeout 240 docker run --rm --init --name "$name" --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -730,14 +1417,25 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
       --entrypoint script \
       "${OPENCLAW_IMAGE}" -qec \
-      'openclaw models auth login --provider anthropic --method cli' /dev/null
+      'openclaw models auth login --provider anthropic --method cli' /dev/null < /dev/null || rc=$?
+    if (( rc != 0 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
+    return $rc
   }
 
-  if [[ -n "$OAUTH_TOKEN" ]] || claude_cli "" auth status >/dev/null 2>&1; then
-    if register_anthropic_cli_profile >/dev/null 2>&1; then
+  if [[ -n "$OAUTH_TOKEN" ]] || claude_cli_bounded 60 "" auth status >/dev/null 2>&1; then
+    _reg_rc=0
+    register_anthropic_cli_profile >/dev/null 2>&1 || _reg_rc=$?
+    if (( _reg_rc == 0 )); then
       echo "Claude CLI: registered Anthropic auth profile in OpenClaw (anthropic/* models now appear in the picker)."
     else
-      echo "Warning: could not register the Anthropic auth profile in OpenClaw; Claude models may not appear in the picker." >&2
+      if (( _reg_rc == 124 || _reg_rc == 137 )); then
+        echo "Warning: registering the Anthropic auth profile timed out after 240s and was aborted." >&2
+        echo "  It most likely stopped on an interactive prompt; check 'openclaw config validate'." >&2
+      else
+        echo "Warning: could not register the Anthropic auth profile in OpenClaw (exit ${_reg_rc})." >&2
+      fi
+      echo "  Claude models may not appear in the picker. Retry after startup:" >&2
+      echo "    docker compose exec -it openclaw-gateway openclaw models auth login --provider anthropic --method cli" >&2
     fi
   fi
 
@@ -747,9 +1445,13 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   # is NOT in bundleMcp mode (default); bundleMcp forces --strict-mcp-config and
   # ignores user scope.
   CLAUDE_MCP_JSON='{"type":"stdio","command":"node","args":["/home/node/.claude-tools/ingest-pdf/dist/index.mjs"]}'
-  claude_cli "" mcp remove -s user ingest-pdf >/dev/null 2>&1 || true
-  if claude_cli "" mcp add-json -s user ingest-pdf "$CLAUDE_MCP_JSON" >/dev/null 2>&1; then
+  claude_cli_bounded 120 "" mcp remove -s user ingest-pdf >/dev/null 2>&1 || true
+  _mcp_rc=0
+  claude_cli_bounded 120 "" mcp add-json -s user ingest-pdf "$CLAUDE_MCP_JSON" >/dev/null 2>&1 || _mcp_rc=$?
+  if (( _mcp_rc == 0 )); then
     echo "Claude CLI: registered ingest_pdf MCP tool (user scope)."
+  elif (( _mcp_rc == 124 || _mcp_rc == 137 )); then
+    echo "Warning: registering the ingest_pdf MCP tool timed out after 120s; it will be unavailable to claude." >&2
   else
     echo "Warning: failed to register the ingest_pdf MCP tool; it will be unavailable to claude." >&2
   fi
@@ -764,8 +1466,31 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
   # Run an openclaw CLI command against the shared auth store without the gateway.
   # The plugins mount is required: openclaw validates the full config (including
   # plugins.load.paths) before any subcommand.
-  copilot_cli() {
-    docker run --rm --user 0:0 --entrypoint openclaw \
+  # BOUND_SECS bounds the docker run from inside. Wrapping the call in
+  # with_timeout does not work: timeout execs its argument, a shell function
+  # is not a program, and it exits 127 with "failed to run command" -- which
+  # the _authed helpers capture with 2>&1 and read as "not signed in". A
+  # valid persisted login looked like none, and the start then waited 900s
+  # for a sign-in that had already happened.
+  # One bounded runner for the three harness CLIs, which differed only in the
+  # container name. Two things it does that the three separate copies did not:
+  #
+  # --init, because without it the bound is decorative. coreutils timeout sends
+  # one SIGTERM to the docker client, the client passes it to the container, and
+  # a node PID 1 with no handler ignores it -- so the client stays attached and
+  # timeout blocks past its limit. Measured 2026-09-11: without --init still
+  # blocked after two minutes with the container Up; with it, rc 124 after 16s
+  # and nothing left behind. The state migration escaped this only because
+  # compose gives that service init: true.
+  #
+  # And a forced removal on any non-zero rc. `--rm` fires when the container
+  # exits, which is exactly what does not happen when the bound expires; the
+  # 900s sign-in wait loops would otherwise leave a dozen containers per provider
+  # holding the state, secrets and plugin mounts.
+  harness_cli() {
+    local label="$1" docker_flags="$2"; shift 2
+    local rc=0 cname="openclaw-${label}-$$-${RANDOM}"
+    with_timeout "${BOUND_SECS:-0}" docker run --rm --init --name "$cname" ${docker_flags} --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -773,9 +1498,13 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
       -v "${STATE_DIR}:/home/node/.openclaw" \
       -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
       -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-      "${OPENCLAW_IMAGE}" "$@"
+      "${OPENCLAW_IMAGE}" "$@" || rc=$?
+    if (( rc != 0 )); then docker rm -f "$cname" >/dev/null 2>&1 || true; fi
+    return $rc
   }
-  copilot_authed() { local out; out="$(copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
+
+  copilot_cli() { harness_cli copilot "--entrypoint openclaw" "$@"; }
+  copilot_authed() { local out; out="$(BOUND_SECS=60 copilot_cli models auth list 2>&1)"; grep -qi github-copilot <<<"$out"; }
 
   if copilot_authed; then
     echo "GitHub Copilot: already authenticated (login persists in ${STATE_DIR})."
@@ -790,33 +1519,28 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until copilot_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: GitHub Copilot sign-in not completed in time; starting without it." >&2
-        echo "  Copilot models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    copilot_authed && echo "GitHub Copilot: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint copilot)"
+    _wait_rc=0
+    lu_wait_for_operator copilot 8 copilot_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "GitHub Copilot: sign-in detected — continuing startup." ;;
+      1) echo "Warning: GitHub Copilot sign-in skipped; starting without it." >&2
+         echo "  Copilot models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: GitHub Copilot sign-in not completed in time; starting without it." >&2
+         echo "  Copilot models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi
 
 if [[ "$ENABLE_CODEX" == "1" ]]; then
-  codex_cli() {
-    local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} --user 0:0 \
-      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
-      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
-      -v "${STATE_DIR}:/home/node/.openclaw" \
-      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
-      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-      "${OPENCLAW_IMAGE}" "$@"
-  }
-  codex_authed() { local out; out="$(codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
+  # BOUND_SECS bounds the docker run from inside. Wrapping the call in
+  # with_timeout does not work: timeout execs its argument, a shell function
+  # is not a program, and it exits 127 with "failed to run command" -- which
+  # the _authed helpers capture with 2>&1 and read as "not signed in". A
+  # valid persisted login looked like none, and the start then waited 900s
+  # for a sign-in that had already happened.
+  codex_cli() { local f="$1"; shift; harness_cli codex "$f" "$@"; }
+  codex_authed() { local out; out="$(BOUND_SECS=60 codex_cli "--entrypoint openclaw" models auth list --provider openai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if codex_authed; then
     echo "OpenAI Codex: already authenticated (ChatGPT/Codex login persists in ${STATE_DIR})."
@@ -844,33 +1568,28 @@ if [[ "$ENABLE_CODEX" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until codex_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: ChatGPT/Codex sign-in not completed in time; starting without it." >&2
-        echo "  OpenAI models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    codex_authed && echo "OpenAI Codex: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint codex)"
+    _wait_rc=0
+    lu_wait_for_operator codex 8 codex_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "OpenAI Codex: sign-in detected — continuing startup." ;;
+      1) echo "Warning: ChatGPT/Codex sign-in skipped; starting without it." >&2
+         echo "  OpenAI models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: ChatGPT/Codex sign-in not completed in time; starting without it." >&2
+         echo "  OpenAI models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi
 
 if [[ "$ENABLE_GROK" == "1" ]]; then
-  grok_cli() {
-    local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} --user 0:0 \
-      -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
-      -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
-      -e OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json \
-      -v "${STATE_DIR}:/home/node/.openclaw" \
-      -v "${SECRETS_DIR}:/home/node/.config/openclaw" \
-      -v "${PROJECT_DIR}/config/openclaw/plugins:/home/node/openclaw-plugins:ro" \
-      "${OPENCLAW_IMAGE}" "$@"
-  }
-  grok_authed() { local out; out="$(grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
+  # BOUND_SECS bounds the docker run from inside. Wrapping the call in
+  # with_timeout does not work: timeout execs its argument, a shell function
+  # is not a program, and it exits 127 with "failed to run command" -- which
+  # the _authed helpers capture with 2>&1 and read as "not signed in". A
+  # valid persisted login looked like none, and the start then waited 900s
+  # for a sign-in that had already happened.
+  grok_cli() { local f="$1"; shift; harness_cli grok "$f" "$@"; }
+  grok_authed() { local out; out="$(BOUND_SECS=60 grok_cli "--entrypoint openclaw" models auth list --provider xai 2>&1)"; grep -qi oauth <<<"$out"; }
 
   if grok_authed; then
     echo "xAI Grok: already authenticated (Grok login persists in ${STATE_DIR})."
@@ -898,15 +1617,15 @@ if [[ "$ENABLE_GROK" == "1" ]]; then
     echo "Waiting for sign-in (up to 15 minutes) before starting the services…"
     echo "================================================================================="
 
-    _deadline=$(( $(date +%s) + 900 ))
-    until grok_authed; do
-      if (( $(date +%s) >= _deadline )); then
-        echo "Warning: Grok sign-in not completed in time; starting without it." >&2
-        echo "  Grok models won't be listed until you sign in and start again." >&2
-        break
-      fi
-      sleep 8
-    done
-    grok_authed && echo "xAI Grok: sign-in detected — continuing startup."
+    echo "$(lu_skip_hint grok)"
+    _wait_rc=0
+    lu_wait_for_operator grok 8 grok_authed || _wait_rc=$?
+    case $_wait_rc in
+      0) echo "xAI Grok: sign-in detected — continuing startup." ;;
+      1) echo "Warning: Grok sign-in skipped; starting without it." >&2
+         echo "  Grok models won't be listed until you sign in and start again." >&2 ;;
+      *) echo "Warning: Grok sign-in not completed in time; starting without it." >&2
+         echo "  Grok models won't be listed until you sign in and start again." >&2 ;;
+    esac
   fi
 fi

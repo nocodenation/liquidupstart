@@ -6,7 +6,30 @@ import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { parseEnvValues } from '../env-file';
 
-export const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
+/**
+ * The project directory, read at the moment it is asked for.
+ *
+ * `ENV_DIR` below is the same answer frozen at first load, and every path derived
+ * from it is frozen with it. In the running dashboard the two are identical --
+ * nothing changes the environment after start -- but under `bun test` a level is
+ * one process, so the first module to import this file decides the directory for
+ * every file after it, and a fixture that sets the variable later sets something
+ * nothing reads again.
+ *
+ * Measured 2026-10-14: that had made `OC-66`, `OC-68` and `OC-70` green in
+ * isolation and dead under `tests/run.sh` since 2026-10-01 -- the unit level
+ * loads first and `m-oc.pairing-choice` imports `$lib/server/pairing` there, so
+ * the capture happens before any fixture runs. Five signed scenarios, passing on
+ * nothing.
+ *
+ * So the pairing path asks instead of remembering, which is the same reason the
+ * suite computes its preconditions rather than prescribing a directory.
+ */
+export function envDir(): string {
+  return process.env.ENV_DIR ?? resolve(process.cwd(), '..');
+}
+
+export const ENV_DIR = envDir();
 export const ENV_FILE = join(ENV_DIR, '.env');
 export const EXAMPLE_FILE = join(ENV_DIR, '.env.example');
 export const RESULT_FILE = join(ENV_DIR, '.install-result');
@@ -22,7 +45,14 @@ export const APP_PASSWORD_FILE = join(APP_PASSWORD_DIR, '.app_password');
 // Images produced by build.sh; all must exist for a start to succeed.
 // 'hermes' is intentionally disabled (commented out in build/start/compose).
 export function builtImages(): string[] {
-  return ['opencode', 'bun-runner', 'liquid', 'openclaw'].map((n) => `liquidupstart/${n}:latest`);
+  // nar-builder is built locally like the other four. Leaving it out made
+  // stackState() answer needBuild: false on a checkout that has never built it,
+  // so `docker compose up -d` tried to *pull* a local-only image and failed --
+  // and since proxy depends on nar_builder, the whole stack failed to start.
+  // Blocker 2 of the 2026-09-28 review.
+  return ['opencode', 'bun-runner', 'liquid', 'openclaw', 'nar-builder'].map(
+    (n) => `liquidupstart/${n}:latest`
+  );
 }
 
 export function projectVersion(): string | null {

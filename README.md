@@ -44,7 +44,12 @@ sandbox they can spin up, throw away, and spin up again.
   the reply. Appears in the agents as `privacy-openai` / `privacy-anthropic` with those
   providers' own models.
 - 🪟 **Windows via WSL2** — run the same Linux scripts inside an Ubuntu WSL2 distro.
-- 💾 **Browsable state** — everything persists in host `./volumes/` bind mounts; no hidden named volumes.
+- ☕ **Java extensions for Liquid** — write a NiFi processor in the workspace, run one command, and
+  the running instance loads it; a controller service brings its own `pom.xml`. Checked against the
+  version Liquid actually runs before anything is deployed.
+- 💾 **Browsable state** — state persists in host `./volumes/` bind mounts. Liquid also keeps two
+  Docker volumes, its API index and its NAR load path, and writes both afresh when it starts;
+  [Data & persistence](#data--persistence) says what clears them.
 
 ## Architecture
 
@@ -68,9 +73,17 @@ Everything is reached through the nginx `proxy` at `http(s)://<service>.localhos
 
 ## Sandbox by design
 
-Liquid Upstart is a prototyping sandbox. All services bind to `localhost` on purpose:
+Liquid Upstart is a prototyping sandbox. All services bind to `localhost` by default:
 the stack is self-contained, and you can safely run agent tools inside it without
-exposing anything to your network. It is not meant to be a production system. When a
+exposing anything to your network. It is not meant to be a production system.
+
+> **This was not true before PR #20.** The sentence above was written on 2026-07-17 and the proxy
+> published its two ports on every interface from that same day until that change merged — so for
+> everyone who installed in between, the stack was reachable from the local network while this section
+> said it was not. `SYSTEM_BIND_ADDRESS` in `.env` is the default now, and a test asserts the published
+> address, so the promise and the behaviour cannot part company again without something going red. Set
+> it to `0.0.0.0` if you need the OpenClaw node bridge or the Teams endpoint; `.env.example` says what
+> that costs, and the gateway's admin identity is part of it. When a
 prototype earns its keep, deploy it to [Liquid.PM](https://liquid.pm) — the managed
 platform that adds security, backups, and operations, in the cloud or on-premise.
 
@@ -194,11 +207,12 @@ Default HTTP port is `8888` (`SYSTEM_HTTP_PORT`); Liquid is served over HTTPS on
 | **App runner** | `http://app.localhost:PORT` | SSR React app host (`bun_runner`) |
 | **OpenCode** | `http://opencode.localhost:PORT` | OpenCode AI agent web interface |
 | **Liquid** | `https://liquid.localhost:HTTPS_PORT` | Data-flow automation (Apache NiFi-based); HTTP ingress on `https://{port}.liquid.localhost` (ports 8900–8999) |
+| **NAR builder** | `nar_builder:8770` (internal) | Compiles Java extensions for Liquid, for `nar-build` in the agent containers. Refused from the host and the LAN; inside the stack network it is not limited to the agents — see [Java extensions](#java-extensions-for-liquid) |
 | **Postgres** | `postgres:5432` (internal) | Postgres 17 with pgvector — user `api_user`, db `postgres` |
 | **Privacy Proxy** | `privacy-proxy:8080` (internal, optional) | Anonymizing stand-in model for the agents — see [Privacy Proxy](#privacy-proxy-optional) |
 
-Four images are built locally — `liquidupstart/{opencode,bun-runner,liquid,openclaw}` —
-the rest are pulled; a fifth, `liquidupstart/privacy-proxy`, is built only when the Privacy
+Five images are built locally — `liquidupstart/{opencode,bun-runner,nar-builder,liquid,openclaw}` —
+the rest are pulled; a sixth, `liquidupstart/privacy-proxy`, is built only when the Privacy
 Proxy is enabled. (`hermes` exists in config but is disabled.)
 
 ## Configuration
@@ -208,7 +222,7 @@ edits it for you; you can also edit it by hand. It's organized into sections:
 
 | Section | What it controls |
 |---|---|
-| 1. Networking | `SYSTEM_HTTP_PORT` / `SYSTEM_HTTPS_PORT` and the `*.localhost` scheme |
+| 1. Networking | `SYSTEM_HTTP_PORT` / `SYSTEM_HTTPS_PORT`, the `*.localhost` scheme, and `SYSTEM_BIND_ADDRESS` — the host address those ports are published on, `127.0.0.1` by default |
 | 2. Auto-generated secrets | Internal passwords/tokens — generated automatically if left empty |
 | 3. User-settable credentials | Logins you may want to set before first start |
 | 4. Script-generated secrets | Managed by scripts; not shown in the UI |
@@ -308,10 +322,103 @@ machine under `volumes/privacy-proxy/`.
   in full before anything is masked, so whatever `LOCAL_LLM_API_BASE` (section 6) points at sees
   the real data. Keep it on your own machine or network; only the masked text goes to the cloud.
 
+## Java extensions for Liquid
+
+Liquid is Apache NiFi, so what it cannot already do you can add as a **NAR**. The stack builds them
+for you, from a source directory in the agents' workspace, inside a container that holds a Maven
+toolchain so you need no Java on the host.
+
+```bash
+# in an agent container (OpenClaw or OpenCode)
+cd /repos/<repository>/<your-processor>
+nar-build --target      # which NiFi and Java the build will target, and where that was read from
+nar-build               # compile, judge, deploy
+```
+
+**Who can ask for a build.** `nar-build` posts to the builder through the proxy. The proxy refuses
+the host and the LAN, so no page in the operator's browser can start one; inside the stack network
+any container can, and directly on `nar_builder:8770` as well — the `X-Liquid-Agent` header the
+command sends is a marker, not authentication. A shared secret for the agents is deferred, with the
+reason, in `BACKLOG.md`.
+
+**A processor builds from its source alone; anything else brings its own `pom.xml`.** Without one,
+the directory needs Java under `src/main/java` and a
+`src/main/resources/META-INF/services/org.apache.nifi.processor.Processor` descriptor, and
+`nar-build` synthesises a processors module and a NAR module around them, with NiFi's API as
+`provided` so your bundle does not carry a second copy of the framework. A controller service, or a
+bundle that needs a parent NAR such as `nifi-standard-services-api-nar`, needs a `pom.xml` of its
+own, and **that one is used unchanged**.
+
+**The target is read from the running instance.** `nar-build --target` reads NiFi's and Java's
+versions from the record Liquid writes on every start, and resolves the `nifi-api` that NiFi version
+was built against through Maven, from `org.apache.nifi:nifi-utils`. The two differ by design: NiFi
+2.11.0 ships `nifi-api` 2.10.0. A synthesised project is compiled against those; your own `pom.xml`
+is compiled against what it declares, and the check below is what holds it to the running instance.
+
+**Nothing is deployed unjudged.** Before a built bundle reaches the load path, its class references
+are checked against the classes the running Liquid actually loads. `./volumes/nar_extensions` is an
+**inbox**: a watcher inside the Liquid container judges every `.nar` that arrives at its top level
+and copies what passes into the load path, which lives inside the container. A bundle that cannot
+link is moved to `./volumes/nar_extensions/refused/`, and the refusal says which reference failed. A
+new bundle is loaded within seconds, without a restart.
+
+**Replacing or removing a loaded bundle takes a restart.** NiFi keeps a bundle it has loaded for the
+life of the process, and a synthesised bundle is always version `1.0.0` — so rebuilding one that is
+already loaded deploys the new file while the running Liquid goes on serving the old classes, until
+`docker compose restart liquid`. Taking one out is the same: delete it from `./volumes/nar_extensions`
+and restart. Every start empties the load path, which is the container's own, and copies back what
+the inbox holds and passes, so a bundle no longer in the inbox is not loaded again:
+
+```bash
+docker compose exec liquid ls -A /opt/nifi/nifi-current/nar_extensions
+rm ./volumes/nar_extensions/<bundle>.nar
+docker compose restart liquid
+```
+
+**A replacement that ends up in `./volumes/nar_extensions/refused/` is not a replacement.** The watcher
+moved it out of the inbox, so nothing is copied back, and the next restart unloads the version that is
+running. Look in `refused/` before restarting. After rebuilding the `liquid` image, look there again:
+a bundle the new `lib/` refuses is unloaded at that start. And let a copy into the inbox finish first:
+a bundle that is not yet a whole archive when Liquid starts is left for the watcher, and the version
+it replaces is not loaded in the meantime.
+
+A restart interrupts every flow the instance is running, which is why it is the operator's step and
+never one `nar-build` takes.
+
+**Two limits, and they are deliberate.** A single bundled dependency over **256 MiB**, or a declared
+class total over **512 MiB**, is refused rather than unpacked. Native machine-learning libraries are
+the realistic way to meet them — one artefact can ship binaries for four platforms — and the refusal
+names both limits and the two ways out. Neither is configurable from `.env`: both are constants in
+`config/liquid/narcheck.py`. The builder mounts that file, but the `liquid` image carries its own
+copy, so raising one means rebuilding that image and recreating the container —
+`./config/scripts/build/liquid.sh`, then `docker compose up -d liquid` — or the builder passes a
+bundle the watcher then refuses.
+
+**For light logic, prefer Python.** Liquid 2.x runs native Python processors: drop a module into
+`./volumes/python_extensions` and restart the container. Reserve the NAR path for what needs Java
+libraries, a controller service, or the SPI descriptor.
+
+The design, the limits and what they refuse are in `docs/FEATURE-liquid-java-extensions.md`; the
+agent-side workflow is §6.3–6.5 of the `liquid` skill.
+
 ## Data & persistence
 
 All state lives in browsable host bind mounts under `./volumes/` (Postgres data, Nextcloud
-files, Liquid repositories, etc.) — there are no hidden named Docker volumes. To reset:
+files, Liquid repositories, etc.). Two Docker volumes are not under it, both Liquid's, and both are
+rebuilt on every start, so neither holds state: `liquidupstart_liquid_api`, the API index Liquid
+writes on every start for the NAR builder, and an
+anonymous volume at its NAR load path, `/opt/nifi/nifi-current/nar_extensions`, which Liquid
+empties and fills again from the inbox, `./volumes/nar_extensions`, on every start. So deleting a
+bundle from the inbox takes it out at the next start, and deleting `./volumes/nar_extensions` itself
+unloads every bundle at the next start, which then has to be `./scripts/linux/start.sh`: it recreates
+the directory with `refused/` and a mode Liquid can write. A bare `docker compose restart` has the
+daemon recreate it owned by root with mode 0755, which Liquid, running as `nifi`, cannot write:
+measured under rootless Docker, where root is the host user. The index is
+rewritten on every start either way. `docker compose restart` keeps the load-path volume and what it
+holds; `docker compose down` leaves it on disk until `docker volume prune`, and the next `up` mounts
+a new, empty one. Both measured on 2026-10-23 in a throwaway compose project on the Liquid base image.
+`docker compose down --volumes`, which `liquidupstart --cleanup` (`./cleanup.sh`) runs, removes
+both. To reset:
 
 - `./scripts/linux/down.sh` — stop the stack (data preserved).
 - `./scripts/linux/cleanup.sh` — remove rendered config (templates are re-rendered on next build).
@@ -337,7 +444,8 @@ files, Liquid repositories, etc.) — there are no hidden named Docker volumes. 
 ## Contributing
 
 Issues and pull requests are welcome. The repo conventions (autogenerated nginx config,
-`.env.example` as the contract, no named volumes, minimal code comments) are documented in
+`.env.example` as the contract, state on bind mounts rather than named volumes, minimal code
+comments) are documented in
 [`CLAUDE.md`](CLAUDE.md).
 
 ## License

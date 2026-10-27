@@ -7,11 +7,20 @@ engine based on Apache NiFi), and AI coding agents (OpenClaw, OpenCode) behind a
 **SvelteKit dashboard** (`dashboard/`) configures, builds, starts, and stops the stack
 from the browser.
 
+> **Continuing this work?** Features are built on stacked branches, and **`HANDOFF.md`** in the
+> project root is the working handover for whoever picks one up on *this machine*: what is next, how
+> the milestone cycle works, and what the failures so far have taught. Its state claims describe one
+> installation at a moment in time, each dated.
+>
+> **Reviewing, or reading to understand the product? You do not need it.** The specifications are
+> `docs/FEATURE-*.md` and `docs/TEST-SPEC-*.md`, written and signed off before the work they
+> describe, and they are the documents the code answers to.
+
 > **Privacy Proxy:** the service lives in its own repository
 > (`ghcr.io/nocodenation/privacy-proxy`, source at `nocodenation/privacy-proxy`). This repo only
 > deploys it: `config/privacy-proxy/templates/Dockerfile` derives a local image from the released
 > one, and `compose.yml`/`.env.example` §7 hold the wiring. Do not add its source back here — it is
-> proprietary and this repo is Apache-2.0. `.env.example` §11 (`PRIVACY_PROXY_DEV_SRC`) points the
+> proprietary and this repo is Apache-2.0. `.env.example` §13 (`PRIVACY_PROXY_DEV_SRC`) points the
 > build at a local checkout instead of the release image, for working on the service itself.
 > It signs upstream requests with the shared §5 keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 > `XAI_API_KEY`, passed unprefixed in compose) and the agents reach it as `privacy-openai` /
@@ -35,8 +44,9 @@ from the browser.
 
 ## Services & images
 
-Most images are pulled; four are built locally as `liquidupstart/{opencode,bun-runner,liquid,openclaw}:latest`.
-`liquidupstart/privacy-proxy:latest` is a fifth, built only when `PRIVACY_PROXY_ENABLE=1`: a thin
+Most images are pulled; five are built locally as
+`liquidupstart/{opencode,bun-runner,liquid,openclaw,nar-builder}:latest`.
+`liquidupstart/privacy-proxy:latest` is a sixth, built only when `PRIVACY_PROXY_ENABLE=1`: a thin
 derivation of the released `ghcr.io/nocodenation/privacy-proxy:latest` that adds the Claude Code
 CLI when `ENABLE_ANTHROPIC_CLAUDE_CODE=1` (the released image omits it — proprietary, no
 redistribution grant — so it is installed here, on the operator's own machine).
@@ -54,12 +64,30 @@ redistribution grant — so it is installed here, on the operator's own machine)
 - **Container-to-container calls go through the proxy** — `X.localhost:PORT` URLs only
   resolve in the user's browser. Server-side calls (curl, fetch, Liquid processors) must hit
   the nginx `proxy` with a `Host:` header instead.
-- **Persist on host disk** — all state lives in browsable `./volumes/` bind mounts; never
-  use named Docker volumes. This includes NextCloud's `/var/www/html`
+- **Persist on host disk** — all **state** lives in browsable `./volumes/` bind mounts; never
+  use named Docker volumes for it. This includes NextCloud's `/var/www/html`
   (`./volumes/nextcloud/html`): the official image extracts ~30k tiny files into it on first
   boot, which on Docker Desktop for Windows (project on a Windows filesystem) routes through
   the slow WSL↔host bridge and can be slow, but keeping everything on `./volumes/` makes all
   state browsable and a reset is just deleting `volumes/nextcloud/`.
+
+  **State is what a container would miss if it vanished.** A directory a service rewrites from
+  scratch on every start is not state, and the rule does not reach it — which is why
+  `nar_extensions` has been a volume all along, and why `liquid/api` became one on 2026-10-09.
+  Both hold a generated index; Liquid writes the one in `api/` from `lib/` and from
+  `java -version` on each boot, and nothing but `nar_builder` reads it, read-only.
+
+  The distinction is drawn here rather than left as an exception because **the bind had a cost
+  and the volume does not**: under rootless Docker the host user maps to container root while
+  Liquid runs as `nifi`, so a host-bound `api/` had to be `chmod 777` and anything on the machine
+  could write the record `nar-build` compiles against. Measured 2026-10-09 — the mode could not
+  be narrowed while it was a bind, and asking Liquid for its version instead needs credentials
+  the builder deliberately does not hold. M2 of the 2026-10-01 review; `compose.yml`'s own note
+  carries the argument, and B6-33 and B6-34 hold the shape.
+
+  **A named volume for state still needs a reason written where it is taken**, not a precedent
+  pointed at: a reader resetting an installation by deleting `volumes/` has to be able to see
+  what that will and will not clear.
 - **Rootless Docker** — the host user maps to container root, so containers run as root;
   don't add `--user $(id -u)` (it breaks bind mounts).
 - **Minimal code comments** — match the surrounding density; don't over-explain.
@@ -70,22 +98,118 @@ redistribution grant — so it is installed here, on the operator's own machine)
 ./run.sh                       # dashboard UI (recommended)
 ./scripts/linux/build.sh       # build the four custom images
 ./scripts/linux/start.sh       # start the stack (prints all URLs & credentials)
-./scripts/linux/down.sh        # docker compose down
+./scripts/linux/down.sh        # docker compose down --remove-orphans
 ```
 
 ## Writing into files
 
-**Write code with ZERO comments by default.** This applies everywhere — new files, edits,
-config (compose.yml, .env, YAML), shell scripts, and subtle one-off workarounds. Do NOT add:
-- explanatory or "why" comments, even a single line;
-- multi-line rationale blocks above tricky code;
-- section headers, banners, or "what this does" notes.
+**Every test file opens with a documented header block** — purpose, given/when/then, requirements
+covered; see `docs/TEST-SPEC-git-integration.md` §4.2. A reviewer has to be able to understand what a
+test proves without reading its body, and a one-line name does not carry that. This is a
+documentation requirement rather than a comment style, and it is the one place in the repository
+where the block is mandatory rather than a matter of density.
 
-Assume a senior developer reads the code and understands it without hand-holding. If
-something is genuinely non-obvious, explain it in the chat reply — never in the file. Add a
-comment ONLY when the user explicitly asks for one. When in doubt, no comment.
+## Development rules
+
+**Project language is English.** Everything that lands in the repository or on GitHub is written in
+English — documentation, commit messages, test headers, pull request descriptions and review
+comments — because the team reads and reviews in English. This includes command snippets handed to
+the operator for running and pasting: their comment lines end up in pull request comments verbatim.
+Only the working conversation itself may be held in another language.
+
+Adopted from Philipp's commandments for AI development.
+
+**Specify first.** Write the specification before the implementation, covering system structure,
+features, use cases, data structures, APIs and tests. Include use cases — ask when they are unclear.
+Document data structures and APIs.
+
+**Prefer a computed answer to a rule an agent has to remember.** When a question has a determinable
+answer, compute it and give the agent a way to ask — a command, a file, a generated value. Do not
+write the rule into a skill and rely on the agent to recall it and apply it correctly. A computed
+answer reads current state, so it cannot go stale when the system changes; it is unambiguous, so
+there is nothing to misread; and it removes the reasoning step rather than making it easier.
+
+This is not an argument against skills. It draws a line through them: **facts are computed, conduct
+is taught.** Where a repository lives, whether it is declared, which key belongs to it — computable,
+and therefore a command. Asking before pushing, not describing a repository from a substitute
+source, committing at a granularity others can read — judgement, with nothing to compute, and
+therefore a skill.
+
+The evidence is in `docs/FEATURE-git-integration.md`: three manual observations failed on rules that
+were correct, present in the skill and mounted in both harnesses. Twice the agent never opened the
+skill; once the rule had quietly become false because the system changed underneath it. None of that
+is possible with a value read at the moment it is needed.
+
+**Think critically.** When a request does not make sense, or the specification has a gap, a security
+weakness or an internal contradiction, say so and establish what is actually wanted rather than
+building what was literally asked for. Offer alternatives where the decision is genuinely open, and
+propose improvements that do not widen the scope. Agreement that turns out to be wrong costs more
+than the question would have.
+
+**Implement to the specification.** Stick to it. When the implementation reveals a problem with the
+spec, raise it rather than quietly deviating, and adjust the spec with the other features in view.
+Document every implemented feature in its own Markdown file.
+
+**Test at every level.** Unit, component, integration and system tests — not unit tests alone.
+Cover happy and unhappy cases. Document every test in a human-readable header.
+
+**The test specification carries an overview and a detail block per test.** The overview is the
+table; the detail block gives the test's premise, the system component it runs against, the steps,
+the expected result, its dependencies and test data, and the use cases it covers. A reviewer has to
+be able to sign a test off, or challenge it, without reading the implementation — which a one-line
+table row does not allow. For a test that has already run, the block also records what it actually
+found, since in a table a test that never caught anything and one that caught a defect before it
+shipped look identical.
+
+**Every scenario gets its own row, labelled positive or negative.** A case usually holds several: a
+guard that refuses, and the counterpart proving it also permits. Both belong in the specification —
+a rule that only refuses is as useless as one that only permits, and a reader cannot tell which was
+tested from a single line. Where a counterpart is deliberately omitted, say so and why, so the gap
+reads as a decision rather than an oversight.
+
+**Test data names both sides.** What must exist, and where it comes from, as well as what must not.
+A guard checked only against something invented is not shown to accept anything real.
+
+The standard these rules serve, and how to meet it, is written up as a skill at
+`config/agents/skills/testing/SKILL.md`, so agents working in the stack are held to it too.
+
+**Test data is stated, not described.** Give the actual values — the file name and its contents, the
+branch name, the configuration setting and what it is set to, the string the assertion looks for. "A
+commit with an innocuous file" is an intention; `README.md` holding the line `probe` is data. A test
+is only as good as what it is run against, so the data is where its worth is decided, and a reviewer
+who cannot see the values cannot judge the test. Where a value is deliberately shaped — a fixture
+that looks like a private key without being one, a name chosen so no environment can supply it by
+accident — say why.
+
+**Write the specification against the code, not from memory.** When documenting tests that exist,
+read their names out of the test files first. Doing it from recollection understates them: an
+earlier pass here described one test per case and missed seven of thirteen, including every positive
+counterpart.
+
+**Coverage where it bites.** Full branch coverage is required for real decision logic. It is not
+demanded of configuration, mounts, or Markdown, where it produces ceremony rather than safety; the
+governing document declares per component which level of rigour applies.
+
+**Behaviour that depends on a model is a documented manual check**, never an automated assertion —
+such tests are non-deterministic and a flaky suite trains everyone to ignore red.
 
 ## GIT
 
 Do not commit any code into project's git repository. You can suggest when to commit, and a commit
 message, but do not do it automatically
+
+**Name a pull request, never instruct the forge.** In a commit message, a pull request **title** or a
+pull request description, write *"the #18 conflict"*, *"on #18"*, *"answered on #18"*. GitHub reads
+`close`, `fix` and `resolve` — any inflection, any case, with or without a colon — as an instruction to
+close whatever reference follows, on pull requests as well as issues, and it names whoever pushed as
+the actor. On 2026-10-16 the line *"both are merged and resolved: #18"* in a documentation commit
+closed a pull request carrying four answered review rounds, and the timeline accused the operator.
+
+`config/agents/hooks/commit-msg` refuses such a message before the commit exists; `./scripts/hooks/install.sh`
+enables it for a clone and `./scripts/hooks/install.sh --check` answers whether it is on, so that is a
+question rather than a memory. `ALLOW_CLOSING_KEYWORD=1 git commit` is there for a commit that means
+it. Agents in the stack get the same hook from the start script.
+
+The hook cannot see a title or a description, and **the title matters here**: this repository's
+`merge_commit_message` is `PR_TITLE`, so the merge button writes the title into a commit on `main`.
+Both halves stay conduct. See `docs/FEATURE-commit-message-guard.md`.

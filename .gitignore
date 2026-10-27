@@ -13,3 +13,4 @@ dashboard/build/
 *.pyc
 __pycache__/
 *.bak
+.pr-drafts/

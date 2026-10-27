@@ -50,7 +50,7 @@ WHAT IT DOES
   NOT stop the stack — services keep running until you stop them.
 
 OPTIONS
-  -s, --stop      Stop the stack (docker compose down), exactly like the Stop
+  -s, --stop      Stop the stack (docker compose down --remove-orphans), exactly like the Stop
                   button in the dashboard. The dashboard itself is unaffected.
   -u, --update    Update Liquid Upstart to the latest release by re-running the
                   hosted installer (curl https://liquidupstart.com/install.sh).
