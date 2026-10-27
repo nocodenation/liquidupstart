@@ -25,6 +25,28 @@ NAR_WATCH="$(cd "$(dirname "$0")" && pwd)/nar-watch.sh"
 
 echo "Liquid Playground - Starting..."
 
+# `${var//"x"/"y"}` keeps the quotes of "y" under bash 3.2, where the suite runs
+# this file, and needs them under 5.2, where the image does. So the builder's
+# own literal_replace, from config/nar_builder/build.sh, which needs neither.
+literal_replace() {  # haystack needle replacement
+  _lr_out=''
+  _lr_rest="$1"
+  while case "$_lr_rest" in *"$2"*) true ;; *) false ;; esac; do
+    _lr_out="${_lr_out}${_lr_rest%%"$2"*}$3"
+    _lr_rest="${_lr_rest#*"$2"}"
+  done
+  printf '%s' "${_lr_out}${_lr_rest}"
+}
+
+# A copy that is not to be loaded. Only what exists is removed, so a load
+# directory that is no directory does not end the start under `set -e`; one that
+# stays is said, and under its dot-name the auto-loader skips it.
+drop_part() {
+    if [ -e "$1" ] && ! rm -f "$1"; then
+        echo "Warning: ${1} could not be removed; under its dot-name it is not loaded." >&2
+    fi
+}
+
 if [ -d "$DROP_DIR" ]; then
     # Emptied first, so the load directory holds what the inbox holds and passes
     # and nothing else: it is an anonymous volume, kept across a restart and a
@@ -67,7 +89,28 @@ if [ -d "$DROP_DIR" ]; then
         STUCK=0
         ARRIVING=0
         for NAR in "$DROP_DIR"/*.nar; do
-            if ! REFUSAL="$(python3 "$NAR_CHECK" check "$NAR" "$LIB_DIR" 2>&1)"; then
+            # The copy is judged, not the inbox file, as nar-watch.sh does since S6
+            # of the 2026-10-01 review: the agents can replace a file in the inbox
+            # between a check and a `cp`, so judging one read and copying another
+            # loaded bytes nobody judged. The dot-name keeps the auto-loader off the
+            # copy until the rename. 45-30 on #45.
+            BASE="$(basename "$NAR")"
+            PART="${LOAD_DIR}/.${BASE}.part"
+            if ! CP_ERR="$(cp "$NAR" "$PART" 2>&1)"; then
+                drop_part "$PART"
+                FAILED=$((FAILED + 1))
+                echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LOAD_DIR}/: it could not be copied there to be judged" >&2
+                echo "  ${CP_ERR}" >&2
+                continue
+            fi
+            if ! REFUSAL="$(python3 "$NAR_CHECK" check "$PART" "$LIB_DIR" 2>&1)"; then
+                drop_part "$PART"
+                # narcheck names the file it was handed: the path on its first line,
+                # the base name in its reasons, which the case below keys on. Both
+                # become the name in the inbox, literally, for the reasons
+                # nar-watch.sh writes down.
+                REFUSAL="$(literal_replace "$REFUSAL" "$PART" "$NAR")"
+                REFUSAL="$(literal_replace "$REFUSAL" ".${BASE}.part" "$BASE")"
                 # The watcher's case: a bundle that is no archive yet may still be
                 # arriving, so it stays in the inbox and the watcher judges it once
                 # it stops changing. Filed as a refusal, a copy in progress lost its
@@ -75,7 +118,7 @@ if [ -d "$DROP_DIR" ]; then
                 # not a jar inside it: narcheck names those `<bundle>!<entry>`, and
                 # a finished bundle with a broken jar is refused.
                 case "$REFUSAL" in
-                    *"$(basename "$NAR"): could not be opened as an archive"*)
+                    *"${BASE}: could not be opened as an archive"*)
                         ARRIVING=$((ARRIVING + 1))
                         echo "NAR NOT JUDGED YET: ${NAR} cannot be opened as an archive, so it is not loaded." >&2
                         echo "$REFUSAL" >&2
@@ -104,9 +147,11 @@ if [ -d "$DROP_DIR" ]; then
                 fi
                 continue
             fi
-            if cp -v "$NAR" "${LOAD_DIR}/"; then
+            if mv "$PART" "${LOAD_DIR}/${BASE}"; then
+                echo "${NAR} -> ${LOAD_DIR}/${BASE}"
                 continue
             fi
+            drop_part "$PART"
             FAILED=$((FAILED + 1))
             echo "NAR DEPLOYMENT FAILED: ${NAR} did not reach ${LOAD_DIR}/" >&2
         done
@@ -126,9 +171,10 @@ if [ -d "$DROP_DIR" ]; then
             echo "  Refused: the bundle is in ${REFUSED_DIR} and was not loaded. Correct it and drop" >&2
             echo "    it in again -- ${DROP_DIR} is watched, and a bundle that passes is loaded" >&2
             echo "    within seconds." >&2
-            echo "  Copy failed: the bundle passed the check and could not be copied into" >&2
-            echo "    ${LOAD_DIR}/, so it is not loaded. That directory is inside the container and" >&2
-            echo "    is written by Liquid alone, so this means its filesystem is full or read-only." >&2
+            echo "  Copy failed: the bundle could not be copied into ${LOAD_DIR}/ to be judged, or" >&2
+            echo "    the judged copy could not be put in place, so it is not loaded. The line naming" >&2
+            echo "    it says why: the bundle unreadable to Liquid, or the load directory -- inside the" >&2
+            echo "    container and written by Liquid alone -- full or read-only." >&2
             echo "Liquid is starting anyway, because every other flow it hosts depends on it." >&2
         else
             echo "NAR deployment complete: $((NAR_COUNT - ARRIVING)) file(s) copied to ${LOAD_DIR}/"

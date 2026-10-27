@@ -393,7 +393,8 @@ container writes to, and NiFi picks it up within seconds. One that fails is move
    The bundle that is judged is the copy the watcher makes, not the file in the inbox -- the
    inbox is writable by you and by the builder, so judging the file and then loading it by
    path would be two reads of something that can change in between. Since 2026-10-05 the
-   watcher copies first, judges the copy, and renames that same copy into place.
+   watcher copies first, judges the copy, and renames that same copy into place, and since
+   2026-10-26 so does the start, for what the inbox holds when Liquid restarts.
 
 3. **Check whether it loaded — do not assume either way.** Liquid watches the drop directory
    while it runs. Every bundle that appears there is judged first: one that passes is copied

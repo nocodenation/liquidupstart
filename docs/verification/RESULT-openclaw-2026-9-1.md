@@ -230,7 +230,8 @@ token/password path for machine clients."*
 Worked around here by stopping the gateway and running `--local` in a throwaway container. Not fixed:
 giving the gateway a token is a change to the authentication model, not part of this migration.
 `.env.example` already declares `OPENCLAW_GATEWAY_TOKEN` and **nothing reads it** — dangling contract
-surface, and the obvious place to start if this is ever taken up.
+surface, and the obvious place to start if this is ever taken up. *Removed from `.env.example` on
+2026-10-26, by the operator's choice; `OC-79` holds that every key it declares has a reader.*
 
 ### 11. The long-lived token would not have worked · **measured, and not built**
 

@@ -58,6 +58,7 @@ import { tmpdir } from 'node:os';
 import { sh, type Result } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 import { WRITTEN_AGAINST, pinnedLiterals, productLiquidImage, type Versions } from '../lib/liquidimage';
+import { throwawayTag, fixtureLabels } from '../lib/dashboardserver';
 
 const SELF = 'tests/integration/m-b5.image-moved.test.ts';
 const DETECTOR = 'tests/unit/m-b5.moving-image-tag.test.ts';
@@ -107,7 +108,13 @@ const JAVA_PATCH = [
 // Named by its recipe, as the builder image is by its context, and removed after:
 // this file is its only user, so the reason `dropBuilderImage` gives against an
 // `afterAll` does not apply, and a leftover would hold the old base's layers.
-const tagOf = (recipe: string) => `liquidupstart/liquid-moved:${createHash('sha256').update(recipe).digest('hex').slice(0, 12)}`;
+//
+// **And by this run, and labelled, since 2026-10-26.** The recipe alone gave the
+// same tag in every checkout, so the first run to finish removed the image a
+// second was still running its consumers against. The local review of #49 found
+// it, `45-1`'s defect one file over; a killed run's images go to the sweep.
+const tagOf = (recipe: string) =>
+  throwawayTag(`liquidupstart/liquid-moved:${createHash('sha256').update(recipe).digest('hex').slice(0, 12)}`);
 
 // Every file that reads the image, found the way the runner finds them.
 const consumers = ['unit', 'component', 'contract', 'integration', 'system', 'e2e']
@@ -183,7 +190,7 @@ function move(label: string, recipe: string, files: string[], probe: string, fil
   mkdirSync(dir);
   writeFileSync(join(dir, 'Dockerfile'), recipe);
   const tag = tagOf(recipe);
-  const built = sh(['docker', 'build', '-q', '-t', tag, dir]);
+  const built = sh(['docker', 'build', '-q', ...fixtureLabels(), '-t', tag, dir]);
   if (built.code !== 0) return { built, run: blank, cases: [], seen: blank };
   const junit = join(dir, 'junit.xml');
   const run = sh(

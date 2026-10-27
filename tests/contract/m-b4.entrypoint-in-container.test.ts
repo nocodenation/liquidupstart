@@ -14,7 +14,11 @@
  * When:     The two pairs are compared as text, and the file on disk is read for
  *           the order of its steps.
  * Then:     Each pair is identical, and in the copy loop the check runs before
- *           the cp into lib/ -- a check after the copy refuses nothing. The
+ *           the bundle is put in place -- a check after that refuses nothing.
+ *           Since 2026-10-26 the start copies each bundle under a dot-name the
+ *           auto-loader skips, judges that copy, and renames it into place, as
+ *           the watcher does; so the order read is copy, check, rename, and the
+ *           copy's name has to begin with a dot (B2-13). The
  *           remedy when this fails is ./config/scripts/build/liquid.sh followed
  *           by docker compose up -d --no-deps liquid, which is a restart and so
  *           the operator's.
@@ -49,12 +53,17 @@ test('B4-7 the parser in the container is the file on disk', () => {
   expect(inContainer(CONTAINER_NARCHECK)).toBe(readFileSync(narcheckPath, 'utf8'));
 });
 
-test('B4-7 the entrypoint checks a NAR before it copies it', () => {
-  const check = text.indexOf('check "$NAR" "$LIB_DIR"');
-  const copy = text.indexOf('cp -v');
+test('B4-7 the entrypoint checks a NAR before it puts it in place', () => {
+  const copy = text.indexOf('cp "$NAR" "$PART"');
+  const check = text.indexOf('check "$PART" "$LIB_DIR"');
+  const rename = text.indexOf('mv "$PART" "${LOAD_DIR}/${BASE}"');
   expect(text).toContain('narcheck.py');
-  expect(check).toBeGreaterThan(-1);
-  expect(copy).toBeGreaterThan(check);
+  expect(text).toContain('PART="${LOAD_DIR}/.${BASE}.part"');
+  expect({ copy: copy > -1, check: check > copy, rename: rename > check }).toEqual({
+    copy: true,
+    check: true,
+    rename: true
+  });
 });
 
 test('B4-7 the image is built from the file this case read', () => {

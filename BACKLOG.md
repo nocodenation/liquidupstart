@@ -31,7 +31,7 @@ the cut line that day and its reason stands.
 
 ---
 
-`OPEN, ours` **[45-1]** **The suite's fixture reclaim is built per file, and two tiers still use fixed names.** Found by a
+`DONE-ON-#49` **[45-1]** **~~The suite's fixture reclaim is built per file, and two tiers still use fixed names.~~ Closed on #49, which carries this strike: the image tags were the last open half, and the rest is settled, as the notes below say.** *What this entry said while it was open, until #49:* Found by a
 local multi-angle review of `fix/fixture-names-per-run` on 2026-10-20, after that branch had already
 been pushed and reported as done. The three defects in the branch's own new code were fixed there;
 these are wider than it and are left here rather than widened into it.
@@ -67,6 +67,9 @@ Recorded 2026-10-20.
 *#42 is on `main` since 2026-10-25 and left both tags as they were, so that half is open, and ours:
 the `afterAll` removes `lu-oc15-with` and `lu-oc16-without` by name, whichever checkout built them.
 `FINISH.md` row 11. 2026-10-26.*
+
+**Repaired on #49**: `m-oc.allow-scripts` tags its two images with `throwawayTag()` and labels them
+with `fixtureLabels()`, and `A8-36` finds a fixed tag in every removal its block lists.
 
 ---
 
@@ -772,7 +775,7 @@ new one.
 
 ---
 
-`OPEN, ours` **[45-30]** **The start-time promotion judges a bundle at its inbox path and loads a second read of it.** Found
+`DONE-ON-#49` **[45-30]** **~~The start-time promotion judges a bundle at its inbox path and loads a second read of it.~~ Repaired on #49, which carries this strike.** *What this entry said while it was open, until #49:* Found
 by the local review of #48 on 2026-10-22. `config/liquid/entrypoint.sh` runs `narcheck.py check
 "$NAR"` on the inbox file and then `cp -v "$NAR" "${LOAD_DIR}/"`, so the bytes judged and the bytes
 loaded are two reads of a file the agents' containers can replace in between: they hold the inbox
@@ -788,6 +791,10 @@ repaired is theirs to say.
 
 *No longer open with the operator: they chose the repair on 2026-10-26, `nar-watch.sh`'s shape, as
 above. `FINISH.md` row 12.*
+
+**Repaired on #49**: the start copies each bundle to `.<name>.part` in the load directory, judges that
+copy and renames it into place, and its reasons name the inbox's file; `B2-13`. Writing the case found
+two defects in the repair before it was committed, both in the block.
 
 ## Open findings
 
@@ -1786,6 +1793,19 @@ no local `user.name` or `user.email` and the identity coming from the environmen
 `Tool error Bash` row in OpenClaw would confirm or refute it. Low value, recorded so the inference is
 not later read as an observation.
 
+---
+
+`SETTLED` **A8-36 reads fixed tags as text, and cannot see a computed one.** Raised by the reviewer
+on #49 on 2026-10-26, as a note, not a request. A8-36 is a text scan over 13 shapes, and it says
+itself that a computed tag is not judged; `B5-34`'s recipe hash was exactly that case, found by
+reading, not by the scan. The computed form would be a guard in `tests/lib/shell.ts`'s `sh()` that
+refuses `docker rmi` and `docker image rm` of any operand not ending in the run's id, which would have
+caught `B5-34` as well. It would have to let flags through, and the removals that take other runs'
+objects on purpose: `sweepAbandonedBuilderObjects` in `tests/lib/builderimage.ts` removes abandoned
+runs' images, and `dropBuilderImage` a tag named by the build context's digest. Found by the local
+review of the answer on #49. Not built: nothing claims something false, since A8-36's block names the
+limit, and after #49 a new finding is recorded rather than worked unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
@@ -1870,8 +1890,8 @@ finding named is still empty; one line on startup would settle what the state me
 #11 on 2026-09-14, and the check skips while `/bun_app/package.json` is absent. What is left is a change
 to the entrypoint and its image.*
 
-`OPEN, ours` **The OpenClaw CLI cannot reach its own gateway here, and `OPENCLAW_GATEWAY_TOKEN` is a dangling
-contract key.** Triggering a turn from inside the container fails both ways: without `--local` the
+`DONE-ON-#49` **~~The OpenClaw CLI cannot reach its own gateway here, and `OPENCLAW_GATEWAY_TOKEN` is a dangling
+contract key.~~ Closed on #49, which carries this strike: the key is removed, and the token stays unbuilt by the operator's choice.** *What this entry said while it was open, until #49:* Triggering a turn from inside the container fails both ways: without `--local` the
 gateway answers `unauthorized`, and with `--local` it refuses because a gateway is already running
 for the same state directory. The cause is the same one behind the September `openclaw devices
 approve` failure — `gateway.auth.mode` is `trusted-proxy`, there is no `gateway.auth.token`, and the
@@ -1889,6 +1909,10 @@ promise the contract does not keep, which meets the cut line, and on 2026-10-26 
 documents reads it. `FINISH.md` had settled it on 2026-10-17 with two other carried-over entries, and
 is corrected; it is row 13 there. Giving the gateway a token changes its authentication model, which
 stays the operator's to decide.* *The operator chose removing the key on 2026-10-26.*
+
+**Repaired on #49**: the key is gone from `.env.example`, and `OC-79` holds that every key it declares
+has a reader. Measuring that found four more: the `LIQUID_*` image settings, unread since the rebrand
+of 2026-06-19 because `liquid.sh` asked for `NIFI`. It asks for `LIQUID` now.
 
 `SETTLED` **`volumes/_openclaw-claude/skills` cannot be removed, and the cause was not established.**
 An empty directory that resists deletion by its owner with a writable parent, by `rmdir`, and by `rm`

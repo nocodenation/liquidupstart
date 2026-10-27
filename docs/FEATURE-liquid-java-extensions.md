@@ -263,6 +263,16 @@ mistake is available here and is cheaper to avoid than to repeat.
   `B2-12` holds the entrypoint's half. The running `liquid` container keeps its old copy until the
   image is rebuilt and the container recreated (`./config/scripts/build/liquid.sh && docker compose
   up -d --no-deps liquid`), which `B4-7` reports.
+
+  **The start judges its own copy, since 2026-10-26.** "Everything in the inbox is judged before
+  anything is loaded" held of a read at start, not of the file: the entrypoint judged each bundle at
+  its inbox path and then copied it by that path, and the agents hold the inbox read-write, so the
+  file could be replaced between the two. `nar-watch.sh` had closed that for itself under S6 of the
+  2026-10-01 review. The start now does the same: it copies each bundle to `.<name>.part` in the load
+  directory, judges that copy, and renames it into place; a copy that is refused or cannot be put in
+  place is removed. The start's reasons name the inbox's file, as they did when it judged that file;
+  the watcher's still name its dot-copy by its base name where they quote narcheck. Recorded on #45
+  as `45-30`; the operator chose the repair. `B2-13`.
 - **FR31 — A deployment step that fails says so.** The copy in the entrypoint currently ends in
   `|| true`, so a failure is swallowed and Liquid starts without the processor with nothing to read.
   A step whose failure is invisible is worse than one that has none.
