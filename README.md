@@ -218,21 +218,25 @@ Proxy is enabled. (`hermes` exists in config but is disabled.)
 ## Configuration
 
 `.env` (copied from `.env.example`) is the **single source of configuration**. The dashboard
-edits it for you; you can also edit it by hand. It's organized into sections:
+edits it for you; you can also edit it by hand. It's organized into sections, in this order. The
+file numbers every one of them; the dashboard numbers the ones it shows, so from *LLM provider API
+keys* on its numbers are one lower, and a section is named here by its title:
 
 | Section | What it controls |
 |---|---|
-| 1. Networking | `SYSTEM_HTTP_PORT` / `SYSTEM_HTTPS_PORT`, the `*.localhost` scheme, and `SYSTEM_BIND_ADDRESS` — the host address those ports are published on, `127.0.0.1` by default |
-| 2. Auto-generated secrets | Internal passwords/tokens — generated automatically if left empty |
-| 3. User-settable credentials | Logins you may want to set before first start |
-| 4. Script-generated secrets | Managed by scripts; not shown in the UI |
-| 5. LLM provider API keys | Shared keys used by the AI agents and the Privacy Proxy (all optional) |
-| 6. Self-hosted local LLM | An OpenAI-compatible endpoint of your own (Ollama, llama.cpp, …) for the agents and for the Privacy Proxy's local checks |
-| 7. Privacy Proxy | The on/off switch and behaviour knobs of the anonymizing stand-in model |
-| 8. OpenClaw configuration | Subscription backends (Claude CLI, Copilot, ChatGPT/Codex, Grok) for the OpenClaw agent |
-| 9. Liquid authentication | Login + TLS keystore credentials for Liquid |
-| 10. Image build configuration | Extra packages/commands baked into the custom images |
-| 11. Developer options | Local-source overrides; not shown in the UI |
+| Networking | `SYSTEM_HTTP_PORT` / `SYSTEM_HTTPS_PORT`, the `*.localhost` scheme, and `SYSTEM_BIND_ADDRESS` — the host address those ports are published on, `127.0.0.1` by default |
+| Auto-generated secrets | Internal passwords/tokens — generated automatically if left empty |
+| User-settable credentials | Logins you may want to set before first start |
+| Script-generated secrets | Managed by scripts; not shown in the UI |
+| LLM provider API keys | Shared keys used by the AI agents and the Privacy Proxy (all optional) |
+| Self-hosted local LLM | An OpenAI-compatible endpoint of your own (Ollama, llama.cpp, …) for the agents and for the Privacy Proxy's local checks |
+| Privacy Proxy | The on/off switch and behaviour knobs of the anonymizing stand-in model |
+| OpenClaw configuration | Subscription backends (Claude CLI, Copilot, ChatGPT/Codex, Grok) for the OpenClaw agent |
+| Liquid authentication | Login + TLS keystore credentials for Liquid |
+| Image build configuration | Extra packages/commands baked into the custom images |
+| Git integration | The agents' git identity and the repositories they may clone |
+| Test hooks | Used by the test suite; not shown in the UI |
+| Developer options | Local-source overrides; not shown in the UI |
 
 > **Contract rule:** start scripts only inject a root `.env` key into a service if that
 > service's template already declares it. To add a new key, add it to `.env.example` first.
@@ -246,7 +250,7 @@ edits it for you; you can also edit it by hand. It's organized into sections:
 
 Two coding agents run inside the stack and can operate the platform directly:
 
-- **OpenClaw** — the recommended harness (subscription backends in `.env` section 8).
+- **OpenClaw** — the recommended harness (subscription backends under *OpenClaw configuration* in `.env`).
 - **OpenCode** — a web-based agent UI at `opencode.localhost`.
 
 Both ship with **skills** that encode how to use this environment:
@@ -261,7 +265,7 @@ Both ship with **skills** that encode how to use this environment:
 | `openproject-api` | Manage projects and work packages |
 | `bun-app` | Hand files to / run apps in the app runner |
 
-Add at least one LLM provider key (section 5) to enable the agents.
+Add at least one key under *LLM provider API keys* to enable the agents.
 
 ### Subscription login (OAuth) or API keys?
 
@@ -272,33 +276,33 @@ Add at least one LLM provider key (section 5) to enable the agents.
   OpenAI's embeddings endpoint (needed for the `vector-search` / RAG skill, and cheap
   even without a subscription), or providers like OpenRouter that are API-only.
 
-The `.env` section 5 configures API keys; the OAuth login happens inside the respective
+*LLM provider API keys* in `.env` configures API keys; the OAuth login happens inside the respective
 agent. Both can coexist.
 
 ### Privacy Proxy (optional)
 
-Set `PRIVACY_PROXY_ENABLE=1` (section 7), rebuild, start. A small service then sits between the
+Set `PRIVACY_PROXY_ENABLE=1` (*Privacy proxy*), rebuild, start. A small service then sits between the
 agents and the cloud: every message is scanned for names, addresses, ID numbers, passwords and
 keys, each is swapped for a realistic stand-in, the cleaned message goes to the real provider,
 and the real values are put back into the reply. State — the encrypted mapping — stays on this
 machine under `volumes/privacy-proxy/`.
 
-- **No extra keys.** The proxy signs upstream requests with the section 5 keys you already
+- **No extra keys.** The proxy signs upstream requests with the *LLM provider API keys* you already
   entered (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) and strips whatever key the agent sends.
 - **What you see in the agents:** one extra provider per real provider you have a key for —
   `privacy-openai` and `privacy-anthropic` — each listing that provider's **own models**
   (`privacy-openai/gpt-5.4-mini`, `privacy-anthropic/claude-sonnet-5`, …). Pick one of those to
   go through the proxy; the plain `openai/*` / `anthropic/*` entries still go direct.
-- **Or make it the only way out** (`PRIVACY_PROXY_ROUTING=only`, section 7; default `opt-in`).
+- **Or make it the only way out** (`PRIVACY_PROXY_ROUTING=only`, *Privacy proxy*; default `opt-in`).
   The agents are then offered the privacy providers and your local LLM and nothing else, and they
-  no longer receive the section 5 keys, your Claude login or any Copilot, Codex or Grok sign-in —
+  no longer receive the *LLM provider API keys*, your Claude login or any Copilot, Codex or Grok sign-in —
   the proxy keeps what it needs. Earlier sign-ins are set aside, not deleted, and return when you
   start in `opt-in` again. Providers without a door in the proxy (OpenRouter, Google, Grok, …) are
   unavailable in this mode. A value other than `opt-in` or `only` stops the start.
-- **With the Claude subscription on** (`ENABLE_ANTHROPIC_CLAUDE_CODE=1`, section 8),
+- **With the Claude subscription on** (`ENABLE_ANTHROPIC_CLAUDE_CODE=1`, *OpenClaw configuration*),
   `privacy-anthropic` runs through your Claude login, not the API key — exactly as OpenClaw's own
   `anthropic/*` does. The Anthropic key is then used only to list the catalogue.
-- **How it is meant to run** (section 7): your local model (section 6) is part of every
+- **How it is meant to run** (*Privacy proxy*): your local model (*Self-hosted local LLM*) is part of every
   message — it reads what the built-in detectors cannot, rewords what would still identify
   someone, and judges every outgoing message for trickery. When a reworded message is still
   too identifying, the proxy pauses and asks you in the chat; when the egress judge rates a
@@ -310,7 +314,7 @@ machine under `volumes/privacy-proxy/`.
   an easy start we recommend `google/gemma-4-31b-it` for the second pass and the rewording,
   `z-ai/glm-5.3-flash` for checking that a rewording kept the meaning, and
   `minimax/minimax-m2.5` for the privacy and security judgements — the combination the numbers
-  above were drawn on. The decision stays yours. Section 7 asks only for what is yours to
+  above were drawn on. The decision stays yours. *Privacy proxy* asks only for what is yours to
   choose: the switch, the routing, the local model, how long the vault keeps entries, and
   optionally the two judge models. Everything else is built in; the switches that turn parts
   of the chain off exist to debug the detectors and the judge on their own, and sit in the
@@ -327,7 +331,7 @@ machine under `volumes/privacy-proxy/`.
   sender id — is never treated as your data: the stamp goes through unchanged and the sender id
   is a stable placeholder.
 - **The local model is the trust boundary.** The second pass and the judges read your messages
-  in full before anything is masked, so whatever `LOCAL_LLM_API_BASE` (section 6) points at sees
+  in full before anything is masked, so whatever `LOCAL_LLM_API_BASE` (*Self-hosted local LLM*) points at sees
   the real data. Keep it on your own machine or network; only the masked text goes to the cloud.
 
 ## Java extensions for Liquid

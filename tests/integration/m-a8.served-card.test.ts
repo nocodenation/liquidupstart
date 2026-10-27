@@ -29,7 +29,8 @@
  *           their state unknown, in both broken-manifest states, with the page
  *           still answering 200. A project that declares nothing is served no
  *           repositories card at all, and one whose declaration cannot be read
- *           keeps the card, with the parser's reason.
+ *           keeps the card, with the parser's reason, and a hint that names the
+ *           section *Git integration* rather than a number.
  * Covers:   A8-6, A8-7, A8-14, A8-20, A8-22, A8-25, A8-37, FR3, FR10, FR11, FR20, U2, U11
  * Unhappy:  A8-7 and A8-14 are the unhappy twins of A8-6: an empty card in
  *           either state reads as "nothing declared", which is false and leaves
@@ -41,7 +42,9 @@
  * Test data for A8-37, written into the second project's .env in turn:
  * `GIT_REPOSITORIES` empty, by `declaredEnv(dir, '')`; and `git@github.com:nocodenation/liquid-flows.git|sometimes|protected`,
  * which `git-repos.sh parse` refuses with *"access must be read or write, not
- * 'sometimes'"*. The heading searched for is `Agent repositories`, the card's own.
+ * 'sometimes'"*. The heading searched for is `Agent repositories`, the card's own;
+ * the hint, *"Declare them under Git integration in the"*, with no `section` and
+ * a number anywhere on the page.
  *
  * Amended 2026-09-30, after this file failed 2 of 3 runs on an idle machine.
  * Twice it was measuring the machine rather than the product, and both times the
@@ -321,6 +324,15 @@ test('A8-37 the counterpart: a declaration that cannot be read keeps the card, w
 
   expect(markup).toContain('Agent repositories');
   expect(markup).toContain("access must be read or write, not 'sometimes'");
+});
+
+test('A8-37 and the card sends the operator to Git integration by name, not by a number', () => {
+  // It said "section 10" after #5 had made Git integration section 11, and the
+  // configuration view numbers its sections itself since A8-38: a number drifts.
+  const markup = withoutScripts(misdeclaredPage.html);
+
+  expect(markup).toContain('Declare them under Git integration in the');
+  expect(markup).not.toMatch(/\bsections? \d/i);
 });
 
 test('A8-37 and a project that declares repositories keeps its card', () => {

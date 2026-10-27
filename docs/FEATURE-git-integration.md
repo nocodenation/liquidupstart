@@ -448,7 +448,13 @@ person.
 declared…"* in its warning style for a project that declares none, which is a normal state: an
 operator who uses no git integration was shown a fault on every visit. Raised by the reviewer from a
 screenshot. The launchpad now draws no card when nothing is declared, and still draws it, with the
-parser's reason, when the declaration cannot be read. A8-37.
+parser's reason, when the declaration cannot be read. A8-37. Its hint names the section *Git
+integration* rather than a number: it said *section 10* after #5 had made it 11.
+
+*The configuration view numbers what it shows, since 2026-10-27.* Issue #51: `.env.example` numbers
+its hidden section 4 too, so the view skipped from 3 to 5. The file keeps its numbers, which another
+repository's contract test reads; the view numbers its sections 1 to 10, and the help it shows, the
+dashboard's own hints and `README.md` name a section by its title. A8-38.
 
 *And one that belongs to no feature.* `run.sh` rebuilds the dashboard image on every launch, and that
 build runs `bun run build`, so an interface that does not compile is a launcher that does not run —

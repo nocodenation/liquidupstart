@@ -10,6 +10,7 @@ import {
   isCollapsedSection,
   isCollapsedSubheading,
   isSystemPort,
+  numberShown,
   sectionDescription,
   selectOptions,
   subheadingDescription
@@ -76,7 +77,7 @@ export const load: PageServerLoad = () => {
         items: grouped
       };
     });
-  return { sections: ui, configured: isConfigured() };
+  return { sections: numberShown(ui), configured: isConfigured() };
 };
 
 export const actions: Actions = {

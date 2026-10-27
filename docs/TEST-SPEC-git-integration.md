@@ -2414,7 +2414,7 @@ render, on a page that must answer while the stack is down — so it is recorded
 
 | # | Level | Case | Expectation |
 |---|---|---|---|
-| A8-1 | Component | The configuration view presents section 10 with all three fields | A1-2 is titled "the section is shown in the dashboard" and asserts a function applied to a title string. This asks the view what it will actually render |
+| A8-1 | Component | The configuration view presents the git section with all three fields | A1-2 is titled "the section is shown in the dashboard" and asserts a function applied to a title string. This asks the view what it will actually render |
 | A8-2 | Component | A declaration typed into the view reaches `.env`, and comes back on the next visit | The operator's own step, never performed by any case in either direction |
 | A8-3 | Component **unhappy** | The save loses nothing it was not asked about | `save` re-renders the whole file, so every key in the installation passes through it. A form that drops one destroys a working installation, and the operator's own act is the trigger |
 | A8-4 | Component | The launchpad's page data carries every declared repository | Each declared repository reaches the page with its label, access, policy and public key — the case that would have caught a route nobody calls |
@@ -2464,7 +2464,13 @@ render, on a page that must answer while the stack is down — so it is recorded
 | **A8-36** | positive | …while a tag a run computes, `throwawayTag()` or one carrying `RUN_ID`, directly, through a constant or through a loop, is not, and neither is a spread, a member, a tag that is only built, or a removal command that is only an expected output | Without it, a search that matched every `rmi` would pass the tree only once nothing removed an image; the last one is the shape `m-a8.toolbox-tools` has |
 | **A8-37** | Integration **negative** | A project that declares no repository is served no repositories card | *2026-10-27, raised by the reviewer from a screenshot.* The card drew *"No repositories are declared…"* in its warning style, so a normal state read as a fault on every visit |
 | **A8-37** | Integration positive | …while a declaration the parser refuses keeps the card, with the parser's reason | A fault must stay visible: the empty declaration and the unreadable one share the card's `none` state, and only `declarationError` tells them apart |
+| **A8-37** | Integration **negative** | …and the card sends the operator to *Git integration* by name, not to a section number | It said *"section 10"*; #5 made Git integration section 11 and section 10 the image build, and the view numbers its sections itself since `A8-38`: a number drifts |
 | **A8-37** | Integration positive | …and a project that declares repositories keeps its card, prepared or not | Without it, a launchpad that drew no card at all would pass the negative |
+| **A8-38** | Component **negative** | The configuration view numbers the sections it shows without a gap | *2026-10-27, #51.* `.env.example` numbers its hidden section 4 too, so the view showed 3 and then 5 |
+| **A8-38** | Component positive | …and keeps each section's name, and shows none the file marks *DO NOT SHOW UI* | Without it, a view that renamed or showed everything would pass the numbering |
+| **A8-38** | Component **negative** | The help the view shows names no section by number | The privacy section's help said *"the keys from section 5"*, the file's number; under the view's numbering that is section 4. It names *LLM provider API keys* now |
+| **A8-38** | Contract **negative** | …and no hint the dashboard writes names one by number | The repositories card said *"section 10"* and the privacy tile *"section 7"* |
+| **A8-38** | Component positive | …and `.env.example` keeps its own numbers, `# 4. …DO NOT SHOW UI` and `# 7. PRIVACY PROXY` among them | privacy-proxy's contract test, in another repository, finds the privacy section by the exact header `# 7. PRIVACY PROXY`; renumbering the file was the other way to close #51, and would have broken it |
 |  |  |  |  |
 | *A8-28 to A8-30 were `A8-24`, `A8-25` and `A8-26` until 2026-10-13* | | | Three ids that already belonged to three other cases — `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. The whole file was using them and **none of its own cases had a row**. `TR-1` passed throughout, because the ids *are* declared, by those other cases |
 
@@ -2849,11 +2855,26 @@ drive it, which is a thing worth knowing before reaching for one.
 | **Component** | `dashboard/src/routes/+page.svelte`, which draws `GitRepositories` unless the card's state is `none` with no `declarationError`; served by the real dashboard image, as `A8-6` is. |
 | **Steps** | After `A8-7`'s page is fetched, write the second project's `.env` with `GIT_REPOSITORIES` empty, wait until the container reads those bytes, and fetch `/`; then the same with a declaration the parser refuses; then put the declaration back. The card reads `.env` on every request (`A8-25`), so one container serves all three, and the file starts no more of them than before. Strip the hydration payload and read the markup. |
 | **Test data, both sides** | Empty: `GIT_REPOSITORIES` written empty by `declaredEnv(dir, '')`. Refused: `git@github.com:nocodenation/liquid-flows.git\|sometimes\|protected`, which `git-repos.sh parse` refuses with *"access must be read or write, not 'sometimes'"*. Declared: `A8-6`'s ready project and `A8-7`'s unprepared one, each declaring `liquid-flows` and `agent-skills`. The heading searched for is `Agent repositories`, the card's own, which appears nowhere else on the page. |
-| **Expected** | The empty project: 200, and neither `Agent repositories` nor `No repositories are declared` in the markup. The refused one: 200, `Agent repositories`, and the parser's sentence. The ready and the unprepared project: `Agent repositories`. |
+| **Expected** | The empty project: 200, and neither `Agent repositories` nor `No repositories are declared` in the markup. The refused one: 200, `Agent repositories`, the parser's sentence, and *"Declare them under Git integration in the"*, with no *section* and a number anywhere in the markup. The ready and the unprepared project: `Agent repositories`. |
 | **Dependencies** | docker, and the dashboard image the file builds, as for `A8-6`. |
-| **What it found** | Against `main`'s page at `e622e01`, the negative is red: the card and its *"No repositories are declared"* are served. With the condition kept but the declaration error left out of it, the first counterpart is red: a declaration the parser refuses loses its card, and with it the only place the operator is told. |
+| **What it found** | Against `main`'s page at `e622e01`, the negative is red: the card and its *"No repositories are declared"* are served. With the condition kept but the declaration error left out of it, the first counterpart is red: a declaration the parser refuses loses its card, and with it the only place the operator is told. With the card's old hint, *"Declare them in section 10 of the"*, the hint scenario is red. |
 | **Covers** | A8-37, FR3, U2. |
 | **Implemented by** | `tests/integration/m-a8.served-card.test.ts`. |
+
+##### A8-38 — the configuration view numbers what it shows, and the file keeps its numbers
+
+| | |
+|---|---|
+| **Premise** | Issue #51: the configuration page's section numbers skip 4. `.env.example` numbers every section, and section 4, *SERVICE SECRETS & CREDENTIALS - SCRIPTS GENERATE IT - DO NOT SHOW UI*, is not shown. Two ways close it. Renumbering the file would break privacy-proxy's contract test in another repository, which finds the privacy section by the exact header `# 7. PRIVACY PROXY`, as `docs/SPECIFICATION.md` says. So the operator chose on 2026-10-27 that the view numbers what it shows. From section 5 on, the file's numbers and the view's then differ. So whatever the view shows, and whatever the dashboard writes, names a section by its title. `.env.example`'s help named *"section 5"*, *"section 6"* and *"section 8"*, the privacy tile *"section 7"*, the repositories card *"section 10"*, and `README.md` used the same numbers. Each names the section now; the headers are unchanged. |
+| **Component** | `numberShown` in `dashboard/src/lib/env-meta.ts`, applied by the configuration view's `load`, over the real `.env.example`; and the sources under `dashboard/src`, read as text. |
+| **Steps** | Call `load` and read the titles' numbers and names. Collect the prose it returns: descriptions, paragraphs, help, subheadings and groups. Read every `.ts` and `.svelte` file under `dashboard/src` that is no test, comments left out. Read `.env.example`'s headers. |
+| **Test data, both sides** | The real `.env.example`, whose shown sections are its 1, 2, 3 and 5 to 11. The pattern for a reference by number is `sections?` followed by a space and a digit, in any case. The headers `# 4. SERVICE SECRETS & CREDENTIALS - SCRIPTS GENERATE IT - DO NOT SHOW UI` and `# 7. PRIVACY PROXY`. |
+| **Expected** | The titles numbered 1 to 10 in order, `GIT INTEGRATION` and `PRIVACY PROXY` among the names, none carrying *DO NOT SHOW UI*. More than fifty prose strings and no reference by number among them. More than twenty source files and no reference by number in them. Both headers in the file as written. `A8-1` expects *"10. GIT INTEGRATION"* since this case. |
+| **Dependencies** | bun only. |
+| **What it found** | With `numberShown` taken out of `load`, the numbering negative is red, and so are `A8-1`'s two title checks. With *"the keys from section 5"* put back into the privacy help, the prose negative is red. With the privacy tile's *"(section 7)"* put back, the source negative is red and names the line. With the file's privacy header renumbered to `# 6.`, the file counterpart is red. *The first version gave the prose the view's numbers with a pattern instead.* The local review found the privacy tile it could not reach, and capitalised and listed references it would miss: a number that has to be rewritten will drift again. |
+| **What is deliberately not here** | `docs/` and the scripts' own messages name `.env` sections by the file's numbers. They describe the file, and the file keeps its numbers. |
+| **Covers** | A8-38, FR10, U1. |
+| **Implemented by** | `tests/component/m-a8.config-view.test.ts`. |
 
 ##### A8-28 / A8-29 / A8-30 — the tools the git step needs, and a setup that must not be mistaken for the product
 
@@ -4950,7 +4971,7 @@ card will tell you if it does not.
 The browser is the instrument here, so the evidence is screenshots. Save them under
 `ScreenCaps/Stills/A8-15` and name the step in the filename.
 
-1. Open `http://localhost:7777/config`. Scroll to **11. GIT INTEGRATION**.
+1. Open `http://localhost:7777/config`. Scroll to **GIT INTEGRATION**, which the view numbers 10 since `A8-38` and the file 11.
    *Expect:* the heading, the section's explanatory text, and three fields — `GIT_USER_NAME`,
    `GIT_USER_EMAIL`, `GIT_REPOSITORIES` — each with the help text `.env.example` gives it.
    *If a field is missing,* it parsed but does not render, which is precisely the class of failure

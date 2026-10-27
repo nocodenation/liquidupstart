@@ -203,7 +203,7 @@
     </ul>
   {:else}
     <p class="dim">
-      Declare them in section 10 of the
+      Declare them under Git integration in the
       <a href="/config">configuration</a>, then start the stack.
     </p>
   {/if}
