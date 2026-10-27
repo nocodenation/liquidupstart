@@ -34,8 +34,10 @@ from the browser.
 - `compose.yml` — all services. The compose project is named `liquidupstart`; a single
   instance of the stack runs per host (fixed container names, no suffixes).
 - `run.sh` — build & launch the dashboard container (first free port from 7777).
-- `scripts/linux/{build,start,down,cleanup}` — CLI alternative to the dashboard. Windows
-  users run these inside WSL2; there is no separate Windows script path.
+- `scripts/linux/{build,start,down,clean-rendered-config}` — CLI alternative to the dashboard. Windows
+  users run these inside WSL2; there is no separate Windows script path. The root `cleanup.sh` is
+  the full reset (`run.sh --cleanup`); `clean-rendered-config.sh` deletes only rendered config.
+- `scripts/tests/*.test.sh` — shell tests, no Docker needed: `bash scripts/tests/<name>.test.sh`.
 - `config/scripts/{build,start}/*.sh` — per-service build/prep steps invoked by the top
   scripts. Build steps render Dockerfiles via `config/scripts/build/lib/dockerfile-render.sh`.
 - `config/<service>/` — per-service config, templates, and (for agents) skills/plugins.

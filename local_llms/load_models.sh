@@ -21,7 +21,7 @@ for _ in $(seq 1 360); do
 done
 
 if [ -z "$was_up" ]; then
-    docker compose down
+    docker compose down --remove-orphans
 fi
 
 if [ "$loaded" -ge "$expected" ]; then

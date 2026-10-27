@@ -178,7 +178,7 @@ main() {
   cd "$DEST"
 
   log "Stopping the stack"
-  COMPOSE_PROFILES="$(docker compose config --profiles 2>/dev/null | paste -sd, -)" \
+  COMPOSE_PROFILES='*' \
     docker compose down --remove-orphans || warn "docker compose down reported an issue; continuing."
 
   remove_legacy

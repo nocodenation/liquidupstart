@@ -185,7 +185,7 @@ latest version it does nothing.
 
    | | Build | Start | Stop | Clean rendered config |
    |---|---|---|---|---|
-   | **Linux / macOS / Windows (WSL2)** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/cleanup.sh` |
+   | **Linux / macOS / Windows (WSL2)** | `./scripts/linux/build.sh` | `./scripts/linux/start.sh` | `./scripts/linux/down.sh` | `./scripts/linux/clean-rendered-config.sh` |
 
    On Windows, run these inside your WSL2 shell.
 
@@ -289,6 +289,12 @@ machine under `volumes/privacy-proxy/`.
   `privacy-openai` and `privacy-anthropic` — each listing that provider's **own models**
   (`privacy-openai/gpt-5.4-mini`, `privacy-anthropic/claude-sonnet-5`, …). Pick one of those to
   go through the proxy; the plain `openai/*` / `anthropic/*` entries still go direct.
+- **Or make it the only way out** (`PRIVACY_PROXY_ROUTING=only`, section 7; default `opt-in`).
+  The agents are then offered the privacy providers and your local LLM and nothing else, and they
+  no longer receive the section 5 keys, your Claude login or any Copilot, Codex or Grok sign-in —
+  the proxy keeps what it needs. Earlier sign-ins are set aside, not deleted, and return when you
+  start in `opt-in` again. Providers without a door in the proxy (OpenRouter, Google, Grok, …) are
+  unavailable in this mode. A value other than `opt-in` or `only` stops the start.
 - **With the Claude subscription on** (`ENABLE_ANTHROPIC_CLAUDE_CODE=1`, section 8),
   `privacy-anthropic` runs through your Claude login, not the API key — exactly as OpenClaw's own
   `anthropic/*` does. The Anthropic key is then used only to list the catalogue.
@@ -421,7 +427,7 @@ a new, empty one. Both measured on 2026-10-23 in a throwaway compose project on 
 both. To reset:
 
 - `./scripts/linux/down.sh` — stop the stack (data preserved).
-- `./scripts/linux/cleanup.sh` — remove rendered config (templates are re-rendered on next build).
+- `./scripts/linux/clean-rendered-config.sh` — remove rendered config (templates are re-rendered on next build).
 - Delete the relevant `./volumes/<service>/` directory to wipe a service's data.
 - `liquidupstart --cleanup` (or `./cleanup.sh`) — **full reset:** stops the stack and removes all
   containers, `volumes/`, `.env`, and the built images. Add `--keep-images` to keep images and
