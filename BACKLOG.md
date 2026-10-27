@@ -1809,7 +1809,7 @@ limit, and after #49 a new finding is recorded rather than worked unless the ope
 ---
 
 `SETTLED` **`.env` has many readers, each with its own rules, and its writer does not escape a
-backslash.** Found by the local review of #50 on 2026-10-27, by reading rather than by an exhaustive
+backslash.** Found by the local review of #52 on 2026-10-27, by reading rather than by an exhaustive
 search. Among them: `get_env` in `scripts/linux/start.sh`; `env_value` in
 `config/scripts/start/lib/privacy-routing.sh`; a `grep | cut | tr` of its own in
 `scripts/linux/build.sh` for `PRIVACY_PROXY_ENABLE`, and in `config/scripts/start/liquid.sh` and
@@ -1818,7 +1818,7 @@ search. Among them: `get_env` in `scripts/linux/start.sh`; `env_value` in
 while `config/scripts/build/openclaw.sh` and `hermes.sh` still run `source .env`; and `splitValue` in
 `dashboard/src/lib/env-file.ts`. They differ on comments, quotes and `$`, so one line
 can mean different things to start, build and dashboard. And `formatValue` there escapes `"` and not
-`\`, so a value ending in a backslash is written as a line compose cannot close. #50 brings
+`\`, so a value ending in a backslash is written as a line compose cannot close. #52 brings
 `load_env_file` in line with compose for the lines `.env.example` and the dashboard write, `OC-80`.
 One reader the start and every build source, and a writer that escapes `\`, would end it. Not
 built: after #49 a finding is recorded unless the operator asks for it.

@@ -9,7 +9,7 @@
  *           unrecognized, and a mode set to `override` fell back to `add`. Compose
  *           reads the same line as `add`, so the build and the stack disagreed about
  *           one file. Found on 2026-10-27, the day #5 merged; the operator chose to
- *           repair it on #50. The same file trimmed packages and commands with
+ *           repair it on #52. The same file trimmed packages and commands with
  *           `xargs`, which took the quotes out of a command, so `sh -c 'a && b'`
  *           was rendered as `sh -c a && b`, and choked on a lone quote in a mode;
  *           and it handed the commands to awk with `-v`, which turned `\.` in a
