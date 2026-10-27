@@ -9,17 +9,42 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-27* has the live picture, *2026-10-26, later* under it, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-27, later* has the live picture, *2026-10-27, morning* under it, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first nine and the review bodies they point to; the rest of this file is the map and the lessons.
+first ten and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-27: #49 merged, and the finishing list is empty
+## Where it stands, 2026-10-27, later: #52 open, on the operator's word
+
+Timur merged #5, the privacy gateway, at 11:36Z, raised the repositories card from a screenshot, and
+opened two issues, #50 and #51. The operator asked for the card, and for what was left lying around to
+go in with it, which made one pull request, **#52**, head `d0ca7cb`, and no other:
+
+- **The repositories card** is not drawn when nothing is declared, and keeps the parser's reason
+  when a declaration cannot be read. A8-37.
+- **#5's `.env` reader** kept a quoted value's comment, so every Liquid, OpenCode and privacy-proxy
+  build warned of an unrecognized mode and an `override` behind a comment fell back to `add`. It
+  now reads the lines `.env.example` and the dashboard write as docker compose 5.6.1 does, measured
+  on twenty shapes, and says what it leaves out. The renderer's `xargs` and `awk -v` rewrote
+  commands; both are gone. OC-80.
+- **The #51 numbering.** The configuration page numbers what it shows, 1 to 10, and the file keeps
+  its numbers, because privacy-proxy's contract test reads `# 7. PRIVACY PROXY` by its exact text.
+  Prose names sections by title. A8-38.
+
+`./tests/run.sh` from a clean tree: `main` at `e622e01`, before the branch, 1394 / 28 / 0; `d0ca7cb`,
+1410 / 28 / 0; dashboard 45 / 0 both; no `oom`. Five local `/code-review` passes ran before its
+commits. One `SETTLED` line in `BACKLOG.md`: `.env` has many readers with their own rules.
+
+**Open, and whose.** Timur's: reviewing #52; the mapping in `45-26`. **#50**, the component switches,
+waits until #52 has merged, then a specification first, by the operator's choice; its decision 4
+keeps the Git card with a warning when both agents are off, which fits #52 and has to be said there.
+
+## 2026-10-27, morning: #49 merged, and the finishing list is empty
 
 Timur merged #49 on 2026-10-27 at 06:51Z. His review of the 26th stands as written, with its one item
 answered at `9501c5d` and no further comment from him. **Nothing in `FINISH.md` is open on our side:**
@@ -38,8 +63,8 @@ warning was printed; what changed in the running container is the entrypoint.
 **The rule from 2026-10-26 stands:** a new finding is one line in `BACKLOG.md`, and no new pull request
 without the operator's word.
 
-**Housekeeping.** The worktree `../liquidupstart-wt-f` still holds the merged branch
-`fix/last-finish-rows`, whose remote copy GitHub has deleted. Removing it is the operator's to approve.
+**Housekeeping.** The worktree `../liquidupstart-wt-f` held the merged branch `fix/last-finish-rows`;
+removed with the operator's word the same morning.
 
 ## 2026-10-26, later: #49 carries the last three rows, and waits on Timur
 
