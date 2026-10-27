@@ -30,7 +30,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LIB="config/scripts/lib/privacy-routing.sh"
+LIB="config/scripts/start/lib/privacy-routing.sh"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TMP_ROOT}"' EXIT
 SKIPPED=()
@@ -47,7 +47,7 @@ fail() {
 new_tree() {
   local tree
   tree="$(mktemp -d "${TMP_ROOT}/tree.XXXX")"
-  mkdir -p "${tree}/config/scripts/lib"
+  mkdir -p "${tree}/config/scripts/start/lib"
   cp "${REPO_DIR}/${LIB}" "${tree}/${LIB}"
   echo "${tree}"
 }
@@ -65,7 +65,7 @@ stub_docker() {
 
 # --- TC-821: reading the mode -------------------------------------------------
 tree="$(new_tree)"
-# shellcheck source=../../config/scripts/lib/privacy-routing.sh
+# shellcheck source=../../config/scripts/start/lib/privacy-routing.sh
 . "${tree}/${LIB}"
 env="${tree}/.env"
 mode_of() { printf '%s\n' "$@" > "${env}"; privacy_routing_mode "${env}"; }
@@ -193,7 +193,7 @@ mkdir -p "${tree}/config/scripts/start" "${tree}/config/openclaw/templates" "${t
 cp "${REPO_DIR}/config/scripts/start/openclaw.sh" "${tree}/config/scripts/start/openclaw.sh"
 # openclaw.sh sources its helpers from start/lib and reads the identity nginx vouches for from
 # the nginx template.
-cp -R "${REPO_DIR}/config/scripts/start/lib" "${tree}/config/scripts/start/lib"
+cp -R "${REPO_DIR}/config/scripts/start/lib/." "${tree}/config/scripts/start/lib/"
 cp "${REPO_DIR}/config/nginx/templates/nginx.conf" "${tree}/config/nginx/templates/nginx.conf"
 cp "${REPO_DIR}/config/openclaw/templates/env_template" "${tree}/config/openclaw/templates/env_template"
 echo '{"gateway":{}}' > "${tree}/volumes/_openclaw/openclaw.json"

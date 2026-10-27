@@ -24,9 +24,8 @@ LOCAL_LLM_HOST="${LOCAL_LLM_API_BASE#*://}"
 LOCAL_LLM_HOST="${LOCAL_LLM_HOST%%[:/]*}"
 export LOCAL_LLM_HOST="${LOCAL_LLM_HOST:-local_llm}"
 
-PP_PORT="$(grep -E '^PRIVACY_PROXY_PORT=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
-PP_PORT="${PP_PORT:-8080}"
 export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
-export PRIVACY_PROXY_URL="http://privacy-proxy:${PP_PORT}"
+# The proxy listens on its built-in port 8080 inside the stack network.
+export PRIVACY_PROXY_URL="http://privacy-proxy:8080"
 
 docker compose up -d --no-deps privacy-proxy

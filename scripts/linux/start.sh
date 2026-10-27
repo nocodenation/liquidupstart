@@ -3,7 +3,7 @@
 #
 # What it does, in order
 #   1. Reads the privacy routing mode from .env and stops on an unknown value, before anything
-#      is stopped (config/scripts/lib/privacy-routing.sh). Warns when "only" leaves the AI
+#      is stopped (config/scripts/start/lib/privacy-routing.sh). Warns when "only" leaves the AI
 #      agents without a cloud model.
 #   2. Stops the running stack (down.sh) and checks that the proxy's host ports are free.
 #   3. Runs the per-service start steps under config/scripts/start/ (nginx, Liquid, OpenClaw).
@@ -11,7 +11,7 @@
 #      PRIVACY_PROXY_URL; with PRIVACY_PROXY_ROUTING=only, also adds the compose override
 #      config/privacy-proxy/compose.routing-only.yml, which withholds the provider keys and
 #      logins from the agent containers.
-#   5. Runs `docker compose up -d` and prints the URLs and credentials.
+#   5. Starts the containers with compose and prints the URLs and credentials.
 #
 # Callers
 #   The operator, and the dashboard's Start action.
@@ -39,8 +39,8 @@ fi
 # --- Privacy routing mode: checked before anything is stopped ----------------
 # An unknown PRIVACY_PROXY_ROUTING value stops here, so that a typo neither takes the running
 # stack down nor starts it with the direct provider routes open.
-# shellcheck source=../../config/scripts/lib/privacy-routing.sh
-. "${PROJECT_DIR}/config/scripts/lib/privacy-routing.sh"
+# shellcheck source=../../config/scripts/start/lib/privacy-routing.sh
+. "${PROJECT_DIR}/config/scripts/start/lib/privacy-routing.sh"
 PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
 if [[ "$PRIVACY_ROUTING" == only \
       && -z "$(env_value "$ENV_FILE" OPENAI_API_KEY)" && -z "$(env_value "$ENV_FILE" ANTHROPIC_API_KEY)" \
@@ -352,10 +352,9 @@ fi
 # agents' start scripts read PRIVACY_PROXY_URL to register its doors.
 PRIVACY_PROXY_ENABLE="$(get_env PRIVACY_PROXY_ENABLE)"
 if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
-  PP_PORT="$(get_env PRIVACY_PROXY_PORT)"
-  PP_PORT="${PP_PORT:-8080}"
   export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
-  export PRIVACY_PROXY_URL="http://privacy-proxy:${PP_PORT}"
+  # The proxy listens on its built-in port 8080 inside the stack network.
+  export PRIVACY_PROXY_URL="http://privacy-proxy:8080"
 fi
 # In only mode the override withholds the provider keys and logins from the agent containers.
 # The empty directories it mounts in place of the real ones are created here, so that Docker does

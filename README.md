@@ -301,18 +301,20 @@ machine under `volumes/privacy-proxy/`.
 - **How it is meant to run** (section 7): your local model (section 6) is part of every
   message — it reads what the built-in detectors cannot, rewords what would still identify
   someone, and judges every outgoing message for trickery. When a reworded message is still
-  too identifying, the proxy pauses and asks you in the chat (`PRIVACY_PROXY_SEMANTIC_MODE=
-  interactive`); when the egress judge rates a message high, it pauses and asks the same way
-  (`PRIVACY_PROXY_GATE_MODE=ask`) and `send-original` sends it as masked — one honest turn held
+  too identifying, the proxy pauses and asks you in the chat; when the egress judge rates a
+  message high, it pauses and asks the same way and `send-original` sends it as masked — one
+  honest turn held
   in twenty-four over two draws (the question then names what the privacy check found
   identifying), both injection probes held and, once released, refused by the cloud model itself.
   Which models fill those seats is your choice; nothing ties the proxy to a particular one. For
   an easy start we recommend `google/gemma-4-31b-it` for the second pass and the rewording,
   `z-ai/glm-5.3-flash` for checking that a rewording kept the meaning, and
   `minimax/minimax-m2.5` for the privacy and security judgements — the combination the numbers
-  above were drawn on. The decision stays yours. The `0` / `off` /
-  `log` / `block` values of those keys exist to debug the detectors and the judge on their
-  own, not to run the product.
+  above were drawn on. The decision stays yours. Section 7 asks only for what is yours to
+  choose: the switch, the routing, the local model, how long the vault keeps entries, and
+  optionally the two judge models. Everything else is built in; the switches that turn parts
+  of the chain off exist to debug the detectors and the judge on their own, and sit in the
+  hidden developer options of `.env`, not on the dashboard.
 - **What it catches, and when.** Built-in detectors (names, e-mails, phones, IBANs, ids,
   dates) run on every message; the local-LLM second pass adds what a model notices on
   that call, which varies from call to call. Anything masked once stays masked for the whole

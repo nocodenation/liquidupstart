@@ -84,7 +84,7 @@ export function isCollapsedSection(title: string): boolean {
 
 // Subheadings that fold the rest of their section into a nested collapsible.
 export function isCollapsedSubheading(text: string): boolean {
-  return /PER-IMAGE OVERRIDES/i.test(text);
+  return /PER-IMAGE OVERRIDES|^ADVANCED\b/i.test(text);
 }
 
 // One-liners shown in a section header so a collapsed card still describes its
@@ -104,7 +104,8 @@ const SECTION_DESCRIPTIONS: [RegExp, string][] = [
 ];
 
 const SUBHEADING_DESCRIPTIONS: [RegExp, string][] = [
-  [/PER-IMAGE OVERRIDES/i, 'Extend or replace the global build settings for a single image.']
+  [/PER-IMAGE OVERRIDES/i, 'Extend or replace the global build settings for a single image.'],
+  [/^ADVANCED: SEPARATE JUDGE MODELS/i, 'Optional: other local models for the two privacy judgements.']
 ];
 
 function firstSentence(text: string): string {

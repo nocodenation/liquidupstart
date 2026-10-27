@@ -223,11 +223,10 @@ describe('env-meta', () => {
     expect(inputType('PRIVACY_PROXY_ENABLE')).toBe('checkbox');
     expect(inputType('PRIVACY_PROXY_LOCAL_LLM_ENABLE')).toBe('checkbox');
     expect(inputType('PRIVACY_PROXY_SEMANTIC_ENABLE')).toBe('checkbox');
-    expect(inputType('PRIVACY_PROXY_AUDIT_ENABLE')).toBe('checkbox');
     expect(inputType('PRIVACY_PROXY_MASK_SCAFFOLDING_ENABLE')).toBe('checkbox');
     expect(inputType('PRIVACY_PROXY_SECURITY_JUDGE_ENABLE')).toBe('checkbox');
     // non-flag privacy-proxy keys stay their normal widgets
-    expect(inputType('PRIVACY_PROXY_BACKSTOP_MODE')).toBe('select-mode');
+    expect(inputType('PRIVACY_PROXY_GATE_MODE')).toBe('select-mode');
     expect(inputType('PRIVACY_PROXY_CLAUDE_CLI_MODEL')).toBe('text');
   });
 
@@ -241,7 +240,7 @@ describe('env-meta', () => {
       'auto',
       'interactive'
     ]);
-    expect(selectOptions('PRIVACY_PROXY_BACKSTOP_MODE', 'block | off\r')).toEqual(['block', 'off']);
+    expect(selectOptions('PRIVACY_PROXY_GATE_SCOPE', 'request | turn\r')).toEqual(['request', 'turn']);
     expect(selectOptions('LIQUID_SYSTEM_DEPENDENCIES_MODE', '# add | override')).toEqual([
       'add',
       'override'
@@ -258,6 +257,7 @@ describe('env-meta', () => {
     expect(isCollapsedSection('6. SELF-HOSTED LOCAL LLM + OPENCODE CONFIGURATION')).toBe(false);
     expect(isCollapsedSection('7. OPENCLAW CONFIGURATION')).toBe(false);
     expect(isCollapsedSubheading('PER-IMAGE OVERRIDES')).toBe(true);
+    expect(isCollapsedSubheading('ADVANCED: SEPARATE JUDGE MODELS')).toBe(true);
     expect(isCollapsedSubheading('SYSTEM_DEPENDENCIES')).toBe(false);
   });
 

@@ -54,8 +54,8 @@ OPENCLAW_IMAGE="liquidupstart/openclaw:latest"
 # The privacy routing mode (off | opt-in | only). In "only" OpenClaw is offered the privacy
 # providers and the local LLM and nothing else, receives no provider key, and its stored
 # subscription sign-ins are set aside. An unknown value stops here, as it does in start.sh.
-# shellcheck source=../lib/privacy-routing.sh
-. "${PROJECT_DIR}/config/scripts/lib/privacy-routing.sh"
+# shellcheck source=lib/privacy-routing.sh
+. "${SCRIPT_DIR}/lib/privacy-routing.sh"
 PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
 
 # The OpenClaw version the gateway will actually run, read from the image.
@@ -187,8 +187,8 @@ ENABLE_LOCAL=0
 
 ENABLE_PRIVACY="$(get_env PRIVACY_PROXY_ENABLE)"
 [[ -z "$ENABLE_PRIVACY" ]] && ENABLE_PRIVACY=0
-PRIVACY_PROXY_PORT="$(get_env PRIVACY_PROXY_PORT)"
-PRIVACY_PROXY_URL="http://privacy-proxy:${PRIVACY_PROXY_PORT:-8080}"
+# The proxy listens on its built-in port 8080 inside the stack network.
+PRIVACY_PROXY_URL="http://privacy-proxy:8080"
 PRIVACY_OPENAI=0
 [[ "$ENABLE_PRIVACY" == 1 && -n "$(get_env OPENAI_API_KEY)" ]] && PRIVACY_OPENAI=1
 PRIVACY_ANTHROPIC=0

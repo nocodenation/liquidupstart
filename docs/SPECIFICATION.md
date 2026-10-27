@@ -168,7 +168,7 @@ Runs the per-service build scripts in order — `opencode`, `bun-runner`, `liqui
 2. Ensures the docker network exists.
 3. **Privacy gate:** greps `PRIVACY_PROXY_ENABLE` out of `.env`; when `1`, appends `privacy-proxy`
    to `COMPOSE_PROFILES` and exports `PRIVACY_PROXY_URL`,
-   `http://privacy-proxy:${PRIVACY_PROXY_PORT:-8080}`.
+   `http://privacy-proxy:8080`, the proxy's built-in port.
 4. `docker compose up -d`, with explicit diagnosis of host port conflicts (rootless Docker means
    another user's containers do not appear in `docker ps`).
 5. Prints every service URL and credential.
@@ -250,7 +250,10 @@ honours the requested `claude-*` model.
 ### 7.6 The four-place configuration contract
 
 Every privacy-proxy setting must appear in `privacy_proxy/config.py`, `privacy-proxy/.env.example`,
-this repo's `.env.example` §7, and this repo's `compose.yml` service block. The exceptions are the
+this repo's `.env.example` — §7 for what an operator sets, the hidden DEVELOPER OPTIONS section for
+the debugging switches — and this repo's `compose.yml` service block. A setting with no operator
+choice (the timeouts, the thinking budget, the rewording thresholds, the backstop, the audit log,
+the reply restore) is not passed at all and runs on the proxy's compiled default. The exceptions are the
 keys the proxy reads **unprefixed** because they are shared with the rest of the stack —
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY` (§5), `LOCAL_LLM_API_BASE/_KEY` (§6) — which
 are declared where they live and passed to the service in compose; the contract test asserts the
