@@ -9,17 +9,39 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-26, later* has the live picture, *2026-10-26, morning* under it, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-27* has the live picture, *2026-10-26, later* under it, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first eight and the review bodies they point to; the rest of this file is the map and the lessons.
+first nine and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-26, later: #49 carries the last three rows, and waits on Timur
+## Where it stands, 2026-10-27: #49 merged, and the finishing list is empty
+
+Timur merged #49 on 2026-10-27 at 06:51Z. His review of the 26th stands as written, with its one item
+answered at `9501c5d` and no further comment from him. **Nothing in `FINISH.md` is open on our side:**
+items 1 to 13 are answered or settled, and 9 is half done, its file split deferred as its row says. No
+pull request of ours is open; #5, #7 and #8 are not ours, and each conflicts with `main` in the same
+files as before #49. Every one of the 77
+`BACKLOG.md` entries carries a state, and ``grep -n '^`OPEN' BACKLOG.md`` returns one: `45-26`,
+Timur's mapping.
+
+Liquid was rebuilt from `main` at `47e8bfd` the same morning: `B4-7` 4 / 0 against the running
+container, and Liquid answered 200. The build now reads `LIQUID_*` for the image's packages and
+commands. The `.env` here sets `LIQUID_SYSTEM_DEPENDENCIES` and `LIQUID_POST_INSTALLATION_COMMANDS`
+empty, both modes at `add`, and holds no `NIFI_*` key, so the image installs what it did before and no
+warning was printed; what changed in the running container is the entrypoint.
+
+**The rule from 2026-10-26 stands:** a new finding is one line in `BACKLOG.md`, and no new pull request
+without the operator's word.
+
+**Housekeeping.** The worktree `../liquidupstart-wt-f` still holds the merged branch
+`fix/last-finish-rows`, whose remote copy GitHub has deleted. Removing it is the operator's to approve.
+
+## 2026-10-26, later: #49 carries the last three rows, and waits on Timur
 
 *Review round 1, the same afternoon.* Timur asked for one thing: a case for the copy that fails before
 it is judged, which B2-6 ran without holding. Answered at `9501c5d` with two B2-13 scenarios, and
