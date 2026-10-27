@@ -2462,6 +2462,9 @@ render, on a page that must answer while the stack is down — so it is recorded
 | **A8-35** | positive | …while every pair stays a taken /24 and the one after it, inside 10.128 to 10.227, and `runSubnets` is this run's | So the clash cannot be avoided by handing out nonsense |
 | **A8-36** | Contract **negative** | No test removes an image under a fixed tag: none in the tree, and in a fixture every fixed tag is found, as a literal in any quote, wrapped or not, as a constant, through a loop over fixed tags, and in a command line handed to a shell | *2026-10-26.* `m-oc.allow-scripts` built `lu-oc15-with` and `lu-oc16-without` and removed both by name, whichever checkout had built them. `45-1` of #45; `A8-34` had left the tags to #42 |
 | **A8-36** | positive | …while a tag a run computes, `throwawayTag()` or one carrying `RUN_ID`, directly, through a constant or through a loop, is not, and neither is a spread, a member, a tag that is only built, or a removal command that is only an expected output | Without it, a search that matched every `rmi` would pass the tree only once nothing removed an image; the last one is the shape `m-a8.toolbox-tools` has |
+| **A8-37** | Integration **negative** | A project that declares no repository is served no repositories card | *2026-10-27, raised by the reviewer from a screenshot.* The card drew *"No repositories are declared…"* in its warning style, so a normal state read as a fault on every visit |
+| **A8-37** | Integration positive | …while a declaration the parser refuses keeps the card, with the parser's reason | A fault must stay visible: the empty declaration and the unreadable one share the card's `none` state, and only `declarationError` tells them apart |
+| **A8-37** | Integration positive | …and a project that declares repositories keeps its card, prepared or not | Without it, a launchpad that drew no card at all would pass the negative |
 |  |  |  |  |
 | *A8-28 to A8-30 were `A8-24`, `A8-25` and `A8-26` until 2026-10-13* | | | Three ids that already belonged to three other cases — `m-a8.harness-env`, `m-a8.served-card` and `m-a8.start-attention`. The whole file was using them and **none of its own cases had a row**. `TR-1` passed throughout, because the ids *are* declared, by those other cases |
 
@@ -2837,6 +2840,20 @@ drive it, which is a thing worth knowing before reaching for one.
 | **What is deliberately not here** | A fixed tag that is only built. It moves a tag and removes nothing, and `m-a8.toolbox-start-path` builds the product's own `liquidupstart/toolbox:latest` on purpose, only when it is absent, and never removes it. A tag handed to a helper in another file, or built from a function's parameter, is not followed; `tests/lib`'s helpers take computed tags. **And a computed tag is not judged.** `m-b5.image-moved` named its images by a hash of their recipe, the same in every checkout, and removed them in its `afterAll`: this defect with no literal in the file. The local review of #49 found it, and `B5-34`'s images carry the run's id and `fixtureLabels()` since. Which computed tags are per run is not decidable from text; this case holds the literal half. |
 | **Covers** | A8-36, the suite's own fixtures as `A8-31` has them. |
 | **Implemented by** | `tests/contract/m-a8.run-tags.test.ts`. |
+
+##### A8-37 — the repositories card appears only where the git integration is used
+
+| | |
+|---|---|
+| **Premise** | The card drew *"No repositories are declared. Add them to GIT_REPOSITORIES in the configuration, then start the stack…"* in its warning style for a project that declares none. Declaring none is a normal state, as `A3c-2`'s positive *empty* scenario says, and `A8-26` gives the rule for what is drawn: *"a section that appears when nothing is wrong is noise"*. Raised by the reviewer on 2026-10-27 from a screenshot of a fresh installation. |
+| **Component** | `dashboard/src/routes/+page.svelte`, which draws `GitRepositories` unless the card's state is `none` with no `declarationError`; served by the real dashboard image, as `A8-6` is. |
+| **Steps** | After `A8-7`'s page is fetched, write the second project's `.env` with `GIT_REPOSITORIES` empty, wait until the container reads those bytes, and fetch `/`; then the same with a declaration the parser refuses; then put the declaration back. The card reads `.env` on every request (`A8-25`), so one container serves all three, and the file starts no more of them than before. Strip the hydration payload and read the markup. |
+| **Test data, both sides** | Empty: `GIT_REPOSITORIES` written empty by `declaredEnv(dir, '')`. Refused: `git@github.com:nocodenation/liquid-flows.git\|sometimes\|protected`, which `git-repos.sh parse` refuses with *"access must be read or write, not 'sometimes'"*. Declared: `A8-6`'s ready project and `A8-7`'s unprepared one, each declaring `liquid-flows` and `agent-skills`. The heading searched for is `Agent repositories`, the card's own, which appears nowhere else on the page. |
+| **Expected** | The empty project: 200, and neither `Agent repositories` nor `No repositories are declared` in the markup. The refused one: 200, `Agent repositories`, and the parser's sentence. The ready and the unprepared project: `Agent repositories`. |
+| **Dependencies** | docker, and the dashboard image the file builds, as for `A8-6`. |
+| **What it found** | Against `main`'s page at `e622e01`, the negative is red: the card and its *"No repositories are declared"* are served. With the condition kept but the declaration error left out of it, the first counterpart is red: a declaration the parser refuses loses its card, and with it the only place the operator is told. |
+| **Covers** | A8-37, FR3, U2. |
+| **Implemented by** | `tests/integration/m-a8.served-card.test.ts`. |
 
 ##### A8-28 / A8-29 / A8-30 — the tools the git step needs, and a setup that must not be mistaken for the product
 

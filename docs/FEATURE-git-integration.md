@@ -444,6 +444,12 @@ same path walked by a person. Three of them are manual and stay manual — what 
 HTML that A8-6 already reads is not the question, and whether a card reads as an instruction needs a
 person.
 
+*Only where the integration is used, since 2026-10-27.* The card drew *"No repositories are
+declared…"* in its warning style for a project that declares none, which is a normal state: an
+operator who uses no git integration was shown a fault on every visit. Raised by the reviewer from a
+screenshot. The launchpad now draws no card when nothing is declared, and still draws it, with the
+parser's reason, when the declaration cannot be read. A8-37.
+
 *And one that belongs to no feature.* `run.sh` rebuilds the dashboard image on every launch, and that
 build runs `bun run build`, so an interface that does not compile is a launcher that does not run —
 with no interface left to repair it from. Nothing outside that image build compiles the UI: not the
