@@ -23,7 +23,7 @@ export function isSystemPort(key: string): boolean {
 // by its exact text. Prose names a section by its title, so no number in it has to
 // follow. A8-38.
 export function numberShown<T extends { title: string }>(sections: T[]): T[] {
-  return sections.map((s, i) => ({ ...s, title: `${i + 1}. ${s.title.replace(/^\d+\.\s*/, '')}` }));
+  return sections.map((s, i) => ({ ...s, title: `${i + 1}. ${s.title.replace(/^\d+\.\s+/, '')}` }));
 }
 
 export function sectionModeFromTitle(title: string): { mode: SectionMode; displayTitle: string } {

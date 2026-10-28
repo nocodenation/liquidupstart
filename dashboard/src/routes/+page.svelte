@@ -119,12 +119,8 @@
        as a position in the markup. -->
   <OpenClawPairing running={data.running} busy={activeTask !== ''} />
 
-  <!-- Only where the git integration is in use: a project that declares no
-       repository is in a normal state, and a card there read as a fault. A
-       declaration that cannot be read is one, and keeps the card. A8-37. -->
-  {#if data.git.state !== 'none' || data.git.declarationError}
-    <GitRepositories git={data.git} />
-  {/if}
+  <!-- Draws itself only where the git integration is in use. A8-37, A8-39. -->
+  <GitRepositories git={data.git} />
 
   <footer class="dashfoot">
     <form method="POST" action="/shutdown">

@@ -43,7 +43,7 @@
  * `GIT_REPOSITORIES` empty, by `declaredEnv(dir, '')`; and `git@github.com:nocodenation/liquid-flows.git|sometimes|protected`,
  * which `git-repos.sh parse` refuses with *"access must be read or write, not
  * 'sometimes'"*. The heading searched for is `Agent repositories`, the card's own;
- * the hint, *"Declare them under Git integration in the"*, with no `section` and
+ * the hint, *"The declaration is under Git integration in the"*, with no `section` and
  * a number anywhere on the page.
  *
  * Amended 2026-09-30, after this file failed 2 of 3 runs on an idle machine.
@@ -105,6 +105,7 @@ import {
   type Dashboard
 } from '../lib/dashboardserver';
 import { join } from 'node:path';
+import { SECTION_BY_NUMBER } from '../lib/sections';
 
 const TAG = throwawayTag('liquidupstart/dashboard:m-a8-served');
 const TRUNCATED = '{\n  "generated": "2026-09-07T09:00:00Z",\n  "repositories": [\n    { "name": "liq';
@@ -331,8 +332,8 @@ test('A8-37 and the card sends the operator to Git integration by name, not by a
   // configuration view numbers its sections itself since A8-38: a number drifts.
   const markup = withoutScripts(misdeclaredPage.html);
 
-  expect(markup).toContain('Declare them under Git integration in the');
-  expect(markup).not.toMatch(/\bsections? \d/i);
+  expect(markup).toContain('The declaration is under Git integration in the');
+  expect(markup).not.toMatch(SECTION_BY_NUMBER);
 });
 
 test('A8-37 and a project that declares repositories keeps its card', () => {

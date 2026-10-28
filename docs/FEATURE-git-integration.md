@@ -448,8 +448,15 @@ person.
 declared…"* in its warning style for a project that declares none, which is a normal state: an
 operator who uses no git integration was shown a fault on every visit. Raised by the reviewer from a
 screenshot. The launchpad now draws no card when nothing is declared, and still draws it, with the
-parser's reason, when the declaration cannot be read. A8-37. Its hint names the section *Git
-integration* rather than a number: it said *section 10* after #5 had made it 11.
+parser's reason, when the declaration cannot be read. A8-37, and A8-39 on every run since the card
+decides this itself. Its hint names the section *Git integration* rather than a number: it said
+*section 10* after #5 had made it 11.
+
+**Decision 4 of issue #50 applies to this card only where something is declared.** That decision
+keeps agent-dependent places visible, with a warning, when both agents are off. With nothing declared
+there is nothing for the warning to be about, so the card stays hidden, agents on or off, and
+A8-37's and A8-39's negatives stay as they are when #50 is built. Written 2026-10-28, in review round
+1 of #52.
 
 *The configuration view numbers what it shows, since 2026-10-27.* Issue #51: `.env.example` numbers
 its hidden section 4 too, so the view skipped from 3 to 5. The file keeps its numbers, which another

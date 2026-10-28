@@ -34,7 +34,10 @@
  *           so none names a section by number. Its counterparts: the sections
  *           keep their names, and the file keeps its own numbers, which
  *           privacy-proxy's contract test reads: it finds the line
- *           `# 7. PRIVACY PROXY` by its exact text.
+ *           `# 7. PRIVACY PROXY` by its exact text. The pattern for a reference
+ *           by number is itself checked on both sides: it finds `section 5`,
+ *           `section #7`, `sec. 7` and `§7`, and passes a section named by title
+ *           and a number that is no section.
  */
 import { test, expect, beforeEach } from 'bun:test';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -50,6 +53,7 @@ import {
 import { envFrom, fixtureValue, rawLines, resetProject, writeEnv } from '../lib/gitproject';
 import { parseDeclaration } from '../lib/gitfixture';
 import { repoRoot } from '../lib/paths';
+import { SECTION_BY_NUMBER } from '../lib/sections';
 
 const QUOTED_KEY = 'LIQUID_PASSWORD';
 const QUOTED_VALUE = 'a quoted fixture value';
@@ -166,10 +170,9 @@ test('A8-3 the write replaces the file rather than rewriting it in place', async
   expect(existsSync(`${ENV_FILE}.tmp`)).toBe(false);
 });
 
-test('A8-38 the view numbers the sections it shows without a gap', () => {
+test('A8-38 the view numbers the sections it shows 1 to 10, without a gap', () => {
   const numbers = configSections().map((s) => Number(s.title.match(/^(\d+)\./)?.[1]));
-  expect(numbers.length).toBeGreaterThan(5);
-  expect(numbers).toEqual(numbers.map((_, i) => i + 1));
+  expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 });
 
 test('A8-38 and keeps each section\'s name as the file gives it', () => {
@@ -177,7 +180,12 @@ test('A8-38 and keeps each section\'s name as the file gives it', () => {
   const shown = configSections().map((s) => s.title);
   expect(names(shown)).toContain('GIT INTEGRATION');
   expect(names(shown)).toContain('PRIVACY PROXY');
-  expect(shown.some((t) => /DO NOT SHOW UI/.test(t))).toBe(false);
+  // A hidden section's marker is cut from its title like any other, so its name is
+  // what would show: the three the file hides are its 4, TEST HOOKS and
+  // DEVELOPER OPTIONS, and the first shares its name with sections 2 and 3.
+  expect(names(shown).filter((n) => n === 'SERVICE SECRETS & CREDENTIALS')).toHaveLength(2);
+  expect(names(shown)).not.toContain('TEST HOOKS');
+  expect(names(shown)).not.toContain('DEVELOPER OPTIONS');
 });
 
 // The prose the view shows: descriptions, paragraphs, help, subheadings and groups.
@@ -191,14 +199,23 @@ function prose(value: unknown): string[] {
   }
   return [];
 }
-const BY_NUMBER = /\bsections? \d/i;
+
+test('A8-38 the pattern finds a section named by number in each form it is written', () => {
+  const forms = ['the keys from section 5', 'Section 10', 'sections 5 and 6', '(section #7)', 'sec. 7', '§7', '§ 7'];
+  expect(forms.filter((t) => !SECTION_BY_NUMBER.test(t))).toEqual([]);
+});
+
+test('A8-38 the counterpart: a section named by title, or a number that is no section, passes', () => {
+  const prose = ['under LLM provider API keys', 'the section below', 'this section', 'every 5 seconds', 'sections of the file', 'v2 of the API'];
+  expect(prose.filter((t) => SECTION_BY_NUMBER.test(t))).toEqual([]);
+});
 
 test('A8-38 the help the view shows names no section by number', () => {
   // It said "the keys from section 5" and "(section 6)": the file's numbers, which
   // the view's numbering no longer matches from section 5 on.
   const shown = configSections().flatMap((s) => prose([s.description, s.items]));
   expect(shown.length).toBeGreaterThan(50);
-  expect(shown.filter((t) => BY_NUMBER.test(t))).toEqual([]);
+  expect(shown.filter((t) => SECTION_BY_NUMBER.test(t))).toEqual([]);
 });
 
 test('A8-38 and no hint the dashboard writes names one by number', () => {
@@ -214,7 +231,7 @@ test('A8-38 and no hint the dashboard writes names one by number', () => {
     readFileSync(join(dir, f), 'utf8')
       .replace(/<!--[\s\S]*?-->/g, '')
       .split('\n')
-      .filter((l) => !comment(f).test(l) && BY_NUMBER.test(l))
+      .filter((l) => !comment(f).test(l) && SECTION_BY_NUMBER.test(l))
       .map((l) => `${f}: ${l.trim()}`)
   );
   expect(sources.length).toBeGreaterThan(20);

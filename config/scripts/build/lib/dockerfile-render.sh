@@ -38,46 +38,50 @@ trim() {
 }
 
 # The lines `.env.example` and the dashboard write, read as docker compose
-# reads them, measured against 5.6.1 on 2026-10-27 (OC-80): whitespace around a
-# value goes; a double-quoted value ends at its first unescaped quote, with `\"`
-# a quote and `\\` a backslash; a single-quoted one ends at its next quote;
-# whatever follows either may only be a comment; an unquoted value ends where a
-# space and a `#` begin one. This is no full dotenv parser: `${VAR}` stays as
-# written, which compose and the `source .env` this replaced both expand, and
-# `\n` stays, as it did under `source`. OC-80 names what else is left out.
+# reads them, measured against 5.6.1 (OC-80): whitespace around a value goes; a
+# quoted value ends at its closing quote, with `\"`, `\\` and `\$` resolved in
+# double quotes and `\'` a quote in single ones; an unquoted value ends where a
+# space and a `#` begin one. What follows a closing quote is no part of the
+# value: compose reads it as another entry, which no build uses. One line is one
+# entry here: a quote that does not close on its line is warned of and the line
+# used as written, where compose reads on across lines or refuses the file. This
+# is no full dotenv parser: `$VAR`, `${VAR}` and `$$`, which compose interpolates,
+# stay as written, and so do `\n` and the other escapes compose turns into
+# control characters, as they did under the `source .env` this replaced: a
+# command holding `printf 'a\nb'` means those two characters. OC-80 names what
+# else is left out.
 load_env_file() {
-    local file="$1" line key val q rest out c i n
+    local file="$1" line key val q out c d i n
     [ -f "$file" ] || return 0
     while IFS= read -r line || [ -n "$line" ]; do
         [[ "$line" == *=* ]] || continue
         key="${line%%=*}"
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
         val="${line#*=}"
-        val="${val%$'\r'}"
         val="${val#"${val%%[![:space:]]*}"}"
         q="${val:0:1}"
-        if [[ "$q" == '"' ]]; then
+        if [[ "$q" == '"' || "$q" == "'" ]]; then
             out=''
             i=1
             n=${#val}
             while (( i < n )); do
                 c="${val:i:1}"
-                if [[ "$c" == '\' && ( "${val:i+1:1}" == '"' || "${val:i+1:1}" == '\' ) ]]; then
-                    out+="${val:i+1:1}"
+                d="${val:i+1:1}"
+                if [[ "$c" == '\' && ( "$d" == "$q" || "$d" == '\' || ( "$q" == '"' && "$d" == '$' ) ) ]]; then
+                    # In single quotes `\\` stays two backslashes; it only keeps the second from escaping a quote.
+                    if [[ "$q" == "'" && "$d" == '\' ]]; then out+='\\'; else out+="$d"; fi
                     (( i += 2 ))
                     continue
                 fi
-                [[ "$c" == '"' ]] && break
+                [[ "$c" == "$q" ]] && break
                 out+="$c"
                 (( i += 1 ))
             done
-            if (( i < n )) && [[ "${val:i+1}" =~ ^[[:space:]]*(#.*)?$ ]]; then
+            if (( i < n )); then
                 val="$out"
-            fi
-        elif [[ "$q" == "'" ]]; then
-            rest="${val:1}"
-            if [[ "$rest" == *"'"* && "${rest#*"'"}" =~ ^[[:space:]]*(#.*)?$ ]]; then
-                val="${rest%%"'"*}"
+            else
+                print_warning "${key} in ${file} opens a quote that does not close on its line. The build reads each line on its own and uses this one as written; docker compose reads such a value across lines, or refuses the file if the quote never closes."
+                val="${val%"${val##*[![:space:]]}"}"
             fi
         else
             val="${val%% #*}"

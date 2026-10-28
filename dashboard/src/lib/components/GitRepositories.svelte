@@ -107,80 +107,98 @@
   }
 </script>
 
-<section class="card gitcard">
-  <h2>Agent repositories</h2>
-  <p class="gitmessage" class:warn={git.state !== 'ready'}>{git.message}</p>
+<!-- Only where the git integration is in use: a project that declares no
+     repository is in a normal state, and a card there read as a fault. A
+     declaration that cannot be read is one, and keeps the card. Decided here
+     rather than around the element on the page, so a mounted case holds it on
+     every run. A8-37, A8-39. -->
+{#if git.state !== 'none' || git.declarationError}
+  <section class="card gitcard">
+    <h2>Agent repositories</h2>
+    <p class="gitmessage" class:warn={git.state !== 'ready'}>{git.message}</p>
 
-  {#if git.declarationError && git.state !== 'none'}
-    <p class="warn">{git.declarationError}</p>
-  {/if}
+    {#if git.declarationError && git.state !== 'none'}
+      <p class="warn">{git.declarationError}</p>
+    {/if}
 
-  {#if git.repositories.length > 0}
-    <ul class="gitlist">
-      {#each git.repositories as repo}
-        <li class="gitrepo" class:unreachable={repo.unreachable}>
-          <div class="gitrepo-head">
-            <span class="gitrepo-label">{repo.label}</span>
-            <span class="gitrepo-state">{repo.unreachable ? 'unreachable' : 'cloned'}</span>
-            <span class="sectdesc">{access(repo)} · {repo.policy}</span>
-          </div>
+    {#if git.repositories.length > 0}
+      <ul class="gitlist">
+        {#each git.repositories as repo}
+          <li class="gitrepo" class:unreachable={repo.unreachable}>
+            <div class="gitrepo-head">
+              <span class="gitrepo-label">{repo.label}</span>
+              <span class="gitrepo-state">{repo.unreachable ? 'unreachable' : 'cloned'}</span>
+              <span class="sectdesc">{access(repo)} · {repo.policy}</span>
+            </div>
 
-          {#if repo.error}
-            <p class="warn gitrepo-error">{repo.error}</p>
-          {/if}
+            {#if repo.error}
+              <p class="warn gitrepo-error">{repo.error}</p>
+            {/if}
 
-          <p class="gitrepo-instructions">{repo.instructions}</p>
-          <p class="gitrepo-instructions">
-            <a href={repo.deployKeyUrl} target="_blank" rel="noopener noreferrer">
-              {repo.deployKeyUrl}
-            </a>
-          </p>
+            <p class="gitrepo-instructions">{repo.instructions}</p>
+            <p class="gitrepo-instructions">
+              <a href={repo.deployKeyUrl} target="_blank" rel="noopener noreferrer">
+                {repo.deployKeyUrl}
+              </a>
+            </p>
 
-          {#if repo.publicKey}
-            <div class="gitkey">
-              <code class="gitkey-value">{repo.publicKey}</code>
+            {#if repo.publicKey}
+              <div class="gitkey">
+                <code class="gitkey-value">{repo.publicKey}</code>
+                <button
+                  type="button"
+                  class="aux gitkey-copy"
+                  onclick={() => copy(repo)}
+                  aria-label={`Copy the deploy key for ${repo.label}`}
+                >
+                  {copied === repo.slug ? 'Copied' : copyFailed === repo.slug ? 'Copy failed' : 'Copy'}
+                </button>
+              </div>
+              {#if repo.fingerprint}
+                <p class="dim gitkey-fingerprint">{repo.fingerprint}</p>
+              {/if}
+            {:else}
+              <p class="warn">
+                No deploy key on disk for this repository yet — start the stack once to generate it.
+              </p>
+            {/if}
+
+            {#if repo.canRetry}
               <button
                 type="button"
-                class="aux gitkey-copy"
-                onclick={() => copy(repo)}
-                aria-label={`Copy the deploy key for ${repo.label}`}
+                class="save gitrepo-test"
+                disabled={testing !== ''}
+                onclick={() => test(repo)}
               >
-                {copied === repo.slug ? 'Copied' : copyFailed === repo.slug ? 'Copy failed' : 'Copy'}
+                {testing === repo.slug ? 'Testing…' : 'Test this repository'}
               </button>
-            </div>
-            {#if repo.fingerprint}
-              <p class="dim gitkey-fingerprint">{repo.fingerprint}</p>
             {/if}
-          {:else}
-            <p class="warn">
-              No deploy key on disk for this repository yet — start the stack once to generate it.
-            </p>
-          {/if}
 
-          {#if repo.canRetry}
-            <button
-              type="button"
-              class="save gitrepo-test"
-              disabled={testing !== ''}
-              onclick={() => test(repo)}
-            >
-              {testing === repo.slug ? 'Testing…' : 'Test this repository'}
-            </button>
-          {/if}
-
-          {#if results[repo.slug]}
-            <p class="gitresult" class:warn={!results[repo.slug].ok}>{results[repo.slug].message}</p>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-    {#if git.pending.length > 0}
-      <p class="gitmessage warn">
-        Declared but not yet prepared — the last start did not see
-        {git.pending.length === 1 ? 'it' : 'them'}:
-      </p>
+            {#if results[repo.slug]}
+              <p class="gitresult" class:warn={!results[repo.slug].ok}>{results[repo.slug].message}</p>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      {#if git.pending.length > 0}
+        <p class="gitmessage warn">
+          Declared but not yet prepared — the last start did not see
+          {git.pending.length === 1 ? 'it' : 'them'}:
+        </p>
+        <ul class="gitlist">
+          {#each git.pending as repo}
+            <li class="gitrepo">
+              <div class="gitrepo-head">
+                <span class="gitrepo-label">{repo.label}</span>
+                <span class="sectdesc">{access(repo)} · {repo.policy}</span>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {:else if git.declared.length > 0}
       <ul class="gitlist">
-        {#each git.pending as repo}
+        {#each git.declared as repo}
           <li class="gitrepo">
             <div class="gitrepo-head">
               <span class="gitrepo-label">{repo.label}</span>
@@ -189,22 +207,13 @@
           </li>
         {/each}
       </ul>
+    {:else}
+      <!-- Reached only by a declaration that cannot be read, whose message says
+           what to correct; this says where. -->
+      <p class="dim">
+        The declaration is under Git integration in the
+        <a href="/config">configuration</a>.
+      </p>
     {/if}
-  {:else if git.declared.length > 0}
-    <ul class="gitlist">
-      {#each git.declared as repo}
-        <li class="gitrepo">
-          <div class="gitrepo-head">
-            <span class="gitrepo-label">{repo.label}</span>
-            <span class="sectdesc">{access(repo)} · {repo.policy}</span>
-          </div>
-        </li>
-      {/each}
-    </ul>
-  {:else}
-    <p class="dim">
-      Declare them under Git integration in the
-      <a href="/config">configuration</a>, then start the stack.
-    </p>
-  {/if}
-</section>
+  </section>
+{/if}
