@@ -1,4 +1,4 @@
-# Handover — 2026-10-26
+# Handover — 2026-10-28
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,17 +9,57 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-27, later* has the live picture, *2026-10-27, morning* under it, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-28* has the live picture, *2026-10-27, later* under it, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first ten and the review bodies they point to; the rest of this file is the map and the lessons.
+first eleven and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-27, later: #52 open, on the operator's word
+## Where it stands, 2026-10-28: #52's first round answered, and the update to 0.8.0 next
+
+Timur requested changes on #52 at `d0ca7cb`: three to address, six smaller, and #51's closing line.
+Answered at **`36b9005`**, one commit, with
+[the comment](https://github.com/nocodenation/liquidupstart/pull/52#issuecomment-6466373052) and the
+description and title rewritten:
+
+- **The `.env` reader.** It resolves `\$` and, in single quotes, `\'`; what follows a closing quote
+  is no part of the value; a quote that does not close on its line is warned of by its key. OC-80
+  holds thirty-two shapes measured against compose, values across lines, and four unclosed quotes.
+  **Reading across lines was built and taken back**: the settings are lists on one line,
+  `render_dockerfile` cuts at the first newline, the scan took minutes on a stray quote, and a key
+  named `k` hung the build. Three local `/code-review` passes found that; a fourth, low, found
+  nothing.
+- **The card** decides itself whether it is drawn, so A8-39 mounts it over `gitCard()` on every run.
+  A8-38 pins ten sections, a shared pattern checked on both sides, and hidden sections hidden.
+- **The description closes #51**, by the operator's word of 2026-10-28, a deliberate exception to
+  CLAUDE.md's rule; GitHub lists exactly #51.
+
+`./tests/run.sh` at `36b9005`, clean: **1452 / 12 / 0**, dashboard 45 / 0, no `oom`. **The earlier
+worktree runs counted less than they said:** `../liquidupstart-wt-50` had no `dashboard/node_modules`
+until today, so the mounted component cases were among the 28 skipped at `d0ca7cb` and in the
+`e622e01` baseline. A feature worktree needs `bun install` in `dashboard/` before its run covers the
+component tier; `SP-2`'s voiced skips say so in the output, and nobody read them.
+
+`BACKLOG.md`: one `OPEN` line, the card's result line throws a `TypeError` when a repository is
+tested, on `main` too; and the `SETTLED` readers entry now says why compose is no reader as it stands.
+
+**Open, and whose.** Timur's: reviewing #52 again; `45-26`. Ours, once #52 merges: rebuild what reads
+`.env`, `./run.sh`, remove the worktree, then #50 with a specification first.
+
+**The update test Timur asked for** waits on the operator's OpenClaw prompt in the installed copy,
+`~/.liquidupstart`, at 0.7.0, whose stack is the one running. Read before it runs, 2026-10-28:
+`liquidupstart --update` runs the hosted `update.sh`, the same as `scripts/install/update.sh` at
+0.8.0, which is `e622e01`. It stops the stack first, prunes the whole build cache of the engine, and
+keeps `.env` and `volumes/`. `privacy-proxy` is in neither its image list nor the dashboard's
+`builtImages()`, and `build.sh` builds it only when `PRIVACY_PROXY_ENABLE=1` is already set. So the
+proxy has to be switched on before Rebuild, or the image from 2026-09-11 that the update leaves runs
+instead. That is a candidate issue for Timur once the test has shown it; not raised yet.
+
+## 2026-10-27, later: #52 open, on the operator's word
 
 Timur merged #5, the privacy gateway, at 11:36Z, raised the repositories card from a screenshot, and
 opened two issues, #50 and #51. The operator asked for the card, and for what was left lying around to
