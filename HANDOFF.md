@@ -9,17 +9,37 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-28* has the live picture, *2026-10-27, later* under it, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-28, afternoon* has the live picture, *2026-10-28, earlier* under it, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first eleven and the review bodies they point to; the rest of this file is the map and the lessons.
+first twelve and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-28: #52's first round answered, and the update to 0.8.0 next
+## Where it stands, 2026-10-28, afternoon: #52 merged, and the update to 0.8.0 next
+
+Timur approved #52 and merged it at 13:01Z as **`a6952b5`**; #51 closed with it. `main`'s tree is
+`36b9005`'s plus this file, so the run there, 1452 / 12 / 0 and the dashboard 45 / 0, describes
+`main`'s code. No suite has run on `a6952b5` itself.
+
+`./scripts/state.sh`: no pull request of ours is open. The two that are, #7 and #8, date from
+2026-08-17 and conflict with `main`.
+
+**What the update test installs is 0.8.0, which is `e622e01`, before #52.** Its build reads `.env`
+with #5's reader. The installed copy's `.env` writes its six `*_MODE` lines for Liquid, OpenCode and
+OpenClaw as `"add" # add | override`, so each Liquid and OpenCode build will warn of an unrecognized
+mode and build `add`, which is what those lines ask for. That is the defect #52 repaired, not a
+finding of the test. Whether 0.8.0 or a release carrying #52 is what Timur wants tested is his call.
+
+**Open, and whose.** Timur's: `45-26`, and the release question above. The operator's: the go for
+the update test, once the OpenClaw prompt in `~/.liquidupstart` is done; the plan is in the section
+below. Ours, on the operator's word: removing `../liquidupstart-wt-50` and its local branch, both
+at `36b9005` and in `main`; then #50, with a specification first.
+
+## 2026-10-28, earlier: #52's first round answered, and the update to 0.8.0 read
 
 Timur requested changes on #52 at `d0ca7cb`: three to address, six smaller, and #51's closing line.
 Answered at **`36b9005`**, one commit, with
