@@ -119,6 +119,7 @@
        as a position in the markup. -->
   <OpenClawPairing running={data.running} busy={activeTask !== ''} />
 
+  <!-- Draws itself only where the git integration is in use. A8-37, A8-39. -->
   <GitRepositories git={data.git} />
 
   <footer class="dashfoot">

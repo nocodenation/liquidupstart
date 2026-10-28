@@ -17,6 +17,15 @@ export function isSystemPort(key: string): boolean {
   return key in SYSTEM_PORT_DEFAULTS;
 }
 
+// The page numbers what it shows, every section it shows. `.env.example` numbers its
+// hidden sections too, so its numbers left a gap where section 4 is hidden (#51). The
+// file keeps its own: privacy-proxy's contract test finds `# 7. PRIVACY PROXY` there
+// by its exact text. Prose names a section by its title, so no number in it has to
+// follow. A8-38.
+export function numberShown<T extends { title: string }>(sections: T[]): T[] {
+  return sections.map((s, i) => ({ ...s, title: `${i + 1}. ${s.title.replace(/^\d+\.\s+/, '')}` }));
+}
+
 export function sectionModeFromTitle(title: string): { mode: SectionMode; displayTitle: string } {
   let mode: SectionMode = 'normal';
   let marked = false;

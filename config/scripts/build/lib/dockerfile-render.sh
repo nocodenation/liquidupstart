@@ -28,16 +28,64 @@ print_warning() {
     echo "${c_warn}WARNING: $*${c_reset}" >&2
 }
 
+# Leading and trailing whitespace removed, and nothing else. `xargs` did this
+# before, and also took the quotes out of a command and choked on a lone one.
+trim() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+# The lines `.env.example` and the dashboard write, read as docker compose
+# reads them, measured against 5.6.1 (OC-80): whitespace around a value goes; a
+# quoted value ends at its closing quote, with `\"`, `\\` and `\$` resolved in
+# double quotes and `\'` a quote in single ones; an unquoted value ends where a
+# space and a `#` begin one. What follows a closing quote is no part of the
+# value: compose reads it as another entry, which no build uses. One line is one
+# entry here: a quote that does not close on its line is warned of and the line
+# used as written, where compose reads on across lines or refuses the file. This
+# is no full dotenv parser: `$VAR`, `${VAR}` and `$$`, which compose interpolates,
+# stay as written, and so do `\n` and the other escapes compose turns into
+# control characters, as they did under the `source .env` this replaced: a
+# command holding `printf 'a\nb'` means those two characters. OC-80 names what
+# else is left out.
 load_env_file() {
-    local file="$1" key val
+    local file="$1" line key val q out c d i n
     [ -f "$file" ] || return 0
-    while IFS='=' read -r key val || [ -n "$key" ]; do
+    while IFS= read -r line || [ -n "$line" ]; do
+        [[ "$line" == *=* ]] || continue
+        key="${line%%=*}"
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-        val="${val%$'\r'}"
-        if [[ ${#val} -ge 2 && "$val" == \"*\" ]]; then
-            val="${val:1:${#val}-2}"
-        elif [[ ${#val} -ge 2 && "$val" == \'*\' ]]; then
-            val="${val:1:${#val}-2}"
+        val="${line#*=}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        q="${val:0:1}"
+        if [[ "$q" == '"' || "$q" == "'" ]]; then
+            out=''
+            i=1
+            n=${#val}
+            while (( i < n )); do
+                c="${val:i:1}"
+                d="${val:i+1:1}"
+                if [[ "$c" == '\' && ( "$d" == "$q" || "$d" == '\' || ( "$q" == '"' && "$d" == '$' ) ) ]]; then
+                    # In single quotes `\\` stays two backslashes; it only keeps the second from escaping a quote.
+                    if [[ "$q" == "'" && "$d" == '\' ]]; then out+='\\'; else out+="$d"; fi
+                    (( i += 2 ))
+                    continue
+                fi
+                [[ "$c" == "$q" ]] && break
+                out+="$c"
+                (( i += 1 ))
+            done
+            if (( i < n )); then
+                val="$out"
+            else
+                print_warning "${key} in ${file} opens a quote that does not close on its line. The build reads each line on its own and uses this one as written; docker compose reads such a value across lines, or refuses the file if the quote never closes."
+                val="${val%"${val##*[![:space:]]}"}"
+            fi
+        else
+            val="${val%% #*}"
+            val="${val%"${val##*[![:space:]]}"}"
         fi
         export "$key=$val"
     done < "$file"
@@ -58,14 +106,14 @@ resolve_setting() {
     local specific="$2"
     local label="${4:-_MODE}"
     local mode
-    mode="$(printf '%s' "$3" | tr '[:upper:]' '[:lower:]' | xargs)"
+    mode="$(trim "$(printf '%s' "$3" | tr '[:upper:]' '[:lower:]')")"
 
     # Unrecognized (non-empty, non-override, non-add) modes warn, then fall
     # through to the default "add" behavior below.
     case "$mode" in
         override|add|"") ;;
         *)
-            print_warning "unrecognized ${label} value '$(printf '%s' "$3" | xargs)'; expected 'add' or 'override'. Falling back to 'add'."
+            print_warning "unrecognized ${label} value '$(trim "$3")'; expected 'add' or 'override'. Falling back to 'add'."
             ;;
     esac
 
@@ -129,7 +177,7 @@ render_dockerfile() {
         local __trimmed=()
         local d trimmed
         for d in "${__deps[@]}"; do
-            trimmed=$(echo "$d" | xargs)
+            trimmed=$(trim "$d")
             [ -n "$trimmed" ] && __trimmed+=("$trimmed")
             # apt package names are case-sensitive and lowercase by convention;
             # warn (but keep the value verbatim) so an upcoming "Unable to locate
@@ -166,15 +214,18 @@ render_dockerfile() {
         local post_block=""
         local c trimmed
         for c in "${__cmds[@]}"; do
-            trimmed=$(echo "$c" | xargs)
-            [ -n "$trimmed" ] && post_block+="RUN $trimmed\n"
+            trimmed=$(trim "$c")
+            [ -n "$trimmed" ] && post_block+="RUN $trimmed"$'\n'
         done
 
-        awk -v block="$post_block" '
+        # Through the environment, not `-v`: awk turns the backslashes of a
+        # `-v` value into escapes, so `\.` in a sed command became `.` and a
+        # `\n` split the command across two lines. OC-80.
+        POST_BLOCK="$post_block" awk '
           {
             print $0
             if ($0 ~ /# POST_INSTALL_COMMANDS/) {
-              n = split(block, lines, "\\n");
+              n = split(ENVIRON["POST_BLOCK"], lines, "\n");
               for (i = 1; i <= n; i++) if (length(lines[i]) > 0) print lines[i];
             }
           }

@@ -17,7 +17,9 @@
  *           (read|direct, failed) with their generated keys and a manifest; one
  *           declaring both with no volumes/_git-secrets at all; and one
  *           declaring both with keys but no manifest, then a manifest truncated
- *           mid-JSON.
+ *           mid-JSON. Since 2026-10-27 the second project is also served with
+ *           its declaration emptied, and then with one the parser refuses, before
+ *           it is put back: the card reads .env on every request.
  * When:     The launchpad is fetched with GET /.
  * Then:     Every declared repository's label, public key and fingerprint are
  *           in the rendered markup — searched with the hydration payload
@@ -25,11 +27,24 @@
  *           fails; the second project's card names starting the stack as the
  *           next step; and the third says both repositories are declared and
  *           their state unknown, in both broken-manifest states, with the page
- *           still answering 200.
- * Covers:   A8-6, A8-7, A8-14, A8-20, A8-22, A8-25, FR3, FR10, FR11, FR20, U2, U11
+ *           still answering 200. A project that declares nothing is served no
+ *           repositories card at all, and one whose declaration cannot be read
+ *           keeps the card, with the parser's reason, and a hint that names the
+ *           section *Git integration* rather than a number.
+ * Covers:   A8-6, A8-7, A8-14, A8-20, A8-22, A8-25, A8-37, FR3, FR10, FR11, FR20, U2, U11
  * Unhappy:  A8-7 and A8-14 are the unhappy twins of A8-6: an empty card in
  *           either state reads as "nothing declared", which is false and leaves
- *           the operator with nothing to do next.
+ *           the operator with nothing to do next. A8-37's negative is the other
+ *           direction: a card where nothing is declared reads as a fault, which is
+ *           false too, and its counterparts keep the card wherever there is
+ *           something to say.
+ *
+ * Test data for A8-37, written into the second project's .env in turn:
+ * `GIT_REPOSITORIES` empty, by `declaredEnv(dir, '')`; and `git@github.com:nocodenation/liquid-flows.git|sometimes|protected`,
+ * which `git-repos.sh parse` refuses with *"access must be read or write, not
+ * 'sometimes'"*. The heading searched for is `Agent repositories`, the card's own;
+ * the hint, *"The declaration is under Git integration in the"*, with no `section` and
+ * a number anywhere on the page.
  *
  * Amended 2026-09-30, after this file failed 2 of 3 runs on an idle machine.
  * Twice it was measuring the machine rather than the product, and both times the
@@ -90,6 +105,7 @@ import {
   type Dashboard
 } from '../lib/dashboardserver';
 import { join } from 'node:path';
+import { SECTION_BY_NUMBER } from '../lib/sections';
 
 const TAG = throwawayTag('liquidupstart/dashboard:m-a8-served');
 const TRUNCATED = '{\n  "generated": "2026-09-07T09:00:00Z",\n  "repositories": [\n    { "name": "liq';
@@ -97,6 +113,7 @@ const TRUNCATED = '{\n  "generated": "2026-09-07T09:00:00Z",\n  "repositories": 
 const ready = newProject('lu-a8-served-ready-');
 const unprepared = newProject('lu-a8-served-unprepared-');
 const unknown = newProject('lu-a8-served-unknown-');
+const MISDECLARATION = 'git@github.com:nocodenation/liquid-flows.git|sometimes|protected';
 const started: Dashboard[] = [];
 
 let readyPage: { status: number; html: string };
@@ -105,6 +122,8 @@ let unknownPage: { status: number; html: string };
 let truncatedPage: { status: number; html: string };
 let driftedPage: { status: number; html: string };
 let reloadedPage: { status: number; html: string };
+let undeclaredPage: { status: number; html: string };
+let misdeclaredPage: { status: number; html: string };
 
 beforeAll(async () => {
   const built = buildDashboardImage(TAG);
@@ -141,6 +160,21 @@ beforeAll(async () => {
   readyPage = await get(a, '/');
   unpreparedPage = await get(b, '/');
   unknownPage = await get(c, '/');
+
+  // A8-37, on the second project, and put back: nothing declared, then a
+  // declaration the parser refuses. Waited on the bytes the container reads, as
+  // the manifest writes below are.
+  const unpreparedEnv = join(unprepared, '.env');
+  for (const [declaration, keep] of [
+    ['', (p: { status: number; html: string }) => (undeclaredPage = p)],
+    [MISDECLARATION, (p: { status: number; html: string }) => (misdeclaredPage = p)]
+  ] as const) {
+    declaredEnv(unprepared, declaration);
+    await awaitFileInContainer(b, unpreparedEnv, readFileSync(unpreparedEnv, 'utf8'));
+    keep(await get(b, '/'));
+  }
+  declaredEnv(unprepared, PAIR_DECLARATION);
+  await awaitFileInContainer(b, unpreparedEnv, readFileSync(unpreparedEnv, 'utf8'));
 
   writeFileSync(manifestPath(unknown), TRUNCATED);
   // Waited for, not assumed, and waited on the file rather than on the page: the
@@ -275,4 +309,34 @@ test('A8-25 a second fetch reports the same state, because it is not held in a s
   expect(reloadedPage.status).toBe(200);
   expect(block(again)).toContain('unreachable');
   expect(block(again)).toBe(block(first));
+});
+
+test('A8-37 a project that declares no repository is served no repositories card', () => {
+  expect(undeclaredPage.status).toBe(200);
+  const markup = withoutScripts(undeclaredPage.html);
+
+  expect(markup).not.toContain('Agent repositories');
+  expect(markup).not.toContain('No repositories are declared');
+});
+
+test('A8-37 the counterpart: a declaration that cannot be read keeps the card, with the reason', () => {
+  expect(misdeclaredPage.status).toBe(200);
+  const markup = withoutScripts(misdeclaredPage.html);
+
+  expect(markup).toContain('Agent repositories');
+  expect(markup).toContain("access must be read or write, not 'sometimes'");
+});
+
+test('A8-37 and the card sends the operator to Git integration by name, not by a number', () => {
+  // It said "section 10" after #5 had made Git integration section 11, and the
+  // configuration view numbers its sections itself since A8-38: a number drifts.
+  const markup = withoutScripts(misdeclaredPage.html);
+
+  expect(markup).toContain('The declaration is under Git integration in the');
+  expect(markup).not.toMatch(SECTION_BY_NUMBER);
+});
+
+test('A8-37 and a project that declares repositories keeps its card', () => {
+  expect(withoutScripts(readyPage.html)).toContain('Agent repositories');
+  expect(withoutScripts(unpreparedPage.html)).toContain('Agent repositories');
 });

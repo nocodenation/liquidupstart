@@ -1806,6 +1806,37 @@ runs' images, and `dropBuilderImage` a tag named by the build context's digest. 
 review of the answer on #49. Not built: nothing claims something false, since A8-36's block names the
 limit, and after #49 a new finding is recorded rather than worked unless the operator asks for it.
 
+---
+
+`SETTLED` **`.env` has many readers, each with its own rules, and its writer does not escape a
+backslash.** Found by the local review of #52 on 2026-10-27, by reading rather than by an exhaustive
+search. Among them: `get_env` in `scripts/linux/start.sh`; `env_value` in
+`config/scripts/start/lib/privacy-routing.sh`; a `grep | cut | tr` of its own in
+`scripts/linux/build.sh` for `PRIVACY_PROXY_ENABLE`, and in `config/scripts/start/liquid.sh` and
+`nginx.sh`; an awk `get_env` in `config/scripts/openclaw-pairing.sh`; `load_env_file` in
+`config/scripts/build/lib/dockerfile-render.sh` for the Liquid, OpenCode and privacy-proxy builds,
+while `config/scripts/build/openclaw.sh` and `hermes.sh` still run `source .env`; and `splitValue` in
+`dashboard/src/lib/env-file.ts`. They differ on comments, quotes and `$`, so one line
+can mean different things to start, build and dashboard. And `formatValue` there escapes `"` and not
+`\`, so a value ending in a backslash is written as a line compose cannot close. #52 brings
+`load_env_file` in line with compose for the lines `.env.example` and the dashboard write, `OC-80`.
+One reader the start and every build source, and a writer that escapes `\`, would end it. Not
+built: after #49 a finding is recorded unless the operator asks for it. Compose as that reader was
+suggested by the local review of #52's round 1, and measured on 2026-10-28 with 5.6.1: `docker
+compose config --environment` prints what it read merged with the caller's environment, and
+prints a value that spans lines over those same lines, so a line inside it reads as a key of its
+own. It is no reader as it stands.
+
+---
+
+`OPEN` **The repositories card's result line throws when a repository is tested.** `test()` in
+`dashboard/src/lib/components/GitRepositories.svelte` sets `results[slug]` to `null` while the test
+runs, and the `$effect` that clears a contradicted result line reads `results[slug].cloned` without
+asking whether it is `null`: *"TypeError: null is not an object"*, printed three times by a run of
+`tests/component/m-a16.result-line.test.ts`, whose four cases pass. On `main` as well. Found by the third local review of #52's round 1 on 2026-10-28, in a file #52
+re-indents; `results[slug] && results[slug].cloned !== now.cloned` is the repair. Not worked: after
+#49 a finding is recorded unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
