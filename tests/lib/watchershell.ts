@@ -11,6 +11,7 @@
 // Specified as B6-47.
 
 export const INCAPABLE = 'cannot show the & defect (needs bash >= 5.2 with patsub_replacement on)';
+export const NO_LINE = 'the shipped line was not found in nar-watch.sh';
 
 /** `null` for a run that may be read; otherwise the message `run()` throws. */
 export function watcherRunVerdict(code: number, stdout: string, stderr: string): string | null {
@@ -18,7 +19,12 @@ export function watcherRunVerdict(code: number, stdout: string, stderr: string):
   // beside a canary that looks right.
   if (code !== 0) return `watcher run exited ${code}: ${stderr}`;
   const canary = stdout.match(/^CANARY=(.*)$/m);
-  if (canary && canary[1] === 'XX') return null;
-  const bash = stdout.match(/^BASH=.*$/m);
-  return `${INCAPABLE}: read ${bash ? bash[0] : 'no BASH= line'}, ${canary ? canary[0] : 'no CANARY= line'}`;
+  if (!canary || canary[1] !== 'XX') {
+    const bash = stdout.match(/^BASH=.*$/m);
+    return `${INCAPABLE}: read ${bash ? bash[0] : 'no BASH= line'}, ${canary ? canary[0] : 'no CANARY= line'}`;
+  }
+  // `eval ""` evaluates nothing, and every OUT= would then blame the product.
+  const line = stdout.match(/^LINE=(.*)$/m);
+  if (!line || line[1] === '') return `${NO_LINE}: read ${line ? 'an empty LINE=' : 'no LINE= line'}`;
+  return null;
 }

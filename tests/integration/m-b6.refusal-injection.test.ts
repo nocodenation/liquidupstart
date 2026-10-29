@@ -70,7 +70,7 @@ import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
-import { sh } from '../lib/shell';
+import { sh, wasInterrupted } from '../lib/shell';
 import { watcherRunVerdict } from '../lib/watchershell';
 
 const BUILD_SH = join(repoRoot, 'config/nar_builder/build.sh');
@@ -159,6 +159,7 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
    * `&` defect, throws `watcherRunVerdict`'s message before any scenario reads
    * `OUT=`. `prefix` runs first; B6-47 uses it to turn the option off.
    */
+  const RUN_TIMEOUT_MS = 150_000;
   const run = (base: string, prefix = '') => {
     const r = sh([
       'docker', 'run', '--rm', '-v', `${WATCH_SH}:/nar-watch.sh:ro`,
@@ -177,9 +178,12 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
        eval "$line"
        printf 'OUT=%s\\n' "$REFUSAL"
        printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
-    ]);
-    // No bound but the test's own: the 120_000 that stood here was sh()'s extraEnv,
-    // which copies nothing from a number. B6-37's block.
+    ], undefined, {}, RUN_TIMEOUT_MS);
+    // Inside the scenarios' 180_000, so a stalled pull is reported as one.
+    if (wasInterrupted(r)) {
+      const how = r.timedOut ? `ran past its ${RUN_TIMEOUT_MS / 1000}s timeout` : `was interrupted (exit ${r.code})`;
+      throw new Error(`the watcher run ${how}, so this run measured nothing; a statement about the machine, not the code under test`);
+    }
     const verdict = watcherRunVerdict(r.code, r.stdout, r.stderr);
     if (verdict !== null) throw new Error(verdict);
     return r;
@@ -189,19 +193,11 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
     // The in-suite proof that the canary reads the shell, not the image name.
     // Its counterpart is every run() scenario of B6-35. The BASH= value is not
     // asserted, so a point update of the image cannot redden this.
-    let message = '';
-    try {
-      run(ORDINARY, 'shopt -u patsub_replacement');
-    } catch (e) {
-      message = (e as Error).message;
-    }
-    expect(message).toContain('cannot show the & defect');
-    expect(message).toContain('CANARY=&&');
+    expect(() => run(ORDINARY, 'shopt -u patsub_replacement')).toThrow(/cannot show the & defect[\s\S]*CANARY=&&/);
   }, 180_000);
 
   test('B6-35 the payload runs nothing through the watcher substitution', () => {
     const r = run(PAYLOAD);
-    expect(r.code).toBe(0);
     expect(r.stdout).toContain('RAN=no');
     expect(r.stdout).not.toContain('.part');
     expect(r.stdout).toContain(`/nar_inbox/${PAYLOAD}`);

@@ -14,18 +14,22 @@
  * Then:     a run that exited 0 and printed `CANARY=XX` has no verdict; a run
  *           whose shell printed anything else, or no canary, is refused with the
  *           reason and the lines it read; and a non-zero exit is reported as the
- *           exit, with stderr, whatever stdout holds.
+ *           exit, with stderr, whatever stdout holds; and a capable run whose
+ *           `LINE=` is empty is refused as a shipped line not found.
  * Covers:   B6-47, and B6-35's premise
- * Negative: `CANARY=&&`, a missing `CANARY=` line, and exit 125 beside `CANARY=XX`.
+ * Negative: `CANARY=&&`, a missing `CANARY=` line, exit 125 beside `CANARY=XX`,
+ *           and an empty `LINE=` beside `CANARY=XX`.
  * Counterpart: exit 0 with `CANARY=XX` and the rest of a real run's output passes,
- *           so refusing every run cannot satisfy the three negatives.
+ *           so refusing every run cannot satisfy the four negatives.
  *
  * Test data, the values measured on 2026-10-29: `BASH=5.2.15(1)-release` is
  * `debian:bookworm-slim`, `BASH=5.1.16(1)-release` and `CANARY=&&` are
  * `bash:5.1`, and the stderr line is what docker prints for
  * `liquidupstart/liquid:missing-for-29`, an image named so it cannot exist. The
  * exit row carries `CANARY=XX` on purpose: a function that read the canary first
- * would return `null` for it. B6-35's run() puts the same function to a real run
+ * would return `null` for it. The empty `LINE=` row is what a run prints when
+ * `grep -F` finds nothing: the `OUT=` beside it still names the dot-copy, as if
+ * the product were wrong. B6-35's run() puts the same function to a real run
  * with `patsub_replacement` turned off.
  */
 import { test, expect, describe } from 'bun:test';
@@ -56,5 +60,11 @@ describe('B6-47 a watcher run is read only if it ran, in a shell that can show t
     const v = watcherRunVerdict(125, 'CANARY=XX\n', stderr);
     expect(v).toStartWith('watcher run exited 125:');
     expect(v).toContain("Unable to find image 'liquidupstart/liquid:missing-for-29' locally");
+  });
+
+  test('B6-47 the negative: a capable run with an empty LINE= is refused as a shipped line not found', () => {
+    const stdout =
+      'CANARY=XX\nBASH=5.2.15(1)-release\nLINE=\nOUT=refused /nar_extensions/.a.nar.part: a reason\n';
+    expect(watcherRunVerdict(0, stdout, '')).toContain('the shipped line was not found in nar-watch.sh');
   });
 });
