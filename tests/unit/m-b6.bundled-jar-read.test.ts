@@ -19,9 +19,9 @@
  *           read limit, over one that **declares 1000 bytes and inflates to
  *           800 MB**, and over an ordinary one
  * Then:     the first is refused on the limit without being unpacked, the second
- *           is refused on the disagreement between the directory and the entry,
- *           the third is not refused for either reason, and peak memory stays
- *           small in every case
+ *           is refused by zipfile's own CRC check (`Bad CRC-32`) after a bounded
+ *           read of its declared 1000 bytes, the third is not refused for either
+ *           reason, and peak memory stays small in every case
  * Covers:   B6-37, FR36
  * Unhappy:  The bomb and the liar are the negative halves. The ordinary bundled
  *           jar is the counterpart, and it is what keeps the fix from being
