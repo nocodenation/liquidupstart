@@ -129,6 +129,22 @@ describe('SP-5 the guard refuses an interrupted run and lets a finished one thro
     expect(said({ code: 130, output: SIGINT_OUTPUT })).toContain('was interrupted (exit 130)');
   });
 
+  test('SP-5 and a caller that is not a build names its own subject and reason', () => {
+    let m = '';
+    try {
+      refuseInterrupted({ code: 255, output: '', timedOut: true }, 'B6-35', 150_000, {
+        subject: 'the watcher run',
+        reason: ['  A debian:bookworm-slim pull that stalled says nothing about nar-watch.sh.']
+      });
+    } catch (e) {
+      m = (e as Error).message;
+    }
+    expect(m).toContain('B6-35: the watcher run ran past its 150s timeout, so this run measured nothing.');
+    expect(m).toContain('says nothing about nar-watch.sh');
+    expect(m).not.toContain('docker build');
+    expect(m).not.toContain('npm');
+  });
+
   test('SP-5 the counterpart: an ordinary failure and a success pass through', () => {
     expect([
       said({ code: 1, output: 'npm error ... install.cjs ... not run' }),

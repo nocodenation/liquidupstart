@@ -18,9 +18,9 @@
  *           `LINE=` is empty is refused as a shipped line not found.
  * Covers:   B6-47, and B6-35's premise
  * Negative: `CANARY=&&`, a missing `CANARY=` line, exit 125 beside `CANARY=XX`,
- *           and an empty `LINE=` beside `CANARY=XX`.
+ *           and an empty or absent `LINE=` beside `CANARY=XX`.
  * Counterpart: exit 0 with `CANARY=XX` and the rest of a real run's output passes,
- *           so refusing every run cannot satisfy the four negatives.
+ *           so refusing every run cannot satisfy the five negatives.
  *
  * Test data, the values measured on 2026-10-29: `BASH=5.2.15(1)-release` is
  * `debian:bookworm-slim`, `BASH=5.1.16(1)-release` and `CANARY=&&` are
@@ -66,5 +66,13 @@ describe('B6-47 a watcher run is read only if it ran, in a shell that can show t
     const stdout =
       'CANARY=XX\nBASH=5.2.15(1)-release\nLINE=\nOUT=refused /nar_extensions/.a.nar.part: a reason\n';
     expect(watcherRunVerdict(0, stdout, '')).toContain('the shipped line was not found in nar-watch.sh');
+  });
+
+  test('B6-47 the negative: a capable run with no LINE= line at all is refused the same way', () => {
+    // Apart from the empty row, so a check that refused only a present, empty
+    // LINE= cannot pass.
+    const v = watcherRunVerdict(0, 'CANARY=XX\nBASH=5.2.15(1)-release\n', '');
+    expect(v).toContain('the shipped line was not found in nar-watch.sh');
+    expect(v).toContain('no LINE= line');
   });
 });

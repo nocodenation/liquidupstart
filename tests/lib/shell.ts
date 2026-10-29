@@ -22,22 +22,29 @@ export function wasInterrupted(
   );
 }
 
+const BUILD_REASON = [
+  '  It reaches the network -- `docker build --no-cache` with an npm install inside -- and a',
+  '  build that is cut off says nothing about --allow-scripts either way.'
+];
+
 /**
  * Throws when `r` was cut off, so a run that measured nothing fails as the machine's
  * fault and is never read as a verdict. `timeoutMs` is the timeout `r` ran under.
+ * `about` names what ran and why a cut-off run of it says nothing; the default is
+ * OC-15's and OC-16's build.
  */
 export function refuseInterrupted(
   r: Pick<Result, 'code' | 'output'> & { timedOut?: boolean; signal?: string | null },
   what: string,
-  timeoutMs: number
+  timeoutMs: number,
+  about: { subject: string; reason: string[] } = { subject: 'the docker build', reason: BUILD_REASON }
 ): void {
   if (!wasInterrupted(r)) return;
   const how = r.timedOut ? `ran past its ${timeoutMs / 1000}s timeout` : `was interrupted (exit ${r.code})`;
   throw new Error(
     [
-      `${what}: the docker build ${how}, so this run measured nothing.`,
-      '  It reaches the network -- `docker build --no-cache` with an npm install inside -- and a',
-      '  build that is cut off says nothing about --allow-scripts either way.',
+      `${what}: ${about.subject} ${how}, so this run measured nothing.`,
+      ...about.reason,
       '  This is a statement about the machine, not about the code under test.'
     ].join('\n')
   );

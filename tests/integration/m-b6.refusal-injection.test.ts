@@ -70,7 +70,7 @@ import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
-import { sh, wasInterrupted } from '../lib/shell';
+import { sh, wasInterrupted, refuseInterrupted } from '../lib/shell';
 import { watcherRunVerdict } from '../lib/watchershell';
 
 const BUILD_SH = join(repoRoot, 'config/nar_builder/build.sh');
@@ -157,14 +157,20 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
    * which is `XX` only where an unquoted `&` is the matched text, and its
    * `BASH=` version. A run that did not exit 0, or whose shell cannot show the
    * `&` defect, throws `watcherRunVerdict`'s message before any scenario reads
-   * `OUT=`. `prefix` runs first; B6-47 uses it to turn the option off.
+   * `OUT=`. `prefix` runs first; B6-47 uses it to turn the option off. `set -e`
+   * makes a line that fails to evaluate end the run with bash's own error, and
+   * the line is taken from code only, since the file's comments quote it.
    */
   const RUN_TIMEOUT_MS = 150_000;
+  let runs = 0;
   const run = (base: string, prefix = '') => {
+    // Named, because the timeout ends the docker client and not the container.
+    const name = `lu-b6-35-${process.pid}-${runs++}`;
     const r = sh([
-      'docker', 'run', '--rm', '-v', `${WATCH_SH}:/nar-watch.sh:ro`,
+      'docker', 'run', '--rm', '--name', name, '-v', `${WATCH_SH}:/nar-watch.sh:ro`,
       '--entrypoint', 'bash', 'debian:bookworm-slim', '-c',
-      `${prefix}
+      `set -e
+       ${prefix}
        c=X; printf 'CANARY=%s\\n' "\${c//X/&&}"
        printf 'BASH=%s\\n' "$BASH_VERSION"
        base='${base.replace(/'/g, "'\\''")}'
@@ -172,7 +178,7 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
        inbox=/nar_inbox
        part="$LOAD_DIR/.$base.part"
        REFUSAL="refused $part: a reason, and again $part"
-       line="$(grep -F 'REFUSAL="\${REFUSAL//' /nar-watch.sh | head -1)"
+       line="$(grep -v '^[[:space:]]*#' /nar-watch.sh | grep -F 'REFUSAL="\${REFUSAL//' | head -1)"
        printf 'LINE=%s\\n' "$line"
        set -- "$inbox/$base"
        eval "$line"
@@ -180,10 +186,11 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
        printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
     ], undefined, {}, RUN_TIMEOUT_MS);
     // Inside the scenarios' 180_000, so a stalled pull is reported as one.
-    if (wasInterrupted(r)) {
-      const how = r.timedOut ? `ran past its ${RUN_TIMEOUT_MS / 1000}s timeout` : `was interrupted (exit ${r.code})`;
-      throw new Error(`the watcher run ${how}, so this run measured nothing; a statement about the machine, not the code under test`);
-    }
+    if (wasInterrupted(r)) sh(['docker', 'rm', '-f', name]);
+    refuseInterrupted(r, 'B6-35', RUN_TIMEOUT_MS, {
+      subject: 'the watcher run',
+      reason: ['  It pulls debian:bookworm-slim, and a run that was cut off says nothing about nar-watch.sh.']
+    });
     const verdict = watcherRunVerdict(r.code, r.stdout, r.stderr);
     if (verdict !== null) throw new Error(verdict);
     return r;

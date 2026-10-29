@@ -79,6 +79,7 @@ like a suite that ran.
 | **SP-5** | positive | …and neither is success, not even one whose log mentions a cancellation | The words are read only for a non-zero exit |
 | **SP-5** | **negative** | The guard throws for a build past its own timeout, naming that timeout and that the run measured nothing | *2026-10-22, item 1 of the review of #42.* Until then only its call sites were read, and the guard could be emptied or inverted with every case green |
 | **SP-5** | **negative** | …and for a build cut off by SIGINT, with its exit | |
+| **SP-5** | positive | …and a caller that is not a build names its own subject and reason, which replace the build's wording | *2026-10-29, `/code-review` of #53.* B6-35's watcher run is a `docker run`, and the build's npm sentence would have misled there; the guard is shared rather than copied |
 | **SP-5** | positive | …and lets an ordinary failure and a success through | A guard that refused every finished build would only show in a real build with network, which `SP-3` skips on an offline machine |
 | **SP-5** | positive | A published port is read out of `docker port`'s answer: one mapping, two lines, IPv6, IPv4-mapped IPv6, and the bare `:::` form | A parser stricter than docker is the same defect from the other side |
 | **SP-5** | **negative** | …and the empty answer, the two error answers docker gives, a zero port, a fraction, hex, a port past 65535 and prose ending in a number are no port | `Number()` of the last colon's tail read `127.0.0.1:1.5` as 1.5 |
