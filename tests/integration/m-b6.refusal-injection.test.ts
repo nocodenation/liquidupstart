@@ -159,7 +159,9 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
    * `&` defect, throws `watcherRunVerdict`'s message before any scenario reads
    * `OUT=`. `prefix` runs first; B6-47 uses it to turn the option off. `set -e`
    * makes a line that fails to evaluate end the run with bash's own error, and
-   * the line is taken from code only, since the file's comments quote it.
+   * the line is taken from code only, so that a comment quoting it, as the
+   * file's comments already quote the old `sed` line, cannot be evaluated in its
+   * place.
    */
   const RUN_TIMEOUT_MS = 150_000;
   let runs = 0;

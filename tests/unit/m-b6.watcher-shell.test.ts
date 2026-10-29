@@ -11,11 +11,12 @@
  *           code and the `CANARY=` line the run prints from `${c//X/&&}`.
  * Given:    the exit code, stdout and stderr of a watcher run, as stated below.
  * When:     `watcherRunVerdict` reads them.
- * Then:     a run that exited 0 and printed `CANARY=XX` has no verdict; a run
+ * Then:     a run that exited 0 and printed `CANARY=XX` and a non-empty `LINE=`
+ *           has no verdict; a run
  *           whose shell printed anything else, or no canary, is refused with the
  *           reason and the lines it read; and a non-zero exit is reported as the
  *           exit, with stderr, whatever stdout holds; and a capable run whose
- *           `LINE=` is empty is refused as a shipped line not found.
+ *           `LINE=` is empty or absent is refused as a shipped line not found.
  * Covers:   B6-47, and B6-35's premise
  * Negative: `CANARY=&&`, a missing `CANARY=` line, exit 125 beside `CANARY=XX`,
  *           and an empty or absent `LINE=` beside `CANARY=XX`.
