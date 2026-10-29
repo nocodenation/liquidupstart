@@ -22,7 +22,8 @@
  * When:     each script's own substitution is run over a refusal naming the
  *           dot-copy
  * Then:     no command runs, the dot-path is gone from the text, and an ordinary
- *           name containing `|` survives unmangled
+ *           name containing `|` survives unmangled -- and a shell where `&`
+ *           cannot go wrong is refused by name
  * Covers:   B6-35, FR30, FR36
  * Unhappy:  The payload is the negative half. The ordinary `|` name is its
  *           counterpart and it is not decoration: the reviewer's suggested fix
@@ -52,12 +53,25 @@
  * Neither half drives a whole failing build with a crafted `<finalName>`. That
  * needs Maven Central and a pom per payload and would measure the same line
  * through four more moving parts; the gap is stated rather than papered over.
+ *
+ * **Both legs run in `debian:bookworm-slim`, and the case has no build
+ * precondition.** #29: the watcher leg ran in `liquidupstart/liquid:latest`, and
+ * where that was never built `docker run` exited 125 and four scenarios failed
+ * with `Received: ""`. Any bash will do for the quoted form, which is correct in
+ * every bash; what the case needs is a shell in which the `&` defect *can* show,
+ * because in `bash:5.1` the `&` and `\&` scenarios were measured green on it. So
+ * `run()` asserts the exit code and a canary, `${c//X/&&}` printing `XX`, read
+ * from the shell that then evaluates the line, through `watcherRunVerdict`
+ * (B6-47). The canary proves the shell can show the defect, not that it is
+ * Liquid's; that is all the case needs of it. B6-47's integration row, the same
+ * run with `patsub_replacement` off, sits beside the scenarios it guards.
  */
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
+import { watcherRunVerdict } from '../lib/watchershell';
 
 const BUILD_SH = join(repoRoot, 'config/nar_builder/build.sh');
 const WATCH_SH = join(repoRoot, 'config/liquid/nar-watch.sh');
@@ -137,15 +151,22 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
    *
    * So the line is extracted by `grep -F` on its own opening, the way the builder
    * leg extracts `literal_replace`, and `$1` is set the way `judge` receives it.
-   * A spelling change is then run rather than asserted. It runs in the **Liquid
-   * image**, where this script runs: bash 5.2.15 with `patsub_replacement` on,
-   * which is the behaviour at issue.
+   * A spelling change is then run rather than asserted. It runs in
+   * `debian:bookworm-slim`, which needs no build (#29), and the shell is asked
+   * rather than assumed: before the eval it prints `CANARY=` from `${c//X/&&}`,
+   * which is `XX` only where an unquoted `&` is the matched text, and its
+   * `BASH=` version. A run that did not exit 0, or whose shell cannot show the
+   * `&` defect, throws `watcherRunVerdict`'s message before any scenario reads
+   * `OUT=`. `prefix` runs first; B6-47 uses it to turn the option off.
    */
-  const run = (base: string) =>
-    sh([
+  const run = (base: string, prefix = '') => {
+    const r = sh([
       'docker', 'run', '--rm', '-v', `${WATCH_SH}:/nar-watch.sh:ro`,
-      '--entrypoint', 'bash', 'liquidupstart/liquid:latest', '-c',
-      `base='${base.replace(/'/g, "'\\''")}'
+      '--entrypoint', 'bash', 'debian:bookworm-slim', '-c',
+      `${prefix}
+       c=X; printf 'CANARY=%s\\n' "\${c//X/&&}"
+       printf 'BASH=%s\\n' "$BASH_VERSION"
+       base='${base.replace(/'/g, "'\\''")}'
        LOAD_DIR=/nar_extensions
        inbox=/nar_inbox
        part="$LOAD_DIR/.$base.part"
@@ -159,6 +180,24 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
     ]);
     // No bound but the test's own: the 120_000 that stood here was sh()'s extraEnv,
     // which copies nothing from a number. B6-37's block.
+    const verdict = watcherRunVerdict(r.code, r.stdout, r.stderr);
+    if (verdict !== null) throw new Error(verdict);
+    return r;
+  };
+
+  test('B6-47 a shell with patsub_replacement off is refused by the same verdict', () => {
+    // The in-suite proof that the canary reads the shell, not the image name.
+    // Its counterpart is every run() scenario of B6-35. The BASH= value is not
+    // asserted, so a point update of the image cannot redden this.
+    let message = '';
+    try {
+      run(ORDINARY, 'shopt -u patsub_replacement');
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain('cannot show the & defect');
+    expect(message).toContain('CANARY=&&');
+  }, 180_000);
 
   test('B6-35 the payload runs nothing through the watcher substitution', () => {
     const r = run(PAYLOAD);
