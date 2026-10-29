@@ -1837,6 +1837,132 @@ asking whether it is `null`: *"TypeError: null is not an object"*, printed three
 re-indents; `results[slug] && results[slug].cloned !== now.cloned` is the repair. Not worked: after
 #49 a finding is recorded unless the operator asks for it.
 
+---
+
+The next ten entries were found by the update test of 2026-10-29: 0.7.0 updated to 0.8.0 (`e622e01`)
+with `liquidupstart --update`, on macOS with Docker Desktop and compose 5.6.1, then the privacy proxy
+0.3.0 tried with made-up data. What the proxy itself does went to its author. None is worked: after
+#49 a finding is recorded unless the operator asks for it.
+
+---
+
+`OPEN` **With the privacy proxy off, nginx does not start, and no `*.localhost` page answers.**
+`config/nginx/templates/nginx.conf` has a `privacy.localhost` server block, written in `28e753e` on
+2026-08-25 and on `main` since #5 merged (`e622e01`), so 0.8.0 is the first release with it. Its
+`proxy_pass http://privacy-proxy:8080` is unconditional, and nginx resolves a literal upstream host
+when it starts. `PRIVACY_PROXY_ENABLE=0`, the default, starts no such container, so nginx exits with
+*host not found in upstream "privacy-proxy" in /etc/nginx/conf.d/default.conf:196* and restarts in a
+loop. Measured on 0.8.0. A fresh install of 0.8.0 with the defaults is affected as well, and `main`
+has the same line. The dashboard on port 7777 runs outside compose and still answers. The draft
+specification for #50 resolves every upstream at request time (its decision 5), which repairs this
+once built. On its own, the repair is a `resolver` line and a variable upstream for this block.
+
+---
+
+`OPEN` **Turning the privacy proxy on asks for no build, so Start runs whatever image is there, or
+none.** `scripts/install/update.sh` removes its `BUILT_IMAGES`, and `builtImages()` in
+`dashboard/src/lib/server/project.ts` lists the images a start needs. Neither names
+`liquidupstart/privacy-proxy`, and `PRIVACY_PROXY_ENABLE` is not in `isBuildAffecting`
+(`dashboard/src/lib/env-meta.ts`). So the save redirects with `rebuild=0`, `needBuild` stays false,
+and Start runs whatever `liquidupstart/privacy-proxy:latest` is on the machine. After the update
+that was 0.1.2 from 2026-09-11. It refused 0.8.0's `.env` (*gate_mode … input_value='ask'*) and
+restarted in a loop. A container in a restart loop has no address, so nginx failed as in the entry above. A Rebuild
+brought 0.3.0. On an install that never built the proxy, read rather than measured, there is no image
+at all, and `docker compose up` tries to pull a local-only image, as the comment in `builtImages()`
+records for `nar-builder`. An image can also be stale without an update: `build.sh` skips the proxy
+while it is off, so one built before `ENABLE_ANTHROPIC_CLAUDE_CODE` changed is still there when the
+proxy is turned on again. Naming the image in both lists while `PRIVACY_PROXY_ENABLE=1` covers the
+missing image. A stale image needs a build to be asked for when the proxy is turned on. Both lists
+are kept by hand. Deriving them from compose for the active profiles would stop the next image from
+going missing in the same way.
+
+---
+
+`OPEN` **A start reports success while a container restarts in a loop.** `scripts/linux/start.sh`
+checks the exit code of `docker compose up -d`. That code is 0 once every container has started,
+even if one then exits again at once. Three times on 2026-10-29 the dashboard printed *[start
+succeeded]* while `proxy` was restarting in a loop, once together with `privacy-proxy`. Its status
+then read *The stack is not running*. If the start read container state instead of the exit code
+alone, for example a restart count that grows during its first minute, it could name the service
+with its last log line and report what the status page finds.
+
+---
+
+`OPEN` **The README gives the host's memory, but Docker Desktop's VM is what runs out.** The
+prerequisites in `README.md` ask for 16 GB of RAM on Linux and macOS. On macOS the containers run in
+Docker Desktop's VM, which had 7.65 GiB here. A tool request on the Claude route (the CLI plus
+OpenClaw's 58 tools) got `privacy-proxy` OOM-killed (kernel log, its container's cgroup), and
+OpenClaw showed *network connection error*. It ran with Docker Desktop's memory set to 16 GB. After
+the tests the containers held 10.8 GiB there, 2.8 GiB of it in `privacy-proxy` (`docker stats`).
+That is what they hold with room to spare, not what they need. Without the proxy, and with it until
+that request, the stack had run in the smaller VM. A line naming Docker Desktop's memory setting
+would do, together with what the proxy adds. #50's switches lower the need.
+
+---
+
+`OPEN` **`update.sh` leaves the dashboard running on the old code, and asks for sudo on every
+update.** `scripts/install/update.sh` stops the stack and unpacks the release over the install, but
+it leaves `liquidupstart-dashboard` running. The old dashboard keeps serving, and `liquidupstart`
+refuses with *the dashboard is already running* (`run.sh:112`) until the container is stopped by
+hand. Its `link_launcher()` runs `sudo ln -sfn` whenever `/usr/local/bin` is not writable, even when
+`/usr/local/bin/liquidupstart` already points at `run.sh`. It does so on the two paths that find
+nothing to update as well, so every run asks for the password. `scripts/install/install.sh` has a
+`link_launcher()` of its own, which compares the resolved link and leaves a link to another install
+alone; `update.sh`'s replaces that link without a word. Stopping the dashboard together with the
+stack, and using install's check, would end both.
+
+---
+
+`OPEN` **OpenClaw offers `200k` and `1m` as models of `privacy-anthropic`.** `catalogOf()` in
+`config/scripts/start/openclaw.sh` takes every node of a bundled plugin manifest that has a string
+`id` and a numeric `contextWindow`. In the anthropic manifest four models of each provider carry a
+`contextWindows` list whose entries have both, such as
+`{"id":"200k","label":"200K","contextWindow":200000}`, so these are read as models. Read on
+2026-10-29 from the manifest in `openclaw-gateway` and from `volumes/_openclaw/openclaw.json`. The
+manifest lists models under two providers, `anthropic` and `claude-cli`, and `privacy-anthropic`
+takes them from both. `claude-opus-4-7`, `claude-sonnet-4-6` and `claude-opus-4-6` are listed under
+`claude-cli` alone. So the repair is to skip `contextWindows`. Reading only
+`modelCatalog.providers.anthropic.models` would drop those three as well.
+
+---
+
+`OPEN` **OpenCode's warning for a refused key says that no key is set.**
+`config/opencode/entrypoint.sh:120` prints *no key for that provider in .env section 5* on any 401
+from the proxy's model discovery. On 2026-10-29 the key was set, and OpenAI refused it: a direct call
+with it answered 401 as well. A warning that says the key is missing or was refused would be true in
+both cases.
+
+---
+
+`OPEN` **`.env.example` says the cleaned Claude route has no tools.** Section 8, at
+`ENABLE_ANTHROPIC_CLAUDE_CODE`, says: *chat only — Claude tools are not available on the cleaned
+route*. The privacy proxy 0.3.0 passes the client's own tools through, over MCP. On 2026-10-29
+OpenClaw's `write` ran that way: Claude saw made-up names, and the file got the real ones. Only
+Claude Code's built-in tools are off, but the sentence reads as no tools at all.
+
+---
+
+`OPEN, the operator's` **One key sets both the proxy's own model and an unmasked provider for the
+agents.** The privacy proxy uses `LOCAL_LLM_API_BASE` for its detection and rewrite model.
+`config/scripts/start/openclaw.sh` registers the same address as OpenClaw's provider `local` whenever
+it is set and its `/v1/models` lists a chat model. OpenCode's entrypoint takes it as its Ollama URL.
+Section 6 of `.env.example` warns that a hosted service there sees the data the proxy protects. Section 7 says `only` offers
+*the privacy providers and your local AI*, and that OpenRouter is *not available in this mode*.
+Pointing the proxy at a hosted model, as the test did with OpenRouter, therefore also gives both
+agents an unmasked route to it, and under `only` as well. That last part is read from the code: the
+test ran with `opt-in`. Two keys, or a warning when the address is not private, are the options. The
+choice is the operator's.
+
+---
+
+`OPEN, Timur's` **0.8.0 warns about four `*_MODE` values on every build.** The release predates #52,
+so its `load_env_file` reads the comment `.env.example` writes after these keys as part of the value:
+*unrecognized LIQUID_SYSTEM_DEPENDENCIES_MODE value 'add # add | override'*. The same warning comes
+for `LIQUID_POST_INSTALLATION_COMMANDS_MODE` and the two `OPENCODE_` keys. The build falls back to
+`add`, which is the value written, so only the message is wrong. #52 repairs it on `main` (`OC-80`).
+A release after it would ship that repair, and with the first two entries above repaired it would
+ship those as well.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
