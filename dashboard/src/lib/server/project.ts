@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { parseEnvValues } from '../env-file';
+import { componentsFrom, type Component } from '../component-switches';
 
 /**
  * The project directory, read at the moment it is asked for.
@@ -42,17 +43,46 @@ const DEV_SRC_KEYS = ['PRIVACY_PROXY_DEV_SRC'];
 export const APP_PASSWORD_DIR = join(ENV_DIR, 'volumes', 'dashboard');
 export const APP_PASSWORD_FILE = join(APP_PASSWORD_DIR, '.app_password');
 
-// Images produced by build.sh; all must exist for a start to succeed.
-// 'hermes' is intentionally disabled (commented out in build/start/compose).
-export function builtImages(): string[] {
+// Images produced by build.sh for the components that are on; all of them must exist for a
+// start to succeed. 'hermes' is intentionally disabled (commented out in build/start/compose).
+//
+// A switched-off component's image is left out, so needBuild asks for a build exactly when an
+// image of something that is on is missing: never for switching off, and for switching on
+// only when the image is gone (CS-FR8, decision 10). The privacy proxy's is in while
+// PRIVACY_PROXY_ENABLE=1: start.sh refuses to start without it, and a dashboard that did not
+// ask for it would offer Start for a start that cannot happen.
+export function builtImages(on: Record<Component, boolean>, privacyProxy = false): string[] {
   // nar-builder is built locally like the other four. Leaving it out made
   // stackState() answer needBuild: false on a checkout that has never built it,
   // so `docker compose up -d` tried to *pull* a local-only image and failed --
   // and since proxy depends on nar_builder, the whole stack failed to start.
   // Blocker 2 of the 2026-09-28 review.
-  return ['opencode', 'bun-runner', 'liquid', 'openclaw', 'nar-builder'].map(
-    (n) => `liquidupstart/${n}:latest`
-  );
+  const images: [string, Component | null][] = [
+    ['opencode', 'opencode'],
+    ['bun-runner', null],
+    ['liquid', 'liquid'],
+    ['openclaw', 'openclaw'],
+    ['nar-builder', 'liquid']
+  ];
+  return images
+    .filter(([, component]) => component === null || on[component])
+    .map(([name]) => `liquidupstart/${name}:latest`)
+    .concat(privacyProxy ? ['liquidupstart/privacy-proxy:latest'] : []);
+}
+
+// The switches as the installation's .env sets them, read from each line's text after `=`
+// rather than from `value`, so the dashboard applies the rule the start applies (CS-2).
+export function installedComponents(
+  values: Map<string, { value: string; raw?: string }> = envValues()
+): Record<Component, boolean> {
+  return componentsFrom(values);
+}
+
+// The same, from the .env of the directory asked for now rather than the one frozen in
+// ENV_FILE, for the reason envDir() gives.
+export function componentsAt(dir: string = envDir()): Record<Component, boolean> {
+  const file = join(dir, '.env');
+  return installedComponents(existsSync(file) ? parseEnvValues(readFileSync(file, 'utf8')) : new Map());
 }
 
 export function projectVersion(): string | null {
@@ -142,12 +172,18 @@ function dockerOutput(args: string[], timeoutMs = 30_000): Promise<string> {
   });
 }
 
-// The nginx proxy depends on every service, so "proxy is running" is the best
-// single signal for "the stack is up".
-export async function stackState(): Promise<{ running: boolean; needBuild: boolean }> {
+// The nginx proxy depends on every service that is on, so "proxy is running" is the
+// best single signal for "the stack is up". `values` is the caller's parsed .env, when it
+// has one, so the switches are not read twice.
+export async function stackState(
+  values: Map<string, { value: string; raw?: string }> = envValues()
+): Promise<{ running: boolean; needBuild: boolean }> {
+  // As the launchpad's privacy tile reads it, so one page gives one answer. The scripts read it
+  // by their own rule, which differs for a hand-quoted or doubled line (BACKLOG, the readers).
+  const privacyProxy = values.get('PRIVACY_PROXY_ENABLE')?.value === '1';
   const [proxy, images] = await Promise.all([
     dockerOutput(['ps', '-q', '--filter', 'name=^proxy$', '--filter', 'status=running']),
-    dockerExitCode(['image', 'inspect', ...builtImages()])
+    dockerExitCode(['image', 'inspect', ...builtImages(installedComponents(values), privacyProxy)])
   ]);
   const imagesMissing = images !== 0;
   // update.sh drops the rebuild marker (and the built images). Once the images

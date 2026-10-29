@@ -5,6 +5,9 @@ import type { Actions, PageServerLoad } from './$types';
 import { listFields, parseEnvValues, parseExample, renderEnv } from '$lib/env-file';
 import {
   SYSTEM_PORT_DEFAULTS,
+  dependentFields,
+  dependsOn,
+  fieldNote,
   inputType,
   isBuildAffecting,
   isCollapsedSection,
@@ -12,10 +15,27 @@ import {
   isSystemPort,
   numberShown,
   sectionDescription,
+  sectionNote,
   selectOptions,
-  subheadingDescription
+  subheadingDescription,
+  visibleItems
 } from '$lib/env-meta';
-import { ENV_FILE, RESULT_FILE, isConfigured, readEnvFile } from '$lib/server/project';
+import {
+  ENV_FILE,
+  RESULT_FILE,
+  installedComponents,
+  isConfigured,
+  readEnvFile
+} from '$lib/server/project';
+import {
+  RENDERED_FIELD,
+  afterEquals,
+  decodeComponents,
+  encodeComponents,
+  refusedSwitchNote,
+  switchOf,
+  switchValue
+} from '$lib/component-switches';
 
 function readState() {
   const { exampleText, envText } = readEnvFile();
@@ -28,10 +48,24 @@ function autogenValue(): string {
 
 export const load: PageServerLoad = () => {
   const { sections, envValues } = readState();
+  // From the saved .env, not from the form: a switch ticked on the page hides or shows its
+  // fields after Save, so what a submit carries never changes under the operator's hand.
+  const on = installedComponents(envValues);
+  // A switch shows what the start reads, so an empty value or `'1'` is ticked: a box shown
+  // unticked would be saved as 0 and switch the component off on an unrelated Save.
+  const shownValue = (key: string, fallback: string) => {
+    const component = switchOf(key);
+    if (component) return on[component] ? '1' : '0';
+    return envValues.get(key)?.value ?? fallback;
+  };
   const ui = sections
     .filter((s) => s.mode !== 'hidden' && s.items.some((i) => i.kind === 'field'))
+    .filter((s) => {
+      const component = dependsOn(s.title, null, '');
+      return component === null || on[component];
+    })
     .map((s) => {
-      const items = s.items.map((item) =>
+      const items = visibleItems(s.title, s.items, on).map((item) =>
         item.kind === 'field'
           ? {
               kind: 'field' as const,
@@ -40,7 +74,8 @@ export const load: PageServerLoad = () => {
               type: inputType(item.field.key, item.field.inlineComment),
               options: selectOptions(item.field.key, item.field.inlineComment),
               buildAffecting: isBuildAffecting(item.field.key),
-              value: envValues.get(item.field.key)?.value ?? item.field.defaultValue
+              value: shownValue(item.field.key, item.field.defaultValue),
+              note: refusedSwitchNote(envValues, item.field.key) || fieldNote(item.field.key, on)
             }
           : item
       );
@@ -74,10 +109,11 @@ export const load: PageServerLoad = () => {
         description: sectionDescription(s.title, firstPara(s.items)),
         autogen: s.mode === 'autogenerate',
         collapsed: s.mode === 'autogenerate' || isCollapsedSection(s.title),
+        note: sectionNote(s.title, on),
         items: grouped
       };
     });
-  return { sections: numberShown(ui), configured: isConfigured() };
+  return { sections: numberShown(ui), configured: isConfigured(), rendered: encodeComponents(on) };
 };
 
 export const actions: Actions = {
@@ -89,13 +125,32 @@ export const actions: Actions = {
     // (before any secret exists) is the only one allowed to set them.
     const configured = Boolean(envValues.get('DATABASE_PASSWORD')?.value);
 
+    // The fields the page did not show, judged by the switches it was rendered with, which the
+    // form carries; a submit does not carry those fields, and an unsubmitted checkbox would
+    // otherwise be written 0 (CS-17). Without the field -- a page from before it existed --
+    // the .env as it is now stands in.
+    const rendered = decodeComponents(fd.get(RENDERED_FIELD)?.toString());
+    const on = rendered ?? installedComponents(envValues);
+    const dependent = dependentFields(sections);
+
     let rebuild = false;
     const final = new Map<string, { value: string; quoted: boolean }>();
     for (const { section, field } of listFields(sections)) {
       const key = field.key;
       const cur = envValues.get(key);
+      const component = dependent.get(key);
       let value: string;
-      if (section.mode === 'hidden') {
+      // A page rendered before the switches existed carries neither them nor the field, and
+      // would otherwise write all three as unticked checkboxes, 0, switching everything off.
+      const unrendered = rendered === null && switchOf(key) !== null;
+      if (unrendered) {
+        // Kept as the start reads it: `'1'` re-rendered from its parsed value would come out
+        // as `"'1'"`, which the start refuses. A refused value is written back from its parsed
+        // value, which may quote it, and stays refused.
+        const raw = afterEquals(envValues, key);
+        const read = raw === undefined ? field.defaultValue : switchValue(raw);
+        value = read === '' || read === '0' || read === '1' ? read : (cur?.value ?? field.defaultValue);
+      } else if (section.mode === 'hidden' || (component !== undefined && !on[component])) {
         value = cur?.value ?? field.defaultValue;
       } else if (inputType(key) === 'checkbox') {
         value = fd.has(key) ? '1' : '0';

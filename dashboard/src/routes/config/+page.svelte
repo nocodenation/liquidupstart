@@ -132,6 +132,7 @@
       {:else if item.help.length > 0}
         <pre class="help">{item.help.join('\n')}</pre>
       {/if}
+      {#if item.note}<p class="autogen-note">{item.note}</p>{/if}
 
       <div class="control">
         {#if item.type === 'select-mode'}
@@ -262,6 +263,8 @@
   </header>
 
   <form method="POST" action="?/save">
+    <!-- The switches this page was rendered with: the save keeps what they hid. CS-FR12. -->
+    <input type="hidden" name="__components" value={data.rendered} />
     {#each data.sections as section}
       <!-- Reopens after a Generate round-trip so the new value stays visible. -->
       <details
@@ -279,6 +282,7 @@
             you save. Existing values are never overwritten.
           </p>
         {/if}
+        {#if section.note}<p class="autogen-note">{section.note}</p>{/if}
         {#each section.items as item}
           {@render itemView(item, section)}
         {/each}

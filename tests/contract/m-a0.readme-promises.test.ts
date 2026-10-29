@@ -75,8 +75,12 @@ function imagesClaim(text: string): { count: number; listed: string[] } {
   return { count: WORDS.indexOf(m[1]), listed: m[2].split(',').sort() };
 }
 
-const built = [...buildScript.matchAll(/^"\$\{PROJECT_DIR\}\/config\/scripts\/build\/([a-z-]+)\.sh"/gm)]
+// Indented too: since #50 three components' build steps sit behind their switch, and an
+// image built only while its switch is on is still built locally. The privacy proxy stays
+// out, as the sixth image the README names separately. A commented line is no build step.
+const built = [...buildScript.matchAll(/^\s*"\$\{PROJECT_DIR\}\/config\/scripts\/build\/([a-z-]+)\.sh"/gm)]
   .map((m) => m[1])
+  .filter((name) => name !== 'privacy-proxy')
   .sort();
 
 // The one predicate both the positive and the negative are judged by.
@@ -184,6 +188,10 @@ describe('A0-11 the README section on Java extensions is backed by the configura
     expect(claim.count, 'the sentence naming the locally built images').toBe(built.length);
     expect(claim.listed).toEqual(built);
     expect(agreesWithBuild(claim)).toBe(true);
+    // And that four of them follow a switch, which is what the indented lines above mean.
+    expect(readme.replace(/\s+/g, ' ')).toContain(
+      'The build leaves out the images of a component that is switched off under *Which apps to run*'
+    );
   });
 
   test('A0-11 and the named volume it names is the only one compose declares, and Liquid\'s', () => {

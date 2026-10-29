@@ -48,45 +48,54 @@ openssl req -x509 -newkey rsa:4096 -nodes \
     -addext "subjectAltName=DNS:liquid.localhost,DNS:*.liquid.localhost"
 echo "Certificate generated at ${CERTS_DIR}."
 
-STORE_PASSWORD="$(grep -E '^LIQUID_KEYSTORE_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+# Every HTTPS server block names the certificate above, Liquid or not. The keystore and
+# truststore are Liquid's alone, and their password is hidden in Configuration while Liquid
+# is off (CS-6).
+# shellcheck source=lib/components.sh
+. "${SCRIPT_DIR}/lib/components.sh"
+if lu_component_on "$ENV_FILE" ENABLE_LIQUID; then
+    STORE_PASSWORD="$(grep -E '^LIQUID_KEYSTORE_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
 
-echo "Generating Liquid keystore (PKCS12)..."
-rm -f "${CERTS_DIR}/liquid.keystore.p12"
-openssl pkcs12 -export \
-    -in "${CERTS_DIR}/liquid.localhost.crt" \
-    -inkey "${CERTS_DIR}/liquid.localhost.key" \
-    -out "${CERTS_DIR}/liquid.keystore.p12" \
-    -name "liquid-ingress" \
-    -passout "pass:${STORE_PASSWORD}"
+    echo "Generating Liquid keystore (PKCS12)..."
+    rm -f "${CERTS_DIR}/liquid.keystore.p12"
+    openssl pkcs12 -export \
+        -in "${CERTS_DIR}/liquid.localhost.crt" \
+        -inkey "${CERTS_DIR}/liquid.localhost.key" \
+        -out "${CERTS_DIR}/liquid.keystore.p12" \
+        -name "liquid-ingress" \
+        -passout "pass:${STORE_PASSWORD}"
 
-echo "Generating Liquid truststore (PKCS12)..."
-rm -f "${CERTS_DIR}/liquid.truststore.p12"
-# keytool decodes paths with the locale charset; on a non-UTF-8 locale (the
-# toolbox's Debian default) a non-ASCII project path is mangled to "?" and the
-# cert is not found. Force a UTF-8 locale so paths survive.
-if command -v keytool &>/dev/null; then
-    LC_ALL=C.UTF-8 keytool -importcert -trustcacerts \
-        -alias "liquid-ingress" \
-        -file "${CERTS_DIR}/liquid.localhost.crt" \
-        -keystore "${CERTS_DIR}/liquid.truststore.p12" \
-        -storetype PKCS12 \
-        -storepass "${STORE_PASSWORD}" \
-        -noprompt
-else
-    docker run --rm \
-        -e LC_ALL=C.UTF-8 \
-        -v "${CERTS_DIR}:/certs" \
-        eclipse-temurin:17-jre-jammy \
-        keytool -importcert -trustcacerts \
+    echo "Generating Liquid truststore (PKCS12)..."
+    rm -f "${CERTS_DIR}/liquid.truststore.p12"
+    # keytool decodes paths with the locale charset; on a non-UTF-8 locale (the
+    # toolbox's Debian default) a non-ASCII project path is mangled to "?" and the
+    # cert is not found. Force a UTF-8 locale so paths survive.
+    if command -v keytool &>/dev/null; then
+        LC_ALL=C.UTF-8 keytool -importcert -trustcacerts \
             -alias "liquid-ingress" \
-            -file "/certs/liquid.localhost.crt" \
-            -keystore "/certs/liquid.truststore.p12" \
+            -file "${CERTS_DIR}/liquid.localhost.crt" \
+            -keystore "${CERTS_DIR}/liquid.truststore.p12" \
             -storetype PKCS12 \
             -storepass "${STORE_PASSWORD}" \
             -noprompt
+    else
+        docker run --rm \
+            -e LC_ALL=C.UTF-8 \
+            -v "${CERTS_DIR}:/certs" \
+            eclipse-temurin:17-jre-jammy \
+            keytool -importcert -trustcacerts \
+                -alias "liquid-ingress" \
+                -file "/certs/liquid.localhost.crt" \
+                -keystore "/certs/liquid.truststore.p12" \
+                -storetype PKCS12 \
+                -storepass "${STORE_PASSWORD}" \
+                -noprompt
+    fi
+    chmod 644 "${CERTS_DIR}/liquid.keystore.p12" "${CERTS_DIR}/liquid.truststore.p12"
+    echo "Keystore/truststore generated. Password: ${STORE_PASSWORD}"
+else
+    echo "Liquid is switched off: no keystore or truststore written."
 fi
-chmod 644 "${CERTS_DIR}/liquid.keystore.p12" "${CERTS_DIR}/liquid.truststore.p12"
-echo "Keystore/truststore generated. Password: ${STORE_PASSWORD}"
 
 
 API_KEY="$(grep -E '^API_KEY=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
@@ -156,7 +165,9 @@ server {
     ssl_protocols       TLSv1.3;
 
     location / {
-        proxy_pass https://liquid:${port};
+        set \$lu_upstream liquid:${port};
+        proxy_pass https://\$lu_upstream;
+        proxy_redirect https://liquid:${port}/ /;
         proxy_ssl_verify off;
         proxy_ssl_server_name on;
         proxy_ssl_name \$host;

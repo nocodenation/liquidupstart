@@ -114,6 +114,15 @@ services:
     image: nginx:latest
     container_name: proxy
     restart: unless-stopped
+    # nginx resolves its upstreams per request through docker's DNS (#50). A name docker does
+    # not know -- a service that is switched off or not running -- is passed on to the host's
+    # DNS, and a device on the LAN that calls itself `opencode` or `liquid` would then receive
+    # the operator's requests, identity headers included. Measured on 2026-10-29: nginx
+    # proxied a request for the bare name `uz` to that domain's public address. With nowhere
+    # to forward to, such a name does not resolve and its vhost answers the 502 page, while
+    # the stack's own names still resolve. Nothing behind this proxy is outside the stack.
+    # CS-7, CS-10.
+    dns: ["127.0.0.1"]
     ports:
       # Bound to this machine by default, which is what README.md promises under
       # "Sandbox by design": *"All services bind to localhost on purpose … without
@@ -143,14 +152,22 @@ services:
         condition: service_started
       swagger:
         condition: service_started
+      # The three below run only under their component's profile (ENABLE_OPENCODE,
+      # ENABLE_LIQUID, ENABLE_OPENCLAW). `required: false` lets the proxy start without one
+      # that is switched off and keeps the condition when it is on, measured on compose
+      # 5.6.1 (CS-0). nginx resolves each upstream per request, so the absent one answers
+      # 502 and nothing else does.
       opencode:
         condition: service_started
+        required: false
       bun_runner:
         condition: service_started
       nar_builder:
         condition: service_started
+        required: false
       openclaw-gateway:
         condition: service_healthy
+        required: false
       # hermes disabled: omitted here too (else compose errors on undefined service)
 #       hermes:
 #         condition: service_started
@@ -293,6 +310,8 @@ services:
   opencode:
     image: liquidupstart/opencode:latest
     container_name: opencode
+    # ENABLE_OPENCODE: start.sh activates the profile while it is on (CS-FR5).
+    profiles: ["opencode"]
     restart: unless-stopped
     extra_hosts:
       - "${LOCAL_LLM_HOST:-local_llm}:${LOCAL_LLM_HOST_IP:-127.0.0.1}"
@@ -375,6 +394,8 @@ services:
   nar_builder:
     image: liquidupstart/nar-builder:latest
     container_name: nar_builder
+    # ENABLE_LIQUID: the builder exists for Liquid, so it shares Liquid's profile (CS-FR5).
+    profiles: ["liquid"]
     restart: unless-stopped
     environment:
       SYSTEM_HTTPS_PORT: ${SYSTEM_HTTPS_PORT:-8833}
@@ -685,6 +706,8 @@ services:
   liquid:
     image: liquidupstart/liquid:latest
     container_name: liquid
+    # ENABLE_LIQUID: start.sh activates the profile while it is on (CS-FR5).
+    profiles: ["liquid"]
     restart: unless-stopped
     environment:
       SINGLE_USER_CREDENTIALS_USERNAME: ${LIQUID_USERNAME}
@@ -770,6 +793,10 @@ services:
     build: .
     user: "0:0"
     container_name: openclaw-gateway
+    # ENABLE_OPENCLAW: start.sh activates the profile while it is on, and before openclaw.sh,
+    # whose `docker compose run openclaw-cli` needs this service and does not enable its
+    # profile on its own (CS-0, CS-FR4).
+    profiles: ["openclaw"]
     env_file:
       - path: config/openclaw/.env
         required: false

@@ -1825,7 +1825,12 @@ built: after #49 a finding is recorded unless the operator asks for it. Compose 
 suggested by the local review of #52's round 1, and measured on 2026-10-28 with 5.6.1: `docker
 compose config --environment` prints what it read merged with the caller's environment, and
 prints a value that spans lines over those same lines, so a line inside it reads as a key of its
-own. It is no reader as it stands.
+own. It is no reader as it stands. *#50 adds one rule for its three switches, which the shell and
+the dashboard apply alike (`CS-2`), and one more place where the difference shows:* the dashboard asks
+for the privacy proxy's image by `PRIVACY_PROXY_ENABLE` as it reads it, while `build.sh` and
+`start.sh`, which build and require the image, read the first line with every quote removed. A
+hand-quoted `'1'`, or `=0` followed by `=1`, makes them disagree on whether a build is needed. The
+start then refuses with *Run Build*, which Rebuild answers; one reader would end that too.
 
 ---
 
@@ -1874,7 +1879,15 @@ while it is off, so one built before `ENABLE_ANTHROPIC_CLAUDE_CODE` changed is s
 proxy is turned on again. Naming the image in both lists while `PRIVACY_PROXY_ENABLE=1` covers the
 missing image. A stale image needs a build to be asked for when the proxy is turned on. Both lists
 are kept by hand. Deriving them from compose for the active profiles would stop the next image from
-going missing in the same way.
+going missing in the same way. #50 gives the stale half three more cases: its build skips a component
+that is switched off, so an image built before that component's build settings changed is still there
+when it is switched on again (`docs/FEATURE-component-switches.md` §3). A label on each image with a
+hash of its build inputs, compared with `.env` by `stackState()`, would cover all four. The operator
+decided on 2026-10-29 to build that together with this entry rather than inside #50. *Answered in part
+on #50:* `builtImages()` names the privacy-proxy image while `PRIVACY_PROXY_ENABLE=1`, and `start.sh`
+refuses to start, before `down.sh`, while an image of anything that is on is missing, so the missing
+half no longer reaches `compose up`. `update.sh` still leaves the image in place, and the stale half
+is open.
 
 ---
 
@@ -1962,6 +1975,23 @@ for `LIQUID_POST_INSTALLATION_COMMANDS_MODE` and the two `OPENCODE_` keys. The b
 `add`, which is the value written, so only the message is wrong. #52 repairs it on `main` (`OC-80`).
 A release after it would ship that repair, and with the first two entries above repaired it would
 ship those as well.
+
+---
+
+`OPEN, the operator's` **Hermes is neither behind a switch nor gone.** It stays commented out in
+`compose.yml`, `build.sh`, `start.sh`, the nginx template and the dashboard, which is the pattern #50's
+switches replace for Liquid, OpenClaw and OpenCode. Put behind a fourth switch, it would have to build
+and run again, and nobody has checked that since it was disabled; deleting it is a decision of its
+own. Left out of #50 by the operator on 2026-10-29 (`docs/FEATURE-component-switches.md`, decision 7).
+
+---
+
+`OPEN` **`http://liquid.localhost` redirects to port 8889, where nothing listens.** The last server
+block of `config/nginx/templates/nginx.conf` answers `return 301 https://liquid.localhost:8889;`,
+written literally since `f2b9806` (2026-06-19), while Liquid is served on `SYSTEM_HTTPS_PORT`, 8833
+by default. `SYSTEM_HTTPS_PORT` in its place, which `nginx.sh` substitutes, is the repair. Found while
+reading the template for #50 on 2026-10-29. Not worked: after #49 a finding is recorded unless the
+operator asks for it.
 
 ## Carried over from the 2026.9.1 migration
 

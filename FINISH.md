@@ -82,6 +82,7 @@ operator decided both.
 | `45-26` — four mutation-runner cases trace to no requirement | Timur's | The mapping is the reviewer's, made case by case on #18 |
 | 0.8.0 warns about four `*_MODE` values on every build | Timur's | A release after #52; recorded 2026-10-29 |
 | One key sets both the proxy's own model and an unmasked provider for the agents | the operator's | Two keys, or a warning when the address is not private; recorded 2026-10-29 |
+| Hermes is neither behind a switch nor gone | the operator's | Behind a fourth switch, or deleted; left out of #50 on 2026-10-29 |
 
 ## What finishing means
 

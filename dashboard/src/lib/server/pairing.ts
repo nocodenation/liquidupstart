@@ -12,7 +12,15 @@
 // is where the docker invocation belongs, this is where HTTP belongs.
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { envDir } from './project';
+import { componentsAt, envDir } from './project';
+import { OPENCLAW_OFF_REFUSAL } from '../component-switches';
+
+// Here rather than imported by the route, which reaches this module alone: OC-72 maps only
+// `$lib/server/pairing`. With OpenClaw switched off there is no image to run the script in.
+export function openclawOn(): boolean {
+  return componentsAt(envDir()).openclaw;
+}
+export { OPENCLAW_OFF_REFUSAL };
 
 // A request id, exactly. This is the only value that reaches a command line, and
 // the script checks it a second time because this is not the only caller it

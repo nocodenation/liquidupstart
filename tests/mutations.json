@@ -269,5 +269,277 @@
     "from": "    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.\n    return 1",
     "to": "    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.\n    return 2",
     "mustFail": "B6-46 the negative: status 1, not the refusal's 2, and the build never reaches Maven"
+  },
+  {
+    "case": "CS-1",
+    "file": "config/scripts/start/lib/components.sh",
+    "spec": "tests/unit/m-cs.component-reader.test.ts",
+    "from": "| tail -n1 |",
+    "to": "| head -n1 |",
+    "mustFail": "CS-1 twice, 0 then 1 reads as on"
+  },
+  {
+    "case": "CS-2",
+    "file": "dashboard/src/lib/component-switches.ts",
+    "spec": "tests/contract/m-cs.readers-agree.test.ts",
+    "from": "return info.raw === undefined ? info.value : info.raw.slice(info.raw.indexOf('=') + 1);",
+    "to": "return info.value;",
+    "mustFail": "CS-2 single quotes inside double: refused by the shell, on in the dashboard"
+  },
+  {
+    "case": "CS-3",
+    "file": "scripts/linux/build.sh",
+    "spec": "tests/integration/m-cs.build-switches.test.ts",
+    "from": "if lu_component_on \"$ENV_FILE\" ENABLE_LIQUID; then\n  \"${PROJECT_DIR}/config/scripts/build/nar-builder.sh\" \"$@\"",
+    "to": "\"${PROJECT_DIR}/config/scripts/build/nar-builder.sh\" \"$@\"\nif lu_component_on \"$ENV_FILE\" ENABLE_LIQUID; then",
+    "mustFail": "CS-3 the negative: Liquid off leaves out its builder and its image"
+  },
+  {
+    "case": "CS-4",
+    "file": "scripts/linux/start.sh",
+    "spec": "tests/integration/m-cs.start-switches.test.ts",
+    "from": "if ! lu_components_check \"$ENV_FILE\"; then",
+    "to": "if false; then",
+    "mustFail": "CS-4 the negative: ENABLE_LIQUID=yes exits 1 before down.sh, with no compose up"
+  },
+  {
+    "case": "CS-5",
+    "file": "scripts/linux/start.sh",
+    "spec": "tests/integration/m-cs.start-switches.test.ts",
+    "from": "if [[ $LIQUID_ON -eq 1 ]]; then\n  \"${PROJECT_DIR}/config/scripts/start/liquid.sh\"",
+    "to": "if true; then\n  \"${PROJECT_DIR}/config/scripts/start/liquid.sh\"",
+    "mustFail": "CS-5 the negative: Liquid off leaves out its profile, its steps and its lines"
+  },
+  {
+    "case": "CS-6",
+    "file": "config/scripts/start/nginx.sh",
+    "spec": "tests/integration/m-cs.nginx-keystore.test.ts",
+    "from": "if lu_component_on \"$ENV_FILE\" ENABLE_LIQUID; then\n    STORE_PASSWORD",
+    "to": "if true; then\n    STORE_PASSWORD",
+    "mustFail": "CS-6 the negative: with Liquid off, the certificate and no keystore or truststore"
+  },
+  {
+    "case": "CS-7",
+    "file": "compose.yml",
+    "spec": "tests/contract/m-cs.compose-profiles.test.ts",
+    "from": "        condition: service_healthy\n        required: false\n",
+    "to": "        condition: service_healthy\n",
+    "mustFail": "CS-7 the proxy's three switchable dependencies are optional and keep their conditions"
+  },
+  {
+    "case": "CS-8",
+    "file": "compose.yml",
+    "spec": "tests/integration/m-cs.compose-resolves.test.ts",
+    "from": "        condition: service_healthy\n        required: false\n",
+    "to": "        condition: service_healthy\n",
+    "mustFail": "CS-8 the negative: with none, exactly the four are left out, and it still resolves"
+  },
+  {
+    "case": "CS-9",
+    "file": "config/nginx/templates/nginx.conf",
+    "spec": "tests/contract/m-cs.nginx-upstreams.test.ts",
+    "from": "        set $lu_upstream pgadmin:80;\n        proxy_pass http://$lu_upstream;",
+    "to": "        proxy_pass http://pgadmin:80;",
+    "mustFail": "CS-9 no proxy_pass names a host, the ingress heredoc included"
+  },
+  {
+    "case": "CS-10",
+    "file": "config/nginx/templates/nginx.conf",
+    "spec": "tests/integration/m-cs.nginx-starts.test.ts",
+    "from": "resolver 127.0.0.11 valid=10s ipv6=off;",
+    "to": "# no resolver",
+    "mustFail": "CS-10 the counterpart: app.localhost reaches the upstream named bun_runner, per request"
+  },
+  {
+    "case": "CS-11",
+    "file": "config/agents/bin/nar-build.sh",
+    "spec": "tests/unit/m-cs.nar-build-absent.test.ts",
+    "from": "if [ $curl_status -ne 0 ] || [ \"$code\" = \"502\" ]; then",
+    "to": "if [ $curl_status -ne 0 ]; then",
+    "mustFail": "CS-11 the negative: a 502 is read as an absent builder, naming ENABLE_LIQUID=0"
+  },
+  {
+    "case": "CS-12",
+    "file": "dashboard/src/lib/server/project.ts",
+    "spec": "tests/unit/m-cs.built-images.test.ts",
+    "from": ".filter(([, component]) => component === null || on[component])",
+    "to": ".filter(() => true)",
+    "mustFail": "CS-12 the negative: Liquid off leaves out liquid and its builder"
+  },
+  {
+    "case": "CS-13",
+    "file": "dashboard/src/routes/+page.server.ts",
+    "spec": "tests/component/m-cs.launchpad.test.ts",
+    "from": "owned('opencode', { name: 'OpenCode', url: `http://opencode.localhost:${http}` })",
+    "to": "{ name: 'OpenCode', url: `http://opencode.localhost:${http}` }",
+    "mustFail": "CS-13 the negative: ENABLE_OPENCODE=0 leaves its tiles the note and no link or credentials"
+  },
+  {
+    "case": "CS-14",
+    "file": "dashboard/src/routes/openclaw-pairing/+server.ts",
+    "spec": "tests/integration/m-cs.pairing-route.test.ts",
+    "from": "  if (!openclawOn()) {\n    return json({ ok: true, disabled: true",
+    "to": "  if (false) {\n    return json({ ok: true, disabled: true",
+    "mustFail": "CS-14 the negative: with OpenClaw off, GET answers disabled and never runs the script"
+  },
+  {
+    "case": "CS-15",
+    "file": "dashboard/src/routes/copilot-auth/+server.ts",
+    "spec": "tests/integration/m-cs.auth-routes.test.ts",
+    "from": "  if (!installedComponents(env).openclaw) return json({ needed: false });\n",
+    "to": "",
+    "mustFail": "CS-15 the negative: /copilot-auth GET answers needed: false and runs no container"
+  },
+  {
+    "case": "CS-16",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-hiding.test.ts",
+    "from": "      return component === null || on[component];",
+    "to": "      return true;",
+    "mustFail": "CS-16 and with Liquid off, its authentication section goes, and the numbers close up"
+  },
+  {
+    "case": "CS-17",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-save.test.ts",
+    "from": "} else if (section.mode === 'hidden' || (component !== undefined && !on[component])) {",
+    "to": "} else if (section.mode === 'hidden') {",
+    "mustFail": "CS-17 the negative (a): with OpenClaw and Liquid off, their hidden fields keep their values"
+  },
+  {
+    "case": "CS-18",
+    "file": "dashboard/src/lib/component-switches.ts",
+    "spec": "tests/component/m-cs.agent-notes.test.ts",
+    "from": "return !on.openclaw && !on.opencode;",
+    "to": "return !on.openclaw;",
+    "mustFail": "CS-18 the negative: with OpenClaw off only, no both-off note; the Claude note; the Node app names OpenCode"
+  },
+  {
+    "case": "CS-19",
+    "file": "dashboard/src/lib/env-meta.ts",
+    "spec": "tests/unit/m-cs.depends-on.test.ts",
+    "from": "export const SECTION_DEPENDS_ON: [RegExp, Component][] = [[/LIQUID AUTHENTICATION/i, 'liquid']];",
+    "to": "export const SECTION_DEPENDS_ON: [RegExp, Component][] = [[/LIQUID AUTHENTICATION/i, 'liquid'], [/OPENCLAW CONFIGURATION/i, 'openclaw']];",
+    "mustFail": "CS-19 openclaw: exactly its stated keys"
+  },
+  {
+    "case": "CS-4",
+    "file": "scripts/linux/start.sh",
+    "spec": "tests/integration/m-cs.start-switches.test.ts",
+    "from": "if [[ -n \"$LU_MISSING\" ]]; then",
+    "to": "if false; then",
+    "mustFail": "CS-4 the negative: a missing image of what is on stops the start before down.sh, named"
+  },
+  {
+    "case": "CS-7",
+    "file": "compose.yml",
+    "spec": "tests/contract/m-cs.compose-profiles.test.ts",
+    "from": "    dns: [\"127.0.0.1\"]\n",
+    "to": "",
+    "mustFail": "CS-7 and the proxy forwards no name docker does not know"
+  },
+  {
+    "case": "CS-10",
+    "file": "config/nginx/templates/nginx.conf",
+    "spec": "tests/integration/m-cs.nginx-starts.test.ts",
+    "from": "        proxy_redirect http://bun_runner:3000/ /;\n",
+    "to": "",
+    "mustFail": "CS-10 and a redirect naming the upstream reaches the browser rewritten, as before"
+  },
+  {
+    "case": "CS-16",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-hiding.test.ts",
+    "from": "    if (component) return on[component] ? '1' : '0';\n",
+    "to": "",
+    "mustFail": "CS-16 and an empty switch, or one written '1', is shown ticked"
+  },
+  {
+    "case": "CS-17",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-save.test.ts",
+    "from": "const on = rendered ?? installedComponents(envValues);",
+    "to": "const on = installedComponents(envValues);",
+    "mustFail": "CS-17 the negative (f): another tab switching OpenClaw on does not wipe this page's hidden fields"
+  },
+  {
+    "case": "CS-2",
+    "file": "dashboard/src/lib/env-file.ts",
+    "spec": "tests/contract/m-cs.readers-agree.test.ts",
+    "from": "const KEY_RE = /^([A-Za-z_][A-Za-z0-9_]*)=([^\\n]*)$/;",
+    "to": "const KEY_RE = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;",
+    "mustFail": "CS-2 0 with two carriage returns: both read off"
+  },
+  {
+    "case": "CS-3",
+    "file": "scripts/linux/rebuild.sh",
+    "spec": "tests/integration/m-cs.build-switches.test.ts",
+    "from": "if ! lu_components_check \"${PROJECT_DIR}/.env\"; then",
+    "to": "if false; then",
+    "mustFail": "CS-3 the negative: through rebuild.sh it stops before down.sh, too"
+  },
+  {
+    "case": "CS-5",
+    "file": "scripts/linux/start.sh",
+    "spec": "tests/integration/m-cs.start-switches.test.ts",
+    "from": "if [[ $OPENCLAW_ON -eq 1 ]] && lu_dependency_failed openclaw-gateway healthy; then",
+    "to": "if false; then",
+    "mustFail": "CS-5 the negative: a gateway that is on but unhealthy fails the start after compose up"
+  },
+  {
+    "case": "CS-12",
+    "file": "dashboard/src/lib/server/project.ts",
+    "spec": "tests/unit/m-cs.built-images.test.ts",
+    "from": "    .concat(privacyProxy ? ['liquidupstart/privacy-proxy:latest'] : []);",
+    "to": "    ;",
+    "mustFail": "CS-12 and the privacy proxy's image joins while it is on, as start.sh requires"
+  },
+  {
+    "case": "CS-16",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-hiding.test.ts",
+    "from": "note: refusedSwitchNote(envValues, item.field.key) || fieldNote(item.field.key, on)",
+    "to": "note: fieldNote(item.field.key, on)",
+    "mustFail": "CS-16 the negative: a value the start refuses is shown ticked, with a note saying so"
+  },
+  {
+    "case": "CS-17",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-save.test.ts",
+    "from": "const unrendered = rendered === null && switchOf(key) !== null;",
+    "to": "const unrendered = false;",
+    "mustFail": "CS-17 the negative (i): a page from before the switches keeps them, whatever it carries"
+  },
+  {
+    "case": "CS-16",
+    "file": "dashboard/src/lib/component-switches.ts",
+    "spec": "tests/component/m-cs.config-hiding.test.ts",
+    "from": "  if (switchOf(key) === null) return '';\n",
+    "to": "",
+    "mustFail": "CS-16 the negative: no field but a switch carries that note, and none shows a value"
+  },
+  {
+    "case": "CS-17",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-save.test.ts",
+    "from": "value = read === '' || read === '0' || read === '1' ? read : (cur?.value ?? field.defaultValue);",
+    "to": "value = cur?.value ?? field.defaultValue;",
+    "mustFail": "CS-17 and keeps them as the start reads them, not re-quoted into a refusal"
+  },
+  {
+    "case": "CS-12",
+    "file": "dashboard/src/lib/server/project.ts",
+    "spec": "tests/component/m-cs.stack-state.test.ts",
+    "from": "const privacyProxy = values.get('PRIVACY_PROXY_ENABLE')?.value === '1';",
+    "to": "const privacyProxy = false;",
+    "mustFail": "CS-12 and the privacy proxy's image is asked for while it is on, as the launchpad shows it"
+  },
+  {
+    "case": "CS-17",
+    "file": "dashboard/src/routes/config/+page.server.ts",
+    "spec": "tests/component/m-cs.config-save.test.ts",
+    "from": "value = read === '' || read === '0' || read === '1' ? read : (cur?.value ?? field.defaultValue);",
+    "to": "value = read === '' || read === '0' || read === '1' ? read : '1';",
+    "mustFail": "CS-17 and leaves a value the start refuses refused, rather than switching it on"
   }
 ]

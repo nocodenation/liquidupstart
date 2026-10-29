@@ -14,6 +14,8 @@ import { spawn } from 'node:child_process';
 import { json } from '@sveltejs/kit';
 import { parseEnvValues } from '$lib/env-file';
 import { requireSameOrigin } from '$lib/server/origin';
+import { componentsAt, installedComponents } from '$lib/server/project';
+import { OPENCLAW_OFF_REFUSAL } from '$lib/component-switches';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const CLAUDE_DIR = join(ENV_DIR, 'volumes', '_openclaw-claude');
@@ -77,6 +79,9 @@ export async function GET() {
   const envFile = join(ENV_DIR, '.env');
   if (!existsSync(envFile)) return json({ needed: false });
   const env = parseEnvValues(readFileSync(envFile, 'utf8'));
+  // No sign-in panel for a service that is switched off, whatever an openclaw.json left
+  // behind says, and no container run to find out (CS-FR11).
+  if (!installedComponents(env).openclaw) return json({ needed: false });
   if (env.get('ENABLE_ANTHROPIC_CLAUDE_CODE')?.value !== '1') return json({ needed: false });
   if (env.get('CLAUDE_CODE_OAUTH_TOKEN')?.value) return json({ needed: false });
   if (!existsSync(join(ENV_DIR, 'volumes', '_openclaw', 'openclaw.json'))) {
@@ -93,6 +98,9 @@ export async function GET() {
 export async function POST({ request }) {
   const blocked = requireSameOrigin(request);
   if (blocked) return blocked;
+  if (!componentsAt(ENV_DIR).openclaw) {
+    return new Response(OPENCLAW_OFF_REFUSAL, { status: 409 });
+  }
 
   const body = await request.json();
 

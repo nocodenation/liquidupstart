@@ -8,7 +8,13 @@
 // an id that has been sitting in a page is stale. The card therefore names the
 // device and this resolves that device's current request.
 import { json, error } from '@sveltejs/kit';
-import { approve, chooseRequest, pendingRequests } from '$lib/server/pairing';
+import {
+  OPENCLAW_OFF_REFUSAL,
+  approve,
+  chooseRequest,
+  openclawOn,
+  pendingRequests
+} from '$lib/server/pairing';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ request }) => {
@@ -42,6 +48,11 @@ export const GET: RequestHandler = async ({ request }) => {
   if (site && site !== 'same-origin') {
     return new Response('Forbidden', { status: 403 });
   }
+  // A tab opened before OpenClaw was switched off keeps polling. It gets an empty listing,
+  // and the script, which runs the OpenClaw image, does not run. CS-FR10.
+  if (!openclawOn()) {
+    return json({ ok: true, disabled: true, pending: [], revoked: [] });
+  }
   // `revoked` travels too: a refused browser stops asking and the gateway drops
   // the request after five minutes, so without it the card is empty for an
   // operator who arrives late. A4 of the 2026-10-01 review.
@@ -53,6 +64,9 @@ export const POST: RequestHandler = async ({ request }) => {
   const origin = request.headers.get('origin');
   if (process.env.ORIGIN && origin !== process.env.ORIGIN) {
     return new Response('Forbidden', { status: 403 });
+  }
+  if (!openclawOn()) {
+    return json({ ok: false, message: OPENCLAW_OFF_REFUSAL }, { status: 409 });
   }
 
   const body = await request.json().catch(() => null);
