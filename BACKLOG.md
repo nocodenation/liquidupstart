@@ -1825,7 +1825,7 @@ built: after #49 a finding is recorded unless the operator asks for it. Compose 
 suggested by the local review of #52's round 1, and measured on 2026-10-28 with 5.6.1: `docker
 compose config --environment` prints what it read merged with the caller's environment, and
 prints a value that spans lines over those same lines, so a line inside it reads as a key of its
-own. It is no reader as it stands. *#50 adds one rule for its three switches, which the shell and
+own. It is no reader as it stands. *#56 adds one rule for #50's three switches, which the shell and
 the dashboard apply alike (`CS-2`), and one more place where the difference shows:* the dashboard asks
 for the privacy proxy's image by `PRIVACY_PROXY_ENABLE` as it reads it, while `build.sh` and
 `start.sh`, which build and require the image, read the first line with every quote removed. A
@@ -1846,13 +1846,15 @@ re-indents; `results[slug] && results[slug].cloned !== now.cloned` is the repair
 
 The next ten entries were found by the update test of 2026-10-29: 0.7.0 updated to 0.8.0 (`e622e01`)
 with `liquidupstart --update`, on macOS with Docker Desktop and compose 5.6.1, then the privacy proxy
-0.3.0 tried with made-up data. What the proxy itself does went to its author. None is worked: after
-#49 a finding is recorded unless the operator asks for it.
+0.3.0 tried with made-up data. What the proxy itself does was drafted as a message to its author,
+for the operator to send. None was worked when they were recorded: after #49 a finding is recorded
+unless the operator asks for it, and a pull request that repairs one says so under it.
 
 ---
 
-`OPEN` **With the privacy proxy off, nginx does not start, and no `*.localhost` page answers.**
-`config/nginx/templates/nginx.conf` has a `privacy.localhost` server block, written in `28e753e` on
+`DONE-ON-#56` **~~With the privacy proxy off, nginx does not start, and no `*.localhost` page
+answers.~~ Repaired on #56, which carries this strike.** *What this entry said while it was open,
+until #56:* `config/nginx/templates/nginx.conf` has a `privacy.localhost` server block, written in `28e753e` on
 2026-08-25 and on `main` since #5 merged (`e622e01`), so 0.8.0 is the first release with it. Its
 `proxy_pass http://privacy-proxy:8080` is unconditional, and nginx resolves a literal upstream host
 when it starts. `PRIVACY_PROXY_ENABLE=0`, the default, starts no such container, so nginx exits with
@@ -1861,6 +1863,17 @@ loop. Measured on 0.8.0. A fresh install of 0.8.0 with the defaults is affected 
 has the same line. The dashboard on port 7777 runs outside compose and still answers. The draft
 specification for #50 resolves every upstream at request time (its decision 5), which repairs this
 once built. On its own, the repair is a `resolver` line and a variable upstream for this block.
+*Repaired on #56:* every `proxy_pass` there names its upstream through a variable, and the template
+declares docker's resolver (`CS-9`). Rendered from `.env.example` with the privacy proxy off, as it
+ships, and Liquid switched off by the test, `nginx -t` passes with no network at all, where the
+template before #56, `da4e2d1`'s in the test, is refused with *host not found in upstream*; and
+nginx runs and answers beside one upstream, the privacy proxy not among them (`CS-10`). And a whole
+stack: #56's, in a start begun on 2026-10-29 at 22:43Z with `PRIVACY_PROXY_ENABLE=0`, ran no
+privacy-proxy container, and its nginx, up from 22:46:08Z, had not restarted when last looked at 23
+seconds later. `pgadmin.localhost`, `nextcloud.localhost` and `opencode.localhost` answered with a
+2xx or 3xx at once, `openproject.localhost` ten seconds later, once it had started, and
+`privacy.localhost` answered 502 with the page naming *Privacy proxy*. Measured by hand rather than
+as a case, since `CS-20` runs with the installation's own setting, which was on.
 
 ---
 
@@ -1884,7 +1897,7 @@ that is switched off, so an image built before that component's build settings c
 when it is switched on again (`docs/FEATURE-component-switches.md` §3). A label on each image with a
 hash of its build inputs, compared with `.env` by `stackState()`, would cover all four. The operator
 decided on 2026-10-29 to build that together with this entry rather than inside #50. *Answered in part
-on #50:* `builtImages()` names the privacy-proxy image while `PRIVACY_PROXY_ENABLE=1`, and `start.sh`
+on #56:* `builtImages()` names the privacy-proxy image while `PRIVACY_PROXY_ENABLE=1`, and `start.sh`
 refuses to start, before `down.sh`, while an image of anything that is on is missing, so the missing
 half no longer reaches `compose up`. `update.sh` still leaves the image in place, and the stale half
 is open.
@@ -2013,6 +2026,29 @@ does theirs. And `github-copilot/*` is routed through the `copilot` agent runtim
 first-start gap holds for `active-memory`: its guarded push runs before the list exists and
 `baseAllow` lacks it, so it joins only on the second start. Not worked: after #49 a finding is
 recorded unless the operator asks for it.
+
+---
+
+`OPEN` **A privacy provider OpenClaw was given once stays offered after the proxy is switched off.**
+`config/scripts/start/openclaw.sh` writes `privacy-openai` into `openclaw.json` while
+`PRIVACY_PROXY_ENABLE=1` and `OPENAI_API_KEY` is set, and `privacy-anthropic` while it is `1` and
+`ANTHROPIC_API_KEY` is set or `ENABLE_ANTHROPIC_CLAUDE_CODE=1`, each with a picker entry and a
+`modelPolicy.allow` line. Neither is taken out once its condition stops holding: the block deletes
+only the legacy `privacy` provider and its `privacy/*` entry, and the picker and allowlist writers
+add without removing, so that a model the operator allowed by hand survives. Measured on this
+branch's stack on 2026-10-29, in a start begun at 22:43Z with `PRIVACY_PROXY_ENABLE=0`: the
+`volumes/_openclaw/openclaw.json` that start's OpenClaw step left still held both providers, and
+`privacy-openai/*` and `privacy-anthropic/*` in the picker and the allowlist. A model chosen there
+is sent to `http://privacy-proxy:8080`, where no container runs, and the start's own output still
+says both were registered, since that line names each provider the file holds. With the switch on,
+clearing `OPENAI_API_KEY` leaves `privacy-openai` the same way, and `ANTHROPIC_API_KEY` leaves
+`privacy-anthropic` while Claude Code is off, read rather than measured. `openclaw.sh` is the same
+on `main`. A repair deletes each privacy provider and its two entries on every start that does not
+write it. `local` has the same shape, read rather than measured: its provider is deleted only when
+an endpoint is set and offers no chat model, a failed discovery counting the same, and never its two
+entries, and nothing at all when `LOCAL_LLM_API_BASE` is emptied. Found while checking the first
+update-test entry on this stack. Not worked: after #49 a finding is recorded unless the operator
+asks for it.
 
 ## Carried over from the 2026.9.1 migration
 
