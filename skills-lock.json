@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "managing-work-packages": {
+      "source": "cdilcher/skills",
+      "sourceType": "github",
+      "skillPath": "src/managing-work-packages/SKILL.md",
+      "computedHash": "c579e9fbe5eaf6be783954c0284358945e8040196bfb00d919e7b186824993ad"
+    },
+    "spec-driven-development": {
+      "source": "cdilcher/skills",
+      "sourceType": "github",
+      "skillPath": "src/spec-driven-development/SKILL.md",
+      "computedHash": "8847e4396868446f65a24ba9f4fc723f3868422dcc4ab93c19ad20e679715043"
+    },
+    "writing-specifications": {
+      "source": "cdilcher/skills",
+      "sourceType": "github",
+      "skillPath": "src/writing-specifications/SKILL.md",
+      "computedHash": "58df69cb882146e6d8c5ff8a3cf73115aa1389c45539dbf33293380fb5b0ff0a"
+    },
+    "writing-unit-tests": {
+      "source": "cdilcher/skills",
+      "sourceType": "github",
+      "skillPath": "src/writing-unit-tests/SKILL.md",
+      "computedHash": "332a948e781ac082012202807c2ceca2d9ebe50582ddb06e3be8570e2b689eea"
+    }
+  }
+}
