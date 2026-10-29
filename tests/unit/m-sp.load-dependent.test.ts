@@ -31,7 +31,8 @@
  *           canceled`, and the answers `docker port` gives for a mapping, for a
  *           container not yet started, for one that is gone, and for nothing
  * Then:     Only the interruptions are called interruptions, and only they make
- *           the guard throw, naming the timeout it was given; only a real mapping
+ *           the guard throw, naming the timeout it was given, in the build's
+ *           words unless the caller gives its own; only a real mapping
  *           parses as a port, the wait stops on the clock and asks by the id it
  *           was given; and the two cases that reach the network carry a budget
  *           of their own, a build timeout inside it, and the guard before each
@@ -127,6 +128,30 @@ describe('SP-5 the guard refuses an interrupted run and lets a finished one thro
 
   test('SP-5 the negative: a build cut off by SIGINT throws, with its exit', () => {
     expect(said({ code: 130, output: SIGINT_OUTPUT })).toContain('was interrupted (exit 130)');
+  });
+
+  test('SP-5 and a caller that is not a build names its own subject and reason', () => {
+    let m = '';
+    try {
+      refuseInterrupted({ code: 255, output: '', timedOut: true }, 'B6-35', 150_000, {
+        subject: 'the watcher run',
+        reason: ['  A debian:bookworm-slim pull that stalled says nothing about nar-watch.sh.']
+      });
+    } catch (e) {
+      m = (e as Error).message;
+    }
+    expect(m).toContain('B6-35: the watcher run ran past its 150s timeout, so this run measured nothing.');
+    expect(m).toContain('says nothing about nar-watch.sh');
+    expect(m).not.toContain('docker build');
+    expect(m).not.toContain('npm');
+  });
+
+  test("SP-5 and a caller that names nothing still gets the build's wording", () => {
+    const m = said({ code: 255, output: '#5 0.131 start', timedOut: true });
+    expect({ subject: m?.includes('the docker build ran past'), reason: m?.includes('says nothing about --allow-scripts') }).toEqual({
+      subject: true,
+      reason: true
+    });
   });
 
   test('SP-5 the counterpart: an ordinary failure and a success pass through', () => {

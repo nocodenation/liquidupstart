@@ -22,7 +22,8 @@
  * When:     each script's own substitution is run over a refusal naming the
  *           dot-copy
  * Then:     no command runs, the dot-path is gone from the text, and an ordinary
- *           name containing `|` survives unmangled
+ *           name containing `|` survives unmangled -- and a shell where `&`
+ *           cannot go wrong is refused by name
  * Covers:   B6-35, FR30, FR36
  * Unhappy:  The payload is the negative half. The ordinary `|` name is its
  *           counterpart and it is not decoration: the reviewer's suggested fix
@@ -52,12 +53,25 @@
  * Neither half drives a whole failing build with a crafted `<finalName>`. That
  * needs Maven Central and a pom per payload and would measure the same line
  * through four more moving parts; the gap is stated rather than papered over.
+ *
+ * **Both legs run in `debian:bookworm-slim`, and the case has no build
+ * precondition.** #29: the watcher leg ran in `liquidupstart/liquid:latest`, and
+ * where that was never built `docker run` exited 125 and four scenarios failed
+ * with `Received: ""`. Any bash will do for the quoted form, which is correct in
+ * every bash; what the case needs is a shell in which the `&` defect *can* show,
+ * because in `bash:5.1` the `&` and `\&` scenarios were measured green on it. So
+ * `run()` asserts the exit code and a canary, `${c//X/&&}` printing `XX`, read
+ * from the shell that then evaluates the line, through `watcherRunVerdict`
+ * (B6-47). The canary proves the shell can show the defect, not that it is
+ * Liquid's; that is all the case needs of it. B6-47's integration row, the same
+ * run with `patsub_replacement` off, sits beside the scenarios it guards.
  */
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
-import { sh } from '../lib/shell';
+import { sh, wasInterrupted, refuseInterrupted } from '../lib/shell';
+import { watcherRunVerdict } from '../lib/watchershell';
 
 const BUILD_SH = join(repoRoot, 'config/nar_builder/build.sh');
 const WATCH_SH = join(repoRoot, 'config/liquid/nar-watch.sh');
@@ -137,32 +151,62 @@ describe('B6-35 the watcher leg, which needs no builder, and its wiring', () => 
    *
    * So the line is extracted by `grep -F` on its own opening, the way the builder
    * leg extracts `literal_replace`, and `$1` is set the way `judge` receives it.
-   * A spelling change is then run rather than asserted. It runs in the **Liquid
-   * image**, where this script runs: bash 5.2.15 with `patsub_replacement` on,
-   * which is the behaviour at issue.
+   * A spelling change is then run rather than asserted. It runs in
+   * `debian:bookworm-slim`, which needs no build (#29), and the shell is asked
+   * rather than assumed: before the eval it prints `CANARY=` from `${c//X/&&}`,
+   * which is `XX` only where an unquoted `&` is the matched text, and its
+   * `BASH=` version. A run that did not exit 0, or whose shell cannot show the
+   * `&` defect, throws `watcherRunVerdict`'s message before any scenario reads
+   * `OUT=`. `prefix` runs first; B6-47 uses it to turn the option off. `set -e`
+   * makes a line that fails to evaluate end the run with bash's own error, and
+   * the line is taken from code only, so that a comment quoting it, as the
+   * file's comments already quote the old `sed` line, cannot be evaluated in its
+   * place.
    */
-  const run = (base: string) =>
-    sh([
-      'docker', 'run', '--rm', '-v', `${WATCH_SH}:/nar-watch.sh:ro`,
-      '--entrypoint', 'bash', 'liquidupstart/liquid:latest', '-c',
-      `base='${base.replace(/'/g, "'\\''")}'
+  const RUN_TIMEOUT_MS = 150_000;
+  let runs = 0;
+  const run = (base: string, prefix = '') => {
+    // Named, because the timeout ends the docker client and not the container.
+    const name = `lu-b6-35-${process.pid}-${runs++}`;
+    const r = sh([
+      'docker', 'run', '--rm', '--name', name, '-v', `${WATCH_SH}:/nar-watch.sh:ro`,
+      '--entrypoint', 'bash', 'debian:bookworm-slim', '-c',
+      `set -e
+       ${prefix}
+       c=X; printf 'CANARY=%s\\n' "\${c//X/&&}"
+       printf 'BASH=%s\\n' "$BASH_VERSION"
+       base='${base.replace(/'/g, "'\\''")}'
        LOAD_DIR=/nar_extensions
        inbox=/nar_inbox
        part="$LOAD_DIR/.$base.part"
        REFUSAL="refused $part: a reason, and again $part"
-       line="$(grep -F 'REFUSAL="\${REFUSAL//' /nar-watch.sh | head -1)"
+       line="$(grep -v '^[[:space:]]*#' /nar-watch.sh | grep -F 'REFUSAL="\${REFUSAL//' | head -1)"
        printf 'LINE=%s\\n' "$line"
        set -- "$inbox/$base"
        eval "$line"
        printf 'OUT=%s\\n' "$REFUSAL"
        printf 'RAN=%s\\n' "$([ -e /tmp/PWNED ] || [ -e ./PWNED ] && echo yes || echo no)"`
-    ]);
-    // No bound but the test's own: the 120_000 that stood here was sh()'s extraEnv,
-    // which copies nothing from a number. B6-37's block.
+    ], undefined, {}, RUN_TIMEOUT_MS);
+    // Inside the scenarios' 180_000, so a stalled pull is reported as one.
+    if (wasInterrupted(r)) sh(['docker', 'rm', '-f', name]);
+    refuseInterrupted(r, 'B6-35', RUN_TIMEOUT_MS, {
+      subject: 'the watcher run',
+      reason: ['  It pulls debian:bookworm-slim, and a run that was cut off says nothing about nar-watch.sh.']
+    });
+    const verdict = watcherRunVerdict(r.code, r.stdout, r.stderr);
+    if (verdict !== null) throw new Error(verdict);
+    return r;
+  };
+
+  test('B6-47 a shell with patsub_replacement off is refused by the same verdict', () => {
+    // The in-suite proof that the canary reads the shell, not the image name.
+    // Its counterpart is every run() scenario of B6-35. The BASH= value is not
+    // asserted, so a point update of the image cannot redden this.
+    expect(() => run(ORDINARY, 'shopt -u patsub_replacement')).toThrow(/cannot show the & defect[\s\S]*CANARY=&&/);
+  }, 180_000);
 
   test('B6-35 the payload runs nothing through the watcher substitution', () => {
     const r = run(PAYLOAD);
-    expect(r.code).toBe(0);
     expect(r.stdout).toContain('RAN=no');
     expect(r.stdout).not.toContain('.part');
     expect(r.stdout).toContain(`/nar_inbox/${PAYLOAD}`);
