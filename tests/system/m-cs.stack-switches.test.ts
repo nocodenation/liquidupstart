@@ -15,9 +15,11 @@
  *           go back to `1`, then build, start and ask again.
  * Then:     (a) None of `liquid`, `nar_builder`, `openclaw-gateway`, `opencode` runs; `proxy`,
  *           `bun_runner`, `postgres` and `pgadmin` do; `opencode.localhost` answers 502 with
- *           the page naming *Which apps to run*; `pgadmin.localhost` answers as it does on
- *           `main`, not with a 502; no `::aiw-claude-auth-required::` is printed. (b) All
- *           eight run, and `opencode.localhost` no longer answers with that page.
+ *           the page naming *Which apps to run*; `pgadmin.localhost` answers with a 2xx or 3xx,
+ *           once it has stopped giving the answers of a service that is starting; no
+ *           `::aiw-claude-auth-required::` is printed. (b) All eight run, and
+ *           `opencode.localhost` and `pgadmin.localhost` answer with a 2xx or 3xx, so
+ *           `opencode.localhost` not with that page.
  * Covers:   CS-20, CS-FR3, CS-FR4, CS-FR5, CS-FR6, CS-NFR1
  * Negative: (a), the stack with nothing switchable in it.
  * Counterpart: (b), the same installation with everything back, so a stack that stayed
@@ -64,22 +66,29 @@ function port(): string {
   return readFileSync(ENV, 'utf8').match(/^SYSTEM_HTTP_PORT=["']?(\d+)/m)?.[1] ?? '8888';
 }
 
-function ask(host: string): { status: number; body: string } {
+function ask(host: string): { status: number; code: string; body: string } {
   const r = sh(['curl', '-s', '-m', '10', '-w', '\n%{http_code}', '-H', `Host: ${host}`, `http://127.0.0.1:${port()}/`]);
   const lines = r.stdout.split('\n');
-  return { status: Number(lines.pop()), body: lines.join('\n') };
+  const code = lines.pop() ?? '';
+  return { status: Number(code), code, body: lines.join('\n') };
 }
 
 // A service that has just been started may not listen yet, and nginx answers 502 for it
-// until it does -- which is right, and would make a case that asked once flaky. So a
-// service that is meant to answer gets two minutes to.
-function askUntilAnswered(host: string): { status: number; body: string } {
+// until it does -- which is right, and would make a case that asked once flaky. So while the
+// answer is one a starting service gives -- no connection, which curl reports as 000, or a
+// 502, 503 or 504 -- it is asked again, up to 60 times two seconds apart, each ask bounded at
+// ten seconds. Then it has to be a 2xx or a 3xx. Merely "not 502", as this asked at first,
+// would have let a refused connection through (found by reading, after the first run). The
+// result names the host and the last code, so a failure reads on its own.
+const OK = (status: number) => status >= 200 && status < 400;
+const STARTING = (status: number) => status === 0 || status === 502 || status === 503 || status === 504;
+function answered(host: string): string {
   let r = ask(host);
-  for (let i = 0; i < 60 && (r.status === 502 || r.status === 0); i++) {
+  for (let i = 0; i < 60 && STARTING(r.status); i++) {
     Bun.sleepSync(2000);
     r = ask(host);
   }
-  return r;
+  return `${host} answered ${OK(r.status) ? '2xx or 3xx' : r.code}`;
 }
 
 function buildAndStart() {
@@ -100,7 +109,7 @@ describe('CS-20 the stack, all off and all on', () => {
     expect(off.status).toBe(502);
     expect(off.body).toContain('OpenCode does not answer');
     expect(off.body).toContain('Which apps to run');
-    expect(askUntilAnswered('pgadmin.localhost').status).not.toBe(502);
+    expect(answered('pgadmin.localhost')).toBe('pgadmin.localhost answered 2xx or 3xx');
     expect(start.output).not.toContain('::aiw-claude-auth-required::');
   }, 3 * HOURS);
 
@@ -110,6 +119,8 @@ describe('CS-20 the stack, all off and all on', () => {
     for (const name of [...SWITCHED, ...ALWAYS]) {
       expect(`${name} running: ${containerRunning(name)}`).toBe(`${name} running: true`);
     }
-    expect(askUntilAnswered('opencode.localhost').body).not.toContain('Which apps to run');
+    // A 2xx or 3xx cannot be the page, which nginx serves only as its own 502.
+    expect(answered('opencode.localhost')).toBe('opencode.localhost answered 2xx or 3xx');
+    expect(answered('pgadmin.localhost')).toBe('pgadmin.localhost answered 2xx or 3xx');
   }, 3 * HOURS);
 });

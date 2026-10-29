@@ -1993,6 +1993,27 @@ by default. `SYSTEM_HTTPS_PORT` in its place, which `nginx.sh` substitutes, is t
 reading the template for #50 on 2026-10-29. Not worked: after #49 a finding is recorded unless the
 operator asks for it.
 
+---
+
+`OPEN` **GitHub Copilot is not in OpenClaw 2026.9.1's plugin allowlist, so its sign-in finds no
+plugin.** `config/scripts/start/openclaw.sh` writes `plugins.allow` from the fixed `baseAllow` list,
+which holds `codex` whatever its switch says and gains `xai` while `ENABLE_XAI_GROK=1`, and never
+`github-copilot`, the id of the plugin bundled in the image. With `ENABLE_GITHUB_COPILOT=1` the
+dashboard's sign-in ran `openclaw models auth login-github-copilot` and ended with *No provider
+plugins found. Install one via `openclaw plugins install`.* and exit 1. The same omission keeps the
+plugin's model catalogue and the Copilot embeddings for memory search out, so signing in another way
+would not be enough. Found by the operator in #50's manual check CS-21 on 2026-10-29, on a fresh
+installation; `openclaw.sh` is the same on `main`. A repair has three parts, read from the script and
+the image and not measured. The id joins `baseAllow` while the switch is on, as `xai` does: the
+guarded pushes run before the list exists on a first start. The list is the union of the previous
+one and `baseAllow`, so an id once in stays in; a switched-off plugin is disabled through
+`plugins.entries` and its routes removed, as for `codex` and `xai`, and `only` deletes the id, as it
+does theirs. And `github-copilot/*` is routed through the `copilot` agent runtime, the external
+`@openclaw/copilot`, which the image does not carry, so that routing needs its own look. The same
+first-start gap holds for `active-memory`: its guarded push runs before the list exists and
+`baseAllow` lacks it, so it joins only on the second start. Not worked: after #49 a finding is
+recorded unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
