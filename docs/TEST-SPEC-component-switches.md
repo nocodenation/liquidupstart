@@ -139,7 +139,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | (1) rc 0, `a` running, no container for `b`. (2) rc 0, `b` healthy before `a` is created, from `docker inspect`'s `State.StartedAt`. (3) each rc 0. (4) recorded either way, rc and message, because `openclaw.sh` runs `openclaw-cli` that way. The design is safe on both answers: `start.sh` exports `openclaw` before `openclaw.sh` runs (CS-5). |
 | **Dependencies** | docker with compose 5.6.1. The file calls `docker compose`, so `run.sh` classes it as stack tier: it runs with `--system`. |
 | **Shown able to fail** | `required: false` removed from `a` → (1) refuses with compose's message naming `b`. |
-| **What it found** | **Measured by hand on 2026-10-29, compose 5.6.1, before the case is written as a test.** (1) `a` running alone. (2) `b` started at 09:16:53.87Z and was healthy before `a` started at 09:16:55.45Z. (3) All six commands rc 0, so naming a profiled service enables its profile for that call, and `ps` without a name lists `b` while it runs. (4) rc 1, `no such service: b`: a dependency's profile is **not** enabled by `run`, which is why CS-FR4 exports the profiles before `openclaw.sh`. Without `required: false`, compose refused the project with `service "a" depends on undefined service "b": invalid compose project`, which is the shown-able-to-fail mutation, observed. In that script the exit codes of (1), (2) and the mutation were a pipeline's, so the outcomes are read from the containers' state and compose's message. The test reads each rc directly. Run as a test on 2026-10-29 at `3ace2c5`: 6 / 0, the unhealthy pair included, which the second local review asked for and which holds as measured: `required` makes `up` exit non-zero, `required: false` exits 0 with `a` running. |
+| **What it found** | **Measured by hand on 2026-10-29, compose 5.6.1, before the case is written as a test.** (1) `a` running alone. (2) `b` started at 09:16:53.87Z and was healthy before `a` started at 09:16:55.45Z. (3) All six commands rc 0, so naming a profiled service enables its profile for that call, and `ps` without a name lists `b` while it runs. (4) rc 1, `no such service: b`: a dependency's profile is **not** enabled by `run`, which is why CS-FR4 exports the profiles before `openclaw.sh`. Without `required: false`, compose refused the project with `service "a" depends on undefined service "b": invalid compose project`, which is the shown-able-to-fail mutation, observed. In that script the exit codes of (1), (2) and the mutation were a pipeline's, so the outcomes are read from the containers' state and compose's message. The test reads each rc directly. Run as a test on 2026-10-29 on the code of `fdac95d`: 6 / 0, the unhealthy pair included, which the second local review asked for and which holds as measured: `required` makes `up` exit non-zero, `required: false` exits 0 with `a` running. |
 | **Implemented by** | `tests/integration/m-cs.compose-profiles.test.ts`. |
 | **Covers** | CS-FR5, CS-NFR1. |
 
@@ -154,7 +154,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | On and off: stdout `on` or `off`, rc 0, stderr empty. Refused: rc 1, stdout empty, stderr holds `Error: ENABLE_LIQUID=yes in .env is not a switch value; use 1 (on) or 0 (off).` (with the value at hand, which is the value after the quotes come off) and a line starting `::aiw-error::ENABLE_LIQUID must be 1 or 0, not '<value>'.`. The check, over `ENABLE_LIQUID=yes`, `ENABLE_OPENCLAW=1` and `ENABLE_OPENCODE=off`, names both refused keys and not the valid one; over a valid file it is silent and exits 0. |
 | **Dependencies** | bash 3.2 and 5.x; the macOS and Linux runs both count. |
 | **Shown able to fail** | Registered: `tail -n1` → `head -n1` in `lu_component_value` reddens the two-occurrence row. Validated by `./tests/mutate.sh --case CS-1`. The refusal turned into "anything but 0 is on" is not registered: it would redden the eight refused rows, which are its own negative. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 31 / 0. The table had fifteen rows when the case was written; the local reviews of that day added nine more. Eight are lines the first readers disagreed on (CS-2); the ninth, `"0`, a quote that never closes, came in with them as a refused row they already agreed on. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 31 / 0. The table had fifteen rows when the case was written; the local reviews of that day added nine more. Eight are lines the first readers disagreed on (CS-2); the ninth, `"0`, a quote that never closes, came in with them as a refused row they already agreed on. |
 | **Implemented by** | `tests/unit/m-cs.component-reader.test.ts`. |
 | **Covers** | CS-FR1, CS-FR2. |
 
@@ -169,7 +169,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | For every on or off row, both readers give the expected answer. For every refused row, the shell refuses and the dashboard reads on (CS-FR2). |
 | **Dependencies** | bash and bun. |
 | **Shown able to fail** | Registered, both validated: `componentsFrom` handed `value` instead of the text after `=` reddens `"'0'"`; the line pattern back to `(.*)$` reddens the two rows whose `\r` no `\n` follows, the lone `\r` and `\r\r\n` -- `0\r\n` stays green, since the line split takes that `\r` -- and the registry names the second. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 24 / 0. Eight rows disagreed between the first readers. Of review 1's five, the tab and `"'0'"` were the dashboard's errors, a reader that took `parseEnvValues`' value, and `" 0"`, `"0 "` and `"0"#x` were the shell's, which refused them; review 2's two rows, a lone `\r` and `\r\r\n`, the dashboard's line pattern; review 4's no-break space, JavaScript's `\s`, while the shell refused it. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 24 / 0. Eight rows disagreed between the first readers. Of review 1's five, the tab and `"'0'"` were the dashboard's errors, a reader that took `parseEnvValues`' value, and `" 0"`, `"0 "` and `"0"#x` were the shell's, which refused them; review 2's two rows, a lone `\r` and `\r\r\n`, the dashboard's line pattern; review 4's no-break space, JavaScript's `\s`, while the shell refused it. |
 | **Implemented by** | `tests/contract/m-cs.readers-agree.test.ts`. |
 | **Covers** | CS-FR2. |
 
@@ -184,7 +184,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | In the same order, for those files: `opencode bun-runner nar-builder liquid openclaw`; `opencode bun-runner openclaw`; `opencode bun-runner nar-builder liquid`; `bun-runner nar-builder liquid openclaw`; `bun-runner`; `bun-runner privacy-proxy`; rc 1 and **no `build.log`**, with stderr naming `ENABLE_OPENCODE=yes`. |
 | **Dependencies** | bash. No docker: the build scripts are stubs. |
 | **Shown able to fail** | Registered, both validated: the Liquid condition moved off `nar-builder.sh` makes the Liquid-off row list it; `rebuild.sh`'s check replaced by `false` makes the rebuild row run `down`. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 9 / 0. The rebuild rows came from the second review, which found `rebuild.sh` running `down.sh` before `build.sh` could refuse. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 9 / 0. The rebuild rows came from the second review, which found `rebuild.sh` running `down.sh` before `build.sh` could refuse. |
 | **Implemented by** | `tests/integration/m-cs.build-switches.test.ts`. |
 | **Covers** | CS-FR3, CS-NFR1, CS-NFR2. |
 
@@ -199,7 +199,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | Refused: rc 1, `down` not in the step log, no `compose up` in the docker log, stderr naming `ENABLE_LIQUID=yes` and saying nothing was stopped. Missing images: rc 1, the step log holds git's declaration pre-flight and nothing after it, stderr holds `Error: these images are not built: liquidupstart/liquid:latest liquidupstart/privacy-proxy:latest` and an `::aiw-error::Not built yet:` line. The absent image of a component that is off: rc 0, `down`, `compose up` with `openclaw,opencode`. Accepted: `down`, then `compose up -d`. |
 | **Dependencies** | As CS-5. |
 | **Shown able to fail** | Registered, both validated: the switch check replaced by `false` makes the refused row run `down.sh`; the image check replaced by `false` makes the missing-image row reach `compose up`. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 16 / 0, with CS-5. The image rows came from the first review: switching Liquid on with no image and pressing Restart emptied the stack. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 16 / 0, with CS-5. The image rows came from the first review: switching Liquid on with no image and pressing Restart emptied the stack. |
 | **Implemented by** | `tests/integration/m-cs.start-switches.test.ts`. |
 | **Covers** | CS-FR4, CS-NFR2. |
 
@@ -214,7 +214,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | `COMPOSE_PROFILES` at `compose up`, in the same order: `liquid,openclaw,opencode`; `openclaw,opencode`; `liquid,opencode`; `liquid,openclaw`; `privacy-proxy`. The `openclaw` step logs the same value as `compose up`. Steps: today's for the first; without `liquid` and `nar-builder` for the second; without `openclaw`, and with no `exec openclaw-gateway` in the docker log, for the third; **with** `opencode` for the fourth. Stdout: the first holds the lines `Liquid`, `Liquid username:`, `Liquid password:`, `Liquid ingresses`, `OpenClaw`, `OpenClaw node bridge`, `OpenClaw MS Teams endpoint` and `OpenCode`, and its docker log an `exec openclaw-gateway`; in the second no line contains `Liquid`, in the third none `OpenClaw` -- the *Node app* line names OpenCode and the network warning leaves the gateway out -- and in the fourth none `OpenCode`; in the fifth none of the three. The inherited `liquid` reaches neither a start step nor `compose up`: both see `openclaw,opencode`. The fifth row leaves `volumes/_openclaw-claude` with mode 700, and the first, with the privacy proxy off and `openclaw.sh` a stub, leaves none. |
 | **Dependencies** | bash. No docker engine. |
 | **Shown able to fail** | Registered, both validated: the `liquid` step left unconditional makes the Liquid-off row list it; the gateway check replaced by `false` lets the unhealthy row exit 0. The export left after the start steps was tried by hand while writing: the `openclaw` step logged an empty value. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 16 / 0, with CS-4. TC-822's own first run, not this fixture, moved CS-4's switch check after the libraries: TC-822 stubs `wait-for-operator.sh` to stop the start (§4). The unhealthy-gateway rows came from the second review, measured first in CS-0. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 16 / 0, with CS-4. TC-822's own first run, not this fixture, moved CS-4's switch check after the libraries: TC-822 stubs `wait-for-operator.sh` to stop the start (§4). The unhealthy-gateway rows came from the second review, measured first in CS-0. |
 | **Implemented by** | `tests/integration/m-cs.start-switches.test.ts`, with CS-4. |
 | **Covers** | CS-FR4, CS-NFR1. |
 
@@ -229,7 +229,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | Off: `volumes/nginx/certs/liquid.localhost.crt` and `.key` exist; `liquid.keystore.p12` and `liquid.truststore.p12` do not. On: all four exist. The rendered `config/nginx/nginx.conf` is byte-identical between the two runs and holds 100 ingress blocks. |
 | **Dependencies** | `openssl` (LibreSSL on macOS counts). |
 | **Shown able to fail** | Registered and validated: the keystore half left unconditional makes the off run write the `.p12` files. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 3 / 0. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 3 / 0. |
 | **Implemented by** | `tests/integration/m-cs.nginx-keystore.test.ts`. |
 | **Covers** | CS-FR4. |
 
@@ -244,7 +244,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | As stated; the set of profiled services equals the six; the proxy's block holds the `dns` line. |
 | **Dependencies** | None. |
 | **Shown able to fail** | Registered, both validated: `required: false` removed from `openclaw-gateway`, and the proxy's `dns` line removed. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 5 / 0. Its first run was red for the test's own reason: the services block was cut at a comment in column 0. The `dns` row came from the first review. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 5 / 0. Its first run was red for the test's own reason: the services block was cut at a comment in column 0. The `dns` row came from the first review. |
 | **Implemented by** | `tests/contract/m-cs.compose-profiles.test.ts`. |
 | **Covers** | CS-FR5. |
 
@@ -259,7 +259,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | All three: today's list. None: rc 0, the 17. JSON: `services.proxy.depends_on.openclaw-gateway` is `{condition: service_healthy, required: false}`. Routing-only: rc 0. |
 | **Dependencies** | docker compose 5.6.1. Stack tier by marker. |
 | **Shown able to fail** | Registered and validated: `required: false` removed from `openclaw-gateway` makes the run with no profile refuse. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 4 / 0, with today's 21 services and the 17 as pinned. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 4 / 0, with today's 21 services and the 17 as pinned. |
 | **Implemented by** | `tests/integration/m-cs.compose-resolves.test.ts`. |
 | **Covers** | CS-FR5, CS-NFR1. |
 
@@ -274,7 +274,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | Every `proxy_pass` matches `proxy_pass https?://\$lu_upstream;`, and the line after it is `proxy_redirect <scheme>://<the set line's host:port>/ /;`, in the template and in the heredoc; the resolver line is `resolver 127.0.0.11 valid=10s ipv6=off;`; the pages as stated; `lu_proxy_identity` prints the identity it prints for `da4e2d1`'s template, and rc 0. |
 | **Dependencies** | bash. |
 | **Shown able to fail** | Built in: `da4e2d1`'s template, whose 15 literal lines and the heredoc's one the predicate names. Registered and validated: one literal `proxy_pass` back, for pgAdmin. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 7 / 0. The `proxy_redirect` row came from the first review, measured: with a variable, an upstream's redirect to its own name reached the browser unchanged. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 7 / 0. The `proxy_redirect` row came from the first review, measured: with a variable, an upstream's redirect to its own name reached the browser unchanged. |
 | **Implemented by** | `tests/contract/m-cs.nginx-upstreams.test.ts`. |
 | **Covers** | CS-FR6. |
 
@@ -289,7 +289,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | (1) rc 0, `test is successful`. (2) rc ≠ 0, `host not found in upstream`. (3) `opencode.localhost` → 502 with a body naming OpenCode and `Which apps to run`; `pgadmin.localhost` → 502 whose body does not contain `Which apps to run`; `app.localhost` → 200 with `Welcome to nginx!`; `app.localhost/redirect` → `Location: http://app.localhost:8888/target`, as the literal form rewrote it. In a container with the proxy's `dns` setting, `getent ahosts uz` prints nothing and `getent ahosts bun_runner` names it. The `bun_runner` row was added during implementation, after measuring it by hand: it is the property decision 5 rests on, and an underscore in a name is what nginx's resolver could have refused. The redirect and `dns` rows came from the local review of 2026-10-29; without the setting, `uz` resolved to the domain's public address and nginx proxied to it, measured by hand that day and not asserted, since it needs the internet. |
 | **Dependencies** | docker, `nginx:latest`. It uses `docker run` and `docker network`, not compose, so it stays in the default tier, as the bare `docker run` comment in `tests/run.sh` allows. |
 | **Shown able to fail** | Built in: (2) is `da4e2d1`'s template. Registered, both validated: the `resolver` line removed reddens the `bun_runner` row, which then answers 502; `app.localhost`'s `proxy_redirect` removed reddens the redirect row. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 8 / 0. The `bun_runner` row held as measured by hand. The redirect row first expected `/target` and got `http://app.localhost:8888/target`, which is what the literal form produces, so the expectation was corrected and not the code. The `dns` rows came from the first review: without the setting, nginx proxied a request for `uz` to that domain's public address. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 8 / 0. The `bun_runner` row held as measured by hand. The redirect row first expected `/target` and got `http://app.localhost:8888/target`, which is what the literal form produces, so the expectation was corrected and not the code. The `dns` rows came from the first review: without the setting, nginx proxied a request for `uz` to that domain's public address. |
 | **Implemented by** | `tests/integration/m-cs.nginx-starts.test.ts`. |
 | **Covers** | CS-FR6, CS-NFR1. |
 
@@ -304,7 +304,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | 502: rc 1; stderr holds `the builder did not answer` and `ENABLE_LIQUID=0`. 503: rc 1; stderr is the body, without `ENABLE_LIQUID`. 200: rc 0; stdout `nifi 2.9.0`. |
 | **Dependencies** | `/bin/sh`. |
 | **Shown able to fail** | Registered and validated: 502 dropped from the absent case leaves the first run's stderr without the hint. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 3 / 0. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 3 / 0. |
 | **Implemented by** | `tests/unit/m-cs.nar-build-absent.test.ts`. |
 | **Covers** | CS-FR7. |
 
@@ -319,7 +319,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | As stated, in that order. `stackState()`'s `image inspect` argv, with Liquid off, names neither `liquid` nor `nar-builder` and does name `opencode`, `bun-runner` and `openclaw`; with Liquid on, all five; with the privacy proxy on, `liquidupstart/privacy-proxy:latest` as well, and with it off, not. |
 | **Dependencies** | bun; the component tier for `stackState()`. |
 | **Shown able to fail** | Registered, all three validated: the filter in `builtImages()` made to keep everything reddens the Liquid-off row; the privacy proxy's image left off reddens the unit privacy row; `stackState()`'s privacy flag fixed at `false` reddens the component privacy row. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 6 / 0 unit, 3 / 0 component. The privacy rows came from the second review: the start required the image and the dashboard did not ask for it. The third review's reading of the key by the scripts' rule was taken back by the fourth, which found it gave one page two answers. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 6 / 0 unit, 3 / 0 component. The privacy rows came from the second review: the start required the image and the dashboard did not ask for it. The third review's reading of the key by the scripts' rule was taken back by the fourth, which found it gave one page two answers. |
 | **Implemented by** | `tests/unit/m-cs.built-images.test.ts`, `tests/component/m-cs.stack-state.test.ts`. Both import `tests/lib/dashboardfixture.ts` before `project.ts`, which captures `ENV_DIR` on its first load; so do A8-27 and B5-3 now (§4). |
 | **Covers** | CS-FR8. |
 
@@ -334,7 +334,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | Off: the note, no `url`, no `creds`. On: today's values. `data.components` matches the switches. |
 | **Dependencies** | bun, `dashboard/node_modules`. |
 | **Shown able to fail** | Registered and validated: the OpenCode tile left unconditional gives the OpenCode-off row a `url`. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 4 / 0. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 4 / 0. |
 | **Implemented by** | `tests/component/m-cs.launchpad.test.ts`. |
 | **Covers** | CS-FR9. |
 
@@ -349,7 +349,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | Off: status 200, `{ ok: true, disabled: true, pending: [], revoked: [] }`, no marker file; POST 409 with `{ ok: false, message }`, the message being CS-15's. On: the marker exists, and the body is the stub's. Mounted off: no element of the pairing card. Mounted on: the card's root element. |
 | **Dependencies** | bun, `dashboard/node_modules`. The mounted half voices its skip under `SP-2`, and joins the SP-2 record (TR-4). |
 | **Shown able to fail** | Registered and validated: the route's switch check replaced by `false` makes the marker appear in the off run. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 3 / 0 for the route, 2 / 0 and 1 SP-2 skip mounted. Run beside OC-72 it found that a component file leaving the shared project's `.env` with OpenClaw off turned OC-72's listing into the switched-off answer; `borrowSharedProject()` in `tests/lib/dashboardfixture.ts` gives the project back, and in the runner's order the twenty files that touch `ENV_DIR` pass on `main` and the thirty on this branch. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 3 / 0 for the route, 2 / 0 and 1 SP-2 skip mounted. Run beside OC-72 it found that a component file leaving the shared project's `.env` with OpenClaw off turned OC-72's listing into the switched-off answer; `borrowSharedProject()` in `tests/lib/dashboardfixture.ts` gives the project back, and in the runner's order the twenty files that touch `ENV_DIR` pass on `main` and the thirty on this branch. |
 | **Implemented by** | `tests/integration/m-cs.pairing-route.test.ts`, `tests/component/m-cs.pairing-mount.test.ts`. |
 | **Covers** | CS-FR10. |
 
@@ -364,7 +364,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | Off: GET `{ needed: false }` with an empty docker log; POST 409 with `OpenClaw is switched off — turn it on under Which apps to run in Configuration first.` On: GET `{ needed: true }`, and the docker log names `liquidupstart/openclaw:latest`. |
 | **Dependencies** | bun. |
 | **Shown able to fail** | Registered and validated: the check removed from `/copilot-auth` GET makes its off GET answer `needed: true`. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 12 / 0. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 12 / 0. |
 | **Implemented by** | `tests/integration/m-cs.auth-routes.test.ts`. |
 | **Covers** | CS-FR11. |
 
@@ -379,7 +379,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | The first section is `1. WHICH APPS TO RUN`, holding `ENABLE_LIQUID`, `ENABLE_OPENCLAW` and `ENABLE_OPENCODE` of type `checkbox`, valued `1`. Each switch off: none of its keys is among the fields, and every other field is. With OpenClaw off, `ENABLE_ANTHROPIC_CLAUDE_CODE` is still shown. With Liquid off, *Liquid AUTHENTICATION* goes and the sections number 1 to 10. All on: every field of every shown section of `.env.example` is shown. The empty and the single-quoted switch are both valued `1`. With `ENABLE_LIQUID=O` appended, the Liquid switch is valued `1` and its note reads `ENABLE_LIQUID=O in .env is not a switch value, and the start refuses it. Tick or untick it and save to set it.`; it is the only field with a note, although every other field holds a `fixture-` value that is no switch value either, and no note contains `fixture-`. |
 | **Dependencies** | bun. |
 | **Shown able to fail** | Registered, all four validated: the section filter of `load` removed leaves the empty Liquid section and the numbering red; the normalised switch value removed reddens the ticked row; the refusal note removed reddens the refused row; the note's switch guard removed reddens the row that no other field carries it. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 10 / 0. The ticked rows came from the first review; the refused row from the second; the row that no other field carries the note from the third, which found the note on every field and a password's value printed in it. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 10 / 0. The ticked rows came from the first review; the refused row from the second; the row that no other field carries the note from the third, which found the note on every field and a password's value printed in it. |
 | **Implemented by** | `tests/component/m-cs.config-hiding.test.ts`. |
 | **Covers** | CS-FR1, CS-FR12. |
 
@@ -394,7 +394,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | (a) `ENABLE_GITHUB_COPILOT=1`, `ENABLE_XAI_GROK=1`, `LIQUID_PASSWORD="kept-while-liquid-is-off"`. (b) `ENABLE_OPENCLAW=1`, `ENABLE_GITHUB_COPILOT=1`, `ENABLE_XAI_GROK=1`. (c) `ENABLE_GITHUB_COPILOT=0`. (d) `ENABLE_OPENCLAW=0`, `ENABLE_GITHUB_COPILOT=0`. (e) the redirect is `/done?rebuild=0`. (f) `ENABLE_GITHUB_COPILOT=1`, `ENABLE_XAI_GROK=1`. (g) `ENABLE_GITHUB_COPILOT=0`: without the field the file as it is now decides, which is the race (f) closes. (h) `ENABLE_LIQUID=1`. (i) `ENABLE_LIQUID=1`, `ENABLE_OPENCLAW=1`, `ENABLE_OPENCODE=0`. (j) `ENABLE_OPENCODE=0`. (k) `ENABLE_LIQUID=O`. (l) `ENABLE_LIQUID=0`, `ENABLE_OPENCODE=1`. |
 | **Dependencies** | bun. |
 | **Shown able to fail** | Registered, all five validated: the keep rule for dependent fields removed reddens (a); the rendered field ignored reddens (f); the old-page rule turned off reddens (i); a kept switch written from its parsed value reddens (l); a refused value written as `1` reddens (k). |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 12 / 0. Row (d)'s first data could not tell the two rules apart, see above. The later rows came from the local reviews: (f), (g) and (h) from the first, the race and the shown value; (i) from the second, the old page; (l) from the third, the re-quoting; (j) and (k) from the fourth, the two branches of the old-page save left untested. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 12 / 0. Row (d)'s first data could not tell the two rules apart, see above. The later rows came from the local reviews: (f), (g) and (h) from the first, the race and the shown value; (i) from the second, the old page; (l) from the third, the re-quoting; (j) and (k) from the fourth, the two branches of the old-page save left untested. |
 | **Implemented by** | `tests/component/m-cs.config-save.test.ts`. |
 | **Covers** | CS-FR12, CS-FR8 (decision 10). |
 
@@ -409,7 +409,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | (a) The card and *GIT INTEGRATION* carry the repositories note. The privacy tile and *PRIVACY PROXY* carry the providers note. *SELF-HOSTED LOCAL LLM* carries the local-LLM note. The Node app tile says no agent is switched on to build it. (b) None of those three notes; the Claude note on `ENABLE_ANTHROPIC_CLAUDE_CODE`; the Node app tile names OpenCode. (c) No note; the Node app tile reads `build an app using OpenClaw first`, as today. |
 | **Dependencies** | bun, `dashboard/node_modules` for the mounted card; SP-2 as CS-14. |
 | **Shown able to fail** | Registered and validated: the both-off condition replaced by OpenClaw-off gives (b) the repositories note. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 4 / 0 and 1 SP-2 skip. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 4 / 0 and 1 SP-2 skip. |
 | **Implemented by** | `tests/component/m-cs.agent-notes.test.ts`. |
 | **Covers** | CS-FR13. |
 
@@ -424,7 +424,7 @@ operator check of the browser path, which no other level covers end to end.
 | **Expected** | The three sets exactly; every other field null. |
 | **Dependencies** | bun. |
 | **Shown able to fail** | Registered and validated: the section pattern for §8 put in place of the three keys lands `ENABLE_ANTHROPIC_CLAUDE_CODE` in the OpenClaw set. |
-| **What it found** | Run on 2026-10-29 at `3ace2c5`, a clean tree, compose 5.6.1, bash 3.2: 5 / 0. |
+| **What it found** | Run on 2026-10-29 on a clean tree with the code of `fdac95d`, compose 5.6.1, bash 3.2: 5 / 0. |
 | **Implemented by** | `tests/unit/m-cs.depends-on.test.ts`. |
 | **Covers** | CS-FR12. |
 
