@@ -25,6 +25,7 @@ documents in one repository each owning a "U1" would make every `Covers:` row am
 | M-B2 | Unit for the resolution, contract for the entrypoint and the skill, one manual case | The decisions are few and each has a case on both sides. The restart is deterministic and disruptive, so it is a verification check rather than a suite test; the manual case is the agent's judgement, which is the only part a model can get wrong |
 | M-B1 | Unit for the two decisions it makes, integration for the builds, contract for the mounts | The tool has exactly two branches worth the name — is the version readable, does the source carry a pom — and both have a case on each side. Full branch coverage is not demanded: this is a compiler front end, not a guardrail, and the standard is reserved for logic that decides what leaves the stack |
 | M-B2 | System, with a documented manual restart | Restart is deliberately human |
+| M-B7 (B7-6 to B7-9) | Contract for the declarations, integration against the image built from the tree for everything else, full branch coverage for the sweep | *Added 2026-10-29, #31.* The sweep decides what is killed and what is deleted as root, so each of its branches has a case: a process ended, a zombie not waited on, a file removed, another user's file kept, and a sweep that cannot complete refusing the build. The home and the slot users are declarations with one behaviour each, and each has its case on both sides |
 
 ---
 
@@ -46,9 +47,15 @@ Filled in as tests are written; a requirement with no test is a gap, and the gap
 | FR30 The drop directory reaches Liquid's load path | B2-5, **B2-12**, **B2-13**, B5-8, B5-9, B5-22, B5-23, B5-24, B5-28, B5-29, B5-30, B5-31, B5-32 |
 | FR31 A deployment step that fails says so | B2-6, **B2-13** (a copy that fails before it is judged), B6-46 (a bundle the drop directory will not take) |
 | FR34 What is built is proven loadable | B3-1, B3-2 — both §4 checks, written out in full and not yet run |
-| FR35 Concurrent builds do not corrupt each other | B3-3, B3-4, B5-14 |
+| FR35 Concurrent builds do not corrupt each other | B3-3, B3-4, B5-14, **B7-8** |
 | FR36 A bundle that cannot link is refused at deployment | B4-1, B4-2, B4-3, B4-4, B4-5, B4-6, B4-7, **B4-9, B4-10, B4-11** in the suite; B4-8 in §4, run by the operator because it restarts Liquid; B5-4 to B5-9, B5-25 to B5-32 |
 | FR36a The check's status says which of three things happened, and only a stated verdict deploys | B6-40, B6-42, B6-43, **B6-44**, **B6-45**, **B6-46** — *row added 2026-10-21: FR36a had cases and no line here* |
+| FR37 Each build gets its own local repository, discarded with the build | B7-1, B7-5, B1-9, **B7-7**, **B7-9** — *row added 2026-10-29, #31: FR37 to FR40 had cases and no line here* |
+| FR38 The image build owns the seeding step | B7-2, B7-5, B1-9 |
+| FR39 The lifecycle is pinned from one declaration | B7-3 |
+| FR40 A stale seed says so in one line | B1-9 |
+| FR41 The build user's home is read-only, and each build carries its own | **B7-6**, **B7-7** |
+| FR42 Two builds never share a user, and a build leaves nothing behind | **B7-6**, **B7-8**, **B7-9** |
 | NFR1 The stack is reachable only where it should be | B5-10, B5-11, B5-12, B5-13, B5-14 |
 | U9 A checkout that has never run the stack can start it | B5-1, B5-2, B5-3, B5-19, B5-20, B5-21 |
 | NFR7 The build's trust surface is stated | B1-1, B1-12, and §3.2 itself |
@@ -1671,6 +1678,24 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 | **B7-5** | **negative** | Integration | A second build downloads them **again** rather than finding them | If this read 0, what the first build fetched outlived it — the shared cache the fourth leg removed, back as a side effect of the seed |
 | **B7-5** | positive | Integration | With no seed in the installed image the file says so, out loud | Five skipped cases are otherwise a silent gap |
 | **B1-9** | positive + **negative** | Integration | *Rewritten here.* No cache is shared between builds, and the seed is why that is affordable | See its own block below |
+| **B7-6** | **negative** | Contract | Each build user is created with no home of its own and given an empty, root-owned `555` one | *Added 2026-10-29, #31, as are the rows below.* A `useradd -m` would copy `/etc/skel` in builder-owned, and a non-recursive `chown` afterwards leaves `.bashrc` and `.profile` builder-owned and writable — measured against the fix #31 first proposed |
+| **B7-6** | positive | Contract | The server's slot users are exactly the users the image creates | Computed from both files, so a third slot cannot be added to one and not the other |
+| **B7-7** | **negative** | Integration | Neither build user can write its passwd home | `~/.mavenrc` and `~/.m2` refused, the home empty, `root:root 555` |
+| **B7-7** | positive | Integration | Maven reads its settings from the build's own home | The counterpart that stops the lock being met by a Maven that reads no settings at all |
+| **B7-7** | **negative** | Integration | One build's `.mavenrc` is not sourced by another | The issue's reproduction, turned into a case |
+| **B7-7** | positive | Integration | …and the same probe **is** seen in its own build | Without it the negative passes against a launcher that never sources anything |
+| **B7-7** | positive | Integration | A JVM that Maven forks gets the per-build `user.home` and `java.io.tmpdir` | Why `JAVA_TOOL_OPTIONS` and not Maven's `-D`: a forked JVM reads `user.home` from passwd |
+| **B7-7** | positive | Integration | A seeded offline build still succeeds with the read-only home | The issue's open item: nothing in the build needs a writable passwd home |
+| **B7-8** | positive | Integration | Two concurrent builds run as two different users | |
+| **B7-8** | **negative** | Integration | Neither of two concurrent builds can reach the other's work directory | `700`, owned by its own user, and `ls` refused across |
+| **B7-9** | **negative** | Integration | Nothing a build started is still running after it | `nohup`, measured to survive `mvn`'s exit before this change |
+| **B7-9** | **negative** | Integration | Nothing a build wrote outside its work directory survives it | One file in each swept directory, and a directory with a file in it |
+| **B7-9** | positive | Integration | The sweep removes the slot user's files and nobody else's | Root's and the other slot user's planted files survive |
+| **B7-9** | positive | Integration | A running build is untouched by the other slot's sweep | The reason a sweep by user rather than a blanket one is right |
+| **B7-9** | **negative** | Integration | What was left before a restart is gone before the first build | A server that dies mid-build never ran the after-sweep |
+| **B7-9** | **negative** | Integration | A slot that cannot be swept is not used | HTTP 500, named, and the build never started |
+| **B7-9** | positive | Integration | A zombie a build leaves does not block its slot | The server is PID 1 and reaps nothing — measured, Java reports a zombie `isAlive() = true` |
+| **B7-9** | **negative** | Integration | Nothing either build user can write lies outside the swept directories | The list in the server is checked against what the image actually permits, not against a comment |
 
 #### B7-1 to B7-4 — the declarations
 
@@ -1724,6 +1749,70 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 | **What it found** | 2 pass / 4 skip / 0 fail in a checkout whose installed image predates the change, which is the honest reading there. The four were measured by hand against a purpose-built image on 2026-10-11 and are the `7 s / 0 downloads / 0 B` row above. **Measured automatically 2026-10-16**, against the same stack: `./tests/run.sh m-b1 --system` → **55 pass / 1 skip / 0 fail** across 12 files, the skip being this case’s own reader of a seedless image. The four scenarios no longer rest on a measurement taken by hand. |
 | **Implemented by** | `tests/integration/m-b1.dependency-cache.test.ts`. |
 | **Covers** | B1-9, FR26, FR37, FR38, FR40. |
+
+#### B7-6 — the build users, declared once and agreeing
+
+> **Specified 2026-10-29, #31, and run the same day.** Green, 2 scenarios. Both revert controls validated: `-M` turned into `-m` for `builder`, and `builder2` removed from the server's list, each reddened exactly its own scenario.
+
+| | |
+|---|---|
+| **Premise** | Two declarations have to agree for FR41 and FR42 to hold, and each is cheap to read for ever. The image creates the build users and their homes; the server names the users it hands to builds. A home created with `useradd -m` gets `/etc/skel` copied in builder-owned, and a non-recursive `chown` of the directory afterwards leaves `.bashrc` and `.profile` builder-owned and writable — measured against the fix #31 first proposed. A slot user the server names and the image lacks makes `run_maven` take its direct branch, as root; a user the image creates and the server never names is a home nobody needed. |
+| **Component** | `config/nar_builder/Dockerfile` and `config/nar_builder/BuildServer.java`, read as text with comment lines stripped by the file's existing `code()`. |
+| **Steps** | Collect every `useradd` in the Dockerfile and the user name it ends on; for each, find its flags and an `install -d` naming `/home/<user>`. Read the slot user names out of the server's one declaration of them. Compare the two sets. |
+| **Test data, both sides** | What must be there: `useradd -r -u 1500 -M -d /home/builder builder`, `useradd -r -u 1501 -M -d /home/builder2 builder2`, and `install -d -m 555 -o root -g root /home/builder /home/builder2` — one `install` naming both homes, which the case reads as each home appearing in an `install` of that shape. What must not: any `useradd` carrying `-m`. The two names, `builder` and `builder2`, appear in both files; the case compares the files with each other, not with a list of its own, so it cannot pass against two files that agree with the test and not with each other. |
+| **Expected** | Two users in the Dockerfile, each with `-M` and its `install` line, and no `-m`; the server's list is the same two names. |
+| **Revert controls** | `-M` turned into `-m` for `builder` must redden the first row; `builder2` removed from the server's list must redden the second. |
+| **Implemented by** | `tests/contract/m-b7.seeded-cache.test.ts`. |
+| **Covers** | B7-6, FR41, FR42. |
+
+#### B7-7 — the build user's home, which FR37 did not reach
+
+> **Specified 2026-10-29, #31, and run the same day.** Green, 5 scenarios, against the image built from the tree; (5) built the probe offline as `builder2` with `BUILD SUCCESS` and one NAR. Both revert controls validated: the home installed `755 builder` reddened (1), and `-Duser.home=` dropped from `JAVA_TOOL_OPTIONS` reddened (2) and (4).
+
+| | |
+|---|---|
+| **Premise** | FR37 made the repository per build and said *"nothing one build writes can be resolved by the next"*. The build user's home was not per build. `/home/builder` was builder-owned for the life of the container, and two files there reach every later Maven: `~/.mavenrc`, which the `mvn` launcher sources as shell with the build's arguments in `$*`, and `~/.m2/settings.xml`, which Maven takes from `user.home` — and `user.home` comes from passwd, so moving `HOME` does not move it. Measured on `main` at `cb63973`: a `.mavenrc` written as `builder` printed `PLANTED: builder args: -B -o -q -Dmaven.repo.local=/tmp/tmp.NEXT/m2 -v` from the next `run_maven`; a malformed `~/.m2/settings.xml` stopped `mvn validate` with `Non-readable settings /home/builder/.m2/settings.xml` under `HOME=/tmp/elsewhere`. |
+| **Component** | The builder image built from the tree by `builderImage()`; `work_dir_for_build` and `run_maven` taken out of the image's own `/opt/builder/build.sh` with `sed`, as `B6-5` does, so the case runs the shipped functions and not a restatement. |
+| **Steps** | Each in a fresh `docker run --rm --entrypoint sh`: (1) for each of `builder` and `builder2`: `stat -c '%U:%G %a'` the home, `ls -A` it, and as that user `touch ~/.mavenrc` and `mkdir ~/.m2`. (2) Make a work directory with `work_dir_for_build`, write the bad settings into its `home/.m2/settings.xml`, run `run_maven "$W" -o -f "$W/p/pom.xml" validate`. (3) Make two work directories `W1` and `W2`, write the `.mavenrc` into `W1/home`, run `run_maven "$W2" -o -q -v`, then `run_maven "$W1" -o -q -v`. (4) Replace `mvn` with a stub that runs `/opt/java/openjdk/bin/java -XshowSettings:properties -version`, and call `run_maven "$W"`. (5) In a container started with `--network none`, write the probe source into a temporary directory, generate its pom with the image's own `synthesise`, versions read from `/opt/builder/m2-seed.record`, and run `run_maven "$W" -o -f <pom> package` with `NAR_BUILDER_BUILD_USER=builder2`. |
+| **Test data, both sides** | The `.mavenrc` is the single line `echo PLANTED-B7-7` — a marker no Maven output can contain by accident. The settings file is `<settings><broken`, malformed on purpose so that Maven names the path it read in its refusal: the path is the assertion, and a well-formed file would be read silently. The pom for (2) and (3) is `B6-36`'s one-line `jar` project with `packaging` changed to `pom`, so `validate` and `-v` need no plugin at all. The source for (5) is the `B1-5` probe processor, `org.nocodenation.probe.ProbeProcessor`, as `probeSource()` in `tests/lib/narfixture.ts` writes it, into a temporary directory rather than `volumes/repos`, so the case touches no installation. What must exist: the seed at `/opt/builder/m2-seed` and its record, read rather than assumed — the precondition `B7-5` carries. |
+| **Expected** | (1) `root:root 555`, `ls -A` empty, both writes refused, for both users. (2) The output contains `Non-readable settings $W/home/.m2/settings.xml` and not `/home/builder`. (3) The first run's output lacks `PLANTED-B7-7`; the second's contains it. (4) `user.home = $W/home` and `java.io.tmpdir = $W/tmp`. (5) Exit 0, `BUILD SUCCESS`, exactly one `target/*.nar`, and `/home/builder2` still empty afterwards. |
+| **Revert controls** | Registered in `tests/mutations.json`. The `install … 555 -o root …` line for `builder` turned into `install -d -m 755 -o builder -g builder /home/builder` must redden (1). `-Duser.home=` removed from `run_maven` must redden (2) and (4). |
+| **Dependencies** | Docker and the builder image built from the tree; no stack, no network for (5). |
+| **Implemented by** | `tests/integration/m-b7.build-home.test.ts`. |
+| **Covers** | B7-7, FR37, FR41. |
+
+#### B7-8 — one user per slot
+
+> **Specified 2026-10-29, #31, and run the same day.** Green, 2 scenarios. Both revert controls validated, after the first shape of one was refused — see the row below.
+
+| | |
+|---|---|
+| **Premise** | The server runs two builds at once and both ran as uid 1500, against work directories `work_dir_for_build` made mode `755` and builder-owned — so a running build could write into the other's `$work/m2`, the repository FR37 had just made private. Raised as the related item of #31; the operator chose one user per slot on 2026-10-29, over one slot with a process kill, which would have halved what the builder can do at once. |
+| **Component** | The shipped build server as PID 1 in a throwaway builder container (`startBuilderServer` in `tests/lib/builderserver.ts`), with `/opt/builder/build.sh` replaced by a stub that takes the shipped `work_dir_for_build` out of the real one. |
+| **Steps** | A stub `build.sh` that makes its work directory with `work_dir_for_build`, prints `BUILD-USER=<the user it was handed>` and sleeps 6 s as that user; start the server, send two `POST /build` together. While both sleep, `docker exec` as root: list `/tmp/tmp.*`, `stat -c '%U %a'` each, and for each pair try `su <one> -c 'ls <the other's dir>'`. |
+| **Test data** | Two request bodies, `/repos/b7-8-a` and `/repos/b7-8-b`. They name nothing that exists, because the stub never reads them: the subject is the slot the server hands out, not a build. The names `builder` and `builder2` are the data; that the server's list and the image's users are the same two is `B7-6`'s. |
+| **Expected** | One response contains `BUILD-USER=builder`, the other `BUILD-USER=builder2`; both work directories are mode `700` and owned by different users; every cross `ls` is refused. |
+| **Revert controls** | Two slots naming one user, `List.of("builder", "builder")` — the defect as it stood — must redden the two-users scenario and leave the cross-`ls` one green. Reducing the list to one name was tried first and reddened both, because the second build is then answered 503 and nothing is left to compare; `mutate.sh` refused it as a broken file rather than a control, which it is. `chmod 700` in `work_dir_for_build` turned back into `chmod 755` must redden the cross-`ls` scenario. |
+| **Not repeated here** | A third concurrent build being refused rather than queued is `B5-14`'s, and the slot change keeps its message. |
+| **Implemented by** | `tests/integration/m-b7.build-slots.test.ts`. |
+| **Covers** | B7-8, FR35, FR42. |
+
+#### B7-9 — the sweep: nothing a build leaves is there for the next
+
+> **Specified 2026-10-29, #31, and run the same day.** 8 pass, 1 skip — the skip being the reader for a daemon that refuses `--tmpfs`, so (6) ran. All three revert controls validated: no sweep after the build, no sweep at start, and zombies counted as running, the last reddening three scenarios because every daemon the sweep kills becomes one.
+
+| | |
+|---|---|
+| **Premise** | A read-only home and a per-build one close the two files Maven reads by name. They do not close what build-time code can leave **elsewhere**: a process started with `nohup` survives `mvn`'s exit (measured in the review of #25) and is still running as that user when the slot's next build starts; and the user can write `/tmp`, `/var/tmp`, `/run/lock`, `/dev/shm` and `/dev/mqueue` (computed in the image on 2026-10-29 as each user, `find / -xdev -writable` plus the tmpfs mounts), which persist for the life of the container — a native library planted in `/tmp/jna-…` is loaded by whatever next asks JNA for it. So the server sweeps a slot before handing it out and after its build ends: processes of its user ended, files of its user removed from those directories. |
+| **What was measured before it was specified** | The server is PID 1 in its container and reaps nothing it did not start, so a process orphaned by the sweep's own kill stays a zombie. Measured in the image: `ProcessHandle.allProcesses()` lists it, `info().user()` is `builder`, and `isAlive()` is **true**. A sweep that waits for every process of the user to go would therefore wait for ever on a zombie and lose the slot; it counts a process as ended when `/proc/<pid>/stat` says state `Z`. |
+| **Component** | The shipped `BuildServer.java` as PID 1 in a throwaway builder container, with a stub `build.sh` acting as the slot's user (`startBuilderServer`); for (8), the image alone. PID 1 is the point: a server started in the background of a shell inherits a shell as init, which reaps, and (7) would pass there for the wrong reason. |
+| **Steps** | (1) to (3) are one build, read three ways. (1) A stub that runs `nohup sleep 600 >/dev/null 2>&1 &` and exits 0; one `POST /build`; afterwards list every process of the user the build reported, by `/proc`, excluding state `Z`. (2) A stub that writes the files listed below and exits 0; one build; afterwards test each path. (3) Before (2), as root, create the keep files; afterwards test each. (4) Build A with a stub that writes `/tmp/b7-9.a-keep`, sleeps 6 s, then prints `A-KEEP=present` or `A-KEEP=gone`; during its sleep run build B to completion. (5) Before starting the server, as `builder`, write `/tmp/b7-9.stale` and start `sleep 600`; start the server; wait for `/health`; test both. (6) Start the container with `--tmpfs /tmp/b7-9.pinned:uid=1500` and `--tmpfs /tmp/b7-9.pinned2:uid=1501` — mount points the slot users own and root cannot remove — and a stub that writes `/tmp/b7-9.mvn-ran`; one build. (7) A stub that runs `sh -c 'sleep 0 & exec sleep 600' &` and exits — the inner `sleep 0` becomes a zombie under a parent that never waits — then two more builds, so the third lands on the first build's slot again — the slots rotate — and count the user's zombies in between. (8) As each slot user, `find / -xdev -writable` excluding `/proc` and its own work directory, plus each tmpfs mount it can write; compare against the swept list read out of `BuildServer.java`. |
+| **Test data, both sides** | Written by the build in (2): `/tmp/b7-9.planted`, `/var/tmp/b7-9.planted`, `/run/lock/b7-9.planted`, `/dev/shm/b7-9.planted`, and `/tmp/b7-9.dir/inner`, the last so that a sweep deleting only files and not directories is caught. Created by root in (3): `/tmp/b7-9.root-keep` owned by root, and `/tmp/b7-9.keep-builder` and `/tmp/b7-9.keep-builder2`, each chowned to the user it names — so whichever slot the build is handed, one keep file is the other user's and must survive, and one is its own and must go. All names carry `b7-9.` so nothing else in an image can supply them. (8)'s expected exception is `/m2`, named in the case with FR42's reason, so the case says what it tolerates rather than tolerating it silently. |
+| **Expected** | (1) No process of that user in any state but `Z`. (2) All five paths gone. (3) The root-owned and the other user's keep files present, the slot user's own gone. (4) Both builds 200 and A's output `A-KEEP=present`. (5) Both gone once `/health` answers. (6) HTTP 500, the body containing `could not clear` and the user's name, and `/tmp/b7-9.mvn-ran` absent. (7) At least one zombie of `builder` exists, and the third build, as `builder`, is 200. (8) Nothing outside the swept list but `/m2`. |
+| **Revert controls** | The after-build sweep call removed must redden (1) and (2); the startup sweep removed must redden (5); the zombie test in the process count removed must redden (7). |
+| **Dependencies** | Docker and the builder image built from the tree. `--tmpfs` with `uid=` for (6); on a daemon that refuses the option the scenario skips and says so. |
+| **Implemented by** | `tests/integration/m-b7.build-sweep.test.ts`. |
+| **Covers** | B7-9, FR37, FR42. |
 
 ### M-A0 — the README's account of the feature, held to its configuration
 
