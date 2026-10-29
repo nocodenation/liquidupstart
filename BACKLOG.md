@@ -1841,8 +1841,9 @@ re-indents; `results[slug] && results[slug].cloned !== now.cloned` is the repair
 
 The next ten entries were found by the update test of 2026-10-29: 0.7.0 updated to 0.8.0 (`e622e01`)
 with `liquidupstart --update`, on macOS with Docker Desktop and compose 5.6.1, then the privacy proxy
-0.3.0 tried with made-up data. What the proxy itself does went to its author. None is worked: after
-#49 a finding is recorded unless the operator asks for it.
+0.3.0 tried with made-up data. What the proxy itself does was drafted as a message to its author,
+for the operator to send. None was worked when they were recorded: after #49 a finding is recorded
+unless the operator asks for it, and a pull request that repairs one says so under it.
 
 ---
 

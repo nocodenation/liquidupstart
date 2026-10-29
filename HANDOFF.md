@@ -1,4 +1,4 @@
-# Handover — 2026-10-28
+# Handover — 2026-10-29
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,17 +9,86 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-28, afternoon* has the live picture, *2026-10-28, earlier* under it, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-29, evening* has the live picture, *2026-10-28, afternoon* under it, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first twelve and the review bodies they point to; the rest of this file is the map and the lessons.
+first thirteen and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-28, afternoon: #52 merged, and the update to 0.8.0 next
+## Where it stands, 2026-10-29, evening: the update test done, and #56 open for issue #50
+
+**The update test ran.** `liquidupstart --update` took `~/.liquidupstart` from 0.7.0 to 0.8.0, and
+the privacy proxy 0.3.0 was tried with made-up data. What lies on this repository's side is ten
+entries in `BACKLOG.md` (`dc984cf`), the first of them nginx not starting with the privacy proxy off,
+the default. What lies in the proxy itself was drafted in the session as a message to Timur for the
+operator to send; whether it went is the operator's to say.
+
+**#56 implements issue #50, open, review-ready at `6100878`.** The operator signed off the
+specification's five points on 2026-10-29 as recommended. `fdac95d` is the code, with the results of
+CS-0 to CS-19 amended into it. After it: `2b3749a` names that commit in the results; `3b7737a`
+records CS-20's first run; `66aa516` makes CS-20 ask for a 2xx or 3xx where it asked for "not 502",
+adds the GitHub Copilot entry and sets mode 755 on `components.sh`; `1ab9c33` records CS-20's second
+run; `6100878` strikes update-test entry 1, adds the privacy-provider entry below, carries the
+intro rewritten on `main`, and names #56 rather than #50 in the notes under entry 2 and *`.env` has
+many readers*. Four local reviews before the first commit changed the design in places, among them
+the proxy's `dns: ["127.0.0.1"]`, measured: with request-time resolution, docker handed an unknown
+name to the host's DNS. A fifth went over the results amended into `fdac95d`, one over `3b7737a`,
+two over `66aa516` and five over `6100878`; `2b3749a` and `1ab9c33`, documentation only, went in
+without one. Results on the branch: the full suite 1630 / 14 / 0 and the dashboard 45 / 0 at
+`2b3749a`; 34 mutations validated; CS-20 against a running stack 2 / 0, and again at `66aa516`;
+CS-21 by the operator in the browser, held.
+
+#56 adds four `BACKLOG.md` entries: Hermes, `liquid.localhost` redirecting to port 8889, the GitHub
+Copilot sign-in, which CS-21 found failing because `plugins.allow` lacks `github-copilot`; `main`'s
+`openclaw.sh` writes the same list, read rather than measured; and OpenClaw still offering
+`privacy-openai` and `privacy-anthropic` once the proxy is switched off, found in the start below,
+since `openclaw.sh` never takes them out. It strikes update-test entry 1, nginx with the privacy
+proxy off, as repaired: `CS-10` shows it on a configuration rendered from `.env.example` with the
+proxy off, as it ships, and Liquid switched off by the test; and #56's stack, Liquid on, in a start
+begun by hand at 22:43Z with `PRIVACY_PROXY_ENABLE=0`, ran nginx without a restart for the 23
+seconds it was watched; four pages answered with a 2xx or 3xx, OpenProject's once it had started,
+and `privacy.localhost` with the 502 page. The stack was started again with the proxy on afterwards,
+and runs so. It adds a note to entry 2, whose missing-image half it repairs, and to the settled
+entry *`.env` has many readers*. On `main` neither update-test entry says so until #56 merges.
+
+`main`'s tree is `dc984cf`'s plus this file and the intro to the update-test entries, which #56
+carries word for word. `9240580`, #53, #54 and the ten entries came after the 1452 / 12 / 0 of
+2026-10-28, so that run no longer describes `main`'s code, and none has run there since.
+
+**The machine is not as the operator left it,** by the operator's word for CS-20:
+- the 0.8.0 installation in `~/.liquidupstart` is stopped, its `volumes/` untouched;
+- the stack running is `../liquidupstart-wt-50`'s, on fresh `volumes/` there, with a Claude login the
+  operator made during CS-21 and four unregistered deploy keys, one for each of three repositories
+  and the legacy `volumes/_git-secrets/id_ed25519`; none of them is to be registered;
+- its `.env` is a copy of the installation's, ignored by git, with `SYSTEM_SIGNIN_WAIT_SECONDS=0`,
+  `ENABLE_GITHUB_COPILOT=1` and the three switches at `1`;
+- the dashboard on port 7777 is the branch's;
+- the images the stack's containers run are the ones built for 0.8.0 that morning: five by the build
+  after the update, 10:18 to 10:20 CET, and the privacy proxy's at 11:29, by the Rebuild after it
+  was switched on. The branch's builds were cache hits and left them as they were. The dashboard's
+  image, which runs outside compose, is new, and `run.sh` builds it on every launch;
+  `liquidupstart/nar-builder:tree-cc42a6c42d7d` is a suite run's fixture of 20:26Z, labelled
+  `lu-builder-run=5324-fem8c7`, and nothing runs it. 0.8.0's dashboard asks for a build only while
+  an image is missing, so the way back is `docker rm -f liquidupstart-dashboard`, the
+  `liquidupstart` launcher, and **Restart**, which is what it offers while the branch's proxy runs
+  and which calls `down.sh` first. Not Rebuild.
+
+**Open, and whose.** Timur's: the review of #56, `45-26`, and a release after #52. The operator's:
+sending the proxy draft if it has not gone; whether to go back to 0.8.0 now or keep the branch's
+stack; and two rows of `FINISH.md`'s waiting table, `LOCAL_LLM_API_BASE`'s two roles on `main` and
+Hermes on #56. Ours: whatever the review of #56 asks, then the image label with update-test entry 2,
+as the operator decided on 2026-10-29, and the other entries that ``grep -n '^`OPEN` ' BACKLOG.md``
+lists on #56's branch, where entry 1 is struck and the new entries stand, each waiting for the
+operator's yes to a pull request, as every new one has since #49. `tests/mutations.json` is appended
+to on #56 and on Timur's #55, so the second to merge gets a conflict at its end. It is resolved by
+keeping both sets; in git's default conflict style the two then need `},` and `{` between them,
+which the style leaves outside the conflict, and in `diff3` style they are already inside it.
+
+## 2026-10-28, afternoon: #52 merged, and the update to 0.8.0 next
 
 Timur approved #52 and merged it at 13:01Z as **`a6952b5`**; #51 closed with it. `main`'s tree is
 `36b9005`'s plus this file, so the run there, 1452 / 12 / 0 and the dashboard 45 / 0, describes
