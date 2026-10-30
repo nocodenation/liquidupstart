@@ -2039,6 +2039,17 @@ recorded unless the operator asks for it.
 
 ---
 
+`OPEN` **One red case in `m-cs.start-switches.test.ts`, seen once and not captured.** On 2026-10-30,
+while #56's answer to Timur's review was being written and before it was committed, one of six runs
+of that file (CS-4 and CS-5, 17 cases, `start.sh` run whole by `tests/lib/startfixture.ts`) reported
+1 fail. The output was not kept, so neither the case nor its message is known. The five runs after it,
+and every later unmutated run of the file from a clean tree, at `3c77efc` and `2b12988`, alone and in
+the full suite, were green. A repeat is worth capturing whole: `bun test tests/integration/m-cs.start-switches.test.ts`
+with its output written to a file. Not worked: after #49 a finding is recorded unless the operator
+asks for it.
+
+---
+
 `OPEN` **`dns: ["127.0.0.1"]` on the proxy is unmeasured on a rootful engine on Linux.**
 `compose.yml` gives the proxy that setting so that a name docker does not know -- a service that is
 switched off or not running -- is not handed to the host's DNS, where a device on the LAN of that name
