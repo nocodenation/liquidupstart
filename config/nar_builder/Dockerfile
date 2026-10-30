@@ -41,7 +41,20 @@ RUN apt-get update \
 # Each build now resolves into its own local repository, created for it and
 # discarded with it, and reads a root-owned seed below. So the question of who
 # owns the cache does not arise: nothing is shared between two builds.
-RUN useradd -r -u 1500 -m -d /home/builder builder
+#
+# **One user per build slot, and neither can write its home.** BuildServer runs
+# two builds at once and hands each the slot's user, so a running build cannot
+# reach the other's work directory (FR42). The homes are created empty and
+# root-owned: a builder-owned home lasted as long as the container, and
+# `~/.mavenrc` -- sourced as shell by the `mvn` launcher -- and
+# `~/.m2/settings.xml` -- read from passwd's `user.home` whatever `HOME` says --
+# reached every later build. `run_maven` gives Maven a home inside the build's
+# work directory instead (FR41). `-M` rather than `-m` and a chown after it: `-m`
+# copies /etc/skel in, and a chown of the directory alone leaves `.bashrc` and
+# `.profile` builder-owned. #31.
+RUN useradd -r -u 1500 -M -d /home/builder builder \
+    && useradd -r -u 1501 -M -d /home/builder2 builder2 \
+    && install -d -m 555 -o root -g root /home/builder /home/builder2
 
 # `/liquid/api` is here although this container only ever reads it, and the uid is
 # written as a number on purpose.

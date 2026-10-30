@@ -27,14 +27,15 @@
  *           directory, where the two builds contend for a single artifact name.
  * Overlap:  Established, not assumed. BuildServer serves on
  *           Executors.newCachedThreadPool() (BuildServer.java:56) and admits two
- *           builds at a time through a Semaphore(2) (:86-87), so two requests fit
- *           and a third waits for a slot — a pair that happened to serialise
+ *           builds at a time through a queue of two slot users (SLOT_USERS), so
+ *           two requests fit and a third is refused — a pair that happened to serialise
  *           would pass a test that checked only that both succeeded, and would be
  *           measuring the wait.
  *
  *           Corrected 2026-10-08: this read "Executors.newFixedThreadPool(2)",
  *           which the code has not used since the semaphore was introduced. D3 of
- *           the 2026-10-01 review. What the header claimed about the mechanism
+ *           the 2026-10-01 review. The semaphore became the slot-user queue on
+ *           2026-10-29, #31. What the header claimed about the mechanism
  *           was wrong; what it claimed about the overlap was not, and the
  *           sampling below is what establishes it either way.
  *           While the two builds run, the builder's /proc is sampled every 150 ms

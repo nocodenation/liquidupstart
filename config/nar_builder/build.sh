@@ -110,10 +110,18 @@ drop_is_closed() {
 #
 # Both temporary directories go through this, rather than a chown beside each
 # `mktemp`, so a third one cannot be added without it.
+#
+# **The build user's, and mode 700.** It was 755, which is all Maven needed when
+# one user ran every build -- and with two slots running as one uid, a running
+# build could write into the other's repository. BuildServer now hands each slot
+# its own user (FR42), and 700 keeps the other one out. `home` and `tmp` are the
+# HOME, user.home and java.io.tmpdir `run_maven` gives Maven (FR41), so whatever
+# a build writes there goes with it. #31.
 work_dir_for_build() {
   d="$(mktemp -d)"
+  mkdir -p "${d}/home" "${d}/tmp"
   chown -R "$BUILD_USER" "$d" 2>/dev/null || true
-  chmod 755 "$d" 2>/dev/null || true
+  chmod 700 "$d" 2>/dev/null || true
   printf '%s' "$d"
 }
 
@@ -178,11 +186,31 @@ seed_notice() {
   fi
 }
 
-run_maven() {
+# Maven with its home in the build's own work directory, never the passwd one.
+#
+# The passwd home is root-owned and read-only (the Dockerfile), and nothing in it
+# may reach a build: the launcher sources `$HOME/.mavenrc`, and Maven reads
+# `settings.xml` from `user.home`, which a JVM takes from passwd rather than from
+# HOME. So both are set, and user.home through JAVA_TOOL_OPTIONS rather than
+# Maven's `-D`, because a JVM that Maven forks -- surefire, an `exec` -- reads
+# that variable and not its parent's properties. Measured in the image: settings
+# read from `<work>/home/.m2`, and a forked JVM reporting `user.home = <work>/home`.
+# FR41, #31.
+run_maven() {  # run_maven <work dir> <mvn args...>
+  _rm_work="$1"
+  shift
   if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
-    su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
+    su "$BUILD_USER" -s /bin/sh -c '
+      export HOME="$1/home" TMPDIR="$1/tmp"
+      export JAVA_TOOL_OPTIONS="-Duser.home=$1/home -Djava.io.tmpdir=$1/tmp"
+      shift
+      exec mvn -B "$@"' -- mvn "$_rm_work" "$@"
   else
-    mvn -B "$@"
+    (
+      export HOME="${_rm_work}/home" TMPDIR="${_rm_work}/tmp"
+      export JAVA_TOOL_OPTIONS="-Duser.home=${_rm_work}/home -Djava.io.tmpdir=${_rm_work}/tmp"
+      exec mvn -B "$@"
+    )
   fi
 }
 
@@ -219,7 +247,7 @@ resolve_api_version() {
 </project>
 POM
 
-  if ! run_maven -f "${probe}/pom.xml" -Dmaven.repo.local="$(repo_for "$probe")" dependency:list \
+  if ! run_maven "$probe" -f "${probe}/pom.xml" -Dmaven.repo.local="$(repo_for "$probe")" dependency:list \
        > "${probe}/resolve.log" 2>&1; then
     API_ERROR="$(grep '^\[ERROR\]' "${probe}/resolve.log" | head -4 | sed 's/^/  /')"
     rm -rf "$probe"
@@ -969,7 +997,7 @@ NOTCLOSED
   else
     set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$build_repo" package
   fi
-  if ! run_maven "$@" > "$log" 2>&1; then
+  if ! run_maven "$work" "$@" > "$log" 2>&1; then
     cat "$log" >&2
     cat >&2 <<BUILDFAILED
 

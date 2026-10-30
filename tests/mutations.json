@@ -269,5 +269,77 @@
     "from": "    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.\n    return 1",
     "to": "    # 1, not a refusal's 2: the installation is at fault, not the bundle. B6-46.\n    return 2",
     "mustFail": "B6-46 the negative: status 1, not the refusal's 2, and the build never reaches Maven"
+  },
+  {
+    "case": "B7-6",
+    "file": "config/nar_builder/Dockerfile",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "useradd -r -u 1500 -M -d /home/builder builder",
+    "to": "useradd -r -u 1500 -m -d /home/builder builder",
+    "mustFail": "B7-6 each build user is created with no home of its own and given an empty, root-owned 555 one"
+  },
+  {
+    "case": "B7-6",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "List.of(\"builder\", \"builder2\")",
+    "to": "List.of(\"builder\")",
+    "mustFail": "B7-6 and the server's slot users are exactly the users the image creates"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/Dockerfile",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "install -d -m 555 -o root -g root /home/builder /home/builder2",
+    "to": "install -d -m 755 -o builder -g builder /home/builder && install -d -m 555 -o root -g root /home/builder2",
+    "mustFail": "B7-7 neither build user can write its passwd home"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "export JAVA_TOOL_OPTIONS=\"-Duser.home=$1/home -Djava.io.tmpdir=$1/tmp\"",
+    "to": "export JAVA_TOOL_OPTIONS=\"-Djava.io.tmpdir=$1/tmp\"",
+    "mustFail": "B7-7 Maven reads its settings from the build's own home"
+  },
+  {
+    "case": "B7-8",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-slots.test.ts",
+    "from": "List.of(\"builder\", \"builder2\")",
+    "to": "List.of(\"builder\", \"builder\")",
+    "mustFail": "B7-8 two concurrent builds run as two different users"
+  },
+  {
+    "case": "B7-8",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-slots.test.ts",
+    "from": "chmod 700 \"$d\"",
+    "to": "chmod 755 \"$d\"",
+    "mustFail": "B7-8 neither of two concurrent builds can reach the other's work directory"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "String after = sweep(user);",
+    "to": "String after = null;",
+    "mustFail": "B7-9 nothing a build started is still running after it"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "String atStart = sweep(user);",
+    "to": "String atStart = null;",
+    "mustFail": "B7-9 what was left before a restart is gone before the first build"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": ".filter(p -> !zombie(p))",
+    "to": ".filter(p -> true)",
+    "mustFail": "B7-9 a zombie a build leaves does not block its slot"
   }
 ]
