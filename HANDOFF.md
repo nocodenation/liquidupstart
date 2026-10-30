@@ -57,10 +57,10 @@ himself #31 at 05:55:44Z, five minutes before `3ec49e1`, so both issues being wo
 now, his #31 and the operator's #50. At 06:30Z Timur opened #57 and #58, B6-23 and B6-2 on rootless
 Docker, both on our tests and both unassigned. Before anyone takes either, the operator asks Timur.
 
-The operator's Slack announcement of this round said only that it was being worked. The 0.8.1
-question also went on Slack, beside the comment. Claiming the `liquidupstart` namespace on Docker
-Hub, which would also protect installations that never get `--pull never`, was not sent. It is the
-operator's or Timur's to raise.
+On Slack the operator announced the round by 13:24Z and wrote by 17:46Z that it is answered
+and the review requested again. The 0.8.1 question also went on Slack, beside the comment. Claiming
+the `liquidupstart` namespace on Docker Hub, which would also protect installations that never get
+`--pull never`, the operator put off for later on 2026-10-30; Timur has not been asked.
 
 **Nothing runs.** CS-20 built and started the worktree's stack twice between 15:27Z and 15:30Z, and
 the stack was stopped afterwards with `down.sh` from the worktree. The builds were cache hits, so the
@@ -74,7 +74,7 @@ be registered. The 0.8.0 installation is stopped and untouched.
   - a second review of #56, and the 0.8.1 question;
   - privacy-proxy#1 and `45-26`;
   - whether he takes #57 or #58.
-- **The operator's, or Timur's:** the Docker Hub namespace.
+- **The operator's, or Timur's:** the Docker Hub namespace, put off for later.
 - **The operator's:**
   - whether 0.8.0 runs again;
   - `LOCAL_LLM_API_BASE`'s two roles in `FINISH.md`'s waiting table on `main`, and Hermes in the
