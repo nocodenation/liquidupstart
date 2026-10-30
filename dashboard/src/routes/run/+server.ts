@@ -97,6 +97,8 @@ export async function POST({ request }) {
         const code = await run(
           [
             'run',
+            '--pull',
+            'never',
             '--rm',
             '--name',
             containerName,

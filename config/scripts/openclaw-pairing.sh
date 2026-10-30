@@ -4,6 +4,10 @@
 #   openclaw-pairing.sh <project-dir> list
 #   openclaw-pairing.sh <project-dir> approve <request-id>
 #
+# Exit 3 is an OpenClaw image that is not built, and exit 1 with docker's words
+# another failure to inspect it; nothing is run in either case. Exit 2 is a bad
+# verb or request id. Any other status is the CLI's own.
+#
 # Why this exists at all. `gateway.auth.mode` is trusted-proxy, so the gateway
 # takes identity from the X-Forwarded-User header nginx sets and from nothing
 # else. A CLI run inside the gateway container reaches it directly, sends no such
@@ -94,11 +98,27 @@ IMAGE="liquidupstart/openclaw:latest"
 HOST="openclaw.localhost:${HTTP_PORT}"
 
 run_cli() {
+  # The image is built here and is on no registry this stack trusts, so a missing
+  # one is said, with exit 3, rather than pulled: Docker Hub's `liquidupstart`
+  # namespace belongs to nobody, and the dashboard polls this every 15 seconds
+  # while the stack runs, with the card mounted by the switch alone, before any
+  # build. The dashboard reads exit 3 with this
+  # line as nothing to pair against. Decision 14, CS-FR10. Any other failure of the
+  # engine is said as it is, so the card shows it rather than going silent.
+  local inspected
+  if ! inspected="$(docker image inspect "$IMAGE" 2>&1 >/dev/null)"; then
+    if [[ "$inspected" == *"No such image"* ]]; then
+      echo "${IMAGE} is not built here." >&2
+      exit 3
+    fi
+    printf '%s\n' "$inspected" >&2
+    exit 1
+  fi
   # Named when the caller gives a name, so a caller that gives up can remove the
   # container. `--rm` alone is not enough: it fires when this CLI exits normally,
   # and a caller that killed the process group is exactly the case where it does
   # not. A2 of the 2026-10-01 review.
-  docker run --rm ${OPENCLAW_PAIRING_CONTAINER:+--name "$OPENCLAW_PAIRING_CONTAINER"} \
+  docker run --pull never --rm ${OPENCLAW_PAIRING_CONTAINER:+--name "$OPENCLAW_PAIRING_CONTAINER"} \
     --network "$NETWORK" \
     --add-host "openclaw.localhost:${PROXY_IP}" \
     -e OPENCLAW_ALLOW_INSECURE_PRIVATE_WS=1 \

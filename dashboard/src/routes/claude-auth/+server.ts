@@ -14,10 +14,10 @@ import { spawn } from 'node:child_process';
 import { json } from '@sveltejs/kit';
 import { parseEnvValues } from '$lib/env-file';
 import { requireSameOrigin } from '$lib/server/origin';
+import { openclawImage, openclawRunnable, refusedWhileOff } from '$lib/server/openclaw-image';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
 const CLAUDE_DIR = join(ENV_DIR, 'volumes', '_openclaw-claude');
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? 'liquidupstart/openclaw:latest';
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
 const PROBE_TIMEOUT_MS = 30_000;
 
@@ -26,6 +26,8 @@ let child: ReturnType<typeof spawn> | null = null;
 function claudeArgs(interactive: boolean, ...args: string[]): string[] {
   return [
     'run',
+    '--pull',
+    'never',
     '--rm',
     ...(interactive ? ['-i'] : []),
     '--user',
@@ -36,7 +38,7 @@ function claudeArgs(interactive: boolean, ...args: string[]): string[] {
     `${CLAUDE_DIR}:/home/node/.claude`,
     '--entrypoint',
     '/usr/local/bin/openclaw-claude',
-    OPENCLAW_IMAGE,
+    openclawImage(),
     ...args
   ];
 }
@@ -82,9 +84,9 @@ export async function GET() {
   if (!existsSync(join(ENV_DIR, 'volumes', '_openclaw', 'openclaw.json'))) {
     return json({ needed: false });
   }
-  if ((await dockerExitCode(['image', 'inspect', OPENCLAW_IMAGE], PROBE_TIMEOUT_MS)) !== 0) {
-    return json({ needed: false });
-  }
+  // OpenClaw switched off, or its image not built: no panel, and nothing run to find out
+  // (CS-FR11).
+  if (!(await openclawRunnable(env))) return json({ needed: false });
   ensureClaudeDir();
   const status = await dockerExitCode(claudeArgs(false, 'auth', 'status'), PROBE_TIMEOUT_MS);
   return json({ needed: status !== 0 });
@@ -93,6 +95,8 @@ export async function GET() {
 export async function POST({ request }) {
   const blocked = requireSameOrigin(request);
   if (blocked) return blocked;
+  const off = refusedWhileOff(ENV_DIR);
+  if (off) return off;
 
   const body = await request.json();
 

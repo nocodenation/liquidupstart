@@ -16,7 +16,12 @@
 #   withhold_openclaw_logins      move those paths out of the state directory
 #   restore_openclaw_logins       move them back
 #
-# Requires bash; no Docker call, no network.
+# Requires bash and components.sh beside it; no Docker call, no network.
+
+# The switch itself is read by components.sh's rule, as the build, the start and the dashboard
+# read it, so the routing check cannot call the proxy off while the start runs it (CS-FR16).
+# shellcheck source=components.sh
+. "$(dirname "${BASH_SOURCE[0]}")/components.sh"
 
 # env_value FILE KEY
 #   Print the value of the first `KEY=` line of FILE, with quotes removed, a trailing
@@ -43,9 +48,8 @@ env_value() {
 #   values on stderr (with the dashboard's ::aiw-error:: marker) and returns 1. A typo must stop
 #   the start rather than fall back to opt-in, which would re-open the direct routes.
 privacy_routing_mode() {
-  local enable routing
-  enable="$(env_value "$1" PRIVACY_PROXY_ENABLE)"
-  if [[ "${enable}" != 1 ]]; then
+  local routing
+  if ! lu_privacy_proxy_on "$1"; then
     echo off
     return 0
   fi

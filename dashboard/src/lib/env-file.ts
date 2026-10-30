@@ -35,7 +35,10 @@ export interface ValueInfo {
   raw: string;
 }
 
-const KEY_RE = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
+// `[^\n]` and not `.`: a JavaScript `.` does not match `\r`, so a line ending in a lone `\r` --
+// the last line of a CRLF file without its newline, or a file converted twice -- matched no key
+// at all, and a switch on it read as absent while the start read it (#50, CS-2).
+const KEY_RE = /^([A-Za-z_][A-Za-z0-9_]*)=([^\n]*)$/;
 const BANNER_RE = /^#\s*={3,}\s*$/;
 const DASH_LINE_RE = /^#\s*-{3,}\s*$/;
 const DASH_HEADING_RE = /^#\s*-{2,}\s*(.*?\S)\s*-{2,}\s*$/;

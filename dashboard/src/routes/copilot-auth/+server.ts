@@ -11,9 +11,9 @@ import { spawn } from 'node:child_process';
 import { json } from '@sveltejs/kit';
 import { parseEnvValues } from '$lib/env-file';
 import { requireSameOrigin } from '$lib/server/origin';
+import { openclawImage, openclawRunnable, refusedWhileOff } from '$lib/server/openclaw-image';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? 'liquidupstart/openclaw:latest';
 const STATE_DIR = join(ENV_DIR, 'volumes', '_openclaw');
 const SECRETS_DIR = join(ENV_DIR, 'volumes', '_openclaw-auth-profile-secrets');
 const PLUGINS_DIR = join(ENV_DIR, 'config', 'openclaw', 'plugins');
@@ -27,6 +27,8 @@ let child: ReturnType<typeof spawn> | null = null;
 function openclawArgs(...args: string[]): string[] {
   return [
     'run',
+    '--pull',
+    'never',
     '--rm',
     '--user',
     '0:0',
@@ -48,7 +50,7 @@ function openclawArgs(...args: string[]): string[] {
     `${SECRETS_DIR}:/home/node/.config/openclaw`,
     '-v',
     `${PLUGINS_DIR}:/home/node/openclaw-plugins:ro`,
-    OPENCLAW_IMAGE,
+    openclawImage(),
     ...args
   ];
 }
@@ -56,6 +58,8 @@ function openclawArgs(...args: string[]): string[] {
 function loginArgs(): string[] {
   return [
     'run',
+    '--pull',
+    'never',
     '--rm',
     '-i',
     '--user',
@@ -78,7 +82,7 @@ function loginArgs(): string[] {
     `${SECRETS_DIR}:/home/node/.config/openclaw`,
     '-v',
     `${PLUGINS_DIR}:/home/node/openclaw-plugins:ro`,
-    OPENCLAW_IMAGE,
+    openclawImage(),
     '-qec',
     'openclaw models auth login-github-copilot --yes',
     '/dev/null'
@@ -122,12 +126,17 @@ export async function GET() {
   const env = parseEnvValues(readFileSync(envFile, 'utf8'));
   if (env.get('ENABLE_GITHUB_COPILOT')?.value !== '1') return json({ needed: false });
   if (!existsSync(join(STATE_DIR, 'openclaw.json'))) return json({ needed: false });
+  // OpenClaw switched off, or its image not built: no panel, and nothing run to find out
+  // (CS-FR11).
+  if (!(await openclawRunnable(env))) return json({ needed: false });
   return json({ needed: !(await copilotAuthed()) });
 }
 
 export async function POST({ request }) {
   const blocked = requireSameOrigin(request);
   if (blocked) return blocked;
+  const off = refusedWhileOff(ENV_DIR);
+  if (off) return off;
 
   const body = await request.json();
   if (body.action !== 'start') return new Response('Unknown action', { status: 400 });

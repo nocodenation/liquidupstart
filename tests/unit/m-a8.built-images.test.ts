@@ -16,9 +16,10 @@
  *           exist for a start to succeed" and the dashboard builds the toolbox
  *           itself when it is absent; naming it there would report `needBuild`
  *           on a machine that needs nothing.
- * Given:    `scripts/install/update.sh` and
- *           `dashboard/src/lib/server/project.ts` from this checkout, read as
- *           text — both are lists, and a list is what was wrong.
+ * Given:    `scripts/install/update.sh` from this checkout, read as text — it is a
+ *           list, and a list is what was wrong; and `builtImages()` from
+ *           `dashboard/src/lib/server/project.ts`, called with all three
+ *           components on (#50, CS-12), since the list it returns depends on them.
  * When:     Each is examined.
  * Then:     The updater names all five; the dashboard's list names the four that
  *           must be present, and not the toolbox.
@@ -32,8 +33,13 @@ import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
+// Before `project.ts`, which captures ENV_DIR on its first load: the fixture owns the
+// directory the component cases share, and this file may be the first to load it.
+import '../lib/dashboardfixture';
+import { builtImages } from '../../dashboard/src/lib/server/project';
 
 const BUILT_BY_BUILD_SH = ['opencode', 'bun-runner', 'liquid', 'openclaw'];
+const ALL_ON = { liquid: true, openclaw: true, opencode: true };
 
 describe('A8-27 an update replaces every locally built image, the toolbox included', () => {
   test('A8-27 update.sh names all five', () => {
@@ -49,10 +55,9 @@ describe('A8-27 an update replaces every locally built image, the toolbox includ
     // The counterpart, and the reason the lists are allowed to differ: the
     // toolbox is built on demand, so requiring it would report a build the
     // operator does not need on a machine that is perfectly ready.
-    const src = readFileSync(join(repoRoot, 'dashboard/src/lib/server/project.ts'), 'utf8');
-    const list = src.match(/return \[([^\]]*)\]\.map/s)?.[1] ?? '';
-    expect(list).not.toBe('');
-    for (const image of BUILT_BY_BUILD_SH) expect(list).toContain(image);
-    expect(list).not.toContain('toolbox');
+    const list = builtImages(ALL_ON);
+    expect(list.length).toBeGreaterThan(0);
+    for (const image of BUILT_BY_BUILD_SH) expect(list).toContain(`liquidupstart/${image}:latest`);
+    expect(list.join(' ')).not.toContain('toolbox');
   });
 });

@@ -35,6 +35,7 @@
                 {#if tile.note}<span class="sectdesc">{tile.note}</span>{/if}
               </div>
               {#if tile.subtitle}<div class="tilesubtitle">{tile.subtitle}</div>{/if}
+              {#if tile.warning}<p class="warn">{tile.warning}</p>{/if}
               {#if tile.url}
                 <a href={tile.url} target="_blank" rel="noopener noreferrer" class="tileurl">
                   {tile.url}
@@ -117,7 +118,11 @@
        block above on purpose -- the card is also the way back when OpenClaw
        itself refuses a browser -- so the condition travels as a prop rather than
        as a position in the markup. -->
-  <OpenClawPairing running={data.running} busy={activeTask !== ''} />
+  <!-- Not mounted with OpenClaw switched off: every poll would run an image that is not
+       there. CS-FR10. -->
+  {#if data.components.openclaw}
+    <OpenClawPairing running={data.running} busy={activeTask !== ''} />
+  {/if}
 
   <!-- Draws itself only where the git integration is in use. A8-37, A8-39. -->
   <GitRepositories git={data.git} />

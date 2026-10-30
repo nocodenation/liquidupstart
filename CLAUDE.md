@@ -47,8 +47,10 @@ from the browser.
 ## Services & images
 
 Most images are pulled; five are built locally as
-`liquidupstart/{opencode,bun-runner,liquid,openclaw,nar-builder}:latest`.
-`liquidupstart/privacy-proxy:latest` is a sixth, built only when `PRIVACY_PROXY_ENABLE=1`: a thin
+`liquidupstart/{opencode,bun-runner,liquid,openclaw,nar-builder}:latest`. Four of them are built and
+started only while their component is on — `ENABLE_LIQUID` (liquid, nar-builder), `ENABLE_OPENCLAW`,
+`ENABLE_OPENCODE`, the compose profiles `liquid`, `openclaw`, `opencode`; see
+`docs/FEATURE-component-switches.md`. `liquidupstart/privacy-proxy:latest` is a sixth, built only when `PRIVACY_PROXY_ENABLE=1`: a thin
 derivation of the released `ghcr.io/nocodenation/privacy-proxy:latest` that adds the Claude Code
 CLI when `ENABLE_ANTHROPIC_CLAUDE_CODE=1` (the released image omits it — proprietary, no
 redistribution grant — so it is installed here, on the operator's own machine).

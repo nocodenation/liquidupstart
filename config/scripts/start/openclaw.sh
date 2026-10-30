@@ -67,7 +67,7 @@ PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
 # Empty when it cannot be determined -- the caller must refuse, not guess.
 openclaw_version() {
   local image="${1:-$OPENCLAW_IMAGE}" out
-  out="$(with_timeout 60 docker run --rm --init --entrypoint openclaw "$image" --version 2>/dev/null | head -n1)" || return 0
+  out="$(with_timeout 60 docker run --pull never --rm --init --entrypoint openclaw "$image" --version 2>/dev/null | head -n1)" || return 0
   # "OpenClaw 2026.7.1" and "OpenClaw 2026.9.1 (ad6fe23)" both parse.
   printf '%s' "$out" | sed -n 's/^OpenClaw \([0-9][0-9.]*\).*$/\1/p'
 }
@@ -77,7 +77,7 @@ openclaw_version() {
 # path we would call ourselves, which is what made the gap invisible.
 claude_wrapper_shadowed() {
   local image="${1:-$OPENCLAW_IMAGE}"
-  with_timeout 60 docker run --rm --init --user 0:0 -e HOME=/home/node \
+  with_timeout 60 docker run --pull never --rm --init --user 0:0 -e HOME=/home/node \
     --entrypoint /bin/sh "$image" -c \
     'test -x /home/node/.local/bin/claude && [ "$(sh -lc "command -v claude")" = /home/node/.local/bin/claude ]' \
     >/dev/null 2>&1
@@ -185,8 +185,10 @@ LOCAL_LLM_API_KEY="$(get_env LOCAL_LLM_API_KEY)"
 ENABLE_LOCAL=0
 [[ -n "$LOCAL_LLM_API_BASE" ]] && ENABLE_LOCAL=1
 
-ENABLE_PRIVACY="$(get_env PRIVACY_PROXY_ENABLE)"
-[[ -z "$ENABLE_PRIVACY" ]] && ENABLE_PRIVACY=0
+# The switch as privacy_routing_mode read it above, which answers off exactly when it is off, so
+# this agrees with the start about whether the proxy runs (CS-FR16).
+ENABLE_PRIVACY=0
+[[ "$PRIVACY_ROUTING" != off ]] && ENABLE_PRIVACY=1
 # The proxy listens on its built-in port 8080 inside the stack network.
 PRIVACY_PROXY_URL="http://privacy-proxy:8080"
 PRIVACY_OPENAI=0
@@ -217,7 +219,7 @@ openclaw_state_version() {
   # end the script at the caller's assignment, with 2>/dev/null having discarded
   # the reason and down.sh having emptied the stack a hundred lines earlier. An
   # unreadable state version is "unknown", not a reason to stop without a word.
-  with_timeout 60 docker run --rm --init --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
+  with_timeout 60 docker run --pull never --rm --init --user 0:0 -v "${STATE_DIR}:/state" --entrypoint node "${OPENCLAW_IMAGE}" -e '
     try {
       const c = JSON.parse(require("fs").readFileSync("/state/openclaw.json", "utf8"));
       const v = c && c.meta && c.meta.lastTouchedVersion;
@@ -371,7 +373,7 @@ else
     _llm_host="${LOCAL_LLM_API_BASE#*://}"; _llm_host="${_llm_host%%[:/]*}"
     _addhost=()
     [[ -n "$_llm_host" && -n "$LOCAL_LLM_HOST_IP" ]] && _addhost=(--add-host "${_llm_host}:${LOCAL_LLM_HOST_IP}")
-    LOCAL_LLM_MODELS_JSON="$(with_timeout 60 docker run --rm --init ${_addhost[@]+"${_addhost[@]}"} \
+    LOCAL_LLM_MODELS_JSON="$(with_timeout 60 docker run --pull never --rm --init ${_addhost[@]+"${_addhost[@]}"} \
       -e LOCAL_LLM_API_BASE="${LOCAL_LLM_API_BASE}" \
       -e LOCAL_LLM_API_KEY="${LOCAL_LLM_API_KEY}" \
       --entrypoint node \
@@ -400,7 +402,7 @@ else
   OPENROUTER_KEY="$(get_env OPENROUTER_API_KEY)"
   [[ "$PRIVACY_ROUTING" == only ]] && OPENROUTER_KEY=""
   if [[ -n "$OPENROUTER_KEY" ]]; then
-    OPENROUTER_MODELS_JSON="$(with_timeout 60 docker run --rm --init \
+    OPENROUTER_MODELS_JSON="$(with_timeout 60 docker run --pull never --rm --init \
       -e OPENROUTER_API_KEY="${OPENROUTER_KEY}" \
       --entrypoint node \
       "${OPENCLAW_IMAGE}" \
@@ -496,7 +498,7 @@ else
   version_at_least "$OPENCLAW_VERSION" "2026.9.0" && OC_SCHEMA_NEW=1
   echo "openclaw: image reports ${OPENCLAW_VERSION}; writing the $([[ $OC_SCHEMA_NEW == 1 ]] && echo "2026.9" || echo "2026.7") config shape."
 
-  docker run --rm --user 0:0 \
+  docker run --pull never --rm --user 0:0 \
     -v "${STATE_DIR}:/state" \
     -e LU_PROXY_IP="${LU_PROXY_IP}" \
     -e LU_PROXY_IDENTITY="${LU_PROXY_IDENTITY}" \
@@ -1352,7 +1354,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
 
   claude_cli() {
     local docker_flags="$1"; shift
-    docker run --rm ${docker_flags} "${CLAUDE_RUN_ARGS[@]}" "$@"
+    docker run --pull never --rm ${docker_flags} "${CLAUDE_RUN_ARGS[@]}" "$@"
   }
 
   # Same, but bounded: no unattended step may wait forever on input that cannot
@@ -1361,7 +1363,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   claude_cli_bounded() {
     local secs="$1" docker_flags="$2"; shift 2
     local name="openclaw-claude-step-$$-${RANDOM}" rc=0
-    with_timeout "$secs" docker run --rm --init --name "$name" ${docker_flags} \
+    with_timeout "$secs" docker run --pull never --rm --init --name "$name" ${docker_flags} \
       "${CLAUDE_RUN_ARGS[@]}" "$@" || rc=$?
     if (( rc != 0 )); then docker rm -f "$name" >/dev/null 2>&1 || true; fi
     return $rc
@@ -1484,7 +1486,7 @@ if [[ "$ENABLE_CLAUDE_CLI" == "1" ]]; then
   # can answer here — hence the timeout and the forced container removal.
   register_anthropic_cli_profile() {
     local name="openclaw-anthropic-profile-$$" rc=0
-    with_timeout 240 docker run --rm --init --name "$name" --user 0:0 \
+    with_timeout 240 docker run --pull never --rm --init --name "$name" --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \
@@ -1569,7 +1571,7 @@ if [[ "$ENABLE_COPILOT" == "1" ]]; then
   harness_cli() {
     local label="$1" docker_flags="$2"; shift 2
     local rc=0 cname="openclaw-${label}-$$-${RANDOM}"
-    with_timeout "${BOUND_SECS:-0}" docker run --rm --init --name "$cname" ${docker_flags} --user 0:0 \
+    with_timeout "${BOUND_SECS:-0}" docker run --pull never --rm --init --name "$cname" ${docker_flags} --user 0:0 \
       -e HOME=/home/node -e OPENCLAW_HOME=/home/node \
       -e OPENCLAW_STATE_DIR=/home/node/.openclaw \
       -e OPENCLAW_CONFIG_DIR=/home/node/.openclaw \

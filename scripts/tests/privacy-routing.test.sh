@@ -43,12 +43,14 @@ fail() {
 }
 
 # new_tree
-#   Create an empty project tree under TMP_ROOT holding the routing library, and print its path.
+#   Create an empty project tree under TMP_ROOT holding the routing library and components.sh,
+#   which it sources for the switch's reader (CS-FR16), and print its path.
 new_tree() {
   local tree
   tree="$(mktemp -d "${TMP_ROOT}/tree.XXXX")"
   mkdir -p "${tree}/config/scripts/start/lib"
   cp "${REPO_DIR}/${LIB}" "${tree}/${LIB}"
+  cp "${REPO_DIR}/config/scripts/start/lib/components.sh" "${tree}/config/scripts/start/lib/components.sh"
   echo "${tree}"
 }
 
@@ -216,8 +218,10 @@ if docker compose version > /dev/null 2>&1; then
   envf="${TMP_ROOT}/compose.env"
   sed -E 's/^(OPENAI_API_KEY|ANTHROPIC_API_KEY|XAI_API_KEY|OPENROUTER_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|ZAI_API_KEY|AI_GATEWAY_API_KEY|MINIMAX_API_KEY|SYNTHETIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_AI_SESSION_KEY)=.*/\1=secret-sentinel/' \
     "${REPO_DIR}/.env.example" > "${envf}"
+  # The agents' own profiles too, since #50 put opencode and openclaw-gateway behind them; with
+  # cli alone, openclaw-cli depends on a gateway compose does not see and the project is refused.
   render() {  # SERVICE -> prints its rendered configuration as JSON
-    (cd "${REPO_DIR}" && COMPOSE_PROFILES=privacy-proxy,cli \
+    (cd "${REPO_DIR}" && COMPOSE_PROFILES=privacy-proxy,cli,openclaw,opencode \
       docker compose --env-file "${envf}" -f compose.yml -f config/privacy-proxy/compose.routing-only.yml \
       config --format json "$1")
   }
