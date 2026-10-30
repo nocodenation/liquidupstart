@@ -11,7 +11,9 @@
  * Given:    `config/nginx/templates/nginx.conf` and the ingress heredoc in
  *           `config/scripts/start/nginx.sh`, read as text; `lu_proxy_identity` from
  *           `config/scripts/start/lib/proxy-identity.sh`; and, for the negative, both files
- *           as `da4e2d1` has them, read with `git show`.
+ *           as `da4e2d1` has them: `tests/fixtures/da4e2d1/nginx.conf` and `nginx.sh`. They
+ *           were read with `git show` until the review on #56, which found that a shallow
+ *           clone or the release archive has no history, so the case failed there.
  * When:     Every uncommented `proxy_pass` line is collected; the `resolver` line is looked
  *           for; each server block is read for `error_page 502 @lu_unavailable` and the page
  *           its named location returns; `lu_proxy_identity` runs on the template.
@@ -20,7 +22,10 @@
  *           default off (the local review of 2026-10-29); the resolver is docker's; each
  *           switchable vhost carries its page, naming the service and where to switch it;
  *           the always-on vhosts carry none; and the identity nginx vouches for is the one
- *           it vouched for before.
+ *           it vouched for before. The ingress heredoc's block carries a page of its own,
+ *           naming its port, Liquid, *Which apps to run* and a flow that does not listen
+ *           (added on 2026-10-30). Where the history holds `da4e2d1`, the fixtures are that
+ *           commit's files byte for byte.
  * Covers:   CS-9, CS-FR6
  * Negative: `da4e2d1`'s template has 15 literal `proxy_pass` lines and its heredoc one, and
  *           the predicate names each of them; the always-on vhosts carry no page.
@@ -35,18 +40,26 @@
  * `pgadmin.localhost`, `postgrest.localhost`, `swagger.localhost`, `app.localhost`,
  * `openproject.localhost`, `nextcloud.localhost`, `eurooffice.localhost`. The resolver line:
  * `resolver 127.0.0.11 valid=10s ipv6=off;`. The identity, as `da4e2d1`'s template gives it:
- * `user@nocodenation.org`.
+ * `user@nocodenation.org`. The ingress page: `Liquid does not answer on port ${port}: it is
+ * either switched off under Which apps to run in Configuration, or not running, or no flow
+ * listens on this port.`, with `${port}` the heredoc's variable, so each block names its own.
+ * Precondition for the fixture row only: `git cat-file -e da4e2d1` succeeds. Where it does not,
+ * that row is skipped, and its name says what it needs; every other row reads the fixtures.
  */
 import { test, expect, describe } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
 
 const TEMPLATE = 'config/nginx/templates/nginx.conf';
 const NGINX_SH = 'config/scripts/start/nginx.sh';
 const read = (p: string) => readFileSync(join(repoRoot, p), 'utf8');
-const atMain = (p: string) => sh(['git', 'show', `da4e2d1:${p}`]).stdout;
+const FIXTURES = join(repoRoot, 'tests/fixtures/da4e2d1');
+const atMain = (p: string) => readFileSync(join(FIXTURES, basename(p)), 'utf8');
+const HAS_DA4E2D1 = sh(['git', 'cat-file', '-e', 'da4e2d1^{commit}']).code === 0;
+const INGRESS_PAGE =
+  'return 502 "Liquid does not answer on port ${port}: it is either switched off under Which apps to run in Configuration, or not running, or no flow listens on this port.\\n";';
 
 /** `proxy_pass` lines that name a host instead of passing through `$lu_upstream`. */
 const literal = (text: string) =>
@@ -128,6 +141,20 @@ describe('CS-9 the template resolves at request time', () => {
       const block = blocks.find((b) => b.name === name);
       expect(block, name).toBeDefined();
       expect(block!.body, name).not.toContain('@lu_unavailable');
+    }
+  });
+
+  test('CS-9 and each ingress block carries a 502 page naming its port, Liquid and Which apps to run', () => {
+    const heredoc = read(NGINX_SH).split('cat >> "$ingress_blocks" <<EOF')[1]?.split('\nEOF\n')[0] ?? '';
+    expect(heredoc).toContain('server_name ${port}.liquid.localhost;');
+    expect(heredoc).toMatch(/^\s*error_page 502 @lu_unavailable;$/m);
+    expect(heredoc).toContain('location @lu_unavailable {');
+    expect(heredoc).toContain(INGRESS_PAGE);
+  });
+
+  test.skipIf(!HAS_DA4E2D1)('CS-9 and the fixtures are da4e2d1\'s files, byte for byte (needs that commit in the history)', () => {
+    for (const p of [TEMPLATE, NGINX_SH]) {
+      expect(atMain(p), p).toBe(sh(['git', 'show', `da4e2d1:${p}`]).stdout);
     }
   });
 

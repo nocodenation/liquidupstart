@@ -10,8 +10,9 @@
 # Functions
 #   lu_component_state FILE KEY    on | off, or an error for a value that is neither
 #   lu_components_check FILE       0 when all three are readable, 1 after an error for each one that is not
-#   lu_component_on FILE KEY       0 when on, 1 when off; only after lu_components_check
+#   lu_component_on FILE KEY       0 when on, 1 when off; exits on a refused value
 #   lu_component_profiles FILE     the compose profiles of what is on, comma-separated
+#   lu_privacy_proxy_on FILE       0 when PRIVACY_PROXY_ENABLE is 1, read by the same rule
 #
 # Requires bash 3.2 or later; no Docker call. docs/FEATURE-component-switches.md §5.
 
@@ -61,8 +62,12 @@ lu_components_check() {
   return "$status"
 }
 
+# A refused value stops the calling shell with lu_component_state's messages. Every caller runs
+# lu_components_check first; one that did not would otherwise read a typo as off, in silence.
 lu_component_on() {
-  [[ "$(lu_component_state "$1" "$2" 2>/dev/null)" == on ]]
+  local state
+  state="$(lu_component_state "$1" "$2")" || exit 1
+  [[ "$state" == on ]]
 }
 
 lu_component_profiles() {
@@ -71,4 +76,12 @@ lu_component_profiles() {
   if lu_component_on "$1" ENABLE_OPENCLAW; then profiles="${profiles:+${profiles},}openclaw"; fi
   if lu_component_on "$1" ENABLE_OPENCODE; then profiles="${profiles:+${profiles},}opencode"; fi
   printf '%s' "$profiles"
+}
+
+# PRIVACY_PROXY_ENABLE is on for 1 and off for anything else, as it always was; the value comes
+# off its line by the switches' rule, which privacyProxyOn in component-switches.ts applies too.
+# The build, the start and the dashboard read it by different rules before, so a hand-quoted '1'
+# had the dashboard offer a Start that the start refused (decision 16, CS-FR16).
+lu_privacy_proxy_on() {
+  [[ "$(lu_component_value "$1" PRIVACY_PROXY_ENABLE)" == 1 ]]
 }

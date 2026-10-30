@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { parseEnvValues } from '../env-file';
-import { componentsFrom, type Component } from '../component-switches';
+import { componentsFrom, privacyProxyOn, type Component } from '../component-switches';
 
 /**
  * The project directory, read at the moment it is asked for.
@@ -178,9 +178,8 @@ function dockerOutput(args: string[], timeoutMs = 30_000): Promise<string> {
 export async function stackState(
   values: Map<string, { value: string; raw?: string }> = envValues()
 ): Promise<{ running: boolean; needBuild: boolean }> {
-  // As the launchpad's privacy tile reads it, so one page gives one answer. The scripts read it
-  // by their own rule, which differs for a hand-quoted or doubled line (BACKLOG, the readers).
-  const privacyProxy = values.get('PRIVACY_PROXY_ENABLE')?.value === '1';
+  // As the build, the start and the launchpad's privacy tile read it (CS-FR16).
+  const privacyProxy = privacyProxyOn(values);
   const [proxy, images] = await Promise.all([
     dockerOutput(['ps', '-q', '--filter', 'name=^proxy$', '--filter', 'status=running']),
     dockerExitCode(['image', 'inspect', ...builtImages(installedComponents(values), privacyProxy)])

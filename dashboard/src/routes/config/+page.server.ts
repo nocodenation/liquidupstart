@@ -32,6 +32,7 @@ import {
   afterEquals,
   decodeComponents,
   encodeComponents,
+  privacyProxyOn,
   refusedSwitchNote,
   switchOf,
   switchValue
@@ -56,6 +57,9 @@ export const load: PageServerLoad = () => {
   const shownValue = (key: string, fallback: string) => {
     const component = switchOf(key);
     if (component) return on[component] ? '1' : '0';
+    // The privacy proxy's switch too, as every other reader of it does (CS-FR16): shown
+    // unticked, a hand-quoted '1' that the start runs was written 0 by an unrelated Save.
+    if (key === 'PRIVACY_PROXY_ENABLE') return privacyProxyOn(envValues) ? '1' : '0';
     return envValues.get(key)?.value ?? fallback;
   };
   const ui = sections

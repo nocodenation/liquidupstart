@@ -10,15 +10,22 @@
  *           `.env` is not read and no relative path reaches the checkout's `volumes/`.
  * When:     `config --services` with `COMPOSE_PROFILES=liquid,openclaw,opencode`, then with
  *           it empty; `config --format json` with all three; `config -q` with the
- *           routing-only override and `COMPOSE_PROFILES=privacy-proxy`.
+ *           routing-only override and `COMPOSE_PROFILES=privacy-proxy`. Added on 2026-10-30,
+ *           for the review on #56: `--dry-run run -d openclaw-cli --version` with no profile
+ *           set, against `compose.yml` and against a copy whose gateway line reads
+ *           `profiles: ["openclaw"]`, the file before decision 15.
  * Then:     All three: today's 21 services. None: rc 0 and those 21 without `liquid`,
  *           `nar_builder`, `openclaw-gateway` and `opencode`. The proxy's dependencies keep
  *           today's conditions, the three switchable ones `required: false` and the rest
- *           required. Routing-only resolves.
- * Covers:   CS-8, CS-FR5, CS-NFR1
+ *           required. Routing-only resolves. `run` resolves against the file and creates
+ *           nothing; against the copy it answers `no such service: openclaw-gateway`, which is
+ *           what an operator's `docker compose run --rm openclaw-cli` met with OpenClaw on.
+ * Covers:   CS-8, CS-FR5, CS-NFR1, decision 15
  * Negative: with no profile the four are absent, and compose still resolves the project.
+ *           The copy without the CLI's profiles on the gateway refuses `run`.
  * Counterpart: with all three the list is today's, so a project that lost a service, or
- *           one that profiled out more than the four, cannot pass.
+ *           one that profiled out more than the four, cannot pass. The file itself resolves
+ *           `run`.
  * Precondition: docker compose 5.6.1. `docker compose config` reads and starts nothing, but
  *           the call is a stack marker, so the runner runs this file with `--system`.
  *
@@ -28,10 +35,12 @@
  * openproject-db openproject-seeder openproject-web openproject-worker pgadmin pgadmin_db
  * postgres postgrest_app proxy swagger`. The proxy's conditions on `da4e2d1`: `bun_runner`,
  * `nar_builder`, `opencode`, `openproject-web`, `pgadmin`, `postgrest_app` and `swagger`
- * `service_started`; `nextcloud` and `openclaw-gateway` `service_healthy`.
+ * `service_started`; `nextcloud` and `openclaw-gateway` `service_healthy`. The project name
+ * of the dry runs is `lu-cs8-<pid>`, so no container of a real project can be named; `-d`
+ * because `--dry-run` refuses an interactive `run` (measured on 2026-10-30, compose 5.6.1).
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
@@ -94,4 +103,33 @@ describe('CS-8 compose resolves every combination', () => {
     const r = config('privacy-proxy', ['compose.yml', 'config/privacy-proxy/compose.routing-only.yml'], '-q');
     expect(r.code, r.output).toBe(0);
   });
+
+  const dryRun = (file: string) =>
+    sh(
+      ['docker', 'compose', '-f', file, '--project-directory', dir, '-p', `lu-cs8-${process.pid}`, '--dry-run', 'run', '-d', 'openclaw-cli', '--version'],
+      dir,
+      { COMPOSE_PROFILES: '', COMPOSE_FILE: '' }
+    );
+
+  test('CS-8 and docker compose run openclaw-cli resolves with no profile set', () => {
+    const r = dryRun(join(repoRoot, 'compose.yml'));
+    expect(r.code, r.output).toBe(0);
+    expect(r.output).not.toContain('no such service');
+    const left = sh(['docker', 'ps', '-aq', '--filter', `label=com.docker.compose.project=lu-cs8-${process.pid}`]);
+    expect(left.stdout.trim()).toBe('');
+  });
+
+  test('CS-8 the negative: without the CLI\'s profiles on the gateway, it answers no such service', () => {
+    const before = readFileSync(join(repoRoot, 'compose.yml'), 'utf8').replace(
+      '    profiles: ["openclaw", "cli", "full"]',
+      '    profiles: ["openclaw"]'
+    );
+    expect(before).toContain('    profiles: ["openclaw"]');
+    const file = join(dir, 'compose.before.yml');
+    writeFileSync(file, before);
+    const r = dryRun(file);
+    expect(r.code).not.toBe(0);
+    expect(r.output).toContain('no such service: openclaw-gateway');
+  });
 });
+

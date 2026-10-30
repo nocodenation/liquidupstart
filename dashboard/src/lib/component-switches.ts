@@ -96,6 +96,15 @@ export function componentsFrom(values: EnvLines): Record<Component, boolean> {
 }
 
 /**
+ * PRIVACY_PROXY_ENABLE, on only for `1` as always, with the value taken by the switches' rule.
+ * `lu_privacy_proxy_on` in components.sh is the same reading, so the dashboard asks for the
+ * proxy's image exactly when the build builds it and the start requires it (CS-FR16).
+ */
+export function privacyProxyOn(values: EnvLines): boolean {
+  return switchValue(afterEquals(values, 'PRIVACY_PROXY_ENABLE') ?? '') === '1';
+}
+
+/**
  * The note a switch carries on the configuration page when the start refuses its value. The
  * page shows such a switch ticked, as the dashboard reads it, and the next Save writes what the
  * box then shows; without the note that would undo the refusal unseen.

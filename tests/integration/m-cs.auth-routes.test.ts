@@ -12,15 +12,22 @@
  *           passes; the routes `/claude-auth`, `/copilot-auth`, `/codex-auth` and
  *           `/grok-auth`, imported with the project as `ENV_DIR` and called in-process; a
  *           stub `docker` first on `PATH` that logs its arguments and exits 0 for `image
- *           inspect` and 1 for everything else, which reads as "not signed in".
+ *           inspect` -- 1 while the file `missing` exists in the project -- and 1 for
+ *           everything else, which reads as "not signed in".
  * When:     Each route is asked GET and POST `{ "action": "start" }` with
- *           `ENABLE_OPENCLAW=0`, and GET with `ENABLE_OPENCLAW=1`.
+ *           `ENABLE_OPENCLAW=0`, and GET with `ENABLE_OPENCLAW=1`; and, added on 2026-10-30 for
+ *           the review on #56, GET with `ENABLE_OPENCLAW=1` while `missing` exists.
  * Then:     Off, every GET answers `{ needed: false }` with nothing in the docker log, and
  *           every POST answers 409 naming the switch. On, every GET answers
- *           `{ needed: true }` and the docker log names `liquidupstart/openclaw:latest`.
- * Covers:   CS-15, CS-FR11
+ *           `{ needed: true }` and the docker log names `liquidupstart/openclaw:latest`, and
+ *           every line of it that starts `run` starts `run --pull never`. On with the image
+ *           missing, every GET answers `{ needed: false }` and the docker log is the single
+ *           line `image inspect liquidupstart/openclaw:latest`. Before the review the Copilot,
+ *           Codex and Grok routes answered `needed: true` there, having run the image -- which,
+ *           without the flag, docker would have pulled from Docker Hub (decision 14).
+ * Covers:   CS-15, CS-FR11, CS-FR15
  * Negative: with OpenClaw off no route runs a container, whatever `.env` and
- *           `openclaw.json` say about the providers.
+ *           `openclaw.json` say about the providers; nor with its image missing.
  * Counterpart: with it on, the same project asks docker and needs a sign-in, so a route
  *           that always answered `needed: false` cannot pass.
  *
@@ -48,7 +55,7 @@ mkdirSync(bin);
 const log = join(dir, 'docker.log');
 writeFileSync(
   join(bin, 'docker'),
-  `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\n[ "$1 $2" = "image inspect" ] && exit 0\nexit 1\n`
+  `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\n[ "$1 $2" = "image inspect" ] && { [ -f ${JSON.stringify(join(dir, 'missing'))} ] && exit 1; exit 0; }\nexit 1\n`
 );
 chmodSync(join(bin, 'docker'), 0o755);
 
@@ -67,7 +74,9 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function env(openclaw: '0' | '1') {
+function env(openclaw: '0' | '1', missing = false) {
+  if (missing) writeFileSync(join(dir, 'missing'), '');
+  else rmSync(join(dir, 'missing'), { force: true });
   writeFileSync(
     join(dir, '.env'),
     `ENABLE_OPENCLAW=${openclaw}\nENABLE_ANTHROPIC_CLAUDE_CODE=1\nENABLE_GITHUB_COPILOT=1\nENABLE_OPENAI_CODEX=1\nENABLE_XAI_GROK=1\nCLAUDE_CODE_OAUTH_TOKEN=\n`
@@ -120,6 +129,16 @@ describe('CS-15 no sign-in panel without OpenClaw', () => {
       const r = await get(name);
       expect(r.value).toEqual({ needed: true });
       expect(r.docker).toContain('liquidupstart/openclaw:latest');
+      const runs = r.docker.split('\n').filter((l) => l.startsWith('run'));
+      expect(runs.length).toBeGreaterThan(0);
+      for (const line of runs) expect(line.startsWith('run --pull never ')).toBe(true);
+    });
+
+    test(`CS-15 the negative: with OpenClaw on and its image missing, /${name}-auth runs nothing`, async () => {
+      env('1', true);
+      const r = await get(name);
+      expect(r.value).toEqual({ needed: false });
+      expect(r.docker).toBe('image inspect liquidupstart/openclaw:latest\n');
     });
   }
 });

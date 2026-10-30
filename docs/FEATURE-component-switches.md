@@ -1,7 +1,8 @@
 # Feature: switch Liquid, OpenClaw and OpenCode on and off
 
-Status: **signed off on 2026-10-29, and implemented on this branch.** §7 records where implementing it
-corrected the specification.
+Status: **signed off on 2026-10-29, and implemented on this branch; revised on 2026-10-30 for the
+review on #56.** §7 records where implementing it corrected the specification, and what the review
+changed.
 Branch: `feature/component-switches`
 Issue: #50. The test specification is `docs/TEST-SPEC-component-switches.md`.
 
@@ -34,6 +35,11 @@ because it is missing.
   keys, and builds and starts exactly as it did.
 - **UC6, a hand-edited value.** `ENABLE_LIQUID=yes` in `.env` stops the build and the start before
   anything is stopped, and says which key holds what.
+- **UC7, an image that is not there.** OpenClaw is switched on and saved while the stack runs, before
+  any build; or an update has removed the images; or a dashboard tab stays open across either.
+  Whatever asks for a `liquidupstart/*` image that is not built is told so, or stays silent where
+  there is nothing to show. Nothing fetches such an image from a registry: they are built here, and
+  no registry this stack trusts carries them.
 
 ## 2. Decisions
 
@@ -97,6 +103,48 @@ code, and four of them refine the issue's proposal; §6 lists those, all signed 
     nothing to do with OpenCode, so `ENABLE_OPENCODE=0` does not skip it. Renaming it is outside
     this feature.
 
+Decisions 14 to 16 answer Timur's review on #56 of 2026-10-30. The operator signed them off that
+day.
+
+14. **No local-only image is ever pulled.** The six `liquidupstart/*` images are built here and exist
+    on no registry this stack trusts. Nobody owns Docker Hub's namespace `liquidupstart`: every lookup
+    answered 404 on 2026-10-30. So a `docker run` or `compose up` that finds no image would pull
+    whatever anyone had put there and run it on the stack network. Before the switches, a running
+    stack implied that the images existed. Now OpenClaw can be switched on in a saved `.env` before
+    its image was ever built, and the launchpad then ran that image every fifteen seconds (the
+    review's first point). So:
+    - every `docker run` of the shipped scripts and the dashboard says `--pull never`;
+    - every compose service of such an image says `pull_policy: never`;
+    - what the dashboard runs on its own first asks whether the image is there.
+
+    Claiming the namespace on Docker Hub would also protect installations that never get this
+    change. That decision lies outside the code.
+15. **`openclaw-gateway` carries the CLI's profiles as well as its own.** `docker compose run --rm
+    openclaw-cli …` is the usual way to reach OpenClaw's CLI. `run` does not enable a dependency's
+    profile (CS-0), so with the gateway behind `openclaw` alone it answered `no such service:
+    openclaw-gateway` (the review's second point). With `cli` and `full` on the gateway as well,
+    naming `openclaw-cli` enables both. Measured on 2026-10-30 with compose 5.6.1 against this file;
+    CS-8 now holds it. The costs:
+    - `--profile cli` or `--profile full` also starts the gateway, and nothing in the repository
+      passes either;
+    - with OpenClaw switched off, an operator's `docker compose run --rm openclaw-cli …` starts
+      the gateway too. Its `restart: unless-stopped` keeps it running until the next start's
+      `down.sh`, while the launchpad says it is switched off. That is what the command asks for,
+      since the CLI runs inside the gateway's network. If the image was never built,
+      `pull_policy: never` stops it at `No such image` (the local review of 2026-10-30). The alternative was a README rule to set
+    `COMPOSE_PROFILES=openclaw` first, which every operator would have to remember.
+16. **`PRIVACY_PROXY_ENABLE` is read by the switches' rule, by every reader.** `1` is on and anything
+    else off, as before. What changes is how the value is taken from its line. Before:
+    - the dashboard read the last line with double quotes removed;
+    - the build and the start read the first line with both kinds of quote removed and a comment
+      kept;
+    - the routing check read the first line with the comment cut.
+
+    So with `PRIVACY_PROXY_ENABLE='1'` the dashboard offered a Start that the start then refused for
+    a missing image (the review's third point). CS-FR2's rule is already implemented in both
+    languages and held to one table, so this key uses it: `lu_privacy_proxy_on` in the shell,
+    `privacyProxyOn` in the dashboard.
+
 ## 3. What this does not cover, deliberately
 
 - **Hermes** (decision 7).
@@ -112,6 +160,16 @@ code, and four of them refine the issue's proposal; §6 lists those, all signed 
   the agents' Liquid skills and `nar-build` without a target. That is documented in the README
   (CS-FR14), and `nar-build` says so when it is called (CS-FR7). The agents are not reconfigured.
 - **bun_runner** stays always on. Its build takes under a minute.
+- **Registering Docker Hub's `liquidupstart` namespace** (decision 14). It would also protect
+  installations that never receive `--pull never`, and deciding it is the project owner's job.
+- **The readers of every other key.** Decision 16 brings one more key under CS-FR2's rule.
+  `BACKLOG.md`'s entry on the readers still holds for the rest of `.env`.
+- **A registry prefix no pull can reach**, such as `localhost/liquidupstart/…`. It would protect
+  every caller of the images at once, the ones decision 14 lists and any command copied from a
+  document, with no flag to remember. The local review of 2026-10-30 proposed it. It renames
+  every image, and so the build scripts, `compose.yml`, `builtImages()`, `update.sh` and the
+  tests that name them, and an update would have to retag or rebuild the images of every existing
+  installation. That is a change of its own. `--pull never` and CS-22 hold the line until then.
 - **An image that is stale rather than missing.** The build skips a component that is off, so an
   image built before its build settings changed is still there when the component is switched on
   again, and `needBuild` sees only whether an image exists. An example: Liquid is off,
@@ -132,7 +190,7 @@ CS-FR2's readers.
 | Switch | Images | Services | Compose profile |
 |---|---|---|---|
 | `ENABLE_LIQUID` | `liquidupstart/liquid`, `liquidupstart/nar-builder` | `liquid`, `nar_builder` | `liquid` |
-| `ENABLE_OPENCLAW` | `liquidupstart/openclaw` | `openclaw-gateway` (and `openclaw-cli`, which only `openclaw.sh` runs) | `openclaw` |
+| `ENABLE_OPENCLAW` | `liquidupstart/openclaw` | `openclaw-gateway` (and `openclaw-cli`, which only `openclaw.sh` and an operator's `docker compose run` run) | `openclaw`; the gateway also carries `cli` and `full` (decision 15) |
 | `ENABLE_OPENCODE` | `liquidupstart/opencode` | `opencode` | `opencode` |
 
 **CS-FR2 — one reader per language, and they agree.**
@@ -201,8 +259,9 @@ CS-FR2's readers.
 
 **CS-FR5 — compose.**
 - `liquid` and `nar_builder` carry `profiles: ["liquid"]`, `openclaw-gateway` carries
-  `profiles: ["openclaw"]`, and `opencode` carries `profiles: ["opencode"]`.
-- `openclaw-cli` keeps `cli` and `full`.
+  `profiles: ["openclaw", "cli", "full"]`, and `opencode` carries `profiles: ["opencode"]`.
+- `openclaw-cli` keeps `cli` and `full`, so `docker compose run --rm openclaw-cli …` enables the
+  gateway it runs inside without `COMPOSE_PROFILES` (decision 15).
 - The proxy's `depends_on` entries for `opencode`, `nar_builder` and `openclaw-gateway` gain
   `required: false`, and keep their conditions: `service_started`, `service_started`,
   `service_healthy`.
@@ -214,6 +273,28 @@ CS-FR2's readers.
   requests, identity headers included. Measured on 2026-10-29: nginx proxied a request for the bare
   name `uz` to that domain's public address; with the setting, the name does not resolve, and the
   stack's own names still do. Found by the local review of that day.
+
+  The review on #56 asked whether, since Docker 26, a rootful engine reaches a loopback `--dns`
+  server from the host's network namespace instead. A resolver on the host's 127.0.0.1 would then
+  answer the names this setting exists to keep unresolved. Two sources say it does not:
+  - Docker's documentation, in its table of DNS flags: *"DNS requests will be forwarded from the
+    container's network namespace so, for example, `--dns=127.0.0.1` refers to the container's
+    own loopback address"* (docs.docker.com/engine/network). Docker 26.0's change on the host's
+    loopback resolvers concerns the internal resolver's upstreams read from the host's
+    `resolv.conf`, such as systemd's 127.0.0.53, on internal networks (CVE-2024-29018). It does not
+    concern `--dns`.
+  - A measurement on 2026-10-30 with Docker Desktop's rootful engine 29.9.2. A resolver listening
+    in the engine's own namespace, on 127.0.0.1 and on all addresses, received nothing, and the
+    container got SERVFAIL at once.
+
+  A rootful engine on Linux, the case the review names, is not measured here. `BACKLOG.md` has a
+  line for it.
+- Every service whose image is `liquidupstart/…` declares `pull_policy: never` (CS-FR15):
+  `opencode`, `bun_runner`, `nar_builder`, `liquid`, `openclaw-gateway`, `openclaw-cli` and
+  `privacy-proxy`.
+- `openclaw-gateway` has no `build:`. Its `build: .`, a leftover from 2026-06-06, pointed at the
+  repository's root, which has no Dockerfile, so `up` with the image missing tried a build there and
+  failed with `failed to read dockerfile`. `config/scripts/build/openclaw.sh` builds the image.
 - `down.sh` already passes `COMPOSE_PROFILES='*'`, so a switched-off service that is still running
   is stopped by the next start.
 
@@ -230,6 +311,12 @@ CS-FR2's readers.
   service and says it is either switched off under *Which apps to run* in Configuration or not
   running. These are `opencode`, `nar-builder`, the three `openclaw` hosts, `liquid` and `privacy`.
   The privacy page names *Privacy proxy* instead.
+- The hundred Liquid ingress vhosts, `8900.liquid.localhost` to `8999.liquid.localhost`, answer a
+  missing upstream with a page of their own, because a port that no flow listens on gets the same
+  502 from a running Liquid: `Liquid does not answer on port <port>: it is either switched off under
+  Which apps to run in Configuration, or not running, or no flow listens on this port.` Before the
+  review on #56 they answered nginx's stock 502, which the README's promise did not cover. Like
+  every other block, they are rendered whatever the switch says (decision 5).
 - Every vhost that answers today answers the same way with all components on.
 
 **CS-FR7 — `nar-build` without a builder.** `config/agents/bin/nar-build.sh` reports an HTTP 502
@@ -245,9 +332,12 @@ not answer, and the hint says *may*.
 - `builtImages()` in `dashboard/src/lib/server/project.ts` takes the `.env` values and leaves out
   the images of components that are off. It names the privacy proxy's image while
   `PRIVACY_PROXY_ENABLE=1`, because the start's pre-flight requires it, and a dashboard that did not
-  would offer a Start the start refuses. That key is read as the launchpad's privacy tile reads it,
-  so one page gives one answer. `build.sh` and `start.sh` read it by a rule of their own, which
-  differs for a hand-quoted or doubled line; `BACKLOG.md`'s entry on the readers has it.
+  would offer a Start the start refuses. That key is read by CS-FR16's rule, as the start and the
+  launchpad's privacy tile read it, so the dashboard asks for the image exactly when the start
+  requires it.
+- `builtImages()`, the image pre-flight in `start.sh` and the build steps of `build.sh` are three
+  lists of the same images, kept by hand in two languages. CS-23 asks all three for every
+  combination of the switches and the privacy proxy, and requires one answer.
 - `stackState().needBuild` is true when an image of a component that is on is missing, as it is
   today for all five.
 - The three keys are not in `isBuildAffecting` (decision 10).
@@ -267,12 +357,37 @@ not answer, and the hint says *may*.
   running `config/scripts/openclaw-pairing.sh`, so a tab opened before the switch neither polls an
   image that is gone nor shows its error.
 - `POST` answers 409 with `{ ok: false, message }`, the message being CS-FR11's.
+- With OpenClaw on and its image not there, the pairing script runs nothing.
+  `config/scripts/openclaw-pairing.sh` asks `docker image inspect` for its image first. When the
+  image is missing, it exits 3 with `liquidupstart/openclaw:latest is not built here.` on stderr.
+  `GET` answers that exit as it answers OpenClaw off: `disabled: true` with empty lists, which leaves
+  the card silent. The dashboard takes it as that answer only when both the status and the line
+  match, so an exit 3 of the CLI itself still reaches the card as an error. Timur's case is this one:
+  OpenClaw switched on and saved before a build, with the card mounted from the saved `.env`.
+- An engine that fails otherwise -- `docker image inspect` answering anything but `No such image`
+  -- is said as it is, exit 1 with docker's words, so the card shows it rather than going silent
+  (the local review of 2026-10-30).
+- `POST` against an image that is not built answers 409 with `OpenClaw is switched on, but its
+  image is not built yet — run Build first.`, and so does one whose image goes away between the
+  listing and the press. Before, it answered that nothing was waiting for approval, which names
+  the wrong cause.
+- The card is still mounted by the switch alone. The script computes the image's presence at each
+  poll, which covers a tab that stays open while an update removes the image; a check when the page
+  loads would not. The run itself says `--pull never` (CS-FR15).
 
 **CS-FR11 — the sign-in routes.**
 - With OpenClaw off, `GET` on `/claude-auth`, `/copilot-auth`, `/codex-auth` and `/grok-auth`
   answers `{ needed: false }` without running a container, so no sign-in panel appears.
+- With OpenClaw on and its image not there, `GET` answers `{ needed: false }` too, having run
+  `docker image inspect` and nothing else. Only `/claude-auth` did this before. The other three
+  asked `volumes/_openclaw/openclaw.json`, which survives the image, and their probe then ran the
+  image. An engine that fails the inspect reads the same way: no panel is offered for a sign-in
+  that could not run.
 - `POST` answers 409 with `OpenClaw is switched off — turn it on under Which apps to run in
   Configuration first.`
+- Each gate is written once, in `dashboard/src/lib/server/openclaw-image.ts`. `openclawRunnable()`
+  answers GET's question and `refusedWhileOff()` gives POST's refusal. The four routes used to carry
+  a copy each.
 
 **CS-FR12 — the configuration page hides what has no reader, and keeps its values.**
 - `dashboard/src/lib/env-meta.ts` declares which section, subheading or field depends on which
@@ -306,6 +421,10 @@ not answer, and the hint says *may*.
   keeps the three switches as the start reads them -- `'1'` is written `1`, a refused value as it
   was; written as unticked checkboxes, they would all have become `0`.
 - Switching a component on and off in the same save therefore changes no hidden field.
+- The section's description ends: `A change takes effect at the next Start; the launchpad shows it
+  from the Save on.` The launchpad follows the saved `.env`, which is spec-chosen, so a switch saved
+  off while the stack still runs takes the tile, the pairing card and the sign-ins away before the
+  service goes. The review on #56 asked for the note.
 
 **CS-FR13 — agent-dependent places warn (decision 4).** When both agents are off:
 - the Git integration card, where something is declared, and the *GIT INTEGRATION* section each
@@ -335,10 +454,50 @@ With either agent on, none of the both-agents-off notes appears.
   - OpenClaw off: no Claude sign-in, so the privacy proxy's Claude route keeps only an existing
     login;
   - either agent off: the other one is unaffected.
+- The same section says that a change to a switch takes effect at the next Start.
 - The README's *Five images are built locally* sentence says that four of them are built only when
   their component is on: `liquid` and `nar-builder` with Liquid, `openclaw` and `opencode` with theirs.
 - `CLAUDE.md`'s *Services & images* paragraph says the same in one line, and `docs/SPECIFICATION.md`
   §3 and §4 say which services run under the profiles and that nginx resolves per request.
+
+**CS-FR15 — no local-only image is pulled (decision 14).**
+- Every `docker run` in the shipped shell scripts is written `docker run --pull never`, with the flag
+  straight after `run`. In the dashboard's code it is written `'run', '--pull', 'never'`. The fixed
+  place lets a reader, and CS-22, see the flag at a glance.
+- The exceptions run an image from a public registry by design, and each is named:
+  - `eclipse-temurin:17-jre-jammy`, for `keytool` in `config/scripts/start/nginx.sh`;
+  - `hello-world`, twice in `scripts/install/install.sh`.
+- The two `ingest-pdf` build scripts under `config/openclaw/` are no exception any more. They
+  defaulted to `ghcr.io/openclaw/openclaw:latest`, while their comment asks for the image the
+  gateway runs. Now they take the remedy `BACKLOG.md` left for whoever next edited them: the image
+  must be named, `${OPENCLAW_IMAGE:?set it to the image this stack runs, …}`, and its run says
+  `--pull never` like every other. A public image is pulled by hand first, if one is wanted (the
+  local reviews of 2026-10-30).
+- Every service in `compose.yml` whose image is `liquidupstart/…` declares `pull_policy: never`
+  (CS-FR5). Measured on 2026-10-30 with compose 5.6.1 in a throwaway project:
+  - without it, `up` and `pull` both go to the registry for a missing image;
+  - with it, `up` stops at `No such image` and `pull` skips the service.
+
+  CS-0 holds both.
+- The image checks before a run (CS-FR10, CS-FR11) and the start's pre-flight (CS-FR4) say what is
+  missing. `--pull never` is what holds when a check is missing or loses a race.
+
+**CS-FR16 — one rule for `PRIVACY_PROXY_ENABLE` (decision 16).**
+- The shell reads it with `lu_privacy_proxy_on FILE` in `components.sh`. The function applies CS-FR2's
+  rule to the key's last line and answers on only for `1`. Its callers are:
+  - `build.sh`;
+  - `recreate-privacy-proxy.sh`;
+  - `privacy_routing_mode` in `privacy-routing.sh`.
+
+  `openclaw.sh` and `start.sh` take the value from `privacy_routing_mode`'s answer, which is `off`
+  exactly when the switch is. `start.sh` takes it once, so its image pre-flight and its profile
+  cannot read two different files.
+- The dashboard reads it with `privacyProxyOn(values)` in `component-switches.ts`, in `stackState()`,
+  in the launchpad's privacy tile, and on the configuration page. The page shows the box ticked
+  exactly when the key is on. Shown unticked, a `'1'` that the start runs was written `0` by the
+  next Save, which would have turned `PRIVACY_PROXY_ROUTING=only` off without a word (the local
+  review of 2026-10-30).
+- The two agree on every line of CS-2's privacy table, `'1'` and a doubled line among them.
 
 **CS-NFR1 — nothing changes with the switches on.** With the three keys absent, or all at `1`:
 - `build.sh` runs the same build scripts in the same order;
@@ -360,8 +519,9 @@ word.
 |---|---|
 | `lu_component_state <env-file> <KEY>` | prints `on` or `off`, exit 0; for a refused value it prints `Error: <KEY>=<value> in .env is not a switch value; use 1 (on) or 0 (off).` and `::aiw-error::<KEY> must be 1 or 0, not '<value>'. Fix it under Which apps to run in Configuration and try again.` to stderr, exit 1 |
 | `lu_components_check <env-file>` | exit 0 when all three are readable, otherwise 1 after `lu_component_state`'s messages for each refused key |
-| `lu_component_on <env-file> <KEY>` | exit 0 when on, 1 when off; only after `lu_components_check` |
+| `lu_component_on <env-file> <KEY>` | exit 0 when on, 1 when off. On a refused value it prints `lu_component_state`'s two messages and exits the calling shell with 1. Every caller runs `lu_components_check` first, and a later one that did not would otherwise read a typo as off without a word (the review on #56). Called inside `$(…)`, as `lu_component_profiles` is, the exit ends only the subshell, so the caller checks the status: `start.sh` reads the profiles once, right after the check, with `|| exit 1` |
 | `lu_component_profiles <env-file>` | prints the profiles of the components that are on, comma-separated, in the order `liquid,openclaw,opencode`; empty when all are off |
+| `lu_privacy_proxy_on <env-file>` | exit 0 when `PRIVACY_PROXY_ENABLE`'s value, read by the same rule, is `1`, otherwise 1 (CS-FR16) |
 
 **TypeScript, `dashboard/src/lib/component-switches.ts`.** It is shared by server and page code, and
 also holds the note texts of CS-FR9, CS-FR11 and CS-FR13 and `nodeAppNote(on)`:
@@ -379,11 +539,23 @@ export const RENDERED_FIELD = '__components';
 export function encodeComponents(on: Record<Component, boolean>): string;  // liquid=1,openclaw=0,opencode=1
 export function decodeComponents(text: string | null | undefined): Record<Component, boolean> | null;
 export function switchOf(key: string): Component | null;
+export function privacyProxyOn(values: Map<string, { value: string; raw?: string }>): boolean;  // CS-FR16
 ```
 
-**`builtImages(on: Record<Component, boolean>): string[]`.** It returns
+**TypeScript, `dashboard/src/lib/server/openclaw-image.ts`.** It serves the four sign-in routes
+(CS-FR11, CS-FR15):
+
+```ts
+export function openclawImage(): string;   // OPENCLAW_IMAGE, or liquidupstart/openclaw:latest; read per call
+export async function openclawRunnable(values: Map<string, { value: string; raw?: string }>): Promise<boolean>;
+                                            // OpenClaw on, and `docker image inspect` finds the image
+export function refusedWhileOff(dir: string): Response | null;   // CS-FR11's 409 while off, else null
+```
+
+**`builtImages(on: Record<Component, boolean>, privacyProxy = false): string[]`.** It returns
 `liquidupstart/{opencode,bun-runner,liquid,openclaw,nar-builder}:latest`, minus the images of the
-components that are off. `stackState()` passes `installedComponents()`, which reads `.env` through
+components that are off, and `liquidupstart/privacy-proxy:latest` after them while `privacyProxy`
+is true (CS-FR8). `stackState()` passes `installedComponents()`, which reads `.env` through
 `envValues()`. `componentsAt(dir = envDir())` reads the `.env` of the directory asked for at the
 moment of the call, for the routes and the pairing module, which must not depend on the directory
 `project.ts` captured on its first load; `pairing.ts` exports `openclawOn()` on top of it, because
@@ -393,8 +565,16 @@ OC-72 maps `$lib/server/pairing` alone and the route can import nothing else.
 Record<Component, boolean>` to what it returns, and `+page.svelte` mounts `OpenClawPairing` only
 when `components.openclaw` is true.
 
-**Pairing route.** `GET /openclaw-pairing` adds `disabled?: true` to its body. The sign-in routes
-call `componentsAt(ENV_DIR)` first, in GET and after the origin check in POST.
+**Pairing route.** `GET /openclaw-pairing` adds `disabled?: true` to its body. `pendingRequests()`
+in `pairing.ts` returns it with empty lists when `openclaw-pairing.sh` exits 3 and its stderr holds
+`is not built here.` (CS-FR10). The sign-in routes call `openclawRunnable(env)` in GET, after their
+own cheap gates and before any probe, and `refusedWhileOff(ENV_DIR)` after the origin check in POST.
+
+**`config/scripts/openclaw-pairing.sh`.** Exit 3 means that the image is not built. Exit 1 with
+docker's words means that `docker image inspect` failed otherwise. The script's other exits are
+unchanged: 2 for a usage error, and the CLI's own status otherwise. `pairing.ts` exports
+`OPENCLAW_NOT_BUILT`, the text of the route's 409. `approve()` answers the same exit and line with
+`{ ok: false, status: 409, message: OPENCLAW_NOT_BUILT }`, beside its 200, 400 and 502.
 
 **Configuration metadata, `env-meta.ts`.**
 
@@ -415,12 +595,12 @@ items through `visibleItems`, and `actions.save` keeps the current value of ever
 section or a field, and the view renders them in the `.autogen-note` style.
 
 **Compose profiles.** `liquid`, `openclaw` and `opencode`, beside the existing `privacy-proxy`,
-`cli` and `full`.
+`cli` and `full`. `openclaw-gateway` carries `openclaw`, `cli` and `full`.
 
 **nginx variables.** Each server block sets `$lu_upstream` to its upstream's `host:port` and passes
 to `http://$lu_upstream` (or `https://` for Liquid). The switchable vhosts declare
 `error_page 502 @lu_unavailable;` and a named location that returns the CS-FR6 text as
-`text/plain`. They use 502 alone because a 504 that nginx generates is a timeout, which this page
+`text/plain`, the hundred ingress blocks included. They use 502 alone because a 504 that nginx generates is a timeout, which this page
 would misname. And since `proxy_intercept_errors` stays off, an upstream's own 502 passes through
 unchanged.
 
@@ -445,6 +625,19 @@ command line has its profiles enabled for that call. If compose 5.6.1 does that 
 `restart` and `start`, those commands keep working without `COMPOSE_PROFILES`. If it does not,
 profiles are the wrong vehicle and this specification comes back before any code is written. The
 measurement is **CS-0** in the test specification.
+
+**On 2026-10-30, for the review on #56**, the operator signed off decisions 14 to 16, as recommended,
+together with the scope of the answer:
+- Timur's three points before the merge;
+- of his seven further points:
+  - the ingress page (CS-FR6);
+  - fixtures in place of the history that two tests read;
+  - a wider CS-20, run against the stack;
+  - the note on the next Start (CS-FR12);
+  - CS-23 for the image lists and one sign-in gate (CS-FR11);
+  - `lu_component_on` failing loudly (§5).
+
+The `dns` point is answered under CS-FR5 and not changed.
 
 **Measured on 2026-10-29, compose 5.6.1: it does.** `logs`, `exec`, `restart`, `stop`, `start` and
 `ps` naming a profiled service all succeeded without `COMPOSE_PROFILES`. `required: false` let a
@@ -506,3 +699,98 @@ service`). That is why CS-FR4 exports the profiles before the start steps.
   untested branches of the old-page save, now CS-17 (j) and (k). Left open, with its reason: one
   hidden list of the checkboxes a page drew would replace the save's three special cases, the
   switches, the hidden fields and the old page, with one rule, and is a change of its own.
+- **2026-10-30** — Timur's review on #56 asked for changes. He confirmed that the two readers agree
+  on 22 more lines of his own, and found three points that block the merge:
+  - the pairing card and three sign-in probes could pull `liquidupstart/openclaw:latest` from Docker
+    Hub (decision 14, CS-FR10, CS-FR11, CS-FR15);
+  - `docker compose run --rm openclaw-cli` failed with OpenClaw on (decision 15);
+  - `PRIVACY_PROXY_ENABLE` was read two ways (decision 16, CS-FR16).
+
+  Each was measured before it was written down. The namespace answered 404. `pull_policy: never`
+  and `run` were tried in a throwaway project, and the second in `--dry-run` against this file.
+  Nothing was created.
+
+  Of his further points:
+  - **Taken:**
+    - the ingress vhosts' missing page (CS-FR6);
+    - the tests that read `da4e2d1` with `git show`, which fail in a shallow clone or the release
+      archive; they read fixtures now;
+    - CS-20's narrow live coverage;
+    - the note on the next Start (CS-FR12);
+    - the duplicated sign-in gate (CS-FR11) and the three image lists, held to one answer by CS-23
+      rather than merged, since they are in two languages;
+    - `lu_component_on` reading a refused value as off.
+  - **Answered:**
+    - `dns`: the documentation and a measurement on Docker Desktop, with rootful Linux left as a
+      `BACKLOG.md` line (CS-FR5);
+    - the ingress blocks rendered with Liquid off (decision 5);
+    - the seven copies of `@lu_unavailable`, which CS-9 holds to one text per service.
+
+  Measuring for the first point found one more: `openclaw-gateway`'s `build: .` (CS-FR5).
+- **2026-10-30** — the local review before the commit found twelve points over the answer. These
+  held and changed the specification:
+  - the configuration page still showed `PRIVACY_PROXY_ENABLE` by the old reading, so the next
+    Save would undo what decision 16 made every other reader agree on (CS-FR16);
+  - the `ingest-pdf` builds could be pointed at the stack's own image without the flag (CS-FR15);
+  - the pairing script read any failure of the engine as an image that is not built, and an
+    approval against such an image was told that nothing was waiting (CS-FR10);
+  - `start.sh` read the profiles in `$(…)`, where `lu_component_on`'s exit ends only the
+    subshell, and read the privacy switch three times (§5, CS-FR16);
+  - decision 15's cost for an operator's `run` with OpenClaw off was not recorded;
+  - two blocks of the test specification described a mutation that had moved, and a case without
+    its negative row.
+
+  The registry prefix is recorded in §3 and not taken. Two points were not taken, with reasons:
+  - having `pendingRequests()` ask `docker image inspect` itself, in place of the script's exit
+    3. OC-72 and CS-14 call the route in-process with no docker stub, so their cases would then
+    depend on the images of the machine they run on. The script's line and the dashboard's
+    reading of it are each pinned by a test (CS-14);
+  - reusing `dockerExitCode()` from `project.ts` in `openclaw-image.ts`. It spawns in the
+    directory `project.ts` froze on its first load, which under `bun test` belongs to whichever
+    file loaded it first (`envDir()`'s comment). A probe that needs no directory should not
+    inherit that.
+- **2026-10-30** — a second, narrow pass over those repairs found fourteen more. These held:
+  - the `ingest-pdf` builds missed the local image when it was spelled with a registry, such as
+    `docker.io/liquidupstart/openclaw:latest`, and CS-22 checked them as text only;
+  - an approval whose image went away after the listing still answered 502 (CS-FR10);
+  - a CS-17 row claimed a mutation registered for another file;
+  - overview rows were missing for four tests that exist, and traceability for CS-16 and CS-17;
+  - the pairing script's header misstated its exits;
+  - CS-FR16 named `start.sh` as a caller it is not, and §5 gave `builtImages()` without its
+    second argument;
+  - the not-built row of CS-14 wrote its marker and never read it.
+
+  Recorded in `BACKLOG.md`'s entry on the readers, since it holds on `main` too: the
+  configuration page shows every other checkbox by `parseEnvValues`' value, so a hand-quoted
+  `'1'` there is shown unticked and saved as `0`.
+
+  Not taken, with reasons:
+  - exporting the routing answer to the start steps. Every step reads `.env` again for its own
+    keys, so a file changed during a start reaches all of them; the one reading made once here is
+    the one the pre-flight and the profile share;
+  - building the profiles from the three flags instead of reading them a second time. One
+    function computes them and CS-1 holds it, the second read follows the first within
+    microseconds, and `|| exit 1` stops the start on a disagreement rather than running on;
+  - sourcing `components.sh` once in `start.sh`. `privacy-routing.sh` loads it too, and the switch
+    check names its own dependency rather than resting on another library's;
+  - classifying the run's own `No such image` in place of the inspect before it. The run's stderr
+    carries the CLI's lines, which the dashboard reads, and the inspect costs one local call per
+    poll.
+- **2026-10-30** — a third pass over those repairs found fourteen points, and these held:
+  - the `ingest-pdf` test read only the first argument after `run`, so `--pull always` passed;
+  - the pattern that recognised the local image was a special case copied into two scripts.
+
+    `BACKLOG.md`'s remedy for them, left for whoever next edited them, removes both: the image is
+    required and never pulled (CS-FR15);
+  - the approval's exit 3 had no counterpart, and its race row could not show that `approve()`
+    answered; the stub now leaves a marker on `approve`, and an exit 3 without the line answers
+    502 with the CLI's words;
+  - CS-22's and CS-14's blocks no longer described their own steps, data or mutations, CS-22's
+    overview merged rows, CS-16's data named values only in its expectation, and §5 left out
+    `approve()`'s 409;
+  - the second pass's count did not match its list, which is complete now;
+  - the test ran each build through its exec bit, which an archive without modes loses; it runs
+    them through `bash` now.
+
+  Every point held. The pattern's reach beyond Docker Hub, the last of them, went with the
+  pattern.

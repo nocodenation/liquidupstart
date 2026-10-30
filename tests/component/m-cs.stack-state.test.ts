@@ -9,16 +9,18 @@
  *           `.env.example` with every flag at `1` except `ENABLE_LIQUID=0`; a stub `docker`
  *           first on `PATH` that appends its arguments to `docker.log` and exits 0.
  * When:     `stackState()` runs, then again with `ENABLE_LIQUID=1`, and with Liquid on and
- *           `PRIVACY_PROXY_ENABLE` at `1` and at `0`.
+ *           `PRIVACY_PROXY_ENABLE` at `1` and at `0`; and, added on 2026-10-30 for the review
+ *           on #56, at `'1'`, through `stackState()` and the launchpad's `load`.
  * Then:     With Liquid off, the `image inspect` call names `opencode`, `bun-runner` and
  *           `openclaw` and neither `liquid` nor `nar-builder`, and `needBuild` is false
  *           since the stub finds every image it is asked for. With Liquid on, it names all
  *           five. With the privacy proxy on it names `liquidupstart/privacy-proxy:latest`,
- *           which the start requires, and with it off it does not. The key is read as the
- *           launchpad's tile reads it, so one page gives one answer; the scripts read it by
- *           a rule of their own, which differs for a hand-quoted or doubled line, as
- *           `BACKLOG.md`'s entry on the readers records.
- * Covers:   CS-12, CS-FR8
+ *           which the start requires, and with it off it does not. With `'1'` it names it too,
+ *           and the *Privacy proxy* tile links: the key is read by the switches' rule, as the
+ *           build and the start read it (CS-FR16). Before the review the dashboard read `'1'`
+ *           as off while the start required the image, so the page offered a Start the start
+ *           refused.
+ * Covers:   CS-12, CS-FR8, CS-FR16
  * Negative: with Liquid off, `liquidupstart/liquid:latest` and
  *           `liquidupstart/nar-builder:latest` are not asked for.
  * Counterpart: with Liquid on they are, so a `stackState()` that never asked for them cannot
@@ -27,13 +29,14 @@
  * Test data: the `.env` is `envFrom()` of `tests/lib/gitproject.ts` -- every key of
  * `.env.example` with its fixture value, flags at `1` -- with `ENABLE_LIQUID=0`, then `1`, and
  * `PRIVACY_PROXY_ENABLE=0`. For the privacy rows its line becomes `PRIVACY_PROXY_ENABLE=1`, then
- * stays `PRIVACY_PROXY_ENABLE=0`.
+ * stays `PRIVACY_PROXY_ENABLE=0`; for the review's row it becomes `PRIVACY_PROXY_ENABLE='1'`, and
+ * the tile's link is `http://privacy.localhost:8888/policy/ui`, the fixture's HTTP port.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { borrowSharedProject, projectDir } from '../lib/dashboardfixture';
+import { borrowSharedProject, launchpadData, projectDir } from '../lib/dashboardfixture';
 import { envFrom, fixtureValue, resetProject, writeEnv } from '../lib/gitproject';
 import { stackState } from '../../dashboard/src/lib/server/project';
 
@@ -78,6 +81,20 @@ describe('CS-12 stackState() asks docker for the images of what is on', () => {
     const off = await inspected('1', 'PRIVACY_PROXY_ENABLE=0');
     expect(on.args).toContain('liquidupstart/privacy-proxy:latest');
     expect(off.args).not.toContain('liquidupstart/privacy-proxy:latest');
+  });
+
+  test("CS-12 and with PRIVACY_PROXY_ENABLE='1' it is asked for, and the launchpad's privacy tile links", async () => {
+    const quoted = await inspected('1', "PRIVACY_PROXY_ENABLE='1'");
+    expect(quoted.args).toContain('liquidupstart/privacy-proxy:latest');
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    try {
+      const data = await launchpadData();
+      const tile = data.groups.flatMap((g: any) => g.tiles).find((t: any) => t.name === 'Privacy proxy');
+      expect(tile?.url).toBe('http://privacy.localhost:8888/policy/ui');
+    } finally {
+      process.env.PATH = path;
+    }
   });
 
   test('CS-12 the counterpart: with Liquid on, all five are', async () => {

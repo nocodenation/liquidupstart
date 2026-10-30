@@ -28,8 +28,7 @@ if lu_component_on "$ENV_FILE" ENABLE_OPENCLAW; then
   "${PROJECT_DIR}/config/scripts/build/openclaw.sh" "$@"
 fi
 
-PRIVACY_PROXY_ENABLE="$(grep -E '^PRIVACY_PROXY_ENABLE=' "${PROJECT_DIR}/.env" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
-if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
+if lu_privacy_proxy_on "$ENV_FILE"; then
   "${PROJECT_DIR}/config/scripts/build/privacy-proxy.sh" "$@"
 fi
 

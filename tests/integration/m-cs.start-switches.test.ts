@@ -28,8 +28,10 @@
  *           login directory the proxy mounts, with mode 700, which `openclaw.sh` used to do.
  *           And a gateway that is on but unhealthy fails the start after `compose up`, which
  *           `required: false` no longer does by itself (the second local review of
- *           2026-10-29, measured on compose 5.6.1); with OpenClaw off it is not asked.
- * Covers:   CS-4, CS-5, CS-FR4, CS-NFR1, CS-NFR2
+ *           2026-10-29, measured on compose 5.6.1); with OpenClaw off it is not asked. Since
+ *           the review on #56 the pre-flight reads the privacy proxy's switch by the switches'
+ *           rule (CS-FR16), so `=0` followed by `=1` requires its image, as the dashboard asks.
+ * Covers:   CS-4, CS-5, CS-FR4, CS-FR16, CS-NFR1, CS-NFR2
  * Negative: `ENABLE_LIQUID=yes` stops before `down`; each switched-off row lacks its
  *           profile, its steps and every line naming it; with OpenClaw off and Copilot on,
  *           no `exec openclaw-gateway` is run.
@@ -40,7 +42,8 @@
  * Test data: every `.env` is `.env.example` with `SYSTEM_SIGNIN_WAIT_SECONDS=0`, then:
  * (missing) `ENABLE_LIQUID=1` and `PRIVACY_PROXY_ENABLE=1` while `docker image inspect` reports
  * `liquidupstart/liquid:latest` and `liquidupstart/privacy-proxy:latest` absent; (missing, off)
- * `ENABLE_LIQUID=0` with the Liquid image absent; (inherited) `ENABLE_LIQUID=0` while the
+ * `ENABLE_LIQUID=0` with the Liquid image absent; (doubled) `PRIVACY_PROXY_ENABLE=0` with the
+ * line `PRIVACY_PROXY_ENABLE=1` appended, while the privacy proxy's image is absent; (inherited) `ENABLE_LIQUID=0` while the
  * caller's shell exports `COMPOSE_PROFILES=liquid`; (unhealthy) `ENABLE_OPENCLAW=1`, and
  * `ENABLE_OPENCLAW=0`, while `docker inspect openclaw-gateway` answers `running unhealthy`;
  * (all) the three switch lines removed and `ENABLE_GITHUB_COPILOT=1`; (liquid)
@@ -106,6 +109,17 @@ describe('CS-4 a refused value costs the start nothing', () => {
     expect(run.stderr).toContain('Error: these images are not built: liquidupstart/liquid:latest liquidupstart/privacy-proxy:latest');
     expect(run.stderr).toContain('Nothing has been stopped; the stack is as it was.');
     expect(run.stderr).toMatch(/^::aiw-error::Not built yet: /m);
+  });
+
+  test('CS-4 the negative: PRIVACY_PROXY_ENABLE=0 followed by =1 requires the proxy\'s image too', () => {
+    const run = runStart(
+      `${exampleEnv({ SYSTEM_SIGNIN_WAIT_SECONDS: '0', PRIVACY_PROXY_ENABLE: '0' })}\nPRIVACY_PROXY_ENABLE=1\n`,
+      { missing: ['liquidupstart/privacy-proxy:latest'] }
+    );
+    expect(run.code).toBe(1);
+    expect(run.steps).toEqual(['git(--check-declaration) ']);
+    expect(composeUp(run)).toBeUndefined();
+    expect(run.stderr).toContain('Error: these images are not built: liquidupstart/privacy-proxy:latest');
   });
 
   test('CS-4 the counterpart: a missing image of a component that is off stops nothing', () => {

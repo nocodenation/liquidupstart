@@ -43,12 +43,14 @@ fail() {
 }
 
 # new_tree
-#   Create an empty project tree under TMP_ROOT holding the routing library, and print its path.
+#   Create an empty project tree under TMP_ROOT holding the routing library and components.sh,
+#   which it sources for the switch's reader (CS-FR16), and print its path.
 new_tree() {
   local tree
   tree="$(mktemp -d "${TMP_ROOT}/tree.XXXX")"
   mkdir -p "${tree}/config/scripts/start/lib"
   cp "${REPO_DIR}/${LIB}" "${tree}/${LIB}"
+  cp "${REPO_DIR}/config/scripts/start/lib/components.sh" "${tree}/config/scripts/start/lib/components.sh"
   echo "${tree}"
 }
 

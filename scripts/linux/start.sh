@@ -44,6 +44,9 @@ fi
 # shellcheck source=../../config/scripts/start/lib/privacy-routing.sh
 . "${PROJECT_DIR}/config/scripts/start/lib/privacy-routing.sh"
 PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
+# The switch once, from the answer above, which is off exactly when it is: the image pre-flight
+# and the profile below then cannot read two different .env files (CS-FR16).
+PRIVACY_PROXY_ENABLE=0; [[ "$PRIVACY_ROUTING" != off ]] && PRIVACY_PROXY_ENABLE=1
 if [[ "$PRIVACY_ROUTING" == only \
       && -z "$(env_value "$ENV_FILE" OPENAI_API_KEY)" && -z "$(env_value "$ENV_FILE" ANTHROPIC_API_KEY)" \
       && "$(env_value "$ENV_FILE" ENABLE_ANTHROPIC_CLAUDE_CODE)" != 1 ]]; then
@@ -72,6 +75,7 @@ fi
 LIQUID_ON=0; lu_component_on "$ENV_FILE" ENABLE_LIQUID && LIQUID_ON=1
 OPENCLAW_ON=0; lu_component_on "$ENV_FILE" ENABLE_OPENCLAW && OPENCLAW_ON=1
 OPENCODE_ON=0; lu_component_on "$ENV_FILE" ENABLE_OPENCODE && OPENCODE_ON=1
+LU_PROFILES="$(lu_component_profiles "$ENV_FILE")" || exit 1
 
 "${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
 
@@ -238,7 +242,7 @@ LU_IMAGES="bun-runner"
 [[ $OPENCODE_ON -eq 1 ]] && LU_IMAGES="opencode ${LU_IMAGES}"
 [[ $LIQUID_ON -eq 1 ]] && LU_IMAGES="${LU_IMAGES} nar-builder liquid"
 [[ $OPENCLAW_ON -eq 1 ]] && LU_IMAGES="${LU_IMAGES} openclaw"
-[[ "$(get_env PRIVACY_PROXY_ENABLE)" == 1 ]] && LU_IMAGES="${LU_IMAGES} privacy-proxy"
+[[ $PRIVACY_PROXY_ENABLE -eq 1 ]] && LU_IMAGES="${LU_IMAGES} privacy-proxy"
 LU_MISSING=""
 for _image in $LU_IMAGES; do
   docker image inspect "liquidupstart/${_image}:latest" >/dev/null 2>&1 \
@@ -334,7 +338,7 @@ port_taken() {
   # 0 = taken, 1 = free (or undeterminable — never block on that).
   local port="$1" out rc
   set +e
-  out="$(docker run --rm --entrypoint true -p "${port}:1" "$PROBE_IMAGE" 2>&1)"
+  out="$(docker run --pull never --rm --entrypoint true -p "${port}:1" "$PROBE_IMAGE" 2>&1)"
   rc=$?
   set -e
   if [[ $rc -eq 0 ]]; then
@@ -371,7 +375,7 @@ fi
 # run` and `rm` against openclaw-gateway, and `run` does not enable a dependency's profile (CS-0).
 # Set rather than appended to: a COMPOSE_PROFILES left in the caller's shell would otherwise
 # start a component .env switches off.
-export COMPOSE_PROFILES="$(lu_component_profiles "$ENV_FILE")"
+export COMPOSE_PROFILES="$LU_PROFILES"
 
 "${PROJECT_DIR}/config/scripts/start/generate_api_key.sh"
 "${PROJECT_DIR}/config/scripts/start/pgadmin.sh"
@@ -401,8 +405,7 @@ fi
 # The privacy proxy runs under its own compose profile, so it is invisible to
 # `docker compose up` unless PRIVACY_PROXY_ENABLE=1 adds the profile here; the
 # agents' start scripts read PRIVACY_PROXY_URL to register its doors.
-PRIVACY_PROXY_ENABLE="$(get_env PRIVACY_PROXY_ENABLE)"
-if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
+if [[ "$PRIVACY_PROXY_ENABLE" = 1 ]]; then
   export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
   # The proxy listens on its built-in port 8080 inside the stack network.
   export PRIVACY_PROXY_URL="http://privacy-proxy:8080"

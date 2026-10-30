@@ -9,6 +9,7 @@
 // device and this resolves that device's current request.
 import { json, error } from '@sveltejs/kit';
 import {
+  OPENCLAW_NOT_BUILT,
   OPENCLAW_OFF_REFUSAL,
   approve,
   chooseRequest,
@@ -56,7 +57,9 @@ export const GET: RequestHandler = async ({ request }) => {
   // `revoked` travels too: a refused browser stops asking and the gateway drops
   // the request after five minutes, so without it the card is empty for an
   // operator who arrives late. A4 of the 2026-10-01 review.
-  const { ok, pending, revoked, message } = await pendingRequests();
+  const { ok, disabled, pending, revoked, message } = await pendingRequests();
+  // The image not built yet answers as switched off does (CS-FR10).
+  if (disabled) return json({ ok: true, disabled: true, pending: [], revoked: [] });
   return json({ ok, pending, revoked, message });
 };
 
@@ -78,7 +81,10 @@ export const POST: RequestHandler = async ({ request }) => {
   // carries a perfectly valid one. `latest` used to be resolved to pending[0] --
   // the newest request of any device -- which is finding 2 of the 2026-09-29
   // review.
-  const { ok, pending, message } = await pendingRequests();
+  const { ok, disabled, pending, message } = await pendingRequests();
+  // Nothing to approve against an image that is not built, and saying "nothing is waiting"
+  // would name the wrong cause (CS-FR10).
+  if (disabled) return json({ ok: false, message: OPENCLAW_NOT_BUILT }, { status: 409 });
   if (!ok) throw error(502, message);
 
   const choice = chooseRequest(pending, { requestId, deviceId });

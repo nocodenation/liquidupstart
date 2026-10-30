@@ -84,7 +84,7 @@ const ALLOWED_UNBOUNDED: { match: string; why: string }[] = [
     why: 'The config writer. Local only, no network and no prompt: it reads a JSON file, edits it and writes it back. A bound here would add a failure mode without removing one.',
   },
   {
-    match: 'docker run --rm ${docker_flags} "${CLAUDE_RUN_ARGS[@]}" "$@"',
+    match: 'docker run --pull never --rm ${docker_flags} "${CLAUDE_RUN_ARGS[@]}" "$@"',
     why: 'claude_cli, the deliberately unbounded sibling of claude_cli_bounded. It exists for the interactive sign-in, which must wait for the operator. Every non-interactive caller uses the bounded one.',
   },
   {

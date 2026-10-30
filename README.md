@@ -263,7 +263,7 @@ written before they existed runs everything, as before. A component that is off 
 started. Its image and its state in `./volumes/` stay where they are, so switching it on again needs
 a build only if the image is gone, and the dashboard asks for one exactly then. `1` is on, `0` is
 off, and an empty value is on; any other value stops the build and the start before anything is
-stopped.
+stopped. A change takes effect at the next Start; the launchpad shows it from the Save on.
 
 What switching one off leaves out:
 

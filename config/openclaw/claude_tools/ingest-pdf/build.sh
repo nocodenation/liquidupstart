@@ -6,11 +6,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMG="${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}"
+# The image the gateway runs, named rather than guessed: a default built the bundle in a different
+# OpenClaw than the stack's pinned one (BACKLOG, the two fallbacks). It is built here and on no
+# registry this stack trusts, so it is never pulled; Docker Hub's `liquidupstart` namespace
+# belongs to nobody (CS-FR15).
+IMG="${OPENCLAW_IMAGE:?set it to the image this stack runs, liquidupstart/openclaw:latest}"
 
 # --network host: throwaway container needs npm registry access. --user 0:0:
 # write dist/ back to the bind mount under rootless/userns-remapped Docker.
-docker run --rm --network host --user 0:0 \
+docker run --pull never --rm --network host --user 0:0 \
   -v "${SCRIPT_DIR}:/tool" \
   --entrypoint sh "$IMG" -c '
     set -e

@@ -18,8 +18,13 @@
  *           and every other field is; its per-image subheading goes with its fields, and so
  *           does a sign-in's subheading in section 8; with OpenClaw off
  *           `ENABLE_ANTHROPIC_CLAUDE_CODE` is still shown, and Liquid's whole section goes.
- *           With all on, every field of every shown section of `.env.example` is shown.
- * Covers:   CS-16, CS-FR1, CS-FR12
+ *           With all on, every field of every shown section of `.env.example` is shown. The
+ *           section's description says that a change takes effect at the next Start, since the
+ *           launchpad already follows the saved `.env` (the review on #56). The privacy proxy's
+ *           switch is shown by the reading every other reader uses (CS-FR16): `'1'` ticked and
+ *           `yes` unticked. Shown unticked, the `'1'` the start ran was written `0` by the next
+ *           Save (the local review of 2026-10-30).
+ * Covers:   CS-16, CS-FR1, CS-FR12, CS-FR16
  * Negative: each switch off: its keys and its subheadings are absent from the view.
  * Counterpart: all on shows every field the file declares outside its hidden sections, so a
  *           filter that dropped too much cannot pass; and with one switch off the other
@@ -34,6 +39,9 @@
  * `ENABLE_LIQUID=O`, appended to all on, whose note must read `ENABLE_LIQUID=O in .env is not a
  * switch value, and the start refuses it. Tick or untick it and save to set it.`, while no other
  * field -- every one holds a `fixture-` value that is no switch value either -- carries a note.
+ * The privacy lines are `PRIVACY_PROXY_ENABLE='1'` and `PRIVACY_PROXY_ENABLE=yes`, each appended
+ * to all on, so the last line decides. The description's last sentence: `A change takes effect at the next Start; the launchpad
+ * shows it from the Save on.`
  */
 import { test, expect, describe, beforeEach } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -85,6 +93,11 @@ beforeEach(() => {
 });
 
 describe('CS-16 the configuration page shows what has a reader', () => {
+  test('CS-16 and the section says that a change takes effect at the next Start', () => {
+    const first = view(null).sections[0] as any;
+    expect(first.description.endsWith('A change takes effect at the next Start; the launchpad shows it from the Save on.')).toBe(true);
+  });
+
   test('CS-16 it opens with 1. WHICH APPS TO RUN and its three checkboxes', () => {
     const first = view(null).sections[0];
     expect(first.title).toBe('1. WHICH APPS TO RUN');
@@ -102,6 +115,13 @@ describe('CS-16 the configuration page shows what has a reader', () => {
       ['ENABLE_OPENCLAW', '1'],
       ['ENABLE_OPENCODE', '1']
     ]);
+  });
+
+  test("CS-16 and the privacy proxy's switch written '1' is shown ticked, as every reader of it reads it", () => {
+    const field = (extra: string) =>
+      view(null, extra).sections.flatMap((s) => fieldsOf(s)).find((f) => f.key === 'PRIVACY_PROXY_ENABLE') as any;
+    expect(field("\nPRIVACY_PROXY_ENABLE='1'\n").value).toBe('1');
+    expect(field('\nPRIVACY_PROXY_ENABLE=yes\n').value).toBe('0');
   });
 
   test('CS-16 the negative: a value the start refuses is shown ticked, with a note saying so', () => {

@@ -1826,11 +1826,18 @@ suggested by the local review of #52's round 1, and measured on 2026-10-28 with 
 compose config --environment` prints what it read merged with the caller's environment, and
 prints a value that spans lines over those same lines, so a line inside it reads as a key of its
 own. It is no reader as it stands. *#56 adds one rule for #50's three switches, which the shell and
-the dashboard apply alike (`CS-2`), and one more place where the difference shows:* the dashboard asks
-for the privacy proxy's image by `PRIVACY_PROXY_ENABLE` as it reads it, while `build.sh` and
-`start.sh`, which build and require the image, read the first line with every quote removed. A
-hand-quoted `'1'`, or `=0` followed by `=1`, makes them disagree on whether a build is needed. The
-start then refuses with *Run Build*, which Rebuild answers; one reader would end that too.
+the dashboard apply alike (`CS-2`).* It first left one more place where the difference showed: the
+dashboard asked for the privacy proxy's image by `PRIVACY_PROXY_ENABLE` as it read it, while
+`build.sh` and `start.sh`, which build and require the image, read the first line with every quote
+removed, so a hand-quoted `'1'`, or `=0` followed by `=1`, made them disagree on whether a build was
+needed. *Taken on #56 after Timur's review of 2026-10-30 (decision 16):* every reader of that key
+uses the switches' rule now, `lu_privacy_proxy_on` in the shell and `privacyProxyOn` in the
+dashboard, and `CS-2` holds them to one table. The other keys keep their readers. One of them,
+found by the local review of that answer and the same on `main`: the configuration page shows
+every other checkbox by `parseEnvValues`' value, which keeps single quotes, while `openclaw.sh`'s
+`get_env` removes them. So `ENABLE_GITHUB_COPILOT='1'` runs Copilot, is shown unticked, and the
+next unrelated Save writes `0`. Showing every checkbox by the switches' rule would end it; not
+worked, after #49 a finding is recorded unless the operator asks for it.
 
 ---
 
@@ -1899,8 +1906,11 @@ hash of its build inputs, compared with `.env` by `stackState()`, would cover al
 decided on 2026-10-29 to build that together with this entry rather than inside #50. *Answered in part
 on #56:* `builtImages()` names the privacy-proxy image while `PRIVACY_PROXY_ENABLE=1`, and `start.sh`
 refuses to start, before `down.sh`, while an image of anything that is on is missing, so the missing
-half no longer reaches `compose up`. `update.sh` still leaves the image in place, and the stale half
-is open.
+half no longer reaches `compose up`. After Timur's review of 2026-10-30 every compose service of a
+`liquidupstart/*` image also says `pull_policy: never`, so a missing image stops `up` at *No such
+image* rather than being fetched from Docker Hub, and `CS-23` holds `builtImages()`, the start's
+pre-flight and the build to one answer for every combination of the switches. `update.sh` still
+leaves the image in place, and the stale half is open.
 
 ---
 
@@ -2026,6 +2036,21 @@ does theirs. And `github-copilot/*` is routed through the `copilot` agent runtim
 first-start gap holds for `active-memory`: its guarded push runs before the list exists and
 `baseAllow` lacks it, so it joins only on the second start. Not worked: after #49 a finding is
 recorded unless the operator asks for it.
+
+---
+
+`OPEN` **`dns: ["127.0.0.1"]` on the proxy is unmeasured on a rootful engine on Linux.**
+`compose.yml` gives the proxy that setting so that a name docker does not know -- a service that is
+switched off or not running -- is not handed to the host's DNS, where a device on the LAN of that name
+would receive the operator's requests (#56, CS-FR5). Timur's review of 2026-10-30 asked whether a
+rootful engine since Docker 26 reaches a loopback `--dns` server from the host's network namespace,
+which on a host running dnsmasq, unbound or Pi-hole on 127.0.0.1 would resolve such a name again.
+Docker's documentation says the server is the container's own loopback (docs.docker.com/engine/network,
+the DNS flags table), and on Docker Desktop's rootful engine 29.9.2 a resolver in the engine's own
+namespace received nothing while the container got SERVFAIL at once. The review reproduced the
+rootless case. A rootful engine on Linux with a resolver on the host's 127.0.0.1 is the case left: a
+`docker run --rm --dns 127.0.0.1 nginx:latest getent ahosts <a name only that resolver knows>` there
+answers it. Not worked: after #49 a finding is recorded unless the operator asks for it.
 
 ---
 
@@ -2190,7 +2215,10 @@ It stays settled against the finishing list's cut line of 2026-10-17: nothing he
 false and nothing touches what is not its own. The remedy for whoever next edits those two scripts is
 one line each — `${OPENCLAW_IMAGE:?set it to the image this stack runs}` in place of the default, so a
 hand-run refuses instead of guessing. Written down rather than done, because doing it means rebuilding
-a checked-in bundle to change a script nothing calls.
+a checked-in bundle to change a script nothing calls. *Done on #56, 2026-10-30, without rebuilding the
+bundles:* Timur's review made every run of a `liquidupstart/*` image say `--pull never`, which edited
+both scripts, so they took this remedy as well. Each now requires `OPENCLAW_IMAGE` and never pulls it;
+`CS-22` runs both against a stub `docker`.
 
 `DONE-ON-#9` **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
 Suggested in the third review of #11 as an optional improvement to N1 (OC-60 since the 2026-09-30 rename), and deferred here on the

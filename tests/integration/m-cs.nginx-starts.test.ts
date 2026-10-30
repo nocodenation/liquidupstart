@@ -13,21 +13,24 @@
  * Given:    `nginx:latest`, the image the proxy runs, against the configuration
  *           `config/scripts/start/nginx.sh` renders from the real template in a temporary
  *           tree, with the certificate it writes; and `da4e2d1`'s template rendered the same
- *           way, for the negative.
+ *           way, for the negative, read from `tests/fixtures/da4e2d1/nginx.conf` since the
+ *           review on #56: `git show` failed in a shallow clone and in the release archive.
  * When:     (1) `nginx -t` in a container with `--network none`; (2) the same with
  *           `da4e2d1`'s template; (3) on a new network `lu-cs10-<pid>`, nginx runs beside one
  *           upstream answering as `bun_runner`, with the `dns` setting `compose.yml` gives the
  *           proxy, and a third container asks for `opencode.localhost`, `pgadmin.localhost`,
  *           `app.localhost` and `app.localhost/redirect`; a container with the same `dns`
- *           setting asks the network's DNS for `uz` and for `bun_runner`; (4) everything made
- *           is removed.
+ *           setting asks the network's DNS for `uz` and for `bun_runner`; and, added on
+ *           2026-10-30, the third container asks `https://8900.liquid.localhost:8833/`, the
+ *           first Liquid ingress, with nothing behind it; (4) everything made is removed.
  * Then:     (1) rc 0 and `test is successful`. (2) refused with `host not found in
  *           upstream`. (3) `opencode.localhost` answers 502 with the page naming OpenCode
  *           and *Which apps to run*; `pgadmin.localhost` answers nginx's own 502, without
  *           that page; `app.localhost` answers 200 from the `bun_runner` upstream, and the
  *           redirect it sends to `http://bun_runner:3000/target` reaches the browser as
  *           `http://app.localhost:8888/target`, as the literal form rewrote it. With the proxy's `dns` setting `uz` does not resolve, while
- *           `bun_runner` does.
+ *           `bun_runner` does. The ingress answers 502 with its own page, naming port 8900 and
+ *           *Which apps to run*, where it answered nginx's stock 502 before (the review on #56).
  * Covers:   CS-10, CS-FR6, CS-NFR1
  * Negative: `da4e2d1`'s configuration does not start; `pgadmin.localhost`, which cannot be
  *           switched off, does not claim it was; `uz` does not resolve with the proxy's `dns`
@@ -50,7 +53,7 @@
  * container is called that. The `dns` setting is read from the proxy's block in `compose.yml`.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
@@ -92,7 +95,7 @@ const mounts = (c: { conf: string; certs: string }) => [
 ];
 
 const today = rendered(sh(['cat', join(repoRoot, 'config/nginx/templates/nginx.conf')]).stdout);
-const main = rendered(sh(['git', 'show', 'da4e2d1:config/nginx/templates/nginx.conf']).stdout);
+const main = rendered(readFileSync(join(repoRoot, 'tests/fixtures/da4e2d1/nginx.conf'), 'utf8'));
 
 function ask(host: string): { status: number; body: string } {
   const r = sh([
@@ -182,6 +185,19 @@ describe('CS-10 nginx starts with nothing behind it', () => {
     test('CS-10 the counterpart: while the stack\'s own names still do', () => {
       start();
       expect(lookup('bun_runner')).toContain('bun_runner');
+    }, LONG);
+
+    test('CS-10 and a Liquid ingress answers over HTTPS with its own page, naming its port', () => {
+      start();
+      const r = sh([
+        'docker', 'run', '--rm', '--network', NET, 'nginx:latest', 'curl', '-sk', '-m', '5', '-w', '\n%{http_code}',
+        '--connect-to', `8900.liquid.localhost:8833:${PROXY}:8833`, 'https://8900.liquid.localhost:8833/'
+      ]);
+      const lines = r.stdout.split('\n');
+      expect(Number(lines.pop()), r.output).toBe(502);
+      const body = lines.join('\n');
+      expect(body).toContain('Liquid does not answer on port 8900');
+      expect(body).toContain('Which apps to run');
     }, LONG);
   });
 });

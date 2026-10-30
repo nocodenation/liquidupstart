@@ -20,7 +20,9 @@
  *           `stop b`, `start b`, `ps b`; (4) `run --rm c true` with no profile; and,
  *           as the negative, `config -q` of the same project without `required: false`; and
  *           `up -d` of a project whose `b` is present but never healthy, once with
- *           `required: false` and once without.
+ *           `required: false` and once without. Added on 2026-10-30, for the review on #56,
+ *           in a project of its own: (6) `up -d p` and `pull p`, where `p`'s image is missing
+ *           and `p` says `pull_policy: never`; (7) `up -d q`, the same service without it.
  * Then:     (1) rc 0, `a` running, no container for `b`. (2) rc 0, `b` healthy, and `a`
  *           started after `b`. (3) every command rc 0. (4) refused, `no such service: b`:
  *           `run` does not enable a dependency's profile, which is why `start.sh` exports
@@ -28,11 +30,16 @@
  *           refuses the project and names `b`. With `b` unhealthy, `required` makes `up` exit
  *           non-zero, and `required: false` makes it exit 0 with `a` running -- which is why
  *           `start.sh` asks after `up` whether the gateway is healthy (CS-5; found by the
- *           second local review of 2026-10-29 and measured the same day).
- * Covers:   CS-0, CS-FR5, CS-NFR1
+ *           second local review of 2026-10-29 and measured the same day). (6) `up` fails with
+ *           `No such image` and no `Pulling`, and `pull` reports `p` `Skipped`: the setting
+ *           every `liquidupstart/*` service carries keeps compose off the registry (CS-FR15).
+ *           (7) `up` fails after `Pulling`: without it compose goes to the registry.
+ * Covers:   CS-0, CS-FR5, CS-FR15, CS-NFR1
  * Negative: the project without `required: false` is refused; and (4), where compose does
  *           not do what the start would need, recorded as measured.
- * Counterpart: (1) to (3), so a compose that refused everything cannot pass.
+ * Counterpart: (1) to (3), so a compose that refused everything cannot pass; and (7), the
+ *           service without `pull_policy: never`, which does go to the registry, so (6) is not
+ *           green merely because nothing could ever be pulled.
  * Precondition: docker with compose, and `nginx:latest` present locally, which `start.sh`
  *           already uses as its probe image. The file calls `docker compose`, so the runner
  *           classes it as stack tier and runs it with `--system`; it touches nothing but its
@@ -43,7 +50,11 @@
  * `b`, `nginx:latest`, `profiles: ["bp"]`, healthcheck `["CMD", "true"]` every second;
  * service `c`, `nginx:latest`, `profiles: ["cp"]`, `depends_on: [b]`. "No profile" is
  * `COMPOSE_PROFILES` set empty, which compose reads as none. **Must not exist:** any
- * container of the project before (1).
+ * container of the project before (1). The pull project is `lu-cs0-<pid>-p`, its file
+ * `pull.yml`: services `p` and `q`, both `lu-cs0-absent.invalid/probe:latest` with
+ * `command: ["true"]`, `p` with `pull_policy: never`. The image is shaped so that no registry
+ * can serve it: `.invalid` is reserved by RFC 2606 and never resolves, so `q`'s pull fails at
+ * the name lookup and nothing can be fetched.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -92,6 +103,18 @@ const UNHEALTHY = (required: boolean) => `services:
       interval: 1s
       retries: 2
 `;
+const PULL = `services:
+  p:
+    image: lu-cs0-absent.invalid/probe:latest
+    pull_policy: never
+    command: ["true"]
+  q:
+    image: lu-cs0-absent.invalid/probe:latest
+    command: ["true"]
+`;
+writeFileSync(join(dir, 'pull.yml'), PULL);
+const pulling = (...args: string[]) =>
+  sh(['docker', 'compose', '-p', `${PROJECT}-p`, '-f', join(dir, 'pull.yml'), ...args], dir, { COMPOSE_PROFILES: '' });
 writeFileSync(join(dir, 'unhealthy-required.yml'), UNHEALTHY(true));
 writeFileSync(join(dir, 'unhealthy-optional.yml'), UNHEALTHY(false));
 const unhealthy = (file: string, ...args: string[]) =>
@@ -112,6 +135,7 @@ function container(service: string): { running: boolean; startedAt: string; heal
 
 afterAll(() => {
   compose('*', 'down', '--remove-orphans', '--timeout', '1');
+  pulling('down', '--remove-orphans', '--timeout', '1');
   for (const f of ['unhealthy-required.yml', 'unhealthy-optional.yml']) {
     sh(['docker', 'compose', '-p', `${PROJECT}-u`, '-f', join(dir, f), 'down', '--remove-orphans', '--timeout', '1'], dir, { COMPOSE_PROFILES: '*' });
   }
@@ -174,5 +198,21 @@ describe('CS-0 compose does what the profile design leans on', () => {
     });
     expect(r.code).not.toBe(0);
     expect(r.output).toContain('depends on undefined service "b"');
+  }, LONG);
+
+  test('CS-0 pull_policy: never stops up at No such image without going to a registry, and pull skips it', () => {
+    const up = pulling('up', '-d', 'p');
+    expect(up.code).not.toBe(0);
+    expect(up.output).toContain('No such image: lu-cs0-absent.invalid/probe:latest');
+    expect(up.output).not.toContain('Pulling');
+    const pull = pulling('pull', 'p');
+    expect(pull.code, pull.output).toBe(0);
+    expect(pull.output).toContain('Skipped');
+  }, LONG);
+
+  test('CS-0 the counterpart: without it, up goes to the registry for the missing image', () => {
+    const up = pulling('up', '-d', 'q');
+    expect(up.code).not.toBe(0);
+    expect(up.output).toContain('Pulling');
   }, LONG);
 });

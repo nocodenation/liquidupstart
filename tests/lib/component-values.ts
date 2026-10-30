@@ -54,6 +54,32 @@ export const ROWS: Row[] = [
 ];
 
 /**
+ * `PRIVACY_PROXY_ENABLE`'s lines, for `lu_privacy_proxy_on` (CS-1) and for both readers at once
+ * (CS-2). The value comes off its line by the switches' rule, and only `1` is on (decision 16).
+ * `'1'` is the review's case on #56: the start read it as on and the dashboard as off. The two
+ * doubled lines are the other disagreement, in which the start read the first line and the
+ * dashboard the last. `yes`, `true` and `on` are there because `1` is the only value that ever
+ * meant on for this key, and a reader that took them would start a proxy nobody switched on.
+ */
+export type PrivacyRow = { name: string; env: string; on: boolean };
+
+export const PRIVACY_VALUES: PrivacyRow[] = [
+  { name: '1', env: 'PRIVACY_PROXY_ENABLE=1\n', on: true },
+  { name: "single-quoted 1", env: "PRIVACY_PROXY_ENABLE='1'\n", on: true },
+  { name: 'double-quoted 1', env: 'PRIVACY_PROXY_ENABLE="1"\n', on: true },
+  { name: '1 with a comment', env: 'PRIVACY_PROXY_ENABLE=1 # on\n', on: true },
+  { name: 'twice, 0 then 1', env: 'PRIVACY_PROXY_ENABLE=0\nPRIVACY_PROXY_ENABLE=1\n', on: true },
+  { name: 'absent', env: 'ENABLE_OPENCLAW=1\n', on: false },
+  { name: 'empty', env: 'PRIVACY_PROXY_ENABLE=\n', on: false },
+  { name: '0', env: 'PRIVACY_PROXY_ENABLE=0\n', on: false },
+  { name: 'double-quoted 0', env: 'PRIVACY_PROXY_ENABLE="0"\n', on: false },
+  { name: 'yes', env: 'PRIVACY_PROXY_ENABLE=yes\n', on: false },
+  { name: 'true', env: 'PRIVACY_PROXY_ENABLE=true\n', on: false },
+  { name: 'on', env: 'PRIVACY_PROXY_ENABLE=on\n', on: false },
+  { name: 'twice, 1 then 0', env: 'PRIVACY_PROXY_ENABLE=1\nPRIVACY_PROXY_ENABLE=0\n', on: false }
+];
+
+/**
  * The keys the configuration page hides while their switch is off, exactly (CS-19). The
  * Liquid set is its authentication section and its per-image overrides; OpenClaw's is the
  * three sign-ins only it reads and its overrides, not `ENABLE_ANTHROPIC_CLAUDE_CODE`, which

@@ -17,8 +17,11 @@
  *           `privacy-proxy` when that is on. A refused value exits 1 with no step run and
  *           the key named -- through `rebuild.sh` too, the dashboard's Rebuild, which runs
  *           `down.sh` first: a refusal there must come before it (the second local review of
- *           2026-10-29), while a valid value runs `down` and then the steps.
- * Covers:   CS-3, CS-FR3, CS-NFR1, CS-NFR2
+ *           2026-10-29), while a valid value runs `down` and then the steps. Since the review
+ *           on #56 the privacy proxy's switch is read by the switches' rule (CS-FR16):
+ *           `PRIVACY_PROXY_ENABLE='1'` and `=0` followed by `=1` build it, `=1` followed by `=0`
+ *           does not.
+ * Covers:   CS-3, CS-FR3, CS-FR16, CS-NFR1, CS-NFR2
  * Negative: the switched-off rows, and the refused row, which writes no `build.log` at all.
  * Counterpart: the row without any switch key runs every step `main` runs, so a build that
  *           skipped something whatever the switches said cannot pass.
@@ -27,7 +30,9 @@
  * `opencode bun-runner nar-builder liquid openclaw`. The `.env` files are
  * `PRIVACY_PROXY_ENABLE=0` alone; `ENABLE_LIQUID=0`; `ENABLE_OPENCLAW=0`;
  * `ENABLE_OPENCODE=0`; all three `0`; all three `0` with `PRIVACY_PROXY_ENABLE=1`; and
- * `ENABLE_OPENCODE=yes`. No docker is involved: every build step is a stub.
+ * `ENABLE_OPENCODE=yes`. The privacy rows hold all three switches at `0` and
+ * `PRIVACY_PROXY_ENABLE='1'`, or `PRIVACY_PROXY_ENABLE=0` then `PRIVACY_PROXY_ENABLE=1`, or the
+ * reverse. No docker is involved: every build step is a stub.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -94,6 +99,19 @@ describe('CS-3 the build runs what is on', () => {
   test('CS-3 and the privacy proxy keeps its own switch', () => {
     const r = build('ENABLE_LIQUID=0\nENABLE_OPENCLAW=0\nENABLE_OPENCODE=0\nPRIVACY_PROXY_ENABLE=1\n');
     expect(r.ran).toEqual(['bun-runner', 'privacy-proxy']);
+  });
+
+  const off = 'ENABLE_LIQUID=0\nENABLE_OPENCLAW=0\nENABLE_OPENCODE=0\n';
+  test("CS-3 and builds it for PRIVACY_PROXY_ENABLE='1'", () => {
+    expect(build(`${off}PRIVACY_PROXY_ENABLE='1'\n`).ran).toEqual(['bun-runner', 'privacy-proxy']);
+  });
+
+  test('CS-3 and for =0 followed by =1, the last line deciding as the dashboard reads it', () => {
+    expect(build(`${off}PRIVACY_PROXY_ENABLE=0\nPRIVACY_PROXY_ENABLE=1\n`).ran).toEqual(['bun-runner', 'privacy-proxy']);
+  });
+
+  test('CS-3 the negative: and not for =1 followed by =0', () => {
+    expect(build(`${off}PRIVACY_PROXY_ENABLE=1\nPRIVACY_PROXY_ENABLE=0\n`).ran).toEqual(['bun-runner']);
   });
 });
 

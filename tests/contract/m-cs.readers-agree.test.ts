@@ -9,22 +9,28 @@
  * Given:    each row of `tests/lib/component-values.ts`, written to a file.
  * When:     `lu_component_state <file> ENABLE_LIQUID` answers for the shell, and
  *           `componentsFrom` over `parseEnvValues` of the same text for the dashboard -- the
- *           function the dashboard's loads reach through `installedComponents()`.
+ *           function the dashboard's loads reach through `installedComponents()`. Added on
+ *           2026-10-30: each privacy row, read by `lu_privacy_proxy_on` and by `privacyProxyOn`.
  * Then:     On every row the shell accepts, both give the row's answer. On every row the
  *           shell refuses, the dashboard reads on, which is the side where nothing is
- *           hidden while the start's banner reports the refusal (CS-FR2).
- * Covers:   CS-2, CS-FR2
+ *           hidden while the start's banner reports the refusal (CS-FR2). On every privacy row
+ *           both give the row's answer, so the dashboard asks for the proxy's image exactly when
+ *           the start requires it (CS-FR16).
+ * Covers:   CS-2, CS-FR2, CS-FR16
  * Negative: `ENABLE_LIQUID='0'` reads off in both. `parseEnvValues` removes double
  *           quotes only, so a dashboard reader left to it would read on while the shell
  *           reads off -- the row is in the table for that reason. So are the six rows the
  *           local review of 2026-10-29 found the readers disagreeing on: a tab before the
  *           comment read off in the shell and on in the dashboard, and four quoted shapes were
  *           refused by the shell and read off by the dashboard, which hid Liquid's tiles.
+ *           Among the privacy rows, `'1'` read on in the start and off in the dashboard until
+ *           the review on #56, and the two doubled lines the other way round.
  * Counterpart: the on rows, so two readers that both always said off cannot agree their
  *           way through; and the refused rows, where agreement is deliberately not
  *           asked for and the dashboard's answer is pinned instead.
  *
- * Test data: the table's twenty-four rows, unchanged, stated in `tests/lib/component-values.ts`.
+ * Test data: the table's twenty-four rows, unchanged, and its thirteen privacy rows,
+ * `PRIVACY_VALUES`, both stated in `tests/lib/component-values.ts`.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -32,9 +38,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
-import { ROWS } from '../lib/component-values';
+import { PRIVACY_VALUES, ROWS } from '../lib/component-values';
 import { parseEnvValues } from '../../dashboard/src/lib/env-file';
-import { componentsFrom } from '../../dashboard/src/lib/component-switches';
+import { componentsFrom, privacyProxyOn } from '../../dashboard/src/lib/component-switches';
 
 const LIB = join(repoRoot, 'config/scripts/start/lib/components.sh');
 const dir = mkdtempSync(join(tmpdir(), 'lu-cs2-'));
@@ -70,6 +76,20 @@ describe('CS-2 the negative: on a refused line the shell refuses and the dashboa
       expect({ shell: shell(row.env, i), dashboard: dashboard(row.env) }).toEqual({
         shell: 'refused',
         dashboard: 'on'
+      });
+    });
+  });
+});
+
+describe('CS-2 the two readers agree on PRIVACY_PROXY_ENABLE', () => {
+  PRIVACY_VALUES.forEach((row, i) => {
+    test(`CS-2 privacy ${row.name}: both read ${row.on ? 'on' : 'off'}`, () => {
+      const file = join(dir, `privacy-${i}`);
+      writeFileSync(file, row.env);
+      const r = sh(['bash', '-c', '. "$1"; lu_privacy_proxy_on "$2"', 'cs2', LIB, file]);
+      expect({ shell: r.code === 0, dashboard: privacyProxyOn(parseEnvValues(row.env)) }).toEqual({
+        shell: row.on,
+        dashboard: row.on
       });
     });
   });

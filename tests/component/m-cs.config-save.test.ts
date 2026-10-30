@@ -27,10 +27,12 @@
  *           2026-10-29); (j) such a form that does carry a switch is not believed about it;
  *           (k) it leaves a refused value refused; (l) it keeps a switch as the start reads it,
  *           so `'1'` is written `1` and `0` with a tab before its comment `0`, not re-quoted
- *           into a value the start refuses (the third and fourth reviews of that day).
- * Covers:   CS-17, CS-FR12, CS-FR8
+ *           into a value the start refuses (the third and fourth reviews of that day); (m) the
+ *           privacy proxy's switch written `'1'`, which the start runs, is shown ticked and saved
+ *           as `1`, where it was written `0` (the local review of 2026-10-30, CS-FR16).
+ * Covers:   CS-17, CS-FR12, CS-FR8, CS-FR16
  * Negative: (a) and (b), where a missing rule writes `ENABLE_GITHUB_COPILOT=0`; (e); (f), the
- *           race the local review of 2026-10-29 found; and (h).
+ *           race the local review of 2026-10-29 found; (h); and (m).
  * Counterpart: (c) and (d), so a save that kept every value whatever the form said cannot
  *           pass; and (g), which shows (f) depends on the field and not on luck.
  *
@@ -48,7 +50,9 @@
  * same `.env`, form without `__components` and with `ENABLE_OPENCODE` ticked; expected
  * `ENABLE_OPENCODE=0`. (k) `ENABLE_LIQUID=O`, form as (i); expected `ENABLE_LIQUID=O`. (l) all on,
  * then `ENABLE_OPENCODE='1'` and `ENABLE_LIQUID=0`, a tab and `# off` appended as lines, form as
- * (i); expected `ENABLE_LIQUID=0`, `ENABLE_OPENCODE=1`.
+ * (i); expected `ENABLE_LIQUID=0`, `ENABLE_OPENCODE=1`. (m) all on, then the line
+ * `PRIVACY_PROXY_ENABLE='1'` appended, so the last line decides; form as rendered; expected
+ * `PRIVACY_PROXY_ENABLE=1`.
  */
 import { test, expect, describe, beforeEach } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -140,6 +144,15 @@ describe('CS-17 the save keeps what it did not show', () => {
     expect(saved().get('ENABLE_LIQUID')).toBe('ENABLE_LIQUID=');
     await saveConfig(submittedForm());
     expect(saved().get('ENABLE_LIQUID')).toBe('ENABLE_LIQUID=1');
+  });
+
+  test("CS-17 the negative (m): the privacy proxy's switch written '1', shown ticked, is saved as 1", async () => {
+    installed({});
+    const file = join(projectDir, '.env');
+    writeFileSync(file, `${readFileSync(file, 'utf8')}\nPRIVACY_PROXY_ENABLE='1'\n`);
+    expect(saved().get('PRIVACY_PROXY_ENABLE')).toBe("PRIVACY_PROXY_ENABLE='1'");
+    await saveConfig(submittedForm());
+    expect(saved().get('PRIVACY_PROXY_ENABLE')).toBe('PRIVACY_PROXY_ENABLE=1');
   });
 
   test('CS-17 the negative (i): a page from before the switches keeps them, whatever it carries', async () => {

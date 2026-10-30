@@ -152,6 +152,8 @@ if [[ -f "$NGINX_CONF" ]]; then
 
     ingress_blocks=$(mktemp)
 
+    # Each block says why it does not answer, as the template's switchable vhosts do (CS-FR6). A
+    # running Liquid with no flow on the port gives the same 502, so the page names that too.
     for port in $(seq 8900 8999); do
         cat >> "$ingress_blocks" <<EOF
 
@@ -163,6 +165,12 @@ server {
     ssl_certificate     /etc/nginx/certs/liquid.localhost.crt;
     ssl_certificate_key /etc/nginx/certs/liquid.localhost.key;
     ssl_protocols       TLSv1.3;
+
+    error_page 502 @lu_unavailable;
+    location @lu_unavailable {
+        default_type text/plain;
+        return 502 "Liquid does not answer on port ${port}: it is either switched off under Which apps to run in Configuration, or not running, or no flow listens on this port.\n";
+    }
 
     location / {
         set \$lu_upstream liquid:${port};

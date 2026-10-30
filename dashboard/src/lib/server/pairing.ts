@@ -22,6 +22,12 @@ export function openclawOn(): boolean {
 }
 export { OPENCLAW_OFF_REFUSAL };
 
+// The script's answer when the OpenClaw image is not built: exit 3 and this line, having run
+// nothing. Both are asked for, so an exit 3 of the CLI's own still reaches the card as an error.
+const NOT_BUILT = 3;
+const NOT_BUILT_LINE = 'is not built here.';
+export const OPENCLAW_NOT_BUILT = 'OpenClaw is switched on, but its image is not built yet — run Build first.';
+
 // A request id, exactly. This is the only value that reaches a command line, and
 // the script checks it a second time because this is not the only caller it
 // could ever have.
@@ -203,11 +209,17 @@ export type RevokedDevice = {
 
 export async function pendingRequests(): Promise<{
   ok: boolean;
+  disabled?: true;
   pending: PendingRequest[];
   revoked: RevokedDevice[];
   message: string;
 }> {
   const { stdout, stderr, code } = await run(['list']);
+  // OpenClaw switched on and saved before a build: nothing to pair against, answered as
+  // switched off is, so the card stays silent rather than repeating an error each poll (CS-FR10).
+  if (code === NOT_BUILT && stderr.includes(NOT_BUILT_LINE)) {
+    return { ok: true, disabled: true, pending: [], revoked: [], message: '' };
+  }
   if (code !== 0) {
     // The gateway being down is the ordinary case here, not an exception: this
     // card is read while something is wrong. Say what the CLI said and show no
@@ -373,6 +385,10 @@ export async function approve(
     return { ok: false, message: 'That is not a pairing request id.', status: 400 };
   }
   const { stdout, stderr, code } = await run(['approve', requestId]);
+  // The image removed between the listing and the press: the same 409 as for the listing.
+  if (code === NOT_BUILT && stderr.includes(NOT_BUILT_LINE)) {
+    return { ok: false, message: OPENCLAW_NOT_BUILT, status: 409 };
+  }
   if (code === 0) {
     return {
       ok: true,

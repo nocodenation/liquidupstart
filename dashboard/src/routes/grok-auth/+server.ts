@@ -4,11 +4,9 @@ import { spawn } from 'node:child_process';
 import { json } from '@sveltejs/kit';
 import { parseEnvValues } from '$lib/env-file';
 import { requireSameOrigin } from '$lib/server/origin';
-import { componentsAt, installedComponents } from '$lib/server/project';
-import { OPENCLAW_OFF_REFUSAL } from '$lib/component-switches';
+import { openclawImage, openclawRunnable, refusedWhileOff } from '$lib/server/openclaw-image';
 
 const ENV_DIR = process.env.ENV_DIR ?? resolve(process.cwd(), '..');
-const OPENCLAW_IMAGE = process.env.OPENCLAW_IMAGE ?? 'liquidupstart/openclaw:latest';
 const STATE_DIR = join(ENV_DIR, 'volumes', '_openclaw');
 const SECRETS_DIR = join(ENV_DIR, 'volumes', '_openclaw-auth-profile-secrets');
 const PLUGINS_DIR = join(ENV_DIR, 'config', 'openclaw', 'plugins');
@@ -21,6 +19,8 @@ let child: ReturnType<typeof spawn> | null = null;
 function openclawArgs(...args: string[]): string[] {
   return [
     'run',
+    '--pull',
+    'never',
     '--rm',
     '--user',
     '0:0',
@@ -42,7 +42,7 @@ function openclawArgs(...args: string[]): string[] {
     `${SECRETS_DIR}:/home/node/.config/openclaw`,
     '-v',
     `${PLUGINS_DIR}:/home/node/openclaw-plugins:ro`,
-    OPENCLAW_IMAGE,
+    openclawImage(),
     ...args
   ];
 }
@@ -52,6 +52,8 @@ const sh = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 function loginPtyCommand(): string {
   const args = [
     'run',
+    '--pull',
+    'never',
     '--rm',
     '--name',
     LOGIN_CONTAINER,
@@ -81,7 +83,7 @@ function loginPtyCommand(): string {
     `${SECRETS_DIR}:/home/node/.config/openclaw`,
     '-v',
     `${PLUGINS_DIR}:/home/node/openclaw-plugins:ro`,
-    OPENCLAW_IMAGE,
+    openclawImage(),
     '-c',
     'socat TCP4-LISTEN:56122,fork,reuseaddr TCP4:127.0.0.1:56121 & exec openclaw models auth login --provider xai --method oauth'
   ];
@@ -129,20 +131,19 @@ export async function GET() {
   const envFile = join(ENV_DIR, '.env');
   if (!existsSync(envFile)) return json({ needed: false });
   const env = parseEnvValues(readFileSync(envFile, 'utf8'));
-  // No sign-in panel for a service that is switched off, whatever an openclaw.json left
-  // behind says, and no container run to find out (CS-FR11).
-  if (!installedComponents(env).openclaw) return json({ needed: false });
   if (env.get('ENABLE_XAI_GROK')?.value !== '1') return json({ needed: false });
   if (!existsSync(join(STATE_DIR, 'openclaw.json'))) return json({ needed: false });
+  // OpenClaw switched off, or its image not built: no panel, and nothing run to find out
+  // (CS-FR11).
+  if (!(await openclawRunnable(env))) return json({ needed: false });
   return json({ needed: !(await grokAuthed()) });
 }
 
 export async function POST({ request }) {
   const blocked = requireSameOrigin(request);
   if (blocked) return blocked;
-  if (!componentsAt(ENV_DIR).openclaw) {
-    return new Response(OPENCLAW_OFF_REFUSAL, { status: 409 });
-  }
+  const off = refusedWhileOff(ENV_DIR);
+  if (off) return off;
 
   const body = await request.json();
 

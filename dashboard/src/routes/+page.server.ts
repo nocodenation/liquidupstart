@@ -14,6 +14,7 @@ import {
   SWITCHED_OFF_NOTE,
   bothAgentsOff,
   nodeAppNote,
+  privacyProxyOn,
   type Component
 } from '$lib/component-switches';
 
@@ -89,7 +90,7 @@ export const load: PageServerLoad = async () => {
         // },
         owned('openclaw', { name: 'OpenClaw', url: `http://openclaw.localhost:${http}`, note: 'recommended' }),
         owned('opencode', { name: 'OpenCode', url: `http://opencode.localhost:${http}` }),
-        privacyTile(http, get('PRIVACY_PROXY_ENABLE') === '1', bothAgentsOff(components))
+        privacyTile(http, privacyProxyOn(env), bothAgentsOff(components))
       ]
     }
   ];

@@ -9,8 +9,9 @@
  * Given:    `compose.yml`, its `services:` block read service by service through
  *           `tests/lib/compose-file.ts`'s `serviceBlock()`.
  * When:     Each service's `profiles:` and the proxy's `depends_on` are read.
- * Then:     `liquid` and `nar_builder` carry `liquid`, `openclaw-gateway` `openclaw`,
- *           `opencode` `opencode`; `openclaw-cli` keeps `cli` and `full`, `privacy-proxy`
+ * Then:     `liquid` and `nar_builder` carry `liquid`, `openclaw-gateway` `openclaw` and,
+ *           since the review on #56, the CLI's `cli` and `full` (decision 15), `opencode`
+ *           `opencode`; `openclaw-cli` keeps `cli` and `full`, `privacy-proxy`
  *           `privacy-proxy`; no other service has a profile. The proxy's entries for
  *           `opencode`, `nar_builder` and `openclaw-gateway` are `required: false` and keep
  *           today's conditions. And the proxy has `dns: ["127.0.0.1"]`: nginx resolves per
@@ -25,7 +26,7 @@
  *           anywhere cannot pass.
  *
  * Test data: the profiled services and their profiles, exactly: `liquid` and `nar_builder`
- * → `liquid`; `openclaw-gateway` → `openclaw`; `opencode` → `opencode`; `openclaw-cli` →
+ * → `liquid`; `openclaw-gateway` → `openclaw`, `cli`, `full`; `opencode` → `opencode`; `openclaw-cli` →
  * `cli`, `full`; `privacy-proxy` → `privacy-proxy`. The proxy's entries: `opencode`
  * `service_started`, `nar_builder` `service_started`, `openclaw-gateway` `service_healthy`,
  * each with `required: false`; and `bun_runner` `service_started` without it.
@@ -55,7 +56,7 @@ function dependency(name: string): string {
 const EXPECTED: Record<string, string[]> = {
   liquid: ['liquid'],
   nar_builder: ['liquid'],
-  'openclaw-gateway': ['openclaw'],
+  'openclaw-gateway': ['openclaw', 'cli', 'full'],
   opencode: ['opencode'],
   'openclaw-cli': ['cli', 'full'],
   'privacy-proxy': ['privacy-proxy']
