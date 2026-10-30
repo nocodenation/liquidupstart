@@ -9,17 +9,92 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-30* has the live picture, *2026-10-29, evening* under it, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-30, afternoon* has the live picture, *2026-10-30, morning* under it, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first fifteen and the review bodies they point to; the rest of this file is the map and the lessons.
+first sixteen and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-30: #56 with Timur, the proxy findings filed, and no stack running
+## Where it stands, 2026-10-30, afternoon: round 1 of #56 answered, and nothing runs
+
+**Timur reviewed #56 at 11:07Z and asked for changes; the answer is pushed, at `1e8a9dc`.** Three
+points blocked the merge, and seven did not. The operator agreed the scope: all three, and the seven
+as recommended, with CS-20 run against the stack.
+- `3c77efc` is the code. Its main changes:
+  - no `liquidupstart/*` image is ever pulled, since nobody owns Docker Hub's namespace;
+  - `docker compose run --rm openclaw-cli` works again;
+  - `PRIVACY_PROXY_ENABLE` is read by one rule everywhere.
+- `2b12988` adds one mutation and corrects a test header.
+- `1e8a9dc` records what the runs found.
+
+The reasons are in decisions 14 to 16 and §7 of `docs/FEATURE-component-switches.md`, and the runs
+in `docs/TEST-SPEC-component-switches.md`. Both exist only on #56's branch, checked out at
+`../liquidupstart-wt-50`.
+
+#56's one comment, rewritten, answers point by point, including what ran and `dns`, which is
+answered with Docker's documentation and a measurement and not changed. `gh pr view 56 --comments`
+shows it.
+
+An edited comment notifies no one, so the review was requested of `iztiev` again at 16:01Z. `gh pr
+view 56 --json headRefOid,reviewRequests,reviewDecision` shows where it stands. The decision stays
+`CHANGES_REQUESTED` until he reviews again.
+
+In short, from a clean tree:
+- the default tier, 1708 / 10 / 0;
+- 61 mutations in 25 cases, all validated;
+- CS-20 2 / 0 in 148 s. It asks every host the review named except `app.localhost`, since
+  `bun_runner` listens only once an app has been built; CS-10 holds that name.
+
+Three local `/code-review` passes ran over the answer, and two over the record of results.
+`2b12988` went in without a pass of its own, which the comment says.
+
+**The morning section's coordination check was wrong by the time it was committed.** Timur assigned
+himself #31 at 05:55:44Z, five minutes before `3ec49e1`, so both issues being worked are assigned
+now, his #31 and the operator's #50. At 06:30Z Timur opened #57 and #58, B6-23 and B6-2 on rootless
+Docker, both on our tests and both unassigned. Before anyone takes either, the operator asks Timur.
+
+The operator's Slack announcement of this round said only that it was being worked. The 0.8.1
+question also went on Slack, beside the comment. Claiming the `liquidupstart` namespace on Docker
+Hub, which would also protect installations that never get `--pull never`, was not sent. It is the
+operator's or Timur's to raise.
+
+**Nothing runs.** CS-20 built and started the worktree's stack twice between 15:27Z and 15:30Z, and
+the stack was stopped afterwards with `down.sh` from the worktree. The builds were cache hits, so the
+shared `liquidupstart/*:latest` images are still the ones of 2026-10-29: `docker image ls
+'liquidupstart/*'` shows their dates. The worktree's `volumes/` were written by those starts and are
+otherwise as they were, with the Claude login and the four unregistered deploy keys, none of them to
+be registered. The 0.8.0 installation is stopped and untouched.
+
+**Open, and whose**, replacing the list in the section below.
+- **Timur's:**
+  - a second review of #56, and the 0.8.1 question;
+  - privacy-proxy#1 and `45-26`;
+  - whether he takes #57 or #58.
+- **The operator's, or Timur's:** the Docker Hub namespace.
+- **The operator's:**
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles in `FINISH.md`'s waiting table on `main`, and Hermes in the
+    same table on #56.
+- **Ours:**
+  - whatever a second round asks;
+  - once #56 merges, the intro to the update-test entries naming privacy-proxy#1 where it says
+    draft;
+  - then the image label with update-test entry 2;
+  - the entries that ``grep -n '^`OPEN` ' BACKLOG.md`` lists on #56's branch, each waiting for the
+    operator's yes. They are thirteen today, two more than this morning: the `dns` setting on
+    rootful Linux and one red case of `m-cs.start-switches.test.ts` that was not captured. The
+    configuration page's other checkboxes are a sentence in the `SETTLED` entry on `.env`'s
+    readers.
+
+`tests/mutations.json` still meets #55 at its end, as below.
+
+The section below holds for the morning, except where this one corrects it.
+
+## 2026-10-30, morning: #56 with Timur, the proxy findings filed, and no stack running
 
 **Timur and we tell each other which issue we start.** He asked for it on Slack, so that two people
 never work one issue, and he announces his own the same way. Before taking an issue: read `gh pr
