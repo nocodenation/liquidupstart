@@ -1,4 +1,4 @@
-# Handover — 2026-10-29
+# Handover — 2026-10-30
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,17 +9,73 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-29, evening* has the live picture, *2026-10-28, afternoon* under it, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-30* has the live picture, *2026-10-29, evening* under it, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first thirteen and the review bodies they point to; the rest of this file is the map and the lessons.
+first fifteen and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-29, evening: the update test done, and #56 open for issue #50
+## Where it stands, 2026-10-30: #56 with Timur, the proxy findings filed, and no stack running
+
+**Timur and we tell each other which issue we start.** He asked for it on Slack, so that two people
+never work one issue, and he announces his own the same way. Before taking an issue: read `gh pr
+list`, where ours and Timur's name their issue in the title, and `gh issue list --json
+number,title,assignees`; give the operator a line for Timur, and start only once it has gone. The
+assignees alone do not answer it yet: Timur works #31 through #55, and #31 has no assignee. The
+operator's Slack message of 2026-10-30 proposes that each of us also assigns themselves on the issue
+taken; #50 is the operator's since that morning.
+
+**#56 waits for Timur's review**, requested of `iztiev` on 2026-10-30 at 05:38Z, with its head at
+`6100878`; `gh pr view 56 --json headRefOid,reviewRequests,reviewDecision` gives both as they are.
+Two minutes later its one comment gained a question: whether a 0.8.1 should carry the repair of
+update-test entry 1 once #56 merges, together with the `*_MODE` warnings #52 repaired. An edited
+comment notifies no one, so Timur meets the question when he opens the pull request.
+
+**The proxy findings went to nocodenation/privacy-proxy#1**, a private repository, in place of the
+draft for Timur the section below describes: the four on the proxy itself (German words read as
+PERSON by the floor, the security judge on a request to write a workspace file, a held message that
+cannot be released, a rewrite that drops a postcode without saying so) and the memory numbers. Its
+log lines were checked against the proxy's container log as the session captured it, since the
+container is gone, and against `audit.jsonl` in `~/.liquidupstart/volumes/privacy-proxy`; that check
+led to one edit after it was filed, which corrected two sentences and added the score the hold in
+its finding 1 carried. It links to the ten `BACKLOG.md` entries and names four of them. The intro to
+those entries still calls the findings a draft for the operator to send. #56 carries that text word
+for word, so a change on `main` alone would make the two conflict, and the correction waits for
+#56's merge.
+
+**Nothing runs on the machine.** The branch's stack, which held 7.8 GiB of Docker's 15.6 GiB at
+rest, was stopped with `down.sh` from `../liquidupstart-wt-50`; the branch's dashboard, which runs
+outside compose, stopped when its `run.sh` was ended. The worktree's `volumes/` stay as they were,
+with the Claude login and the four unregistered deploy keys, none of them to be registered. The
+0.8.0 installation is stopped as before, its `volumes/` untouched.
+
+The two share the `liquidupstart/*:latest` images, the container names and the dashboard's name, so
+one runs at a time, on whatever images were built last; today those are 0.8.0's, from 2026-10-29,
+but for the dashboard's, which each `run.sh` builds anew. To work with 0.8.0: the `liquidupstart`
+launcher, then **Start**. To bring the branch's stack back for a CS-21: `./run.sh` in the worktree,
+then **Start**, or **Rebuild** where the change the review asks for reaches into an image. After
+such a build 0.8.0 runs the branch's images until it is rebuilt itself, and its dashboard does not
+ask for that: it does not compare an image with the code it was built from.
+
+**Open, and whose**, replacing the list in the section below. Timur's: the review of #56 and the
+0.8.1 question on it, privacy-proxy#1, and `45-26`. The operator's: whether 0.8.0 runs again, and
+two rows of `FINISH.md`'s waiting table, `LOCAL_LLM_API_BASE`'s two roles on `main` and Hermes on
+#56. Ours: whatever the review of #56 asks; once #56 merges, the intro to the update-test entries
+naming privacy-proxy#1 where it says draft; then the image label with update-test entry 2, as the
+operator decided on 2026-10-29, and the other entries that ``grep -n '^`OPEN` ' BACKLOG.md`` lists
+on #56's branch, where entry 1 is struck and the new entries stand, each waiting for the operator's
+yes to a pull request. `tests/mutations.json` is appended to on #56 and on #55, so the second to
+merge gets a conflict at its end, resolved by keeping both sets; in git's default conflict style
+they then need `},` and `{` between them, which `diff3` style already holds inside the conflict.
+
+The section below still holds for the update test and for #56's work, except where it says what
+runs: nothing does. Its proxy draft and its open list are replaced by this one.
+
+## 2026-10-29, evening: the update test done, and #56 open for issue #50
 
 **The update test ran.** `liquidupstart --update` took `~/.liquidupstart` from 0.7.0 to 0.8.0, and
 the privacy proxy 0.3.0 was tried with made-up data. What lies on this repository's side is ten
