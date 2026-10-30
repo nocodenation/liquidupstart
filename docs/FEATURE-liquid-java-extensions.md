@@ -124,9 +124,10 @@ mistake is available here and is cheaper to avoid than to repeat.
   under `user.home` can only come from the build that is running. `user.home` is set through
   `JAVA_TOOL_OPTIONS` rather than Maven's own `-D`, because a JVM that Maven forks (surefire, an
   `exec`) reads `user.home` from passwd and not from its parent; measured, a JVM started with it
-  reports the per-build path. The read-only home is the floor and the per-build one is the
-  mechanism: a plugin that writes under `user.home` keeps working, and one that bypasses it is
-  refused instead of persisting.
+  reports the per-build path. Every JVM so started prints `Picked up JAVA_TOOL_OPTIONS: …` to
+  stderr, so the line opens a failed build's Maven output; it is the JVM's notice and expected.
+  The read-only home is the floor and the per-build one is the mechanism: a plugin that writes
+  under `user.home` keeps working, and one that bypasses it is refused instead of persisting.
 - **FR42 — Two builds never share a user, and a build leaves nothing running or written behind it.**
   The builder has one unprivileged user per build slot — `builder` (uid 1500) and `builder2`
   (uid 1501) — and a build runs as the slot's user it was handed. Its work directory is that user's
