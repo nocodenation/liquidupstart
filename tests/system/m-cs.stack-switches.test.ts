@@ -29,8 +29,9 @@
  *           naming `Liquid does not answer`, `8900.liquid.localhost` 502 naming `port 8900`,
  *           `openclaw.localhost` 502 naming `OpenClaw does not answer`, and `postgrest.localhost`
  *           a 2xx or 3xx. (b) `postgrest.localhost` and `liquid.localhost` a 2xx or 3xx, Liquid
- *           given ten minutes; `nar-builder.localhost` the builder's own answer, any status but
- *           nginx's 502 or 504 and curl's `000`; and the WebSocket `101 Switching Protocols`.
+ *           given ten minutes; `nar-builder.localhost` the builder's own answer once it has settled,
+ *           any status but 502, 503, 504 and curl's `000` -- it answers 404 at `/`, and its own
+ *           503 belongs to `/build` -- and the WebSocket `101 Switching Protocols`.
  * Covers:   CS-20, CS-FR3, CS-FR4, CS-FR5, CS-FR6, CS-FR15, CS-NFR1
  * Negative: (a), the stack with nothing switchable in it.
  * Counterpart: (b), the same installation with everything back, so a stack that stayed

@@ -717,5 +717,13 @@
     "from": "  if (code === NOT_BUILT && stderr.includes(NOT_BUILT_LINE)) {\n    return { ok: false, message: OPENCLAW_NOT_BUILT, status: 409 };",
     "to": "  if (code === NOT_BUILT) {\n    return { ok: false, message: OPENCLAW_NOT_BUILT, status: 409 };",
     "mustFail": "CS-14 the counterpart: an approval that exits 3 without that line is the CLI's failure, as before"
+  },
+  {
+    "case": "CS-10",
+    "file": "config/scripts/start/nginx.sh",
+    "spec": "tests/integration/m-cs.nginx-starts.test.ts",
+    "from": "    error_page 502 @lu_unavailable;\n",
+    "to": "",
+    "mustFail": "CS-10 and a Liquid ingress answers over HTTPS with its own page, naming its port"
   }
 ]
