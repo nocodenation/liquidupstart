@@ -1950,9 +1950,29 @@ it is set and its `/v1/models` lists a chat model. OpenCode's entrypoint takes i
 Section 6 of `.env.example` warns that a hosted service there sees the data the proxy protects. Section 7 says `only` offers
 *the privacy providers and your local AI*, and that OpenRouter is *not available in this mode*.
 Pointing the proxy at a hosted model, as the test did with OpenRouter, therefore also gives both
-agents an unmasked route to it, and under `only` as well. That last part is read from the code: the
-test ran with `opt-in`. Two keys, or a warning when the address is not private, are the options. The
-choice is the operator's.
+agents an unmasked route to it, and under `only` as well. Measured on 2026-10-31 on #56's branch,
+with OpenRouter as the local model. Under `only`, both agents lost `OPENAI_API_KEY`, and OpenCode its
+`openai` provider. OpenCode kept `llamacpp` and OpenClaw kept `local`, both pointing at OpenRouter
+with `LOCAL_LLM_API_KEY`. In either mode OpenCode also makes that provider its default model:
+`config/opencode/entrypoint.sh:63` takes the first model the endpoint lists, which of OpenRouter's
+420 was `particle-ai/particle-1`. Whoever opens OpenCode without choosing a model sends everything
+unmasked to an arbitrary hosted model. Two keys, or a warning when the address is not private, are
+the options, and the choice is the operator's. A default model on the proxy whenever the proxy is on
+would close the second part by itself.
+
+---
+
+*Found on 2026-10-31 while measuring the entry above, so it stands beside it; it is not one of the
+update test's ten.*
+
+`OPEN` **Switching from `only` back to `opt-in` leaves OpenClaw on the privacy model.** In `only`,
+`config/scripts/start/openclaw.sh:1065` drops a primary model the mode does not offer and pins the
+first privacy one. On 2026-10-31, `anthropic/claude-opus-5` became `privacy-anthropic/claude-opus-5`.
+The next start in `opt-in` keeps it, since it is still a valid model, so the operator's choice does
+not come back with the sign-ins. On the Claude subscription that changes what works: the cleaned
+route carries the client's tools, but not Claude Code's own. Measured on #56's branch; the primary
+was set back by hand in `volumes/_openclaw/openclaw.json`. Keeping the dropped model beside the
+sign-ins `only` sets aside, and restoring it with them, would repair it.
 
 ---
 

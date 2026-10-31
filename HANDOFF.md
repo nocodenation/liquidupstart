@@ -19,7 +19,7 @@ unless a paragraph carries its own later date. It still says "three features and
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-31: the proxy's custom policy tried, and the worktree's stack running
+## Where it stands, 2026-10-31: the privacy proxy tested on liquidupstart, and the worktree's stack running
 
 **#56 still waits on Timur's second review.** Nothing has changed on it since 16:01Z yesterday, and
 `gh pr view 56 --json reviewDecision,reviewRequests` answers where it stands.
@@ -56,9 +56,36 @@ one today; it answers 200, and `privacy-openai` lists 142 models through the pro
 checkout's `.env`, and was copied from there to the worktree's. `~/.liquidupstart/.env`, the 0.8.0
 installation, still has the revoked one.
 
+**Four more tests ran later, at the operator's choice, all with made-up data.**
+- **German business data**, through `/policy/test`: IBAN, BIC, VAT ID, tax ID, social security number,
+  ID card, credit card, phone numbers, e-mail, licence plate, invoice and customer numbers and names
+  are caught without a policy. Postcodes never are, and each names the real city.
+- **OpenCode reads a file** from `/data` through `privacy-openai`. The content reached OpenAI masked,
+  the reply came back restored, and every call went through the proxy, the session title's as well.
+- **The document functions:** a `.docx` uploaded to the policy gives term proposals, approved terms
+  take effect at once, and the whole document anonymizes to plain text with the verdict `safe`.
+- **`PRIVACY_PROXY_ROUTING=only`**, measured against `opt-in` and switched back. The provider keys,
+  OpenCode's `openai`, OpenClaw's `claude-cli` and its Claude login are withheld and come back.
+
+The proxy's part went onto privacy-proxy#2 as a comment, at the operator's word: postcodes, a payment
+deadline replaced like a birth date, and plain text out of a `.docx`. Ours are two `BACKLOG.md`
+entries, both in the update test's block:
+- the entry on `LOCAL_LLM_API_BASE` is now measured. OpenRouter stays an unmasked route in both
+  agents under `only`, and OpenCode makes it its default model in either mode;
+- a new one: `only` replaces OpenClaw's primary model, and `opt-in` does not bring it back.
+
+**The worktree is as it was before the routing test, compared field by field.** Its `.env` is back on
+`opt-in`, and OpenClaw's primary model was set back by hand to `anthropic/claude-opus-5`. What the
+tests left there:
+- the policy holds a document now, `notiz-q4.docx`, with four approved terms;
+- `volumes/data/projekt-falke-notiz.md`;
+- two empty directories `only` created, `volumes/_openclaw-claude-routing-only` and
+  `volumes/_openclaw-auth-profile-secrets-routing-only`.
+
 **Open, and whose**, adding to the list in the section below:
-- **Timur's:** privacy-proxy#2, and the Copilot discussion when he has time for it;
-- **the operator's:** whether the worktree's stack keeps running, and the example policy with it.
+- **Timur's:** privacy-proxy#2 with its comment, and the Copilot discussion when he has time for it;
+- **the operator's:** whether the worktree's stack keeps running, and the test policy with it; the
+  two new `BACKLOG.md` findings wait for a yes like every other.
 
 ## Where it stands, 2026-10-30, afternoon: round 1 of #56 answered, and nothing runs
 
