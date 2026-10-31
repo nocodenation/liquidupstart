@@ -1,4 +1,4 @@
-# Handover — 2026-10-30
+# Handover — 2026-10-31
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,15 +9,56 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-30, afternoon* has the live picture, *2026-10-30, morning* under it, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-10-31* has the live picture, *2026-10-30, afternoon* under it, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first sixteen and the review bodies they point to; the rest of this file is the map and the lessons.
+first seventeen and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-10-31: the proxy's custom policy tried, and the worktree's stack running
+
+**#56 still waits on Timur's second review.** Nothing has changed on it since 16:01Z yesterday, and
+`gh pr view 56 --json reviewDecision,reviewRequests` answers where it stands.
+
+**The privacy proxy's custom policy works.** The operator asked whether the proxy can be given its own
+rules for what is confidential. 0.3.0 can:
+- a policy holds terms, patterns with context words, an `allow` list and a free-text description for
+  the local model;
+- it is kept in the proxy's `volumes/privacy-proxy/policy.json`, and edited at
+  `http://privacy.localhost:8888/policy/ui` or with `PUT /policy`;
+- `POST /policy/test` shows what a text would become, without a cloud call.
+
+No installation had a policy before, which is why the earlier tests showed personal data only. Tried
+on the worktree's stack with made-up data, in `/policy/test` and on two real chats, `private-claude`
+and `privacy-openai` with `gpt-4.1-mini`. On both chats the audit log counted the policy's types, and
+the model spelled the surrogates back, never the originals. Without a policy, the local model already
+masks most of the same data, under general types. The policy adds:
+- what the model misses: an order number named only by a pattern and a context word;
+- terms that are caught without the model;
+- its own types and labels, and exceptions.
+
+**Two findings are privacy-proxy#2, filed at the operator's word, and they are Timur's.** An allowed
+term is masked when a PERSON span runs over it, as in `Hallo, hier ist Maria Schneider von
+NoCodeNation.`. Separately, the proxy's specification points to a file it does not have. The operator
+told Timur on Slack, and asked about Copilot as a topic to discuss later. Nothing waits on us there.
+
+**The worktree's stack runs.** It was started at 07:08Z and restarted at 08:00Z for the new key. Its
+proxy holds the example policy, and `vault.enc` and `audit.jsonl` from the two chats. The policy
+stays until the operator says otherwise.
+
+**`OPENAI_API_KEY` is new in the checkout's and the worktree's `.env`.** Both old keys were refused
+by OpenAI with 401, the worktree's being the revoked one of 2026-10-29. The operator created the new
+one today; it answers 200, and `privacy-openai` lists 142 models through the proxy. It went into the
+checkout's `.env`, and was copied from there to the worktree's. `~/.liquidupstart/.env`, the 0.8.0
+installation, still has the revoked one.
+
+**Open, and whose**, adding to the list in the section below:
+- **Timur's:** privacy-proxy#2, and the Copilot discussion when he has time for it;
+- **the operator's:** whether the worktree's stack keeps running, and the example policy with it.
 
 ## Where it stands, 2026-10-30, afternoon: round 1 of #56 answered, and nothing runs
 
