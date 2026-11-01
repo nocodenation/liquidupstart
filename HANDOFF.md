@@ -1,4 +1,4 @@
-# Handover — 2026-10-31
+# Handover — 2026-11-01
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,15 +9,61 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-31* has the live picture, *2026-10-30, afternoon* under it, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-11-01* has the live picture, *2026-10-31* under it, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first seventeen and the review bodies they point to; the rest of this file is the map and the lessons.
+first eighteen and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-11-01: #59 implemented and tested, and OpenCode 2 recorded
+
+**#59 is ours and implemented: OpenCode under `PRIVACY_PROXY_ROUTING=only`.** It takes the part of
+the `BACKLOG.md` entry on `LOCAL_LLM_API_BASE` that needs no operator decision:
+- under `only`, OpenCode's default is a privacy model, `privacy/private-claude` on this
+  installation;
+- `enabled_providers` keeps OpenCode Zen out, whose free models need no key;
+- `opt-in` writes `opencode.json` byte for byte as before.
+
+The operator chose the rule on 2026-11-01: OpenClaw's rule, with `opt-in` unchanged. They signed off
+the specification and asked for the implementation. The operator was given a one-line note for
+Timur naming #59; the PR number is all he needs, per the operator's word of 2026-11-01. Whether it
+was sent was not confirmed here.
+- **The commits:** `17a4dcb` is the specification, `642601b` the code, `4f99419` the results.
+- **The runs, all at `642601b` from a clean tree:**
+  - the RO tier, 21 / 0;
+  - eleven mutations, all validated;
+  - the full default tier, 1486 pass, 8 skip, 0 fail;
+  - RO-6 on the running stack through the browser.
+- **The PR is still a draft.** Marking it ready asks Timur for a review, and that is the operator's
+  call.
+
+**RO-6 found one thing beyond the specification.** Under `opt-in` the web UI does not open on the
+configured model. It opened once on `openai`'s default and once on Zen's. The entry on
+`LOCAL_LLM_API_BASE` now says so.
+
+**`BACKLOG.md` gained two entries today, both placed before that one:**
+- OpenCode 2 is out, as a rewrite under its own npm package, `@opencode/cli`. The image stays on
+  `opencode-ai` 1.x, so no build moves by itself. The operator asked for it to go to Timur.
+- OpenCode rewrites the tracked `config/opencode/package.json` on every start, so the worktree shows
+  it as modified. That edit is OpenCode's, not ours.
+
+Both sit where #56's insertions into the file do not reach.
+
+**The worktree's stack runs as it did this morning.** For RO-6, `opencode` was recreated with an
+image built from #59, under `opt-in`, then `only`, then `opt-in` again. Afterwards the image was
+rebuilt from #56's tree and `opencode` recreated under `opt-in`. OpenClaw and the proxy were not
+touched. The test's entries in the operator's Chrome were removed.
+
+**Open, and whose**, adding to the list in the section below:
+- **the operator's:**
+  - the note on #59 to Timur, if it has not gone out;
+  - marking #59 ready for review;
+  - telling Timur about OpenCode 2;
+- **Timur's:** #56's second review, still requested since 2026-10-30, 16:01Z.
 
 ## Where it stands, 2026-10-31: the privacy proxy tested on liquidupstart, and the worktree's stack running
 

@@ -1943,6 +1943,16 @@ Claude Code's built-in tools are off, but the sentence reads as no tools at all.
 
 ---
 
+`OPEN` **OpenCode rewrites a tracked file on every start.** Compose mounts
+`config/opencode/package.json` into the container read-write, and OpenCode sets the
+`@opencode-ai/plugin` version in it to its own. In the worktree of #56 that was `1.18.9` →
+`1.19.5`, written on 2026-10-31 at 13:17, so every checkout the stack runs from shows the file as
+modified. A suite run then no longer starts on a clean tree, and a careless `git add -A` commits the
+bump. Mounting a copy, or keeping the version where OpenCode writes it, would take the file out of
+the repository's way.
+
+---
+
 `OPEN, to agree with Timur` **OpenCode 2 is out, as a rewrite under a package of its own.** The image
 installs `opencode-ai` without a version (`config/opencode/templates/Dockerfile`). On npm that
 package stays on the 1.x line: on 2026-11-01 its `latest` was 1.19.5, released on 2026-10-28, which
@@ -1978,6 +1988,16 @@ with `LOCAL_LLM_API_KEY`. In either mode OpenCode also makes that provider its d
 unmasked to an arbitrary hosted model. Two keys, or a warning when the address is not private, are
 the options, and the choice is the operator's. A default model on the proxy whenever the proxy is on
 would close the second part by itself.
+
+*Narrowed on 2026-11-01, and corrected.* #59 takes the part under `only`: OpenCode's default
+becomes a privacy model there, and `enabled_providers` keeps OpenCode Zen out, whose free models
+need no key. Under `opt-in` the operator kept the default as it is, since with a local LLM that
+really is local it sends nothing off the machine. The correction comes from #59's operator check
+(RO-6). The web UI does not open on the configured model under `opt-in`: `GET /config` answered
+`llamacpp/particle-ai/particle-1`, yet a new session opened once on `openai`'s default and once on
+Zen's `big-pickle`. `particle-ai/particle-1` is what `opencode run` uses. Whoever opens the web UI
+without choosing a model reaches `openai` or Zen unmasked, which is the same finding by another
+route. Under `only` the configured default held every time.
 
 ---
 
