@@ -1943,6 +1943,25 @@ Claude Code's built-in tools are off, but the sentence reads as no tools at all.
 
 ---
 
+`OPEN, to agree with Timur` **OpenCode 2 is out, as a rewrite under a package of its own.** The image
+installs `opencode-ai` without a version (`config/opencode/templates/Dockerfile`). On npm that
+package stays on the 1.x line: on 2026-11-01 its `latest` was 1.19.5, released on 2026-10-28, which
+the running image carries. OpenCode 2 is published as `@opencode/cli`, whose `latest` was 2.2.5 on
+the same day. A build therefore takes every 1.x release and never moves to 2 by itself. Moving is a
+choice, and it touches what this stack builds around OpenCode:
+- the configuration `config/opencode/entrypoint.sh` writes: providers, `model`, `server`, and with
+  #59 `enabled_providers`;
+- `opencode web` on port 4096 behind `opencode.localhost`;
+- the mounted `tools`, `package.json` and skills.
+
+The measurements behind #59 were taken on 1.19.5: the allowlist, the fallback without `model` and
+`getSmallModel`. Not measured: whether 2.x reads the same configuration. Coverage
+(<https://thenewstack.io/opencode-2-shared-service/>) describes 2.0 as a rewrite that puts the
+terminal, desktop and web apps on one shared service, with the API rebuilt. To agree with Timur:
+whether and when to move, and who takes it.
+
+---
+
 `OPEN, the operator's` **One key sets both the proxy's own model and an unmasked provider for the
 agents.** The privacy proxy uses `LOCAL_LLM_API_BASE` for its detection and rewrite model.
 `config/scripts/start/openclaw.sh` registers the same address as OpenClaw's provider `local` whenever
