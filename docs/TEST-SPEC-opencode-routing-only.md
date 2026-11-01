@@ -1,8 +1,20 @@
 # Test specification: OpenCode under `PRIVACY_PROXY_ROUTING=only`
 
 Status: **signed off on 2026-11-01, and implemented on this branch.** Each block's *What it found*
-is filled in from the run that follows the commit adding the code, and each block's *Shown able to
-fail* from `./tests/mutate.sh --case`, which refuses a subject with uncommitted changes.
+comes from the run after `642601b`, the commit that adds the code, and each block's *Shown able to
+fail* from `./tests/mutate.sh --case`, which refuses a subject with uncommitted changes. All runs
+started and ended on a clean tree at `642601b`, one at a time:
+
+- **RO tier.** `./tests/run.sh ro` gave 21 pass and 0 fail across five files, in 18.5 s.
+- **Mutations.** Eleven registered, eleven validated: RO-1 six, RO-2 one, RO-3 two, RO-4 one, RO-5
+  one.
+- **Full default tier.** 1486 pass, 8 skip and 0 fail across 194 files, in 27 minutes. The 45
+  stack-level files were left out, as always. The dashboard gave 45 pass and 0 fail.
+- **Routing.** `scripts/tests/privacy-routing.test.sh`, TC-821 to TC-826, passed.
+
+The full tier's stderr carried the two messages known before it: the builder sweep reporting an
+image that a concurrent case's container still held, which it reports by design and which was gone
+afterwards, and the TypeError of `GitRepositories.svelte` recorded in `BACKLOG.md`.
 Feature: `docs/FEATURE-opencode-routing-only.md` (RO-FR1 to RO-FR5, RO-NFR1, RO-NFR2).
 
 Files are named `tests/<level>/m-ro.<subject>.test.ts`. Their headers open with `M-RO · <Level> · …`
@@ -107,8 +119,8 @@ entrypoint is taken for each run, with `/root/.config/opencode` and `/tmp/` poin
 | **Test data, both sides** | Row 1: all three answers 200, CLI on. Row 2: Anthropic 401, CLI on. Row 3: OpenAI and Anthropic `000`, CLI on. Row 4: Anthropic 401, CLI off, the plain OpenAI list. Row 5: as row 4, the list with dropped ids. Row 6: as row 4, the list without `created`. Row 7: OpenAI and Anthropic `000`, CLI off. Row 8: every URL `000`, CLI off. |
 | **Expected** | Row 1: `privacy-anthropic/claude-sonnet-5`, and the start line ends `(model: privacy-anthropic/claude-sonnet-5)`. Rows 2 and 3: `privacy/private-claude`, and row 2's start line ends `(model: privacy/private-claude)`. Row 4: `privacy-openai/gpt-6.1-terra`, and the start line ends `(model: privacy-openai/gpt-6.1-terra)`. Row 5: `privacy-openai/gpt-6.1-terra`, neither `gpt-image-2` nor `gpt-6.2-2026-10-30`. Row 6: `privacy-openai/gpt-5.6-luna`. Row 7: `llamacpp/particle-ai/particle-1`. Row 8: no `model` key, and the start line ends `(model: <none discovered>)`. |
 | **Dependencies** | `/bin/sh`, `jq`. |
-| **Shown able to fail** | To register: the `privacy-anthropic` step skipped reddens row 1; the CLI step skipped reddens rows 2 and 3; the sort by `created` removed reddens row 4; the restriction to registered ids removed reddens row 5 alone; the start line left on the bare id reddens rows 1, 2 and 4. |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Six registered, all validated. The `privacy-anthropic` step skipped: row 1 red (1 red, 7 green). The CLI step made `elif false`, registered once for row 2 and once for row 3: both red (2 red, 6 green). The sort by `created` removed: rows 4 and 5 red. The restriction to registered ids removed: row 5 alone (1 red, 7 green), which is why that row has a list of its own. The start line left on the bare id (`${_DEFAULT_MODEL#*/}`): 4 red, rows 1, 2 and 4 as specified, and row 8 as well, whose `<none discovered>` that form also loses. |
+| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree, with the host's `/bin/sh` and jq 1.7.1: 8 / 0. Nothing failed while it was written. |
 | **Implemented by** | `tests/unit/m-ro.default-model.test.ts`. |
 | **Covers** | RO-FR1, RO-FR5, UC1 to UC4a. |
 
@@ -122,8 +134,8 @@ entrypoint is taken for each run, with `/root/.config/opencode` and `/tmp/` poin
 | **Test data, both sides** | §3, with `OPENAI_API_KEY=sk-ro-stray`. |
 | **Expected** | The files are equal in both configurations, and `model` is `llamacpp/particle-ai/particle-1`. The start line ends `(model: llamacpp/particle-ai/particle-1)`. The fixture equals the commit's file. |
 | **Dependencies** | `/bin/sh`, `jq`. The history, for the last row only, which is skipped without it. |
-| **Shown able to fail** | To register: the test for `only` made true for any mode reddens the `opt-in` row. |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Registered and validated: the test for `only` made `if true` reddens the `opt-in` row, the proxy-off row and the start line row (3 red); the fixture row stays green. |
+| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree: 4 / 0, the fixture row included, since the history holds `ed7fd46`. On the running stack (RO-6), the new image wrote under `opt-in` the same `opencode.json` as the old one, apart from the model lists, which the upstreams had changed overnight. |
 | **Implemented by** | `tests/unit/m-ro.opt-in-unchanged.test.ts`. |
 | **Covers** | RO-FR2, RO-FR5, UC5. |
 
@@ -137,8 +149,8 @@ entrypoint is taken for each run, with `/root/.config/opencode` and `/tmp/` poin
 | **Test data, both sides** | Row 1: all three answers 200, CLI on. Row 2: Anthropic 401, CLI on. Row 3: as row 1, with `OPENAI_API_KEY=sk-ro-stray`. Row 4: `opt-in`, as row 1. |
 | **Expected** | Row 1: `["llamacpp","privacy-openai","privacy-anthropic","privacy"]`. Row 2: `["llamacpp","privacy-openai","privacy"]`. Row 3: as row 1. Its `provider` holds `openai`, which is what makes the row test the allowlist rather than a missing block; that the block is written is not a property this feature wants, and the feature's §5 says why it is left. Row 4: no `enabled_providers`. |
 | **Dependencies** | `/bin/sh`, `jq`. |
-| **Shown able to fail** | To register: the allowlist built without the privacy providers reddens row 1; `openai` added to it in its own block reddens row 3. |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Two registered, both validated. The allowlist built without the privacy providers: rows 1 to 3 red, the `opt-in` row green. `openai` added to it in its own block: row 3 alone (1 red, 3 green). |
+| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree: 4 / 0. |
 | **Implemented by** | `tests/unit/m-ro.enabled-providers.test.ts`. |
 | **Covers** | RO-FR3, UC6. |
 
@@ -152,8 +164,8 @@ entrypoint is taken for each run, with `/root/.config/opencode` and `/tmp/` poin
 | **Test data, both sides** | The two files as committed. |
 | **Expected** | The override's block holds the line `PRIVACY_ROUTING: "only"` outside a comment. The block in `compose.yml` holds no `PRIVACY_ROUTING`. |
 | **Dependencies** | bun. |
-| **Shown able to fail** | To register: the line deleted from the override. |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Registered and validated: the line deleted from the override reddens the positive row, and the negative stays green. |
+| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree: 2 / 0. RO-6 showed why the case matters: started with the override of a checkout that lacks the line, the container got no `PRIVACY_ROUTING`, and OpenCode wrote the `opt-in` file. |
 | **Implemented by** | `tests/contract/m-ro.routing-override.test.ts`. |
 | **Covers** | RO-FR4. |
 
@@ -167,8 +179,8 @@ entrypoint is taken for each run, with `/root/.config/opencode` and `/tmp/` poin
 | **Test data, both sides** | §3's answers with Anthropic 401 and the CLI on, and `OPENAI_API_KEY=sk-ro-stray`. Then `PRIVACY_ROUTING=only` once, and unset once. |
 | **Expected** | `only`: the ids are exactly `llamacpp`, `privacy-openai` and `privacy`, with no `opencode` and no `openai`. `model` is `privacy/private-claude`, and `private-claude` is among the `privacy` provider's models. `opt-in`: the ids include `opencode` and `openai`. |
 | **Dependencies** | Docker and the image, otherwise skipped with that reason. The container gets Docker's default network. The 1.19.5 binary carries a catalogue of its own, but whether OpenCode starts without any network has not been measured. |
-| **Shown able to fail** | To register: `enabled_providers` left out under `only` reddens the negative row, while the `opt-in` row stays green. |
-| **What it found** | Not yet run. The measurement behind decision 3 was taken by hand on 2026-11-01. |
+| **Shown able to fail** | Registered and validated: `enabled_providers` left out under `only` reddens the negative row and the positive row (2 red), and the `opt-in` row stays green. |
+| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree, against `liquidupstart/opencode:latest` with OpenCode 1.19.5: 3 / 0 in 7 s. The first version hung until its 200-second hook limit: a `curl` without `-m` blocked inside `spawnSync` while OpenCode was starting, so the deadline was never checked. It got `-m 5` before the commit. Started by hand, the same container answered after 20 s with exactly `llamacpp`, `privacy-openai` and `privacy`. |
 | **Implemented by** | `tests/integration/m-ro.opencode-reads.test.ts`. |
 | **Covers** | RO-FR1, RO-FR3, UC2, UC6. |
 
@@ -183,6 +195,6 @@ entrypoint is taken for each run, with `/root/.config/opencode` and `/tmp/` poin
 | **Expected** | `only`: the start line ends `(model: privacy/private-claude)`, the picker holds the local LLM, `privacy-openai` and `privacy` only, and the new session does not run on the `openai` model chosen before. What the page shows for that earlier choice is recorded as found. `opt-in`: the start line ends `(model: llamacpp/particle-ai/particle-1)`, and the picker holds Zen and `openai` again. |
 | **Dependencies** | The running stack and a browser. |
 | **Shown able to fail** | No mutation: this is a manual check. RO-5 is the automated counterpart. |
-| **What it found** | Not yet run. |
+| **What it found** | Run on 2026-11-01 on the stack of `feature/component-switches`, with the OpenCode image built from `642601b`, through Claude in Chrome. **`opt-in`:** the start line ended `(model: llamacpp/particle-ai/particle-1)`. **`only`:** the start line ended `(model: privacy/private-claude)`, and the picker held the groups `llamacpp`, `privacy` and `privacy-openai`, with no Zen entry and no OpenAI group. **The earlier choice:** under `opt-in`, GPT-6.1 Terra of `openai` was chosen explicitly, and the browser stored it as the recent model (`opencode.global.dat:model`). Under `only`, both a new session and that same draft showed `privacy: private-claude`. **Back under `opt-in`:** `/config/providers` listed `openai`, `opencode`, `llamacpp`, `privacy-openai` and `privacy` again. The first `only` attempt took the override of the stack's own checkout, which lacks the line, so the container got no `PRIVACY_ROUTING`; it was repeated with this branch's override, given by absolute path in `COMPOSE_FILE`. **Beyond the specification:** under `opt-in` the web UI did not open on the configured model. `GET /config` answered `llamacpp/particle-ai/particle-1`, yet one new session showed GPT-5.6 Terra Pro, `openai`'s default, and the next showed Big Pickle, Zen's. Nothing was stored in the browser at either point. Under `only` it opened on `privacy/private-claude` every time: two new sessions and two drafts. The cause was not established. The feature's §5 says what follows from it. Afterwards the OpenCode image was rebuilt from `feature/component-switches` and recreated under `opt-in`, and the test's entries were removed from the browser. |
 | **Implemented by** | Operator check, recorded here. |
 | **Covers** | UC2, UC5, UC6. |

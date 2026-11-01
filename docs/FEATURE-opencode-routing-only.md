@@ -136,8 +136,18 @@ The entrypoint writes the privacy providers in the order `privacy-openai`, `priv
 - **OpenClaw's primary model after switching from `only` back to `opt-in`** has its own BACKLOG
   entry.
 - **A model chosen in a session.** The default is what OpenCode uses when nobody has chosen a model.
-  Not measured: what the browser shows under `only` when a model of a removed provider was chosen
-  there under `opt-in`. RO-6 checks it.
+  RO-6 measured the other case on 2026-11-01. A model of `openai` was chosen in the browser under
+  `opt-in` and stored there as the recent one. Under `only`, a new session and the same draft both
+  opened on `privacy/private-claude`.
+- **The web UI under `opt-in` does not open on the configured model.** RO-6 found this on
+  2026-11-01 without looking for it. `GET /config` answered `llamacpp/particle-ai/particle-1`, but a
+  new session opened once on `openai`'s default and once on Zen's, with nothing stored in the
+  browser. Under `only` the configured `privacy/private-claude` held every time. The cause was not
+  established. For this feature, it means the default holds in the web UI where it matters, and
+  `enabled_providers` would keep the picker inside the mode even if it did not. For `opt-in` it
+  corrects the BACKLOG entry. Whoever opens the web UI without choosing a model reaches `openai`
+  or Zen unmasked, while `particle-ai/particle-1` is what `opencode run` uses. That part stays with
+  the operator's decision.
 - **A proxy slower than discovery.** `opencode` does not wait for `privacy-proxy` in compose, and
   each model list is asked for ten times, three seconds apart. A proxy that has not answered by then
   leaves `privacy-openai` and `privacy-anthropic` unregistered until OpenCode is started again. With
