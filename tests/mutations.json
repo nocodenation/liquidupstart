@@ -1,5 +1,93 @@
 [
   {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "if [ -n \"$_anthropic_ids\" ]; then",
+    "to": "if [ -n \"\" ]; then",
+    "mustFail": "RO-1 with every privacy route on offer, privacy-anthropic and the first id the proxy lists"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "elif [ \"${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}\" = \"1\" ]; then",
+    "to": "elif false; then",
+    "mustFail": "RO-1 with privacy-anthropic refused and the CLI on, privacy/private-claude"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "elif [ \"${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}\" = \"1\" ]; then",
+    "to": "elif false; then",
+    "mustFail": "RO-1 with the proxy not answering and the CLI on, still privacy/private-claude"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "sort_by(-(.created // 0)) | ",
+    "to": "",
+    "mustFail": "RO-1 with the CLI off as well, privacy-openai and its newest registered id"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": " | select(.id | IN($k[]))",
+    "to": "",
+    "mustFail": "RO-1 the negative: an id the filter drops never wins, though it carries the highest created"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "(model: ${_DEFAULT_MODEL:-<none discovered>})",
+    "to": "(model: ${_DEFAULT_MODEL#*/})",
+    "mustFail": "RO-1 with privacy-anthropic refused and the CLI on, privacy/private-claude"
+  },
+  {
+    "case": "RO-2",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.opt-in-unchanged.test.ts",
+    "from": "if [ \"${PRIVACY_ROUTING:-}\" = \"only\" ]; then",
+    "to": "if true; then",
+    "mustFail": "RO-2 under opt-in, opencode.json is byte for byte what ed7fd46 writes"
+  },
+  {
+    "case": "RO-3",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.enabled-providers.test.ts",
+    "from": "        _ENABLED=\"${_ENABLED}, \\\"${1}\\\"\"\n",
+    "to": "",
+    "mustFail": "RO-3 llamacpp and every privacy provider that registered, in the order written"
+  },
+  {
+    "case": "RO-3",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.enabled-providers.test.ts",
+    "from": "if [ -n \"${OPENAI_API_KEY}\" ]; then\n",
+    "to": "if [ -n \"${OPENAI_API_KEY}\" ]; then\n    _ENABLED=\"${_ENABLED}, \\\"openai\\\"\"\n",
+    "mustFail": "RO-3 the negative: openai is left out although its key reached the container"
+  },
+  {
+    "case": "RO-4",
+    "file": "config/privacy-proxy/compose.routing-only.yml",
+    "spec": "tests/contract/m-ro.routing-override.test.ts",
+    "from": "      PRIVACY_ROUTING: \"only\"\n",
+    "to": "",
+    "mustFail": "RO-4 compose.routing-only.yml gives opencode PRIVACY_ROUTING: \"only\""
+  },
+  {
+    "case": "RO-5",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/integration/m-ro.opencode-reads.test.ts",
+    "from": "    _ENABLED_FIELD=\"\n  \\\"enabled_providers\\\": [${_ENABLED}],\"",
+    "to": "    _ENABLED_FIELD=\"\"",
+    "mustFail": "RO-5 the negative: under only, neither opencode nor openai, though OPENAI_API_KEY reached the container"
+  },
+  {
     "case": "A4-7",
     "file": "config/agents/hooks/pre-push",
     "spec": "tests/unit/m-a4.secret-scan.test.ts",

@@ -1,6 +1,6 @@
 # Feature: OpenCode under `PRIVACY_PROXY_ROUTING=only`
 
-Status: **drafted on 2026-11-01, waiting for sign-off.**
+Status: **signed off on 2026-11-01, and implemented on this branch.**
 Branch: `feature/opencode-routing-only`
 Found: `BACKLOG.md`, the entry *One key sets both the proxy's judge and the agents' local provider*,
 measured on 2026-10-31. This feature takes the part of that entry which does not wait for the
@@ -138,6 +138,19 @@ The entrypoint writes the privacy providers in the order `privacy-openai`, `priv
 - **A model chosen in a session.** The default is what OpenCode uses when nobody has chosen a model.
   Not measured: what the browser shows under `only` when a model of a removed provider was chosen
   there under `opt-in`. RO-6 checks it.
+- **A proxy slower than discovery.** `opencode` does not wait for `privacy-proxy` in compose, and
+  each model list is asked for ten times, three seconds apart. A proxy that has not answered by then
+  leaves `privacy-openai` and `privacy-anthropic` unregistered until OpenCode is started again. With
+  the CLI off, the local LLM is then the default, as in UC4. This is how discovery has always worked;
+  only the consequence for the default is new.
+- **A project's own `opencode.json`.** OpenCode merges a project's configuration over the one written
+  here, so a repository under `/repos`, or an agent writing into one, can name other providers.
+  `only` decides what the stack offers. It does not confine an agent that writes its own
+  configuration, and the container has network access either way.
+- **A newest model that only the Responses API serves.** `privacy-openai` speaks chat completions
+  (`@ai-sdk/openai-compatible`). OpenAI's list carries no capability field, so the newest id cannot be
+  checked for that. On 2026-10-31 the five newest after the filter were `gpt-6.1-terra`,
+  `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-sol` and `gpt-6-astra`. This only matters in UC3.
 - **A key that reaches the container anyway.** Under `only` the override withholds the provider keys
   (TC-826). If one still arrives, the entrypoint writes its provider block as it does today, and
   `enabled_providers` keeps that provider out of the picker. Leaving the block out would add no

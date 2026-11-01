@@ -61,11 +61,10 @@ for _m in $_CHAT_IDS; do
 done
 
 _DEFAULT_MODEL="$(printf '%s\n' $_CHAT_IDS | head -n1)"
-_MODEL_FIELD=""
-[ -n "$_DEFAULT_MODEL" ] && _MODEL_FIELD="
-  \"model\": \"llamacpp/${_DEFAULT_MODEL}\","
+[ -n "$_DEFAULT_MODEL" ] && _DEFAULT_MODEL="llamacpp/${_DEFAULT_MODEL}"
 
 # Build providers JSON block — the self-hosted llamacpp provider is always included
+_ENABLED="\"llamacpp\""
 _PROVIDERS="    \"llamacpp\": {
       \"npm\": \"@ai-sdk/openai-compatible\",
       \"name\": \"llamacpp\",
@@ -111,12 +110,13 @@ if [ -n "${OPENROUTER_API_KEY}" ]; then
     }"
 fi
 
+_PRIVACY_DEFAULT=""
 if [ -n "${PRIVACY_PROXY_URL:-}" ]; then
     _discover_ids() {
         _i=0
         while [ "$_i" -lt 10 ]; do
-            _c="$(curl -s -o /tmp/privacy_models.json -w '%{http_code}' "$1" 2>/dev/null || true)"
-            [ "$_c" = "200" ] && { jq -r ".data[].id | select(test(\"${2:-.}\"))" /tmp/privacy_models.json 2>/dev/null; return; }
+            _c="$(curl -s -o "${3:-/tmp/privacy_models.json}" -w '%{http_code}' "$1" 2>/dev/null || true)"
+            [ "$_c" = "200" ] && { jq -r ".data[].id | select(test(\"${2:-.}\"))" "${3:-/tmp/privacy_models.json}" 2>/dev/null; return; }
             [ "$_c" = "401" ] && { echo "WARNING: ${1} -> HTTP 401: no key for that provider in .env section 5 — provider skipped." >&2; return; }
             _i=$((_i + 1)); sleep 3
         done
@@ -136,6 +136,7 @@ if [ -n "${PRIVACY_PROXY_URL:-}" ]; then
         }"
         done
         [ -z "$_map" ] && return
+        _ENABLED="${_ENABLED}, \"${1}\""
         _PROVIDERS="${_PROVIDERS},
     \"${1}\": {
       \"npm\": \"${2}\",
@@ -150,13 +151,26 @@ if [ -n "${PRIVACY_PROXY_URL:-}" ]; then
       }
     }"
     }
-    _privacy_provider privacy-openai "@ai-sdk/openai-compatible" "${PRIVACY_PROXY_URL}/openai/v1" \
-        "$(_discover_ids "${PRIVACY_PROXY_URL}/openai/v1/models" "^(gpt-[0-9]|o[0-9]|chatgpt)" | grep -vE "audio|realtime|transcribe|tts|image|search|instruct|moderation|embed|-[0-9]{4}-[0-9]{2}-[0-9]{2}$")"
-    _privacy_provider privacy-anthropic "@ai-sdk/anthropic" "${PRIVACY_PROXY_URL}/anthropic" \
-        "$(_discover_ids "${PRIVACY_PROXY_URL}/anthropic/v1/models")"
+    _openai_ids="$(_discover_ids "${PRIVACY_PROXY_URL}/openai/v1/models" "^(gpt-[0-9]|o[0-9]|chatgpt)" /tmp/privacy_openai_models.json | grep -vE "audio|realtime|transcribe|tts|image|search|instruct|moderation|embed|-[0-9]{4}-[0-9]{2}-[0-9]{2}$" || true)"
+    # OpenAI lists its models in no useful order: the newest registered id by `created` (none
+    # counts as oldest, a tie goes to the one listed first) is the one a default may name.
+    _openai_newest="$(jq -r --arg ids "$_openai_ids" '($ids | split("\n")) as $k | [.data[] | select(.id | IN($k[]))] | sort_by(-(.created // 0)) | .[0].id // empty' /tmp/privacy_openai_models.json 2>/dev/null || true)"
+    _privacy_provider privacy-openai "@ai-sdk/openai-compatible" "${PRIVACY_PROXY_URL}/openai/v1" "$_openai_ids"
+    _anthropic_ids="$(_discover_ids "${PRIVACY_PROXY_URL}/anthropic/v1/models" || true)"
+    _privacy_provider privacy-anthropic "@ai-sdk/anthropic" "${PRIVACY_PROXY_URL}/anthropic" "$_anthropic_ids"
     if [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
         _privacy_provider privacy "@ai-sdk/openai-compatible" "${PRIVACY_PROXY_URL}/v1" \
             "private-claude private-claude-opus private-claude-sonnet private-claude-fable"
+    fi
+    # The default under PRIVACY_ROUTING=only: Anthropic, then the CLI door standing in for it when
+    # discovery cannot run, then OpenAI. The CLI door is written from a fixed list, so it stays the
+    # default while the proxy does not answer yet.
+    if [ -n "$_anthropic_ids" ]; then
+        _PRIVACY_DEFAULT="privacy-anthropic/$(printf '%s\n' $_anthropic_ids | head -n1)"
+    elif [ "${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}" = "1" ]; then
+        _PRIVACY_DEFAULT="privacy/private-claude"
+    elif [ -n "$_openai_newest" ]; then
+        _PRIVACY_DEFAULT="privacy-openai/${_openai_newest}"
     fi
 fi
 
@@ -219,7 +233,20 @@ if [ -n "${SYNTHETIC_API_KEY}" ]; then
     }"
 fi
 
-printf '{%s
+# PRIVACY_ROUTING=only comes from config/privacy-proxy/compose.routing-only.yml. The mode offers the
+# local LLM and the privacy providers and nothing else: OpenCode Zen needs no key, so withholding the
+# keys alone leaves it in the picker, and so would a login stored with `opencode auth login`.
+_ENABLED_FIELD=""
+if [ "${PRIVACY_ROUTING:-}" = "only" ]; then
+    [ -n "$_PRIVACY_DEFAULT" ] && _DEFAULT_MODEL="$_PRIVACY_DEFAULT"
+    _ENABLED_FIELD="
+  \"enabled_providers\": [${_ENABLED}],"
+fi
+_MODEL_FIELD=""
+[ -n "$_DEFAULT_MODEL" ] && _MODEL_FIELD="
+  \"model\": \"${_DEFAULT_MODEL}\","
+
+printf '{%s%s
   "instructions": ["/opencode/instructions.md"],
   "provider": {
 %s
@@ -229,7 +256,7 @@ printf '{%s
     "hostname": "0.0.0.0",
     "mdns": false
   }
-}\n' "$_MODEL_FIELD" "$_PROVIDERS" "$OPENCODE_PORT" > "/root/.config/opencode/opencode.json"
+}\n' "$_MODEL_FIELD" "$_ENABLED_FIELD" "$_PROVIDERS" "$OPENCODE_PORT" > "/root/.config/opencode/opencode.json"
 
 echo "Starting opencode web on port $OPENCODE_PORT (model: ${_DEFAULT_MODEL:-<none discovered>})"
 exec opencode web

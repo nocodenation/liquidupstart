@@ -1,8 +1,8 @@
 # Test specification: OpenCode under `PRIVACY_PROXY_ROUTING=only`
 
-Status: **drafted on 2026-11-01, waiting for sign-off.** Nothing here has run yet. Each block's
-*What it found* is filled in from the run that follows the commit adding the code, and each block's
-*Shown able to fail* from `./tests/mutate.sh --case`.
+Status: **signed off on 2026-11-01, and implemented on this branch.** Each block's *What it found*
+is filled in from the run that follows the commit adding the code, and each block's *Shown able to
+fail* from `./tests/mutate.sh --case`, which refuses a subject with uncommitted changes.
 Feature: `docs/FEATURE-opencode-routing-only.md` (RO-FR1 to RO-FR5, RO-NFR1, RO-NFR2).
 
 Files are named `tests/<level>/m-ro.<subject>.test.ts`. Their headers open with `M-RO · <Level> · …`

@@ -13,8 +13,12 @@
 services:
   opencode:
     environment:
-      # The provider keys of .env section 5, blanked. OpenCode registers a direct provider only
-      # for a key that is set, so it offers the privacy providers and the local LLM only.
+      # The mode itself. The entrypoint then makes a privacy model the default and lists the local
+      # LLM and the privacy providers in enabled_providers, which is what keeps OpenCode Zen out:
+      # it needs no key, so blanking the keys below does not remove it.
+      PRIVACY_ROUTING: "only"
+      # The provider keys of .env section 5, blanked. OpenCode writes a direct provider only for a
+      # key that is set.
       ANTHROPIC_API_KEY: ""
       OPENAI_API_KEY: ""
       OPENROUTER_API_KEY: ""
