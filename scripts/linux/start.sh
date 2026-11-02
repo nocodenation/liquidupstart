@@ -4,9 +4,11 @@
 # What it does, in order
 #   1. Reads the privacy routing mode from .env and stops on an unknown value, before anything
 #      is stopped (config/scripts/start/lib/privacy-routing.sh). Warns when "only" leaves the AI
-#      agents without a cloud model.
+#      agents without a cloud model. Reads ENABLE_LIQUID, ENABLE_OPENCLAW and ENABLE_OPENCODE
+#      the same way and stops on a value that is neither 1 nor 0 (lib/components.sh).
 #   2. Stops the running stack (down.sh) and checks that the proxy's host ports are free.
-#   3. Runs the per-service start steps under config/scripts/start/ (nginx, Liquid, OpenClaw).
+#   3. Exports the compose profiles of the components that are on, then runs the per-service
+#      start steps under config/scripts/start/ (nginx, and Liquid and OpenClaw when they are on).
 #   4. With PRIVACY_PROXY_ENABLE=1, activates the privacy-proxy compose profile and exports
 #      PRIVACY_PROXY_URL; with PRIVACY_PROXY_ROUTING=only, also adds the compose override
 #      config/privacy-proxy/compose.routing-only.yml, which withholds the provider keys and
@@ -20,8 +22,8 @@
 #   ./scripts/linux/start.sh      (from anywhere; it changes into the project root)
 #
 # Exit status
-#   0 when the stack is up; 1 when .env is missing, PRIVACY_PROXY_ROUTING is unknown, a port
-#   is taken, or compose fails.
+#   0 when the stack is up; 1 when .env is missing, PRIVACY_PROXY_ROUTING is unknown, a switch
+#   is neither 1 nor 0, a port is taken, or compose fails.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +44,9 @@ fi
 # shellcheck source=../../config/scripts/start/lib/privacy-routing.sh
 . "${PROJECT_DIR}/config/scripts/start/lib/privacy-routing.sh"
 PRIVACY_ROUTING="$(privacy_routing_mode "$ENV_FILE")" || exit 1
+# The switch once, from the answer above, which is off exactly when it is: the image pre-flight
+# and the profile below then cannot read two different .env files (CS-FR16).
+PRIVACY_PROXY_ENABLE=0; [[ "$PRIVACY_ROUTING" != off ]] && PRIVACY_PROXY_ENABLE=1
 if [[ "$PRIVACY_ROUTING" == only \
       && -z "$(env_value "$ENV_FILE" OPENAI_API_KEY)" && -z "$(env_value "$ENV_FILE" ANTHROPIC_API_KEY)" \
       && "$(env_value "$ENV_FILE" ENABLE_ANTHROPIC_CLAUDE_CODE)" != 1 ]]; then
@@ -57,6 +62,20 @@ fi
 . "${PROJECT_DIR}/config/scripts/start/lib/bind-address.sh"
 . "${PROJECT_DIR}/config/scripts/start/lib/proxy-identity.sh"
 lu_clear_skips
+
+# --- Which apps run: checked before anything is stopped (CS-4) ---------------
+# After the libraries above, which scripts/tests/privacy-routing.test.sh stubs to stop the
+# start right after the routing check, and before git's pre-flight and down.sh.
+# shellcheck source=../../config/scripts/start/lib/components.sh
+. "${PROJECT_DIR}/config/scripts/start/lib/components.sh"
+if ! lu_components_check "$ENV_FILE"; then
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  exit 1
+fi
+LIQUID_ON=0; lu_component_on "$ENV_FILE" ENABLE_LIQUID && LIQUID_ON=1
+OPENCLAW_ON=0; lu_component_on "$ENV_FILE" ENABLE_OPENCLAW && OPENCLAW_ON=1
+OPENCODE_ON=0; lu_component_on "$ENV_FILE" ENABLE_OPENCODE && OPENCODE_ON=1
+LU_PROFILES="$(lu_component_profiles "$ENV_FILE")" || exit 1
 
 "${PROJECT_DIR}/config/scripts/start/git.sh" "${PROJECT_DIR}" --check-declaration
 
@@ -213,6 +232,30 @@ if ! lu_proxy_identity "${PROJECT_DIR}/config/nginx/templates/nginx.conf" >/dev/
   exit 1
 fi
 
+# --- Pre-flight: the images of what is on must exist (CS-4) ------------------
+# Switching a component on whose image was never built, or that an update removed, used to be
+# found by `compose up`, which tries to pull a local-only image from no registry -- with the
+# stack already down. The dashboard's Restart button reaches that without asking for a build.
+# Asked here instead, before anything is stopped. The privacy proxy's image counts too, since
+# its profile is activated below when it is on.
+LU_IMAGES="bun-runner"
+[[ $OPENCODE_ON -eq 1 ]] && LU_IMAGES="opencode ${LU_IMAGES}"
+[[ $LIQUID_ON -eq 1 ]] && LU_IMAGES="${LU_IMAGES} nar-builder liquid"
+[[ $OPENCLAW_ON -eq 1 ]] && LU_IMAGES="${LU_IMAGES} openclaw"
+[[ $PRIVACY_PROXY_ENABLE -eq 1 ]] && LU_IMAGES="${LU_IMAGES} privacy-proxy"
+LU_MISSING=""
+for _image in $LU_IMAGES; do
+  docker image inspect "liquidupstart/${_image}:latest" >/dev/null 2>&1 \
+    || LU_MISSING="${LU_MISSING:+${LU_MISSING} }liquidupstart/${_image}:latest"
+done
+if [[ -n "$LU_MISSING" ]]; then
+  echo "Error: these images are not built: ${LU_MISSING}" >&2
+  echo "  Build first (./scripts/linux/build.sh, or Build in the dashboard), then start again." >&2
+  echo "  Nothing has been stopped; the stack is as it was." >&2
+  echo "::aiw-error::Not built yet: ${LU_MISSING}. Run Build, then start again." >&2
+  exit 1
+fi
+
 "${PROJECT_DIR}/scripts/linux/down.sh"
 
 # --- Pre-flight: the host ports the proxy publishes must be free -------------
@@ -295,7 +338,7 @@ port_taken() {
   # 0 = taken, 1 = free (or undeterminable — never block on that).
   local port="$1" out rc
   set +e
-  out="$(docker run --rm --entrypoint true -p "${port}:1" "$PROBE_IMAGE" 2>&1)"
+  out="$(docker run --pull never --rm --entrypoint true -p "${port}:1" "$PROBE_IMAGE" 2>&1)"
   rc=$?
   set -e
   if [[ $rc -eq 0 ]]; then
@@ -328,14 +371,23 @@ if [[ -n "$PROBE_IMAGE" ]]; then
 fi
 # ----------------------------------------------------------------------------
 
+# Before the start steps, not with the privacy profile below: openclaw.sh runs `docker compose
+# run` and `rm` against openclaw-gateway, and `run` does not enable a dependency's profile (CS-0).
+# Set rather than appended to: a COMPOSE_PROFILES left in the caller's shell would otherwise
+# start a component .env switches off.
+export COMPOSE_PROFILES="$LU_PROFILES"
+
 "${PROJECT_DIR}/config/scripts/start/generate_api_key.sh"
 "${PROJECT_DIR}/config/scripts/start/pgadmin.sh"
+# Runs whatever ENABLE_OPENCODE says: it creates the log directories of the always-on services.
 "${PROJECT_DIR}/config/scripts/start/opencode.sh"
 "${PROJECT_DIR}/config/scripts/start/git.sh"
 "${PROJECT_DIR}/config/scripts/start/nextcloud.sh"
 "${PROJECT_DIR}/config/scripts/start/nginx.sh"
-"${PROJECT_DIR}/config/scripts/start/liquid.sh"
-"${PROJECT_DIR}/config/scripts/start/nar-builder.sh"
+if [[ $LIQUID_ON -eq 1 ]]; then
+  "${PROJECT_DIR}/config/scripts/start/liquid.sh"
+  "${PROJECT_DIR}/config/scripts/start/nar-builder.sh"
+fi
 # hermes disabled: not started
 # "${PROJECT_DIR}/config/scripts/start/hermes.sh"
 # No network is created here any more. It existed only so openclaw.sh could read
@@ -344,17 +396,23 @@ fi
 # ipam, so compose can create the network at `up` like any other. That also
 # removes the ordering dependency between this script and openclaw.sh.
 
-"${PROJECT_DIR}/config/scripts/start/openclaw.sh"
+# Off, nothing waits for a Claude, Copilot, Codex or Grok sign-in: they all happen in here.
+if [[ $OPENCLAW_ON -eq 1 ]]; then
+  "${PROJECT_DIR}/config/scripts/start/openclaw.sh"
+fi
 
 
 # The privacy proxy runs under its own compose profile, so it is invisible to
 # `docker compose up` unless PRIVACY_PROXY_ENABLE=1 adds the profile here; the
 # agents' start scripts read PRIVACY_PROXY_URL to register its doors.
-PRIVACY_PROXY_ENABLE="$(get_env PRIVACY_PROXY_ENABLE)"
-if [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]]; then
+if [[ "$PRIVACY_PROXY_ENABLE" = 1 ]]; then
   export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}privacy-proxy"
   # The proxy listens on its built-in port 8080 inside the stack network.
   export PRIVACY_PROXY_URL="http://privacy-proxy:8080"
+  # It mounts the Claude login directory, which openclaw.sh creates with mode 700 so that docker
+  # never does. With OpenClaw off openclaw.sh does not run, so it is created here as well.
+  mkdir -p "${PROJECT_DIR}/volumes/_openclaw-claude"
+  chmod 700 "${PROJECT_DIR}/volumes/_openclaw-claude"
 fi
 # In only mode the override withholds the provider keys and logins from the agent containers.
 # The empty directories it mounts in place of the real ones are created here, so that Docker does
@@ -386,6 +444,31 @@ if [[ $UP_RC -ne 0 ]]; then
     echo "::aiw-error::Starting the stack failed. See the log above for the failing service." >&2
   fi
   exit $UP_RC
+fi
+
+# --- The proxy's optional dependencies held their conditions (CS-5) -----------
+# `required: false` in compose.yml lets the proxy start without a component that is switched
+# off, and it equally lets it start beside one that is on and failed: measured on compose
+# 5.6.1, an unhealthy dependency with `required: false` leaves `up -d` at 0, where `required`
+# made it refuse. So the start asks for itself, for what is on.
+lu_dependency_failed() {  # lu_dependency_failed <container> <running|healthy>
+  local state
+  state="$(docker inspect --format '{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' "$1" 2>/dev/null || true)"
+  case "$2" in
+    healthy) [[ "$state" != "running healthy" ]] ;;
+    *) [[ "$state" != running* ]] ;;
+  esac
+}
+LU_FAILED=""
+if [[ $OPENCODE_ON -eq 1 ]] && lu_dependency_failed opencode running; then LU_FAILED="${LU_FAILED} opencode"; fi
+if [[ $LIQUID_ON -eq 1 ]] && lu_dependency_failed nar_builder running; then LU_FAILED="${LU_FAILED} nar_builder"; fi
+if [[ $OPENCLAW_ON -eq 1 ]] && lu_dependency_failed openclaw-gateway healthy; then LU_FAILED="${LU_FAILED} openclaw-gateway"; fi
+if [[ -n "$LU_FAILED" ]]; then
+  echo "" >&2
+  echo "Error: did not come up as it should:${LU_FAILED}" >&2
+  echo "  The rest of the stack is up. 'docker compose logs <service>' shows why." >&2
+  echo "::aiw-error::Starting the stack failed:${LU_FAILED} did not come up. See the log above, or docker compose logs." >&2
+  exit 1
 fi
 
 PGADMIN_DEFAULT_EMAIL="$(get_env PGADMIN_DEFAULT_EMAIL)"
@@ -429,29 +512,41 @@ url_line "REST API"    "http://postgrest.localhost:${HTTP_PORT}"
 url_line "Swagger UI"  "http://swagger.localhost:${HTTP_PORT}"
 echo ""
 echo "${HDR}=== Web interfaces = Applications ================================${RST}"
-url_line "Liquid"        "https://liquid.localhost:${HTTPS_PORT}"
-url_line "Node app"    "http://app.localhost:${HTTP_PORT}        - build an app using OpenClaw first"
+# A component that is off gets no line: its URL would answer 502 (CS-5).
+[[ $LIQUID_ON -eq 1 ]] && url_line "Liquid"        "https://liquid.localhost:${HTTPS_PORT}"
+if [[ $OPENCLAW_ON -eq 1 ]]; then
+  url_line "Node app"    "http://app.localhost:${HTTP_PORT}        - build an app using OpenClaw first"
+elif [[ $OPENCODE_ON -eq 1 ]]; then
+  url_line "Node app"    "http://app.localhost:${HTTP_PORT}        - build an app using OpenCode first"
+else
+  url_line "Node app"    "http://app.localhost:${HTTP_PORT}        - no agent is switched on to build one"
+fi
 url_line "OpenProject" "http://openproject.localhost:${HTTP_PORT}"
 echo ""
 echo "${HDR}=== Web interfaces = AI Harnesses ================================${RST}"
 # hermes disabled: url_line "Hermes"      "http://hermes.localhost:${HTTP_PORT}"
-url_line "OpenClaw"    "http://openclaw.localhost:${HTTP_PORT}   - recommended"
-url_line "OpenCode"    "http://opencode.localhost:${HTTP_PORT}"
+[[ $OPENCLAW_ON -eq 1 ]] && url_line "OpenClaw"    "http://openclaw.localhost:${HTTP_PORT}   - recommended"
+[[ $OPENCODE_ON -eq 1 ]] && url_line "OpenCode"    "http://opencode.localhost:${HTTP_PORT}"
 [[ "${PRIVACY_PROXY_ENABLE:-0}" = 1 ]] && \
   url_line "Privacy settings" "http://privacy.localhost:${HTTP_PORT}/policy/ui"
 echo ""
 echo "${HDR}=== Logins, passwords & tokens ===================================${RST}"
 # hermes disabled: echo "  Hermes API/Webhooks token:  ${CRED}${HERMES_API_KEY}${RST}"
 echo "  NextCloud admin password:   ${CRED}${PGADMIN_DEFAULT_EMAIL}${RST}"
-echo "  Liquid username:              ${CRED}${LIQUID_USERNAME}${RST}"
-echo "  Liquid password:              ${CRED}${LIQUID_PASSWORD}${RST}"
+if [[ $LIQUID_ON -eq 1 ]]; then
+  echo "  Liquid username:              ${CRED}${LIQUID_USERNAME}${RST}"
+  echo "  Liquid password:              ${CRED}${LIQUID_PASSWORD}${RST}"
+fi
 echo ""
 echo "${HDR}=== Additional endpoints =========================================${RST}"
 # hermes disabled: echo "  ${DIM}Hermes API:                 ${URL}http://api.hermes.localhost:${HTTP_PORT}${RST}"
 # hermes disabled: echo "  ${DIM}Hermes webhooks:            ${URL}http://webhooks.hermes.localhost:${HTTP_PORT}${RST}"
-echo "  ${DIM}Liquid ingresses: ports 8900-8999, served on https://PORT.liquid.localhost:${HTTPS_PORT}${RST}"
-echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost:${HTTP_PORT}${RST}"
-echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
+[[ $LIQUID_ON -eq 1 ]] && \
+  echo "  ${DIM}Liquid ingresses: ports 8900-8999, served on https://PORT.liquid.localhost:${HTTPS_PORT}${RST}"
+if [[ $OPENCLAW_ON -eq 1 ]]; then
+  echo "  ${DIM}OpenClaw node bridge:       ${URL}http://bridge.openclaw.localhost:${HTTP_PORT}${RST}"
+  echo "  ${DIM}OpenClaw MS Teams endpoint: ${URL}http://msteams.openclaw.localhost:${HTTP_PORT}${RST}"
+fi
 echo ""
 
 # Both states, said out loud. The ports bind to this machine by default from the
@@ -471,9 +566,13 @@ if lu_bind_is_loopback "$BIND_ADDRESS"; then
   echo "  ${DIM}  Another device needs SYSTEM_BIND_ADDRESS=0.0.0.0, or an SSH tunnel.${RST}"
 else
   echo "  ${WARN}Reachable from: your network (SYSTEM_BIND_ADDRESS=${BIND_ADDRESS}).${RST}"
-  echo "  ${DIM}  Every service above is, including the ones with no password, and the${RST}"
-  echo "  ${DIM}  OpenClaw gateway with admin rights: nginx asserts the operator identity${RST}"
-  echo "  ${DIM}  for whoever reaches it, so the network reaches it as the operator.${RST}"
+  if [[ $OPENCLAW_ON -eq 1 ]]; then
+    echo "  ${DIM}  Every service above is, including the ones with no password, and the${RST}"
+    echo "  ${DIM}  OpenClaw gateway with admin rights: nginx asserts the operator identity${RST}"
+    echo "  ${DIM}  for whoever reaches it, so the network reaches it as the operator.${RST}"
+  else
+    echo "  ${DIM}  Every service above is, including the ones with no password.${RST}"
+  fi
 fi
 echo ""
 
@@ -535,4 +634,6 @@ NODE
   echo ""
 }
 
-check_copilot_auth
+if [[ $OPENCLAW_ON -eq 1 ]]; then
+  check_copilot_auth
+fi

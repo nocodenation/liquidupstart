@@ -30,6 +30,8 @@ function docker(args: string[]): Promise<{ code: number; out: string }> {
 async function isFree(port: number): Promise<boolean> {
   const { code, out } = await docker([
     'run',
+    '--pull',
+    'never',
     '--rm',
     '-p',
     `127.0.0.1:${port}:1`,

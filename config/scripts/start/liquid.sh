@@ -45,7 +45,7 @@ else
     mkdir -p "$STATE_DIR"
     chmod 777 "$STATE_DIR"
 
-    docker run --rm \
+    docker run --pull never --rm \
         -e "SINGLE_USER_CREDENTIALS_USERNAME=${LIQUID_USERNAME}" \
         -e "SINGLE_USER_CREDENTIALS_PASSWORD=${LIQUID_PASSWORD}" \
         -v "${STATE_DIR}":/target \

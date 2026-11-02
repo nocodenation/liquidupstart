@@ -115,6 +115,8 @@
 {#if git.state !== 'none' || git.declarationError}
   <section class="card gitcard">
     <h2>Agent repositories</h2>
+    <!-- With both agents switched off, set by the launchpad's load. CS-FR13. -->
+    {#if git.notice}<p class="warn gitnotice">{git.notice}</p>{/if}
     <p class="gitmessage" class:warn={git.state !== 'ready'}>{git.message}</p>
 
     {#if git.declarationError && git.state !== 'none'}

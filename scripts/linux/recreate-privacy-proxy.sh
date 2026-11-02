@@ -11,8 +11,9 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-PRIVACY_PROXY_ENABLE="$(grep -E '^PRIVACY_PROXY_ENABLE=' "$ENV_FILE" | head -n1 | cut -d'=' -f2- | tr -d "'\"" || true)"
-if [[ "${PRIVACY_PROXY_ENABLE:-0}" != 1 ]]; then
+# shellcheck source=../../config/scripts/start/lib/components.sh
+. "${PROJECT_DIR}/config/scripts/start/lib/components.sh"
+if ! lu_privacy_proxy_on "$ENV_FILE"; then
   echo "Error: PRIVACY_PROXY_ENABLE=1 is not set in ${ENV_FILE}" >&2
   exit 1
 fi

@@ -38,6 +38,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
+// Before `project.ts`, which captures ENV_DIR on its first load: the fixture owns the
+// directory the component cases share, and this file may be the first to load it.
+import '../lib/dashboardfixture';
+import { builtImages } from '../../dashboard/src/lib/server/project';
 
 const SCRIPT = join(repoRoot, 'config/scripts/start/liquid.sh');
 
@@ -148,11 +152,12 @@ describe('B5-2 an existing state folder is left alone', () => {
 describe('B5-3 nar-builder counts as a locally built image', () => {
   test('B5-3 the dashboard lists it, so a fresh checkout is told to build', () => {
     // Without it `stackState()` answered needBuild: false and compose tried to
-    // pull an image that only ever exists locally.
-    const src = readFileSync(join(repoRoot, 'dashboard/src/lib/server/project.ts'), 'utf8');
-    const list = src.match(/return \[([^\]]*)\]\.map/s)?.[1] ?? '';
-    expect(list).toContain('nar-builder');
-    for (const n of ['opencode', 'bun-runner', 'liquid', 'openclaw']) expect(list).toContain(n);
+    // pull an image that only ever exists locally. Called with Liquid on, since the
+    // builder is Liquid's and leaves the list with it (#50, CS-12).
+    const list = builtImages({ liquid: true, openclaw: true, opencode: true });
+    expect(list).toContain('liquidupstart/nar-builder:latest');
+    for (const n of ['opencode', 'bun-runner', 'liquid', 'openclaw'])
+      expect(list).toContain(`liquidupstart/${n}:latest`);
   });
 
   test('B5-3 and the upgrade path removes the stale one', () => {
