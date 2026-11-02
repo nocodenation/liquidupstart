@@ -135,7 +135,11 @@ mistake is available here and is cheaper to avoid than to repeat.
   server and the image ship together and B7-6 ties their users to each other, so it takes a
   mismatched `NAR_BUILDER_BUILD_USER` to get there, but the fallback opened what FR41 and the drop
   directory's containment rest on. Now, as root, a build user `id` does not know stops the build
-  with a message naming it, before Maven runs, and `drop_is_closed` refuses. Run as an ordinary
+  with a message naming it, before Maven runs, and `drop_is_closed` refuses. *Amended 2026-11-02,
+  the second review of #55:* the refusal surfaced first through the API version's resolution, so a
+  synthesised project answered 409 with advice to add a `pom.xml`. `build` and `target` now check
+  the user before anything else, as root, and stop with exit status 1, HTTP 500, the status of
+  every fault of the installation. Run as an ordinary
   user, which is how the suite drives `build.sh` on the host against a stub `mvn`, both behave as
   before: there is nothing to drop from.
 - **FR42 — Two builds never share a user, and a build leaves nothing running or written behind it.**
@@ -172,6 +176,30 @@ mistake is available here and is cheaper to avoid than to repeat.
   repeated while a live task remains, at most five times 200 ms apart; a task still live then makes
   the sweep fail, as above. A real zombie, every task `Z`, is still counted as ended, for the reason
   B7-9 records: the server is PID 1 and reaps nothing it did not start.
+
+  *Amended 2026-11-02, the second review of #55.* **The sweep fails closed on what it cannot read,
+  and kills whether or not it has seen anything.** A task's name is the process's to set, and the
+  kernel writes bytes above `0x7f` into `status` and `stat` unescaped, so a process that names
+  itself `\xff\xfe\xfd` with `prctl(PR_SET_NAME)` made a strict UTF-8 read of those files throw;
+  the sweep took the exception for a task that had gone, and since it sent the kill only when its
+  scan found something, such a process was never signalled. The review reproduced the planted
+  `.mavenrc` with one. So: `/proc` is read as bytes, decoded as ISO-8859-1; a task counts as gone
+  only when its files no longer exist, and any other failure to read them counts it as live; and
+  every sweep sends `kill -KILL -1` as the slot user at least once, the scan deciding only whether
+  to repeat it and whether the sweep failed. The guard before the kill reads the uid as a number,
+  so a passwd entry `00` is root as the kernel takes it, and is refused.
+
+  *Amended 2026-11-02, the second review of #55.* **The removal cannot be steered out of the swept
+  directories.** It ran as root as `find … -user <user> -prune -exec rm -rf {} +`, and `-exec`
+  hands `rm` absolute paths that are resolved again when `rm` runs. A build running on the other
+  slot meanwhile owns directories under `/tmp`, and can turn one on such a path into a symlink to
+  `/` between `find`'s match and `rm`'s call; root then removes a file of the same name at the top
+  of the filesystem. The review won that race on its 29th attempt, deleting a root-owned `/victim`.
+  `fs.protected_symlinks` does not stop it, since the symlink lies in the attacker's own directory
+  and not directly in sticky `/tmp`. The removal is `-execdir rm -rf {} +` now: `rm` runs in the
+  directory `find` holds open, on `./<name>`, so no path is resolved twice; the same race lost 1500
+  attempts out of 1500. Measured on the reviewer's host, not proven; the argument is GNU find's
+  documented reason for `-execdir`.
 
   *Added 2026-11-02.* **What the sweep does not clear: System V IPC.** A shared-memory segment,
   semaphore set or message queue a build user creates with `shmget`, `semget` or `msgget` lasts
