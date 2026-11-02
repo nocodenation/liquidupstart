@@ -20,10 +20,12 @@
  * Then:     The git section is offered with all three fields and their help; the
  *           declaration reaches .env in the form git-repos.sh parses and comes
  *           back on the next load; and every other key keeps its exact line. The
- *           sections the view shows are numbered 1 to 10 and keep their names;
+ *           sections the view shows are numbered 1 to 11 and keep their names;
  *           no prose the view shows and no hint in the sources names a section by
- *           number; and .env.example keeps `# 4. …DO NOT SHOW UI` and
- *           `# 7. PRIVACY PROXY` as written.
+ *           number; and .env.example keeps `# 0. WHICH APPS TO RUN`,
+ *           `# 4. …DO NOT SHOW UI` and `# 7. PRIVACY PROXY` as written. Eleven
+ *           since #50 put the switches first as the file's section 0, so that no
+ *           number the file already had moved (its decision 8).
  * Covers:   A8-1, A8-2, A8-3, A8-38, FR10, FR11, NFR1, U1
  * Unhappy:  A8-3 is the unhappy case: it is the operator's own act that triggers
  *           the loss, so the assertion is over the whole file rather than over
@@ -74,9 +76,10 @@ beforeEach(() => {
 test('A8-1 the view offers the git section with all three git fields', () => {
   const git = sectionTitled('GIT INTEGRATION');
 
-  // The tenth section the page shows; `.env.example` calls it 11, counting the
-  // hidden section 4. The page numbers what it shows since 2026-10-27, A8-38.
-  expect(git.title).toBe('10. GIT INTEGRATION');
+  // The eleventh section the page shows; `.env.example` calls it 11 as well, counting
+  // its section 0 and the hidden section 4. The page numbers what it shows since
+  // 2026-10-27, A8-38, and #50 added the switches at the top on 2026-10-29.
+  expect(git.title).toBe('11. GIT INTEGRATION');
   expect(git.autogen).toBe(false);
   expect(git.collapsed).toBe(false);
   expect(git.description).toContain('./volumes/repos');
@@ -106,7 +109,7 @@ test('A8-1 each field carries the help text .env.example gives it', () => {
 
 test('A8-1 the section survives the whole view, not just the parser', () => {
   const titles = configSections().map((s) => s.title);
-  expect(titles).toContain('10. GIT INTEGRATION');
+  expect(titles).toContain('11. GIT INTEGRATION');
 });
 
 test('A8-2 a declaration typed into the view reaches .env in the form git-repos.sh parses', async () => {
@@ -170,9 +173,9 @@ test('A8-3 the write replaces the file rather than rewriting it in place', async
   expect(existsSync(`${ENV_FILE}.tmp`)).toBe(false);
 });
 
-test('A8-38 the view numbers the sections it shows 1 to 10, without a gap', () => {
+test('A8-38 the view numbers the sections it shows 1 to 11, without a gap', () => {
   const numbers = configSections().map((s) => Number(s.title.match(/^(\d+)\./)?.[1]));
-  expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  expect(numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 });
 
 test('A8-38 and keeps each section\'s name as the file gives it', () => {
@@ -194,7 +197,7 @@ function prose(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(prose);
   if (value && typeof value === 'object') {
     return Object.entries(value).flatMap(([k, v]) =>
-      ['description', 'lines', 'help', 'text', 'title', 'items'].includes(k) ? prose(v) : []
+      ['description', 'lines', 'help', 'text', 'title', 'items', 'note'].includes(k) ? prose(v) : []
     );
   }
   return [];
@@ -240,6 +243,7 @@ test('A8-38 and no hint the dashboard writes names one by number', () => {
 
 test('A8-38 the counterpart: the file keeps its own numbers, which another repository reads', () => {
   const example = readFileSync(join(projectDir, '.env.example'), 'utf8');
+  expect(example).toMatch(/^# 0\. WHICH APPS TO RUN$/m);
   expect(example).toMatch(/^# 4\. SERVICE SECRETS & CREDENTIALS - SCRIPTS GENERATE IT - DO NOT SHOW UI$/m);
   expect(example).toMatch(/^# 7\. PRIVACY PROXY$/m);
 });

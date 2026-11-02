@@ -142,7 +142,7 @@ while :; do
   # ORIGIN must match the browser URL: SvelteKit rejects cross-origin form
   # posts, blocking random sites from writing .env or triggering builds.
   set +e
-  RUN_ERR="$(docker run -d --rm --name "$CONTAINER" \
+  RUN_ERR="$(docker run --pull never -d --rm --name "$CONTAINER" \
     -p "127.0.0.1:${PORT}:3000" \
     -e "ORIGIN=${URL}" \
     -e "ENV_DIR=${SCRIPT_DIR}" \
