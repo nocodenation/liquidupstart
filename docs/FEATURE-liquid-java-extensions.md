@@ -189,6 +189,16 @@ mistake is available here and is cheaper to avoid than to repeat.
   to repeat it and whether the sweep failed. The guard before the kill reads the uid as a number,
   so a passwd entry `00` is root as the kernel takes it, and is refused.
 
+  *Amended 2026-11-02, the third review of #55.* **A name cannot move a line of `status`.** The
+  kernel escapes `\n`, `\\` and the tab-like whitespace in the name it writes into `status`'s
+  `Name:` line, and writes other bytes, the space and `0x85` among them, as they are — seen with
+  `od` in the review. ISO-8859-1 turns `0x85` into U+0085, which Java's multi-line `^` takes for a line break. A
+  process of `builder` that named itself `\x85Uid: 1501` was read as `builder2`'s, so the other
+  slot's sweep could not clear it and refused that slot's builds with 500 for as long as it ran —
+  reproduced twice. It hid nothing, since the kill does not depend on the scan, but it let one slot
+  deny the other. So `status` is split on `\n` alone, and the real uid is the first field of the
+  line that begins `Uid:\t`; no other byte ends a line.
+
   *Amended 2026-11-02, the second review of #55.* **The removal cannot be steered out of the swept
   directories.** It ran as root as `find … -user <user> -prune -exec rm -rf {} +`, and `-exec`
   hands `rm` absolute paths that are resolved again when `rm` runs. A build running on the other
