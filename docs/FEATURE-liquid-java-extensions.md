@@ -140,6 +140,23 @@ mistake is available here and is cheaper to avoid than to repeat.
   cannot complete is not used: the server refuses the build with HTTP 500, the status every fault of
   the installation answers, and names the slot and the restart that clears it.
 
+  *Amended 2026-11-02, the first review of #55.* **How a user's processes are ended, and when they
+  count as ended.** The server does not signal processes it has listed; it runs, as the slot user,
+  `setpriv --reuid=<uid> --regid=<gid> --clear-groups sh -c 'kill -KILL -1'`. A `kill(-1)` from that
+  uid reaches every process the uid may signal, which is every process of that user and nothing of
+  root's or the other slot user's, and the kernel walks the process list for it under the lock that
+  `fork` takes, so a process cannot fork its way past it (traced in the kernel, not measured; B7-9
+  (10) holds the chain that would). The image has no `kill` binary, hence the shell's builtin. The
+  user's processes count as ended when no **task** whose real uid is the user's (`Uid:` in
+  `/proc/<pid>/task/<tid>/status`) is in any state but `Z`. Tasks, not processes, because
+  a process whose main thread has exited shows `Z` in `/proc/<pid>/stat` while its other threads run.
+  The sweep before this amendment skipped such a process as a zombie and never signalled it, and in
+  the review a thread kept that way wrote into the next build's `.mavenrc`, which that build would
+  have sourced: #31's reproduction, moved from the passwd home to the per-build one. The kill is
+  repeated while a live task remains, at most five times 200 ms apart; a task still live then makes
+  the sweep fail, as above. A real zombie, every task `Z`, is still counted as ended, for the reason
+  B7-9 records: the server is PID 1 and reaps nothing it did not start.
+
   *What this does not close, stated rather than implied.* Two builds that **overlap** share `/tmp`
   and the other world-writable directories for that time: one can leave a file there that the other's
   code may choose to read. The sticky bit stops it replacing the other's files, and `TMPDIR` and
