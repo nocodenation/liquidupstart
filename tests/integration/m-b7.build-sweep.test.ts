@@ -16,7 +16,8 @@
  *           process whose main thread has exited while another runs shows `Z`
  *           too, and is not one: so "live" here means a task of the user's uid
  *           in any state but `Z`, never a process, read from /proc as bytes,
- *           since a task names itself and a name need not be UTF-8.
+ *           since a task names itself and a name need not be UTF-8, and its
+ *           `status` split on `\n` alone, since a name may carry `\x85`.
  * Given:    The shipped build server as PID 1 in the builder image built from
  *           this tree (`startBuilderServer`), with a stub `build.sh` that acts
  *           as the slot's user; and, for the swept list, the image started
@@ -28,25 +29,32 @@
  *           process whose main thread has exited and whose other thread keeps
  *           writing `.mavenrc` into the slot's work directories; a build leaves
  *           a chain that forks a successor and exits; a build leaves a process
- *           named `\xff\xfe\xfd` writing `.mavenrc` the same way; `builder`'s
- *           passwd uid reads `00` while root runs a `sleep`; and each user's
- *           writable paths are computed, on `/` and inside every other mount.
+ *           named `\xff\xfe\xfd` writing `.mavenrc` the same way; a build
+ *           leaves a process named `\x85Uid: ` and the other slot's uid while
+ *           that slot builds; `builder`'s passwd uid reads `00` while root runs
+ *           a `sleep`; and each user's writable paths are computed, on `/`
+ *           and inside every other mount.
  * Then:     The daemon and the files are gone and nobody else's files are; the
  *           running build is untouched; what was left before the start is gone
  *           before the first build; the unsweepable slot is refused with 500,
  *           naming `--force-recreate` as the remedy, and the build never ran;
  *           the zombie does not block its slot; the thread, the chain and the
  *           unreadably named process are ended and the slot's next build finds
- *           no `.mavenrc`; the `00` uid is refused with 500 and root's `sleep`
- *           lives; and nothing writable lies outside the swept list but `/m2`,
- *           which `builder` is seen to write, so the tolerance is used.
+ *           no `.mavenrc`; the forged `Uid:` line does not fail the other
+ *           slot, whose build is 200; the `00` uid is refused with 500 and
+ *           root's `sleep` lives; and nothing writable lies outside the swept
+ *           list but `/m2`, which `builder` is seen to write, so the
+ *           tolerance is used.
  * Covers:   B7-9, FR37, FR42
  * Unhappy:  Every negative has its counterpart here: the sweep removes the
  *           slot user's files and keeps root's and the other user's, and it
  *           leaves a running build alone -- a sweep that deleted everything
  *           would pass every negative. The non-UTF-8 name's counterpart is the
- *           first daemon, ordinarily named; the `00` uid's is every other
- *           scenario, where the uids are 1500 and 1501 and the sweep runs.
+ *           first daemon, ordinarily named; the forged line's is the running
+ *           build, where the other slot's build runs beside an ordinarily
+ *           named process of the first slot's user and is 200; the `00` uid's
+ *           is every other scenario, where the uids are 1500 and 1501 and the
+ *           sweep runs.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -76,7 +84,8 @@ const PLANTED = [
  * The user's live tasks: a /proc/<pid>/task/<tid> whose real uid is the user's
  * and whose state is not Z. Tasks, because a process whose main thread has
  * exited shows Z while its other threads run; one gone mid-read is not live.
- * Bytes, so a task name that is not UTF-8 cannot make the count itself fail.
+ * Bytes, so a task name that is not UTF-8 cannot make the count itself fail;
+ * split on `\n` alone, since `splitlines()` breaks on `\x85` as Java's `^` did.
  * One process for the scan: the fork chain below leaves a zombie per member
  * under a PID 1 that never reaps them.
  */
@@ -91,7 +100,7 @@ for t in glob.glob("/proc/[0-9]*/task/[0-9]*"):
         stat = open(t + "/stat", "rb").read().decode("latin-1")
     except OSError:
         continue
-    uid = [l.split()[1] for l in status.splitlines() if l.startswith("Uid:")]
+    uid = [l.split("\\t")[1] for l in status.split("\\n") if l.startswith("Uid:\\t")]
     if uid == [sys.argv[1]] and stat[stat.rindex(")") + 2] != "Z":
         n += 1
 print(n)' "$(id -u ${user})"
@@ -430,6 +439,50 @@ esac`
     expect(third.stdout).toContain(`BUILD-USER=${user}\n`);
     expect(third.stdout).toContain('HTTP=200');
     expect(third.stdout).toContain('MAVENRC=absent');
+  });
+});
+
+describe('B7-9 a process whose name carries a line of `status` of its own', () => {
+  // The review's name: `\x85`, which ISO-8859-1 makes U+0085 and Java's
+  // multi-line `^` a line break, then a `Uid:` line claiming the other slot's
+  // uid. That slot's sweep could not end it and refused B with 500. A writes
+  // its marker under /run, which no sweep touches, so B starts once A is named.
+  const s = start({
+    pre: `cat > /opt/b7-9-line.py <<'PY'
+import ctypes, sys, time
+ctypes.CDLL(None).prctl(15, b'\\x85Uid: ' + sys.argv[1].encode(), 0, 0, 0)
+print('named', flush=True)
+time.sleep(600)
+PY
+chmod 644 /opt/b7-9-line.py`,
+    stub: `${STUB_PREAMBLE}
+case "$2" in
+  *b7-9-l1) other=$([ "$BUILD_USER" = builder ] && echo builder2 || echo builder)
+    as_user "nohup python3 /opt/b7-9-line.py $(id -u $other) > $W/tmp/named 2>&1 &"
+    for i in $(seq 1 100); do [ -s "$W/tmp/named" ] && break; sleep 0.05; done
+    echo "NAMED=$(cat "$W/tmp/named")"
+    touch /run/b7-9.line-named
+    sleep 6 ;;
+esac`
+  });
+  const out = s.exec(`
+    curl -s -w '\\nHTTP=%{http_code}\\n' -H 'X-Liquid-Agent: 1' -X POST --data-binary /repos/b7-9-l1 http://127.0.0.1:8779/build > /run/b7-9.a.out &
+    for i in $(seq 1 100); do [ -e /run/b7-9.line-named ] && break; sleep 0.05; done
+    curl -s -w '\\nHTTP=%{http_code}\\n' -H 'X-Liquid-Agent: 1' -X POST --data-binary /repos/b7-9-l2 http://127.0.0.1:8779/build > /run/b7-9.b.out
+    wait
+    cat /run/b7-9.a.out; echo '--- B ---'; cat /run/b7-9.b.out
+  `).stdout;
+  const [a, b = ''] = out.split('--- B ---');
+  const userA = a.match(/^BUILD-USER=(\S+)$/m)?.[1] ?? '';
+
+  test('B7-9 a process whose name carries a line of `status` of its own does not make the other slot\'s sweep fail', () => {
+    expect(userA).toMatch(/^builder2?$/);
+    // Named before B started, or the case is about python3.
+    expect(a).toContain('NAMED=named');
+    expect(a).toContain('HTTP=200');
+    expect(b).not.toContain('could not clear');
+    expect(b).toContain('HTTP=200');
+    expect(b).toContain(`BUILD-USER=${userA === 'builder' ? 'builder2' : 'builder'}\n`);
   });
 });
 

@@ -236,7 +236,18 @@ public class BuildServer {
         return null;
     }
 
-    private static final Pattern REAL_UID = Pattern.compile("(?m)^Uid:\\s+([0-9]+)");
+    /**
+     * The real uid in a /proc status file, or -1. Split on `\n` alone: a task
+     * names itself, and a name holding 0x85 is a line break to a multi-line `^`.
+     */
+    private static long realUid(String status) {
+        for (String line : status.split("\n")) {
+            if (line.startsWith("Uid:\t")) {
+                return Long.parseLong(line.split("\t")[1]);
+            }
+        }
+        return -1;
+    }
 
     /**
      * The pid of a task whose real uid is the given one and whose state is not
@@ -250,9 +261,7 @@ public class BuildServer {
             for (java.io.File task : tasks == null ? new java.io.File[0] : tasks) {
                 java.nio.file.Path status = task.toPath().resolve("status");
                 try {
-                    java.util.regex.Matcher m = REAL_UID.matcher(procText(status));
-                    if (m.find() && Long.parseLong(m.group(1)) == uid
-                            && state(task.toPath().resolve("stat")) != 'Z') {
+                    if (realUid(procText(status)) == uid && state(task.toPath().resolve("stat")) != 'Z') {
                         return Long.parseLong(proc.getName());
                     }
                 } catch (IOException e) {
