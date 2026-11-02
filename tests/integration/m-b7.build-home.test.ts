@@ -21,15 +21,18 @@
  *           `/opt/builder/build.sh`, so the shipped functions run and not a
  *           restatement of them.
  * When:     Each build user tries to write its home; Maven runs in a work
- *           directory holding a malformed settings file, and in one that does
- *           not hold another's `.mavenrc`; a stub mvn reports what a forked JVM
- *           sees; and the probe processor is built offline as `builder2`.
+ *           directory holding a malformed settings file, in one that does not
+ *           hold another's `.mavenrc`, and with a `.mavenrc` root put into
+ *           `/home/builder`; a stub mvn reports what a forked JVM sees; and the
+ *           probe processor is built offline as `builder2`.
  * Then:     Both homes are `root:root 555`, empty and unwritable; Maven names
  *           the per-build settings path; the other build's `.mavenrc` is not
- *           sourced while its own is; the forked JVM reports the per-build
+ *           sourced while its own is, and the passwd home's is not sourced
+ *           even when it is there; the forked JVM reports the per-build
  *           paths; and the offline build succeeds with one NAR.
  * Covers:   B7-7, FR37, FR41
- * Unhappy:  The refused writes and the unsourced `.mavenrc` are the negatives.
+ * Unhappy:  The refused writes and the two unsourced `.mavenrc`s are the
+ *           negatives.
  *           Each has its counterpart: the settings read from the per-build
  *           home, the same `.mavenrc` sourced in its own build, and a real build
  *           succeeding -- without them the lock would pass against a Maven that
@@ -100,9 +103,10 @@ describe('B7-7 Maven reads only the home of the build that is running', () => {
   }, 900_000);
 
   test('B7-7 one build\'s .mavenrc is not sourced by another, and is by its own', () => {
-    // The issue's reproduction, turned into a case. The second run is the
-    // counterpart: without it the first passes against a launcher that never
-    // sources anything.
+    // Holds the per-build home between two work directories; not the issue's
+    // reproduction, which plants in the passwd home -- that is the case below.
+    // The second run is the counterpart: without it the first passes against a
+    // launcher that never sources anything.
     const r = inBuilder(`
       W1=$(work_dir_for_build); W2=$(work_dir_for_build)
       echo 'echo PLANTED-B7-7' > "$W1/home/.mavenrc"
@@ -113,6 +117,19 @@ describe('B7-7 Maven reads only the home of the build that is running', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('OTHER=[]');
     expect(r.stdout).toContain('OWN=[PLANTED-B7-7]');
+  }, 900_000);
+
+  test('B7-7 a .mavenrc in the passwd home is not sourced, even when it is there', () => {
+    // The issue's reproduction. Put there by root, because the 555 home now
+    // refuses builder: what is held is HOME moved to the work directory, apart
+    // from the floor the first case holds.
+    const r = inBuilder(`
+      echo 'echo PLANTED-B7-7' > /home/builder/.mavenrc
+      W=$(work_dir_for_build)
+      printf 'PASSWD=[%s]\\n' "$(run_maven "$W" -o -q -v 2>&1 | grep PLANTED)"
+    `);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('PASSWD=[]');
   }, 900_000);
 
   test('B7-7 a JVM that Maven forks gets the per-build user.home and java.io.tmpdir', () => {

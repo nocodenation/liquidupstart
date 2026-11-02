@@ -107,9 +107,9 @@ public class BuildServer {
      * Everything a slot user can write outside its work directory, which is
      * under /tmp and so swept with it. Computed in the image as each user --
      * `find / -xdev -writable` and the tmpfs mounts -- and held there by B7-9
-     * rather than by this comment. `/m2` is not here: entrypoint.sh keeps it for
-     * #10, nothing on this branch reads it, and on #10 it is the cache that must
-     * persist.
+     * rather than by this comment. `/m2` is not here: entrypoint.sh keeps it
+     * because B6-36 and B6-38 still drive its handling there, and no build reads
+     * it, since each has its own repository. FR42.
      */
     private static final List<String> SWEPT =
             List.of("/tmp", "/var/tmp", "/run/lock", "/dev/shm", "/dev/mqueue");

@@ -18,7 +18,8 @@
  *           in any state but `Z`, never a process.
  * Given:    The shipped build server as PID 1 in the builder image built from
  *           this tree (`startBuilderServer`), with a stub `build.sh` that acts
- *           as the slot's user; and, for the last case, the image alone.
+ *           as the slot's user; and, for the swept list, the image started
+ *           through its own entrypoint, so `/m2` is there as in compose.
  * When:     A build starts a daemon and writes into every swept directory;
  *           another runs while the first sleeps; a user leaves a file and a
  *           process before the server starts; a slot holds a mount point that
@@ -26,14 +27,14 @@
  *           process whose main thread has exited and whose other thread keeps
  *           writing `.mavenrc` into the slot's work directories; a build leaves
  *           a chain that forks a successor and exits; and each user's writable
- *           paths are computed.
+ *           paths are computed, on `/` and inside every other mount.
  * Then:     The daemon and the files are gone and nobody else's files are; the
  *           running build is untouched; what was left before the start is gone
  *           before the first build; the unsweepable slot is refused with 500 and
  *           the build never ran; the zombie does not block its slot; the thread
  *           and the chain are ended and the slot's next build finds no
  *           `.mavenrc`; and nothing writable lies outside the swept list but
- *           `/m2`.
+ *           `/m2`, which `builder` is seen to write, so the tolerance is used.
  * Covers:   B7-9, FR37, FR42
  * Unhappy:  Every negative has its counterpart here: the sweep removes the
  *           slot user's files and keeps root's and the other user's, and it
@@ -45,7 +46,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
-import { builderImage } from '../lib/builderimage';
+import { builderImage, builderLabels } from '../lib/builderimage';
 import { startBuilderServer, STUB_PREAMBLE, type BuilderServer } from '../lib/builderserver';
 
 const started: BuilderServer[] = [];
@@ -247,28 +248,42 @@ describe('B7-9 the swept list is what the image permits', () => {
   const swept = [...(server.match(/SWEPT\s*=\s*List\.of\(([^)]*)\)/)?.[1] ?? '').matchAll(/"([^"]+)"/g)].map(
     (m) => m[1]
   );
-  const r = sh([
-    'docker', 'run', '--rm', '--entrypoint', 'sh', builderImage(), '-c',
-    `for u in builder builder2; do
-       su $u -s /bin/sh -c 'find / -xdev -path /proc -prune -o -writable \\( -type d -o -type f \\) -print 2>/dev/null' | sed "s|^|$u |"
-       awk '{print $2}' /proc/mounts | while read -r m; do
-         [ -d "$m" ] && su $u -s /bin/sh -c "test -w '$m'" && echo "$u $m"
-       done
-     done`
-  ]);
-  const found = r.stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => l.split(' ').slice(1).join(' '));
+  // Through the image's own entrypoint, so what entrypoint.sh creates and hands
+  // over -- `/m2` among it -- is there as it is in compose.
+  const run = sh(['docker', 'run', '-d', ...builderLabels(), builderImage()]);
+  const id = run.stdout.trim();
+  const up = run.code === 0
+    ? sh(['docker', 'exec', id, 'sh', '-c',
+        'for i in $(seq 1 240); do curl -fsS http://127.0.0.1:8770/health >/dev/null 2>&1 && exit 0; sleep 0.25; done; exit 1'])
+    : run;
+  // Inside every mount but `/` and the kernel's, not only at its top. Typed by
+  // `test`, which asks stat: docker binds `/dev/null` and its kind over regular
+  // files, and find's `-type` and `%y` both take readdir's word -- measured.
+  const r = up.code === 0
+    ? sh(['docker', 'exec', id, 'sh', '-c',
+        `kept() { while read -r p; do if [ ! -L "$p" ] && { [ -f "$p" ] || [ -d "$p" ]; }; then echo "$1 $p"; fi; done; }
+         for u in builder builder2; do
+           su $u -s /bin/sh -c 'find / -xdev -path /proc -prune -o -writable -print 2>/dev/null' | kept $u
+           awk '{print $2}' /proc/self/mounts | sort -u | while read -r m; do
+             case "$m" in /|/proc|/proc/*|/sys|/sys/*) continue ;; esac
+             su $u -s /bin/sh -c "find '$m' -xdev -writable -print 2>/dev/null" | kept $u
+           done
+         done`])
+    : up;
+  if (run.code === 0) sh(['docker', 'rm', '-f', id]);
+  const lines = r.stdout.split('\n').filter(Boolean);
+  const found = lines.map((l) => l.split(' ').slice(1).join(' '));
   const outside = [...new Set(found)].filter(
     (p) => !swept.some((d) => p === d || p.startsWith(`${d}/`))
   );
 
   test('B7-9 nothing either build user can write lies outside the swept directories', () => {
+    expect(r.code === 0 ? '' : r.output).toBe('');
     expect(swept.length).toBeGreaterThan(0);
-    expect(found.length).toBeGreaterThan(0);
-    // `/m2` is tolerated by name: entrypoint.sh keeps it for #10, nothing on this
-    // branch reads it, and on #10 it is the cache that must persist (FR42).
+    // `/m2` is tolerated by name: entrypoint.sh keeps it while B6-36 and B6-38
+    // drive its handling, and no build reads it (FR42). Seen, so the tolerance is
+    // shown to be used and a container that skipped the entrypoint fails here.
+    expect(lines).toContain('builder /m2');
     expect(outside.filter((p) => p !== '/m2')).toEqual([]);
   });
 });

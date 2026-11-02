@@ -303,6 +303,14 @@
     "mustFail": "B7-7 Maven reads its settings from the build's own home"
   },
   {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "      export HOME=\"$1/home\" TMPDIR=\"$1/tmp\"\n",
+    "to": "      export TMPDIR=\"$1/tmp\"\n",
+    "mustFail": "B7-7 a .mavenrc in the passwd home is not sourced, even when it is there"
+  },
+  {
     "case": "B7-8",
     "file": "config/nar_builder/BuildServer.java",
     "spec": "tests/integration/m-b7.build-slots.test.ts",
@@ -357,5 +365,29 @@
     "from": "        long left = liveTask(ids[0]);\n        for (int round = 0; round < 5 && left >= 0; round++) {\n            run(List.of(\"setpriv\", \"--reuid=\" + ids[0], \"--regid=\" + ids[1], \"--clear-groups\",\n                    \"sh\", \"-c\", \"kill -KILL -1\"));\n            try {\n                Thread.sleep(200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n            left = liveTask(ids[0]);\n        }\n        if (left >= 0) {\n            return \"a process would not end, pid \" + left;\n        }\n",
     "to": "        java.util.function.Supplier<List<ProcessHandle>> running = () -> ProcessHandle.allProcesses()\n                .filter(p -> p.info().user().map(user::equals).orElse(false))\n                .filter(p -> state(java.nio.file.Path.of(\"/proc/\" + p.pid() + \"/stat\")) != 'Z')\n                .collect(java.util.stream.Collectors.toList());\n        for (int round = 0; round < 6; round++) {\n            List<ProcessHandle> live = running.get();\n            if (live.isEmpty()) {\n                break;\n            }\n            for (ProcessHandle p : live) {\n                if (round == 0) {\n                    p.destroy();\n                } else {\n                    p.destroyForcibly();\n                }\n            }\n            try {\n                Thread.sleep(round == 0 ? 1000 : 200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n        }\n        List<ProcessHandle> left = running.get();\n        if (!left.isEmpty()) {\n            return left.size() + \" process(es) would not end, pid \" + left.get(0).pid();\n        }\n",
     "mustFail": "B7-9 a process that keeps forking a successor and exiting is ended"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "            if (fault != null) {",
+    "to": "            if (false) {",
+    "mustFail": "B7-9 a slot that cannot be swept is not used"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "            String fault = sweep(user);",
+    "to": "            String fault = null;",
+    "mustFail": "B7-9 a slot that cannot be swept is not used"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "\"-mindepth\", \"1\", \"-user\", user,\n                \"-prune\"",
+    "to": "\"-mindepth\", \"1\",\n                \"-prune\"",
+    "mustFail": "B7-9 the sweep removes the slot user's files and nobody else's"
   }
 ]
