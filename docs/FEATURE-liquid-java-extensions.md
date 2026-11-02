@@ -164,9 +164,22 @@ mistake is available here and is cheaper to avoid than to repeat.
   code may choose to read. The sticky bit stops it replacing the other's files, and `TMPDIR` and
   `java.io.tmpdir` point into the build's own work directory, so ordinary tooling never looks there;
   closing it outright needs a private mount namespace per build, which an unprivileged container does
-  not have. And `/m2`, which `entrypoint.sh` still creates and hands to `builder` for #10's sake, is
-  not swept: on this branch nothing reads it, and on #10's arrangement it is the shared cache that
-  must persist. It goes when #10 and this branch have both landed.
+  not have. And `/m2`, which `entrypoint.sh` still creates and hands to `builder`, is not swept.
+  *Restated 2026-11-02, the first review of #55:* this said `/m2` was kept for #10's sake and would
+  go once #10 and this branch had both landed, but #10 merged on 2026-10-16 and `main` mounts
+  nothing at `/m2`. What keeps it is that B6-36 and B6-38 still drive the entrypoint's handling of
+  it, and retiring two signed cases is not #31's to do; it is a follow-up of its own. Until then
+  `/m2` is a directory that `builder` alone can write and that lasts as long as the container. No
+  build reads it, since every build has its own repository (FR37), so what one leaves there reaches
+  no other build; it can still hold data or fill the disk.
+
+  *Added 2026-11-02.* **Zombies accumulate.** A process the sweep kills whose parent was killed too
+  is re-parented to the server, which as PID 1 reaps nothing it did not start, so it stays a zombie
+  until the container restarts. A zombie holds no memory and no files, only its PID. Compose sets
+  no `pids_limit` on `nar_builder` and no `init`, so what bounds them is the host's `pid_max`, and a
+  build that leaves thousands of orphans on purpose brings later builds nearer that bound. A
+  restart of `nar_builder` clears them. An `init` would reap them, but it would also remove the
+  premise B7-9 (7) is built on; that is a change of its own, not made here.
 - **FR27 — The API compiled against is resolved, not assumed, and is stated.** NiFi versions
   `nifi-api` on its own line: 2.11.0 ships `nifi-api-2.10.0.jar`. The build resolves what the
   distribution was actually built against, writes that version into the project, and prints it. FR23
@@ -663,7 +676,8 @@ Closed in three parts (FR41, FR42): the homes are root-owned, empty and `555`, a
 inside its work directory instead; each slot has its own user and a `700` work directory; and a slot
 is swept — processes ended, files removed from every directory its user can write — before it is
 handed out and after its build ends. What stays open is stated under FR42: two *overlapping* builds
-share `/tmp` for that time, and `/m2` is kept until #10 retires it.
+share `/tmp` for that time, `/m2` is kept while B6-36 and B6-38 drive it, and the zombies a build
+leaves accumulate until a restart.
 
 What remains, then: a compromised or malicious dependency can read the source being compiled, write
 into the shared dependency cache, and reach the network. The third of those is inherent to Maven and
