@@ -128,6 +128,16 @@ mistake is available here and is cheaper to avoid than to repeat.
   stderr, so the line opens a failed build's Maven output; it is the JVM's notice and expected.
   The read-only home is the floor and the per-build one is the mechanism: a plugin that writes
   under `user.home` keeps working, and one that bypasses it is refused instead of persisting.
+
+  *Added 2026-11-02, the first review of #55.* **A build user the image lacks is refused, not run
+  as root.** As root, `run_maven` dropped to the build user only when `id` knew it, and otherwise ran
+  Maven itself, as root; `drop_is_closed` answered "closed" for the same case without asking. The
+  server and the image ship together and B7-6 ties their users to each other, so it takes a
+  mismatched `NAR_BUILDER_BUILD_USER` to get there, but the fallback opened what FR41 and the drop
+  directory's containment rest on. Now, as root, a build user `id` does not know stops the build
+  with a message naming it, before Maven runs, and `drop_is_closed` refuses. Run as an ordinary
+  user, which is how the suite drives `build.sh` on the host against a stub `mvn`, both behave as
+  before: there is nothing to drop from.
 - **FR42 — Two builds never share a user, and a build leaves nothing running or written behind it.**
   The builder has one unprivileged user per build slot — `builder` (uid 1500) and `builder2`
   (uid 1501) — and a build runs as the slot's user it was handed. Its work directory is that user's
@@ -138,7 +148,11 @@ mistake is available here and is cheaper to avoid than to repeat.
   is held by a case that computes what each user can actually write in the image, so a directory
   that becomes writable later turns that case red rather than going unswept. A slot whose sweep
   cannot complete is not used: the server refuses the build with HTTP 500, the status every fault of
-  the installation answers, and names the slot and the restart that clears it.
+  the installation answers, and names the slot and how to clear it: *corrected 2026-11-02* from
+  `docker compose restart nar_builder`, which keeps the container's `/tmp` and so cannot clear a
+  file root cannot remove there, to `docker compose up -d --force-recreate nar_builder`, which
+  starts from the image. The slot goes back to the queue however its sweep ends, an exception
+  included; a slot lost to one would leave the builder a single slot with nothing saying so.
 
   *Amended 2026-11-02, the first review of #55.* **How a user's processes are ended, and when they
   count as ended.** The server does not signal processes it has listed; it runs, as the slot user,
@@ -158,6 +172,13 @@ mistake is available here and is cheaper to avoid than to repeat.
   repeated while a live task remains, at most five times 200 ms apart; a task still live then makes
   the sweep fail, as above. A real zombie, every task `Z`, is still counted as ended, for the reason
   B7-9 records: the server is PID 1 and reaps nothing it did not start.
+
+  *Added 2026-11-02.* **What the sweep does not clear: System V IPC.** A shared-memory segment,
+  semaphore set or message queue a build user creates with `shmget`, `semget` or `msgget` lasts
+  past the sweep, as long as the container; the review created one as `builder` and found it
+  listed in `/proc/sysvipc/shm` three builds later. No build tool opens such an object unless it is
+  told its key, and nothing in a build is, so FR37 is untouched; it is named here because "nothing
+  written behind it" would otherwise claim it. A recreation clears it.
 
   *What this does not close, stated rather than implied.* Two builds that **overlap** share `/tmp`
   and the other world-writable directories for that time: one can leave a file there that the other's
