@@ -15,7 +15,8 @@
  *           measured. A sweep waiting on it would lose the slot for good. A
  *           process whose main thread has exited while another runs shows `Z`
  *           too, and is not one: so "live" here means a task of the user's uid
- *           in any state but `Z`, never a process.
+ *           in any state but `Z`, never a process, read from /proc as bytes,
+ *           since a task names itself and a name need not be UTF-8.
  * Given:    The shipped build server as PID 1 in the builder image built from
  *           this tree (`startBuilderServer`), with a stub `build.sh` that acts
  *           as the slot's user; and, for the swept list, the image started
@@ -26,20 +27,26 @@
  *           root cannot remove; a build leaves a zombie; a build leaves a
  *           process whose main thread has exited and whose other thread keeps
  *           writing `.mavenrc` into the slot's work directories; a build leaves
- *           a chain that forks a successor and exits; and each user's writable
- *           paths are computed, on `/` and inside every other mount.
+ *           a chain that forks a successor and exits; a build leaves a process
+ *           named `\xff\xfe\xfd` writing `.mavenrc` the same way; `builder`'s
+ *           passwd uid reads `00` while root runs a `sleep`; and each user's
+ *           writable paths are computed, on `/` and inside every other mount.
  * Then:     The daemon and the files are gone and nobody else's files are; the
  *           running build is untouched; what was left before the start is gone
  *           before the first build; the unsweepable slot is refused with 500,
  *           naming `--force-recreate` as the remedy, and the build never ran;
- *           the zombie does not block its slot; the thread and the chain are
- *           ended and the slot's next build finds no `.mavenrc`; and nothing writable lies outside the swept list but
- *           `/m2`, which `builder` is seen to write, so the tolerance is used.
+ *           the zombie does not block its slot; the thread, the chain and the
+ *           unreadably named process are ended and the slot's next build finds
+ *           no `.mavenrc`; the `00` uid is refused with 500 and root's `sleep`
+ *           lives; and nothing writable lies outside the swept list but `/m2`,
+ *           which `builder` is seen to write, so the tolerance is used.
  * Covers:   B7-9, FR37, FR42
  * Unhappy:  Every negative has its counterpart here: the sweep removes the
  *           slot user's files and keeps root's and the other user's, and it
  *           leaves a running build alone -- a sweep that deleted everything
- *           would pass every negative.
+ *           would pass every negative. The non-UTF-8 name's counterpart is the
+ *           first daemon, ordinarily named; the `00` uid's is every other
+ *           scenario, where the uids are 1500 and 1501 and the sweep runs.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -69,6 +76,7 @@ const PLANTED = [
  * The user's live tasks: a /proc/<pid>/task/<tid> whose real uid is the user's
  * and whose state is not Z. Tasks, because a process whose main thread has
  * exited shows Z while its other threads run; one gone mid-read is not live.
+ * Bytes, so a task name that is not UTF-8 cannot make the count itself fail.
  * One process for the scan: the fork chain below leaves a zombie per member
  * under a PID 1 that never reaps them.
  */
@@ -79,8 +87,8 @@ import glob, sys
 n = 0
 for t in glob.glob("/proc/[0-9]*/task/[0-9]*"):
     try:
-        status = open(t + "/status").read()
-        stat = open(t + "/stat").read()
+        status = open(t + "/status", "rb").read().decode("latin-1")
+        stat = open(t + "/stat", "rb").read().decode("latin-1")
     except OSError:
         continue
     uid = [l.split()[1] for l in status.splitlines() if l.startswith("Uid:")]
@@ -215,7 +223,8 @@ describe('B7-9 a slot that cannot be swept', () => {
     expect(out).toContain('RAN=no');
   });
 
-  test.skipIf(s !== null)('B7-9 this daemon refused the tmpfs mount, so the unsweepable slot is not tested', () => {
+  // Skipped wherever the mount is accepted, which is when the case above ran.
+  test.skipIf(s !== null)('B7-9 on a daemon refusing the tmpfs mount, the missing unsweepable-slot case is reported', () => {
     // Reads the refusal, so a run in this state says which scenario is missing.
     expect(refused).not.toBe('');
   });
@@ -369,5 +378,94 @@ esac`
     expect(second.stdout).toContain('HTTP=200');
     expect(third.stdout).toContain(`BUILD-USER=${user}\n`);
     expect(third.stdout).toContain('HTTP=200');
+  });
+});
+
+describe('B7-9 a process whose name is not UTF-8', () => {
+  // The review's name, which no UTF-8 decoder accepts: a strict read of its
+  // /proc files threw, the throw was taken for a task that had gone, and the
+  // kill went only to what the scan found. The stub waits for the name to be
+  // set, so the sweep after the build cannot meet it still called python3.
+  const s = start({
+    pre: `cat > /opt/b7-9-name.py <<'PY'
+import ctypes, glob, time
+ctypes.CDLL(None).prctl(15, b'\\xff\\xfe\\xfd', 0, 0, 0)
+print('named', flush=True)
+while True:
+    for home in glob.glob('/tmp/tmp.*/home'):
+        try:
+            with open(home + '/.mavenrc', 'w') as f:
+                f.write('echo B7-9-PLANTED-NAME')
+        except OSError:
+            pass
+    time.sleep(0.05)
+PY
+chmod 644 /opt/b7-9-name.py`,
+    stub: `${STUB_PREAMBLE}
+case "$2" in
+  *b7-9-n1) as_user "nohup python3 /opt/b7-9-name.py > $W/tmp/named 2>&1 &"
+    for i in $(seq 1 100); do [ -s "$W/tmp/named" ] && break; sleep 0.05; done
+    echo "NAMED=$(cat "$W/tmp/named")" ;;
+  *b7-9-n3) sleep 1
+    if [ -e "$W/home/.mavenrc" ]; then echo "MAVENRC=$(cat "$W/home/.mavenrc")"; else echo MAVENRC=absent; fi ;;
+esac`
+  });
+  const first = s.build('/repos/b7-9-n1');
+  const user = first.stdout.match(/^BUILD-USER=(\S+)$/m)?.[1] ?? '';
+  const live = s.exec(`
+    ${LIVE(user)}
+    for i in $(seq 1 60); do [ "$(live)" = 0 ] && break; sleep 0.25; done
+    printf 'LIVE=%s\\n' "$(live)"
+  `).stdout;
+  const second = s.build('/repos/b7-9-n2');
+  const third = s.build('/repos/b7-9-n3');
+
+  test('B7-9 a process whose name is not UTF-8 is ended, and plants nothing in the slot\'s next build', () => {
+    expect(user).toMatch(/^builder2?$/);
+    // The name was set before the build ended, or the case is about python3.
+    expect(first.stdout).toContain('NAMED=named');
+    expect(live).toContain('LIVE=0');
+    expect(first.stdout).toContain('HTTP=200');
+    expect(second.stdout).toContain('HTTP=200');
+    expect(third.stdout).toContain(`BUILD-USER=${user}\n`);
+    expect(third.stdout).toContain('HTTP=200');
+    expect(third.stdout).toContain('MAVENRC=absent');
+  });
+});
+
+describe('B7-9 a slot user whose passwd uid reads 00', () => {
+  // `00` is root to the kernel and was not "0" to the string compare; `kill -1`
+  // as root would end everything in the container but the server. The sleep
+  // lives outside every swept directory, so only a kill can end it. A server
+  // that sends it at start kills the probe of /health too, so a failed start is
+  // read rather than thrown: thrown, the case would not run at all.
+  let s: BuilderServer | null = null;
+  let failed = '';
+  try {
+    s = start({
+      stub: `${STUB_PREAMBLE}\ntouch /tmp/b7-9.mvn-ran`,
+      pre: `sed -i 's/^builder:x:1500:/builder:x:00:/' /etc/passwd
+grep '^builder:' /etc/passwd > /run/b7-9.passwd
+nohup sleep 600 >/dev/null 2>&1 &
+echo $! > /run/b7-9.root-sleep.pid`
+    });
+  } catch (e) {
+    failed = String(e);
+  }
+  const built = s ? s.build('/repos/b7-9-root') : { stdout: '' };
+  const after = !s ? '' : s.exec(`
+    printf 'PASSWD=%s\\n' "$(cat /run/b7-9.passwd)"
+    pid=$(cat /run/b7-9.root-sleep.pid)
+    state=$(sed -n 's/.*) \\(.\\).*/\\1/p' /proc/$pid/stat 2>/dev/null)
+    printf 'SLEEP=%s\\n' "$([ -n "$state" ] && [ "$state" != Z ] && echo alive || echo ended)"
+  `).stdout;
+
+  test('B7-9 a slot user whose passwd uid reads 00 is refused, and no kill -1 is sent as root', () => {
+    expect(failed).toBe('');
+    // The rewrite took, or the case is about the ordinary uid.
+    expect(after).toContain('PASSWD=builder:x:00:');
+    expect(built.stdout).toContain('HTTP=500');
+    expect(built.stdout).toMatch(/left behind as builder /);
+    expect(after).toContain('SLEEP=alive');
   });
 });

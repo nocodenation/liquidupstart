@@ -23,15 +23,20 @@
  * Then:     No /m2 mount is declared anywhere; the seeding step is invoked by
  *           the image build with one version argument; build.sh copies the seed
  *           per build and splices the pins; the pins name every plugin the
- *           default lifecycle binds; and each build user is created with an
+ *           default lifecycle binds; each build user is created with an
  *           empty, root-owned 555 home, and is the user the server hands a slot
- *           (B7-6, #31).
+ *           (B7-6, #31); and the sweep's removal runs `rm` through `-execdir`,
+ *           never `-exec`, so no path is resolved twice as root (B7-6, the
+ *           second review of #55).
  * Covers:   B7-1, B7-2, B7-3, B7-4, B7-6, FR26, FR37, FR38, FR39, FR41, FR42
  * Unhappy:  B7-1's negative half is the mount coming back, by any spelling.
  *           B7-3's is a pins file that parses but has lost a plugin, which is
  *           how the first attempt failed: with resources, compiler, jar and
  *           surefire pinned a build still refused on maven-install-plugin,
  *           whose goal `package` never reaches.
+ *           B7-6's third is a removal through `-exec`, which the review raced
+ *           into deleting a root-owned `/victim`; the race is timing, so the
+ *           declaration is held and the measurement is FR42's.
  */
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -204,4 +209,22 @@ test('B7-6 and the server\'s slot users are exactly the users the image creates'
     .sort();
   expect(slots.length).toBe(2);
   expect(slots).toEqual(users);
+});
+
+test('B7-6 and the sweep\'s removal runs rm from the directory find holds, never on a path resolved again', () => {
+  // `-exec` hands rm an absolute path resolved again when rm runs, and the other
+  // slot's build can swap a symlink to / into it meanwhile -- raced into removing
+  // a root-owned /victim. `-execdir` gives rm `./<name>` in the directory find
+  // holds open. FR42, the second review of #55.
+  const server = javaCode('config/nar_builder/BuildServer.java');
+  const lists = [...server.matchAll(/List\.of\(([^;]*?)\)\);/g)].map((m) =>
+    [...m[1].matchAll(/"([^"]*)"/g)].map((q) => q[1])
+  );
+  const removal = lists.filter((args) => args.includes('-prune'));
+  expect(removal.length).toBe(1);
+  const args = removal[0];
+  const at = args.indexOf('-execdir');
+  expect(at).toBeGreaterThanOrEqual(0);
+  expect(args.slice(at, at + 3)).toEqual(['-execdir', 'rm', '-rf']);
+  expect(args).not.toContain('-exec');
 });

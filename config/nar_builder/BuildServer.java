@@ -156,36 +156,44 @@ public class BuildServer {
      * user's processes are ended by a `kill -KILL -1` sent as that user, which
      * reaches every one of them and nothing of root's or the other slot's, and
      * which a process forking successors cannot outrun the way a list can.
-     * Repeated while a live task remains, five times at most.
+     * Sent once whatever the scan says, and repeated while a live task remains,
+     * five times in all: a kill sent only on what the scan saw spared a process
+     * the scan could not read.
      *
      * Tasks, not processes: a process whose main thread has exited shows `Z` in
      * /proc/<pid>/stat while its other threads run, and the sweep that skipped it
      * let one write the next build's `.mavenrc`. A **zombie** -- every task `Z`
      * -- is not counted: this server is PID 1 and reaps nothing it did not
      * start, so a process orphaned by the kill stays one. Waiting on it would
-     * lose the slot for good.
+     * lose the slot for good. /proc is read as bytes, since a task names itself
+     * and a strict UTF-8 read threw on `\xff\xfe\xfd`; a task counts as gone only
+     * when its files are, and one that cannot be read counts as live.
      *
      * A file is removed with whatever it holds (`-prune` and `rm -rf`), because
      * build.sh writes root-owned files into the user's work directory, and the
      * result is checked rather than the exit status: a concurrent build removing
-     * its own work directory mid-walk is not a failure of this one. B7-9.
+     * its own work directory mid-walk is not a failure of this one. `-execdir`,
+     * not `-exec`: `rm` gets `./<name>` in the directory find holds, so the other
+     * slot's build cannot swap a symlink into a path root resolves again. B7-9.
      */
     static String sweep(String user) {
-        String[] ids = ids(user);
+        long[] ids = ids(user);
         if (ids == null) {
             return "no user " + user + " with a uid other than root's";
         }
-        long left = liveTask(ids[0]);
-        for (int round = 0; round < 5 && left >= 0; round++) {
+        long left = -1;
+        for (int round = 0; round < 5 && (round == 0 || left >= 0); round++) {
             run(List.of("setpriv", "--reuid=" + ids[0], "--regid=" + ids[1], "--clear-groups",
                     "sh", "-c", "kill -KILL -1"));
             try {
                 Thread.sleep(200);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                break;
             }
             left = liveTask(ids[0]);
+            if (Thread.currentThread().isInterrupted()) {
+                break;
+            }
         }
         if (left >= 0) {
             return "a process would not end, pid " + left;
@@ -199,7 +207,7 @@ public class BuildServer {
         List<String> remove = new ArrayList<>(List.of("find"));
         remove.addAll(dirs);
         remove.addAll(List.of("-ignore_readdir_race", "-mindepth", "1", "-user", user,
-                "-prune", "-exec", "rm", "-rf", "{}", "+"));
+                "-prune", "-execdir", "rm", "-rf", "{}", "+"));
         run(remove);
         List<String> check = new ArrayList<>(List.of("find"));
         check.addAll(dirs);
@@ -208,14 +216,18 @@ public class BuildServer {
         return stayed.isEmpty() ? null : stayed + " could not be removed";
     }
 
-    /** Uid and gid from /etc/passwd; null for no such user, or for root's uid. */
-    private static String[] ids(String user) {
+    /**
+     * Uid and gid from /etc/passwd; null for no such user, or for root's uid.
+     * Compared as a number: `00` is root to the kernel, and `kill -1` as root
+     * would end everything in the container but this server.
+     */
+    private static long[] ids(String user) {
         try {
             for (String line : java.nio.file.Files.readAllLines(java.nio.file.Path.of("/etc/passwd"))) {
                 String[] f = line.split(":");
-                if (f.length > 3 && f[0].equals(user) && f[2].matches("[0-9]+") && f[3].matches("[0-9]+")
-                        && !f[2].equals("0")) {
-                    return new String[] {f[2], f[3]};
+                if (f.length > 3 && f[0].equals(user) && f[2].matches("[0-9]{1,10}") && f[3].matches("[0-9]{1,10}")
+                        && Long.parseLong(f[2]) != 0) {
+                    return new long[] {Long.parseLong(f[2]), Long.parseLong(f[3])};
                 }
             }
         } catch (IOException e) {
@@ -228,42 +240,53 @@ public class BuildServer {
 
     /**
      * The pid of a task whose real uid is the given one and whose state is not
-     * Z, or -1 for none. A task that has gone since it was listed is not live.
+     * Z, or -1 for none. A task whose files have gone since it was listed is not
+     * live; one whose files are there and cannot be read is, of whatever uid.
      */
-    private static long liveTask(String uid) {
+    private static long liveTask(long uid) {
         java.io.File[] procs = new java.io.File("/proc").listFiles((d, n) -> n.matches("[0-9]+"));
         for (java.io.File proc : procs == null ? new java.io.File[0] : procs) {
             java.io.File[] tasks = new java.io.File(proc, "task").listFiles();
             for (java.io.File task : tasks == null ? new java.io.File[0] : tasks) {
+                java.nio.file.Path status = task.toPath().resolve("status");
                 try {
-                    String status = java.nio.file.Files.readString(task.toPath().resolve("status"));
-                    java.util.regex.Matcher m = REAL_UID.matcher(status);
-                    if (m.find() && m.group(1).equals(uid)
+                    java.util.regex.Matcher m = REAL_UID.matcher(procText(status));
+                    if (m.find() && Long.parseLong(m.group(1)) == uid
                             && state(task.toPath().resolve("stat")) != 'Z') {
                         return Long.parseLong(proc.getName());
                     }
                 } catch (IOException e) {
-                    // Gone since it was listed.
+                    if (java.nio.file.Files.exists(status)) {
+                        return Long.parseLong(proc.getName());
+                    }
                 }
             }
         }
         return -1;
     }
 
-    /** The state in a /proc stat file; Z for one that has gone or cannot be read. */
+    /** The state in a /proc stat file; Z for one that has gone, `?` for one that cannot be read. */
     private static char state(java.nio.file.Path stat) {
         try {
-            String text = java.nio.file.Files.readString(stat);
+            String text = procText(stat);
             int close = text.lastIndexOf(')');
-            return close < 0 || text.length() < close + 3 ? 'Z' : text.charAt(close + 2);
+            return close < 0 || text.length() < close + 3 ? '?' : text.charAt(close + 2);
         } catch (IOException e) {
-            return 'Z';
+            return java.nio.file.Files.exists(stat) ? '?' : 'Z';
         }
+    }
+
+    /** A /proc file as bytes, one char each, so no task name can make it unreadable. */
+    private static String procText(java.nio.file.Path file) throws IOException {
+        return new String(java.nio.file.Files.readAllBytes(file), StandardCharsets.ISO_8859_1);
     }
 
     private static String run(List<String> command) {
         try {
-            Process p = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            ProcessBuilder pb = new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.DISCARD);
+            // Absolute only: GNU find refuses -execdir under a PATH with a relative entry.
+            pb.environment().put("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
+            Process p = pb.start();
             String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             p.waitFor();
             return out;
@@ -375,9 +398,9 @@ public class BuildServer {
      * `destroyForcibly()` on the Process reaches the shell alone. Measured with
      * NAR_BUILDER_BUILD_TIMEOUT=3 and a stub mvn sleeping: the client got 504
      * while `su`, the stub and its `sleep` were still running with PPID 1, and
-     * /tmp/tmp.XXXX was left behind. The semaphore slot was released with the
+     * /tmp/tmp.XXXX was left behind. The build's slot was handed back with the
      * 504, so the two-at-a-time cap did not hold either -- four concurrent Maven
-     * runs were measured under a two-slot semaphore. S2 of the 2026-10-01 review.
+     * runs were measured under what was then a two-slot semaphore. S2 of the 2026-10-01 review.
      *
      * The descendants are collected **before** the parent dies: once the shell is
      * gone the tree is gone with it and `descendants()` comes back empty. Order

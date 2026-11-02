@@ -200,6 +200,22 @@ seed_notice() {
 # image has, and the `--` is load-bearing: without it su reads Maven's own flags
 # as its own, and the first run of this came back as `su: invalid option -- 'o'`.
 # After it the first operand becomes $0 and mvn's argv is passed through untouched.
+#
+# `build` and `target` ask `build_user_is_known` before anything else, since the
+# refusal surfaced first through the API version's resolution, as exit 3 with
+# advice to add a pom.xml. Second review of #55, FR41.
+build_user_is_known() {
+  [ "$(id -u)" -ne 0 ] || id "$BUILD_USER" >/dev/null 2>&1
+}
+
+refuse_unknown_build_user() {
+  cat >&2 <<NOUSER
+nar-build refused: the build user ${BUILD_USER} does not exist in this image, and Maven is not run as root in its place.
+The builder server and its image name the same users; rebuild and recreate the builder:
+  ./config/scripts/build/nar-builder.sh && docker compose up -d --force-recreate nar_builder
+NOUSER
+}
+
 run_maven() {  # run_maven <work dir> <mvn args...>
   _rm_work="$1"
   shift
@@ -216,11 +232,7 @@ run_maven() {  # run_maven <work dir> <mvn args...>
       shift
       exec mvn -B "$@"' -- mvn "$_rm_work" "$@"
   else
-    cat >&2 <<NOUSER
-nar-build refused: the build user ${BUILD_USER} does not exist in this image, and Maven is not run as root in its place.
-The builder server and its image name the same users; rebuild and recreate the builder:
-  ./config/scripts/build/nar-builder.sh && docker compose up -d --force-recreate nar_builder
-NOUSER
+    refuse_unknown_build_user
     return 1
   fi
 }
@@ -536,6 +548,10 @@ POM
 }
 
 target_command() {
+  if ! build_user_is_known; then
+    refuse_unknown_build_user
+    return 1
+  fi
   if ! TARGET="$(resolve_target)"; then
     printf '%s\n' "$TARGET" >&2
     return 3
@@ -814,6 +830,10 @@ NOINDEX
 
 
 build_command() {
+  if ! build_user_is_known; then
+    refuse_unknown_build_user
+    return 1
+  fi
   rel="$1"
   case "$rel" in
     ""|/*|*..*)
