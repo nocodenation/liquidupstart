@@ -128,17 +128,21 @@ public class BuildServer {
             if (fault != null) {
                 respond(exchange, 500, "nar-build refused: the builder could not clear what an earlier"
                         + " build left behind as " + user + " (" + fault + "),\n"
-                        + "so this build did not start. Ask the operator to restart the builder:\n"
-                        + "docker compose restart nar_builder\n");
+                        + "so this build did not start. Ask the operator to recreate the builder:\n"
+                        + "docker compose up -d --force-recreate nar_builder\n");
                 return;
             }
             invokeHeld(exchange, command, user);
         } finally {
-            String after = sweep(user);
-            if (after != null) {
-                System.out.println("sweep of " + user + " after a build: " + after);
+            // Nested, so a sweep that throws does not take the slot with it. FR42.
+            try {
+                String after = sweep(user);
+                if (after != null) {
+                    System.out.println("sweep of " + user + " after a build: " + after);
+                }
+            } finally {
+                SLOTS.add(user);
             }
-            SLOTS.add(user);
         }
     }
 

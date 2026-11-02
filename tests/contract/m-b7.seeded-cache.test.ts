@@ -192,7 +192,8 @@ test('B7-6 each build user is created with no home of its own and given an empty
 test('B7-6 and the server\'s slot users are exactly the users the image creates', () => {
   // Compared file with file rather than against a list of the case's own, so
   // two files that agree with the test and not with each other cannot pass.
-  // A slot user the image lacks makes run_maven take its direct branch, as root.
+  // A slot user the image lacks fails every build on that slot; until 2026-11-02
+  // it made run_maven run Maven as root instead. B7-7 (7).
   const server = javaCode('config/nar_builder/BuildServer.java');
   const decl = server.match(/SLOT_USERS\s*=\s*List\.of\(([^)]*)\)/);
   expect(decl).not.toBeNull();

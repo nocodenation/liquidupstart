@@ -30,10 +30,10 @@
  *           paths are computed, on `/` and inside every other mount.
  * Then:     The daemon and the files are gone and nobody else's files are; the
  *           running build is untouched; what was left before the start is gone
- *           before the first build; the unsweepable slot is refused with 500 and
- *           the build never ran; the zombie does not block its slot; the thread
- *           and the chain are ended and the slot's next build finds no
- *           `.mavenrc`; and nothing writable lies outside the swept list but
+ *           before the first build; the unsweepable slot is refused with 500,
+ *           naming `--force-recreate` as the remedy, and the build never ran;
+ *           the zombie does not block its slot; the thread and the chain are
+ *           ended and the slot's next build finds no `.mavenrc`; and nothing writable lies outside the swept list but
  *           `/m2`, which `builder` is seen to write, so the tolerance is used.
  * Covers:   B7-9, FR37, FR42
  * Unhappy:  Every negative has its counterpart here: the sweep removes the
@@ -210,6 +210,8 @@ describe('B7-9 a slot that cannot be swept', () => {
     expect(out).toContain('HTTP=500');
     expect(out).toContain('could not clear');
     expect(out).toMatch(/left behind as builder2? /);
+    // Recreated, not restarted: a restart keeps /tmp, which is what is stuck.
+    expect(out).toContain('--force-recreate');
     expect(out).toContain('RAN=no');
   });
 

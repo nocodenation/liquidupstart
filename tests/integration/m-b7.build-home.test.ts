@@ -17,26 +17,30 @@
  *           Maven as HOME, and as user.home and java.io.tmpdir through
  *           JAVA_TOOL_OPTIONS, so a JVM Maven forks gets it too (FR41).
  * Given:    The builder image built from this tree, and `work_dir_for_build`,
- *           `repo_for`, `run_maven` and `synthesise` taken out of its own
- *           `/opt/builder/build.sh`, so the shipped functions run and not a
- *           restatement of them.
+ *           `repo_for`, `run_maven`, `drop_is_closed` and `synthesise` taken
+ *           out of its own `/opt/builder/build.sh`, so the shipped functions
+ *           run and not a restatement of them.
  * When:     Each build user tries to write its home; Maven runs in a work
  *           directory holding a malformed settings file, in one that does not
  *           hold another's `.mavenrc`, and with a `.mavenrc` root put into
- *           `/home/builder`; a stub mvn reports what a forked JVM sees; and the
- *           probe processor is built offline as `builder2`.
+ *           `/home/builder`; a stub mvn reports what a JVM it starts sees; the
+ *           probe processor is built offline as `builder2`; and, as root, the
+ *           build user is set to `b7-7-nobody`, which the image lacks.
  * Then:     Both homes are `root:root 555`, empty and unwritable; Maven names
  *           the per-build settings path; the other build's `.mavenrc` is not
  *           sourced while its own is, and the passwd home's is not sourced
- *           even when it is there; the forked JVM reports the per-build
- *           paths; and the offline build succeeds with one NAR.
+ *           even when it is there; the JVM reports the per-build paths; the
+ *           offline build succeeds with one NAR; and the unknown user stops
+ *           `run_maven` before Maven runs, naming it, and `drop_is_closed`
+ *           counts the drop directory as open.
  * Covers:   B7-7, FR37, FR41
- * Unhappy:  The refused writes and the two unsourced `.mavenrc`s are the
- *           negatives.
+ * Unhappy:  The refused writes, the two unsourced `.mavenrc`s and the
+ *           unknown build user are the negatives.
  *           Each has its counterpart: the settings read from the per-build
  *           home, the same `.mavenrc` sourced in its own build, and a real build
  *           succeeding -- without them the lock would pass against a Maven that
- *           reads nothing or cannot build at all.
+ *           reads nothing or cannot build at all. The unknown user's
+ *           counterparts are the cases above, which run as a user the image has.
  */
 import { test, expect, describe } from 'bun:test';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -50,8 +54,8 @@ const IMAGE = builderImage();
 
 /** The shipped functions and the globals they read, out of the image's build.sh. */
 const SHIPPED =
-  `eval "$(sed -n -E '/^(BUILD_USER|SEED|PINS|NAR_PLUGIN_VERSION)=/p; ` +
-  `/^(work_dir_for_build|repo_for|run_maven|synthesise)\\(\\) \\{/,/^}/p' /opt/builder/build.sh)"`;
+  `eval "$(sed -n -E '/^(BUILD_USER|DROP|SEED|PINS|NAR_PLUGIN_VERSION)=/p; ` +
+  `/^(work_dir_for_build|repo_for|run_maven|drop_is_closed|synthesise)\\(\\) \\{/,/^}/p' /opt/builder/build.sh)"`;
 
 const inBuilder = (script: string, extra: string[] = []) =>
   sh(['docker', 'run', '--rm', ...extra, '--entrypoint', 'sh', IMAGE, '-c', `${SHIPPED}\n${script}`]);
@@ -132,7 +136,7 @@ describe('B7-7 Maven reads only the home of the build that is running', () => {
     expect(r.stdout).toContain('PASSWD=[]');
   }, 900_000);
 
-  test('B7-7 a JVM that Maven forks gets the per-build user.home and java.io.tmpdir', () => {
+  test('B7-7 a JVM started under run_maven inherits the per-build user.home and java.io.tmpdir', () => {
     // A stub over the real mvn -- `su` resets PATH, so one earlier on it is never
     // found -- that starts a JVM the way surefire or an `exec` would: on its own,
     // reading user.home from passwd unless it is told otherwise.
@@ -146,6 +150,29 @@ describe('B7-7 Maven reads only the home of the build that is running', () => {
     expect(w).toBeTruthy();
     expect(r.stdout).toContain(`user.home = ${w}/home`);
     expect(r.stdout).toContain(`java.io.tmpdir = ${w}/tmp`);
+  }, 900_000);
+});
+
+describe('B7-7 a build user the image lacks', () => {
+  test('B7-7 as root, a build user the image lacks stops the build before Maven runs, and the drop directory counts as open', () => {
+    // A name no image supplies by accident. The marker, not the message, shows
+    // whether Maven was reached: a refusal could follow a run.
+    const r = inBuilder(
+      `
+      printf '#!/bin/sh\\ntouch /tmp/b7-7.mvn-ran\\n' > "$(command -v mvn)"
+      W=$(work_dir_for_build)
+      out=$(run_maven "$W" -o -q -v 2>&1); rc=$?
+      printf 'RC=%s\\nOUT=[%s]\\n' "$rc" "$out"
+      printf 'RAN=%s\\n' "$([ -e /tmp/b7-7.mvn-ran ] && echo yes || echo no)"
+      drop_is_closed; printf 'DROP=%s\\n' "$?"
+    `,
+      ['-e', 'NAR_BUILDER_BUILD_USER=b7-7-nobody']
+    );
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/^RC=[1-9]\d*$/m);
+    expect(r.stdout).toMatch(/OUT=\[[^\]]*b7-7-nobody/);
+    expect(r.stdout).toContain('RAN=no');
+    expect(r.stdout).toContain('DROP=1');
   }, 900_000);
 });
 

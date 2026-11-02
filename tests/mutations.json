@@ -311,6 +311,14 @@
     "mustFail": "B7-7 a .mavenrc in the passwd home is not sourced, even when it is there"
   },
   {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "  if [ \"$(id -u)\" -ne 0 ]; then\n",
+    "to": "  if [ \"$(id -u)\" -ne 0 ] || ! id \"$BUILD_USER\" >/dev/null 2>&1; then\n",
+    "mustFail": "B7-7 as root, a build user the image lacks stops the build before Maven runs, and the drop directory counts as open"
+  },
+  {
     "case": "B7-8",
     "file": "config/nar_builder/BuildServer.java",
     "spec": "tests/integration/m-b7.build-slots.test.ts",

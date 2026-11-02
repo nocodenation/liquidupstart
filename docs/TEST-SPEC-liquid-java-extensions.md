@@ -1773,7 +1773,7 @@ looked up for, so plugin *version* resolution is the one thing a seed cannot ser
 
 > **Specified 2026-10-29, #31, and run the same day.** Green, 5 scenarios, against the image built from the tree; (5) built the probe offline as `builder2` with `BUILD SUCCESS` and one NAR. Both revert controls validated: the home installed `755 builder` reddened (1), and `-Duser.home=` dropped from `JAVA_TOOL_OPTIONS` reddened (2) and (4).
 >
-> **Amended a third time 2026-11-02, and not run yet:** (7) added, and (4) renamed; see the table.
+> **Amended a third time 2026-11-02, and run the same day:** (7) added, and (4) renamed; see the table. The file: 7 pass, 0 fail, against the image built from the tree; `./tests/run.sh m-b7` 27 pass, 1 skip (B7-9's tmpfs-refused counterpart, which skips when the mount is accepted), 0 fail. (7)'s control validated by `tests/mutate.sh` against an untracked copy of the tree: `run_maven`'s `if [ "$(id -u)" -ne 0 ]` widened with `|| ! id "$BUILD_USER"`, so a root run with an unknown user takes the direct branch again, reddened (7) alone, 1 red and 6 green. The three earlier controls re-validated in the same run, the code around them having moved: 1 red, 2 red and 2 red, each with its named test among them.
 >
 > **Amended 2026-11-02, the first review of #55, and run the same day.** (3) was described as the issue's reproduction and is not one: its `.mavenrc` goes into another build's home, so `main`'s `run_maven` passes its negative half too. (6) is added as the reproduction, with a revert control of its own.
 >

@@ -49,9 +49,9 @@ RUN apt-get update \
 # `~/.mavenrc` -- sourced as shell by the `mvn` launcher -- and
 # `~/.m2/settings.xml` -- read from passwd's `user.home` whatever `HOME` says --
 # reached every later build. `run_maven` gives Maven a home inside the build's
-# work directory instead (FR41). `-M` rather than `-m` and a chown after it: `-m`
-# copies /etc/skel in, and a chown of the directory alone leaves `.bashrc` and
-# `.profile` builder-owned. #31.
+# work directory instead (FR41). `-M` and an `install -d` rather than `-m`: `-m`
+# copies /etc/skel in, leaving `.bashrc` and `.profile` builder-owned whatever
+# the directory itself is given. #31.
 RUN useradd -r -u 1500 -M -d /home/builder builder \
     && useradd -r -u 1501 -M -d /home/builder2 builder2 \
     && install -d -m 555 -o root -g root /home/builder /home/builder2
