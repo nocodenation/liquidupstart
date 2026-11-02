@@ -146,7 +146,9 @@ mistake is available here and is cheaper to avoid than to repeat.
   uid reaches every process the uid may signal, which is every process of that user and nothing of
   root's or the other slot user's, and the kernel walks the process list for it under the lock that
   `fork` takes, so a process cannot fork its way past it (traced in the kernel, not measured; B7-9
-  (10) holds the chain that would). The image has no `kill` binary, hence the shell's builtin. The
+  (10) holds the chain that would). `<uid>` and `<gid>` are read from `/etc/passwd`: `builder` is
+  1500 in group 999, `builder2` 1501 in group 998. A slot user missing from it, or with uid 0, fails
+  the sweep, because a `kill -1` sent as root would reach everything in the container. The
   user's processes count as ended when no **task** whose real uid is the user's (`Uid:` in
   `/proc/<pid>/task/<tid>/status`) is in any state but `Z`. Tasks, not processes, because
   a process whose main thread has exited shows `Z` in `/proc/<pid>/stat` while its other threads run.

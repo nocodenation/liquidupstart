@@ -148,10 +148,18 @@ public class BuildServer {
      * slot. Returns null when the slot is clean, or what stayed.
      *
      * A `nohup` started by build-time code was measured to survive `mvn`'s
-     * exit, and endBuildTree reaches only what descends from the build. A
-     * **zombie** is not counted: this server is PID 1 and reaps nothing it did
-     * not start, so a process orphaned by the kill below stays one -- and Java
-     * reports it alive, measured. Waiting on it would lose the slot for good.
+     * exit, and endBuildTree reaches only what descends from the build. So the
+     * user's processes are ended by a `kill -KILL -1` sent as that user, which
+     * reaches every one of them and nothing of root's or the other slot's, and
+     * which a process forking successors cannot outrun the way a list can.
+     * Repeated while a live task remains, five times at most.
+     *
+     * Tasks, not processes: a process whose main thread has exited shows `Z` in
+     * /proc/<pid>/stat while its other threads run, and the sweep that skipped it
+     * let one write the next build's `.mavenrc`. A **zombie** -- every task `Z`
+     * -- is not counted: this server is PID 1 and reaps nothing it did not
+     * start, so a process orphaned by the kill stays one. Waiting on it would
+     * lose the slot for good.
      *
      * A file is removed with whatever it holds (`-prune` and `rm -rf`), because
      * build.sh writes root-owned files into the user's work directory, and the
@@ -159,28 +167,24 @@ public class BuildServer {
      * its own work directory mid-walk is not a failure of this one. B7-9.
      */
     static String sweep(String user) {
-        for (int round = 0; round < 6; round++) {
-            List<ProcessHandle> live = running(user);
-            if (live.isEmpty()) {
-                break;
-            }
-            for (ProcessHandle p : live) {
-                if (round == 0) {
-                    p.destroy();
-                } else {
-                    p.destroyForcibly();
-                }
-            }
+        String[] ids = ids(user);
+        if (ids == null) {
+            return "no user " + user + " with a uid other than root's";
+        }
+        long left = liveTask(ids[0]);
+        for (int round = 0; round < 5 && left >= 0; round++) {
+            run(List.of("setpriv", "--reuid=" + ids[0], "--regid=" + ids[1], "--clear-groups",
+                    "sh", "-c", "kill -KILL -1"));
             try {
-                Thread.sleep(round == 0 ? 1000 : 200);
+                Thread.sleep(200);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             }
+            left = liveTask(ids[0]);
         }
-        List<ProcessHandle> left = running(user);
-        if (!left.isEmpty()) {
-            return left.size() + " process(es) would not end, pid " + left.get(0).pid();
+        if (left >= 0) {
+            return "a process would not end, pid " + left;
         }
         List<String> dirs = SWEPT.stream()
                 .filter(d -> java.nio.file.Files.isDirectory(java.nio.file.Path.of(d)))
@@ -200,21 +204,56 @@ public class BuildServer {
         return stayed.isEmpty() ? null : stayed + " could not be removed";
     }
 
-    private static List<ProcessHandle> running(String user) {
-        return ProcessHandle.allProcesses()
-                .filter(p -> p.info().user().map(user::equals).orElse(false))
-                .filter(p -> !zombie(p))
-                .collect(java.util.stream.Collectors.toList());
+    /** Uid and gid from /etc/passwd; null for no such user, or for root's uid. */
+    private static String[] ids(String user) {
+        try {
+            for (String line : java.nio.file.Files.readAllLines(java.nio.file.Path.of("/etc/passwd"))) {
+                String[] f = line.split(":");
+                if (f.length > 3 && f[0].equals(user) && f[2].matches("[0-9]+") && f[3].matches("[0-9]+")
+                        && !f[2].equals("0")) {
+                    return new String[] {f[2], f[3]};
+                }
+            }
+        } catch (IOException e) {
+            return null;
+        }
+        return null;
     }
 
-    /** State Z in /proc/<pid>/stat; one that has gone since it was listed counts too. */
-    private static boolean zombie(ProcessHandle p) {
+    private static final Pattern REAL_UID = Pattern.compile("(?m)^Uid:\\s+([0-9]+)");
+
+    /**
+     * The pid of a task whose real uid is the given one and whose state is not
+     * Z, or -1 for none. A task that has gone since it was listed is not live.
+     */
+    private static long liveTask(String uid) {
+        java.io.File[] procs = new java.io.File("/proc").listFiles((d, n) -> n.matches("[0-9]+"));
+        for (java.io.File proc : procs == null ? new java.io.File[0] : procs) {
+            java.io.File[] tasks = new java.io.File(proc, "task").listFiles();
+            for (java.io.File task : tasks == null ? new java.io.File[0] : tasks) {
+                try {
+                    String status = java.nio.file.Files.readString(task.toPath().resolve("status"));
+                    java.util.regex.Matcher m = REAL_UID.matcher(status);
+                    if (m.find() && m.group(1).equals(uid)
+                            && state(task.toPath().resolve("stat")) != 'Z') {
+                        return Long.parseLong(proc.getName());
+                    }
+                } catch (IOException e) {
+                    // Gone since it was listed.
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** The state in a /proc stat file; Z for one that has gone or cannot be read. */
+    private static char state(java.nio.file.Path stat) {
         try {
-            String stat = java.nio.file.Files.readString(java.nio.file.Path.of("/proc/" + p.pid() + "/stat"));
-            int close = stat.lastIndexOf(')');
-            return close < 0 || stat.length() < close + 3 || stat.charAt(close + 2) == 'Z';
+            String text = java.nio.file.Files.readString(stat);
+            int close = text.lastIndexOf(')');
+            return close < 0 || text.length() < close + 3 ? 'Z' : text.charAt(close + 2);
         } catch (IOException e) {
-            return true;
+            return 'Z';
         }
     }
 

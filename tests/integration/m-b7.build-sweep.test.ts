@@ -12,20 +12,28 @@
  *
  *           The server is PID 1 and reaps nothing it did not start, so a process
  *           the sweep orphans stays a zombie -- and Java reports a zombie alive,
- *           measured. A sweep waiting on it would lose the slot for good.
+ *           measured. A sweep waiting on it would lose the slot for good. A
+ *           process whose main thread has exited while another runs shows `Z`
+ *           too, and is not one: so "live" here means a task of the user's uid
+ *           in any state but `Z`, never a process.
  * Given:    The shipped build server as PID 1 in the builder image built from
  *           this tree (`startBuilderServer`), with a stub `build.sh` that acts
  *           as the slot's user; and, for the last case, the image alone.
  * When:     A build starts a daemon and writes into every swept directory;
  *           another runs while the first sleeps; a user leaves a file and a
  *           process before the server starts; a slot holds a mount point that
- *           root cannot remove; a build leaves a zombie; and each user's
- *           writable paths are computed.
+ *           root cannot remove; a build leaves a zombie; a build leaves a
+ *           process whose main thread has exited and whose other thread keeps
+ *           writing `.mavenrc` into the slot's work directories; a build leaves
+ *           a chain that forks a successor and exits; and each user's writable
+ *           paths are computed.
  * Then:     The daemon and the files are gone and nobody else's files are; the
  *           running build is untouched; what was left before the start is gone
  *           before the first build; the unsweepable slot is refused with 500 and
- *           the build never ran; the zombie does not block its slot; and nothing
- *           writable lies outside the swept list but `/m2`.
+ *           the build never ran; the zombie does not block its slot; the thread
+ *           and the chain are ended and the slot's next build finds no
+ *           `.mavenrc`; and nothing writable lies outside the swept list but
+ *           `/m2`.
  * Covers:   B7-9, FR37, FR42
  * Unhappy:  Every negative has its counterpart here: the sweep removes the
  *           slot user's files and keeps root's and the other user's, and it
@@ -57,12 +65,37 @@ const PLANTED = [
 ];
 
 /**
- * Waits up to 15 s for the slot user to have no live process and none of the
+ * The user's live tasks: a /proc/<pid>/task/<tid> whose real uid is the user's
+ * and whose state is not Z. Tasks, because a process whose main thread has
+ * exited shows Z while its other threads run; one gone mid-read is not live.
+ * One process for the scan: the fork chain below leaves a zombie per member
+ * under a PID 1 that never reaps them.
+ */
+const LIVE = (user: string) => `
+  live() {
+    python3 -c '
+import glob, sys
+n = 0
+for t in glob.glob("/proc/[0-9]*/task/[0-9]*"):
+    try:
+        status = open(t + "/status").read()
+        stat = open(t + "/stat").read()
+    except OSError:
+        continue
+    uid = [l.split()[1] for l in status.splitlines() if l.startswith("Uid:")]
+    if uid == [sys.argv[1]] and stat[stat.rindex(")") + 2] != "Z":
+        n += 1
+print(n)' "$(id -u ${user})"
+  }
+`;
+
+/**
+ * Waits up to 15 s for the slot user to have no live task and none of the
  * planted paths, then reports what is there. The sweep after a build runs once
  * the response is sent, so reading at once would race it.
  */
 const settle = (user: string) => `
-  live() { ps -u ${user} -o stat= 2>/dev/null | grep -vc '^Z'; }
+  ${LIVE(user)}
   left() { for p in ${PLANTED.join(' ')}; do [ -e "$p" ] && echo "$p"; done; }
   for i in $(seq 1 60); do [ "$(live)" = 0 ] && [ -z "$(left)" ] && break; sleep 0.25; done
   printf 'LIVE=%s\\n' "$(live)"
@@ -237,5 +270,87 @@ describe('B7-9 the swept list is what the image permits', () => {
     // `/m2` is tolerated by name: entrypoint.sh keeps it for #10, nothing on this
     // branch reads it, and on #10 it is the cache that must persist (FR42).
     expect(outside.filter((p) => p !== '/m2')).toEqual([]);
+  });
+});
+
+describe('B7-9 a process whose main thread has exited', () => {
+  // The leader calls pthread_exit, so /proc/<pid>/stat says Z, while its thread
+  // writes into every work directory of the slot user it can reach -- the
+  // slot's next build's included, unless the sweep ended it.
+  const s = start({
+    pre: `cat > /opt/b7-9-plant.py <<'PY'
+import ctypes, glob, threading, time
+def plant():
+    while True:
+        for home in glob.glob('/tmp/tmp.*/home'):
+            try:
+                with open(home + '/.mavenrc', 'w') as f:
+                    f.write('echo B7-9-PLANTED')
+            except OSError:
+                pass
+        time.sleep(0.05)
+threading.Thread(target=plant).start()
+ctypes.CDLL(None).pthread_exit(None)
+PY
+chmod 644 /opt/b7-9-plant.py`,
+    stub: `${STUB_PREAMBLE}
+case "$2" in
+  *b7-9-t1) as_user 'nohup python3 /opt/b7-9-plant.py >/dev/null 2>&1 &' ;;
+  *b7-9-t3) sleep 1
+    if [ -e "$W/home/.mavenrc" ]; then echo "MAVENRC=$(cat "$W/home/.mavenrc")"; else echo MAVENRC=absent; fi ;;
+esac`
+  });
+  const first = s.build('/repos/b7-9-t1');
+  const user = first.stdout.match(/^BUILD-USER=(\S+)$/m)?.[1] ?? '';
+  const live = s.exec(`
+    ${LIVE(user)}
+    for i in $(seq 1 60); do [ "$(live)" = 0 ] && break; sleep 0.25; done
+    printf 'LIVE=%s\\n' "$(live)"
+  `).stdout;
+  const second = s.build('/repos/b7-9-t2');
+  const third = s.build('/repos/b7-9-t3');
+
+  test('B7-9 a process whose main thread has exited while another runs is ended, and plants nothing in the slot\'s next build', () => {
+    expect(user).toMatch(/^builder2?$/);
+    expect(live).toContain('LIVE=0');
+    expect(first.stdout).toContain('HTTP=200');
+    expect(second.stdout).toContain('HTTP=200');
+    // The third is on the first's slot, or it reads a directory the thread could
+    // never have reached.
+    expect(third.stdout).toContain(`BUILD-USER=${user}\n`);
+    expect(third.stdout).toContain('HTTP=200');
+    expect(third.stdout).toContain('MAVENRC=absent');
+  });
+});
+
+describe('B7-9 a process that keeps forking a successor', () => {
+  // At any instant one member is running and its parent has gone, so a sweep
+  // that lists and then signals is always one behind.
+  const s = start({
+    stub: `${STUB_PREAMBLE}
+case "$2" in
+  *b7-9-f1) as_user "nohup python3 -c 'import os
+while True:
+  if os.fork(): os._exit(0)' >/dev/null 2>&1 &"
+    sleep 1 ;;
+esac`
+  });
+  const first = s.build('/repos/b7-9-f1');
+  const user = first.stdout.match(/^BUILD-USER=(\S+)$/m)?.[1] ?? '';
+  const live = s.exec(`
+    ${LIVE(user)}
+    for i in $(seq 1 60); do [ "$(live)" = 0 ] && break; sleep 0.25; done
+    printf 'LIVE=%s\\n' "$(live)"
+  `).stdout;
+  const second = s.build('/repos/b7-9-f2');
+  const third = s.build('/repos/b7-9-f3');
+
+  test('B7-9 a process that keeps forking a successor and exiting is ended', () => {
+    expect(user).toMatch(/^builder2?$/);
+    expect(live).toContain('LIVE=0');
+    expect(first.stdout).toContain('HTTP=200');
+    expect(second.stdout).toContain('HTTP=200');
+    expect(third.stdout).toContain(`BUILD-USER=${user}\n`);
+    expect(third.stdout).toContain('HTTP=200');
   });
 });

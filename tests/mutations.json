@@ -338,8 +338,24 @@
     "case": "B7-9",
     "file": "config/nar_builder/BuildServer.java",
     "spec": "tests/integration/m-b7.build-sweep.test.ts",
-    "from": ".filter(p -> !zombie(p))",
-    "to": ".filter(p -> true)",
+    "from": " && state(task.toPath().resolve(\"stat\")) != 'Z')",
+    "to": ")",
     "mustFail": "B7-9 a zombie a build leaves does not block its slot"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "        long left = liveTask(ids[0]);\n        for (int round = 0; round < 5 && left >= 0; round++) {\n            run(List.of(\"setpriv\", \"--reuid=\" + ids[0], \"--regid=\" + ids[1], \"--clear-groups\",\n                    \"sh\", \"-c\", \"kill -KILL -1\"));\n            try {\n                Thread.sleep(200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n            left = liveTask(ids[0]);\n        }\n        if (left >= 0) {\n            return \"a process would not end, pid \" + left;\n        }\n",
+    "to": "        java.util.function.Supplier<List<ProcessHandle>> running = () -> ProcessHandle.allProcesses()\n                .filter(p -> p.info().user().map(user::equals).orElse(false))\n                .filter(p -> state(java.nio.file.Path.of(\"/proc/\" + p.pid() + \"/stat\")) != 'Z')\n                .collect(java.util.stream.Collectors.toList());\n        for (int round = 0; round < 6; round++) {\n            List<ProcessHandle> live = running.get();\n            if (live.isEmpty()) {\n                break;\n            }\n            for (ProcessHandle p : live) {\n                if (round == 0) {\n                    p.destroy();\n                } else {\n                    p.destroyForcibly();\n                }\n            }\n            try {\n                Thread.sleep(round == 0 ? 1000 : 200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n        }\n        List<ProcessHandle> left = running.get();\n        if (!left.isEmpty()) {\n            return left.size() + \" process(es) would not end, pid \" + left.get(0).pid();\n        }\n",
+    "mustFail": "B7-9 a process whose main thread has exited while another runs is ended, and plants nothing in the slot's next build"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "        long left = liveTask(ids[0]);\n        for (int round = 0; round < 5 && left >= 0; round++) {\n            run(List.of(\"setpriv\", \"--reuid=\" + ids[0], \"--regid=\" + ids[1], \"--clear-groups\",\n                    \"sh\", \"-c\", \"kill -KILL -1\"));\n            try {\n                Thread.sleep(200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n            left = liveTask(ids[0]);\n        }\n        if (left >= 0) {\n            return \"a process would not end, pid \" + left;\n        }\n",
+    "to": "        java.util.function.Supplier<List<ProcessHandle>> running = () -> ProcessHandle.allProcesses()\n                .filter(p -> p.info().user().map(user::equals).orElse(false))\n                .filter(p -> state(java.nio.file.Path.of(\"/proc/\" + p.pid() + \"/stat\")) != 'Z')\n                .collect(java.util.stream.Collectors.toList());\n        for (int round = 0; round < 6; round++) {\n            List<ProcessHandle> live = running.get();\n            if (live.isEmpty()) {\n                break;\n            }\n            for (ProcessHandle p : live) {\n                if (round == 0) {\n                    p.destroy();\n                } else {\n                    p.destroyForcibly();\n                }\n            }\n            try {\n                Thread.sleep(round == 0 ? 1000 : 200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n        }\n        List<ProcessHandle> left = running.get();\n        if (!left.isEmpty()) {\n            return left.size() + \" process(es) would not end, pid \" + left.get(0).pid();\n        }\n",
+    "mustFail": "B7-9 a process that keeps forking a successor and exiting is ended"
   }
 ]
