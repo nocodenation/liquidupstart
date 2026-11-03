@@ -2710,9 +2710,10 @@ watch for:
   2026-11-03 — and a file spawns if it imports one of `guard`, `references`, `referenceSet`,
   `fakeApiJar`, `narWithEntries`, `sandbox` or `writeNar`, which 12 of the 14 do;
   `m-b4.entrypoint-in-container` imports paths and constants only, and `m-b4.placement-check` runs
-  python inside the container. `git grep -n -E "sh\(\[\s*'python3'|'python3',\s*$" -- tests` finds the
-  direct callers: `m-b6.check-index-status`, `m-b2.load-path-rebuilt`, and `B7-3` in
-  `m-b7.seeded-cache`. Without `python3` each of those fails inside `sh()` with
+  python inside the container. `git grep -n -E "sh\(\[\s*'python3'|'python3',\s*$" -- tests ':!tests/lib'`
+  finds the direct callers — on 2026-11-03 exactly `m-b2.load-path-rebuilt` (142, 177),
+  `m-b7.seeded-cache` (151, `B7-3`) and `m-b6.check-index-status` (97, 100); without the
+  `':!tests/lib'` it also prints the fixtures' own calls. Without `python3` each of those fails inside `sh()` with
   `Executable not found in $PATH: "python3"`, which reads like a product failure and is not one — the
   #25 review met it on `B7-3` and added the package by hand. One file checks first:
   `m-b2.start-judges-its-copy:80-81` asks `Bun.which('python3')` and throws *python3 is not on PATH*.
@@ -2771,7 +2772,6 @@ watch for:
   `docker compose logs` in the default 5s. It is in the opt-in `--system` tier, it has never been seen
   to time out, and verifying a change there needs a running stack — so it is named on #19 rather than
   changed blind.
-
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.

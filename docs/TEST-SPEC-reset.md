@@ -28,7 +28,7 @@ this note the rows that need a failing `rm` relied on a directory `volumes/locke
 `rm -rf volumes` by an ordinary user is refused on `locked/keep`, since unlinking needs write on the
 directory — and skipped under uid 0, where no mode refuses anything; the scenario meant to report
 that skip asserted a constant against itself and was counted as a pass. The project's reproducible run
-is `bun test` as uid 0 in the dashboard image (the `run-tests-on-linux` note, `HANDOFF.md`), so the
+is `bun test` as uid 0 in the dashboard image (`HANDOFF.md`, *A tool the test host does not have*), so the
 decision logic this section demands full branch coverage of could be green there having never run:
 7 passes, 11 skips, and one of the 7 saying nothing. Now the fixture's `bin/rm` is a stub in every
 row. It appends its arguments to `rm.log` as the other two stubs do, and with `LU_STUB_RM=refuse` in
