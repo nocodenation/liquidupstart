@@ -97,6 +97,14 @@ mistake is available here and is cheaper to avoid than to repeat.
 - **FR37 — Each build gets its own local repository, discarded with the build.** Nothing one build
   writes can be resolved by the next. This holds whatever the project is: the synthesised skeleton or
   an author's own `pom.xml`.
+
+  > *Amended 2026-10-29, #31.* As written this claimed more than the system guaranteed. It held for the
+  > repository and not for the build user's home: `/home/builder` was builder-owned and lived as long
+  > as the container, and `~/.mavenrc` (sourced as shell by the `mvn` launcher, with the next build's
+  > arguments in `$*`) and `~/.m2/settings.xml` (read from passwd's `user.home`, whatever `HOME` says)
+  > reached every later build. Measured on `main` at `cb63973`: a `.mavenrc` planted as `builder`
+  > printed `PLANTED: builder args: -B -o -q -Dmaven.repo.local=/tmp/tmp.NEXT/m2 -v` from the next
+  > `run_maven`. The sentence stands; FR41 and FR42 are what make it true beyond the repository.
 - **FR38 — The image build owns the seeding step.** A dedicated step resolves the closure of the
   project `build.sh` synthesises, and **resolves the `nifi-api` version itself** rather than taking
   it — NiFi versions `nifi-api` separately (FR27), so an argument for it is an argument that can
@@ -108,6 +116,129 @@ mistake is available here and is cheaper to avoid than to repeat.
 - **FR40 — A seed that does not match the build says so in one line.** Computed from a record the
   seeding step writes, not from a version somebody keeps in step. A stale seed costs time and never
   correctness, and the failure mode it prevents is a build that is mysteriously slow.
+- **FR41 — The build user's home is read-only, and each build carries its own.** Every build user's
+  passwd home is created empty, root-owned and mode `555` in the image, so nothing the user runs can
+  put a file there. Maven runs with `HOME`, `user.home` and `java.io.tmpdir` inside the build's own
+  work directory (`<work>/home`, `<work>/tmp`), created for the build and discarded with it — so
+  `.mavenrc`, `settings.xml`, `settings-security.xml`, `toolchains.xml` and anything a plugin writes
+  under `user.home` can only come from the build that is running. `user.home` is set through
+  `JAVA_TOOL_OPTIONS` rather than Maven's own `-D`, because a JVM that Maven forks (surefire, an
+  `exec`) reads `user.home` from passwd and not from its parent; measured, a JVM started with it
+  reports the per-build path. Every JVM so started prints `Picked up JAVA_TOOL_OPTIONS: …` to
+  stderr, so the line opens a failed build's Maven output; it is the JVM's notice and expected.
+  The read-only home is the floor and the per-build one is the mechanism: a plugin that writes
+  under `user.home` keeps working, and one that bypasses it is refused instead of persisting.
+
+  *Added 2026-11-02, the first review of #55.* **A build user the image lacks is refused, not run
+  as root.** As root, `run_maven` dropped to the build user only when `id` knew it, and otherwise ran
+  Maven itself, as root; `drop_is_closed` answered "closed" for the same case without asking. The
+  server and the image ship together and B7-6 ties their users to each other, so it takes a
+  mismatched `NAR_BUILDER_BUILD_USER` to get there, but the fallback opened what FR41 and the drop
+  directory's containment rest on. Now, as root, a build user `id` does not know stops the build
+  with a message naming it, before Maven runs, and `drop_is_closed` refuses. *Amended 2026-11-02,
+  the second review of #55:* the refusal surfaced first through the API version's resolution, so a
+  synthesised project answered 409 with advice to add a `pom.xml`. `build` and `target` now check
+  the user before anything else, as root, and stop with exit status 1, HTTP 500, the status of
+  every fault of the installation. Run as an ordinary
+  user, which is how the suite drives `build.sh` on the host against a stub `mvn`, both behave as
+  before: there is nothing to drop from.
+- **FR42 — Two builds never share a user, and a build leaves nothing running or written behind it.**
+  The builder has one unprivileged user per build slot — `builder` (uid 1500) and `builder2`
+  (uid 1501) — and a build runs as the slot's user it was handed. Its work directory is that user's
+  and mode `700`, so a concurrent build cannot read or write into it. Before a slot is handed out,
+  and again when its build ends however it ends, the server **sweeps** it: every process owned by
+  that user is ended, and every file that user owns under the directories it can write outside its
+  work directory — `/tmp`, `/var/tmp`, `/run/lock`, `/dev/shm`, `/dev/mqueue` — is removed. The list
+  is held by a case that computes what each user can actually write in the image, so a directory
+  that becomes writable later turns that case red rather than going unswept. A slot whose sweep
+  cannot complete is not used: the server refuses the build with HTTP 500, the status every fault of
+  the installation answers, and names the slot and how to clear it: *corrected 2026-11-02* from
+  `docker compose restart nar_builder`, which keeps the container's `/tmp` and so cannot clear a
+  file root cannot remove there, to `docker compose up -d --force-recreate nar_builder`, which
+  starts from the image. The slot goes back to the queue however its sweep ends, an exception
+  included; a slot lost to one would leave the builder a single slot with nothing saying so.
+
+  *Amended 2026-11-02, the first review of #55.* **How a user's processes are ended, and when they
+  count as ended.** The server does not signal processes it has listed; it runs, as the slot user,
+  `setpriv --reuid=<uid> --regid=<gid> --clear-groups sh -c 'kill -KILL -1'`. A `kill(-1)` from that
+  uid reaches every process the uid may signal, which is every process of that user and nothing of
+  root's or the other slot user's, and the kernel walks the process list for it under the lock that
+  `fork` takes, so a process cannot fork its way past it (traced in the kernel, not measured; B7-9
+  (10) holds the chain that would). `<uid>` and `<gid>` are read from `/etc/passwd`: `builder` is
+  1500 in group 999, `builder2` 1501 in group 998. A slot user missing from it, or with uid 0, fails
+  the sweep, because a `kill -1` sent as root would reach everything in the container. The
+  user's processes count as ended when no **task** whose real uid is the user's (`Uid:` in
+  `/proc/<pid>/task/<tid>/status`) is in any state but `Z`. Tasks, not processes, because
+  a process whose main thread has exited shows `Z` in `/proc/<pid>/stat` while its other threads run.
+  The sweep before this amendment skipped such a process as a zombie and never signalled it, and in
+  the review a thread kept that way wrote into the next build's `.mavenrc`, which that build would
+  have sourced: #31's reproduction, moved from the passwd home to the per-build one. The kill is
+  repeated while a live task remains, at most five times 200 ms apart; a task still live then makes
+  the sweep fail, as above. A real zombie, every task `Z`, is still counted as ended, for the reason
+  B7-9 records: the server is PID 1 and reaps nothing it did not start.
+
+  *Amended 2026-11-02, the second review of #55.* **The sweep fails closed on what it cannot read,
+  and kills whether or not it has seen anything.** A task's name is the process's to set, and the
+  kernel writes bytes above `0x7f` into `status` and `stat` unescaped, so a process that names
+  itself `\xff\xfe\xfd` with `prctl(PR_SET_NAME)` made a strict UTF-8 read of those files throw;
+  the sweep took the exception for a task that had gone, and since it sent the kill only when its
+  scan found something, such a process was never signalled. The review reproduced the planted
+  `.mavenrc` with one. So: `/proc` is read as bytes, decoded as ISO-8859-1; a task counts as gone
+  only when its files no longer exist, and any other failure to read them counts it as live; and
+  every sweep sends `kill -KILL -1` as the slot user at least once, the scan deciding only whether
+  to repeat it and whether the sweep failed. The guard before the kill reads the uid as a number,
+  so a passwd entry `00` is root as the kernel takes it, and is refused.
+
+  *Amended 2026-11-02, the third review of #55.* **A name cannot move a line of `status`.** The
+  kernel escapes `\n`, `\\` and the tab-like whitespace in the name it writes into `status`'s
+  `Name:` line, and writes other bytes, the space and `0x85` among them, as they are — seen with
+  `od` in the review. ISO-8859-1 turns `0x85` into U+0085, which Java's multi-line `^` takes for a line break. A
+  process of `builder` that named itself `\x85Uid: 1501` was read as `builder2`'s, so the other
+  slot's sweep could not clear it and refused that slot's builds with 500 for as long as it ran —
+  reproduced twice. It hid nothing, since the kill does not depend on the scan, but it let one slot
+  deny the other. So `status` is split on `\n` alone, and the real uid is the first field of the
+  line that begins `Uid:\t`; no other byte ends a line.
+
+  *Amended 2026-11-02, the second review of #55.* **The removal cannot be steered out of the swept
+  directories.** It ran as root as `find … -user <user> -prune -exec rm -rf {} +`, and `-exec`
+  hands `rm` absolute paths that are resolved again when `rm` runs. A build running on the other
+  slot meanwhile owns directories under `/tmp`, and can turn one on such a path into a symlink to
+  `/` between `find`'s match and `rm`'s call; root then removes a file of the same name at the top
+  of the filesystem. The review won that race on its 29th attempt, deleting a root-owned `/victim`.
+  `fs.protected_symlinks` does not stop it, since the symlink lies in the attacker's own directory
+  and not directly in sticky `/tmp`. The removal is `-execdir rm -rf {} +` now: `rm` runs in the
+  directory `find` holds open, on `./<name>`, so no path is resolved twice; the same race lost 1500
+  attempts out of 1500. Measured on the reviewer's host, not proven; the argument is GNU find's
+  documented reason for `-execdir`.
+
+  *Added 2026-11-02.* **What the sweep does not clear: System V IPC.** A shared-memory segment,
+  semaphore set or message queue a build user creates with `shmget`, `semget` or `msgget` lasts
+  past the sweep, as long as the container; the review created one as `builder` and found it
+  listed in `/proc/sysvipc/shm` three builds later. No build tool opens such an object unless it is
+  told its key, and nothing in a build is, so FR37 is untouched; it is named here because "nothing
+  written behind it" would otherwise claim it. A recreation clears it.
+
+  *What this does not close, stated rather than implied.* Two builds that **overlap** share `/tmp`
+  and the other world-writable directories for that time: one can leave a file there that the other's
+  code may choose to read. The sticky bit stops it replacing the other's files, and `TMPDIR` and
+  `java.io.tmpdir` point into the build's own work directory, so ordinary tooling never looks there;
+  closing it outright needs a private mount namespace per build, which an unprivileged container does
+  not have. And `/m2`, which `entrypoint.sh` still creates and hands to `builder`, is not swept.
+  *Restated 2026-11-02, the first review of #55:* this said `/m2` was kept for #10's sake and would
+  go once #10 and this branch had both landed, but #10 merged on 2026-10-16 and `main` mounts
+  nothing at `/m2`. What keeps it is that B6-36 and B6-38 still drive the entrypoint's handling of
+  it, and retiring two signed cases is not #31's to do; it is a follow-up of its own. Until then
+  `/m2` is a directory that `builder` alone can write and that lasts as long as the container. No
+  build reads it, since every build has its own repository (FR37), so what one leaves there reaches
+  no other build; it can still hold data or fill the disk.
+
+  *Added 2026-11-02.* **Zombies accumulate.** A process the sweep kills whose parent was killed too
+  is re-parented to the server, which as PID 1 reaps nothing it did not start, so it stays a zombie
+  until the container restarts. A zombie holds no memory and no files, only its PID. Compose sets
+  no `pids_limit` on `nar_builder` and no `init`, so what bounds them is the host's `pid_max`, and a
+  build that leaves thousands of orphans on purpose brings later builds nearer that bound. A
+  restart of `nar_builder` clears them. An `init` would reap them, but it would also remove the
+  premise B7-9 (7) is built on; that is a change of its own, not made here.
 - **FR27 — The API compiled against is resolved, not assumed, and is stated.** NiFi versions
   `nifi-api` on its own line: 2.11.0 ships `nifi-api-2.10.0.jar`. The build resolves what the
   distribution was actually built against, writes that version into the project, and prints it. FR23
@@ -283,7 +414,8 @@ mistake is available here and is cheaper to avoid than to repeat.
   nowhere else — the whole argument for the fix was reasoning, never observation.
 - **FR35 — Concurrent builds do not corrupt each other.** One builder, one dependency cache, one
   `/repos`. Two builds at once is the ordinary case the moment two agents work, and nothing has ever
-  run it.
+  run it. *Amended 2026-10-29, #31:* "do not corrupt" now includes "cannot reach" — since FR42 the
+  two slots run as two users, and neither can write the other's work directory.
 - **FR36a — The check's exit status says which of three things happened, and only a stated verdict
   deploys.** *Heading amended 2026-10-21: it said "only 0 deploys", and a 0-byte checker's 0 is not a
   verdict — see below.*
@@ -589,6 +721,22 @@ resolution is the one thing a seed cannot serve.
 still resolves plugin versions remotely, and the per-build repository means its closure is fetched on
 every build. FR37's security property holds for it regardless — that is the leg — but the speed does
 not, and it is unmeasured because no such project exists here yet.
+
+**A fifth leg, found in the review of #25 and closed on #31 (2026-10-29).** The repository was per
+build; the build user was not. `/home/builder` was builder-owned and lasted as long as the container,
+so build-time code could write `~/.mavenrc`, which the `mvn` launcher sources as shell on every later
+build, or `~/.m2/settings.xml`, which Maven reads from passwd's `user.home` even with `HOME` moved —
+a mirror, a plugin repository, a profile, all in the next build, including one another agent started.
+And the two build slots ran as the same uid against mode-755 work directories, so a running build
+could write into the other's repository, and a process it left behind (`nohup`, measured to survive
+`mvn`'s exit) was still running as that user when the next build began.
+
+Closed in three parts (FR41, FR42): the homes are root-owned, empty and `555`, and Maven gets a home
+inside its work directory instead; each slot has its own user and a `700` work directory; and a slot
+is swept — processes ended, files removed from every directory its user can write — before it is
+handed out and after its build ends. What stays open is stated under FR42: two *overlapping* builds
+share `/tmp` for that time, `/m2` is kept while B6-36 and B6-38 drive it, and the zombies a build
+leaves accumulate until a restart.
 
 What remains, then: a compromised or malicious dependency can read the source being compiled, write
 into the shared dependency cache, and reach the network. The third of those is inherent to Maven and

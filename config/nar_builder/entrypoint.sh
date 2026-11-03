@@ -45,11 +45,12 @@ chmod 700 /deploy
 # per-build repository removes the shared cache: `compose.yml` mounts nothing at
 # `/m2`, `repo_for` copies the seed into the build own work directory, and the
 # lines above therefore act on an empty directory inside the container. They are
-# kept rather than deleted for two reasons. `B6-36` and `B6-38` on #10 drive this
-# file against a root-owned `/m2` they create themselves, so deleting the handling
-# would redden two signed cases that are not this branch to retire; and until #10
-# and this branch have both landed, the file has to be correct for the arrangement
-# #10 ships.
+# kept rather than deleted because `B6-36` and `B6-38` drive this file against a
+# root-owned `/m2` they create themselves, and deleting the handling would redden
+# two signed cases that are not #31's to retire. #10 has merged, and `main` mounts
+# nothing at `/m2` either, so retiring them is a follow-up of its own. Until then
+# `/m2` is a directory only the build user can write, lasting as long as the
+# container, and no build reads it (FR42).
 #
 # What that means for N7 of the 2026-10-14 re-review is worth stating here rather
 # than leaving to the BACKLOG entry: its second consequence -- on rootless Docker

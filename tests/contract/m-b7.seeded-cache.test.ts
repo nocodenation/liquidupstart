@@ -17,18 +17,26 @@
  *           *Non-parseable settings* because an XML comment contained `--`,
  *           and nothing but a parse would have caught it.
  * Given:    compose.yml, config/nar_builder/{Dockerfile,build.sh,seed.sh,
- *           lifecycle-pins.xml} and config/scripts/start/nar-builder.sh.
+ *           lifecycle-pins.xml,BuildServer.java} and
+ *           config/scripts/start/nar-builder.sh.
  * When:     Each is read as text, and the pins file is parsed as XML.
  * Then:     No /m2 mount is declared anywhere; the seeding step is invoked by
  *           the image build with one version argument; build.sh copies the seed
- *           per build and splices the pins; and the pins name every plugin the
- *           default lifecycle binds.
- * Covers:   B7-1, B7-2, B7-3, B7-4, FR26, FR37, FR38, FR39
+ *           per build and splices the pins; the pins name every plugin the
+ *           default lifecycle binds; each build user is created with an
+ *           empty, root-owned 555 home, and is the user the server hands a slot
+ *           (B7-6, #31); and the sweep's removal runs `rm` through `-execdir`,
+ *           never `-exec`, so no path is resolved twice as root (B7-6, the
+ *           second review of #55).
+ * Covers:   B7-1, B7-2, B7-3, B7-4, B7-6, FR26, FR37, FR38, FR39, FR41, FR42
  * Unhappy:  B7-1's negative half is the mount coming back, by any spelling.
  *           B7-3's is a pins file that parses but has lost a plugin, which is
  *           how the first attempt failed: with resources, compiler, jar and
  *           surefire pinned a build still refused on maven-install-plugin,
  *           whose goal `package` never reaches.
+ *           B7-6's third is a removal through `-exec`, which the review raced
+ *           into deleting a root-owned `/victim`; the race is timing, so the
+ *           declaration is held and the measurement is FR42's.
  */
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -152,4 +160,71 @@ test('B7-4 the stale host directory is named once and not deleted', () => {
   // It only speaks when there is something to speak about.
   expect(notice).toMatch(/if \[ -d "\$STALE" \]/);
   expect(read('scripts/linux/start.sh')).toContain('start/nar-builder.sh');
+});
+
+/**
+ * The Dockerfile's instructions, comments dropped and continuation lines joined,
+ * so a `useradd` and the `install` that follows it on the next line read as the
+ * one RUN they are.
+ */
+const dockerRuns = () =>
+  code('config/nar_builder/Dockerfile').replace(/\\\n/g, ' ').split(/\s*&&\s*|\n/);
+
+/** The Java source with its comment lines dropped, for the same reason as `code()`. */
+const javaCode = (p: string) =>
+  read(p)
+    .split('\n')
+    .filter((l) => !/^\s*(\/\/|\/?\*)/.test(l))
+    .join('\n');
+
+test('B7-6 each build user is created with no home of its own and given an empty, root-owned 555 one', () => {
+  // #31. `useradd -m` copies /etc/skel in builder-owned, and a chown of the
+  // directory alone afterwards leaves `.bashrc` and `.profile` writable --
+  // measured against the fix the issue first proposed.
+  const adds = dockerRuns().filter((c) => /\buseradd\b/.test(c));
+  const users = adds.map((c) => c.trim().split(/\s+/).pop());
+  expect(users).toEqual(['builder', 'builder2']);
+  for (const c of adds) {
+    expect(c).toMatch(/\s-M\s/);
+    expect(c).not.toMatch(/\s-m\s/);
+  }
+  const installs = dockerRuns().filter((c) => /^\s*install -d -m 555 -o root -g root\s/.test(c));
+  for (const u of users) {
+    expect(installs.some((c) => c.split(/\s+/).includes(`/home/${u}`))).toBe(true);
+  }
+});
+
+test('B7-6 and the server\'s slot users are exactly the users the image creates', () => {
+  // Compared file with file rather than against a list of the case's own, so
+  // two files that agree with the test and not with each other cannot pass.
+  // A slot user the image lacks fails every build on that slot; until 2026-11-02
+  // it made run_maven run Maven as root instead. B7-7 (7).
+  const server = javaCode('config/nar_builder/BuildServer.java');
+  const decl = server.match(/SLOT_USERS\s*=\s*List\.of\(([^)]*)\)/);
+  expect(decl).not.toBeNull();
+  const slots = [...decl![1].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+  const users = dockerRuns()
+    .filter((c) => /\buseradd\b/.test(c))
+    .map((c) => c.trim().split(/\s+/).pop()!)
+    .sort();
+  expect(slots.length).toBe(2);
+  expect(slots).toEqual(users);
+});
+
+test('B7-6 and the sweep\'s removal runs rm from the directory find holds, never on a path resolved again', () => {
+  // `-exec` hands rm an absolute path resolved again when rm runs, and the other
+  // slot's build can swap a symlink to / into it meanwhile -- raced into removing
+  // a root-owned /victim. `-execdir` gives rm `./<name>` in the directory find
+  // holds open. FR42, the second review of #55.
+  const server = javaCode('config/nar_builder/BuildServer.java');
+  const lists = [...server.matchAll(/List\.of\(([^;]*?)\)\);/g)].map((m) =>
+    [...m[1].matchAll(/"([^"]*)"/g)].map((q) => q[1])
+  );
+  const removal = lists.filter((args) => args.includes('-prune'));
+  expect(removal.length).toBe(1);
+  const args = removal[0];
+  const at = args.indexOf('-execdir');
+  expect(at).toBeGreaterThanOrEqual(0);
+  expect(args.slice(at, at + 3)).toEqual(['-execdir', 'rm', '-rf']);
+  expect(args).not.toContain('-exec');
 });
