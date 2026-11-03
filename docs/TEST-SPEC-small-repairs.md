@@ -1,7 +1,30 @@
 # Test specification: six small repairs from `BACKLOG.md`
 
 Status: **signed off on 2026-11-03, and implemented on this branch.** Each block's *What it found*
-and *Shown able to fail* are filled in from the runs on the commit that adds the code.
+comes from the runs after `c38fd78`, the commit that adds the code, and `1c8dd3b`, which gave SR-3
+its control; each block's *Shown able to fail* from `./tests/mutate.sh --case`, which refuses a
+subject with uncommitted changes. All runs started and ended on a clean tree, one at a time; the
+tiers and SR-5 ran at `1c8dd3b`:
+
+- **SR tier.** `./tests/run.sh sr` gave 29 pass, 3 skip and 0 fail across four files, in 70 s. The
+  three skips are the named notices for a missing OpenClaw image and missing dashboard dependencies,
+  which skip where both are present.
+- **Mutations.** Twenty registered, all validated: SR-1 fifteen and SR-2 two at `c38fd78`, SR-3 two
+  at `1c8dd3b`, SR-4 one at `c38fd78`. SR-3's were refused at `c38fd78`, as below.
+- **Full default tier.** 1759 pass, 19 skip and 0 fail across 218 files, in 29 minutes, with the
+  dashboard dependencies installed and the 48 stack-level files left out as always; the dashboard
+  gave 45 pass and 0 fail. Its stderr carried one message, the builder sweep reporting an image a
+  concurrent case's container still held, which it reports by design and which was gone afterwards.
+  The TypeError of `GitRepositories.svelte` is no longer printed.
+- **Routing.** `scripts/tests/privacy-routing.test.sh`, TC-821 to TC-826, passed.
+- **SR-5.** Passed on the worktree's stack on 2026-11-03; its block has the details.
+- **After merging `main` with #61, at `1a4c1ca`.** `tests/mutations.json` conflicted and was resolved
+  as the union, 171 entries; `./tests/mutate.sh --gaps` reports no orphan. The SR tier gave 29 pass,
+  3 skip, 0 fail again, and `privacy-routing.test.sh` passed. `m-tr.case-ids` and the four files #61
+  added or changed gave 63 pass and 2 fail: the two B7-10 cases under `bash -O compat42`, which fail
+  on `main` at `6f892f7` the same way on this host, whose bash is 3.2.57 and has no `compat42`. The
+  full tier was not run again on the merge.
+
 Feature: `docs/FEATURE-small-repairs.md` (SR-FR1 to SR-FR7).
 
 Files are named `tests/<level>/m-sr.<subject>.test.ts`. Their headers open with `M-SR · <Level> · …`
@@ -195,8 +218,8 @@ while it runs.
 | **Test data, both sides** | §3.1. |
 | **Expected** | Row 1: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Rows 2, 3 and 4: primary `anthropic/claude-opus-5`, no record. Row 5: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Row 6: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Rows 7 and 8: primary `privacy-anthropic/claude-opus-5`, no record. Row 9: after the `only` start, no primary and the record `{"dropped":"openai/gpt-5.5"}`; after the `opt-in` start, primary `openai/gpt-5.5`, no record, the output contains `restored primary model openai/gpt-5.5`, and it does not contain `pinned default primary model`. Row 10: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Row 11: primary `anthropic/claude-opus-5`, no record. Rows 12 to 15: exit status 0, primary `privacy-anthropic/claude-opus-5`, no record, and the output contains `removed an unusable privacy-routing-primary.json`. Row 16: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Row 17: exit status 0, primary `privacy-anthropic/claude-opus-5`, no record, and the output contains `removed an unusable privacy-routing-primary.json`. Row 18: exit status 0, primary `privacy-anthropic/claude-opus-5`, and the output contains `could not remove privacy-routing-primary.json`. Row 19: exit status 0, primary `privacy-anthropic/claude-opus-5`, and the output contains `could not record primary model anthropic/claude-opus-5`. In every row, no file whose name starts with `privacy-routing-primary` is left beside `openclaw.json` other than the record where one is expected, so no temporary file of decision 6 stays behind. |
 | **Dependencies** | Docker, `ghcr.io/openclaw/openclaw:2026.9.1` present locally. Skipped without the image, and the skip names it. |
-| **Shown able to fail** | To be registered: the record not written (rows 1, 9, 10 and 16 red); the restore removed (rows 2, 3, 4, 9 and 11 red); a record already there replaced (row 6 red); an unusable record kept on a drop (row 16 red); a record written on every start under `only` that has no usable record (row 7 red); the record kept after an `opt-in` start (rows 2, 3, 4, 9 and 11 red); the restore moved after the default block (row 9 red, by its output); the string form not handled on the way back (row 11 red); the check that `dropped` is a string removed (row 12 red); the check that it is not empty removed (row 13 red); the check for `null` removed (row 14 red); the parse left unguarded (row 15 red); the unusable record kept under `only` (row 17 red); the removal of the record left unguarded (row 18 red); the writing of it left unguarded (row 19 red). Row 8 has no mutation of its own: it holds on today's code as well, and is there as the counterpart of row 2. **Decision 6 has no row.** A failure between the restore and the write of `openclaw.json` cannot be brought about without changing the writer, and in a run that succeeds both orders leave the same files; the order is read in review. |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Fifteen registered, all validated at `c38fd78`, each under the row it is registered for; the counts are of nineteen rows. The record not written, row 1: 8 red, the rows that expect a record or a restore from one (1 to 4, 9, 10, 16 and 19). The restore removed, row 2: 5 red (2, 3, 4, 9, 11). A record already there replaced, row 6: 1 red. An unusable record kept on a drop, row 16: 2 red, 16 and the directory of 19. A record written on every start under `only` that has no usable one, row 7: 2 red, 7 and 17. The record kept after an `opt-in` start, row 2: 5 red. The restore moved after the default block, row 9: 1 red. The string form not handled on the way back, row 11: 1 red. The check that `dropped` is a string removed, row 12; that it is not empty, row 13; for `null`, row 14: 1 red each. The parse left unguarded, row 15: 5 red, 15 to 19, since a directory cannot be read either. The unusable record kept under `only`, row 17: 1 red. The removal left unguarded, row 18: 11 red, every row that removes a record, because the `finally` the mutation puts in has no error to name. The writing left unguarded, row 19: 5 red, every row that writes one. Row 8 has no mutation of its own: it holds on the code before this change as well, and is there as the counterpart of row 2. **Decision 6 has no row.** A failure between the restore and the write of `openclaw.json` cannot be brought about without changing the writer, and in a run that succeeds both orders leave the same files; the order is read in review. |
+| **What it found** | Run at `c38fd78` on a clean tree: 19 / 0. The local review of the implementation added rows 17 to 19, decision 7 and row 9's Codex: a directory at the record's path aborted the start after `openclaw.json` was written, an unusable record outlived an `only` start that dropped nothing, and row 9 restored a model nothing served. It also found `scripts/tests/privacy-routing.test.sh`'s TC-824 passing through the restore, which the feature's §10 records. |
 | **Implemented by** | `tests/component/m-sr.primary-restored.test.ts`. |
 | **Covers** | SR-FR1, SR-FR2, UC1 to UC5. |
 
@@ -210,8 +233,8 @@ while it runs.
 | **Test data, both sides** | §3.2. |
 | **Expected** | `privacy-anthropic`: the ten ids of §3.2, in that order, with neither `200k` nor `1m`. `privacy-openai`: the nine ids. `claude-cli`: the six ids. |
 | **Dependencies** | As SR-1. |
-| **Shown able to fail** | To be registered: the walk over every node put back in place of the structural read (rows 1 and 2 red, 3 and 4 green). |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Registered twice, for rows 1 and 2: the walk over every node put back in place of the structural read. Validated at `c38fd78`: rows 1 and 2 red, 3 and 4 green. |
+| **What it found** | Run at `c38fd78` on a clean tree: 4 / 0. |
 | **Implemented by** | `tests/component/m-sr.catalog-models.test.ts`. |
 | **Covers** | SR-FR3. |
 
@@ -225,8 +248,8 @@ while it runs.
 | **Test data, both sides** | §3.3. |
 | **Expected** | `return 301 https://liquid.localhost:9443;` and `return 301 https://liquid.localhost:8833;`. No `8889` in either rendering. The HTTPS block on 9443 is there. |
 | **Dependencies** | `bash`, `openssl`. |
-| **Shown able to fail** | To be registered: the placeholder put back to `8889` (rows 1 to 3 red, the control green). The control was added when `tests/mutate.sh` refused that mutation on the first run: with all three rows red, a broken file and a working control look the same. |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Registered twice, for rows 1 and 3: the placeholder put back to `8889`. Validated at `1c8dd3b`: rows 1 to 3 red, the control green. At `c38fd78`, before the control existed, `tests/mutate.sh` refused both: every test in the file went red, which a broken file does as well. |
+| **What it found** | Run at `1c8dd3b` on a clean tree: 4 / 0. |
 | **Implemented by** | `tests/unit/m-sr.liquid-redirect.test.ts`. |
 | **Covers** | SR-FR4. |
 
@@ -240,8 +263,8 @@ while it runs.
 | **Test data, both sides** | §3.4. |
 | **Expected** | No error collected while the answer is pending. Once it has arrived, the card shows `is still unreachable`. |
 | **Dependencies** | `DASHBOARD_DEPS`, as every component case of the card. |
-| **Shown able to fail** | To be registered: the check removed (row 1 red, row 2 green). |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Registered and validated at `c38fd78`: the check removed, row 1 red and row 2 green. Row 1's failure carried `TypeError: null is not an object (evaluating '$.get(results)[slug].cloned')`, the error the BACKLOG entry describes. |
+| **What it found** | Run at `c38fd78` on a clean tree: 2 / 0. The worktree had no `dashboard/node_modules` at first, and the file then ran only its notice; the dependencies were installed before any run recorded here. With the check, `m-a16.result-line.test.ts` no longer prints the TypeError. |
 | **Implemented by** | `tests/component/m-sr.result-line-null.test.ts`. |
 | **Covers** | SR-FR5. |
 
@@ -255,5 +278,5 @@ while it runs.
 | **Test data, both sides** | The worktree's installation, whose primary was set back by hand to `anthropic/claude-opus-5` on 2026-10-31. |
 | **Expected** | Under `only`: `privacy-anthropic/claude-opus-5` and the record of SR-1 row 1. Under `opt-in`: `anthropic/claude-opus-5`, no record, and OpenClaw answering. |
 | **Dependencies** | The worktree's stack, with the Claude subscription on. |
-| **What it found** | Not yet run. |
+| **What it found** | Run on 2026-11-03 on the worktree's stack, `../liquidupstart-wt-50`, with the proxy and the Claude subscription on and routing at `opt-in`. For the two starts, `config/scripts/start/openclaw.sh` of `1c8dd3b` was copied over the worktree's, the only file of the start that differs, and put back afterwards. Before: `anthropic/claude-opus-5` in `openclaw.json` and in `openclaw config get agents.defaults.model` inside `openclaw-gateway`, and no record. **`only`:** `start.sh` exited 0 and printed `dropped primary model anthropic/claude-opus-5` and `pinned default primary model = privacy-anthropic/claude-opus-5`; the file and the gateway named `privacy-anthropic/claude-opus-5`, and the record held `{"dropped":"anthropic/claude-opus-5"}`. **`opt-in`:** `start.sh` exited 0 and printed `restored primary model anthropic/claude-opus-5`; the file, the gateway and `openclaw models status` named `anthropic/claude-opus-5`, the record was gone, the gateway was healthy and `openclaw.localhost` answered 200. Its allowed models listed `privacy-anthropic` without `200k` and `1m`, which is SR-2 on the stack. No sign-in moved: this installation has no file `openclaw_login_paths` lists, and its `auth_profile_store` is empty. The Claude login sits in `volumes/_openclaw-claude`, which the override replaces under `only` and does not move; its `.credentials.json` was refreshed at 13:49 during the run, as the CLI refreshes it, with a token valid for eight hours. Both starts warned, as every start there does, that three declared repositories cannot be cloned while their deploy keys are unregistered. |
 | **Covers** | SR-FR1, SR-FR2, UC1. |
