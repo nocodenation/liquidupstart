@@ -2670,7 +2670,7 @@ teardown when its tools are missing, but the durable form is a label carrying a 
 
 ### If a test fails on your machine and passed on the one it was written on
 
-Four shapes have cost real time. The last one is not an instance but a habit, and it is the one to
+Five shapes have cost real time. The last one is not an instance but a habit, and it is the one to
 watch for:
 
 - **A contract check against an installed stack.** A3-3, A4-16 and A1-4 read `volumes/`. In a git
@@ -2687,6 +2687,55 @@ watch for:
   propagates with a delay. Fetching a page straight after writing a fixture file failed **2 of 3 runs
   on an idle machine**. `awaitFileInContainer` waits until `docker exec cat` returns the bytes that were
   written.
+- **A tool the test host does not have.** *Written 2026-11-03, #33; the recipe lived in a memory note
+  until then and `TEST-SPEC-reset.md` cited it from there.* The reproducible way to run a suite on
+  Linux is the dashboard image — Alpine, with whatever bun `oven/bun:1-alpine` was when the image was
+  built (`dashboard/Dockerfile:10`; **1.4.4** on 2026-11-03, against 1.4.2 on this host) — over a
+  **real clone**, not a `git worktree`, whose `.git` file points at a host path and makes
+  `git ls-files` empty inside the container:
+
+  ```sh
+  docker run --rm -it --user 0:0 -v "$(pwd):/w" -w /w --entrypoint sh liquidupstart/dashboard:latest
+  apk add --no-cache bash git coreutils openssh docker-cli python3
+  bun test --timeout 120000 tests/contract/m-b7.seeded-cache.test.ts   # one file, or a directory
+  ```
+
+  `python3` is in that line because cases spawn it on the host, for two things: to run the real
+  `config/liquid/narcheck.py` (`guard` → `check` and `references` → `refs` in
+  `tests/lib/narcheckfixture.ts`; `m-b6.check-index-status` runs `check-index` itself), and to write
+  the zip archives the fixtures hand it, with `zipfile` (`fakeApiJar` and `narWithEntries` there,
+  `writeNar` and the api jar `sandbox()` makes in `tests/lib/entrypointfixture.ts`,
+  `m-b2.load-path-rebuilt:142,177` directly). **Which files, computed rather than remembered:**
+  `git grep -l -E "narcheckfixture|entrypointfixture" -- tests` lists the importers — 14 on
+  2026-11-03 — and a file spawns if it imports one of `guard`, `references`, `referenceSet`,
+  `fakeApiJar`, `narWithEntries`, `sandbox` or `writeNar`, which 12 of the 14 do;
+  `m-b4.entrypoint-in-container` imports paths and constants only, and `m-b4.placement-check` runs
+  python inside the container. `git grep -n -E "sh\(\[\s*'python3'|'python3',\s*$" -- tests` finds the
+  direct callers: `m-b6.check-index-status`, `m-b2.load-path-rebuilt`, and `B7-3` in
+  `m-b7.seeded-cache`. Without `python3` each of those fails inside `sh()` with
+  `Executable not found in $PATH: "python3"`, which reads like a product failure and is not one — the
+  #25 review met it on `B7-3` and added the package by hand. One file checks first:
+  `m-b2.start-judges-its-copy:80-81` asks `Bun.which('python3')` and throws *python3 is not on PATH*.
+  `B7-3` is **specified** (#33, the *B7-1 to B7-3* block of `TEST-SPEC-liquid-java-extensions.md`)
+  to ask `PYTHON3` from `tests/lib/preconditions.ts` and skip its parse with a voiced `SP-2` line
+  where the tool is absent; until that lands it fails like the others. A follow-up issue for the
+  other files is to be opened. `docker-cli` is for the files that run `docker run --rm <image>`
+  against the host daemon: add a second `-v` for the daemon's socket —
+  `$XDG_RUNTIME_DIR/docker.sock` under rootless Docker, `/var/run/docker.sock` otherwise — at
+  `/var/run/docker.sock`.
+
+  **What the container can run:** the default tier — `unit`; `component` once `bun install` has run
+  in the clone's `dashboard/` (a **real** install: `DASHBOARD_DEPS` is
+  `existsSync('dashboard/node_modules')`, which a symlink to another checkout's install also
+  satisfies, and through a link the tier breaks — `tests/lib/preconditions.ts` says how); `contract`;
+  and the `integration` files that do not drive the stack. **What it cannot:** `system` and `e2e`,
+  and any file `tests/run.sh` classes as needing the stack (`docker compose exec …`, `narBuild(` and
+  the other markers at the top of that script) — those act on the installation running on this
+  machine and are `./tests/run.sh --system` from the host. The host's `stat` here is uutils, the
+  image's busybox until `coreutils` is added — which the line above does — and the toolbox image's
+  GNU 9.1: anything in `config/scripts/` that shells out to `stat`, `date`, `sed` or `realpath` is not
+  verified until its suites have run in the image — PR #9's lock-age bug (`stat -f %m`) passed on
+  macOS and broke on every Linux variant.
 
 - **Waiting on the clock instead of on the condition.** Six instances in one day, 2026-10-02, all
   repaired. Three were found by accident and three by looking:
@@ -2723,41 +2772,6 @@ watch for:
   to time out, and verifying a change there needs a running stack — so it is named on #19 rather than
   changed blind.
 
-- **A tool the test host does not have.** *Written 2026-11-03, #33; the recipe lived in a memory note
-  until then and `TEST-SPEC-reset.md` cited it from there.* The reproducible way to run a suite on
-  Linux is the dashboard image — Alpine, bun 1.4.2, the same bun the dashboard runs — over a **real
-  clone**, not a `git worktree`, whose `.git` file points at a host path and makes `git ls-files`
-  empty inside the container:
-
-  ```sh
-  docker run --rm -it --user 0:0 -v "$(pwd):/w" -w /w --entrypoint sh liquidupstart/dashboard:latest
-  apk add --no-cache bash git coreutils openssh docker-cli python3
-  bun test --timeout 120000 tests/contract/m-b7.seeded-cache.test.ts   # one file, or a directory
-  ```
-
-  `python3` is in that line because the suite runs the real `config/liquid/narcheck.py` with the host's
-  interpreter — fourteen files through `tests/lib/narcheckfixture.ts` and `tests/lib/entrypointfixture.ts`,
-  and `m-b6.check-index-status` directly — and, until #33,
-  `B7-3` parsed the lifecycle pins with it. Without `python3` those cases fail inside `sh()` with
-  `Executable not found in $PATH: "python3"`, which reads like a product failure and is not one; the #25
-  review met it on `B7-3` and added the package by hand. `B7-3` asks `PYTHON3` from
-  `tests/lib/preconditions.ts` since #33 and skips its parse with a voiced `SP-2` line where the tool is
-  absent; the other files still throw, and a follow-up issue is to be opened for them (the text is drafted on #33).
-  `docker-cli` is for the files that run `docker run --rm <image>` against the host daemon: add a
-  second `-v` for the daemon's socket — `$XDG_RUNTIME_DIR/docker.sock` under rootless Docker,
-  `/var/run/docker.sock` otherwise — at `/var/run/docker.sock`.
-
-  **What the container can run:** the default tier — `unit`, `component` where `dashboard/node_modules`
-  is installed in the clone (`DASHBOARD_DEPS`, a real install and not a link; see
-  `TEST-SPEC-suite-preconditions.md`), `contract` and the `integration` files that do not drive the
-  stack. **What it cannot:** `system` and `e2e`, and any file `tests/run.sh` classes as needing the stack
-  (`docker compose exec …`, `narBuild(` and the other markers at the top of that script) — those act on
-  the installation running on this machine and are `./tests/run.sh --system` from the host. The host's
-  `stat` here is uutils, the image's busybox until `coreutils` is added — which the line above does —
-  and the toolbox image's GNU 9.1: anything in
-  `config/scripts/` that shells out to `stat`, `date`, `sed` or `realpath` is not verified until its
-  suites have run in the image — PR #9's lock-age bug (`stat -f %m`) passed on macOS and broke on every
-  Linux variant.
 
 0. ~~**A8-15, A8-16 and A8-17**~~ — walked 2026-09-08. Step 3 of A8-17 answered yes, which is the
    finding, not the pass.
