@@ -883,6 +883,22 @@ cache gone removes it from a container, e.g.
 machine — it is Docker Desktop, where bind mounts ignore ownership — so it stands on the reviewer's
 rootless Linux measurement and on `cleanup.sh` having no such leg, which is readable here.
 
+*2026-11-03.* **What the strike left standing came back as #32, and is answered on the #32 pull
+request.** #25 removed the mount for new installations; an installation that built under #10 still
+has the directory, still `101499`'s, and the notice #25 added (`config/scripts/start/nar-builder.sh`)
+told its operator *"you can delete it"* — the instruction that fails. Reproduced 2026-11-03 on a
+rootless host: `Permission denied`. The `$PWD`/`alpine` form above is replaced — `alpine` is not
+local on any installation and would be pulled to run one `rm`, against CS-FR15 — by
+`docker run --rm --pull never --entrypoint rm -v "<project>/volumes/nar_builder:/v"
+liquidupstart/nar-builder:latest -rf /v/m2`, with the project's path resolved into it, which the notice
+now prints (FR43, B7-4, B7-10 in the Java-extensions documents). The leg this entry said `cleanup.sh`
+had no room for exists now that there is no mount to retire it: `docs/FEATURE-reset.md` — plain `rm`,
+then `rm` from a container with the project directory mounted (`nginx:latest`, never pulled), then
+`sudo`, then the error, with the directory being gone the only success. And `liquid.sh`'s sibling
+notice about `volumes/liquid/api` was measured the same day and **left as it is**: the old layout
+was a host-owned `777` directory into which `nifi` wrote flat files only, and a plain `rm -rf` of
+that succeeds. The entry stays struck; nothing of N7(2) is open.
+
 ---
 
 `DONE-ON-#40` **~~`tests/lib/builderimage.ts` leaks its per-run image on normal exits, not only on killed runs.~~**
