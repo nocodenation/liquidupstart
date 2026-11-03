@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { repoRoot } from './paths';
@@ -35,14 +35,15 @@ export const OPENAI_TIED =
   '{"id":"gpt-5-mini","created":1754500000}]}';
 export const ANTHROPIC =
   '{"data":[{"id":"claude-sonnet-5","created_at":"2026-09-01T00:00:00Z"},{"id":"claude-opus-5","created_at":"2026-08-01T00:00:00Z"}]}';
-export const ANTHROPIC_REFUSED = '{"detail":"no ANTHROPIC_API_KEY"}';
+// The proxy's own answer when it holds no Anthropic key, as 0.3.0 gave it on 2026-11-03.
+export const ANTHROPIC_KEY_MISSING = '{"error":"provider_key_missing","provider":"anthropic"}';
 
 export type Answer = { status: string; body?: string };
 export type Answers = { local: Answer; openai: Answer; anthropic: Answer };
 
 export const ok = (body: string): Answer => ({ status: '200', body });
 export const UNREACHABLE: Answer = { status: '000' };
-export const REFUSED: Answer = { status: '401', body: ANTHROPIC_REFUSED };
+export const KEY_MISSING: Answer = { status: '401', body: ANTHROPIC_KEY_MISSING };
 
 export const ALL_ON: Answers = { local: ok(LOCAL), openai: ok(OPENAI), anthropic: ok(ANTHROPIC) };
 
@@ -53,7 +54,8 @@ export const BASE_ENV = {
 
 // A `curl` that answers by URL from <answers>/<name>.code and .json, writing the body to
 // the file after `-o` and printing the status as `-w '%{http_code}'` makes curl do. With no
-// .code file it behaves like an unreachable host: prints 000 and exits 7.
+// .code file it behaves like an unreachable host: prints 000 and exits 7. An answer without a
+// .json empties the file, as curl 8.14.1 does with an empty body.
 export const STUB_CURL = `#!/bin/sh
 out=""; url=""
 while [ $# -gt 0 ]; do
@@ -72,7 +74,9 @@ case "$url" in
   *) n=none ;;
 esac
 if [ ! -f "$RO_ANSWERS/$n.code" ]; then printf '000'; exit 7; fi
-[ -n "$out" ] && [ -f "$RO_ANSWERS/$n.json" ] && cp "$RO_ANSWERS/$n.json" "$out"
+if [ -n "$out" ]; then
+  if [ -f "$RO_ANSWERS/$n.json" ]; then cp "$RO_ANSWERS/$n.json" "$out"; else : > "$out"; fi
+fi
 cat "$RO_ANSWERS/$n.code"
 `;
 
@@ -94,6 +98,8 @@ export type Run = {
   startLine: string;
   // The sandbox's path, for checks on the path itself: it is removed before the run returns.
   box: string;
+  // What the run left in its /tmp, read before the sandbox is removed.
+  tmp: string[];
 };
 
 // One pass, so a box that itself lies under /tmp is not rewritten a second time: chained
@@ -143,7 +149,8 @@ export function runEntrypoint(
       raw,
       config: raw === null ? null : JSON.parse(raw),
       startLine: r.stdout.split('\n').find((l) => l.startsWith('Starting opencode web')) ?? '',
-      box
+      box,
+      tmp: readdirSync(join(box, 'tmp')).sort()
     };
   } finally {
     rmSync(box, { recursive: true, force: true });

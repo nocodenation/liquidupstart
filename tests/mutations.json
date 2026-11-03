@@ -1513,5 +1513,165 @@
     "from": "results[slug] && results[slug].cloned",
     "to": "results[slug].cloned",
     "mustFail": "SR-4 the negative: while a repository test waits for its answer, the card raises no error"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "                    missing) _why=\"the privacy proxy holds no key for that provider\" ;;\n",
+    "to": "",
+    "mustFail": "SR-6 the proxy holds no Anthropic key: the warning says so, and nothing of a refusal"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "                    missing) _why=\"the privacy proxy holds no key for that provider\" ;;\n",
+    "to": "",
+    "mustFail": "SR-6 and likewise for OpenAI, whose answer is written to a file of its own"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/integration/m-ro.opencode-reads.test.ts",
+    "from": "                    missing) _why=\"the privacy proxy holds no key for that provider\" ;;\n",
+    "to": "",
+    "mustFail": "SR-6 in the image, the missing-key line reaches the container log"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "                    refused) _why=\"the provider refused the key the privacy proxy sent\" ;;\n",
+    "to": "",
+    "mustFail": "SR-6 OpenAI refuses the key: the warning says refused, and nothing of a missing key"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "                    refused) _why=\"the provider refused the key the privacy proxy sent\" ;;\n",
+    "to": "",
+    "mustFail": "SR-6 and likewise Anthropic refusing the key"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": ".error.code == \"invalid_api_key\" or ",
+    "to": "",
+    "mustFail": "SR-6 OpenAI refuses the key: the warning says refused, and nothing of a missing key"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": " or .error.type == \"authentication_error\"",
+    "to": "",
+    "mustFail": "SR-6 and likewise Anthropic refusing the key"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "*) _why=\"the privacy proxy holds no key for that provider, or the provider refused it\" ;;",
+    "to": "*) _why=\"the provider refused the key the privacy proxy sent\" ;;",
+    "mustFail": "SR-6 the negative: a 401 whose body is not JSON is taken for neither"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "*) _why=\"the privacy proxy holds no key for that provider, or the provider refused it\" ;;",
+    "to": "*) _why=\"the provider refused the key the privacy proxy sent\" ;;",
+    "mustFail": "SR-6 the negative: nor is valid JSON with more after it, which jq cannot read whole"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "*) _why=\"the privacy proxy holds no key for that provider, or the provider refused it\" ;;",
+    "to": "*) _why=\"the provider refused the key the privacy proxy sent\" ;;",
+    "mustFail": "SR-6 the negative: nor is a body shaped like a wrapped missing-key answer"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "*) _why=\"the privacy proxy holds no key for that provider, or the provider refused it\" ;;",
+    "to": "*) _why=\"the provider refused the key the privacy proxy sent\" ;;",
+    "mustFail": "SR-6 the negative: nor an error object no provider was measured giving"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "*) _why=\"the privacy proxy holds no key for that provider, or the provider refused it\" ;;",
+    "to": "*) _why=\"the provider refused the key the privacy proxy sent\" ;;",
+    "mustFail": "SR-6 the negative: nor a 401 with an empty body"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "elif .error.code == \"invalid_api_key\" or .error.type == \"authentication_error\" then",
+    "to": "elif (.error | type) == \"object\" then",
+    "mustFail": "SR-6 the negative: nor an error object no provider was measured giving"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": " || _k=\"\"",
+    "to": "",
+    "mustFail": "SR-6 the negative: nor is valid JSON with more after it, which jq cannot read whole"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "else empty end' \"$_f\" 2>/dev/null)\" || _k=\"\"",
+    "to": "else empty end' /tmp/privacy_models.json 2>/dev/null)\" || _k=\"\"",
+    "mustFail": "SR-6 and likewise for OpenAI, whose answer is written to a file of its own"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "                rm -f \"$_f\"\n                echo",
+    "to": "                cat \"$_f\" >&2\n                rm -f \"$_f\"\n                echo",
+    "mustFail": "SR-6 the negative: neither refusal message reaches stderr, stdout or opencode.json"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "                rm -f \"$_f\"\n                echo",
+    "to": "                cat \"$_f\"\n                rm -f \"$_f\"\n                echo",
+    "mustFail": "SR-6 the negative: neither refusal message reaches stderr, stdout or opencode.json"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "provider skipped.\" >&2\n                return\n",
+    "to": "provider skipped.\" >&2\n",
+    "mustFail": "SR-6 the negative: a 401 ends that list after one warning, without retrying"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "                rm -f \"$_f\"\n                echo",
+    "to": "                echo",
+    "mustFail": "SR-6 the negative: the refusal body is not left in /tmp, while the list that answered is"
+  },
+  {
+    "case": "SR-6",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-sr.refused-key.test.ts",
+    "from": "done\n        rm -f \"$_f\"\n",
+    "to": "done\n",
+    "mustFail": "SR-6 the negative: nor is the body of a list that never answered 200"
   }
 ]
