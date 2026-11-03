@@ -53,12 +53,14 @@ like a suite that ran.
 | **SP-1** | **negative** | …and an **empty** `volumes/_git-secrets` is not a start either, which is what it used to be — *2026-10-14* |
 | **SP-1** | positive + **negative** | A directory that is no git repository is told apart from one that is |
 | **SP-1** | positive + **negative** | A dashboard without its dependencies is told apart from one with them |
-| **SP-1** | positive | The exported constants describe *this* checkout, and `preconditions()` names it |
+| **SP-1** | positive + **negative** | A `PATH` with no `python3` on it gives `''`, and one holding an executable `python3` gives that path — *#33, 2026-11-03* |
+| **SP-1** | positive | The exported constants describe *this* checkout, and `preconditions()` names it — `python3=` among them since #33 |
 | **SP-2** | positive | Each dependent file names the precondition it skips on, in its header, and uses it — and the DOM files are **computed**, not listed |
 | **SP-2** | positive | …the computation is over something: at least three DOM files, the card file among them |
 | **SP-2** | **negative** | …and each DOM file files its voiced skip under `SP-2`, not under a case id |
 | **SP-2** | positive | …and the files gated on a registry are computed too, and found — *finding 6 of the local review of 2026-10-21* |
 | **SP-2** | **negative** | …while the file that tests the function is not counted as one that needs it |
+| **SP-2** | positive | `m-b7.seeded-cache` names `PYTHON3` in its header, gates its parse on it, and files its voiced skip under `SP-2` — *#33, 2026-11-03, the first adopter of a tool precondition in the module* |
 | **SP-3** | **negative** | An unreachable host answers false — against `.invalid`, which RFC 2606 reserves so it cannot resolve |
 | **SP-3** | positive | And the real registry answers true — gated by an **independent** probe, so an implementation that always says no fails here instead of skipping itself |
 | **SP-3** | positive | The answer is memoised per url: a second ask of the same url leaves the process **no second time**, counted rather than compared |
@@ -125,6 +127,32 @@ like a suite that ran.
 | **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
 | **Covers** | SP-FR1, SP-FR2. |
 
+### SP-1, widened 2026-11-03 (#33) — a tool the case runs, computed from `PATH`
+
+> **The first precondition in the module that is about the host and not the checkout.** `B7-3`
+> parses `config/nar_builder/lifecycle-pins.xml` with `python3`'s `xml.etree`, and nothing asked
+> whether `python3` was there: in the Linux test recipe's container — `liquidupstart/dashboard:latest`
+> with `bash git coreutils openssh docker-cli` added — the case failed inside `sh()` at
+> `tests/lib/shell.ts:79` with `Executable not found in $PATH: "python3"`, which reads as a product
+> failure. Reproduced on 2026-11-03 with a `PATH` holding only `bun`. `m-a17.computed-state` had
+> already met the same need for `jq` and answered it with a constant of its own; this one lives in
+> the module so the next case asks the same question the same way. `B7-3` is the first adopter;
+> the fourteen files that run the real `narcheck.py` through `narcheckfixture` and
+> `entrypointfixture` need the same answer and are a follow-up, not this change.
+
+| | |
+|---|---|
+| **Premise** | A case that runs a tool the runner does not ship has a precondition whether or not it says so. Said nowhere, it surfaces as a thrown spawn in the middle of a test body — not at collection, as `SP-6`'s `git` did, because the call is inside the test — and the report names the product file. Computed, it is a value a case can gate on and a line a bare host's report can show. |
+| **Component** | `tests/lib/preconditions.ts`: `export function python3On(path: string = process.env.PATH ?? ''): string` — the path of the first executable `python3` on the `PATH` string it is given, through `Bun.which('python3', { PATH: path })`, or `''` when there is none; and `export const PYTHON3: string = python3On()`, this process's answer. `preconditions()` names it as `python3=<path or empty>`. A function of a `PATH` as well as a constant, so both answers can be put to it — the same shape as the three discriminators of a root. `Bun.which` never throws, so there is no `ENOENT` branch to hold, unlike `inGitRepoAt` and `registryReachable`. *Is on `PATH` and executable*, not *runs*, which is what `JQ` asks: no host here has shown a `python3` that is present and does not run, and a rule that probes by running would be a rule for a case that has not been seen. If one appears, the row to add is the one `JQ` carries. |
+| **Steps** | Make two scratch directories. Ask `python3On` with the empty one as the whole `PATH`. Write `python3` into the other, make it executable, and ask again with that directory as the whole `PATH`. Then assert `PYTHON3` equals `python3On()` with no argument, and that `preconditions()` holds `python3=`. |
+| **Test data, both sides** | What must answer `''`: an empty scratch directory as the entire `PATH`, so no host can supply a `python3` by accident. What must answer the path: a scratch directory holding a file `python3` with the two lines `#!/bin/sh` and `exit 0`, mode `755`; the expected answer is `<that directory>/python3`, compared as a string. A stub rather than the host's interpreter, because the question is *is one found*, and a host without `python3` has to be able to run the permitting half too. Not mode `644`: `Bun.which` looks for an executable, and a non-executable file is the same answer as no file — a scenario deliberately not held, for the reason in *Component*. |
+| **Expected** | `''`; the stub's path; `PYTHON3 === python3On()`; `python3=` in the line. |
+| **Dependencies** | bun. No `python3` needed on the host — that is the point of the stub. |
+| **What it found** | *Specified 2026-11-03, not yet run.* |
+| **Controls** | To run by hand, each alone: `python3On` returning `''` always → the permitting half red, and the constants scenario still green, since both sides of it would agree — which is why the permitting half exists; `python3On` returning its argument's first entry whether or not a file is there → the refusing half red. Whether to register them in `tests/mutations.json` is the implementation's call: the file mutates tracked files of any kind — `tests/run.sh` has an entry — and nothing on the product's side changes here. |
+| **Implemented by** | `tests/unit/m-sp.preconditions.test.ts`. |
+| **Covers** | SP-1, SP-FR1, SP-FR2. |
+
 ### SP-2 — a case that needs a precondition says so
 
 | | |
@@ -132,7 +160,7 @@ like a suite that ran.
 | **Premise** | The drift this exists against is what the findings were: a case reading the installation while its header described something else. A reviewer signing a case off has to see the dependency without running it. |
 | **Component** | The eight dependent test files, read as text. |
 | **Steps** | For each, read the header comment and assert it names the precondition; then assert the file actually uses `skipIf(!<name>)`, so the header is not a claim about nothing. |
-| **Test data** | `m-a3.known-hosts`, `m-a4.clones-governed` and `m-a1.workspace-dir` against `STARTED`; `m-a5.nested-clone`, `m-a6.operator-repository` and `m-a16.text-only` against `IN_GIT_REPO`; `m-a16.result-line` and `m-a16.skip-panel` against `DASHBOARD_DEPS`. *Added by hand since: `m-a17.computed-state`'s stub-forge cases against `JQ` (#43) and `m-a10.fixture-ceiling`'s first case against `IN_GIT_REPO` (#46), both 2026-10-22; `m-a8.repositories-card` against `DASHBOARD_DEPS`, which the DOM computation finds, with its voiced skip (#52, 2026-10-28). `m-cs.pairing-mount` and `m-cs.agent-notes` against `DASHBOARD_DEPS` in the same way (#50, 2026-10-29). With the DOM and registry files the widened block computes, the run on 2026-10-23 holds twelve of these scenarios.* |
+| **Test data** | `m-a3.known-hosts`, `m-a4.clones-governed` and `m-a1.workspace-dir` against `STARTED`; `m-a5.nested-clone`, `m-a6.operator-repository` and `m-a16.text-only` against `IN_GIT_REPO`; `m-a16.result-line` and `m-a16.skip-panel` against `DASHBOARD_DEPS`. *Added by hand since: `m-a17.computed-state`'s stub-forge cases against `JQ` (#43) and `m-a10.fixture-ceiling`'s first case against `IN_GIT_REPO` (#46), both 2026-10-22; `m-a8.repositories-card` against `DASHBOARD_DEPS`, which the DOM computation finds, with its voiced skip (#52, 2026-10-28). `m-cs.pairing-mount` and `m-cs.agent-notes` against `DASHBOARD_DEPS` in the same way (#50, 2026-10-29). With the DOM and registry files the widened block computes, the run on 2026-10-23 holds twelve of these scenarios. `m-b7.seeded-cache` against `PYTHON3` (#33, 2026-11-03) — enumerated by hand, as `JQ` is, since the constant's name is also the word a header uses; its header line is `Precondition: PYTHON3`, its gate `test.skipIf(!PYTHON3)` on the parse, and its voiced skip `SP-2 the parse in this file needs python3 on PATH, which is absent here`, gated `test.skipIf(!!PYTHON3)` and asserting `expect(PYTHON3).toBe('')`.* |
 | **Expected** | Eight passes. |
 | **What it found** | Green — and writing it found two things the guards alone did not cover, both in the component tier. A **skipped describe still has its body evaluated**, because bun has to run it to register the tests inside, and these bodies `await` a mount at that point; and `m-a16.skip-panel` calls `setupComponentTier()` at **file level**, where nothing inside a describe can reach it. Both now return early on the precondition, and the file-level hooks with them, because `task` is null without the dependencies. Two measurements had reported that failure as an unhandled error between tests without naming a case. |
 | **And a silent skip is not acceptable either** | With the bodies returning early those files register nothing, so a run would not mention them at all. Each carries one test that runs **only** in that case and names it: `SP-2 the cases in this file need the dashboard dependencies, which are absent here`. It asserts the absence rather than nothing, so it is a reading and not a label. |
@@ -289,9 +317,9 @@ the detail block says what was measured instead.
 
 | Requirement | Covered by |
 |---|---|
-| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, **SP-6**, B5-33, B5-34 — *the Liquid image's versions, read rather than assumed; added 2026-10-22* |
-| SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3**, **SP-6** |
-| SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2, **SP-3** |
+| SP-FR1 each precondition is computed from current state, never assumed | SP-1, **SP-3**, **SP-4**, **SP-6**, B5-33, B5-34 — *the Liquid image's versions, read rather than assumed; added 2026-10-22*; SP-1's `python3On` — *#33, 2026-11-03* |
+| SP-FR2 each discriminator is shown to answer both ways | SP-1, **SP-3**, **SP-6**; SP-1's `python3On` — *#33, 2026-11-03* |
+| SP-FR3 a case that depends on one names it where a reviewer reads, and a skip is never silent | SP-2, **SP-3**; `B7-3`'s voiced skip under SP-2 — *#33, 2026-11-03* |
 | SP-FR4 a condition of the machine is never reported as a verdict on the code | **SP-5** |
 
 *`SP-3` added to all three rows 2026-10-20.* Its detail block claimed them and the table listed it
