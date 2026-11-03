@@ -1,8 +1,8 @@
 # Feature: seven small repairs from `BACKLOG.md`
 
 Status: **signed off on 2026-11-03.** Sections 2 to 7 are implemented on `fix/small-backlog-repairs`
-(#60), section 8 on `fix/opencode-refused-key-warning`. Section 8 was changed after the local reviews
-of its implementation, as it records; the changed version awaits the operator's sign-off.
+(#60), section 8 on `fix/opencode-refused-key-warning` (#63). Section 8 was changed after the local
+reviews of its implementation, as it records, and the changed version was signed off on 2026-11-03.
 Found: seven `OPEN` entries of `BACKLOG.md`, each named under its section below. The operator approved
 them as one package on 2026-10-31, to wait for #56, which has since merged. The test specification is
 `docs/TEST-SPEC-small-repairs.md`.
@@ -204,8 +204,9 @@ and 0.3.0:
   2026-11-03).
 - **A key configured.** The proxy passes the provider's status and body through unchanged: its route
   returns the upstream response's bytes and status. That is read in the source, not measured through
-  the proxy, which would need a refused key on an installation. With the made-up key `lu-sr-not-a-key` on 2026-11-03, OpenAI answered 401 with an `error` object whose
-  `code` is `invalid_api_key`, and Anthropic answered 401 with
+  the proxy, which would need a refused key on an installation. With the made-up key
+  `lu-sr-not-a-key` on 2026-11-03, OpenAI answered 401 with an `error` object whose `code` is
+  `invalid_api_key`, and Anthropic answered 401 with
   `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},…}`.
 
 That missing-key answer is the only 401 the proxy gives of its own: across `privacy_proxy/api/` at
@@ -221,10 +222,10 @@ recognises the answers that were measured, and nothing else:
 
 Any other body gets a line that names both, which is true either way: one that is not JSON, valid
 JSON with more after it, which `jq` does not read whole, an empty one, and an `error` object of any
-other shape. The proxy is pulled as `latest`, and a release that
-changed its answer, even only by moving `provider_key_missing` into an object, would otherwise turn
-the common case, no Anthropic key beside the Claude subscription, into a refusal that never
-happened.
+other shape. The proxy is pulled as `latest`, and a release that changed its answer, even only by
+moving `provider_key_missing` into an object, would otherwise turn the common case, no Anthropic key
+beside the Claude subscription, into a refusal that never happened.
+
 The three lines describe what happened rather than tell the operator what to do, since running
 without a provider's key is a choice the stack supports. Each keeps *provider skipped* and names
 `.env` section 5, where the proxy's keys come from:
@@ -246,8 +247,8 @@ refusal, told the operator to set or check the key, and kept the body. The secon
 reviews of the implementation pointed out each of these, and this section was changed to answer
 them.
 
-Nothing else changes: a 200 is read as before, any other status is tried ten times, the provider is
-left out either way, and the start carries on.
+Beyond that, nothing changes: a 200 is read as before, any other status is tried ten times, the
+provider is left out either way, and the start carries on.
 
 ## 9. Requirements
 

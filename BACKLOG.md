@@ -1987,9 +1987,10 @@ takes them from both. `claude-opus-4-7`, `claude-sonnet-4-6` and `claude-opus-4-
 
 ---
 
-`OPEN` **OpenCode's warning for a refused key says that no key is set.**
-`config/opencode/entrypoint.sh:120` prints *no key for that provider in .env section 5* on any 401
-from the proxy's model discovery. On 2026-10-29 the key was set, and OpenAI refused it: a direct call
+`DONE-ON-#63` **~~OpenCode's warning for a refused key says that no key is set.~~**
+*Answered on #63 on 2026-11-03: the warning reads the proxy's answer and says whether the proxy holds
+no key, the provider refused it, or either is possible.* `config/opencode/entrypoint.sh:120` printed
+*no key for that provider in .env section 5* on any 401 from the proxy's model discovery. On 2026-10-29 the key was set, and OpenAI refused it: a direct call
 with it answered 401 as well. A warning that says the key is missing or was refused would be true in
 both cases.
 
