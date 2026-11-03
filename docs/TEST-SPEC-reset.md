@@ -9,8 +9,8 @@ each block's *What it found* records the run and its controls.
 The function decides, four times over, whether to run something destructive and as whom: `rm` as the
 operator, `rm` as root inside a container with the project directory mounted, `rm` as root on the
 host. Each decision has a side on which data goes and a side on which it stays, so this is decision
-logic in `CLAUDE.md`'s sense and **full branch coverage is required**: the guard's three refusals and
-its acceptance, plain `rm` succeeding and failing, `docker` present and absent, each candidate image
+logic in `CLAUDE.md`'s sense and **full branch coverage is required**: the guard's two refusals — *not
+an absolute path below /* and *not an existing directory* — and its acceptance, plain `rm` succeeding and failing, `docker` present and absent, each candidate image
 present and absent, the container run exiting 0 and not, the directory gone and remaining after it,
 `sudo` present and absent, and the directory gone and remaining after `sudo`. Every one of those has a
 row below, and the branches none reaches are listed in §4 so the claim can be checked.
@@ -82,14 +82,14 @@ by design. Every case hands it a `mkdtemp` directory and nothing else, and the c
 | **CU-2** | positive | Unit | `nginx:latest` absent, `liquidupstart/bun-runner:latest` present: both probed in that order, the run names `bun-runner` | The second candidate, for an installation that built and never started |
 | **CU-2** | **negative** | Unit | Across every call the stub recorded there is no `pull` subcommand, and `--pull never` are the two elements after `run` | CU-FR2's *never* — the same predicate CS-22 applies to the text, applied to what ran |
 | **CU-3** | positive | Unit | Neither image present: no run, one line naming both images tried, then `sudo rm -rf <dir>/volumes`, which removes it; exit 0, `volumes/ removed with sudo.` | The host whose images are gone — §5 of the feature |
-| **CU-3** | positive | Unit | No `docker` on `PATH`: the same line, straight to `sudo`, no `docker.log` | A host without Docker is still reset |
-| **CU-3** | positive | Unit | `docker` present and the daemon down — every call fails with *Cannot connect to the Docker daemon*: the same line, `sudo`, removed | `uninstall.sh` skips `cleanup.sh` in this state; a direct run meets it |
+| **CU-3** | positive | Unit | No `docker` on `PATH`: the same line, straight to `sudo`, no `docker.log` | The function's own branch: a direct `cleanup.sh` run never reaches it, since step 1's `docker compose down` fails first under `set -e` (*corrected 2026-11-03, third review of #32*; this said a host without Docker is still reset) |
+| **CU-3** | positive | Unit | `docker` present and the daemon down — every call fails with *Cannot connect to the Docker daemon*: the same line, `sudo`, removed | The function's own branch, held for a caller other than `cleanup.sh`: a direct `cleanup.sh` run stops at step 1's `docker compose down` under `set -e` before this step (*corrected 2026-11-03, third review of #32*; this said a direct run meets it) |
 | **CU-3** | **negative** | Unit | The container run exits 0 and removes nothing: `Container removal failed (nginx:latest); retrying with sudo...`, `sudo` called, removed | CU-FR3 — the exit status is not believed |
 | **CU-3** | **negative** | Unit | The container run exits 125 with *No such image*: the same message, `sudo`, removed | What `--pull never` says when an image went away between the probe and the run |
 | **CU-4** | **negative** | Unit | Neither image, no `sudo` on `PATH`: stderr `ERROR: cannot remove volumes/ and sudo is unavailable.`, exit 1, `volumes/locked/keep` still reads `probe` | The message `cleanup.sh` prints today, reached by the same route one leg later |
 | **CU-4** | **negative** | Unit | `sudo` exits 1: stderr `ERROR: volumes/ is still present after sudo rm -rf.`, exit 1, tree present | A refused password, or a `sudoers` that denies `rm` |
 | **CU-4** | **negative** | Unit | `sudo` exits 0 and removes nothing: the same error, exit 1 | CU-FR3 on the last leg — the status `cleanup.sh` used to trust |
-| **CU-5** | **negative** | Unit | An empty argument is refused: stderr `ERROR: refusing to remove volumes/ under '': not an absolute path below /.`, exit 1, no `rm`, `docker` or `sudo` call, and the fixture's `volumes/plain/keep` beside the working directory still reads `probe` | For these three the `rm` on `PATH` is a logging stub too: the property is that nothing runs |
+| **CU-5** | **negative** | Unit | An empty argument is refused: stderr `ERROR: refusing to remove volumes/ under '': not an absolute path below /.`, exit 1, no `rm`, `docker` or `sudo` call, and the fixture's `volumes/plain/keep` beside the working directory still reads `probe` | The `rm` on `PATH` is the logging stub here as in every row; the property is that nothing runs (*corrected 2026-11-03, third review of #32*: this said "for these three") |
 | **CU-5** | **negative** | Unit | `volumes-of-nobody`, a relative path, is refused the same way | Relative to wherever the caller stands is exactly what the guard is against |
 | **CU-5** | **negative** | Unit | `/` and `///` are refused the same way | The one absolute path that is not below `/` |
 | **CU-5** | positive | Unit | `<dir>/`, absolute with a trailing slash and a space in it, is accepted and the tree removed | The counterpart; CU-1 and CU-2 are the other acceptances |

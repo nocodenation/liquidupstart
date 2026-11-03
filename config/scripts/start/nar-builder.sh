@@ -38,9 +38,10 @@ if [ -d "$STALE" ]; then
     echo "Note: volumes/nar_builder/m2 (${size:-unknown size}) is left over from before 2026-10-10"
     echo "  and is no longer mounted. Each build now resolves into its own repository and"
     echo "  reads the seed inside the builder image, so nothing reads the directory above."
-    echo "  On rootless Docker a plain rm is refused: the tree belongs to the build user's"
-    echo "  mapped uid, not to you. A container with the directory mounted removes it, and"
-    echo "  rmdir takes the empty parent the container cannot remove:"
+    echo "  On rootless Docker, and on rootful Docker on Linux, a plain rm is refused: the"
+    echo "  tree belongs to the build user's uid (mapped, under rootless), not to you. A"
+    echo "  container with the directory mounted removes it, and rmdir takes the empty"
+    echo "  parent the container cannot remove:"
     echo "    docker run --pull never --rm --entrypoint rm -v '${QUOTED}/volumes/nar_builder:/v' liquidupstart/nar-builder:latest -rf /v/m2"
     echo "    rmdir '${QUOTED}/volumes/nar_builder'"
 fi

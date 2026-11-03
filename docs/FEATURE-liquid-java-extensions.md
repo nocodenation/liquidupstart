@@ -278,7 +278,9 @@ mistake is available here and is cheaper to avoid than to repeat.
   targets, container uid N is host uid 100000 + N − 1, so every directory of the tree is
   `101499:1000`, mode `755`, and a plain `rm -rf` as the host user is refused. Measured 2026-11-03 on
   this host (`iztiev:100000:65536`) against a scratch copy of such a tree: `rm: cannot remove '…':
-  Permission denied`, the issue's claim reproduced. The same uid inside a container is that
+  Permission denied`, the issue's claim reproduced. On rootful Docker on Linux the tree is the real
+  uid 1500's and the host user is refused the same way, so the notice names both (*corrected
+  2026-11-03, third review of #32*; it named rootless Docker alone). The same uid inside a container is that
   container's root over those files, so a container with the directory mounted removes it — measured
   the same day with the command above: exit 0, `m2` gone, `volumes/nar_builder/` left behind empty
   and the host user's. The image is the builder's own because it is the one the notice can count on:

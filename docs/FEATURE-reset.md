@@ -111,9 +111,11 @@ reset keeps its promise whatever a container has written.
   operator reading the output of a reset should be able to tell which of four things removed their
   data. Errors go to stderr, as before.
 
-- **What the fallback does not change.** `sudo` stays: a host whose daemon is down, whose `docker`
-  is not on `PATH`, or that has neither image, still needs root, and a reset is still allowed to ask
-  for it. `--keep-images` is unaffected — the image sweep is step 5, after this step, so the images
+- **What the fallback does not change.** `sudo` stays: a host that has neither image still needs
+  root. A daemon that is down, or a `docker` that is not on `PATH`, sends the function to `sudo` too,
+  but `cleanup.sh` never gets that far: step 1's `docker compose down` fails first under `set -e`
+  (*corrected 2026-11-03, third review of #32*; this listed both as hosts the reset reaches `sudo`
+  on). A reset is still allowed to ask for root. `--keep-images` is unaffected — the image sweep is step 5, after this step, so the images
   are there during it on every ordinary run (§5 for the one case they are not). `scripts/uninstall.sh`
   calls `cleanup.sh` first and, when it reports an error, warns and goes on to remove the whole
   project directory with a `sudo` fallback of its own; that path is unchanged and not governed here.
