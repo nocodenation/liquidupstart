@@ -11,14 +11,27 @@
 # password. The container mounts the project directory, not volumes/: a mount
 # point cannot be removed from inside. Success is the directory being gone, never
 # a leg's exit status. docs/FEATURE-reset.md, #32.
+#
+# The argument is resolved to its physical directory before anything else, and
+# the legs act on the resolved path: `/.`, `//.`, `/tmp/..` and a symlink to `/`
+# all passed a comparison of the string with `/`, and each is `/volumes` to the
+# kernel (CU-FR5, review of #32). `cd -P` rather than `realpath -m`, which is
+# GNU-only; bash's `pwd -P` answers `//` for `//.`, hence the trim after it.
 
 lu_remove_volumes() {
-  local dir="${1:-}" root="${1:-}" target image c tried
+  local dir="${1:-}" root="" why="" target image c tried
   local candidates=("nginx:latest" "liquidupstart/bun-runner:latest")
 
-  while [[ "$root" == */ && "$root" != "/" ]]; do root="${root%/}"; done
-  if [[ -z "$dir" || "$dir" != /* || "$root" == "/" ]]; then
-    echo "ERROR: refusing to remove volumes/ under '${dir}': not an absolute path below /." >&2
+  if [[ -z "$dir" || "$dir" != /* ]]; then
+    why="not an absolute path below /."
+  elif ! root="$(cd -P -- "$dir" 2>/dev/null && pwd -P)"; then
+    why="not an existing directory."
+  else
+    while [[ "$root" == */ && "$root" != "/" ]]; do root="${root%/}"; done
+    [[ "$root" != "/" ]] || why="not an absolute path below /."
+  fi
+  if [[ -n "$why" ]]; then
+    echo "ERROR: refusing to remove volumes/ under '${dir}': ${why}" >&2
     return 1
   fi
   target="${root}/volumes"

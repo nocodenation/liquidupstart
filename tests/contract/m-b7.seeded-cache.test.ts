@@ -25,8 +25,11 @@
  *           a notice printing the command that works would have gone red. The
  *           rewritten rows (2026-11-03, FR43) read the printed lines apart
  *           from the code: the `echo` must carry the containerised removal,
- *           and the code must still run nothing. What the script prints at
- *           run time is B7-10, in tests/unit/m-b7.stale-cache-notice.test.ts.
+ *           with the path single-quoted as a parameter expansion (the review
+ *           of #32, the same day: double quotes carry a space but not a `$`,
+ *           a backtick or a `"`), and the code must still run nothing. What
+ *           the script prints at run time, and whether a shell reads it back
+ *           as one argument, is B7-10, in tests/unit/m-b7.stale-cache-notice.test.ts.
  * Given:    compose.yml, config/nar_builder/{Dockerfile,build.sh,seed.sh,
  *           lifecycle-pins.xml,BuildServer.java},
  *           config/scripts/start/nar-builder.sh and scripts/linux/start.sh.
@@ -63,10 +66,12 @@
  *           into deleting a root-owned `/victim`; the race is timing, so the
  *           declaration is held and the measurement is FR42's.
  *
- * Test data for B7-4: the command is compared as one string, so the flag order
- * (`--pull never` straight after `run`, CS-22's shape), the image and the quotes
- * around the path are each held. `alpine` is what BACKLOG.md once offered -- a
- * public image not already local, which would be pulled to run one `rm`.
+ * Test data for B7-4: the command is matched as one pattern, so the flag order
+ * (`--pull never` straight after `run`, CS-22's shape), the image and the single
+ * quotes around the path are each held; the expansion inside them may be any
+ * identifier, `${<var>}`, and the `rmdir` line must use the same one. `alpine` is
+ * what BACKLOG.md once offered -- a public image not already local, which would
+ * be pulled to run one `rm`.
  */
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -192,20 +197,23 @@ const noticeCode = () =>
     .filter((l) => !/^\s*#/.test(l) && !PRINTED.test(l))
     .join('\n');
 
-test('B7-4 the stale host directory is named, with the containerised removal printed: --pull never, the builder image, the project path double-quoted', () => {
+test('B7-4 the stale host directory is named, with the containerised removal printed: --pull never, the builder image, the project path single-quoted', () => {
   // Named, so an installation that ran before the move is told the directory is
   // dead rather than left to wonder -- and told the command that removes it,
   // since on rootless Docker a plain rm by the host user is refused (FR43).
+  // Single quotes, because the operator's shell -- bash, zsh, dash, ash -- reads
+  // them alike and literally; the review of #32 found double quotes, which lose
+  // a `$b` to expansion and run what follows a backtick.
   const lines = printed();
   expect(lines.join('\n')).toContain('volumes/nar_builder/m2');
-  const at = lines.findIndex((l) =>
-    l.includes(
-      'docker run --pull never --rm --entrypoint rm -v "${PROJECT_DIR}/volumes/nar_builder:/v" liquidupstart/nar-builder:latest -rf /v/m2'
-    )
-  );
+  const COMMAND =
+    /docker run --pull never --rm --entrypoint rm -v '\$\{([A-Za-z_][A-Za-z0-9_]*)\}\/volumes\/nar_builder:\/v' liquidupstart\/nar-builder:latest -rf \/v\/m2/;
+  const at = lines.findIndex((l) => COMMAND.test(l));
   expect(at).toBeGreaterThanOrEqual(0);
-  // The parent the container cannot remove -- its own mount point -- on the next line.
-  expect(lines[at + 1] ?? '').toContain('rmdir "${PROJECT_DIR}/volumes/nar_builder"');
+  const variable = lines[at].match(COMMAND)![1];
+  // The parent the container cannot remove -- its own mount point -- on the next
+  // line, quoted the same way, from the same expansion.
+  expect(lines[at + 1] ?? '').toContain(`rmdir '\${${variable}}/volumes/nar_builder'`);
 });
 
 test('B7-4 the negative: the bare phrase is gone, and so are $PWD and alpine', () => {

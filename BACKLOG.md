@@ -893,8 +893,9 @@ local on any installation and would be pulled to run one `rm`, against CS-FR15 �
 liquidupstart/nar-builder:latest -rf /v/m2`, with the project's path resolved into it, which the notice
 now prints (FR43, B7-4, B7-10 in the Java-extensions documents). The leg this entry said `cleanup.sh`
 had no room for exists now that there is no mount to retire it: `docs/FEATURE-reset.md` — plain `rm`,
-then `rm` from a container with the project directory mounted (`nginx:latest`, never pulled), then
-`sudo`, then the error, with the directory being gone the only success. And `liquid.sh`'s sibling
+then `rm` from a container with the project directory mounted (the first local of `nginx:latest` and
+`liquidupstart/bun-runner:latest`, never pulled — *corrected 2026-11-03, review of #32: this named the
+first candidate alone*), then `sudo`, then the error, with the directory being gone the only success. And `liquid.sh`'s sibling
 notice about `volumes/liquid/api` was measured the same day and **left as it is**: the old layout
 was a host-owned `777` directory into which `nifi` wrote flat files only, and a plain `rm -rf` of
 that succeeds. The entry stays struck; nothing of N7(2) is open.

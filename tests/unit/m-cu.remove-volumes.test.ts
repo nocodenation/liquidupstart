@@ -11,63 +11,86 @@
  *           `docs/FEATURE-reset.md`). `lu_remove_volumes <project-dir>` tries four
  *           legs in order -- plain `rm`, `rm` from a local image, `sudo rm`, an
  *           error -- and each is a decision about running something destructive
- *           and as whom, so every branch has a row here: the guard's three
- *           refusals and its acceptance, plain `rm` succeeding and failing,
- *           `docker` present and absent, each image present and absent, the run
- *           exiting 0 and not, the directory gone and remaining after it, `sudo`
- *           present and absent, and the directory gone and remaining after `sudo`.
+ *           and as whom, so every branch has a row here: the guard's refusals and
+ *           its acceptances, plain `rm` succeeding and failing, `docker` present
+ *           and absent, each image present and absent, the run exiting 0 and not,
+ *           the directory gone and remaining after it, `sudo` present and absent,
+ *           and the directory gone and remaining after `sudo`. The review of #32
+ *           (2026-11-03) added two things: the argument is resolved to its
+ *           physical directory before the `/` comparison, because `/.`, `//.`,
+ *           `/tmp/..` and a symlink to `/` all passed the string comparison and
+ *           would have had `sudo rm -rf /volumes` run; and the plain `rm` is a
+ *           logging stub, so the rows that need it to fail run under uid 0 as
+ *           well, where no mode refuses anything -- the project's reproducible run
+ *           is `bun test` as root in the dashboard image, and the decision logic
+ *           here was green there having never run (7 passes, 11 skips).
  * Given:    `resetFixture()`: `mkdtempSync` under the system temp directory with the
  *           prefix `lu cu-` -- a space on purpose, so every path that reaches a
- *           command carries one. `bin/rm` a symlink to the real `rm` found with
- *           `command -v rm`; `bin/docker` and `bin/sudo` stubs appending every
- *           argument on its own line and then a line `--` to `docker.log` or
- *           `sudo.log` beside `volumes/`, so a call is readable element by element
- *           and a space in a path cannot hide a split. The stubs' knobs, through
- *           the run's environment: `LU_STUB_IMAGES`, the images `image inspect`
- *           answers 0 for; `LU_STUB_RUN` = `remove` (the run makes `<src>/volumes`
- *           writable and removes it, `<src>` the element after `-v` less `:/v`),
- *           `keep` (exit 0, nothing touched) or `fail` (`No such image`, exit 125);
- *           `LU_STUB_DAEMON=down` (every call: `Cannot connect to the Docker daemon
- *           at unix:///nonexistent-lu-cu.sock`, exit 1); `LU_STUB_SUDO` = `remove`,
- *           `keep` or `fail` (`sudo: a password is required`, exit 1). The stubs
- *           that remove stand in for root; they make the function's reading of the
- *           result observable, not Docker. **The plain tree:** `volumes/plain/keep`
- *           holding `probe`. **The locked tree:** `volumes/locked/keep` holding
- *           `probe` under `chmod 0500 volumes/locked`, so plain `rm -rf` is refused
- *           on `keep` -- unlinking needs write on the directory. As root nothing is
- *           refused, so the rows that need it skip under uid 0 and one scenario
- *           says so. `probe` is a word no service writes.
+ *           command carries one -- and `<dir>` throughout is `realpathSync` of
+ *           what it returned: the same string on Linux, and on macOS (`/tmp` ->
+ *           `/private/tmp`) the one the resolution hands the legs. `bin/rm`,
+ *           `bin/docker` and `bin/sudo` are stubs appending every argument on its
+ *           own line and then a line `--` to `rm.log`, `docker.log` or `sudo.log`
+ *           beside `volumes/`, so a call is readable element by element and a
+ *           space in a path cannot hide a split. `bin/rm` without `LU_STUB_RM`
+ *           `exec`s the real `rm` found with `command -v rm` when the fixture was
+ *           built; with `LU_STUB_RM=refuse` it prints `rm: cannot remove
+ *           '<dir>/volumes/locked/keep': Permission denied` on stderr, exits 1 and
+ *           touches nothing. The other knobs, through the run's environment:
+ *           `LU_STUB_IMAGES`, the images `image inspect` answers 0 for;
+ *           `LU_STUB_RUN` = `remove` (the run makes `<src>/volumes` writable and
+ *           removes it with the real `rm`, `<src>` the element after `-v` less
+ *           `:/v`), `keep` (exit 0, nothing touched) or `fail` (`No such image`,
+ *           exit 125); `LU_STUB_DAEMON=down` (every call: `Cannot connect to the
+ *           Docker daemon at unix:///nonexistent-lu-cu.sock`, exit 1);
+ *           `LU_STUB_SUDO` = `remove`, `keep` or `fail` (`sudo: a password is
+ *           required`, exit 1). The stubs that remove stand in for root; they make
+ *           the function's reading of the result observable, not Docker. **The
+ *           plain tree:** `volumes/plain/keep` holding `probe`. **The locked
+ *           tree:** `volumes/locked/keep` holding `probe` under `chmod 0500
+ *           volumes/locked`, so the *real* `rm -rf` is refused on `keep` by an
+ *           ordinary uid -- the measured fact the stub's refusal stands in for,
+ *           held by CU-2's premise, which is skipped under uid 0 with the reason
+ *           in its name. `probe` is a word no service writes.
  * When:     `bash -c '. "$0" && lu_remove_volumes "$1"' <lib> <dir>` with PATH the
  *           fixture's `bin` alone and the working directory the checkout root --
  *           the fixture root for CU-5, so a relative `volumes` would name the
  *           fixture's own tree.
  * Then:     CU-1: plain `rm` removes the plain tree, or finds none; exit 0, stdout
- *           exactly `Removing volumes/...`, no stub called. CU-2: on the locked
- *           tree the container leg runs `run --pull never --rm --entrypoint rm -v
- *           <dir>:/v <image> -rf /v/volumes` as eleven elements, the path one of
- *           them, with the first present of `nginx:latest`,
- *           `liquidupstart/bun-runner:latest`, probed in that order; no `pull`
- *           anywhere. CU-3: no image, no `docker`, a daemon down, a run that kept
- *           the tree, a run that failed -- each falls through to `sudo rm -rf
- *           <dir>/volumes` with the line that says why. CU-4: no `sudo`, or a
- *           `sudo` after which the tree remains -- stderr names it, exit 1, the
- *           tree is there. CU-5: `""`, `volumes-of-nobody`, `/` and `///` are
- *           refused before any leg, with `rm` stubbed to prove it; `<dir>/` with a
- *           trailing slash is accepted.
+ *           exactly `Removing volumes/...`, `rm.log` the one call `-rf
+ *           <dir>/volumes`, no other stub called. CU-2: on the locked tree with
+ *           the refusing `rm` the container leg runs `run --pull never --rm
+ *           --entrypoint rm -v <dir>:/v <image> -rf /v/volumes` as eleven
+ *           elements, the path one of them, with the first present of
+ *           `nginx:latest`, `liquidupstart/bun-runner:latest`, probed in that
+ *           order; no `pull` anywhere; `rm.log` the one plain call first. CU-3:
+ *           no image, no `docker`, a daemon down, a run that kept the tree, a run
+ *           that failed -- each falls through to `sudo rm -rf <dir>/volumes` with
+ *           the line that says why. CU-4: no `sudo`, or a `sudo` after which the
+ *           tree remains -- stderr names it, exit 1, the tree is there. CU-5:
+ *           `""`, `volumes-of-nobody`, `/`, `///`, `/.`, `//.`, `/tmp/..` and
+ *           `<dir>/rootlink` (a symlink to `/`) are refused with `not an absolute
+ *           path below /.`, `<dir>/absent` with `not an existing directory.`, all
+ *           before any leg; `<dir>/` and `<dir>/sub/..` are accepted and the
+ *           target is `<dir>/volumes`, resolved; `<dir>/link` (a symlink to
+ *           `<dir>`) is accepted and the run mounts `<dir>:/v`, not the link.
  * Covers:   CU-1, CU-2, CU-3, CU-4, CU-5, CU-FR1, CU-FR2, CU-FR3, CU-FR4, CU-FR5, CU-FR6
  * Unhappy:  CU-2 (3) is `--pull` anywhere but straight after `run`, or a `pull` at
  *           all. CU-3 (4), (5) and CU-4 (2), (3) are a leg's exit status believed
- *           over the directory. CU-4 is every leg failing. CU-5 (1)-(3) are the
- *           paths a caller must never hand the function. The real container on a
+ *           over the directory. CU-4 is every leg failing. CU-5 (1)-(3) and
+ *           (5)-(8) are the paths a caller must never hand the function, each
+ *           `/volumes` to the kernel or nothing at all. The real container on a
  *           real `101499`-owned tree is CU-7, manual, in `docs/TEST-SPEC-reset.md`.
  */
 import { test, expect, describe, afterEach } from 'bun:test';
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -82,23 +105,33 @@ const LIB = join(repoRoot, 'scripts/linux/lib/remove-volumes.sh');
 const BASH = Bun.which('bash')!;
 const REAL_RM = sh(['sh', '-c', 'command -v rm']).stdout.trim();
 const asRoot = (process.getuid?.() ?? -1) === 0;
-const SKIP_REASON =
-  'uid 0 is refused nothing, so the locked tree cannot make plain rm fail: CU-2, CU-3 and CU-4 were not measured on this run';
 
 const IMAGES = ['nginx:latest', 'liquidupstart/bun-runner:latest'];
 const NO_IMAGE_LINE = `No local image to run the removal from (tried ${IMAGES.join(', ')}); retrying with sudo...`;
+const REFUSE = { LU_STUB_RM: 'refuse' };
 
 type Fixture = { root: string; bin: string; volumes: string; keep: string };
 const made: Fixture[] = [];
 
+/** `s` as one shell word, whatever it holds. */
+const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const logging = (log: string) =>
-  `PATH=/usr/bin:/bin\nfor a in "$@"; do printf '%s\\n' "$a" >> ${JSON.stringify(log)}; done\nprintf '%s\\n' '--' >> ${JSON.stringify(log)}\n`;
+  `PATH=/usr/bin:/bin\nfor a in "$@"; do printf '%s\\n' "$a" >> ${shq(log)}; done\nprintf '%s\\n' '--' >> ${shq(log)}\n`;
 
 function resetFixture(tree: 'plain' | 'locked' | 'none'): Fixture {
-  const root = mkdtempSync(join(tmpdir(), 'lu cu-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'lu cu-')));
   const bin = join(root, 'bin');
   mkdirSync(bin);
-  symlinkSync(REAL_RM, join(bin, 'rm'));
+  writeFileSync(
+    join(bin, 'rm'),
+    `#!/bin/sh
+${logging(join(root, 'rm.log'))}
+if [ "\${LU_STUB_RM:-}" = refuse ]; then
+  printf '%s\\n' ${shq(`rm: cannot remove '${root}/volumes/locked/keep': Permission denied`)} >&2; exit 1
+fi
+exec ${shq(REAL_RM)} "$@"
+`
+  );
   writeFileSync(
     join(bin, 'docker'),
     `#!/bin/sh
@@ -136,8 +169,7 @@ case "\${LU_STUB_SUDO:-keep}" in
 esac
 `
   );
-  chmodSync(join(bin, 'docker'), 0o755);
-  chmodSync(join(bin, 'sudo'), 0o755);
+  for (const s of ['rm', 'docker', 'sudo']) chmodSync(join(bin, s), 0o755);
   const volumes = join(root, 'volumes');
   const keep = join(volumes, tree === 'locked' ? 'locked' : 'plain', 'keep');
   if (tree !== 'none') {
@@ -154,6 +186,14 @@ afterEach(() => {
   for (const f of made.splice(0)) {
     const locked = join(f.volumes, 'locked');
     if (existsSync(locked)) chmodSync(locked, 0o700);
+    // The links CU-5 makes point at `/` and at the fixture itself; gone first, so
+    // no recursive removal can be asked to look through them.
+    for (const l of ['rootlink', 'link']) {
+      const p = join(f.root, l);
+      try {
+        if (lstatSync(p).isSymbolicLink()) unlinkSync(p);
+      } catch {}
+    }
     rmSync(f.root, { recursive: true, force: true });
   }
 });
@@ -174,6 +214,8 @@ const run = (f: Fixture, arg: string, env: Record<string, string> = {}, cwd = re
   sh([BASH, '-c', '. "$0" && lu_remove_volumes "$1"', LIB, arg], cwd, { PATH: f.bin, ...env });
 
 const keepReads = (f: Fixture) => (existsSync(f.keep) ? readFileSync(f.keep, 'utf8') : '(gone)');
+/** The plain leg, tried once and first, on the resolved directory. */
+const PLAIN_CALL = (f: Fixture) => [['-rf', f.volumes]];
 
 describe('CU-1 plain rm, and the path most hosts take', () => {
   test('CU-1 a tree the operator can delete is removed by plain rm, and no stub is called', () => {
@@ -182,6 +224,7 @@ describe('CU-1 plain rm, and the path most hosts take', () => {
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toBe('Removing volumes/...\n');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect(calls(f, 'docker.log')).toBeNull();
     expect(calls(f, 'sudo.log')).toBeNull();
   });
@@ -192,29 +235,27 @@ describe('CU-1 plain rm, and the path most hosts take', () => {
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toBe('Removing volumes/...\n');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect(calls(f, 'docker.log')).toBeNull();
     expect(calls(f, 'sudo.log')).toBeNull();
   });
 });
 
 describe('CU-2 the container leg, which is what #32 adds', () => {
-  test('CU-2 the premise: the locked tree refuses plain rm to this uid -- or, as root, the skip says what was not measured', () => {
-    if (asRoot) {
-      expect(SKIP_REASON).toContain('were not measured');
-      return;
-    }
+  test.skipIf(asRoot)('CU-2 the premise: the locked tree refuses the real rm -rf to this uid (skipped as uid 0: no mode refuses root; CU-2 to CU-4 run against the refusing stub rm)', () => {
     const f = resetFixture('locked');
     const r = sh([REAL_RM, '-rf', f.volumes]);
     expect(r.code).not.toBe(0);
     expect(keepReads(f)).toBe('probe\n');
   });
 
-  test.skipIf(asRoot)('CU-2 plain rm refused, nginx:latest present: the container removes it, and the argv mounts the project directory as one element', () => {
+  test('CU-2 plain rm refused, nginx:latest present: the container removes it, and the argv mounts the project directory as one element', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_IMAGES: 'nginx:latest', LU_STUB_RUN: 'remove' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: 'nginx:latest', LU_STUB_RUN: 'remove' });
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(calls(f, 'sudo.log')).toBeNull();
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     const lines = r.stdout.split('\n');
     const order = [
       'Plain removal failed (files owned by another UID); retrying from a container...',
@@ -229,12 +270,13 @@ describe('CU-2 the container leg, which is what #32 adds', () => {
     ]);
   });
 
-  test.skipIf(asRoot)('CU-2 nginx:latest absent, bun-runner present: both probed in that order, and the run names bun-runner', () => {
+  test('CU-2 nginx:latest absent, bun-runner present: both probed in that order, and the run names bun-runner', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_IMAGES: 'liquidupstart/bun-runner:latest', LU_STUB_RUN: 'remove' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: 'liquidupstart/bun-runner:latest', LU_STUB_RUN: 'remove' });
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(calls(f, 'sudo.log')).toBeNull();
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect(r.stdout).toContain('Removing volumes/ from a container (liquidupstart/bun-runner:latest)...');
     const log = calls(f, 'docker.log')!;
     expect(log.slice(0, 2)).toEqual([
@@ -247,11 +289,12 @@ describe('CU-2 the container leg, which is what #32 adds', () => {
     expect(log[2][10]).toBe('/v/volumes');
   });
 
-  test.skipIf(asRoot)('CU-2 the negative: nothing pulls, and --pull never are the two elements after run, in every call recorded', () => {
+  test('CU-2 the negative: nothing pulls, and --pull never are the two elements after run, in every call recorded', () => {
     const seen: string[][] = [];
     for (const images of ['nginx:latest', 'liquidupstart/bun-runner:latest']) {
       const f = resetFixture('locked');
-      run(f, f.root, { LU_STUB_IMAGES: images, LU_STUB_RUN: 'remove' });
+      run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: images, LU_STUB_RUN: 'remove' });
+      expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
       seen.push(...(calls(f, 'docker.log') ?? []));
     }
     const runs = seen.filter((c) => c[0] === 'run');
@@ -267,130 +310,181 @@ describe('CU-2 the container leg, which is what #32 adds', () => {
 describe('CU-3 falling through to sudo, for each of the ways the leg cannot help', () => {
   const SUDO_CALL = (f: Fixture) => [['rm', '-rf', f.volumes]];
 
-  test.skipIf(asRoot)('CU-3 neither image present: no run, both named, then sudo removes it', () => {
+  test('CU-3 neither image present: no run, both named, then sudo removes it', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_IMAGES: '', LU_STUB_SUDO: 'remove' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: '', LU_STUB_SUDO: 'remove' });
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toContain(NO_IMAGE_LINE);
     expect(r.stdout).toContain('volumes/ removed with sudo.');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect((calls(f, 'docker.log') ?? []).filter((c) => c[0] === 'run')).toEqual([]);
     expect(calls(f, 'sudo.log')).toEqual(SUDO_CALL(f));
   });
 
-  test.skipIf(asRoot)('CU-3 no docker on PATH: the same line, straight to sudo', () => {
+  test('CU-3 no docker on PATH: the same line, straight to sudo', () => {
     const f = resetFixture('locked');
     unlinkSync(join(f.bin, 'docker'));
-    const r = run(f, f.root, { LU_STUB_SUDO: 'remove' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_SUDO: 'remove' });
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toContain(NO_IMAGE_LINE);
     expect(r.stdout).toContain('volumes/ removed with sudo.');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect(calls(f, 'docker.log')).toBeNull();
     expect(calls(f, 'sudo.log')).toEqual(SUDO_CALL(f));
   });
 
-  test.skipIf(asRoot)('CU-3 docker present and the daemon down: the same line, sudo, removed', () => {
+  test('CU-3 docker present and the daemon down: the same line, sudo, removed', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_DAEMON: 'down', LU_STUB_IMAGES: 'nginx:latest', LU_STUB_SUDO: 'remove' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_DAEMON: 'down', LU_STUB_IMAGES: 'nginx:latest', LU_STUB_SUDO: 'remove' });
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toContain(NO_IMAGE_LINE);
     expect(r.stdout).toContain('volumes/ removed with sudo.');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect((calls(f, 'docker.log') ?? []).filter((c) => c[0] === 'run')).toEqual([]);
     expect(calls(f, 'sudo.log')).toEqual(SUDO_CALL(f));
   });
 
-  test.skipIf(asRoot)('CU-3 the negative: a run that exits 0 and removes nothing is not believed', () => {
+  test('CU-3 the negative: a run that exits 0 and removes nothing is not believed', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_IMAGES: 'nginx:latest', LU_STUB_RUN: 'keep', LU_STUB_SUDO: 'remove' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: 'nginx:latest', LU_STUB_RUN: 'keep', LU_STUB_SUDO: 'remove' });
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toContain('Container removal failed (nginx:latest); retrying with sudo...');
     expect(r.stdout).toContain('volumes/ removed with sudo.');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect((calls(f, 'docker.log') ?? []).filter((c) => c[0] === 'run').length).toBe(1);
     expect(calls(f, 'sudo.log')).toEqual(SUDO_CALL(f));
   });
 
-  test.skipIf(asRoot)('CU-3 the negative: a run that exits 125 with No such image falls through the same way', () => {
+  test('CU-3 the negative: a run that exits 125 with No such image falls through the same way', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_IMAGES: 'nginx:latest', LU_STUB_RUN: 'fail', LU_STUB_SUDO: 'remove' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: 'nginx:latest', LU_STUB_RUN: 'fail', LU_STUB_SUDO: 'remove' });
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toContain('Container removal failed (nginx:latest); retrying with sudo...');
     expect(r.stdout).toContain('volumes/ removed with sudo.');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect((calls(f, 'docker.log') ?? []).filter((c) => c[0] === 'run').length).toBe(1);
     expect(calls(f, 'sudo.log')).toEqual(SUDO_CALL(f));
   });
 });
 
 describe('CU-4 when every leg has failed', () => {
-  test.skipIf(asRoot)('CU-4 the negative: neither image and no sudo on PATH -- the error cleanup.sh printed before, exit 1, the tree kept', () => {
+  test('CU-4 the negative: neither image and no sudo on PATH -- the error cleanup.sh printed before, exit 1, the tree kept', () => {
     const f = resetFixture('locked');
     unlinkSync(join(f.bin, 'sudo'));
-    const r = run(f, f.root, { LU_STUB_IMAGES: '' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: '' });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('ERROR: cannot remove volumes/ and sudo is unavailable.');
     expect(keepReads(f)).toBe('probe\n');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect(calls(f, 'sudo.log')).toBeNull();
     expect(r.stdout).not.toMatch(/^volumes\/ removed/m);
   });
 
-  test.skipIf(asRoot)('CU-4 the negative: sudo exits 1 -- still present after sudo, exit 1', () => {
+  test('CU-4 the negative: sudo exits 1 -- still present after sudo, exit 1', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_IMAGES: '', LU_STUB_SUDO: 'fail' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: '', LU_STUB_SUDO: 'fail' });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('ERROR: volumes/ is still present after sudo rm -rf.');
     expect(keepReads(f)).toBe('probe\n');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect(calls(f, 'sudo.log')).toEqual([['rm', '-rf', f.volumes]]);
     expect(r.stdout).not.toMatch(/^volumes\/ removed/m);
   });
 
-  test.skipIf(asRoot)('CU-4 the negative: sudo exits 0 and removes nothing -- the same error, exit 1', () => {
+  test('CU-4 the negative: sudo exits 0 and removes nothing -- the same error, exit 1', () => {
     const f = resetFixture('locked');
-    const r = run(f, f.root, { LU_STUB_IMAGES: '', LU_STUB_SUDO: 'keep' });
+    const r = run(f, f.root, { ...REFUSE, LU_STUB_IMAGES: '', LU_STUB_SUDO: 'keep' });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('ERROR: volumes/ is still present after sudo rm -rf.');
     expect(keepReads(f)).toBe('probe\n');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
     expect(calls(f, 'sudo.log')).toEqual([['rm', '-rf', f.volumes]]);
     expect(r.stdout).not.toMatch(/^volumes\/ removed/m);
   });
 });
 
 describe('CU-5 the guard, which exists because the function takes an argument', () => {
-  /** The plain tree with `bin/rm` a logging stub that exits 1, run from the fixture root. */
-  function guarded(arg: string) {
+  const NOT_BELOW_ROOT = 'not an absolute path below /.';
+  const NOT_A_DIRECTORY = 'not an existing directory.';
+  /**
+   * The plain tree, `rm` refusing and logging, no image and no `sudo` knob -- so a
+   * guard that let `arg` through would leave `rm.log` and `sudo.log` as the only
+   * trace -- run from the fixture root. `arg` may be built from the fixture.
+   */
+  const refused = (arg: string | ((f: Fixture) => string), why: string) => {
     const f = resetFixture('plain');
-    unlinkSync(join(f.bin, 'rm'));
-    writeFileSync(join(f.bin, 'rm'), `#!/bin/sh\n${logging(join(f.root, 'rm.log'))}exit 1\n`);
-    chmodSync(join(f.bin, 'rm'), 0o755);
-    const r = run(f, arg, {}, f.root);
-    return { f, r };
-  }
-  const refused = (arg: string) => {
-    const { f, r } = guarded(arg);
+    const a = typeof arg === 'function' ? arg(f) : arg;
+    const r = run(f, a, REFUSE, f.root);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain(`ERROR: refusing to remove volumes/ under '${arg}': not an absolute path below /.`);
+    expect(r.stderr).toContain(`ERROR: refusing to remove volumes/ under '${a}': ${why}`);
     expect(calls(f, 'rm.log')).toBeNull();
     expect(calls(f, 'docker.log')).toBeNull();
     expect(calls(f, 'sudo.log')).toBeNull();
     expect(keepReads(f)).toBe('probe\n');
   };
-
-  test('CU-5 the negative: an empty argument is refused before any leg', () => refused(''));
-
-  test('CU-5 the negative: a relative path is refused the same way', () => refused('volumes-of-nobody'));
-
-  test('CU-5 the negative: / and /// are refused the same way', () => {
-    refused('/');
-    refused('///');
-  });
-
-  test('CU-5 the counterpart: an absolute path with a trailing slash and a space is accepted, and the tree removed', () => {
+  /** The plain tree with the real `rm`, run from the fixture root: removed, and the target is the resolved one. */
+  const accepted = (arg: (f: Fixture) => string, prepare: (f: Fixture) => void = () => {}) => {
     const f = resetFixture('plain');
-    const r = run(f, `${f.root}/`, {}, f.root);
+    prepare(f);
+    const r = run(f, arg(f), {}, f.root);
     expect(r.code).toBe(0);
     expect(existsSync(f.volumes)).toBe(false);
     expect(r.stdout).toBe('Removing volumes/...\n');
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
+  };
+
+  test('CU-5 the negative: an empty argument is refused before any leg', () => refused('', NOT_BELOW_ROOT));
+
+  test('CU-5 the negative: a relative path is refused the same way', () => refused('volumes-of-nobody', NOT_BELOW_ROOT));
+
+  test('CU-5 the negative: / and /// are refused the same way', () => {
+    refused('/', NOT_BELOW_ROOT);
+    refused('///', NOT_BELOW_ROOT);
+  });
+
+  test('CU-5 the counterpart: an absolute path with a trailing slash and a space is accepted, and the tree removed', () => {
+    accepted((f) => `${f.root}/`);
+  });
+
+  test('CU-5 the negative: /. and //. are refused the same way, the argument as given', () => {
+    refused('/.', NOT_BELOW_ROOT);
+    refused('//.', NOT_BELOW_ROOT);
+  });
+
+  test('CU-5 the negative: /tmp/.. -- a .. that climbs to / -- is refused the same way', () => refused('/tmp/..', NOT_BELOW_ROOT));
+
+  test('CU-5 the negative: a symbolic link to / is refused the same way', () => {
+    refused((f) => {
+      symlinkSync('/', join(f.root, 'rootlink'));
+      return join(f.root, 'rootlink');
+    }, NOT_BELOW_ROOT);
+  });
+
+  test('CU-5 the negative: a directory that does not exist is refused as not an existing directory', () => {
+    refused((f) => join(f.root, 'absent'), NOT_A_DIRECTORY);
+  });
+
+  test('CU-5 the counterpart: a .. that stays below / is accepted, and the target is the resolved directory', () => {
+    accepted(
+      (f) => `${f.root}/sub/..`,
+      (f) => mkdirSync(join(f.root, 'sub'))
+    );
+  });
+
+  test('CU-5 the counterpart: a symbolic link to the project directory is accepted, and the legs act on the resolved directory', () => {
+    const f = resetFixture('locked');
+    symlinkSync(f.root, join(f.root, 'link'));
+    const r = run(f, join(f.root, 'link'), { ...REFUSE, LU_STUB_IMAGES: 'nginx:latest', LU_STUB_RUN: 'remove' }, f.root);
+    expect(r.code).toBe(0);
+    expect(existsSync(f.volumes)).toBe(false);
+    expect(calls(f, 'rm.log')).toEqual(PLAIN_CALL(f));
+    const runs = (calls(f, 'docker.log') ?? []).filter((c) => c[0] === 'run');
+    expect(runs.length).toBe(1);
+    expect(runs[0][7]).toBe(`${f.root}:/v`);
   });
 });

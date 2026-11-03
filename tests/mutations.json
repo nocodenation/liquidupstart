@@ -916,23 +916,71 @@
     "spec": "tests/contract/m-b7.seeded-cache.test.ts",
     "from": "docker run --pull never --rm --entrypoint rm",
     "to": "docker run --rm --entrypoint rm",
-    "mustFail": "B7-4 the stale host directory is named, with the containerised removal printed: --pull never, the builder image, the project path double-quoted"
+    "mustFail": "B7-4 the stale host directory is named, with the containerised removal printed: --pull never, the builder image, the project path single-quoted"
   },
   {
     "case": "B7-4",
     "file": "config/scripts/start/nar-builder.sh",
     "spec": "tests/contract/m-b7.seeded-cache.test.ts",
-    "from": "\\\"${PROJECT_DIR}/volumes/nar_builder:/v\\\"",
-    "to": "\\\"$PWD/volumes/nar_builder:/v\\\"",
+    "from": "'${QUOTED}/volumes/nar_builder:/v'",
+    "to": "'$PWD/volumes/nar_builder:/v'",
     "mustFail": "B7-4 the negative: the bare phrase is gone, and so are $PWD and alpine"
   },
   {
     "case": "B7-10",
     "file": "config/scripts/start/nar-builder.sh",
     "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
-    "from": "\\\"${PROJECT_DIR}/volumes/nar_builder:/v\\\"",
-    "to": "\\\"$PWD/volumes/nar_builder:/v\\\"",
-    "mustFail": "B7-10 stdout carries the command with the fixture's own path, double-quoted, the rmdir line, and the reason a plain rm is refused"
+    "from": "'${QUOTED}/volumes/nar_builder:/v'",
+    "to": "'$PWD/volumes/nar_builder:/v'",
+    "mustFail": "B7-10 stdout carries the command with the fixture's own path single-quoted, its ' written '\\'', the rmdir line, and the reason a plain rm is refused"
+  },
+  {
+    "case": "B7-4",
+    "file": "config/scripts/start/nar-builder.sh",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "-v '${QUOTED}/volumes/nar_builder:/v' liquidupstart",
+    "to": "-v \\\"${QUOTED}/volumes/nar_builder:/v\\\" liquidupstart",
+    "mustFail": "B7-4 the stale host directory is named, with the containerised removal printed: --pull never, the builder image, the project path single-quoted"
+  },
+  {
+    "case": "B7-10",
+    "file": "config/scripts/start/nar-builder.sh",
+    "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
+    "from": "-v '${QUOTED}/volumes/nar_builder:/v' liquidupstart",
+    "to": "-v \\\"${QUOTED}/volumes/nar_builder:/v\\\" liquidupstart",
+    "mustFail": "B7-10 stdout carries the command with the fixture's own path single-quoted, its ' written '\\'', the rmdir line, and the reason a plain rm is refused"
+  },
+  {
+    "case": "B7-10",
+    "file": "config/scripts/start/nar-builder.sh",
+    "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
+    "from": "-v '${QUOTED}/volumes/nar_builder:/v' liquidupstart",
+    "to": "-v \\\"${QUOTED}/volumes/nar_builder:/v\\\" liquidupstart",
+    "mustFail": "B7-10 the printed lines, evaluated by sh, reach docker and rmdir with the path as one element, verbatim"
+  },
+  {
+    "case": "B7-10",
+    "file": "config/scripts/start/nar-builder.sh",
+    "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
+    "from": "QUOTED=\"${PROJECT_DIR//\\'/\\'\\\\\\'\\'}\"",
+    "to": "QUOTED=\"${PROJECT_DIR}\"",
+    "mustFail": "B7-10 stdout carries the command with the fixture's own path single-quoted, its ' written '\\'', the rmdir line, and the reason a plain rm is refused"
+  },
+  {
+    "case": "B7-10",
+    "file": "config/scripts/start/nar-builder.sh",
+    "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
+    "from": "QUOTED=\"${PROJECT_DIR//\\'/\\'\\\\\\'\\'}\"",
+    "to": "QUOTED=\"${PROJECT_DIR}\"",
+    "mustFail": "B7-10 the printed lines, evaluated by sh, reach docker and rmdir with the path as one element, verbatim"
+  },
+  {
+    "case": "B7-10",
+    "file": "config/scripts/start/nar-builder.sh",
+    "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
+    "from": "rmdir '${QUOTED}/volumes/nar_builder'",
+    "to": "rmdir ${QUOTED}/volumes/nar_builder",
+    "mustFail": "B7-10 the printed lines, evaluated by sh, reach docker and rmdir with the path as one element, verbatim"
   },
   {
     "case": "B7-4",
@@ -981,6 +1029,14 @@
     "from": "  rm -rf \"$target\" 2>/dev/null || true",
     "to": "  : \"$target\"",
     "mustFail": "CU-1 a tree the operator can delete is removed by plain rm, and no stub is called"
+  },
+  {
+    "case": "CU-2",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "  rm -rf \"$target\" 2>/dev/null || true",
+    "to": "  : \"$target\"",
+    "mustFail": "CU-2 plain rm refused, nginx:latest present: the container removes it, and the argv mounts the project directory as one element"
   },
   {
     "case": "CU-2",
@@ -1050,17 +1106,73 @@
     "case": "CU-5",
     "file": "scripts/linux/lib/remove-volumes.sh",
     "spec": "tests/unit/m-cu.remove-volumes.test.ts",
-    "from": "  if [[ -z \"$dir\" || \"$dir\" != /* || \"$root\" == \"/\" ]]; then\n    echo \"ERROR: refusing to remove volumes/ under '${dir}': not an absolute path below /.\" >&2\n    return 1\n  fi\n",
-    "to": "",
+    "from": "  if [[ -z \"$dir\" || \"$dir\" != /* ]]; then\n    why=\"not an absolute path below /.\"\n  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n    while [[ \"$root\" == */ && \"$root\" != \"/\" ]]; do root=\"${root%/}\"; done\n    [[ \"$root\" != \"/\" ]] || why=\"not an absolute path below /.\"\n  fi\n  if [[ -n \"$why\" ]]; then\n    echo \"ERROR: refusing to remove volumes/ under '${dir}': ${why}\" >&2\n    return 1\n  fi\n",
+    "to": "  root=\"$dir\"\n",
     "mustFail": "CU-5 the negative: an empty argument is refused before any leg"
   },
   {
     "case": "CU-5",
     "file": "scripts/linux/lib/remove-volumes.sh",
     "spec": "tests/unit/m-cu.remove-volumes.test.ts",
-    "from": "  if [[ -z \"$dir\" || \"$dir\" != /* || \"$root\" == \"/\" ]]; then\n    echo \"ERROR: refusing to remove volumes/ under '${dir}': not an absolute path below /.\" >&2\n    return 1\n  fi\n",
-    "to": "",
+    "from": "  if [[ -z \"$dir\" || \"$dir\" != /* ]]; then\n    why=\"not an absolute path below /.\"\n  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n    while [[ \"$root\" == */ && \"$root\" != \"/\" ]]; do root=\"${root%/}\"; done\n    [[ \"$root\" != \"/\" ]] || why=\"not an absolute path below /.\"\n  fi\n  if [[ -n \"$why\" ]]; then\n    echo \"ERROR: refusing to remove volumes/ under '${dir}': ${why}\" >&2\n    return 1\n  fi\n",
+    "to": "  root=\"$dir\"\n",
     "mustFail": "CU-5 the negative: / and /// are refused the same way"
+  },
+  {
+    "case": "CU-5",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n",
+    "to": "  else\n    root=\"$dir\"\n",
+    "mustFail": "CU-5 the negative: /. and //. are refused the same way, the argument as given"
+  },
+  {
+    "case": "CU-5",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n",
+    "to": "  else\n    root=\"$dir\"\n",
+    "mustFail": "CU-5 the negative: /tmp/.. -- a .. that climbs to / -- is refused the same way"
+  },
+  {
+    "case": "CU-5",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n",
+    "to": "  else\n    root=\"$dir\"\n",
+    "mustFail": "CU-5 the negative: a symbolic link to / is refused the same way"
+  },
+  {
+    "case": "CU-5",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n",
+    "to": "  else\n    root=\"$dir\"\n",
+    "mustFail": "CU-5 the negative: a directory that does not exist is refused as not an existing directory"
+  },
+  {
+    "case": "CU-5",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n",
+    "to": "  else\n    root=\"$dir\"\n",
+    "mustFail": "CU-5 the counterpart: a symbolic link to the project directory is accepted, and the legs act on the resolved directory"
+  },
+  {
+    "case": "CU-5",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "    why=\"not an existing directory.\"\n",
+    "to": "    root=\"$dir\"\n",
+    "mustFail": "CU-5 the negative: a directory that does not exist is refused as not an existing directory"
+  },
+  {
+    "case": "CU-5",
+    "file": "scripts/linux/lib/remove-volumes.sh",
+    "spec": "tests/unit/m-cu.remove-volumes.test.ts",
+    "from": "    while [[ \"$root\" == */ && \"$root\" != \"/\" ]]; do root=\"${root%/}\"; done\n",
+    "to": "",
+    "mustFail": "CU-5 the negative: /. and //. are refused the same way, the argument as given"
   },
   {
     "case": "CU-6",

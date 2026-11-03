@@ -17,7 +17,11 @@
 # delete as; the same uid inside a container is root over it, so the command is
 # a `docker run` of the builder's own image -- the one image this script, running
 # under LIQUID_ON alone, can count on being local -- with the project's resolved
-# path, quoted. `rmdir` for the mount point the container cannot remove.
+# path between single quotes, every `'` in it written `'\''`: the one quoting
+# every POSIX shell reads literally, so the pasted line hands docker the path as
+# one argument whatever it holds, short of a newline (double quotes lost a `$b`
+# and ran a backtick; review of #32). `rmdir` for the mount point the container
+# cannot remove.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +30,7 @@ STALE="${PROJECT_DIR}/volumes/nar_builder/m2"
 
 if [ -d "$STALE" ]; then
     size="$(du -sh "$STALE" 2>/dev/null | cut -f1)"
+    QUOTED="${PROJECT_DIR//\'/\'\\\'\'}"
     echo ""
     echo "Note: volumes/nar_builder/m2 (${size:-unknown size}) is left over from before 2026-10-10"
     echo "  and is no longer mounted. Each build now resolves into its own repository and"
@@ -33,6 +38,6 @@ if [ -d "$STALE" ]; then
     echo "  On rootless Docker a plain rm is refused: the tree belongs to the build user's"
     echo "  mapped uid, not to you. A container with the directory mounted removes it, and"
     echo "  rmdir takes the empty parent the container cannot remove:"
-    echo "    docker run --pull never --rm --entrypoint rm -v \"${PROJECT_DIR}/volumes/nar_builder:/v\" liquidupstart/nar-builder:latest -rf /v/m2"
-    echo "    rmdir \"${PROJECT_DIR}/volumes/nar_builder\""
+    echo "    docker run --pull never --rm --entrypoint rm -v '${QUOTED}/volumes/nar_builder:/v' liquidupstart/nar-builder:latest -rf /v/m2"
+    echo "    rmdir '${QUOTED}/volumes/nar_builder'"
 fi

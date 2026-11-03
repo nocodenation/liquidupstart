@@ -38,8 +38,20 @@ reset keeps its promise whatever a container has written.
 - **Four legs, in order, each tried only when the one before it did not remove the directory:**
   plain `rm -rf`; `rm -rf` from a container; `sudo rm -rf`; an error with exit status 1. The
   container leg sits before `sudo` because it needs nothing the operator has not already given, and
-  after plain `rm` because on Docker Desktop and on rootful Docker plain `rm` usually succeeds —
-  there the leg is never reached and the reset is as it was.
+  after plain `rm` because where plain `rm` works nothing should change.
+
+  *Where the leg is reached — corrected 2026-11-03, review of #32.* This said the leg is never
+  reached on Docker Desktop or on rootful Docker, and half of that is wrong. On Docker Desktop
+  (macOS, Windows) a bind mount passes through the VM's file sharing, which presents every file as
+  the host user's, so plain `rm` succeeds and the reset is as it was. On **rootful Docker on Linux** a
+  container's uid is the host's same uid — Postgres's files are `999`'s, Nextcloud's `33`'s, the
+  Maven cache #10 handed to `builder` `1500`'s — and the operator, who is none of them, is refused
+  exactly as under rootless Docker. There the leg **is** reached, and the container's root is the
+  host's real root, so it removes the tree with no password where the old step asked for `sudo`'s.
+  That is not a privilege the operator lacked: membership of the `docker` group is root-equivalent —
+  anyone who can run `docker run -v /:/host` is root on the host — so the leg spends a privilege they
+  already hold rather than asking for a second one. Only an operator who runs the reset as root
+  themselves takes the plain-`rm` path on such a host.
 
 - **The step moves into a function, `lu_remove_volumes <project-dir>`, in
   `scripts/linux/lib/remove-volumes.sh`, sourced by `cleanup.sh`.** `cleanup.sh` derives its project
@@ -75,11 +87,25 @@ reset keeps its promise whatever a container has written.
   only success.
 
 - **The function refuses a directory it should not be given, before any leg runs.** An empty
-  argument, a relative path, or `/` (after trailing slashes are dropped) is refused with exit 1 and
-  nothing is removed, plainly or otherwise. `cleanup.sh`'s derivation cannot produce any of them —
-  the guard is there because the function is now callable with an argument, and `sudo rm -rf` on
-  `/volumes` or on `volumes` relative to wherever the caller stands is the kind of mistake a guard
-  costs nothing against.
+  argument, a relative path, a directory that does not exist, or one that **resolves** to `/` is
+  refused with exit 1 and nothing is removed, plainly or otherwise. `cleanup.sh`'s derivation cannot
+  produce any of them — the guard is there because the function is now callable with an argument, and
+  `sudo rm -rf` on `/volumes` or on `volumes` relative to wherever the caller stands is the kind of
+  mistake a guard costs nothing against.
+
+  *Resolved, not compared — 2026-11-03, review of #32.* The first version dropped trailing slashes
+  and compared the string to `/`, which `/.`, `//.`, `/tmp/..` and a symbolic link to `/` all pass,
+  and each would have had every leg run `rm -rf /volumes` — `/./volumes` is `/volumes` to the kernel,
+  and the `sudo` leg would have followed the plain one. The argument is now resolved to its physical
+  directory with `cd -P -- "<arg>" && pwd -P` in a subshell before the comparison, and the legs act on
+  the resolved path, so what is removed is what was checked. `cd -P` was chosen over a lexical
+  normalisation because the symlink case is the one lexical rules cannot see, over `realpath` because
+  `realpath -m` is GNU-only and the scripts are also run on macOS hosts, and it brings one new refusal
+  with it: a directory `cd` cannot enter does not resolve, and a function that cannot resolve its
+  argument must not act on it. Two things the resolution needs stated: bash's `pwd -P` answers `//`
+  for `//.` and for `//`, so trailing slashes are dropped from the **resolved** path before the
+  comparison; and on a host where the temporary directory is itself a symbolic link (macOS, `/tmp` →
+  `/private/tmp`) the path the legs act on is not the one the caller typed, which the tests allow for.
 
 - **Each leg announces itself in one line on stdout, and the leg that succeeded names itself.** An
   operator reading the output of a reset should be able to tell which of four things removed their
@@ -120,11 +146,18 @@ reset keeps its promise whatever a container has written.
   and `.env` is not removed, as today — `cleanup.sh` runs under `set -e` and the function's status
   stops it.
 
-- **CU-FR5 — A directory the function must not act on is refused before any removal.** An empty
-  argument, an argument not beginning with `/`, or one that is `/` once trailing slashes are dropped,
-  is refused with `ERROR: refusing to remove volumes/ under '<arg>': not an absolute path below /.` on
-  stderr and return 1, and no `rm`, `docker` or `sudo` is run. Every other absolute path is accepted,
-  one with a space in it included.
+- **CU-FR5 — A directory the function must not act on is refused before any removal.** *Widened
+  2026-11-03, review of #32; until then the guard compared the slash-trimmed string to `/` alone.* The
+  argument is resolved to its physical directory — `cd -P -- "<arg>" && pwd -P` in a subshell, so `.`
+  and `..` components, repeated slashes and symbolic links are followed, with trailing slashes dropped
+  from the result — and refused when it is empty, when it does not begin with `/`, or when the resolved
+  directory is `/`: `ERROR: refusing to remove volumes/ under '<arg>': not an absolute path below /.`
+  on stderr, with the argument as given. An argument `cd` cannot enter — a directory that does not
+  exist, or one the caller may not enter — is refused with `ERROR: refusing to remove volumes/ under
+  '<arg>': not an existing directory.` In every refusal the return is 1 and no `rm`, `docker` or `sudo`
+  is run. Every other absolute path is accepted — with a space, a trailing slash, a `.` or `..`
+  component, or through a symbolic link to a real directory — and the legs act on the **resolved**
+  directory: `rm -rf <resolved>/volumes`, `-v "<resolved>:/v"`, `sudo rm -rf <resolved>/volumes`.
 
 - **CU-FR6 — Each leg is announced on stdout, and the leg that removed the directory names itself.**
   The lines are, in the order they can appear: `Removing volumes/...`; `Plain removal failed (files
@@ -144,7 +177,7 @@ lu_remove_volumes <project-dir>
 
 | | |
 |---|---|
-| Argument | The project directory, absolute. `cleanup.sh` passes `"${PROJECT_DIR}"`. |
+| Argument | The project directory, absolute. `cleanup.sh` passes `"${PROJECT_DIR}"`. Resolved with `cd -P -- "<arg>" && pwd -P` before anything else (CU-FR5, 2026-11-03); `<project-dir>` below is that resolved path. |
 | Removes | `<project-dir>/volumes`, by the first leg of CU-FR1 that removes it. |
 | Reads from the environment | `PATH`, for `rm`, `docker` and `sudo`. Nothing else: no `.env` key, no variable of its own. |
 | Runs | `rm`; `docker image inspect`, `docker run`; `sudo rm`. Never `docker pull`, never `docker compose`. |

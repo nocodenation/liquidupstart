@@ -244,14 +244,18 @@ mistake is available here and is cheaper to avoid than to repeat.
   exists for one notice: an installation that built before 2026-10-10 still holds the shared Maven
   cache #10 mounted at `/m2`, tens of megabytes that nothing reads since #25. When the directory is
   there, the notice names it, says why nothing reads it, says why a plain `rm` is refused, and prints
-  — with the installation's own path resolved into it, double-quoted — the command that removes it:
+  — with the installation's own path resolved into it, quoted for the shell — the command that
+  removes it:
 
   ```
-  docker run --pull never --rm --entrypoint rm -v "<project>/volumes/nar_builder:/v" liquidupstart/nar-builder:latest -rf /v/m2
+  docker run --pull never --rm --entrypoint rm -v '<project>/volumes/nar_builder:/v' liquidupstart/nar-builder:latest -rf /v/m2
   ```
 
-  and, on the line after it, `rmdir "<project>/volumes/nar_builder"` for the empty parent the removal
-  leaves. When the directory is not there the script prints nothing. It deletes nothing and runs
+  and, on the line after it, `rmdir '<project>/volumes/nar_builder'` for the empty parent the removal
+  leaves. **The path is printed between single quotes, with every `'` in it written `'\''`**
+  (*corrected 2026-11-03, review of #32; it was double-quoted*), so the pasted line hands `docker` the
+  path as one argument whatever it holds, short of a newline. When the directory is not there the
+  script prints nothing. It deletes nothing and runs
   nothing itself, in either case: removing a directory the operator may have copied something into is
   not a start script's call — the reason at the top of the script, shared with `liquid.sh`'s notice
   about `volumes/liquid/api`.
@@ -271,8 +275,24 @@ mistake is available here and is cheaper to avoid than to repeat.
   not taken: a public image that is not already local would be pulled to run one `rm`. The path is
   `${PROJECT_DIR}`, resolved, and not `$PWD`, because the operator pastes the line from wherever they
   read it; the dashboard runs `start.sh` in the toolbox with the project mounted at its real host path
-  and shows the output verbatim, so the printed path is right on the host as well. It is
-  double-quoted for a project path with a space in it. The `rmdir` line is there because a container
+  and shows the output verbatim, so the printed path is right on the host as well.
+
+  *Quoting — corrected 2026-11-03, review of #32.* The path was printed between double quotes, which
+  carry a space but not a `$`, a backtick or a `"`. Pasted, `/home/u/a$b` lost `$b` to parameter
+  expansion and Docker mounted a path that did not exist — which `-v` creates, empty, as root — so the
+  `rm` removed nothing of the leftover and left a new directory behind; a backtick ran whatever
+  followed it; a `"` ended the argument early (measured 2026-11-03 with `dash` as `sh`: `Syntax error:
+  EOF in backquote substitution`, exit 2, nothing run). Single quotes with `'\''` for the quote itself
+  are the one quoting every POSIX shell reads literally, so the operator's shell — `bash`, `zsh`,
+  `dash`, busybox `ash` — does not matter. `printf '%q'` was not taken: for a space it prints `a\ b`,
+  which reads worse than the quoted form, and for a control character `$'…'`, which `dash` does not
+  read. **A `:` in the project path is a stated limit, not handled:** `-v` is split on it and Docker
+  refuses the result at its own parser (*invalid mount path … must be absolute*), so nothing runs and
+  nothing is mounted — a visible failure, not a wrong removal. `--mount type=bind,source=…` carries a
+  colon but splits on `,` and quotes with CSV rules inside the shell's quotes, so it moves the hole
+  rather than closing it; `docs/FEATURE-reset.md` §4 makes the same choice for the same path shape,
+  which this project has not met, and the notice does not branch on the colon — a branch for a shape
+  nothing produces would have a case against nothing. The `rmdir` line is there because a container
   cannot remove its own mount point, so `volumes/nar_builder/` stays behind, empty and host-owned —
   the same "looks like state, is read by nobody" shape one level up. `rmdir` and not `rm -r`: it
   refuses a directory that is not empty, so it cannot take anything the operator put beside `m2`.
