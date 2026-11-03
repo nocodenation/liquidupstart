@@ -1,5 +1,153 @@
 [
   {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "if [ -n \"$_anthropic_ids\" ]; then",
+    "to": "if [ -n \"\" ]; then",
+    "mustFail": "RO-1 with every privacy route on offer, privacy-anthropic and the first id the proxy lists"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "elif [ \"${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}\" = \"1\" ]; then",
+    "to": "elif false; then",
+    "mustFail": "RO-1 with privacy-anthropic refused and the CLI on, privacy/private-claude"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "elif [ \"${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}\" = \"1\" ]; then",
+    "to": "elif false; then",
+    "mustFail": "RO-1 with the proxy not answering and the CLI on, still privacy/private-claude"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "sort_by(-(.created // 0)) | ",
+    "to": "",
+    "mustFail": "RO-1 with the CLI off as well, privacy-openai and its newest registered id"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": " | select(.id | IN($k[]))",
+    "to": "",
+    "mustFail": "RO-1 the negative: an id the filter drops never wins, though it carries the highest created"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "(model: ${_DEFAULT_MODEL:-<none discovered>})",
+    "to": "(model: ${_DEFAULT_MODEL#*/})",
+    "mustFail": "RO-1 with privacy-anthropic refused and the CLI on, privacy/private-claude"
+  },
+  {
+    "case": "RO-2",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.opt-in-unchanged.test.ts",
+    "from": "if [ \"${PRIVACY_ROUTING:-}\" = \"only\" ]; then",
+    "to": "if true; then",
+    "mustFail": "RO-2 under opt-in, opencode.json is byte for byte what ed7fd46 writes"
+  },
+  {
+    "case": "RO-3",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.enabled-providers.test.ts",
+    "from": "        _ENABLED=\"${_ENABLED}, \\\"${1}\\\"\"\n",
+    "to": "",
+    "mustFail": "RO-3 llamacpp and every privacy provider that registered, in the order written"
+  },
+  {
+    "case": "RO-3",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.enabled-providers.test.ts",
+    "from": "if [ -n \"${OPENAI_API_KEY}\" ]; then\n",
+    "to": "if [ -n \"${OPENAI_API_KEY}\" ]; then\n    _ENABLED=\"${_ENABLED}, \\\"openai\\\"\"\n",
+    "mustFail": "RO-3 the negative: openai is left out although its key reached the container"
+  },
+  {
+    "case": "RO-4",
+    "file": "config/privacy-proxy/compose.routing-only.yml",
+    "spec": "tests/contract/m-ro.routing-override.test.ts",
+    "from": "      PRIVACY_ROUTING: \"only\"\n",
+    "to": "",
+    "mustFail": "RO-4 compose.routing-only.yml gives opencode PRIVACY_ROUTING: \"only\""
+  },
+  {
+    "case": "RO-5",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/integration/m-ro.opencode-reads.test.ts",
+    "from": "    _ENABLED_FIELD=\"\n  \\\"enabled_providers\\\": [${_ENABLED}],\"",
+    "to": "    _ENABLED_FIELD=\"\"",
+    "mustFail": "RO-5 the negative: under only, neither opencode nor openai, though OPENAI_API_KEY reached the container"
+  },
+  {
+    "case": "RO-1",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.default-model.test.ts",
+    "from": "sort_by(-(.created // 0)) | .[0].id",
+    "to": "sort_by(.created // 0) | .[-1].id",
+    "mustFail": "RO-1 where two registered ids share the highest created, the one listed first"
+  },
+  {
+    "case": "RO-3",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.enabled-providers.test.ts",
+    "from": "    if [ \"${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}\" = \"1\" ]; then\n        _privacy_provider privacy ",
+    "to": "    if true; then\n        _privacy_provider privacy ",
+    "mustFail": "RO-3 the negative: privacy is left out when the CLI is off"
+  },
+  {
+    "case": "RO-7",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.fallback-warning.test.ts",
+    "from": "echo \"WARNING: privacy routing only,",
+    "to": "true \"WARNING: privacy routing only,",
+    "mustFail": "RO-7 with no privacy route and the CLI off, the warning names the local model"
+  },
+  {
+    "case": "RO-7",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.fallback-warning.test.ts",
+    "from": "        _DEFAULT_MODEL=\"$_PRIVACY_DEFAULT\"\n    elif [ -n \"$_DEFAULT_MODEL\" ]; then",
+    "to": "        _DEFAULT_MODEL=\"$_PRIVACY_DEFAULT\"\n    fi\n    if [ -n \"$_DEFAULT_MODEL\" ]; then",
+    "mustFail": "RO-7 the negative: with a privacy model as the default, no warning"
+  },
+  {
+    "case": "RO-7",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.fallback-warning.test.ts",
+    "from": "    elif [ -n \"$_DEFAULT_MODEL\" ]; then",
+    "to": "    else",
+    "mustFail": "RO-7 the negative: with nothing discovered anywhere, no warning either"
+  },
+  {
+    "case": "RO-7",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.fallback-warning.test.ts",
+    "from": "if [ \"${PRIVACY_ROUTING:-}\" = \"only\" ]; then",
+    "to": "if true; then",
+    "mustFail": "RO-7 the negative: under opt-in, the same local default and no warning"
+  },
+  {
+    "case": "RO-7",
+    "file": "config/opencode/entrypoint.sh",
+    "spec": "tests/unit/m-ro.fallback-warning.test.ts",
+    "from": "echo \"WARNING: privacy routing only,",
+    "to": "true \"WARNING: privacy routing only,",
+    "mustFail": "RO-7 with PRIVACY_PROXY_URL unset, the same warning"
+  },
+  {
+    "case": "RO-8",
+    "exempt": "its subject, tests/lib/opencodefixture.ts, is test infrastructure, which tests/mutate.sh refuses as a subject because assertions read it. The three edits that docs/TEST-SPEC-opencode-routing-only.md names under RO-8 were applied by hand instead, and what each reddened is recorded there. Round 1 of the review on #59."
+  },
+  {
     "case": "A4-7",
     "file": "config/agents/hooks/pre-push",
     "spec": "tests/unit/m-a4.secret-scan.test.ts",
