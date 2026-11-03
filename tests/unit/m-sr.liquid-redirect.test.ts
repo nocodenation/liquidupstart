@@ -14,7 +14,10 @@
  *           `return 301 https://liquid.localhost:9443;` and `...:8833;` respectively.
  * Covers:   SR-3, SR-FR4
  * Negative: neither rendering contains `8889` anywhere.
- * Counterpart: the two renderings, which show that the port follows the setting.
+ * Counterpart: the two renderings, which show that the port follows the setting; and the control,
+ *           the HTTPS block for `liquid.localhost` listening on 9443 in the first rendering, which
+ *           shows the rendering took the setting at all. It is the row a mutation of the redirect
+ *           leaves green, without which `tests/mutate.sh` refuses the mutation as a broken file.
  *
  * Test data: `.env` is `exampleEnv()` with `ENABLE_LIQUID=0`, which spares the keystore and
  * its need for Docker or `keytool`, `SYSTEM_HTTP_PORT=8888`, and `SYSTEM_HTTPS_PORT` set to
@@ -72,5 +75,12 @@ describe('SR-3 the redirect from http://liquid.localhost', () => {
   test('SR-3 the negative: neither rendering contains 8889', () => {
     expect(at9443).not.toContain('8889');
     expect(at8833).not.toContain('8889');
+  });
+
+  test('SR-3 the control: the same rendering serves liquid.localhost over HTTPS on 9443', () => {
+    const https = at9443.split(/\n(?=server\s*\{)/).find((b) => /server_name liquid\.localhost;/.test(b) && /listen 9443 ssl/.test(b));
+    expect(https).toBeDefined();
+    // A block of its own: were the split to find no boundary, the whole file would match.
+    expect(https).not.toContain('listen 8888;');
   });
 });

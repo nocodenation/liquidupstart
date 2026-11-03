@@ -51,6 +51,7 @@ both modes shows the round trip on an installation's own state.
 | **SR-3** | Unit | positive | rendered with `SYSTEM_HTTPS_PORT=9443`, `liquid.localhost` on HTTP answers `return 301 https://liquid.localhost:9443;` |
 | **SR-3** | Unit | positive | …and with `SYSTEM_HTTPS_PORT=8833`, `return 301 https://liquid.localhost:8833;` |
 | **SR-3** | Unit | **negative** | …and neither rendering contains `8889` |
+| **SR-3** | Unit | positive | the control: the rendering with `9443` serves `liquid.localhost` over HTTPS on 9443 |
 | **SR-4** | Component | **negative** | while a repository test is waiting for its answer, the card raises no error |
 | **SR-4** | Component | positive | …and once the answer arrives, its line is shown |
 | **SR-5** | System | positive | operator check: on the running stack, a start under `only` and one under `opt-in` bring OpenClaw back to the primary model it had |
@@ -220,11 +221,11 @@ while it runs.
 |---|---|
 | **Premise** | The redirect must lead to the port Liquid is served on, which is `SYSTEM_HTTPS_PORT` (SR-FR4). Today it names 8889 whatever the setting. |
 | **Component** | `config/nginx/templates/nginx.conf`, rendered by `config/scripts/start/nginx.sh` as §3.3 describes. |
-| **Steps** | Render twice. In each rendering, find the server block with `server_name liquid.localhost;` that listens on the HTTP port, and read its `return` line. Search the whole rendering for `8889`. |
+| **Steps** | Render twice. In each rendering, find the server block with `server_name liquid.localhost;` that listens on the HTTP port, and read its `return` line. Search the whole rendering for `8889`. In the first rendering, find the block for `liquid.localhost` that listens on `9443 ssl`. |
 | **Test data, both sides** | §3.3. |
-| **Expected** | `return 301 https://liquid.localhost:9443;` and `return 301 https://liquid.localhost:8833;`. No `8889` in either rendering. |
+| **Expected** | `return 301 https://liquid.localhost:9443;` and `return 301 https://liquid.localhost:8833;`. No `8889` in either rendering. The HTTPS block on 9443 is there. |
 | **Dependencies** | `bash`, `openssl`. |
-| **Shown able to fail** | To be registered: the placeholder put back to `8889` (all three rows red). |
+| **Shown able to fail** | To be registered: the placeholder put back to `8889` (rows 1 to 3 red, the control green). The control was added when `tests/mutate.sh` refused that mutation on the first run: with all three rows red, a broken file and a working control look the same. |
 | **What it found** | Not yet run. |
 | **Implemented by** | `tests/unit/m-sr.liquid-redirect.test.ts`. |
 | **Covers** | SR-FR4. |
