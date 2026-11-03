@@ -238,7 +238,11 @@ fi
 # keys alone leaves it in the picker, and so would a login stored with `opencode auth login`.
 _ENABLED_FIELD=""
 if [ "${PRIVACY_ROUTING:-}" = "only" ]; then
-    [ -n "$_PRIVACY_DEFAULT" ] && _DEFAULT_MODEL="$_PRIVACY_DEFAULT"
+    if [ -n "$_PRIVACY_DEFAULT" ]; then
+        _DEFAULT_MODEL="$_PRIVACY_DEFAULT"
+    elif [ -n "$_DEFAULT_MODEL" ]; then
+        echo "WARNING: privacy routing only, but no privacy model was found: the default is ${_DEFAULT_MODEL}, which is reached without the privacy proxy. Check that the proxy answers at PRIVACY_PROXY_URL and holds a key, then restart opencode." >&2
+    fi
     _ENABLED_FIELD="
   \"enabled_providers\": [${_ENABLED}],"
 fi

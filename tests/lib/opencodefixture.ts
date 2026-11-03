@@ -29,6 +29,10 @@ export const OPENAI_WITH_DROPPED =
   '{"id":"gpt-image-2","created":1795000000},{"id":"gpt-5-mini","created":1754500000}]}';
 export const OPENAI_UNDATED =
   '{"data":[{"id":"gpt-5.6-luna"},{"id":"gpt-3.5-turbo-0125"},{"id":"gpt-6.1-terra"},{"id":"gpt-5-mini"}]}';
+export const OPENAI_TIED =
+  '{"data":[{"id":"gpt-5.6-luna","created":1781000000},{"id":"gpt-6.1-terra","created":1790000000},' +
+  '{"id":"gpt-3.5-turbo-0125","created":1706140800},{"id":"gpt-6.1-sol","created":1790000000},' +
+  '{"id":"gpt-5-mini","created":1754500000}]}';
 export const ANTHROPIC =
   '{"data":[{"id":"claude-sonnet-5","created_at":"2026-09-01T00:00:00Z"},{"id":"claude-opus-5","created_at":"2026-08-01T00:00:00Z"}]}';
 export const ANTHROPIC_REFUSED = '{"detail":"no ANTHROPIC_API_KEY"}';
@@ -88,14 +92,24 @@ export type Run = {
   raw: string | null;
   config: any;
   startLine: string;
+  // The sandbox's path, for checks on the path itself: it is removed before the run returns.
+  box: string;
 };
+
+// One pass, so a box that itself lies under /tmp is not rewritten a second time: chained
+// replacements put the configuration in <box>/tmp/<box>/config/opencode (round 1 on #59).
+export const sandboxed = (text: string, box: string): string =>
+  text.replace(/\/root\/\.config\/opencode|\/tmp\//g, (m) =>
+    m === '/tmp/' ? join(box, 'tmp') + '/' : join(box, 'config/opencode')
+  );
 
 export function runEntrypoint(
   answers: Answers,
   env: Record<string, string>,
-  script: string = ENTRYPOINT
+  script: string = ENTRYPOINT,
+  base: string = tmpdir()
 ): Run {
-  const box = mkdtempSync(join(tmpdir(), 'lu-ro-'));
+  const box = mkdtempSync(join(base, 'lu-ro-'));
   try {
     const bin = join(box, 'bin');
     mkdirSync(bin);
@@ -111,22 +125,25 @@ export function runEntrypoint(
       throw new Error(`${script} no longer writes to /root/.config/opencode and /tmp/: the sandbox copy would write outside it`);
     }
     const copy = join(box, 'entrypoint.sh');
-    writeFileSync(
-      copy,
-      text.replaceAll('/root/.config/opencode', join(box, 'config/opencode')).replaceAll('/tmp/', join(box, 'tmp') + '/')
-    );
+    writeFileSync(copy, sandboxed(text, box));
 
     const vars = { PATH: `${bin}:${dirname(JQ)}:/usr/bin:/bin`, HOME: box, RO_ANSWERS: join(box, 'answers'), ...env };
     const r = sh(['env', '-i', ...Object.entries(vars).map(([k, v]) => `${k}=${v}`), 'sh', copy], box);
     const file = join(box, 'config/opencode/opencode.json');
     const raw = existsSync(file) ? readFileSync(file, 'utf8') : null;
+    // Without this a misplaced file read as `config: null`, which a negative such as
+    // `not.toHaveProperty('model')` accepts.
+    if (raw === null && r.code === 0) {
+      throw new Error(`${script} exited 0 but wrote no opencode.json at ${file}: the sandbox's paths no longer match the script's`);
+    }
     return {
       code: r.code,
       stdout: r.stdout,
       stderr: r.stderr,
       raw,
       config: raw === null ? null : JSON.parse(raw),
-      startLine: r.stdout.split('\n').find((l) => l.startsWith('Starting opencode web')) ?? ''
+      startLine: r.stdout.split('\n').find((l) => l.startsWith('Starting opencode web')) ?? '',
+      box
     };
   } finally {
     rmSync(box, { recursive: true, force: true });

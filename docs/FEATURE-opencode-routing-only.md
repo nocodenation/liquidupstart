@@ -1,6 +1,7 @@
 # Feature: OpenCode under `PRIVACY_PROXY_ROUTING=only`
 
-Status: **signed off on 2026-11-01, and implemented on this branch.**
+Status: **signed off on 2026-11-01, and implemented on this branch.** Round 1 of the review, on
+2026-11-03, added decision 8 and RO-FR6.
 Branch: `feature/opencode-routing-only`
 Found: `BACKLOG.md`, the entry *One key sets both the proxy's judge and the agents' local provider*,
 measured on 2026-10-31. This feature takes the part of that entry which does not wait for the
@@ -38,7 +39,8 @@ falls back to the first provider in its own list, which was the direct `openai` 
 - **UC4, `only` when the proxy offers nothing.** This covers no key with the CLI switched off, and
   an unreachable proxy with the CLI switched off. OpenCode opens on the local LLM's first model, as
   OpenClaw does. `start.sh` already warns, without stopping, that `only` leaves the agents without a
-  cloud model (TC-822).
+  cloud model (TC-822), and OpenCode's start says on stderr that its default is the local LLM's
+  (RO-FR6).
 - **UC4a, `only` with the CLI on while the proxy does not answer yet.** OpenCode opens on
   `privacy/private-claude` even so. That provider is written from a fixed list, as it is today, and
   a privacy default that fails until the proxy answers is better than an unmasked one. OpenClaw
@@ -90,6 +92,20 @@ falls back to the first provider in its own list, which was the direct `openai` 
    its writer. Only the override sets it, so nothing reaches OpenCode under `opt-in`.
 7. **The model list keeps its order.** Only the default is chosen by `created`. Re-sorting the list
    would change the file written under `opt-in`, and RO-FR2 forbids that.
+8. **Under `only`, falling back to the local LLM is announced.** Round 1 of the review asked for it:
+   with the CLI off, a proxy that holds no key or answers later than discovery waits leaves the
+   local LLM as the default, and with OpenRouter as the local LLM that is a hosted model reached
+   unmasked (§5). The start then prints `WARNING: privacy routing only, but no privacy model was
+   found: the default is llamacpp/particle-ai/particle-1, which is reached without the privacy proxy.
+   Check that the proxy answers at PRIVACY_PROXY_URL and holds a key, then restart opencode.` on
+   stderr, with the model it fell back to. The wording names no single cause, because three lead
+   there: no key, a slow proxy, and no `PRIVACY_PROXY_URL` at all, as when the service is recreated
+   by hand without it (RO-6). The review
+   offered `depends_on: privacy-proxy: condition: service_healthy` for `opencode` as the other way.
+   It is not taken: a proxy that is healthy but holds no key gives the same fallback, so the warning
+   would still be needed; and a proxy that never turns healthy, such as the one the update test saw
+   killed for memory on a Docker Desktop VM of 7.65 GiB (`BACKLOG.md`), would make `docker compose up`
+   fail for `opencode` instead of starting it with a warning.
 
 ## 3. Requirements
 
@@ -100,6 +116,7 @@ falls back to the first provider in its own list, which was the direct `openai` 
 | **RO-FR3** | Under `only`, `opencode.json` carries `enabled_providers` naming `llamacpp` and each privacy provider the entrypoint registered, in the order they were written, and nothing else. |
 | **RO-FR4** | `compose.routing-only.yml` gives the `opencode` service `PRIVACY_ROUTING: "only"`. `compose.yml` gives it no `PRIVACY_ROUTING`. |
 | **RO-FR5** | The start line names the default together with its provider, for example `Starting opencode web on port 4096 (model: privacy/private-claude)`. |
+| **RO-FR6** | Under `only`, when step 4 of RO-FR1 gives the default, the entrypoint prints on stderr the warning of decision 8, naming that model. It prints nothing of the kind when a privacy model is the default, when there is no default, or in any other mode. |
 | **RO-NFR1** | POSIX `sh`, using only the tools the entrypoint already calls (`curl`, `jq`, `grep`, `head`). Nothing new goes into the image. |
 | **RO-NFR2** | The change reaches an installation with the next build of `liquidupstart/opencode`, because the Dockerfile copies the entrypoint into the image (`config/opencode/templates/Dockerfile:13`). |
 
@@ -151,8 +168,8 @@ The entrypoint writes the privacy providers in the order `privacy-openai`, `priv
 - **A proxy slower than discovery.** `opencode` does not wait for `privacy-proxy` in compose, and
   each model list is asked for ten times, three seconds apart. A proxy that has not answered by then
   leaves `privacy-openai` and `privacy-anthropic` unregistered until OpenCode is started again. With
-  the CLI off, the local LLM is then the default, as in UC4. This is how discovery has always worked;
-  only the consequence for the default is new.
+  the CLI off, the local LLM is then the default, as in UC4, and the start says so (RO-FR6). This is
+  how discovery has always worked; only the consequence for the default is new.
 - **A project's own `opencode.json`.** OpenCode merges a project's configuration over the one written
   here, so a repository under `/repos`, or an agent writing into one, can name other providers.
   `only` decides what the stack offers. It does not confine an agent that writes its own
@@ -173,7 +190,7 @@ The entrypoint writes the privacy providers in the order `privacy-openai`, `priv
 
 | File | Change |
 |---|---|
-| `config/opencode/entrypoint.sh` | the default under `only` (RO-FR1), `enabled_providers` (RO-FR3), the start line (RO-FR5) |
+| `config/opencode/entrypoint.sh` | the default under `only` (RO-FR1), `enabled_providers` (RO-FR3), the start line (RO-FR5), the warning (RO-FR6) |
 | `config/privacy-proxy/compose.routing-only.yml` | `PRIVACY_ROUTING: "only"` for `opencode` (RO-FR4). The comment above the blanked keys, which says that blanking them leaves only the privacy providers and the local LLM, is corrected: Zen needs no key, so `enabled_providers` is what restricts the picker |
 | `docs/SPECIFICATION.md` §7.5 | one paragraph on OpenCode under `only` |
-| `tests/…/m-ro.*.test.ts`, `tests/fixtures/ed7fd46/opencode-entrypoint.sh`, `tests/mutations.json` | `docs/TEST-SPEC-opencode-routing-only.md` |
+| `tests/…/m-ro.*.test.ts`, `tests/lib/opencodefixture.ts`, `tests/fixtures/ed7fd46/opencode-entrypoint.sh`, `tests/mutations.json` | `docs/TEST-SPEC-opencode-routing-only.md` |

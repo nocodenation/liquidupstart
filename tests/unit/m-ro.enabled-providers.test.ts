@@ -8,19 +8,21 @@
  *           `enabled_providers`, an allowlist, which also keeps out a provider OpenCode finds by
  *           itself in its environment or in a stored login.
  * Given:    `config/opencode/entrypoint.sh`, run as `tests/lib/opencodefixture.ts` runs it.
- * When:     Three runs under `PRIVACY_ROUTING=only` and one under `opt-in`.
+ * When:     Four runs under `PRIVACY_ROUTING=only` and one under `opt-in`.
  * Then:     Under `only`, `enabled_providers` names `llamacpp` and each privacy provider that
  *           registered, in the order written, and nothing else. Under `opt-in` it is absent.
  * Covers:   RO-3, RO-FR3
- * Negative: a privacy provider the proxy refuses is not listed; `openai` is not listed although
- *           `OPENAI_API_KEY` reached the container and its provider block is written, which is
- *           what makes the row test the allowlist rather than a missing block; and `opt-in`
- *           carries no allowlist.
+ * Negative: a privacy provider the proxy refuses is not listed; `privacy`, the CLI's door, is not
+ *           listed with the CLI off (added in round 1 of the review on #59); `openai` is not
+ *           listed although `OPENAI_API_KEY` reached the container and its provider block is
+ *           written, which is what makes the row test the allowlist rather than a missing
+ *           block; and `opt-in` carries no allowlist.
  * Counterpart: the first row, every provider the mode keeps is listed.
  *
  * Test data: as RO-1's. All on is all three answers 200 with `ENABLE_ANTHROPIC_CLAUDE_CODE=1`.
  * The refused row answers the Anthropic list with 401 and `{"detail":"no ANTHROPIC_API_KEY"}`.
- * The stray key is `OPENAI_API_KEY=sk-ro-stray`.
+ * The stray key is `OPENAI_API_KEY=sk-ro-stray`. The CLI-off row is all on with
+ * `ENABLE_ANTHROPIC_CLAUDE_CODE=0`.
  */
 import { test, expect, describe } from 'bun:test';
 import { ALL_ON, BASE_ENV, LOCAL, OPENAI, REFUSED, ok, runEntrypoint } from '../lib/opencodefixture';
@@ -48,5 +50,10 @@ describe('RO-3 under only, the providers OpenCode may offer', () => {
     const { PRIVACY_ROUTING: _, ...optIn } = ONLY;
     const r = runEntrypoint(ALL_ON, optIn);
     expect(r.config).not.toHaveProperty('enabled_providers');
+  });
+
+  test('RO-3 the negative: privacy is left out when the CLI is off', () => {
+    const r = runEntrypoint(ALL_ON, { ...ONLY, ENABLE_ANTHROPIC_CLAUDE_CODE: '0' });
+    expect(r.config.enabled_providers).toEqual(['llamacpp', 'privacy-openai', 'privacy-anthropic']);
   });
 });

@@ -258,10 +258,11 @@ built-in `anthropic` provider is never pointed at the proxy: "private" is always
 Under `PRIVACY_PROXY_ROUTING=only` the routing override passes `PRIVACY_ROUTING=only` to OpenCode.
 Its default model is then a privacy one: `privacy-anthropic` with the first id the proxy lists,
 then `privacy/private-claude` when the CLI is on, then `privacy-openai` with its newest id by
-`created`, and the local LLM's first model only when the proxy offers none of them. OpenCode also
-gets `enabled_providers`, naming `llamacpp` and the privacy providers that registered, so OpenCode
-Zen and any provider OpenCode would add by itself stay out of the picker. Under `opt-in`,
-`opencode.json` is written as before. `docs/FEATURE-opencode-routing-only.md` has the reasons.
+`created`, and the local LLM's first model only when the proxy offers none of them, which the start
+announces on stderr. OpenCode also gets `enabled_providers`, naming `llamacpp` and the privacy
+providers that registered, so OpenCode Zen and any provider OpenCode would add by itself stay out
+of the picker. Under `opt-in`, `opencode.json` is written as before.
+`docs/FEATURE-opencode-routing-only.md` has the reasons.
 
 With the CLI enabled, the proxy serves `privacy-anthropic` through the Claude subscription and
 honours the requested `claude-*` model.

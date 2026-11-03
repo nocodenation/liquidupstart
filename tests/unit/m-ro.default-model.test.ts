@@ -14,8 +14,9 @@
  * Then:     `model` in the written `opencode.json` is, in this order: `privacy-anthropic` with
  *           the first id the proxy lists; `privacy/private-claude` when the CLI is on, also
  *           when the proxy does not answer; `privacy-openai` with the newest registered id by
- *           `created`; the local LLM's first model. With nothing discovered there is no
- *           `model`. The start line names the default together with its provider.
+ *           `created`, a tie going to the id listed first; the local LLM's first model. With
+ *           nothing discovered there is no `model`. The start line names the default together
+ *           with its provider.
  * Covers:   RO-1, RO-FR1, RO-FR5
  * Negative: an id the entrypoint's own filter drops never becomes the default, although the
  *           two highest `created` values belong to such ids; and with nothing discovered no
@@ -28,12 +29,15 @@
  * the newest `created` in the middle so that neither first nor last passes for newest. The
  * list with dropped ids adds `gpt-6.2-2026-10-30` (a dated snapshot) and `gpt-image-2`, with
  * the two highest `created` values. The list without `created` is the plain one with the field
- * removed. The Anthropic list puts `claude-sonnet-5` before `claude-opus-5`, the reverse of
- * alphabetical order; refused, it answers 401 with `{"detail":"no ANTHROPIC_API_KEY"}`.
+ * removed. The list with a tie, added in round 1 of the review on #59, gives `gpt-6.1-terra` and
+ * `gpt-6.1-sol` the same highest `created`, Terra listed before Sol but not first, and Sol
+ * sorting first alphabetically. The Anthropic list puts `claude-sonnet-5` before
+ * `claude-opus-5`, the reverse of alphabetical order; refused, it answers 401 with
+ * `{"detail":"no ANTHROPIC_API_KEY"}`.
  */
 import { test, expect, describe } from 'bun:test';
 import {
-  ALL_ON, BASE_ENV, LOCAL, OPENAI, OPENAI_UNDATED, OPENAI_WITH_DROPPED, REFUSED, UNREACHABLE,
+  ALL_ON, BASE_ENV, LOCAL, OPENAI, OPENAI_TIED, OPENAI_UNDATED, OPENAI_WITH_DROPPED, REFUSED, UNREACHABLE,
   ok, runEntrypoint
 } from '../lib/opencodefixture';
 
@@ -86,5 +90,10 @@ describe('RO-1 the default under only', () => {
     expect(r.code).toBe(0);
     expect(r.config).not.toHaveProperty('model');
     expect(r.startLine).toBe('Starting opencode web on port 4096 (model: <none discovered>)');
+  });
+
+  test('RO-1 where two registered ids share the highest created, the one listed first', () => {
+    const r = runEntrypoint(noAnthropic(OPENAI_TIED), only('0'));
+    expect(r.config.model).toBe('privacy-openai/gpt-6.1-terra');
   });
 });
