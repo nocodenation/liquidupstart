@@ -1,4 +1,4 @@
-# Handover — 2026-11-01
+# Handover — 2026-11-03
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,15 +9,129 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-11-01* has the live picture, *2026-10-31* under it, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-11-03* has the live picture, *2026-11-02* under it, *2026-11-01* under that, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first eighteen and the review bodies they point to; the rest of this file is the map and the lessons.
+first twenty and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-11-03: #59 ready for review, #55 merged, and Timur on issue 32
+
+**Timur merged #55 (issue 31) at 08:59Z, as `7b5abbc`, and asked on Slack a minute later whether
+#59 and #60 were still work in progress.** On the operator's word #59 is now ready for review.
+#60 stays a draft until its specification is signed off. The operator sends the answer to Timur.
+
+**#55 shares one file with #59, `tests/mutations.json`, and none with #60.** A trial merge of `main`
+into #59, aborted afterwards, was clean: the result holds all 114 entries of `main` and all 102 of
+#59, 125 in all, with no duplicate. No merge commit was made and no suite ran on it, since GitHub's
+merge produces the state that was checked. `../liquidupstart-wt-59` is back at `38d230d`.
+
+**OpenCode's refused-key warning joins #60 once #59 has merged**, the operator decided; #59 gets no
+further commit for it. It becomes a section of #60's specification of its own, specified and
+tested before it is built; `docs/FEATURE-small-repairs.md` §1 on #60 says so (`81a798b`).
+
+**Timur has started on issue 32**: `config/scripts/start/nar-builder.sh`'s notice about a stale
+`volumes/nar_builder/m2`, a leg for it in `cleanup.sh`, and the `BACKLOG.md` entry N7(2). Neither #59
+nor #60 touches those files; #60 will strike other entries of `BACKLOG.md`. On `main`, N7(2) already
+reads `DONE-ON-#25`.
+
+**Open, and whose**, replacing the list of the section below:
+- **the operator's:**
+  - the answer to Timur's question, which the operator is writing;
+  - signing off #60's specification, or changing it;
+  - whether `../liquidupstart-wt-50` and its stack stay, and the proxy's test policy with them;
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles, in `FINISH.md`'s waiting table;
+- **the operator's or Timur's:** the Docker Hub namespace, put off for later;
+- **Timur's:**
+  - reviewing #59;
+  - issue 32;
+  - an answer on OpenCode 2;
+  - privacy-proxy#1, and #2 with its comment;
+  - the Copilot discussion, when there is time for it;
+  - `45-26`, the 0.8.1 question, and whether to take #57 or #58;
+- **ours:**
+  - whatever the review of #59 asks;
+  - #60, once signed off, and the refused-key warning in it after #59's merge;
+  - Hermes's switch, decided on 2026-10-31, a feature with a specification of its own, not started;
+  - every other `OPEN` entry waits for the operator's yes, update-test entry 2's stale half among
+    them.
+
+## Where it stands, 2026-11-02: #56 merged, #59 brought up to it, and #60 specified
+
+**Timur approved #56 and merged it at 07:20Z; issue #50 is closed.** He said so on Slack, and
+`gh pr view 56` gives the merge commit as `a694be6`. His approval carries only a `:+1:`, so the
+0.8.1 question on #56 stays unanswered. The operator thanked him and, in the same message at 08:49Z, told
+him about OpenCode 2. What waited for the merge is done on `main`:
+- the intro to the update-test entries in `BACKLOG.md` names privacy-proxy#1 where it called the
+  findings a draft;
+- the Hermes entry records the operator's decision of 2026-10-31, a fourth switch, as a feature of
+  its own, not started. The decision was made in that day's session and held back until #56, which
+  carries the entry, had merged. `FINISH.md`'s waiting table loses its row.
+
+**#59 has `main` merged in, at `38d230d`, and is still a draft.** The merge was clean.
+`docs/SPECIFICATION.md` and `tests/mutations.json` changed on both sides and hold every line of
+each. At `38d230d`, from a clean tree, one at a time:
+- the RO tier, 21 / 0;
+- the full default tier, 1695 pass, 29 skip, 0 fail across 216 files, and the dashboard 45 / 0;
+- `privacy-routing.test.sh` passed;
+- the eleven RO mutations, validated again.
+
+The PR description says so. Marking it ready is still the operator's call.
+
+**#60 is the package of small repairs, a draft holding its specification only (`9655055`).** The
+operator approved the package on 2026-10-31 to wait for #56. It takes six entries:
+- OpenClaw's primary model after `only`;
+- `200k` and `1m` among `privacy-anthropic`'s models;
+- the redirect from `http://liquid.localhost`;
+- the repositories card's null check;
+- the sentence on the cleaned Claude route in `.env.example`;
+- the README's memory line.
+
+OpenCode's warning for a refused key is left out. It sits one line from #59's change in
+`_discover_ids`, and its test would need #59's fixture. Three local reviews went over the
+specification, as `9655055`'s message records. The second changed the design of the first repair:
+the dropped model now comes back unconditionally, as the sign-ins do. The first draft compared the
+primary with the model `only` pinned, and that needed a rule for a stale `pinned` and another for
+`null`. The specification waits
+for the operator's sign-off, and the note for Timur names #60.
+
+**One new `BACKLOG.md` entry, found by the first of those reviews.** Under `only`, with the Claude
+subscription on, OpenClaw's picker and `modelPolicy.allow` list `anthropic/*` and `claude-cli/*`
+again. `MODEL_WILDCARDS` is built from `ENABLE_CLAUDE_CLI`, which `only` leaves at 1 while it zeroes
+`OPENCLAW_CLAUDE_BACKEND`. Measured on the writer in the 2026.9.1 image, not on a gateway.
+
+**The worktree's stack still runs from `../liquidupstart-wt-50`**, whose branch is merged and gone
+from the remote. Its `volumes/` hold the Claude login, the proxy's test policy and the four
+unregistered deploy keys, none of them to be registered. Removing the worktree would delete them,
+so whether it goes is the operator's to say. Two more worktrees are this session's:
+`../liquidupstart-wt-59` for #59 and `../liquidupstart-wt-sr` for #60.
+
+**Open, and whose**, replacing the lists of the sections below:
+- **the operator's:**
+  - signing off #60's specification, or changing it;
+  - the note for Timur naming #60, and the one naming #59 if it has not gone out;
+  - marking #59 ready for review;
+  - whether `../liquidupstart-wt-50` and its stack stay, and the proxy's test policy with them;
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles, in `FINISH.md`'s waiting table;
+- **the operator's or Timur's:** the Docker Hub namespace, put off for later;
+- **Timur's:**
+  - an answer on OpenCode 2;
+  - privacy-proxy#1, and #2 with its comment;
+  - the Copilot discussion, when he has time for it;
+  - `45-26`, the 0.8.1 question, and whether he takes #57 or #58;
+- **ours:**
+  - #60, once signed off;
+  - OpenCode's refused-key warning, after #59;
+  - Hermes's switch, decided on 2026-10-31, a feature with a specification of its own, not started;
+  - every other `OPEN` entry waits for the operator's yes. Among them is update-test entry 2's stale
+    half, whose image label the operator decided on 2026-10-29 to build together with it rather than
+    inside #50; #56 has merged, so nothing else holds it back.
 
 ## Where it stands, 2026-11-01: #59 implemented and tested, and OpenCode 2 recorded
 

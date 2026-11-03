@@ -1853,9 +1853,11 @@ re-indents; `results[slug] && results[slug].cloned !== now.cloned` is the repair
 
 The next ten entries were found by the update test of 2026-10-29: 0.7.0 updated to 0.8.0 (`e622e01`)
 with `liquidupstart --update`, on macOS with Docker Desktop and compose 5.6.1, then the privacy proxy
-0.3.0 tried with made-up data. What the proxy itself does was drafted as a message to its author,
-for the operator to send. None was worked when they were recorded: after #49 a finding is recorded
-unless the operator asks for it, and a pull request that repairs one says so under it.
+0.3.0 tried with made-up data. What the proxy itself does went to its author as
+nocodenation/privacy-proxy#1 on 2026-10-30, a private repository, in place of the message the
+session had drafted for the operator to send. None was worked when they were recorded: after #49 a
+finding is recorded unless the operator asks for it, and a pull request that repairs one says so
+under it.
 
 ---
 
@@ -2050,6 +2052,21 @@ sign-ins `only` sets aside, and restoring it with them, would repair it.
 
 ---
 
+*Found on 2026-11-02 by the local review of #60's specification, while reading the entry above.*
+
+`OPEN` **Under `only`, OpenClaw's picker lists `anthropic/*` and `claude-cli/*` again when the Claude
+subscription is on.** `config/scripts/start/openclaw.sh` adds both wildcards to `MODEL_WILDCARDS` from
+`ENABLE_CLAUDE_CLI`, which `only` leaves at 1 on purpose, and the writer adds them to
+`agents.defaults.models` and `modelPolicy.allow` after its routing-only block removed them. Run on
+2026-11-02 in `ghcr.io/openclaw/openclaw:2026.9.1` with what `openclaw.sh` passes under `only`: both
+lists came out as `anthropic/*`, `claude-cli/*`, `privacy-openai/*`, `privacy-anthropic/*`. Measured on
+the writer, not on a gateway. The Claude login and the backend are withheld under `only`, so such a
+model presumably fails rather than going around the proxy; that is not measured either. Found by the
+local review of #60's specification. Not worked: after #49 a finding is recorded
+unless the operator asks for it.
+
+---
+
 `OPEN, Timur's` **0.8.0 warns about four `*_MODE` values on every build.** The release predates #52,
 so its `load_env_file` reads the comment `.env.example` writes after these keys as part of the value:
 *unrecognized LIQUID_SYSTEM_DEPENDENCIES_MODE value 'add # add | override'*. The same warning comes
@@ -2060,11 +2077,14 @@ ship those as well.
 
 ---
 
-`OPEN, the operator's` **Hermes is neither behind a switch nor gone.** It stays commented out in
+`OPEN` **Hermes is neither behind a switch nor gone.** It stays commented out in
 `compose.yml`, `build.sh`, `start.sh`, the nginx template and the dashboard, which is the pattern #50's
 switches replace for Liquid, OpenClaw and OpenCode. Put behind a fourth switch, it would have to build
 and run again, and nobody has checked that since it was disabled; deleting it is a decision of its
 own. Left out of #50 by the operator on 2026-10-29 (`docs/FEATURE-component-switches.md`, decision 7).
+*Decided by the operator on 2026-10-31: a fourth switch.* That is a feature of its own, with a
+specification first, because Hermes has to build and run again before a switch can start it.
+Recorded here on 2026-11-02, once #56, which carries this entry, had merged. Not started.
 
 ---
 

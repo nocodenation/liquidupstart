@@ -359,6 +359,190 @@
     "mustFail": "B6-46 the negative: status 1, not the refusal's 2, and the build never reaches Maven"
   },
   {
+    "case": "B7-6",
+    "file": "config/nar_builder/Dockerfile",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "useradd -r -u 1500 -M -d /home/builder builder",
+    "to": "useradd -r -u 1500 -m -d /home/builder builder",
+    "mustFail": "B7-6 each build user is created with no home of its own and given an empty, root-owned 555 one"
+  },
+  {
+    "case": "B7-6",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "List.of(\"builder\", \"builder2\")",
+    "to": "List.of(\"builder\")",
+    "mustFail": "B7-6 and the server's slot users are exactly the users the image creates"
+  },
+  {
+    "case": "B7-6",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "\"-prune\", \"-execdir\", \"rm\"",
+    "to": "\"-prune\", \"-exec\", \"rm\"",
+    "mustFail": "B7-6 and the sweep's removal runs rm from the directory find holds, never on a path resolved again"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/Dockerfile",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "install -d -m 555 -o root -g root /home/builder /home/builder2",
+    "to": "install -d -m 755 -o builder -g builder /home/builder && install -d -m 555 -o root -g root /home/builder2",
+    "mustFail": "B7-7 neither build user can write its passwd home"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "export JAVA_TOOL_OPTIONS=\"-Duser.home=$1/home -Djava.io.tmpdir=$1/tmp\"",
+    "to": "export JAVA_TOOL_OPTIONS=\"-Djava.io.tmpdir=$1/tmp\"",
+    "mustFail": "B7-7 Maven reads its settings from the build's own home"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "      export HOME=\"$1/home\" TMPDIR=\"$1/tmp\"\n",
+    "to": "      export TMPDIR=\"$1/tmp\"\n",
+    "mustFail": "B7-7 a .mavenrc in the passwd home is not sourced, even when it is there"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "  if [ \"$(id -u)\" -ne 0 ]; then\n",
+    "to": "  if [ \"$(id -u)\" -ne 0 ] || ! id \"$BUILD_USER\" >/dev/null 2>&1; then\n",
+    "mustFail": "B7-7 as root, a build user the image lacks stops the build before Maven runs, and the drop directory counts as open"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "build_command() {\n  if ! build_user_is_known; then\n    refuse_unknown_build_user\n    return 1\n  fi\n",
+    "to": "build_command() {\n",
+    "mustFail": "B7-7 and build and target end with exit status 1, HTTP 500, before anything else runs"
+  },
+  {
+    "case": "B7-7",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-home.test.ts",
+    "from": "target_command() {\n  if ! build_user_is_known; then\n    refuse_unknown_build_user\n    return 1\n  fi\n",
+    "to": "target_command() {\n",
+    "mustFail": "B7-7 and build and target end with exit status 1, HTTP 500, before anything else runs"
+  },
+  {
+    "case": "B7-8",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-slots.test.ts",
+    "from": "List.of(\"builder\", \"builder2\")",
+    "to": "List.of(\"builder\", \"builder\")",
+    "mustFail": "B7-8 two concurrent builds run as two different users"
+  },
+  {
+    "case": "B7-8",
+    "file": "config/nar_builder/build.sh",
+    "spec": "tests/integration/m-b7.build-slots.test.ts",
+    "from": "chmod 700 \"$d\"",
+    "to": "chmod 755 \"$d\"",
+    "mustFail": "B7-8 neither of two concurrent builds can reach the other's work directory"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "String after = sweep(user);",
+    "to": "String after = null;",
+    "mustFail": "B7-9 nothing a build started is still running after it"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "String atStart = sweep(user);",
+    "to": "String atStart = null;",
+    "mustFail": "B7-9 what was left before a restart is gone before the first build"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": " && state(task.toPath().resolve(\"stat\")) != 'Z')",
+    "to": ")",
+    "mustFail": "B7-9 a zombie a build leaves does not block its slot"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "        long left = -1;\n        for (int round = 0; round < 5 && (round == 0 || left >= 0); round++) {\n            run(List.of(\"setpriv\", \"--reuid=\" + ids[0], \"--regid=\" + ids[1], \"--clear-groups\",\n                    \"sh\", \"-c\", \"kill -KILL -1\"));\n            try {\n                Thread.sleep(200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n            }\n            left = liveTask(ids[0]);\n            if (Thread.currentThread().isInterrupted()) {\n                break;\n            }\n        }\n        if (left >= 0) {\n            return \"a process would not end, pid \" + left;\n        }\n",
+    "to": "        java.util.function.Supplier<List<ProcessHandle>> running = () -> ProcessHandle.allProcesses()\n                .filter(p -> p.info().user().map(user::equals).orElse(false))\n                .filter(p -> state(java.nio.file.Path.of(\"/proc/\" + p.pid() + \"/stat\")) != 'Z')\n                .collect(java.util.stream.Collectors.toList());\n        for (int round = 0; round < 6; round++) {\n            List<ProcessHandle> live = running.get();\n            if (live.isEmpty()) {\n                break;\n            }\n            for (ProcessHandle p : live) {\n                if (round == 0) {\n                    p.destroy();\n                } else {\n                    p.destroyForcibly();\n                }\n            }\n            try {\n                Thread.sleep(round == 0 ? 1000 : 200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n        }\n        List<ProcessHandle> left = running.get();\n        if (!left.isEmpty()) {\n            return left.size() + \" process(es) would not end, pid \" + left.get(0).pid();\n        }\n",
+    "mustFail": "B7-9 a process whose main thread has exited while another runs is ended, and plants nothing in the slot's next build"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "        long left = -1;\n        for (int round = 0; round < 5 && (round == 0 || left >= 0); round++) {\n            run(List.of(\"setpriv\", \"--reuid=\" + ids[0], \"--regid=\" + ids[1], \"--clear-groups\",\n                    \"sh\", \"-c\", \"kill -KILL -1\"));\n            try {\n                Thread.sleep(200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n            }\n            left = liveTask(ids[0]);\n            if (Thread.currentThread().isInterrupted()) {\n                break;\n            }\n        }\n        if (left >= 0) {\n            return \"a process would not end, pid \" + left;\n        }\n",
+    "to": "        java.util.function.Supplier<List<ProcessHandle>> running = () -> ProcessHandle.allProcesses()\n                .filter(p -> p.info().user().map(user::equals).orElse(false))\n                .filter(p -> state(java.nio.file.Path.of(\"/proc/\" + p.pid() + \"/stat\")) != 'Z')\n                .collect(java.util.stream.Collectors.toList());\n        for (int round = 0; round < 6; round++) {\n            List<ProcessHandle> live = running.get();\n            if (live.isEmpty()) {\n                break;\n            }\n            for (ProcessHandle p : live) {\n                if (round == 0) {\n                    p.destroy();\n                } else {\n                    p.destroyForcibly();\n                }\n            }\n            try {\n                Thread.sleep(round == 0 ? 1000 : 200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n        }\n        List<ProcessHandle> left = running.get();\n        if (!left.isEmpty()) {\n            return left.size() + \" process(es) would not end, pid \" + left.get(0).pid();\n        }\n",
+    "mustFail": "B7-9 a process that keeps forking a successor and exiting is ended"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "            if (fault != null) {",
+    "to": "            if (false) {",
+    "mustFail": "B7-9 a slot that cannot be swept is not used"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "            String fault = sweep(user);",
+    "to": "            String fault = null;",
+    "mustFail": "B7-9 a slot that cannot be swept is not used"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "\"-mindepth\", \"1\", \"-user\", user,\n                \"-prune\"",
+    "to": "\"-mindepth\", \"1\",\n                \"-prune\"",
+    "mustFail": "B7-9 the sweep removes the slot user's files and nobody else's"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "        long left = -1;\n        for (int round = 0; round < 5 && (round == 0 || left >= 0); round++) {\n            run(List.of(\"setpriv\", \"--reuid=\" + ids[0], \"--regid=\" + ids[1], \"--clear-groups\",\n                    \"sh\", \"-c\", \"kill -KILL -1\"));\n            try {\n                Thread.sleep(200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n            }\n            left = liveTask(ids[0]);\n            if (Thread.currentThread().isInterrupted()) {\n                break;\n            }\n        }\n        if (left >= 0) {\n            return \"a process would not end, pid \" + left;\n        }\n",
+    "to": "        java.util.function.LongSupplier scan = () -> {\n            java.io.File[] procs = new java.io.File(\"/proc\").listFiles((d, n) -> n.matches(\"[0-9]+\"));\n            for (java.io.File proc : procs == null ? new java.io.File[0] : procs) {\n                java.io.File[] tasks = new java.io.File(proc, \"task\").listFiles();\n                for (java.io.File task : tasks == null ? new java.io.File[0] : tasks) {\n                    try {\n                        String status = java.nio.file.Files.readString(task.toPath().resolve(\"status\"));\n                        if (realUid(status) == ids[0]) {\n                            String text = java.nio.file.Files.readString(task.toPath().resolve(\"stat\"));\n                            int close = text.lastIndexOf(')');\n                            if (close >= 0 && text.length() >= close + 3 && text.charAt(close + 2) != 'Z') {\n                                return Long.parseLong(proc.getName());\n                            }\n                        }\n                    } catch (IOException e) {\n                        // Gone since it was listed.\n                    }\n                }\n            }\n            return -1;\n        };\n        long left = scan.getAsLong();\n        for (int round = 0; round < 5 && left >= 0; round++) {\n            run(List.of(\"setpriv\", \"--reuid=\" + ids[0], \"--regid=\" + ids[1], \"--clear-groups\",\n                    \"sh\", \"-c\", \"kill -KILL -1\"));\n            try {\n                Thread.sleep(200);\n            } catch (InterruptedException e) {\n                Thread.currentThread().interrupt();\n                break;\n            }\n            left = scan.getAsLong();\n        }\n        if (left >= 0) {\n            return \"a process would not end, pid \" + left;\n        }\n",
+    "mustFail": "B7-9 a process whose name is not UTF-8 is ended, and plants nothing in the slot's next build"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "Long.parseLong(f[2]) != 0",
+    "to": "!f[2].equals(\"0\")",
+    "mustFail": "B7-9 a slot user whose passwd uid reads 00 is refused, and no kill -1 is sent as root"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "\n                        && Long.parseLong(f[2]) != 0) {",
+    "to": ") {",
+    "mustFail": "B7-9 a slot user whose passwd uid reads 00 is refused, and no kill -1 is sent as root"
+  },
+  {
+    "case": "B7-9",
+    "file": "config/nar_builder/BuildServer.java",
+    "spec": "tests/integration/m-b7.build-sweep.test.ts",
+    "from": "        for (String line : status.split(\"\\n\")) {\n            if (line.startsWith(\"Uid:\\t\")) {\n                return Long.parseLong(line.split(\"\\t\")[1]);\n            }\n        }\n        return -1;\n",
+    "to": "        java.util.regex.Matcher m = Pattern.compile(\"(?m)^Uid:\\\\s+([0-9]+)\").matcher(status);\n        return m.find() ? Long.parseLong(m.group(1)) : -1;\n",
+    "mustFail": "B7-9 a process whose name carries a line of `status` of its own does not make the other slot's sweep fail"
+  },
+  {
     "case": "CS-1",
     "file": "config/scripts/start/lib/components.sh",
     "spec": "tests/unit/m-cs.component-reader.test.ts",

@@ -73,23 +73,18 @@ literal_replace() {  # haystack needle replacement
 }
 
 
-# Maven as BUILD_USER when this is root and that user exists -- in the image it
-# does. Outside the container, where the suite runs build.sh against a stub mvn,
-# neither holds and the call is made directly, so a fixture needs no root and no
-# such user. `su` is what the base image has, and the `--` is load-bearing:
-# without it su reads Maven's own flags as its own, and the first run of this came
-# back as `su: invalid option -- 'o'`. After it the first operand becomes $0 and
-# mvn's argv is passed through untouched.
 # Whether the build user can reach the drop directory -- asked rather than
 # assumed. The containment rests on /deploy being root-owned and mode 700 in the
-# image (see the Dockerfile); an image built before that, or a BUILD_USER that
-# does not exist, silently reopens the one route a bundle can take into NiFi's
-# autoload directory without passing narcheck. So the script measures it and
-# refuses to build when it holds no longer. Only meaningful as root with that
-# user present, which is the container; on the host, where the suite runs this
-# against a stub mvn as an ordinary user, there is nothing to drop from.
+# image (see the Dockerfile); an image built before that reopens the one route a
+# bundle can take into NiFi's autoload directory without passing narcheck. So the
+# script measures it and refuses to build when it holds no longer. As root, a
+# BUILD_USER that does not exist cannot be asked, and counts as open: answering
+# closed for it was the 2026-11-02 review's finding on #55, FR41. On the host,
+# where the suite runs this against a stub mvn as an ordinary user, there is
+# nothing to drop from.
 drop_is_closed() {
-  [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1 || return 0
+  [ "$(id -u)" -eq 0 ] || return 0
+  id "$BUILD_USER" >/dev/null 2>&1 || return 1
   probe="${DROP}/.build-user-probe.$$"
   if su "$BUILD_USER" -s /bin/sh -c "touch '$probe' 2>/dev/null"; then
     rm -f "$probe"
@@ -110,10 +105,18 @@ drop_is_closed() {
 #
 # Both temporary directories go through this, rather than a chown beside each
 # `mktemp`, so a third one cannot be added without it.
+#
+# **The build user's, and mode 700.** It was 755, which is all Maven needed when
+# one user ran every build -- and with two slots running as one uid, a running
+# build could write into the other's repository. BuildServer now hands each slot
+# its own user (FR42), and 700 keeps the other one out. `home` and `tmp` are the
+# HOME, user.home and java.io.tmpdir `run_maven` gives Maven (FR41), so whatever
+# a build writes there goes with it. #31.
 work_dir_for_build() {
   d="$(mktemp -d)"
+  mkdir -p "${d}/home" "${d}/tmp"
   chown -R "$BUILD_USER" "$d" 2>/dev/null || true
-  chmod 755 "$d" 2>/dev/null || true
+  chmod 700 "$d" 2>/dev/null || true
   printf '%s' "$d"
 }
 
@@ -178,11 +181,59 @@ seed_notice() {
   fi
 }
 
-run_maven() {
-  if [ "$(id -u)" -eq 0 ] && id "$BUILD_USER" >/dev/null 2>&1; then
-    su "$BUILD_USER" -s /bin/sh -c 'exec mvn -B "$@"' -- mvn "$@"
+# Maven with its home in the build's own work directory, never the passwd one.
+#
+# The passwd home is root-owned and read-only (the Dockerfile), and nothing in it
+# may reach a build: the launcher sources `$HOME/.mavenrc`, and Maven reads
+# `settings.xml` from `user.home`, which a JVM takes from passwd rather than from
+# HOME. So both are set, and user.home through JAVA_TOOL_OPTIONS rather than
+# Maven's `-D`, because a JVM that Maven forks -- surefire, an `exec` -- reads
+# that variable and not its parent's properties. Measured in the image: settings
+# read from `<work>/home/.m2`, and a forked JVM reporting `user.home = <work>/home`.
+# FR41, #31.
+#
+# As root, Maven runs as BUILD_USER or not at all: a BUILD_USER the image lacks
+# stops the build here rather than running the author's code as root, which is
+# what this did until the 2026-11-02 review of #55. Outside the container, where
+# the suite runs build.sh as an ordinary user against a stub mvn, the call is made
+# directly, so a fixture needs no root and no such user. `su` is what the base
+# image has, and the `--` is load-bearing: without it su reads Maven's own flags
+# as its own, and the first run of this came back as `su: invalid option -- 'o'`.
+# After it the first operand becomes $0 and mvn's argv is passed through untouched.
+#
+# `build` and `target` ask `build_user_is_known` before anything else, since the
+# refusal surfaced first through the API version's resolution, as exit 3 with
+# advice to add a pom.xml. Second review of #55, FR41.
+build_user_is_known() {
+  [ "$(id -u)" -ne 0 ] || id "$BUILD_USER" >/dev/null 2>&1
+}
+
+refuse_unknown_build_user() {
+  cat >&2 <<NOUSER
+nar-build refused: the build user ${BUILD_USER} does not exist in this image, and Maven is not run as root in its place.
+The builder server and its image name the same users; rebuild and recreate the builder:
+  ./config/scripts/build/nar-builder.sh && docker compose up -d --force-recreate nar_builder
+NOUSER
+}
+
+run_maven() {  # run_maven <work dir> <mvn args...>
+  _rm_work="$1"
+  shift
+  if [ "$(id -u)" -ne 0 ]; then
+    (
+      export HOME="${_rm_work}/home" TMPDIR="${_rm_work}/tmp"
+      export JAVA_TOOL_OPTIONS="-Duser.home=${_rm_work}/home -Djava.io.tmpdir=${_rm_work}/tmp"
+      exec mvn -B "$@"
+    )
+  elif id "$BUILD_USER" >/dev/null 2>&1; then
+    su "$BUILD_USER" -s /bin/sh -c '
+      export HOME="$1/home" TMPDIR="$1/tmp"
+      export JAVA_TOOL_OPTIONS="-Duser.home=$1/home -Djava.io.tmpdir=$1/tmp"
+      shift
+      exec mvn -B "$@"' -- mvn "$_rm_work" "$@"
   else
-    mvn -B "$@"
+    refuse_unknown_build_user
+    return 1
   fi
 }
 
@@ -219,9 +270,10 @@ resolve_api_version() {
 </project>
 POM
 
-  if ! run_maven -f "${probe}/pom.xml" -Dmaven.repo.local="$(repo_for "$probe")" dependency:list \
+  if ! run_maven "$probe" -f "${probe}/pom.xml" -Dmaven.repo.local="$(repo_for "$probe")" dependency:list \
        > "${probe}/resolve.log" 2>&1; then
-    API_ERROR="$(grep '^\[ERROR\]' "${probe}/resolve.log" | head -4 | sed 's/^/  /')"
+    # The refusal of an unknown build user as well, which is not Maven's to print.
+    API_ERROR="$(grep -e '^\[ERROR\]' -e '^nar-build refused:' "${probe}/resolve.log" | head -4 | sed 's/^/  /')"
     rm -rf "$probe"
     return 1
   fi
@@ -496,6 +548,10 @@ POM
 }
 
 target_command() {
+  if ! build_user_is_known; then
+    refuse_unknown_build_user
+    return 1
+  fi
   if ! TARGET="$(resolve_target)"; then
     printf '%s\n' "$TARGET" >&2
     return 3
@@ -774,6 +830,10 @@ NOINDEX
 
 
 build_command() {
+  if ! build_user_is_known; then
+    refuse_unknown_build_user
+    return 1
+  fi
   rel="$1"
   case "$rel" in
     ""|/*|*..*)
@@ -943,13 +1003,20 @@ NOSPI
   # when the containment does not hold, instead of a detector running after the
   # fact over writes it cannot attribute.
   if ! drop_is_closed; then
+    if id "$BUILD_USER" >/dev/null 2>&1; then
+      why="${DROP} is writable by the unprivileged build user ${BUILD_USER}, so a pom could
+put a bundle into Liquid's autoload directory without narcheck ever judging it.
+The directory is mounted under a root-only parent on purpose; an image built
+before 2026-10-05 does not have it."
+    else
+      why="The build user ${BUILD_USER} does not exist in this image, so ${DROP}
+cannot be shown closed to it, and Maven is not run as root in its place. The
+builder server and its image name the same users."
+    fi
     cat >&2 <<NOTCLOSED
 
 nar-build refused: this builder is misconfigured and no build will run.
-${DROP} is writable by the unprivileged build user ${BUILD_USER}, so a pom could
-put a bundle into Liquid's autoload directory without narcheck ever judging it.
-The directory is mounted under a root-only parent on purpose; an image built
-before 2026-10-05 does not have it. Rebuild the builder image:
+${why} Rebuild the builder image:
 
   ./config/scripts/build/nar-builder.sh && docker compose up -d nar_builder
 NOTCLOSED
@@ -969,7 +1036,7 @@ NOTCLOSED
   else
     set -- -f "${proj}/pom.xml" -Dmaven.repo.local="$build_repo" package
   fi
-  if ! run_maven "$@" > "$log" 2>&1; then
+  if ! run_maven "$work" "$@" > "$log" 2>&1; then
     cat "$log" >&2
     cat >&2 <<BUILDFAILED
 

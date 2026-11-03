@@ -127,7 +127,7 @@ const PROBE =
     "printf '#!/bin/sh\\nid -u\\n' > \"$stub\"",
     "chmod 755 \"$stub\"",
     "eval \"$(sed -n '/^BUILD_USER=/p;/^run_maven() {/,/^}/p' /opt/builder/build.sh)\"",
-    "echo \"run_maven-uid: $(run_maven -q 2>/dev/null | tail -1)\"",
+    "echo \"run_maven-uid: $(run_maven \"$(mktemp -d)\" -q 2>/dev/null | tail -1)\"",
     "# drop_is_closed, out of the shipped build.sh, in both shapes: the real",
     "# mount under a root-only parent, and a reachable 777 directory, which is",
     "# what an image built before 2026-10-05 gives.",
