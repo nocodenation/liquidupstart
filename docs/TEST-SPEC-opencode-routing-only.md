@@ -2,8 +2,9 @@
 
 Status: **signed off on 2026-11-01, and implemented on this branch.** Each block's *What it found*
 comes from the run after `642601b`, the commit that adds the code, and each block's *Shown able to
-fail* from `./tests/mutate.sh --case`, which refuses a subject with uncommitted changes. All runs
-started and ended on a clean tree at `642601b`, one at a time:
+fail* from `./tests/mutate.sh --case`, which refuses a subject with uncommitted changes. What round 1
+of the review added was run at `939ba57`, further down. All runs started and ended on a clean tree,
+one at a time. At `642601b`:
 
 - **RO tier.** `./tests/run.sh ro` gave 21 pass and 0 fail across five files, in 18.5 s.
 - **Mutations.** Eleven registered, eleven validated: RO-1 six, RO-2 one, RO-3 two, RO-4 one, RO-5
@@ -15,6 +16,23 @@ started and ended on a clean tree at `642601b`, one at a time:
 The full tier's stderr carried the two messages known before it: the builder sweep reporting an
 image that a concurrent case's container still held, which it reports by design and which was gone
 afterwards, and the TypeError of `GitRepositories.svelte` recorded in `BACKLOG.md`.
+
+**Round 1 of the review, at `939ba57`.** Timur found the sandbox of the unit cases broken wherever
+the temp directory is `/tmp`, the Linux default; this host's is under `/var/folders`, which is why
+the runs above were green. The repair came with RO-8, the warning he proposed with RO-FR6 and RO-7,
+and the two rows he found missing as RO-1 row 9 and RO-3 row 5. `main` was merged in first
+(`9248dbd`). At `939ba57`:
+
+- **RO tier.** `./tests/run.sh ro` gave 32 pass and 0 fail across seven files, once with this host's
+  temp directory and once with `TMPDIR=/tmp`.
+- **Mutations.** Eighteen registered for RO-1 to RO-7, all validated, under both temp directories:
+  RO-1 seven, RO-2 one, RO-3 three, RO-4 one, RO-5 one, RO-7 five. RO-8's three edits by hand.
+- **Full default tier.** 1732 pass, 30 skip and 0 fail across 221 files, in 30 minutes, with the 48
+  stack-level files left out as always; the dashboard gave 45 pass and 0 fail. Its stderr carried one
+  message, the builder sweep reporting an image a concurrent case's container still held, which it
+  reports by design and which was gone afterwards.
+- **Routing.** `scripts/tests/privacy-routing.test.sh`, TC-821 to TC-826, passed.
+
 Feature: `docs/FEATURE-opencode-routing-only.md` (RO-FR1 to RO-FR6, RO-NFR1, RO-NFR2).
 
 Files are named `tests/<level>/m-ro.<subject>.test.ts`. Their headers open with `M-RO · <Level> · …`
@@ -151,8 +169,8 @@ lets it through, then `exit 0` in row 3 and `exit 3` in row 4. Neither writes an
 | **Test data, both sides** | Row 1: all three answers 200, CLI on. Row 2: Anthropic 401, CLI on. Row 3: OpenAI and Anthropic `000`, CLI on. Row 4: Anthropic 401, CLI off, the plain OpenAI list. Row 5: as row 4, the list with dropped ids. Row 6: as row 4, the list without `created`. Row 7: OpenAI and Anthropic `000`, CLI off. Row 8: every URL `000`, CLI off. Row 9: as row 4, the list with a tie. |
 | **Expected** | Row 1: `privacy-anthropic/claude-sonnet-5`, and the start line ends `(model: privacy-anthropic/claude-sonnet-5)`. Rows 2 and 3: `privacy/private-claude`, and row 2's start line ends `(model: privacy/private-claude)`. Row 4: `privacy-openai/gpt-6.1-terra`, and the start line ends `(model: privacy-openai/gpt-6.1-terra)`. Row 5: `privacy-openai/gpt-6.1-terra`, neither `gpt-image-2` nor `gpt-6.2-2026-10-30`. Row 6: `privacy-openai/gpt-5.6-luna`. Row 7: `llamacpp/particle-ai/particle-1`. Row 8: no `model` key, and the start line ends `(model: <none discovered>)`. Row 9: `privacy-openai/gpt-6.1-terra`. |
 | **Dependencies** | `/bin/sh`, `jq`. |
-| **Shown able to fail** | Six registered, all validated. The `privacy-anthropic` step skipped: row 1 red (1 red, 7 green). The CLI step made `elif false`, registered once for row 2 and once for row 3: both red (2 red, 6 green). The sort by `created` removed: rows 4 and 5 red. The restriction to registered ids removed: row 5 alone (1 red, 7 green), which is why that row has a list of its own. The start line left on the bare id (`${_DEFAULT_MODEL#*/}`): 4 red, rows 1, 2 and 4 as specified, and row 8 as well, whose `<none discovered>` that form also loses. Added in round 1: the tie handed to the id listed last (`sort_by(.created // 0) | .[-1].id`), rows 6 and 9 red. No edit tried reddens row 9 alone. Run with jq 1.7.1 on the two lists: `max_by(.created // 0)`, `sort_by(.created // 0) | .[-1]` and a tie broken by `.id` pick the wrong id in rows 6 and 9 alike; `sort_by(-.created)`, without `// 0`, fails row 6 alone, since jq cannot negate `null`; `min_by(-(.created // 0))` and `unique_by(.created // 0) | last` pick right in both. Row 9 is there because the operator's lists carry `created`, and the rule had been shown only where none does. |
-| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree, with the host's `/bin/sh` and jq 1.7.1: 8 / 0. Nothing failed while it was written. |
+| **Shown able to fail** | Seven registered, all validated, last at `939ba57` with nine rows. The `privacy-anthropic` step skipped: row 1 red (1 red, 8 green). The CLI step made `elif false`, registered once for row 2 and once for row 3: both red (2 red, 7 green). The sort by `created` removed: rows 4, 5 and 9 red, each then naming the first registered id, `gpt-5.6-luna` (3 red, 6 green). The restriction to registered ids removed: row 5 alone (1 red, 8 green), which is why that row has a list of its own. The start line left on the bare id (`${_DEFAULT_MODEL#*/}`): 4 red, rows 1, 2 and 4 as specified, and row 8 as well, whose `<none discovered>` that form also loses. Added in round 1: the tie handed to the id listed last (`sort_by(.created // 0) | .[-1].id`), rows 6 and 9 red (2 red, 7 green). No edit tried reddens row 9 alone. Run with jq 1.7.1 on the two lists: `max_by(.created // 0)`, `sort_by(.created // 0) | .[-1]` and a tie broken by `.id` pick the wrong id in rows 6 and 9 alike; `sort_by(-.created)`, without `// 0`, fails row 6 alone, since jq cannot negate `null`; `min_by(-(.created // 0))` and `unique_by(.created // 0) | last` pick right in both. Row 9 is there because the operator's lists carry `created`, and the rule had been shown only where none does. |
+| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree, with the host's `/bin/sh` and jq 1.7.1: 8 / 0. Nothing failed while it was written. At `939ba57`, with row 9: 9 / 0, under both temp directories. |
 | **Implemented by** | `tests/unit/m-ro.default-model.test.ts`. |
 | **Covers** | RO-FR1, RO-FR5, UC1 to UC4a. |
 
@@ -181,8 +199,8 @@ lets it through, then `exit 0` in row 3 and `exit 3` in row 4. Neither writes an
 | **Test data, both sides** | Row 1: all three answers 200, CLI on. Row 2: Anthropic 401, CLI on. Row 3: as row 1, with `OPENAI_API_KEY=sk-ro-stray`. Row 4: `opt-in`, as row 1. Row 5: as row 1, with the CLI off. |
 | **Expected** | Row 1: `["llamacpp","privacy-openai","privacy-anthropic","privacy"]`. Row 2: `["llamacpp","privacy-openai","privacy"]`. Row 3: as row 1. Its `provider` holds `openai`, which is what makes the row test the allowlist rather than a missing block; that the block is written is not a property this feature wants, and the feature's §5 says why it is left. Row 4: no `enabled_providers`. Row 5: `["llamacpp","privacy-openai","privacy-anthropic"]`. |
 | **Dependencies** | `/bin/sh`, `jq`. |
-| **Shown able to fail** | Two registered, both validated. The allowlist built without the privacy providers: rows 1 to 3 red, the `opt-in` row green. `openai` added to it in its own block: row 3 alone (1 red, 3 green). Added in round 1: the `privacy` provider written whatever the CLI switch says (`if true`), row 5 alone. |
-| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree: 4 / 0. |
+| **Shown able to fail** | Three registered, all validated, last at `939ba57` with five rows. The allowlist built without the privacy providers: rows 1, 2, 3 and 5 red, the `opt-in` row green (4 red, 1 green). `openai` added to it in its own block: row 3 alone (1 red, 4 green). Added in round 1: the `privacy` provider written whatever the CLI switch says (`if true`), row 5 alone (1 red, 4 green). |
+| **What it found** | Run on 2026-11-01 at `642601b` on a clean tree: 4 / 0. At `939ba57`, with row 5: 5 / 0, under both temp directories. |
 | **Implemented by** | `tests/unit/m-ro.enabled-providers.test.ts`. |
 | **Covers** | RO-FR3, UC6. |
 
@@ -241,8 +259,8 @@ lets it through, then `exit 0` in row 3 and `exit 3` in row 4. Neither writes an
 | **Test data, both sides** | Row 1: `only`, OpenAI and Anthropic `000`, CLI off, as RO-1 row 7. Row 2: `only`, all three answers 200, CLI on, as RO-1 row 1. Row 3: `only`, every URL `000`, CLI off, as RO-1 row 8. Row 4: as row 1 without `PRIVACY_ROUTING`. Row 5: `only`, all three answers 200, CLI on, `PRIVACY_PROXY_URL` unset, so discovery never runs and no privacy provider is written. §3 gives the sentence looked for. |
 | **Expected** | Row 1: `model` is `llamacpp/particle-ai/particle-1`, and stderr holds the sentence followed by `the default is llamacpp/particle-ai/particle-1`. Row 2: `model` is `privacy-anthropic/claude-sonnet-5`, and stderr does not hold the sentence. Row 3: no `model`, and no sentence. Row 4: `model` is `llamacpp/particle-ai/particle-1`, and no sentence. Row 5: as row 1. |
 | **Dependencies** | `/bin/sh`, `jq`. |
-| **Shown able to fail** | To be validated: the warning's `echo` made `true` (rows 1 and 5 red, registered once for each); the warning moved out of the `elif`, so it follows any default (row 2 red); its `elif` made `else`, so it follows no default too (row 3 red); the test for `only` made `if true`, RO-2's mutation registered again (row 4 red). |
-| **What it found** | Not yet run. |
+| **Shown able to fail** | Five registered, all validated at `939ba57` under both temp directories. The warning's `echo` made `true`: rows 1 and 5 red (2 red, 3 green), registered once for each. The warning moved out of the `elif`, so it follows any default: row 2 (1 red, 4 green). Its `elif` made `else`, so it follows no default too: row 3 (1 red, 4 green). The test for `only` made `if true`, RO-2's mutation registered again: row 4 (1 red, 4 green). |
+| **What it found** | Run at `939ba57` on a clean tree: 5 / 0, under both temp directories. Row 5 came from the local review of this round: the first wording blamed the proxy for offering no model, which does not fit a start where `PRIVACY_PROXY_URL` is unset and discovery never ran. |
 | **Implemented by** | `tests/unit/m-ro.fallback-warning.test.ts`. |
 | **Covers** | RO-FR6, UC4. |
 
@@ -256,7 +274,7 @@ lets it through, then `exit 0` in row 3 and `exit 3` in row 4. Neither writes an
 | **Test data, both sides** | §3, *The sandbox, RO-8*. |
 | **Expected** | Row 1: the copy holds both rewritten paths and neither the original nor the doubled one. Row 2: the box starts with `/tmp/lu-ro-`, and `model` is `privacy-anthropic/claude-sonnet-5`. Row 3: `runEntrypoint()` throws, and the message holds `exited 0 but wrote no opencode.json`. Row 4: it returns, with status 3 and `config` `null`. |
 | **Dependencies** | `/bin/sh`, `jq`, and a writable `/tmp`. |
-| **Shown able to fail** | By hand, since `tests/mutate.sh` refuses a subject under `tests/lib/`: assertions read it, so a red run would not show what it shows for product code. The registry holds an exemption for RO-8 that says so. The three edits: the two replacements chained again, the form round 1 found (rows 1 and 2 should go red); the check for a missing file removed (row 3); the check made to ignore the status (row 4). |
-| **What it found** | Not yet run. Before the repair, at `38d230d` with `TMPDIR=/tmp`, RO-1 to RO-4 gave 6 pass and 12 fail: ten with `null is not an object`, as the review reported, and RO-2's two comparisons with `expect(received).not.toBeNull()`. Two of the six that passed were negatives that held only because there was no file: RO-1 row 8 and RO-3 row 4 assert `not.toHaveProperty`, which `null` satisfies. Row 3's check turns that into a harness error. |
+| **Shown able to fail** | By hand at `939ba57`, since `tests/mutate.sh` refuses a subject under `tests/lib/`: assertions read it, so a red run would not show what it shows for product code. The registry holds an exemption for RO-8 that says so. The two replacements chained again, the form round 1 found: rows 1 and 2 red (2 red, 2 green). The check for a missing file removed: row 3 (1 red, 3 green). The check made to ignore the status: row 4 (1 red, 3 green). The file was restored after each edit. With the chained form put back and `TMPDIR=/tmp`, RO-1, RO-2, RO-3 and RO-7 gave 1 pass and 22 fail, every failure the harness's own `exited 0 but wrote no opencode.json`, the two negatives that had passed on the missing file among them. The one pass is RO-2's fixture row, which runs no entrypoint. |
+| **What it found** | Run at `939ba57` on a clean tree: 4 / 0, under both temp directories. Before the repair, at `38d230d` with `TMPDIR=/tmp`, RO-1 to RO-4 gave 6 pass and 12 fail: ten with `null is not an object`, as the review reported, and RO-2's two comparisons with `expect(received).not.toBeNull()`. Two of the six that passed were negatives that held only because there was no file: RO-1 row 8 and RO-3 row 4 assert `not.toHaveProperty`, which `null` satisfies. Row 3's check turns that into a harness error. |
 | **Implemented by** | `tests/unit/m-ro.sandbox.test.ts`. |
 | **Covers** | The harness of RO-1, RO-2, RO-3 and RO-7. |
