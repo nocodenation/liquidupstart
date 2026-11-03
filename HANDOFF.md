@@ -9,17 +9,78 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-11-03* has the live picture, *2026-11-02* under it, *2026-11-01* under that, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-11-03, afternoon* has the live picture, *2026-11-03, morning* under it, *2026-11-02* under that, *2026-11-01* under that, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first twenty and the review bodies they point to; the rest of this file is the map and the lessons.
+first twenty-one and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-11-03: #59 ready for review, #55 merged, and Timur on issue 32
+## Where it stands, 2026-11-03, afternoon: #59's first round answered, #60 implemented, #61 merged
+
+**Timur requested changes on #59 at 10:01Z: one blocker and two optional points, all answered.** The
+blocker was real and reproduced: the M-RO harness rewrote `/tmp/` twice when its sandbox lay under
+`/tmp`, the Linux default, so every case read no file on a stock host while this Mac, whose temp
+directory is under `/var/folders`, ran green. `939ba57` repairs it in one pass, makes a run that
+exits 0 without a file a harness error (two negatives had passed on the missing file), adds RO-8 for
+the harness (exempt in the registry, since `mutate.sh` refuses `tests/lib/`, and shown by hand), the
+fallback warning he proposed (RO-7, decision 8; `depends_on` declined with reasons), and his two
+coverage rows. `main` was merged in first (`9248dbd`, #55 had changed `tests/mutations.json`). The
+results are in `75cd167`, and `74acd56` corrects them: the worktree had no `dashboard/node_modules`,
+so the full runs at `38d230d` and `939ba57` ran the card's six component files as notices; with the
+dependencies installed the seven gated files gave 68 pass. One comment on #59 answers the review, and
+the description is rewritten. A re-review is requested from Timur.
+
+**#60 is implemented to its signed-off specification, on the operator's go of 2026-11-03.** The code
+is `c38fd78`, SR-3's control `1c8dd3b`, the results `0de19c8`, after `main` with #61 was merged in as
+`1a4c1ca` (`tests/mutations.json` conflicted and was resolved as the union, 171 entries). The local
+review of the implementation changed the specification in four places, each recorded there: TC-824
+of `privacy-routing.test.sh` had begun passing through the new restore and now removes the record
+between its runs; a directory at the record's path aborted the start (decision 7, rows 18 and 19);
+an unusable record outlived an `only` start that dropped nothing (row 17); and row 9 restored a model
+nothing served. Twenty mutations validated; full tier 1759 / 19 / 0 at `1c8dd3b` with the dashboard
+dependencies installed. **SR-5 ran on the worktree's stack:** under `only` the writer dropped and
+recorded `anthropic/claude-opus-5`, back under `opt-in` it restored it and removed the record, the
+gateway healthy throughout. For that, `../liquidupstart-wt-50`'s `openclaw.sh` was replaced by #60's
+for two starts and put back with `git checkout`; its `.env` is at `opt-in` again. No sign-in moved,
+and the Claude login's `.credentials.json` was refreshed by the CLI during the run, valid until
+21:49. #60 is still a draft; the description is rewritten. The refused-key warning joins it after
+#59's merge.
+
+**Timur merged #61 (issue 32) at 12:49Z.** Bringing #60 up to it showed two of its B7-10 cases
+failing on this Mac's bash 3.2.57, which has no `compat42`, on `main` as well. That is a `BACKLOG.md`
+entry marked as Timur's, next to two more from today: whether `withhold_openclaw_logins` reaches
+2026.9.1's SQLite sign-ins, which SR-5 could not show, and a computed line in `tests/run.sh` for a
+missing `dashboard/node_modules`. Both worktrees, `../liquidupstart-wt-59` and
+`../liquidupstart-wt-sr`, now have the dashboard dependencies installed.
+
+**Open, and whose**, replacing the list of the section below:
+- **the operator's:**
+  - whether #60 goes to ready for review;
+  - telling Timur, where not done yet, that #59's first round is answered, and about B7-10 on
+    macOS's bash;
+  - whether `../liquidupstart-wt-50` and its stack stay, and the proxy's test policy with them;
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles, in `FINISH.md`'s waiting table;
+- **the operator's or Timur's:** the Docker Hub namespace, put off for later;
+- **Timur's:**
+  - re-reviewing #59;
+  - B7-10 on macOS's bash;
+  - an answer on OpenCode 2;
+  - privacy-proxy#1, and #2 with its comment;
+  - the Copilot discussion, when there is time for it;
+  - `45-26`, the 0.8.1 question, and whether to take #57 or #58;
+- **ours:**
+  - whatever the re-review of #59 asks;
+  - whatever a review of #60 asks, and the refused-key warning in it after #59's merge;
+  - Hermes's switch, decided on 2026-10-31, a feature with a specification of its own, not started;
+  - every other `OPEN` entry waits for the operator's yes, update-test entry 2's stale half among
+    them.
+
+## Where it stands, 2026-11-03, morning: #59 ready for review, #55 merged, and Timur on issue 32
 
 **Timur merged #55 (issue 31) at 08:59Z, as `7b5abbc`, and asked on Slack a minute later whether
 #59 and #60 were still work in progress.** On the operator's word #59 is now ready for review.

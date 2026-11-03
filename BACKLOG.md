@@ -2183,6 +2183,37 @@ entries, and nothing at all when `LOCAL_LLM_API_BASE` is emptied. Found while ch
 update-test entry on this stack. Not worked: after #49 a finding is recorded unless the operator
 asks for it.
 
+---
+
+`OPEN, Timur's` **Two B7-10 cases from #61 fail on macOS's bash.**
+`tests/unit/m-b7.stale-cache-notice.test.ts` runs the notice under `bash -O compat42`, and its
+control does the same. The bash macOS ships is
+3.2.57, which has no `compat42`, so `bash -O compat42` exits 2 before the script runs: on `main` at
+`6f892f7`, run on 2026-11-03 on the operator's Mac, the file gave 6 pass and 2 fail, both those
+cases. The case name already says *compat31 where bash accepts it*; `compat42` needs the same
+condition, or a skip that says why. Found while bringing #60 up to `main`. Not worked: it is
+#61's test, and after #49 a finding is recorded unless the operator asks for it.
+
+`OPEN` **Whether `withhold_openclaw_logins` reaches OpenClaw 2026.9.1's sign-ins is not known.** Under
+`only`, `config/scripts/start/lib/privacy-routing.sh` sets aside `credentials/` and
+`agents/*/agent/auth*.json`. OpenClaw 2026.9.1 keeps auth profiles in the agent's SQLite store,
+`agents/<id>/agent/openclaw-agent.sqlite`, table `auth_profile_store`, which `start.sh` itself reads
+for the Copilot token, and which the function does not touch. On the worktree's installation, read
+on 2026-11-03 during #60's SR-5, there was no file the function lists and the table was empty, so
+nothing could show whether a sign-in stored there stays usable under `only`. A start under `only`
+with a Copilot or Codex sign-in stored would answer it. Not worked: after #49 a finding is
+recorded unless the operator asks for it.
+
+`OPEN` **A worktree without `dashboard/node_modules` runs the card's component cases as notices, and
+the full tier's numbers do not say so.** The six component files gated on `DASHBOARD_DEPS` then each
+run one notice, which passes, in place of their cases. On 2026-11-03 two of #59's full runs, at
+`38d230d` and `939ba57`, counted that way; the seven gated files gave 68 pass once the dependencies
+were installed. HANDOFF recorded the same lesson on 2026-10-28, and it was missed again, which is
+the argument for a computed answer: `tests/run.sh` already prints the Docker VM's free disk before
+it starts, and the Liquid image's versions when a selected file reads them, and a line saying
+whether the dashboard dependencies are there would be read at the moment it matters. Not worked: after #49 a finding is recorded unless
+the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
