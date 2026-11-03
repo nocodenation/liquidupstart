@@ -9,15 +9,64 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-11-03, afternoon* has the live picture, *2026-11-03, morning* under it, *2026-11-02* under that, *2026-11-01* under that, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-11-03, evening* has the live picture, *2026-11-03, afternoon* under it, *2026-11-03, morning* under that, *2026-11-02* under that, *2026-11-01* under that, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first twenty-one and the review bodies they point to; the rest of this file is the map and the lessons.
+first twenty-two and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-11-03, evening: #59, #60 and #62 merged, and #63 the last pull request open
+
+**Timur approved and merged #59 at 14:20Z and #60 at 14:36Z**, and his own #62, the specification
+round for issue 33, at 14:47Z. The full default tier on `main` with #60, run before #62 landed,
+gave 1827 / 19 / 2: the two B7-10 cases of macOS's bash 3.2, nothing else.
+
+**#63 is the refused-key warning, and the operator decided it is the last pull request we open.** It
+was to join #60 once #59 had merged; #60 merged first, and the operator approved a pull request of
+its own. It is section 8 of `docs/FEATURE-small-repairs.md` and SR-6, on
+`fix/opencode-refused-key-warning` in `../liquidupstart-wt-rk`. The warning reads the proxy's 401: its
+own `provider_key_missing`, a refusal in the shape OpenAI or Anthropic answer in, or anything else,
+which gets a line naming both; no body is printed or left in `/tmp`, since OpenAI's quotes part of
+the key. The bodies were measured on the running proxy 0.3.0 and from both providers with a made-up
+key. SR tier 44 / 3 / 0, RO tier 33 / 0, twenty mutations validated, full tier 1843 / 19 / 2 at
+`d4224cd`; `main` with #62 merged in as `7c0f998`. Ready for review, Timur requested.
+
+**What it cost, and the rule taken from it.** The repair was one line. Four rounds of `/code-review`
+before the first push made it fifteen unit rows, one in the image and twenty mutations, and changed
+the signed-off specification twice, because each fix gave the next round new surface. The operator
+signed the changed version off, and called it the road that never ends. From now on a pull request
+gets one review pass and one check of its fixes, and only defects in what it changes are fixed.
+Two findings outside it are `BACKLOG.md` entries, not worked: a provider's 403 or 429 reported as
+unreachable, and discovery without a time limit per try.
+
+**Worktrees.** `../liquidupstart-wt-59` and `../liquidupstart-wt-sr` hold merged branches;
+`wt-sr` also has an unpushed merge commit, `aec8868`, whose tree is `main`'s after #60 and which
+nothing needs. Removing them is the operator's call. `../liquidupstart-wt-50` and its stack still run.
+
+**Open, and whose**, replacing the list of the section below:
+- **the operator's:**
+  - whether `../liquidupstart-wt-59`, `../liquidupstart-wt-sr` and `../liquidupstart-wt-50`, with its
+    stack, stay;
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles, in `FINISH.md`'s waiting table;
+  - #7 and #8, which are not ours, as before;
+- **the operator's or Timur's:** the Docker Hub namespace, put off for later;
+- **Timur's:**
+  - reviewing #63;
+  - B7-10 on macOS's bash, and the rest of issue 33 after its specification;
+  - an answer on OpenCode 2;
+  - privacy-proxy#1, and #2 with its comment;
+  - the Copilot discussion, when there is time for it;
+  - `45-26`, the 0.8.1 question, and #34, #57 and #58;
+- **ours:**
+  - whatever the review of #63 asks, answered on #63;
+  - Hermes's switch, decided on 2026-10-31, which would be a pull request of its own and so waits for
+    the operator's word;
+  - every other `OPEN` entry waits for the operator's yes as well.
 
 ## Where it stands, 2026-11-03, afternoon: #59's first round answered, #60 implemented, #61 merged
 
