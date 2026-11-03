@@ -239,6 +239,95 @@ mistake is available here and is cheaper to avoid than to repeat.
   build that leaves thousands of orphans on purpose brings later builds nearer that bound. A
   restart of `nar_builder` clears them. An `init` would reap them, but it would also remove the
   premise B7-9 (7) is built on; that is a change of its own, not made here.
+- **FR43 — A stale `volumes/nar_builder/m2` is named with the one command that removes it, and the
+  start script still removes nothing.** *Added 2026-11-03, #32.* `config/scripts/start/nar-builder.sh`
+  exists for one notice: an installation that built before 2026-10-10 still holds the shared Maven
+  cache #10 mounted at `/m2`, tens of megabytes that nothing reads since #25. When the directory is
+  there, the notice names it, says why nothing reads it, says why a plain `rm` is refused, and prints
+  — with the installation's own path resolved into it, quoted for the shell — the command that
+  removes it:
+
+  ```
+  docker run --pull never --rm --entrypoint rm -v '<project>/volumes/nar_builder:/v' liquidupstart/nar-builder:latest -rf /v/m2
+  ```
+
+  and, on the line after it, `rmdir '<project>/volumes/nar_builder'` for the empty parent the removal
+  leaves. **The path is printed between single quotes, with every `'` in it written `'\''`**
+  (*corrected 2026-11-03, review of #32; it was double-quoted*), so the pasted line hands `docker` the
+  path as one argument whatever it holds, short of a newline. When the directory is not there the
+  script prints nothing. It deletes nothing and runs
+  nothing itself, in either case: removing a directory the operator may have copied something into is
+  not a start script's call — the reason at the top of the script, shared with `liquid.sh`'s notice
+  about `volumes/liquid/api`.
+
+  **The line is the same under every bash from 3.2 on.** *Corrected 2026-11-03, second review of
+  #32.* The start scripts run under whatever `bash` the host has, and macOS ships 3.2 (`git.sh`
+  already avoids `mapfile` for it), so the substitution that writes `'\''` has to hold there. It did
+  not: `"${PROJECT_DIR//\'/\'\\\'\'}"` puts the replacement inside the double-quoted expansion, and
+  bash quote-removes it there only from 4.3 on — for a path holding `d'e`, bash 3.2.57 printed
+  `d\'\\'\'e` and bash 5.3 under `shopt -s compat42` `d\'\'\'e`, each of which `sh` refuses as an
+  unterminated quote, so the pasted line ran nothing on exactly the hosts the double quotes had been
+  replaced for. The replacement is held in a variable instead — `q="'\\''"`, then
+  `"${PROJECT_DIR//\'/$q}"` — which every bash from 3.2 to 5.3 expands to the same `'\''`. B7-10
+  (7) holds the output under `bash -O compat42` and `compat31` against the hostile path, (8) is the
+  control showing the old line fail there, and the real 3.2.57 measurement is in the test
+  specification.
+
+  *Why a container, and why this image.* #10's entrypoint handed the directory to the build user with
+  `chown -R -h builder /m2`, and `builder` is uid 1500: on rootless Docker, the platform this stack
+  targets, container uid N is host uid 100000 + N − 1, so every directory of the tree is
+  `101499:1000`, mode `755`, and a plain `rm -rf` as the host user is refused. Measured 2026-11-03 on
+  this host (`iztiev:100000:65536`) against a scratch copy of such a tree: `rm: cannot remove '…':
+  Permission denied`, the issue's claim reproduced. On rootful Docker on Linux the tree is the real
+  uid 1500's and the host user is refused the same way, so the notice names both (*corrected
+  2026-11-03, third review of #32*; it named rootless Docker alone). The same uid inside a container is that
+  container's root over those files, so a container with the directory mounted removes it — measured
+  the same day with the command above: exit 0, `m2` gone, `volumes/nar_builder/` left behind empty
+  and the host user's. The image is the builder's own because it is the one the notice can count on:
+  the script runs under `LIQUID_ON` alone, and `start.sh`'s pre-flight refuses to start without
+  `liquidupstart/nar-builder:latest` present (CS-23). `--pull never` because no `liquidupstart/*`
+  image is ever pulled (CS-FR15, decision 14) — which is also why `BACKLOG.md`'s `alpine` form was
+  not taken: a public image that is not already local would be pulled to run one `rm`. The path is
+  `${PROJECT_DIR}`, resolved, and not `$PWD`, because the operator pastes the line from wherever they
+  read it; the dashboard runs `start.sh` in the toolbox with the project mounted at its real host path
+  and shows the output verbatim, so the printed path is right on the host as well.
+
+  *Quoting — corrected 2026-11-03, review of #32.* The path was printed between double quotes, which
+  carry a space but not a `$`, a backtick or a `"`. Pasted, `/home/u/a$b` lost `$b` to parameter
+  expansion and Docker mounted a path that did not exist — which `-v` creates, empty, as root — so the
+  `rm` removed nothing of the leftover and left a new directory behind; a backtick ran whatever
+  followed it; a `"` ended the argument early (measured 2026-11-03 with `dash` as `sh`: `Syntax error:
+  EOF in backquote substitution`, exit 2, nothing run). Single quotes with `'\''` for the quote itself
+  are the one quoting every POSIX shell reads literally, so the operator's shell — `bash`, `zsh`,
+  `dash`, busybox `ash` — does not matter. `printf '%q'` was not taken: for a space it prints `a\ b`,
+  which reads worse than the quoted form, and for a control character `$'…'`, which `dash` does not
+  read. **A `:` in the project path is a stated limit, not handled:** `-v` is split on it and Docker
+  refuses the result at its own parser (*invalid mount path … must be absolute*), so nothing runs and
+  nothing is mounted — a visible failure, not a wrong removal. `--mount type=bind,source=…` carries a
+  colon but splits on `,` and quotes with CSV rules inside the shell's quotes, so it moves the hole
+  rather than closing it; `docs/FEATURE-reset.md` §4 makes the same choice for the same path shape,
+  which this project has not met, and the notice does not branch on the colon — a branch for a shape
+  nothing produces would have a case against nothing. The `rmdir` line is there because a container
+  cannot remove its own mount point, so `volumes/nar_builder/` stays behind, empty and host-owned —
+  the same "looks like state, is read by nobody" shape one level up. `rmdir` and not `rm -r`: it
+  refuses a directory that is not empty, so it cannot take anything the operator put beside `m2`.
+
+  *What the first wording was, and how the test held it.* Until #32 the notice ended *"nothing reads
+  the directory above; you can delete it"*, advice that fails on the target platform. B7-4 pinned that
+  phrase as the requirement and refused `\brm\s+-rf?\b` anywhere in the file, printed text included,
+  so the case both encoded the instruction that fails and would have reddened a notice printing the
+  one that works. B7-4 reads the text now with the printed lines set apart from the code, and B7-10
+  runs the script against a fixture and reads what it prints.
+
+  *`liquid.sh`'s sibling notice is left as it is, by measurement.* #32 asked whether its *"you can
+  delete it"* about `volumes/liquid/api` fails the same way. It does not. Under the old layout the
+  directory was made by the host (`mkdir`, `chmod 777`) and Liquid, as `nifi` (uid 1000), wrote flat
+  files into it — `narcheck.py` at b59d19c opens `os.path.join(out_dir, …)` for writing and makes no
+  subdirectory. Measured 2026-11-03 on this host: the files land as `100999:100999` in a directory
+  the host user owns, and a plain `rm -rf` by the host user **succeeds**, since unlinking needs write
+  on the directory and not on the file. The one shape that does fail, a `nifi`-made subdirectory
+  (`api/sub/f`, `Permission denied`), is not one the old code could leave. The wording there is true,
+  and B5-1 keeps pinning it.
 - **FR27 — The API compiled against is resolved, not assumed, and is stated.** NiFi versions
   `nifi-api` on its own line: 2.11.0 ships `nifi-api-2.10.0.jar`. The build resolves what the
   distribution was actually built against, writes that version into the project, and prints it. FR23
