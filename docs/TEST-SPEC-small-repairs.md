@@ -1,6 +1,6 @@
 # Test specification: six small repairs from `BACKLOG.md`
 
-Status: **draft for sign-off, 2026-11-02.** Nothing here has run yet. Each block's *What it found*
+Status: **signed off on 2026-11-03, and implemented on this branch.** Each block's *What it found*
 and *Shown able to fail* are filled in from the runs on the commit that adds the code.
 Feature: `docs/FEATURE-small-repairs.md` (SR-FR1 to SR-FR7).
 
@@ -11,7 +11,7 @@ and follow the block of `docs/TEST-SPEC-git-integration.md` §4.2. `./tests/run.
 
 | Component | Level | Rigour |
 |---|---|---|
-| The primary model's record in the config writer of `openclaw.sh` | component, real OpenClaw image | **Full branch coverage.** Under `only`: a drop with and without a record, no drop with and without one. In any other mode: a record and none, the primary as an object and as a string, and each way a record can be unusable |
+| The primary model's record in the config writer of `openclaw.sh` | component, real OpenClaw image | **Full branch coverage.** Under `only`: a drop with and without a record, no drop with and without one. In any other mode: a record and none, the primary as an object and as a string, and each way a record can be unusable. In any mode: a record that cannot be written or removed |
 | `catalogOf()` in the same writer | component, real OpenClaw image | Both providers it serves, against the manifests the image ships |
 | The redirect in `config/nginx/templates/nginx.conf` | unit, rendered by `nginx.sh` | Two ports, so that neither can pass as a constant |
 | The null check in `GitRepositories.svelte` | component, mounted card | The state that threw, and the result line that follows it |
@@ -31,7 +31,6 @@ both modes shows the round trip on an installation's own state.
 | **SR-1** | Component | positive | …and so it does when the default was set to `privacy-openai/gpt-5.6-sol` under `only` |
 | **SR-1** | Component | **negative** | a second start under `only` leaves the first start's record as it was |
 | **SR-1** | Component | **negative** | a start under `only` that drops `openai/gpt-5.5` while a record is there keeps the record |
-| **SR-1** | Component | positive | …but a start under `only` that drops a model while an unusable record is there replaces it |
 | **SR-1** | Component | **negative** | a start under `only` that drops nothing, with no record, writes none |
 | **SR-1** | Component | **negative** | a start under `opt-in` with no record leaves `privacy-anthropic/claude-opus-5` as it is |
 | **SR-1** | Component | positive | when `only` had nothing to pin, the next start under `opt-in` restores `openai/gpt-5.5` before the default block runs, which then pins nothing |
@@ -41,6 +40,10 @@ both modes shows the round trip on an installation's own state.
 | **SR-1** | Component | **negative** | …and likewise one whose `dropped` is an empty string |
 | **SR-1** | Component | **negative** | …and likewise a record that is `null` |
 | **SR-1** | Component | **negative** | …and likewise a record cut off mid-write |
+| **SR-1** | Component | positive | a start under `only` that drops a model while an unusable record is there replaces it |
+| **SR-1** | Component | **negative** | a start under `only` that drops nothing removes an unusable record as well, with the line in the output |
+| **SR-1** | Component | **negative** | a directory where the record belongs, which cannot be removed, does not stop a start under `opt-in`, and the output says so |
+| **SR-1** | Component | **negative** | …nor a drop under `only`, which cannot write over it, and no temporary file is left |
 | **SR-2** | Component | **negative** | with the proxy on, `privacy-anthropic` offers neither `200k` nor `1m`, which the manifest of 2026.9.1 holds under `contextWindows` |
 | **SR-2** | Component | positive | …and offers exactly the ten models of the anthropic manifest, `claude-opus-4-7`, `claude-sonnet-4-6` and `claude-opus-4-6` among them, which the manifest lists under `claude-cli` alone |
 | **SR-2** | Component | positive | …and `privacy-openai` offers the nine models of the openai manifest, as before |
@@ -93,7 +96,7 @@ row sees what another row did.
 | 6 | after row 1, with `agents.defaults.model.primary` set to `openai/gpt-5.5` | `only` |
 | 7 | `{"agents":{"defaults":{"model":{"primary":"privacy-anthropic/claude-opus-5"}}}}`, no record | `only` |
 | 8 | the same, no record | `opt-in` |
-| 9 | `{}` run under `opt-in` with `ENABLE_CLAUDE_CLI=0`, `ENABLE_CODEX=1` and both privacy providers `0`, which pins `openai/gpt-5.5`; then a start under `only` with both privacy providers `0` | `opt-in` |
+| 9 | `{}` run under `opt-in` with `ENABLE_CLAUDE_CLI=0`, `ENABLE_CODEX=1` and both privacy providers `0`, which pins `openai/gpt-5.5`; then a start under `only` with both privacy providers `0` | `opt-in`, with `ENABLE_CODEX=1` |
 | 10 | `{"agents":{"defaults":{"model":"anthropic/claude-opus-5"}}}`, no record | `only` |
 | 11 | `{"agents":{"defaults":{"model":"privacy-anthropic/claude-opus-5"}}}`, record `{"dropped":"anthropic/claude-opus-5"}` | `opt-in` |
 | 12 | primary `privacy-anthropic/claude-opus-5`; record `{"dropped":["anthropic/claude-opus-5"]}` | `opt-in` |
@@ -101,6 +104,9 @@ row sees what another row did.
 | 14 | primary `privacy-anthropic/claude-opus-5`; record `null` | `opt-in` |
 | 15 | primary `privacy-anthropic/claude-opus-5`; record `{"dropped":` | `opt-in` |
 | 16 | starting point A; record `{"dropped":` | `only` |
+| 17 | primary `privacy-anthropic/claude-opus-5`; record `{"dropped":` | `only` |
+| 18 | primary `privacy-anthropic/claude-opus-5`; an empty directory named `privacy-routing-primary.json` | `opt-in` |
+| 19 | starting point A; an empty directory named `privacy-routing-primary.json` | `only` |
 
 **Why the data is shaped this way.**
 
@@ -117,7 +123,9 @@ row sees what another row did.
   so the primary is missing. Its starting point runs with both privacy providers `0` as well, because
   the writer keeps a `privacy-*` provider it wrote earlier, and a stale one would be pinned. Under
   `opt-in` with the subscription on, the writer would pin `anthropic/claude-opus-5`, so the restored
-  `openai/gpt-5.5` can only come from the record.
+  `openai/gpt-5.5` can only come from the record. The last start keeps Codex on, as the installation
+  had it, so the restored model has its route; the local review of the implementation noted that the
+  first version ended with Codex off and so restored a model nothing served.
 - Rows 10 and 11 put the string form on each side. On the way back the primary is an object whenever
   this writer pinned it, so row 11 needs the string written by hand to reach that branch.
 - Rows 12 to 15 are decision 5's unusable records, one per way the check can be incomplete. Row 12's
@@ -127,6 +135,12 @@ row sees what another row did.
   type check refuses. A parse without a guard fails row 15.
 - Row 16 is decision 3's exception: the cut-off record of row 15 holds nothing to bring back, so the
   drop of `anthropic/claude-opus-5` must replace it.
+- Row 17 is decision 5 under `only`: with nothing dropped, the cut-off record goes as it would in
+  another mode.
+- Rows 18 and 19 are decision 7. A directory stands where the record belongs, so reading it fails,
+  removing it with a file's removal fails, and renaming a file onto it fails: once on the way out,
+  under `opt-in`, and once on the way in, under `only` with a drop. Both were found by the local
+  review of the implementation.
 
 ### 3.2 SR-2: the manifests
 
@@ -176,11 +190,11 @@ while it runs.
 |---|---|
 | **Premise** | A start under `only` replaces a primary model on a removed route with a privacy model. The next start in another mode must bring the operator's model back, as the sign-ins come back (SR-FR1, SR-FR2). Today the privacy model stays. |
 | **Component** | The config writer in `config/scripts/start/openclaw.sh`, run in the real image as §3.1 describes. |
-| **Steps** | The sixteen rows of §3.1. After each start, read the writer's exit status and output, `agents.defaults.model` from `openclaw.json`, and the record `privacy-routing-primary.json` beside it. |
+| **Steps** | The nineteen rows of §3.1. After each start, read the writer's exit status and output, `agents.defaults.model` from `openclaw.json`, and the record `privacy-routing-primary.json` beside it. |
 | **Test data, both sides** | §3.1. |
-| **Expected** | Row 1: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Rows 2, 3 and 4: primary `anthropic/claude-opus-5`, no record. Row 5: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Row 6: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Rows 7 and 8: primary `privacy-anthropic/claude-opus-5`, no record. Row 9: after the `only` start, no primary and the record `{"dropped":"openai/gpt-5.5"}`; after the `opt-in` start, primary `openai/gpt-5.5`, no record, the output contains `restored primary model openai/gpt-5.5`, and it does not contain `pinned default primary model`. Row 10: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Row 11: primary `anthropic/claude-opus-5`, no record. Rows 12 to 15: exit status 0, primary `privacy-anthropic/claude-opus-5`, no record, and the output contains `removed an unusable privacy-routing-primary.json`. Row 16: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. In every row, no file whose name starts with `privacy-routing-primary` is left beside `openclaw.json` other than the record where one is expected, so no temporary file of decision 6 stays behind. |
+| **Expected** | Row 1: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Rows 2, 3 and 4: primary `anthropic/claude-opus-5`, no record. Row 5: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Row 6: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Rows 7 and 8: primary `privacy-anthropic/claude-opus-5`, no record. Row 9: after the `only` start, no primary and the record `{"dropped":"openai/gpt-5.5"}`; after the `opt-in` start, primary `openai/gpt-5.5`, no record, the output contains `restored primary model openai/gpt-5.5`, and it does not contain `pinned default primary model`. Row 10: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Row 11: primary `anthropic/claude-opus-5`, no record. Rows 12 to 15: exit status 0, primary `privacy-anthropic/claude-opus-5`, no record, and the output contains `removed an unusable privacy-routing-primary.json`. Row 16: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Row 17: exit status 0, primary `privacy-anthropic/claude-opus-5`, no record, and the output contains `removed an unusable privacy-routing-primary.json`. Row 18: exit status 0, primary `privacy-anthropic/claude-opus-5`, and the output contains `could not remove privacy-routing-primary.json`. Row 19: exit status 0, primary `privacy-anthropic/claude-opus-5`, and the output contains `could not record primary model anthropic/claude-opus-5`. In every row, no file whose name starts with `privacy-routing-primary` is left beside `openclaw.json` other than the record where one is expected, so no temporary file of decision 6 stays behind. |
 | **Dependencies** | Docker, `ghcr.io/openclaw/openclaw:2026.9.1` present locally. Skipped without the image, and the skip names it. |
-| **Shown able to fail** | To be registered: the record not written (rows 1, 9, 10 and 16 red); the restore removed (rows 2, 3, 4, 9 and 11 red); a record already there replaced (row 6 red); an unusable record kept on a drop (row 16 red); a record written on every start under `only` (rows 5 and 7 red); the record kept after an `opt-in` start (rows 2, 3, 4, 9 and 11 red); the restore moved after the default block (row 9 red, by its output); the string form not handled on the way back (row 11 red); the check that `dropped` is a string removed (row 12 red); the check that it is not empty removed (row 13 red); the check for `null` removed (row 14 red); the parse left unguarded (row 15 red). Row 8 has no mutation of its own: it holds on today's code as well, and is there as the counterpart of row 2. **Decision 6 has no row.** A failure between the restore and the write of `openclaw.json` cannot be brought about without changing the writer, and in a run that succeeds both orders leave the same files; the order is read in review. |
+| **Shown able to fail** | To be registered: the record not written (rows 1, 9, 10 and 16 red); the restore removed (rows 2, 3, 4, 9 and 11 red); a record already there replaced (row 6 red); an unusable record kept on a drop (row 16 red); a record written on every start under `only` that has no usable record (row 7 red); the record kept after an `opt-in` start (rows 2, 3, 4, 9 and 11 red); the restore moved after the default block (row 9 red, by its output); the string form not handled on the way back (row 11 red); the check that `dropped` is a string removed (row 12 red); the check that it is not empty removed (row 13 red); the check for `null` removed (row 14 red); the parse left unguarded (row 15 red); the unusable record kept under `only` (row 17 red); the removal of the record left unguarded (row 18 red); the writing of it left unguarded (row 19 red). Row 8 has no mutation of its own: it holds on today's code as well, and is there as the counterpart of row 2. **Decision 6 has no row.** A failure between the restore and the write of `openclaw.json` cannot be brought about without changing the writer, and in a run that succeeds both orders leave the same files; the order is read in review. |
 | **What it found** | Not yet run. |
 | **Implemented by** | `tests/component/m-sr.primary-restored.test.ts`. |
 | **Covers** | SR-FR1, SR-FR2, UC1 to UC5. |

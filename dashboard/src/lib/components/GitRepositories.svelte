@@ -94,7 +94,7 @@
   $effect(() => {
     const stale = Object.keys(results).filter((slug) => {
       const now = git.repositories.find((r) => r.slug === slug);
-      return now && results[slug].cloned !== now.cloned;
+      return now && results[slug] && results[slug].cloned !== now.cloned;
     });
     if (!stale.length) return;
     const next = { ...results };

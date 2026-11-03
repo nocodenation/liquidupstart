@@ -159,6 +159,9 @@ if command -v node > /dev/null; then
   run_patch() {  # MODE -> prints the patched JSON
     local json="${TMP_ROOT}/openclaw.json"
     echo "${stale}" > "${json}"
+    # Each run starts from the stale file alone: the record the only run leaves would otherwise
+    # make the opt-in run restore its primary, and hide whether opt-in leaves it alone.
+    rm -f "${TMP_ROOT}/privacy-routing-primary.json"
     OPENCLAW_JSON="${json}" PRIVACY_ROUTING="$1" PLUGIN_PATHS=/p MODEL_WILDCARDS="local/*,privacy-openai/*" \
       OC_SCHEMA_NEW=1 OPENCLAW_VERSION=test LU_NETWORK_SUBNET=10.99.0.0/24 \
       node "${WRITER}" > /dev/null 2>&1

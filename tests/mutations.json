@@ -909,5 +909,165 @@
     "from": "    error_page 502 @lu_unavailable;\n",
     "to": "",
     "mustFail": "CS-10 and a Liquid ingress answers over HTTPS with its own page, naming its port"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "        if (drop && !recordedPrimary) recordWrite = { dropped: primary };\n",
+    "to": "",
+    "mustFail": "SR-1 a start under only drops anthropic/claude-opus-5, pins the privacy model and records the dropped one"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "        if (!recordedPrimary) return;\n        if (typeof c.agents.defaults.model === \"string\")",
+    "to": "        return;\n        if (typeof c.agents.defaults.model === \"string\")",
+    "mustFail": "SR-1 the next start under opt-in restores anthropic/claude-opus-5 and removes the record"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "if (drop && !recordedPrimary) recordWrite",
+    "to": "if (drop) recordWrite",
+    "mustFail": "SR-1 the negative: a start under only that drops openai/gpt-5.5 keeps the record already there"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "if (drop && !recordedPrimary) recordWrite",
+    "to": "if (drop && recordedPrimary === undefined) recordWrite",
+    "mustFail": "SR-1 but a start under only that drops a model while an unusable record is there replaces it"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "if (drop && !recordedPrimary) recordWrite",
+    "to": "if (!recordedPrimary) recordWrite",
+    "mustFail": "SR-1 the negative: a start under only that drops nothing, with no record, writes none"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "        recordRemove = true;\n",
+    "to": "        recordRemove = false;\n",
+    "mustFail": "SR-1 the next start under opt-in restores anthropic/claude-opus-5 and removes the record"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "      if (!routingOnly) restorePrimary();\n      const currentPrimary = typeof c.agents.defaults.model === \"string\"\n        ? c.agents.defaults.model\n        : c.agents.defaults.model && c.agents.defaults.model.primary;\n",
+    "to": "      const currentPrimary = typeof c.agents.defaults.model === \"string\"\n        ? c.agents.defaults.model\n        : c.agents.defaults.model && c.agents.defaults.model.primary;\n      if (!routingOnly) restorePrimary();\n",
+    "mustFail": "SR-1 when only had nothing to pin, opt-in restores openai/gpt-5.5 before the default block, which pins nothing"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "        if (typeof c.agents.defaults.model === \"string\") c.agents.defaults.model = recordedPrimary;\n        else c.agents.defaults.model =",
+    "to": "        if (typeof c.agents.defaults.model !== \"string\") c.agents.defaults.model =",
+    "mustFail": "SR-1 a primary written as a string is replaced by the record under opt-in"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "typeof r.dropped === \"string\" && ",
+    "to": "",
+    "mustFail": "SR-1 the negative: a record whose dropped is a list restores nothing, is removed, and the start succeeds"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": " && r.dropped !== \"\"",
+    "to": "",
+    "mustFail": "SR-1 the negative: a record whose dropped is empty restores nothing, is removed, and the start succeeds"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "r !== null && ",
+    "to": "",
+    "mustFail": "SR-1 the negative: a record that is null restores nothing, is removed, and the start succeeds"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "try { r = JSON.parse(fs.readFileSync(recordFile, \"utf8\")); } catch (e) { return null; }",
+    "to": "r = JSON.parse(fs.readFileSync(recordFile, \"utf8\"));",
+    "mustFail": "SR-1 the negative: a record cut off mid-write restores nothing, is removed, and the start succeeds"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "let recordWrite = null, recordRemove = recordedPrimary === null;",
+    "to": "let recordWrite = null, recordRemove = recordedPrimary === null && !routingOnly;",
+    "mustFail": "SR-1 the negative: under only, an unusable record goes as well when nothing is dropped"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "        } catch (e) {\n          console.log(\"openclaw.json: privacy routing, could not remove",
+    "to": "        } finally {\n          console.log(\"openclaw.json: privacy routing, could not remove",
+    "mustFail": "SR-1 the negative: a directory where the record belongs, which cannot be removed, stops no start"
+  },
+  {
+    "case": "SR-1",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.primary-restored.test.ts",
+    "from": "        } catch (e) {\n          fs.rmSync(recordFile + \".tmp\", { force: true });",
+    "to": "        } finally {\n          fs.rmSync(recordFile + \".tmp\", { force: true });",
+    "mustFail": "SR-1 the negative: and one that cannot be written over stops no drop either, and leaves no temporary file"
+  },
+  {
+    "case": "SR-2",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.catalog-models.test.ts",
+    "from": "          for (const prov of Object.values((manifest.modelCatalog || {}).providers || {})) {\n            for (const m of (prov && Array.isArray(prov.models)) ? prov.models : []) {\n              if (m && typeof m.id === \"string\" && typeof m.contextWindow === \"number\") found.push(m);\n            }\n          }\n",
+    "to": "          const collect = (node) => {\n            if (Array.isArray(node)) { node.forEach(collect); return; }\n            if (!node || typeof node !== \"object\") return;\n            if (typeof node.id === \"string\" && typeof node.contextWindow === \"number\") found.push(node);\n            Object.values(node).forEach(collect);\n          };\n          collect(manifest);\n",
+    "mustFail": "SR-2 the negative: privacy-anthropic offers neither 200k nor 1m"
+  },
+  {
+    "case": "SR-2",
+    "file": "config/scripts/start/openclaw.sh",
+    "spec": "tests/component/m-sr.catalog-models.test.ts",
+    "from": "          for (const prov of Object.values((manifest.modelCatalog || {}).providers || {})) {\n            for (const m of (prov && Array.isArray(prov.models)) ? prov.models : []) {\n              if (m && typeof m.id === \"string\" && typeof m.contextWindow === \"number\") found.push(m);\n            }\n          }\n",
+    "to": "          const collect = (node) => {\n            if (Array.isArray(node)) { node.forEach(collect); return; }\n            if (!node || typeof node !== \"object\") return;\n            if (typeof node.id === \"string\" && typeof node.contextWindow === \"number\") found.push(node);\n            Object.values(node).forEach(collect);\n          };\n          collect(manifest);\n",
+    "mustFail": "SR-2 privacy-anthropic offers exactly the ten models of the anthropic manifest, in its order"
+  },
+  {
+    "case": "SR-3",
+    "file": "config/nginx/templates/nginx.conf",
+    "spec": "tests/unit/m-sr.liquid-redirect.test.ts",
+    "from": "return 301 https://liquid.localhost:SYSTEM_HTTPS_PORT;",
+    "to": "return 301 https://liquid.localhost:8889;",
+    "mustFail": "SR-3 rendered with SYSTEM_HTTPS_PORT=9443, it redirects to port 9443"
+  },
+  {
+    "case": "SR-3",
+    "file": "config/nginx/templates/nginx.conf",
+    "spec": "tests/unit/m-sr.liquid-redirect.test.ts",
+    "from": "return 301 https://liquid.localhost:SYSTEM_HTTPS_PORT;",
+    "to": "return 301 https://liquid.localhost:8889;",
+    "mustFail": "SR-3 the negative: neither rendering contains 8889"
+  },
+  {
+    "case": "SR-4",
+    "file": "dashboard/src/lib/components/GitRepositories.svelte",
+    "spec": "tests/component/m-sr.result-line-null.test.ts",
+    "from": "results[slug] && results[slug].cloned",
+    "to": "results[slug].cloned",
+    "mustFail": "SR-4 the negative: while a repository test waits for its answer, the card raises no error"
   }
 ]

@@ -1,6 +1,6 @@
 # Feature: six small repairs from `BACKLOG.md`
 
-Status: **draft for sign-off, 2026-11-02.**
+Status: **signed off on 2026-11-03, and implemented on this branch.**
 Branch: `fix/small-backlog-repairs`
 Found: six `OPEN` entries of `BACKLOG.md`, each named under its section below. The operator approved
 them as one package on 2026-10-31, to wait for #56, which has since merged. The test specification is
@@ -85,23 +85,32 @@ What the writer reads and writes is OpenClaw's default model, `agents.defaults.m
 4. **The restore runs before the writer pins a default model.** When `only` had nothing to pin, the
    primary is missing on the way back. The default block then finds the restored model and pins
    nothing, instead of pinning one, announcing it, and having it replaced.
-5. **A record that cannot be used is removed, and nothing is restored.** It is usable when it is a
-   JSON object whose `dropped` is a non-empty string. Anything else, a file cut off mid-write, `null`,
-   or a `dropped` of another type or empty, is logged and removed, and the start carries on. The
-   writer runs under `set -euo pipefail` in a `docker run` that nothing guards, so a parse error
-   would abort the OpenClaw start; and a `dropped` of another type would become a primary model the
-   validator refuses.
+5. **A record that cannot be used is removed, and nothing is restored, in any mode.** Under `only` a
+   drop replaces it (decision 3), and without a drop it goes as it would elsewhere. It is usable
+   when it is a JSON object whose `dropped` is a non-empty string. Anything else, a file cut off
+   mid-write, `null`, or a `dropped` of another type or empty, is logged and removed, and the start
+   carries on. The writer runs under `set -euo pipefail` in a `docker run` that nothing guards, so a
+   parse error would abort the OpenClaw start; and a `dropped` of another type would become a primary
+   model the validator refuses.
 6. **The record is written whole, and removed only once `openclaw.json` is written.** The writer
    writes it to a temporary file beside it and renames that into place, so no reader meets half a
    record. It builds `openclaw.json` in memory and writes it at its very end. A record removed before
    that would be gone if the writer failed on the way, while `openclaw.json` still held the privacy
    model. So the restore only notes the record, and the writer removes it after `openclaw.json` is
    written.
+7. **The record never stops a start.** Writing it or removing it can fail, for instance where a
+   directory stands at its path. The writer then logs the failure, removes its temporary file, and
+   carries on; OpenClaw starts with or without the record. The local review of the implementation
+   found that case: the removal threw after `openclaw.json` was written, and under
+   `set -euo pipefail` the OpenClaw start aborted.
 
 **What the start prints.** A restore prints
 `openclaw.json: privacy routing, restored primary model anthropic/claude-opus-5`. An unusable record
-prints `openclaw.json: privacy routing, removed an unusable privacy-routing-primary.json`. The drop
-keeps the line it prints today.
+prints `openclaw.json: privacy routing, removed an unusable privacy-routing-primary.json`. A record that
+cannot be written prints `openclaw.json: privacy routing, could not record primary model
+anthropic/claude-opus-5 (…)`, and one that cannot be removed `openclaw.json: privacy routing, could
+not remove privacy-routing-primary.json (…)`, each with the error. The drop keeps the line it prints
+today.
 
 **Data structure.** `privacy-routing-primary.json` beside `openclaw.json`, written by the writer
 under `only`, read and removed by it in any other mode:
@@ -185,7 +194,7 @@ and the proxy held 2.8 GiB. The line gains:
 | Id | Requirement |
 |---|---|
 | SR-FR1 | Under `only`, when the writer drops a primary model and no usable record is there, it records that model in `privacy-routing-primary.json` beside the `openclaw.json` it writes, whole or not at all. A usable record already there is kept |
-| SR-FR2 | In any other mode, before a default model is pinned, the writer makes a usable record's model the primary model, and removes the record once `openclaw.json` is written. A record that is not a JSON object with a non-empty string `dropped` is removed and restores nothing, and the start carries on. Both are announced in the start output |
+| SR-FR2 | In any other mode, before a default model is pinned, the writer makes a usable record's model the primary model, and removes the record once `openclaw.json` is written. In any mode, a record that is not a JSON object with a non-empty string `dropped` restores nothing and is removed, or replaced by a drop under `only`. A record that cannot be written or removed is logged, and the start carries on. Each is announced in the start output |
 | SR-FR3 | `catalogOf()` takes the models a manifest declares under `modelCatalog.providers`, and nothing else |
 | SR-FR4 | `http://liquid.localhost` redirects to `https://liquid.localhost:` followed by `SYSTEM_HTTPS_PORT` |
 | SR-FR5 | The repositories card raises no error while a repository test runs |
@@ -200,6 +209,12 @@ and the proxy held 2.8 GiB. The line gains:
   is the state the installation had before `only`, and `opt-in` does not check the primary model
   today either.
 - **Section 4 keeps the redirect to the root.** Carrying the path over is a change of its own.
+- **Picker and allowlist entries that `only` removed come back only as far as the writer writes
+  them.** One added by hand, such as an allowlist entry for a single model, stays gone, and a
+  restored primary that needed it is refused. `only` has removed such entries from the start; the
+  restore makes it visible. Found by the local review of the implementation.
+- **A temporary file left by a writer killed between writing the record and renaming it stays.**
+  Nothing reads it, and the next drop writes over it.
 - **Under `only`, the picker still lists `anthropic/*` and `claude-cli/*` with the Claude
   subscription on.** `openclaw.sh` builds `MODEL_WILDCARDS` from `ENABLE_ANTHROPIC_CLAUDE_CODE`
   before `only` takes the backend away, and the writer adds them back after removing them. Found by
@@ -212,7 +227,14 @@ and the proxy held 2.8 GiB. The line gains:
 - `config/nginx/templates/nginx.conf`: section 4
 - `dashboard/src/lib/components/GitRepositories.svelte`: section 5
 - `.env.example`, `README.md`: sections 6 and 7
-- `tests/lib/openclaw-writer.ts`: a state directory kept across runs, for SR-1
-- `scripts/tests/privacy-routing.test.sh`, unchanged: TC-824's `only` run leaves a record beside its copy, and its `opt-in` run restores from it the primary that run expects anyway
+- `tests/lib/openclaw-writer.ts`: `startWriter()`, a start on a state directory kept across runs, for
+  SR-1; `writeConfig()` is built on it
+- `scripts/tests/privacy-routing.test.sh`: TC-824 removes the record before each run. The first draft
+  of this specification said the file stayed unchanged, because the `opt-in` run restores the primary
+  it expects anyway. The local review of the implementation pointed out that this was the problem:
+  the check that `opt-in` leaves the primary alone then passed through the restore
 - the tests and mutations in `docs/TEST-SPEC-small-repairs.md`
+- `tests/contract/m-tr.case-ids.test.ts`, `docs/TEST-SPEC-case-id-traceability.md` and
+  `docs/TEST-SPEC-suite-preconditions.md`: SP-2's record names SR-4's mounted card, whose voiced
+  skip is filed under `SP-2` as the rule requires
 - `BACKLOG.md`: the six entries struck, as `DONE-ON-#N`

@@ -105,6 +105,11 @@ ports you use.
   IO issues of running off the Windows filesystem.
 - **Memory:** 16 GB RAM on Linux/macOS; 32 GB on Windows, since WSL2 itself needs a large
   share. Below these numbers the stack will not start reliably.
+  On macOS the containers run in Docker Desktop's virtual machine, so what counts is the
+  memory Docker Desktop is given (Settings → Resources), not the Mac's own. With the
+  privacy proxy on, a VM of 7.65 GiB ran out of memory in a measured run and one of
+  16 GB did not; the proxy alone held 2.8 GiB. Apps switched off under
+  *Which apps to run* need nothing.
 
 ### Windows: install WSL2 + Ubuntu first
 
