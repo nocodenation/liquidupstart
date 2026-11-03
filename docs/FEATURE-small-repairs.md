@@ -25,8 +25,10 @@ request of its own.
 of the package the operator approved. Its line, `config/opencode/entrypoint.sh:120`, sits in
 `_discover_ids`, and #59 changes the two lines above it. A test of the warning would run the
 entrypoint, and the fixture for that, `tests/lib/opencodefixture.ts`, exists only on #59. Built from
-`main`, the repair would conflict with #59 and would need a second copy of that fixture. It follows
-#59, as a commit on #59 or after its merge, whichever the operator prefers.
+`main`, the repair would conflict with #59 and would need a second copy of that fixture. The operator
+decided on 2026-11-03, when #59 was marked ready for review, that #59 stays as it is: once #59 has
+merged and `main` is merged in here, the entry joins this change as a section of its own, specified
+and tested like the others before any of it is built.
 
 ## 2. The primary model after `only`
 
