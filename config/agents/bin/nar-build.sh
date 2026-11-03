@@ -76,12 +76,18 @@ ask() {
   curl_status=$?
   set -e
 
-  if [ $curl_status -ne 0 ]; then
+  # A 502 is the proxy's, not the builder's: the builder answers 503 and 504 itself and never
+  # 502, so its own refusals still pass through below. With ENABLE_LIQUID=0 there is no
+  # builder behind the proxy at all (CS-11).
+  if [ $curl_status -ne 0 ] || [ "$code" = "502" ]; then
     echo "nar-build refused: the builder did not answer at http://${PROXY}:${PORT} (${VHOST})." >&2
     sed 's/^/  /' "$errors" >&2
     echo "The nar_builder service compiles the NAR; nothing here can do it without it." >&2
     echo "Ask the operator to start it: docker compose start nar_builder, or start the" >&2
     echo "whole stack with ./scripts/linux/start.sh, then run nar-build again." >&2
+    if [ "$code" = "502" ]; then
+      echo "It may be switched off: ENABLE_LIQUID=0 leaves the builder out." >&2
+    fi
     rm -f "$body" "$errors"
     exit 1
   fi

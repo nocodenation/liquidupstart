@@ -1825,7 +1825,19 @@ built: after #49 a finding is recorded unless the operator asks for it. Compose 
 suggested by the local review of #52's round 1, and measured on 2026-10-28 with 5.6.1: `docker
 compose config --environment` prints what it read merged with the caller's environment, and
 prints a value that spans lines over those same lines, so a line inside it reads as a key of its
-own. It is no reader as it stands.
+own. It is no reader as it stands. *#56 adds one rule for #50's three switches, which the shell and
+the dashboard apply alike (`CS-2`).* It first left one more place where the difference showed: the
+dashboard asked for the privacy proxy's image by `PRIVACY_PROXY_ENABLE` as it read it, while
+`build.sh` and `start.sh`, which build and require the image, read the first line with every quote
+removed, so a hand-quoted `'1'`, or `=0` followed by `=1`, made them disagree on whether a build was
+needed. *Taken on #56 after Timur's review of 2026-10-30 (decision 16):* every reader of that key
+uses the switches' rule now, `lu_privacy_proxy_on` in the shell and `privacyProxyOn` in the
+dashboard, and `CS-2` holds them to one table. The other keys keep their readers. One of them,
+found by the local review of that answer and the same on `main`: the configuration page shows
+every other checkbox by `parseEnvValues`' value, which keeps single quotes, while `openclaw.sh`'s
+`get_env` removes them. So `ENABLE_GITHUB_COPILOT='1'` runs Copilot, is shown unticked, and the
+next unrelated Save writes `0`. Showing every checkbox by the switches' rule would end it; not
+worked, after #49 a finding is recorded unless the operator asks for it.
 
 ---
 
@@ -1836,6 +1848,322 @@ asking whether it is `null`: *"TypeError: null is not an object"*, printed three
 `tests/component/m-a16.result-line.test.ts`, whose four cases pass. On `main` as well. Found by the third local review of #52's round 1 on 2026-10-28, in a file #52
 re-indents; `results[slug] && results[slug].cloned !== now.cloned` is the repair. Not worked: after
 #49 a finding is recorded unless the operator asks for it.
+
+---
+
+The next ten entries were found by the update test of 2026-10-29: 0.7.0 updated to 0.8.0 (`e622e01`)
+with `liquidupstart --update`, on macOS with Docker Desktop and compose 5.6.1, then the privacy proxy
+0.3.0 tried with made-up data. What the proxy itself does went to its author as
+nocodenation/privacy-proxy#1 on 2026-10-30, a private repository, in place of the message the
+session had drafted for the operator to send. None was worked when they were recorded: after #49 a
+finding is recorded unless the operator asks for it, and a pull request that repairs one says so
+under it.
+
+---
+
+`DONE-ON-#56` **~~With the privacy proxy off, nginx does not start, and no `*.localhost` page
+answers.~~ Repaired on #56, which carries this strike.** *What this entry said while it was open,
+until #56:* `config/nginx/templates/nginx.conf` has a `privacy.localhost` server block, written in `28e753e` on
+2026-08-25 and on `main` since #5 merged (`e622e01`), so 0.8.0 is the first release with it. Its
+`proxy_pass http://privacy-proxy:8080` is unconditional, and nginx resolves a literal upstream host
+when it starts. `PRIVACY_PROXY_ENABLE=0`, the default, starts no such container, so nginx exits with
+*host not found in upstream "privacy-proxy" in /etc/nginx/conf.d/default.conf:196* and restarts in a
+loop. Measured on 0.8.0. A fresh install of 0.8.0 with the defaults is affected as well, and `main`
+has the same line. The dashboard on port 7777 runs outside compose and still answers. The draft
+specification for #50 resolves every upstream at request time (its decision 5), which repairs this
+once built. On its own, the repair is a `resolver` line and a variable upstream for this block.
+*Repaired on #56:* every `proxy_pass` there names its upstream through a variable, and the template
+declares docker's resolver (`CS-9`). Rendered from `.env.example` with the privacy proxy off, as it
+ships, and Liquid switched off by the test, `nginx -t` passes with no network at all, where the
+template before #56, `da4e2d1`'s in the test, is refused with *host not found in upstream*; and
+nginx runs and answers beside one upstream, the privacy proxy not among them (`CS-10`). And a whole
+stack: #56's, in a start begun on 2026-10-29 at 22:43Z with `PRIVACY_PROXY_ENABLE=0`, ran no
+privacy-proxy container, and its nginx, up from 22:46:08Z, had not restarted when last looked at 23
+seconds later. `pgadmin.localhost`, `nextcloud.localhost` and `opencode.localhost` answered with a
+2xx or 3xx at once, `openproject.localhost` ten seconds later, once it had started, and
+`privacy.localhost` answered 502 with the page naming *Privacy proxy*. Measured by hand rather than
+as a case, since `CS-20` runs with the installation's own setting, which was on.
+
+---
+
+`OPEN` **Turning the privacy proxy on asks for no build, so Start runs whatever image is there, or
+none.** `scripts/install/update.sh` removes its `BUILT_IMAGES`, and `builtImages()` in
+`dashboard/src/lib/server/project.ts` lists the images a start needs. Neither names
+`liquidupstart/privacy-proxy`, and `PRIVACY_PROXY_ENABLE` is not in `isBuildAffecting`
+(`dashboard/src/lib/env-meta.ts`). So the save redirects with `rebuild=0`, `needBuild` stays false,
+and Start runs whatever `liquidupstart/privacy-proxy:latest` is on the machine. After the update
+that was 0.1.2 from 2026-09-11. It refused 0.8.0's `.env` (*gate_mode … input_value='ask'*) and
+restarted in a loop. A container in a restart loop has no address, so nginx failed as in the entry above. A Rebuild
+brought 0.3.0. On an install that never built the proxy, read rather than measured, there is no image
+at all, and `docker compose up` tries to pull a local-only image, as the comment in `builtImages()`
+records for `nar-builder`. An image can also be stale without an update: `build.sh` skips the proxy
+while it is off, so one built before `ENABLE_ANTHROPIC_CLAUDE_CODE` changed is still there when the
+proxy is turned on again. Naming the image in both lists while `PRIVACY_PROXY_ENABLE=1` covers the
+missing image. A stale image needs a build to be asked for when the proxy is turned on. Both lists
+are kept by hand. Deriving them from compose for the active profiles would stop the next image from
+going missing in the same way. #50 gives the stale half three more cases: its build skips a component
+that is switched off, so an image built before that component's build settings changed is still there
+when it is switched on again (`docs/FEATURE-component-switches.md` §3). A label on each image with a
+hash of its build inputs, compared with `.env` by `stackState()`, would cover all four. The operator
+decided on 2026-10-29 to build that together with this entry rather than inside #50. *Answered in part
+on #56:* `builtImages()` names the privacy-proxy image while `PRIVACY_PROXY_ENABLE=1`, and `start.sh`
+refuses to start, before `down.sh`, while an image of anything that is on is missing, so the missing
+half no longer reaches `compose up`. After Timur's review of 2026-10-30 every compose service of a
+`liquidupstart/*` image also says `pull_policy: never`, so a missing image stops `up` at *No such
+image* rather than being fetched from Docker Hub, and `CS-23` holds `builtImages()`, the start's
+pre-flight and the build to one answer for every combination of the switches. `update.sh` still
+leaves the image in place, and the stale half is open.
+
+---
+
+`OPEN` **A start reports success while a container restarts in a loop.** `scripts/linux/start.sh`
+checks the exit code of `docker compose up -d`. That code is 0 once every container has started,
+even if one then exits again at once. Three times on 2026-10-29 the dashboard printed *[start
+succeeded]* while `proxy` was restarting in a loop, once together with `privacy-proxy`. Its status
+then read *The stack is not running*. If the start read container state instead of the exit code
+alone, for example a restart count that grows during its first minute, it could name the service
+with its last log line and report what the status page finds.
+
+---
+
+`OPEN` **The README gives the host's memory, but Docker Desktop's VM is what runs out.** The
+prerequisites in `README.md` ask for 16 GB of RAM on Linux and macOS. On macOS the containers run in
+Docker Desktop's VM, which had 7.65 GiB here. A tool request on the Claude route (the CLI plus
+OpenClaw's 58 tools) got `privacy-proxy` OOM-killed (kernel log, its container's cgroup), and
+OpenClaw showed *network connection error*. It ran with Docker Desktop's memory set to 16 GB. After
+the tests the containers held 10.8 GiB there, 2.8 GiB of it in `privacy-proxy` (`docker stats`).
+That is what they hold with room to spare, not what they need. Without the proxy, and with it until
+that request, the stack had run in the smaller VM. A line naming Docker Desktop's memory setting
+would do, together with what the proxy adds. #50's switches lower the need.
+
+---
+
+`OPEN` **`update.sh` leaves the dashboard running on the old code, and asks for sudo on every
+update.** `scripts/install/update.sh` stops the stack and unpacks the release over the install, but
+it leaves `liquidupstart-dashboard` running. The old dashboard keeps serving, and `liquidupstart`
+refuses with *the dashboard is already running* (`run.sh:112`) until the container is stopped by
+hand. Its `link_launcher()` runs `sudo ln -sfn` whenever `/usr/local/bin` is not writable, even when
+`/usr/local/bin/liquidupstart` already points at `run.sh`. It does so on the two paths that find
+nothing to update as well, so every run asks for the password. `scripts/install/install.sh` has a
+`link_launcher()` of its own, which compares the resolved link and leaves a link to another install
+alone; `update.sh`'s replaces that link without a word. Stopping the dashboard together with the
+stack, and using install's check, would end both.
+
+---
+
+`OPEN` **OpenClaw offers `200k` and `1m` as models of `privacy-anthropic`.** `catalogOf()` in
+`config/scripts/start/openclaw.sh` takes every node of a bundled plugin manifest that has a string
+`id` and a numeric `contextWindow`. In the anthropic manifest four models of each provider carry a
+`contextWindows` list whose entries have both, such as
+`{"id":"200k","label":"200K","contextWindow":200000}`, so these are read as models. Read on
+2026-10-29 from the manifest in `openclaw-gateway` and from `volumes/_openclaw/openclaw.json`. The
+manifest lists models under two providers, `anthropic` and `claude-cli`, and `privacy-anthropic`
+takes them from both. `claude-opus-4-7`, `claude-sonnet-4-6` and `claude-opus-4-6` are listed under
+`claude-cli` alone. So the repair is to skip `contextWindows`. Reading only
+`modelCatalog.providers.anthropic.models` would drop those three as well.
+
+---
+
+`OPEN` **OpenCode's warning for a refused key says that no key is set.**
+`config/opencode/entrypoint.sh:120` prints *no key for that provider in .env section 5* on any 401
+from the proxy's model discovery. On 2026-10-29 the key was set, and OpenAI refused it: a direct call
+with it answered 401 as well. A warning that says the key is missing or was refused would be true in
+both cases.
+
+---
+
+`OPEN` **`.env.example` says the cleaned Claude route has no tools.** Section 8, at
+`ENABLE_ANTHROPIC_CLAUDE_CODE`, says: *chat only — Claude tools are not available on the cleaned
+route*. The privacy proxy 0.3.0 passes the client's own tools through, over MCP. On 2026-10-29
+OpenClaw's `write` ran that way: Claude saw made-up names, and the file got the real ones. Only
+Claude Code's built-in tools are off, but the sentence reads as no tools at all.
+
+---
+
+`OPEN` **OpenCode rewrites a tracked file on every start.** Compose mounts
+`config/opencode/package.json` into the container read-write, and OpenCode sets the
+`@opencode-ai/plugin` version in it to its own. In the worktree of #56 that was `1.18.9` →
+`1.19.5`, written on 2026-10-31 at 13:17, so every checkout the stack runs from shows the file as
+modified. A suite run then no longer starts on a clean tree, and a careless `git add -A` commits the
+bump. Mounting a copy, or keeping the version where OpenCode writes it, would take the file out of
+the repository's way.
+
+---
+
+`OPEN, to agree with Timur` **OpenCode 2 is out, as a rewrite under a package of its own.** The image
+installs `opencode-ai` without a version (`config/opencode/templates/Dockerfile`). On npm that
+package stays on the 1.x line: on 2026-11-01 its `latest` was 1.19.5, released on 2026-10-28, which
+the running image carries. OpenCode 2 is published as `@opencode/cli`, whose `latest` was 2.2.5 on
+the same day. A build therefore takes every 1.x release and never moves to 2 by itself. Moving is a
+choice, and it touches what this stack builds around OpenCode:
+- the configuration `config/opencode/entrypoint.sh` writes: providers, `model`, `server`, and with
+  #59 `enabled_providers`;
+- `opencode web` on port 4096 behind `opencode.localhost`;
+- the mounted `tools`, `package.json` and skills.
+
+The measurements behind #59 were taken on 1.19.5: the allowlist, the fallback without `model` and
+`getSmallModel`. Not measured: whether 2.x reads the same configuration. Coverage
+(<https://thenewstack.io/opencode-2-shared-service/>) describes 2.0 as a rewrite that puts the
+terminal, desktop and web apps on one shared service, with the API rebuilt. To agree with Timur:
+whether and when to move, and who takes it.
+
+---
+
+`OPEN, the operator's` **One key sets both the proxy's own model and an unmasked provider for the
+agents.** The privacy proxy uses `LOCAL_LLM_API_BASE` for its detection and rewrite model.
+`config/scripts/start/openclaw.sh` registers the same address as OpenClaw's provider `local` whenever
+it is set and its `/v1/models` lists a chat model. OpenCode's entrypoint takes it as its Ollama URL.
+Section 6 of `.env.example` warns that a hosted service there sees the data the proxy protects. Section 7 says `only` offers
+*the privacy providers and your local AI*, and that OpenRouter is *not available in this mode*.
+Pointing the proxy at a hosted model, as the test did with OpenRouter, therefore also gives both
+agents an unmasked route to it, and under `only` as well. Measured on 2026-10-31 on #56's branch,
+with OpenRouter as the local model. Under `only`, both agents lost `OPENAI_API_KEY`, and OpenCode its
+`openai` provider. OpenCode kept `llamacpp` and OpenClaw kept `local`, both pointing at OpenRouter
+with `LOCAL_LLM_API_KEY`. In either mode OpenCode also makes that provider its default model:
+`config/opencode/entrypoint.sh:63` takes the first model the endpoint lists, which of OpenRouter's
+420 was `particle-ai/particle-1`. Whoever opens OpenCode without choosing a model sends everything
+unmasked to an arbitrary hosted model. Two keys, or a warning when the address is not private, are
+the options, and the choice is the operator's. A default model on the proxy whenever the proxy is on
+would close the second part by itself.
+
+*Narrowed on 2026-11-01, and corrected.* #59 takes the part under `only`: OpenCode's default
+becomes a privacy model there, and `enabled_providers` keeps OpenCode Zen out, whose free models
+need no key. Under `opt-in` the operator kept the default as it is, since with a local LLM that
+really is local it sends nothing off the machine. The correction comes from #59's operator check
+(RO-6). The web UI does not open on the configured model under `opt-in`: `GET /config` answered
+`llamacpp/particle-ai/particle-1`, yet a new session opened once on `openai`'s default and once on
+Zen's `big-pickle`. `particle-ai/particle-1` is what `opencode run` uses. Whoever opens the web UI
+without choosing a model reaches `openai` or Zen unmasked, which is the same finding by another
+route. Under `only` the configured default held every time.
+
+---
+
+*Found on 2026-10-31 while measuring the entry above, so it stands beside it; it is not one of the
+update test's ten.*
+
+`OPEN` **Switching from `only` back to `opt-in` leaves OpenClaw on the privacy model.** In `only`,
+`config/scripts/start/openclaw.sh:1065` drops a primary model the mode does not offer and pins the
+first privacy one. On 2026-10-31, `anthropic/claude-opus-5` became `privacy-anthropic/claude-opus-5`.
+The next start in `opt-in` keeps it, since it is still a valid model, so the operator's choice does
+not come back with the sign-ins. On the Claude subscription that changes what works: the cleaned
+route carries the client's tools, but not Claude Code's own. Measured on #56's branch; the primary
+was set back by hand in `volumes/_openclaw/openclaw.json`. Keeping the dropped model beside the
+sign-ins `only` sets aside, and restoring it with them, would repair it.
+
+---
+
+*Found on 2026-11-02 by the local review of #60's specification, while reading the entry above.*
+
+`OPEN` **Under `only`, OpenClaw's picker lists `anthropic/*` and `claude-cli/*` again when the Claude
+subscription is on.** `config/scripts/start/openclaw.sh` adds both wildcards to `MODEL_WILDCARDS` from
+`ENABLE_CLAUDE_CLI`, which `only` leaves at 1 on purpose, and the writer adds them to
+`agents.defaults.models` and `modelPolicy.allow` after its routing-only block removed them. Run on
+2026-11-02 in `ghcr.io/openclaw/openclaw:2026.9.1` with what `openclaw.sh` passes under `only`: both
+lists came out as `anthropic/*`, `claude-cli/*`, `privacy-openai/*`, `privacy-anthropic/*`. Measured on
+the writer, not on a gateway. The Claude login and the backend are withheld under `only`, so such a
+model presumably fails rather than going around the proxy; that is not measured either. Found by the
+local review of #60's specification. Not worked: after #49 a finding is recorded
+unless the operator asks for it.
+
+---
+
+`OPEN, Timur's` **0.8.0 warns about four `*_MODE` values on every build.** The release predates #52,
+so its `load_env_file` reads the comment `.env.example` writes after these keys as part of the value:
+*unrecognized LIQUID_SYSTEM_DEPENDENCIES_MODE value 'add # add | override'*. The same warning comes
+for `LIQUID_POST_INSTALLATION_COMMANDS_MODE` and the two `OPENCODE_` keys. The build falls back to
+`add`, which is the value written, so only the message is wrong. #52 repairs it on `main` (`OC-80`).
+A release after it would ship that repair, and with the first two entries above repaired it would
+ship those as well.
+
+---
+
+`OPEN` **Hermes is neither behind a switch nor gone.** It stays commented out in
+`compose.yml`, `build.sh`, `start.sh`, the nginx template and the dashboard, which is the pattern #50's
+switches replace for Liquid, OpenClaw and OpenCode. Put behind a fourth switch, it would have to build
+and run again, and nobody has checked that since it was disabled; deleting it is a decision of its
+own. Left out of #50 by the operator on 2026-10-29 (`docs/FEATURE-component-switches.md`, decision 7).
+*Decided by the operator on 2026-10-31: a fourth switch.* That is a feature of its own, with a
+specification first, because Hermes has to build and run again before a switch can start it.
+Recorded here on 2026-11-02, once #56, which carries this entry, had merged. Not started.
+
+---
+
+`OPEN` **`http://liquid.localhost` redirects to port 8889, where nothing listens.** The last server
+block of `config/nginx/templates/nginx.conf` answers `return 301 https://liquid.localhost:8889;`,
+written literally since `f2b9806` (2026-06-19), while Liquid is served on `SYSTEM_HTTPS_PORT`, 8833
+by default. `SYSTEM_HTTPS_PORT` in its place, which `nginx.sh` substitutes, is the repair. Found while
+reading the template for #50 on 2026-10-29. Not worked: after #49 a finding is recorded unless the
+operator asks for it.
+
+---
+
+`OPEN` **GitHub Copilot is not in OpenClaw 2026.9.1's plugin allowlist, so its sign-in finds no
+plugin.** `config/scripts/start/openclaw.sh` writes `plugins.allow` from the fixed `baseAllow` list,
+which holds `codex` whatever its switch says and gains `xai` while `ENABLE_XAI_GROK=1`, and never
+`github-copilot`, the id of the plugin bundled in the image. With `ENABLE_GITHUB_COPILOT=1` the
+dashboard's sign-in ran `openclaw models auth login-github-copilot` and ended with *No provider
+plugins found. Install one via `openclaw plugins install`.* and exit 1. The same omission keeps the
+plugin's model catalogue and the Copilot embeddings for memory search out, so signing in another way
+would not be enough. Found by the operator in #50's manual check CS-21 on 2026-10-29, on a fresh
+installation; `openclaw.sh` is the same on `main`. A repair has three parts, read from the script and
+the image and not measured. The id joins `baseAllow` while the switch is on, as `xai` does: the
+guarded pushes run before the list exists on a first start. The list is the union of the previous
+one and `baseAllow`, so an id once in stays in; a switched-off plugin is disabled through
+`plugins.entries` and its routes removed, as for `codex` and `xai`, and `only` deletes the id, as it
+does theirs. And `github-copilot/*` is routed through the `copilot` agent runtime, the external
+`@openclaw/copilot`, which the image does not carry, so that routing needs its own look. The same
+first-start gap holds for `active-memory`: its guarded push runs before the list exists and
+`baseAllow` lacks it, so it joins only on the second start. Not worked: after #49 a finding is
+recorded unless the operator asks for it.
+
+---
+
+`OPEN` **One red case in `m-cs.start-switches.test.ts`, seen once and not captured.** On 2026-10-30,
+while #56's answer to Timur's review was being written and before it was committed, one of six runs
+of that file (CS-4 and CS-5, 17 cases, `start.sh` run whole by `tests/lib/startfixture.ts`) reported
+1 fail. The output was not kept, so neither the case nor its message is known. The five runs after it,
+and every later unmutated run of the file from a clean tree, at `3c77efc` and `2b12988`, alone and in
+the full suite, were green. A repeat is worth capturing whole: `bun test tests/integration/m-cs.start-switches.test.ts`
+with its output written to a file. Not worked: after #49 a finding is recorded unless the operator
+asks for it.
+
+---
+
+`OPEN` **`dns: ["127.0.0.1"]` on the proxy is unmeasured on a rootful engine on Linux.**
+`compose.yml` gives the proxy that setting so that a name docker does not know -- a service that is
+switched off or not running -- is not handed to the host's DNS, where a device on the LAN of that name
+would receive the operator's requests (#56, CS-FR5). Timur's review of 2026-10-30 asked whether a
+rootful engine since Docker 26 reaches a loopback `--dns` server from the host's network namespace,
+which on a host running dnsmasq, unbound or Pi-hole on 127.0.0.1 would resolve such a name again.
+Docker's documentation says the server is the container's own loopback (docs.docker.com/engine/network,
+the DNS flags table), and on Docker Desktop's rootful engine 29.9.2 a resolver in the engine's own
+namespace received nothing while the container got SERVFAIL at once. The review reproduced the
+rootless case. A rootful engine on Linux with a resolver on the host's 127.0.0.1 is the case left: a
+`docker run --rm --dns 127.0.0.1 nginx:latest getent ahosts <a name only that resolver knows>` there
+answers it. Not worked: after #49 a finding is recorded unless the operator asks for it.
+
+---
+
+`OPEN` **A privacy provider OpenClaw was given once stays offered after the proxy is switched off.**
+`config/scripts/start/openclaw.sh` writes `privacy-openai` into `openclaw.json` while
+`PRIVACY_PROXY_ENABLE=1` and `OPENAI_API_KEY` is set, and `privacy-anthropic` while it is `1` and
+`ANTHROPIC_API_KEY` is set or `ENABLE_ANTHROPIC_CLAUDE_CODE=1`, each with a picker entry and a
+`modelPolicy.allow` line. Neither is taken out once its condition stops holding: the block deletes
+only the legacy `privacy` provider and its `privacy/*` entry, and the picker and allowlist writers
+add without removing, so that a model the operator allowed by hand survives. Measured on this
+branch's stack on 2026-10-29, in a start begun at 22:43Z with `PRIVACY_PROXY_ENABLE=0`: the
+`volumes/_openclaw/openclaw.json` that start's OpenClaw step left still held both providers, and
+`privacy-openai/*` and `privacy-anthropic/*` in the picker and the allowlist. A model chosen there
+is sent to `http://privacy-proxy:8080`, where no container runs, and the start's own output still
+says both were registered, since that line names each provider the file holds. With the switch on,
+clearing `OPENAI_API_KEY` leaves `privacy-openai` the same way, and `ANTHROPIC_API_KEY` leaves
+`privacy-anthropic` while Claude Code is off, read rather than measured. `openclaw.sh` is the same
+on `main`. A repair deletes each privacy provider and its two entries on every start that does not
+write it. `local` has the same shape, read rather than measured: its provider is deleted only when
+an endpoint is set and offers no chat model, a failed discovery counting the same, and never its two
+entries, and nothing at all when `LOCAL_LLM_API_BASE` is emptied. Found while checking the first
+update-test entry on this stack. Not worked: after #49 a finding is recorded unless the operator
+asks for it.
 
 ## Carried over from the 2026.9.1 migration
 
@@ -1977,7 +2305,10 @@ It stays settled against the finishing list's cut line of 2026-10-17: nothing he
 false and nothing touches what is not its own. The remedy for whoever next edits those two scripts is
 one line each — `${OPENCLAW_IMAGE:?set it to the image this stack runs}` in place of the default, so a
 hand-run refuses instead of guessing. Written down rather than done, because doing it means rebuilding
-a checked-in bundle to change a script nothing calls.
+a checked-in bundle to change a script nothing calls. *Done on #56, 2026-10-30, without rebuilding the
+bundles:* Timur's review made every run of a `liquidupstart/*` image say `--pull never`, which edited
+both scripts, so they took this remedy as well. Each now requires `OPENCLAW_IMAGE` and never pulls it;
+`CS-22` runs both against a stub `docker`.
 
 `DONE-ON-#9` **~~`timeout -k` on the bounded docker runs.~~** *Done 2026-09-14, and this entry was wrong.*
 Suggested in the third review of #11 as an optional improvement to N1 (OC-60 since the 2026-09-30 rename), and deferred here on the

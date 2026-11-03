@@ -1,4 +1,4 @@
-# Handover — 2026-10-28
+# Handover — 2026-11-02
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,17 +9,403 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-10-28, afternoon* has the live picture, *2026-10-28, earlier* under it, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-11-02* has the live picture, *2026-11-01* under it, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first twelve and the review bodies they point to; the rest of this file is the map and the lessons.
+first nineteen and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
 
-## Where it stands, 2026-10-28, afternoon: #52 merged, and the update to 0.8.0 next
+## Where it stands, 2026-11-02: #56 merged, #59 brought up to it, and #60 specified
+
+**Timur approved #56 and merged it at 07:20Z; issue #50 is closed.** He said so on Slack, and
+`gh pr view 56` gives the merge commit as `a694be6`. His approval carries only a `:+1:`, so the
+0.8.1 question on #56 stays unanswered. The operator thanked him and, in the same message at 08:49Z, told
+him about OpenCode 2. What waited for the merge is done on `main`:
+- the intro to the update-test entries in `BACKLOG.md` names privacy-proxy#1 where it called the
+  findings a draft;
+- the Hermes entry records the operator's decision of 2026-10-31, a fourth switch, as a feature of
+  its own, not started. The decision was made in that day's session and held back until #56, which
+  carries the entry, had merged. `FINISH.md`'s waiting table loses its row.
+
+**#59 has `main` merged in, at `38d230d`, and is still a draft.** The merge was clean.
+`docs/SPECIFICATION.md` and `tests/mutations.json` changed on both sides and hold every line of
+each. At `38d230d`, from a clean tree, one at a time:
+- the RO tier, 21 / 0;
+- the full default tier, 1695 pass, 29 skip, 0 fail across 216 files, and the dashboard 45 / 0;
+- `privacy-routing.test.sh` passed;
+- the eleven RO mutations, validated again.
+
+The PR description says so. Marking it ready is still the operator's call.
+
+**#60 is the package of small repairs, a draft holding its specification only (`9655055`).** The
+operator approved the package on 2026-10-31 to wait for #56. It takes six entries:
+- OpenClaw's primary model after `only`;
+- `200k` and `1m` among `privacy-anthropic`'s models;
+- the redirect from `http://liquid.localhost`;
+- the repositories card's null check;
+- the sentence on the cleaned Claude route in `.env.example`;
+- the README's memory line.
+
+OpenCode's warning for a refused key is left out. It sits one line from #59's change in
+`_discover_ids`, and its test would need #59's fixture. Three local reviews went over the
+specification, as `9655055`'s message records. The second changed the design of the first repair:
+the dropped model now comes back unconditionally, as the sign-ins do. The first draft compared the
+primary with the model `only` pinned, and that needed a rule for a stale `pinned` and another for
+`null`. The specification waits
+for the operator's sign-off, and the note for Timur names #60.
+
+**One new `BACKLOG.md` entry, found by the first of those reviews.** Under `only`, with the Claude
+subscription on, OpenClaw's picker and `modelPolicy.allow` list `anthropic/*` and `claude-cli/*`
+again. `MODEL_WILDCARDS` is built from `ENABLE_CLAUDE_CLI`, which `only` leaves at 1 while it zeroes
+`OPENCLAW_CLAUDE_BACKEND`. Measured on the writer in the 2026.9.1 image, not on a gateway.
+
+**The worktree's stack still runs from `../liquidupstart-wt-50`**, whose branch is merged and gone
+from the remote. Its `volumes/` hold the Claude login, the proxy's test policy and the four
+unregistered deploy keys, none of them to be registered. Removing the worktree would delete them,
+so whether it goes is the operator's to say. Two more worktrees are this session's:
+`../liquidupstart-wt-59` for #59 and `../liquidupstart-wt-sr` for #60.
+
+**Open, and whose**, replacing the lists of the sections below:
+- **the operator's:**
+  - signing off #60's specification, or changing it;
+  - the note for Timur naming #60, and the one naming #59 if it has not gone out;
+  - marking #59 ready for review;
+  - whether `../liquidupstart-wt-50` and its stack stay, and the proxy's test policy with them;
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles, in `FINISH.md`'s waiting table;
+- **the operator's or Timur's:** the Docker Hub namespace, put off for later;
+- **Timur's:**
+  - an answer on OpenCode 2;
+  - privacy-proxy#1, and #2 with its comment;
+  - the Copilot discussion, when he has time for it;
+  - `45-26`, the 0.8.1 question, and whether he takes #57 or #58;
+- **ours:**
+  - #60, once signed off;
+  - OpenCode's refused-key warning, after #59;
+  - Hermes's switch, decided on 2026-10-31, a feature with a specification of its own, not started;
+  - every other `OPEN` entry waits for the operator's yes. Among them is update-test entry 2's stale
+    half, whose image label the operator decided on 2026-10-29 to build together with it rather than
+    inside #50; #56 has merged, so nothing else holds it back.
+
+## Where it stands, 2026-11-01: #59 implemented and tested, and OpenCode 2 recorded
+
+**#59 is ours and implemented: OpenCode under `PRIVACY_PROXY_ROUTING=only`.** It takes the part of
+the `BACKLOG.md` entry on `LOCAL_LLM_API_BASE` that needs no operator decision:
+- under `only`, OpenCode's default is a privacy model, `privacy/private-claude` on this
+  installation;
+- `enabled_providers` keeps OpenCode Zen out, whose free models need no key;
+- `opt-in` writes `opencode.json` byte for byte as before.
+
+The operator chose the rule on 2026-11-01: OpenClaw's rule, with `opt-in` unchanged. They signed off
+the specification and asked for the implementation. The operator was given a one-line note for
+Timur naming #59; the PR number is all he needs, per the operator's word of 2026-11-01. Whether it
+was sent was not confirmed here.
+- **The commits:** `17a4dcb` is the specification, `642601b` the code, `4f99419` the results.
+- **The runs, all at `642601b` from a clean tree:**
+  - the RO tier, 21 / 0;
+  - eleven mutations, all validated;
+  - the full default tier, 1486 pass, 8 skip, 0 fail;
+  - RO-6 on the running stack through the browser.
+- **The PR is still a draft.** Marking it ready asks Timur for a review, and that is the operator's
+  call.
+
+**RO-6 found one thing beyond the specification.** Under `opt-in` the web UI does not open on the
+configured model. It opened once on `openai`'s default and once on Zen's. The entry on
+`LOCAL_LLM_API_BASE` now says so.
+
+**`BACKLOG.md` gained two entries today, both placed before that one:**
+- OpenCode 2 is out, as a rewrite under its own npm package, `@opencode/cli`. The image stays on
+  `opencode-ai` 1.x, so no build moves by itself. The operator asked for it to go to Timur.
+- OpenCode rewrites the tracked `config/opencode/package.json` on every start, so the worktree shows
+  it as modified. That edit is OpenCode's, not ours.
+
+Both sit where #56's insertions into the file do not reach.
+
+**The worktree's stack runs as it did this morning.** For RO-6, `opencode` was recreated with an
+image built from #59, under `opt-in`, then `only`, then `opt-in` again. Afterwards the image was
+rebuilt from #56's tree and `opencode` recreated under `opt-in`. OpenClaw and the proxy were not
+touched. The test's entries in the operator's Chrome were removed.
+
+**Open, and whose**, adding to the list in the section below:
+- **the operator's:**
+  - the note on #59 to Timur, if it has not gone out;
+  - marking #59 ready for review;
+  - telling Timur about OpenCode 2;
+- **Timur's:** #56's second review, still requested since 2026-10-30, 16:01Z.
+
+## Where it stands, 2026-10-31: the privacy proxy tested on liquidupstart, and the worktree's stack running
+
+**#56 still waits on Timur's second review.** Nothing has changed on it since 16:01Z yesterday, and
+`gh pr view 56 --json reviewDecision,reviewRequests` answers where it stands.
+
+**The privacy proxy's custom policy works.** The operator asked whether the proxy can be given its own
+rules for what is confidential. 0.3.0 can:
+- a policy holds terms, patterns with context words, an `allow` list and a free-text description for
+  the local model;
+- it is kept in the proxy's `volumes/privacy-proxy/policy.json`, and edited at
+  `http://privacy.localhost:8888/policy/ui` or with `PUT /policy`;
+- `POST /policy/test` shows what a text would become, without a cloud call.
+
+No installation had a policy before, which is why the earlier tests showed personal data only. Tried
+on the worktree's stack with made-up data, in `/policy/test` and on two real chats, `private-claude`
+and `privacy-openai` with `gpt-4.1-mini`. On both chats the audit log counted the policy's types, and
+the model spelled the surrogates back, never the originals. Without a policy, the local model already
+masks most of the same data, under general types. The policy adds:
+- what the model misses: an order number named only by a pattern and a context word;
+- terms that are caught without the model;
+- its own types and labels, and exceptions.
+
+**Two findings are privacy-proxy#2, filed at the operator's word, and they are Timur's.** An allowed
+term is masked when a PERSON span runs over it, as in `Hallo, hier ist Maria Schneider von
+NoCodeNation.`. Separately, the proxy's specification points to a file it does not have. The operator
+told Timur on Slack, and asked about Copilot as a topic to discuss later. Nothing waits on us there.
+
+**The worktree's stack runs.** It was started at 07:08Z and restarted at 08:00Z for the new key. Its
+proxy holds the example policy, and `vault.enc` and `audit.jsonl` from the two chats. The policy
+stays until the operator says otherwise.
+
+**`OPENAI_API_KEY` is new in the checkout's and the worktree's `.env`.** Both old keys were refused
+by OpenAI with 401, the worktree's being the revoked one of 2026-10-29. The operator created the new
+one today; it answers 200, and `privacy-openai` lists 142 models through the proxy. It went into the
+checkout's `.env`, and was copied from there to the worktree's. `~/.liquidupstart/.env`, the 0.8.0
+installation, still has the revoked one.
+
+**Four more tests ran later, at the operator's choice, all with made-up data.**
+- **German business data**, through `/policy/test`: IBAN, BIC, VAT ID, tax ID, social security number,
+  ID card, credit card, phone numbers, e-mail, licence plate, invoice and customer numbers and names
+  are caught without a policy. Postcodes never are, and each names the real city.
+- **OpenCode reads a file** from `/data` through `privacy-openai`. The content reached OpenAI masked,
+  the reply came back restored, and every call went through the proxy, the session title's as well.
+- **The document functions:** a `.docx` uploaded to the policy gives term proposals, approved terms
+  take effect at once, and the whole document anonymizes to plain text with the verdict `safe`.
+- **`PRIVACY_PROXY_ROUTING=only`**, measured against `opt-in` and switched back. The provider keys,
+  OpenCode's `openai`, OpenClaw's `claude-cli` and its Claude login are withheld and come back.
+
+The proxy's part went onto privacy-proxy#2 as a comment, at the operator's word: postcodes, a payment
+deadline replaced like a birth date, and plain text out of a `.docx`. Ours are two `BACKLOG.md`
+entries, both in the update test's block:
+- the entry on `LOCAL_LLM_API_BASE` is now measured. OpenRouter stays an unmasked route in both
+  agents under `only`, and OpenCode makes it its default model in either mode;
+- a new one: `only` replaces OpenClaw's primary model, and `opt-in` does not bring it back.
+
+**The worktree is as it was before the routing test, compared field by field.** Its `.env` is back on
+`opt-in`, and OpenClaw's primary model was set back by hand to `anthropic/claude-opus-5`. What the
+tests left there:
+- the policy holds a document now, `notiz-q4.docx`, with four approved terms;
+- `volumes/data/projekt-falke-notiz.md`;
+- two empty directories `only` created, `volumes/_openclaw-claude-routing-only` and
+  `volumes/_openclaw-auth-profile-secrets-routing-only`.
+
+**Open, and whose**, adding to the list in the section below:
+- **Timur's:** privacy-proxy#2 with its comment, and the Copilot discussion when he has time for it;
+- **the operator's:** whether the worktree's stack keeps running, and the test policy with it; the
+  two new `BACKLOG.md` findings wait for a yes like every other.
+
+## Where it stands, 2026-10-30, afternoon: round 1 of #56 answered, and nothing runs
+
+**Timur reviewed #56 at 11:07Z and asked for changes; the answer is pushed, at `1e8a9dc`.** Three
+points blocked the merge, and seven did not. The operator agreed the scope: all three, and the seven
+as recommended, with CS-20 run against the stack.
+- `3c77efc` is the code. Its main changes:
+  - no `liquidupstart/*` image is ever pulled, since nobody owns Docker Hub's namespace;
+  - `docker compose run --rm openclaw-cli` works again;
+  - `PRIVACY_PROXY_ENABLE` is read by one rule everywhere.
+- `2b12988` adds one mutation and corrects a test header.
+- `1e8a9dc` records what the runs found.
+
+The reasons are in decisions 14 to 16 and §7 of `docs/FEATURE-component-switches.md`, and the runs
+in `docs/TEST-SPEC-component-switches.md`. Both exist only on #56's branch, checked out at
+`../liquidupstart-wt-50`.
+
+#56's one comment, rewritten, answers point by point, including what ran and `dns`, which is
+answered with Docker's documentation and a measurement and not changed. `gh pr view 56 --comments`
+shows it.
+
+An edited comment notifies no one, so the review was requested of `iztiev` again at 16:01Z. `gh pr
+view 56 --json headRefOid,reviewRequests,reviewDecision` shows where it stands. The decision stays
+`CHANGES_REQUESTED` until he reviews again.
+
+In short, from a clean tree:
+- the default tier, 1708 / 10 / 0;
+- 61 mutations in 25 cases, all validated;
+- CS-20 2 / 0 in 148 s. It asks every host the review named except `app.localhost`, since
+  `bun_runner` listens only once an app has been built; CS-10 holds that name.
+
+Three local `/code-review` passes ran over the answer, and two over the record of results.
+`2b12988` went in without a pass of its own, which the comment says.
+
+**The morning section's coordination check was wrong by the time it was committed.** Timur assigned
+himself #31 at 05:55:44Z, five minutes before `3ec49e1`, so both issues being worked are assigned
+now, his #31 and the operator's #50. At 06:30Z Timur opened #57 and #58, B6-23 and B6-2 on rootless
+Docker, both on our tests and both unassigned. Before anyone takes either, the operator asks Timur.
+
+On Slack the operator announced the round by 13:24Z and wrote by 17:46Z that it is answered
+and the review requested again. The 0.8.1 question also went on Slack, beside the comment. Claiming
+the `liquidupstart` namespace on Docker Hub, which would also protect installations that never get
+`--pull never`, the operator put off for later on 2026-10-30; Timur has not been asked.
+
+**Nothing runs.** CS-20 built and started the worktree's stack twice between 15:27Z and 15:30Z, and
+the stack was stopped afterwards with `down.sh` from the worktree. The builds were cache hits, so the
+shared `liquidupstart/*:latest` images are still the ones of 2026-10-29: `docker image ls
+'liquidupstart/*'` shows their dates. The worktree's `volumes/` were written by those starts and are
+otherwise as they were, with the Claude login and the four unregistered deploy keys, none of them to
+be registered. The 0.8.0 installation is stopped and untouched.
+
+**Open, and whose**, replacing the list in the section below.
+- **Timur's:**
+  - a second review of #56, and the 0.8.1 question;
+  - privacy-proxy#1 and `45-26`;
+  - whether he takes #57 or #58.
+- **The operator's, or Timur's:** the Docker Hub namespace, put off for later.
+- **The operator's:**
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles in `FINISH.md`'s waiting table on `main`, and Hermes in the
+    same table on #56.
+- **Ours:**
+  - whatever a second round asks;
+  - once #56 merges, the intro to the update-test entries naming privacy-proxy#1 where it says
+    draft;
+  - then the image label with update-test entry 2;
+  - the entries that ``grep -n '^`OPEN` ' BACKLOG.md`` lists on #56's branch, each waiting for the
+    operator's yes. They are thirteen today, two more than this morning: the `dns` setting on
+    rootful Linux and one red case of `m-cs.start-switches.test.ts` that was not captured. The
+    configuration page's other checkboxes are a sentence in the `SETTLED` entry on `.env`'s
+    readers.
+
+`tests/mutations.json` still meets #55 at its end, as below.
+
+The section below holds for the morning, except where this one corrects it.
+
+## 2026-10-30, morning: #56 with Timur, the proxy findings filed, and no stack running
+
+**Timur and we tell each other which issue we start.** He asked for it on Slack, so that two people
+never work one issue, and he announces his own the same way. Before taking an issue: read `gh pr
+list`, where ours and Timur's name their issue in the title, and `gh issue list --json
+number,title,assignees`; give the operator a line for Timur, and start only once it has gone. The
+assignees alone do not answer it yet: Timur works #31 through #55, and #31 has no assignee. The
+operator's Slack message of 2026-10-30 proposes that each of us also assigns themselves on the issue
+taken; #50 is the operator's since that morning.
+
+**#56 waits for Timur's review**, requested of `iztiev` on 2026-10-30 at 05:38Z, with its head at
+`6100878`; `gh pr view 56 --json headRefOid,reviewRequests,reviewDecision` gives both as they are.
+Two minutes later its one comment gained a question: whether a 0.8.1 should carry the repair of
+update-test entry 1 once #56 merges, together with the `*_MODE` warnings #52 repaired. An edited
+comment notifies no one, so Timur meets the question when he opens the pull request.
+
+**The proxy findings went to nocodenation/privacy-proxy#1**, a private repository, in place of the
+draft for Timur the section below describes: the four on the proxy itself (German words read as
+PERSON by the floor, the security judge on a request to write a workspace file, a held message that
+cannot be released, a rewrite that drops a postcode without saying so) and the memory numbers. Its
+log lines were checked against the proxy's container log as the session captured it, since the
+container is gone, and against `audit.jsonl` in `~/.liquidupstart/volumes/privacy-proxy`; that check
+led to one edit after it was filed, which corrected two sentences and added the score the hold in
+its finding 1 carried. It links to the ten `BACKLOG.md` entries and names four of them. The intro to
+those entries still calls the findings a draft for the operator to send. #56 carries that text word
+for word, so a change on `main` alone would make the two conflict, and the correction waits for
+#56's merge.
+
+**Nothing runs on the machine.** The branch's stack, which held 7.8 GiB of Docker's 15.6 GiB at
+rest, was stopped with `down.sh` from `../liquidupstart-wt-50`; the branch's dashboard, which runs
+outside compose, stopped when its `run.sh` was ended. The worktree's `volumes/` stay as they were,
+with the Claude login and the four unregistered deploy keys, none of them to be registered. The
+0.8.0 installation is stopped as before, its `volumes/` untouched.
+
+The two share the `liquidupstart/*:latest` images, the container names and the dashboard's name, so
+one runs at a time, on whatever images were built last; today those are 0.8.0's, from 2026-10-29,
+but for the dashboard's, which each `run.sh` builds anew. To work with 0.8.0: the `liquidupstart`
+launcher, then **Start**. To bring the branch's stack back for a CS-21: `./run.sh` in the worktree,
+then **Start**, or **Rebuild** where the change the review asks for reaches into an image. After
+such a build 0.8.0 runs the branch's images until it is rebuilt itself, and its dashboard does not
+ask for that: it does not compare an image with the code it was built from.
+
+**Open, and whose**, replacing the list in the section below. Timur's: the review of #56 and the
+0.8.1 question on it, privacy-proxy#1, and `45-26`. The operator's: whether 0.8.0 runs again, and
+two rows of `FINISH.md`'s waiting table, `LOCAL_LLM_API_BASE`'s two roles on `main` and Hermes on
+#56. Ours: whatever the review of #56 asks; once #56 merges, the intro to the update-test entries
+naming privacy-proxy#1 where it says draft; then the image label with update-test entry 2, as the
+operator decided on 2026-10-29, and the other entries that ``grep -n '^`OPEN` ' BACKLOG.md`` lists
+on #56's branch, where entry 1 is struck and the new entries stand, each waiting for the operator's
+yes to a pull request. `tests/mutations.json` is appended to on #56 and on #55, so the second to
+merge gets a conflict at its end, resolved by keeping both sets; in git's default conflict style
+they then need `},` and `{` between them, which `diff3` style already holds inside the conflict.
+
+The section below still holds for the update test and for #56's work, except where it says what
+runs: nothing does. Its proxy draft and its open list are replaced by this one.
+
+## 2026-10-29, evening: the update test done, and #56 open for issue #50
+
+**The update test ran.** `liquidupstart --update` took `~/.liquidupstart` from 0.7.0 to 0.8.0, and
+the privacy proxy 0.3.0 was tried with made-up data. What lies on this repository's side is ten
+entries in `BACKLOG.md` (`dc984cf`), the first of them nginx not starting with the privacy proxy off,
+the default. What lies in the proxy itself was drafted in the session as a message to Timur for the
+operator to send; whether it went is the operator's to say.
+
+**#56 implements issue #50, open, review-ready at `6100878`.** The operator signed off the
+specification's five points on 2026-10-29 as recommended. `fdac95d` is the code, with the results of
+CS-0 to CS-19 amended into it. After it: `2b3749a` names that commit in the results; `3b7737a`
+records CS-20's first run; `66aa516` makes CS-20 ask for a 2xx or 3xx where it asked for "not 502",
+adds the GitHub Copilot entry and sets mode 755 on `components.sh`; `1ab9c33` records CS-20's second
+run; `6100878` strikes update-test entry 1, adds the privacy-provider entry below, carries the
+intro rewritten on `main`, and names #56 rather than #50 in the notes under entry 2 and *`.env` has
+many readers*. Four local reviews before the first commit changed the design in places, among them
+the proxy's `dns: ["127.0.0.1"]`, measured: with request-time resolution, docker handed an unknown
+name to the host's DNS. A fifth went over the results amended into `fdac95d`, one over `3b7737a`,
+two over `66aa516` and five over `6100878`; `2b3749a` and `1ab9c33`, documentation only, went in
+without one. Results on the branch: the full suite 1630 / 14 / 0 and the dashboard 45 / 0 at
+`2b3749a`; 34 mutations validated; CS-20 against a running stack 2 / 0, and again at `66aa516`;
+CS-21 by the operator in the browser, held.
+
+#56 adds four `BACKLOG.md` entries: Hermes, `liquid.localhost` redirecting to port 8889, the GitHub
+Copilot sign-in, which CS-21 found failing because `plugins.allow` lacks `github-copilot`; `main`'s
+`openclaw.sh` writes the same list, read rather than measured; and OpenClaw still offering
+`privacy-openai` and `privacy-anthropic` once the proxy is switched off, found in the start below,
+since `openclaw.sh` never takes them out. It strikes update-test entry 1, nginx with the privacy
+proxy off, as repaired: `CS-10` shows it on a configuration rendered from `.env.example` with the
+proxy off, as it ships, and Liquid switched off by the test; and #56's stack, Liquid on, in a start
+begun by hand at 22:43Z with `PRIVACY_PROXY_ENABLE=0`, ran nginx without a restart for the 23
+seconds it was watched; four pages answered with a 2xx or 3xx, OpenProject's once it had started,
+and `privacy.localhost` with the 502 page. The stack was started again with the proxy on afterwards,
+and runs so. It adds a note to entry 2, whose missing-image half it repairs, and to the settled
+entry *`.env` has many readers*. On `main` neither update-test entry says so until #56 merges.
+
+`main`'s tree is `dc984cf`'s plus this file and the intro to the update-test entries, which #56
+carries word for word. `9240580`, #53, #54 and the ten entries came after the 1452 / 12 / 0 of
+2026-10-28, so that run no longer describes `main`'s code, and none has run there since.
+
+**The machine is not as the operator left it,** by the operator's word for CS-20:
+- the 0.8.0 installation in `~/.liquidupstart` is stopped, its `volumes/` untouched;
+- the stack running is `../liquidupstart-wt-50`'s, on fresh `volumes/` there, with a Claude login the
+  operator made during CS-21 and four unregistered deploy keys, one for each of three repositories
+  and the legacy `volumes/_git-secrets/id_ed25519`; none of them is to be registered;
+- its `.env` is a copy of the installation's, ignored by git, with `SYSTEM_SIGNIN_WAIT_SECONDS=0`,
+  `ENABLE_GITHUB_COPILOT=1` and the three switches at `1`;
+- the dashboard on port 7777 is the branch's;
+- the images the stack's containers run are the ones built for 0.8.0 that morning: five by the build
+  after the update, 10:18 to 10:20 CET, and the privacy proxy's at 11:29, by the Rebuild after it
+  was switched on. The branch's builds were cache hits and left them as they were. The dashboard's
+  image, which runs outside compose, is new, and `run.sh` builds it on every launch;
+  `liquidupstart/nar-builder:tree-cc42a6c42d7d` is a suite run's fixture of 20:26Z, labelled
+  `lu-builder-run=5324-fem8c7`, and nothing runs it. 0.8.0's dashboard asks for a build only while
+  an image is missing, so the way back is `docker rm -f liquidupstart-dashboard`, the
+  `liquidupstart` launcher, and **Restart**, which is what it offers while the branch's proxy runs
+  and which calls `down.sh` first. Not Rebuild.
+
+**Open, and whose.** Timur's: the review of #56, `45-26`, and a release after #52. The operator's:
+sending the proxy draft if it has not gone; whether to go back to 0.8.0 now or keep the branch's
+stack; and two rows of `FINISH.md`'s waiting table, `LOCAL_LLM_API_BASE`'s two roles on `main` and
+Hermes on #56. Ours: whatever the review of #56 asks, then the image label with update-test entry 2,
+as the operator decided on 2026-10-29, and the other entries that ``grep -n '^`OPEN` ' BACKLOG.md``
+lists on #56's branch, where entry 1 is struck and the new entries stand, each waiting for the
+operator's yes to a pull request, as every new one has since #49. `tests/mutations.json` is appended
+to on #56 and on Timur's #55, so the second to merge gets a conflict at its end. It is resolved by
+keeping both sets; in git's default conflict style the two then need `},` and `{` between them,
+which the style leaves outside the conflict, and in `diff3` style they are already inside it.
+
+## 2026-10-28, afternoon: #52 merged, and the update to 0.8.0 next
 
 Timur approved #52 and merged it at 13:01Z as **`a6952b5`**; #51 closed with it. `main`'s tree is
 `36b9005`'s plus this file, so the run there, 1452 / 12 / 0 and the dashboard 45 / 0, describes

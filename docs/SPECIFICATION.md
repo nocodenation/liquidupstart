@@ -83,9 +83,13 @@ mounted read-only into the agent containers so an agent can read its own error m
 | `privacy-proxy` | `liquidupstart/privacy-proxy:latest` | **profile-gated**, see §7 |
 | `hermes` | — | **disabled**: commented out in `compose.yml`, `build.sh`, `start.sh` and the nginx template; config remains in the tree |
 
-Five images are built locally: `opencode`, `bun-runner`, `liquid`, `openclaw`, and — only under the
-privacy profile — `privacy-proxy`. `dashboard/src/lib/server/project.ts:builtImages()` lists the
-first four as the prerequisite set for a start.
+Six images are built locally: `opencode`, `bun-runner`, `nar-builder`, `liquid`, `openclaw`, and —
+only under the privacy profile — `privacy-proxy`. Four of them belong to a component that can be
+switched off in `.env`'s *Which apps to run*: their services run under the compose profiles
+`liquid` (`liquid`, `nar_builder`), `openclaw` (`openclaw-gateway`) and `opencode`, which
+`start.sh` activates for what is on (`docs/FEATURE-component-switches.md`).
+`dashboard/src/lib/server/project.ts:builtImages()` lists the images of the components that are on,
+`bun-runner` always among them, as the prerequisite set for a start.
 
 Both agents receive the same skill set from `config/agents/skills/` (Postgres/pgvector RAG,
 PostgREST, Liquid, Nextcloud WebDAV, OpenProject) plus `config/agents/instructions.md`.
@@ -99,13 +103,20 @@ PostgREST, Liquid, Nextcloud WebDAV, OpenProject) plus `config/agents/instructio
 the rendered file is a no-op that survives until the next start.
 
 Virtual hosts: a catch-all default server, then `pgadmin`, `postgrest`, `swagger`, `opencode`,
-`openclaw`, `bridge.openclaw`, `msteams.openclaw`, `app`, `openproject`, `nextcloud`, `eurooffice`,
-and `liquid` (HTTPS default server plus an HTTP redirect). Nextcloud gets the required
+`nar-builder`, `openclaw`, `bridge.openclaw`, `msteams.openclaw`, `privacy`, `app`, `openproject`,
+`nextcloud`, `eurooffice`, and `liquid` (HTTPS default server plus an HTTP redirect, and one HTTPS
+server per Liquid ingress port, which `nginx.sh` generates). Nextcloud gets the required
 `/.well-known/{carddav,caldav}` redirects and a bypass for the Euro-Office download/track endpoints;
 OpenProject gets a `^~ /custom-theme/` location served from a read-only theme mount.
 
-**`privacy-proxy` is deliberately absent from nginx.** It is reached only container-to-container by
-service name — see §7.3.
+**Every upstream is resolved per request**, through `resolver 127.0.0.11` and a `$lu_upstream`
+variable in each `proxy_pass`, so nginx starts whichever services are missing. The vhosts of
+services that can be switched off (`opencode`, `nar-builder`, the three `openclaw` hosts, `liquid`
+and `privacy`) answer nginx's own 502 with a page naming the service and saying it is either
+switched off or not running. `docs/FEATURE-component-switches.md`, CS-FR6.
+
+`privacy.localhost` serves the Privacy Proxy's policy page to the browser. The agents reach the
+proxy container-to-container by service name — see §7.3.
 
 > **URL rule.** `<service>.localhost` resolves **only in the user's browser**. Server-side calls
 > between containers must use the service name, or hit the `proxy` with an explicit `Host:` header.
