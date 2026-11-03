@@ -1859,7 +1859,8 @@ worked, after #49 a finding is recorded unless the operator asks for it.
 
 ---
 
-`OPEN` **The repositories card's result line throws when a repository is tested.** `test()` in
+`DONE-ON-#60` **~~The repositories card's result line throws when a repository is tested.~~**
+*Repaired on #60 on 2026-11-03 with the null check this entry names; `SR-4` holds it.* `test()` in
 `dashboard/src/lib/components/GitRepositories.svelte` sets `results[slug]` to `null` while the test
 runs, and the `$effect` that clears a contradicted result line reads `results[slug].cloned` without
 asking whether it is `null`: *"TypeError: null is not an object"*, printed three times by a run of
@@ -1944,7 +1945,9 @@ with its last log line and report what the status page finds.
 
 ---
 
-`OPEN` **The README gives the host's memory, but Docker Desktop's VM is what runs out.** The
+`DONE-ON-#60` **~~The README gives the host's memory, but Docker Desktop's VM is what runs out.~~**
+*Answered on #60 on 2026-11-03: on macOS the memory line now names Docker Desktop's setting, with
+the measurement below.* The
 prerequisites in `README.md` ask for 16 GB of RAM on Linux and macOS. On macOS the containers run in
 Docker Desktop's VM, which had 7.65 GiB here. A tool request on the Claude route (the CLI plus
 OpenClaw's 58 tools) got `privacy-proxy` OOM-killed (kernel log, its container's cgroup), and
@@ -1969,7 +1972,9 @@ stack, and using install's check, would end both.
 
 ---
 
-`OPEN` **OpenClaw offers `200k` and `1m` as models of `privacy-anthropic`.** `catalogOf()` in
+`DONE-ON-#60` **~~OpenClaw offers `200k` and `1m` as models of `privacy-anthropic`.~~**
+*Repaired on #60 on 2026-11-03: `catalogOf()` reads the models a manifest declares under
+`modelCatalog.providers`, and no model is lost; `SR-2` holds it.* `catalogOf()` in
 `config/scripts/start/openclaw.sh` takes every node of a bundled plugin manifest that has a string
 `id` and a numeric `contextWindow`. In the anthropic manifest four models of each provider carry a
 `contextWindows` list whose entries have both, such as
@@ -1990,7 +1995,9 @@ both cases.
 
 ---
 
-`OPEN` **`.env.example` says the cleaned Claude route has no tools.** Section 8, at
+`DONE-ON-#60` **~~`.env.example` says the cleaned Claude route has no tools.~~**
+*Answered on #60 on 2026-11-03: the sentence says that the app's own tools work there and Claude
+Code's do not.* Section 8, at
 `ENABLE_ANTHROPIC_CLAUDE_CODE`, says: *chat only — Claude tools are not available on the cleaned
 route*. The privacy proxy 0.3.0 passes the client's own tools through, over MCP. On 2026-10-29
 OpenClaw's `write` ran that way: Claude saw made-up names, and the file got the real ones. Only
@@ -2059,7 +2066,9 @@ route. Under `only` the configured default held every time.
 *Found on 2026-10-31 while measuring the entry above, so it stands beside it; it is not one of the
 update test's ten.*
 
-`OPEN` **Switching from `only` back to `opt-in` leaves OpenClaw on the privacy model.** In `only`,
+`DONE-ON-#60` **~~Switching from `only` back to `opt-in` leaves OpenClaw on the privacy model.~~**
+*Repaired on #60 on 2026-11-03: the dropped model is recorded beside `openclaw.json`, and the next
+start in another mode restores it unconditionally, as the sign-ins come back; `SR-1` holds it.* In `only`,
 `config/scripts/start/openclaw.sh:1065` drops a primary model the mode does not offer and pins the
 first privacy one. On 2026-10-31, `anthropic/claude-opus-5` became `privacy-anthropic/claude-opus-5`.
 The next start in `opt-in` keeps it, since it is still a valid model, so the operator's choice does
@@ -2082,6 +2091,15 @@ the writer, not on a gateway. The Claude login and the backend are withheld unde
 model presumably fails rather than going around the proxy; that is not measured either. Found by the
 local review of #60's specification. Not worked: after #49 a finding is recorded
 unless the operator asks for it.
+
+`OPEN` **`only` removes allowlist and picker entries added by hand, and leaving `only` does not bring
+them back.** The routing-only block in `config/scripts/start/openclaw.sh` keeps only `local/` and
+`privacy-` entries of `agents.defaults.models` and `modelPolicy.allow`; the next start in another mode
+writes back what the writer itself writes, the wildcards of `MODEL_WILDCARDS` among them, and nothing
+else. An entry the operator allowed by hand for a single model stays gone, and since #60 a primary
+model restored after `only` that needed it is refused. Read from the code on 2026-11-03 by the local
+review of #60's implementation, not measured on a gateway; `docs/FEATURE-small-repairs.md` §9 records
+it as a limit. Not worked: after #49 a finding is recorded unless the operator asks for it.
 
 ---
 
@@ -2106,7 +2124,8 @@ Recorded here on 2026-11-02, once #56, which carries this entry, had merged. Not
 
 ---
 
-`OPEN` **`http://liquid.localhost` redirects to port 8889, where nothing listens.** The last server
+`DONE-ON-#60` **~~`http://liquid.localhost` redirects to port 8889, where nothing listens.~~**
+*Repaired on #60 on 2026-11-03: the redirect names `SYSTEM_HTTPS_PORT`; `SR-3` holds it.* The last server
 block of `config/nginx/templates/nginx.conf` answers `return 301 https://liquid.localhost:8889;`,
 written literally since `f2b9806` (2026-06-19), while Liquid is served on `SYSTEM_HTTPS_PORT`, 8833
 by default. `SYSTEM_HTTPS_PORT` in its place, which `nginx.sh` substitutes, is the repair. Found while

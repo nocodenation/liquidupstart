@@ -377,8 +377,8 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
     files: ['tests/component/m-oc.config-shape.test.ts', 'tests/system/m-oc.codex-plugin.test.ts'],
     why: 'the codex plugin: component asserts it does not stay enabled unasked, system reads the error it raises'
   },
-  // By design, and the design is in SP-2 itself. **Nine files since #50**, seven since
-  // #52, six since #43 and #46, four since #15, three before: the rule is "a case that needs a
+  // By design, and the design is in SP-2 itself. **Ten files since #60**, nine since #50, seven
+  // since #52, six since #43 and #46, four since #15, three before: the rule is "a case that needs a
   // precondition says so in its header", so every file the rule reaches carries
   // the id, and the DOM list it checks is itself computed. The fourth arrived
   // without anyone judging it, which is why the entry now names the set.
@@ -391,6 +391,7 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
       'tests/component/m-cs.agent-notes.test.ts',
       'tests/component/m-cs.pairing-mount.test.ts',
       'tests/component/m-oc.pairing-card.test.ts',
+      'tests/component/m-sr.result-line-null.test.ts',
       'tests/contract/m-a17.computed-state.test.ts',
       'tests/unit/m-a10.fixture-ceiling.test.ts',
       'tests/unit/m-sp.preconditions.test.ts'

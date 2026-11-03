@@ -654,19 +654,19 @@ else
       c.agents.defaults = c.agents.defaults || {};
       c.agents.defaults.models = c.agents.defaults.models || {};
 
-      // The bundled model catalog of a provider plugin: every node with a string id and a
-      // numeric contextWindow, deduplicated to the widest entry per id.
+      // The bundled model catalog of a provider plugin: the models its manifest declares under
+      // modelCatalog.providers, each with a string id and a numeric contextWindow, deduplicated to
+      // the widest entry per id. Nested lists, such as the contextWindows of a model, are not
+      // models.
       const catalogOf = (pluginId) => {
         const found = [];
         try {
           const manifest = JSON.parse(fs.readFileSync("/app/dist/extensions/" + pluginId + "/openclaw.plugin.json", "utf8"));
-          const collect = (node) => {
-            if (Array.isArray(node)) { node.forEach(collect); return; }
-            if (!node || typeof node !== "object") return;
-            if (typeof node.id === "string" && typeof node.contextWindow === "number") found.push(node);
-            Object.values(node).forEach(collect);
-          };
-          collect(manifest);
+          for (const prov of Object.values((manifest.modelCatalog || {}).providers || {})) {
+            for (const m of (prov && Array.isArray(prov.models)) ? prov.models : []) {
+              if (m && typeof m.id === "string" && typeof m.contextWindow === "number") found.push(m);
+            }
+          }
         } catch (e) {
           console.log("openclaw.json: could not read the " + pluginId + " model catalog (" + e.message + ")");
         }
@@ -1043,6 +1043,18 @@ else
       // dropped and chosen again below.
       const routingOnly = process.env.PRIVACY_ROUTING === "only";
       const keptRoute = (ref) => ref.startsWith("local/") || ref.startsWith("privacy-");
+      // The dropped primary is recorded beside openclaw.json, and the next start in another mode
+      // brings it back, as privacy-routing.sh brings back the sign-ins it set aside. Undefined: no
+      // record; null: a record that cannot be used, which goes in any mode; otherwise the model it
+      // holds.
+      const recordFile = require("path").join(require("path").dirname(p), "privacy-routing-primary.json");
+      const recordedPrimary = (() => {
+        if (!fs.existsSync(recordFile)) return undefined;
+        let r;
+        try { r = JSON.parse(fs.readFileSync(recordFile, "utf8")); } catch (e) { return null; }
+        return r !== null && typeof r === "object" && typeof r.dropped === "string" && r.dropped !== "" ? r.dropped : null;
+      })();
+      let recordWrite = null, recordRemove = recordedPrimary === null;
       if (routingOnly) {
         for (const ref of Object.keys(c.agents.defaults.models)) {
           if (!keptRoute(ref)) delete c.agents.defaults.models[ref];
@@ -1061,11 +1073,14 @@ else
         const primary = typeof c.agents.defaults.model === "string"
           ? c.agents.defaults.model
           : c.agents.defaults.model && c.agents.defaults.model.primary;
-        if (primary && !keptRoute(primary)) {
+        const drop = primary && !keptRoute(primary);
+        if (drop) {
           if (typeof c.agents.defaults.model === "object") delete c.agents.defaults.model.primary;
           else delete c.agents.defaults.model;
           console.log("openclaw.json: privacy routing only, dropped primary model " + primary);
         }
+        // A usable record holds the model from before only already; an unusable one holds nothing.
+        if (drop && !recordedPrimary) recordWrite = { dropped: primary };
         console.log("openclaw.json: privacy routing only, kept providers [" + Object.keys((c.models || {}).providers || {}).join(", ") + "]");
       }
 
@@ -1102,6 +1117,16 @@ else
         }
       }
 
+      // Before the default below, which would otherwise pin a model where only left none. The
+      // record goes once openclaw.json is written.
+      const restorePrimary = () => {
+        if (!recordedPrimary) return;
+        if (typeof c.agents.defaults.model === "string") c.agents.defaults.model = recordedPrimary;
+        else c.agents.defaults.model = { ...(c.agents.defaults.model || {}), primary: recordedPrimary };
+        console.log("openclaw.json: privacy routing, restored primary model " + recordedPrimary);
+        recordRemove = true;
+      };
+      if (!routingOnly) restorePrimary();
       const currentPrimary = typeof c.agents.defaults.model === "string"
         ? c.agents.defaults.model
         : c.agents.defaults.model && c.agents.defaults.model.primary;
@@ -1244,7 +1269,25 @@ else
         console.log("openclaw.json: removed keys this version does not accept:", sweptKeys.join(", "));
       }
 
+      // The record never stops a start: OpenClaw starts with or without it.
+      if (recordWrite) {
+        try {
+          fs.writeFileSync(recordFile + ".tmp", JSON.stringify(recordWrite) + "\n");
+          fs.renameSync(recordFile + ".tmp", recordFile);
+        } catch (e) {
+          fs.rmSync(recordFile + ".tmp", { force: true });
+          console.log("openclaw.json: privacy routing, could not record primary model " + recordWrite.dropped + " (" + e.message + ")");
+        }
+      }
       fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+      if (recordRemove && !recordWrite) {
+        try {
+          fs.rmSync(recordFile, { force: true });
+          if (recordedPrimary === null) console.log("openclaw.json: privacy routing, removed an unusable privacy-routing-primary.json");
+        } catch (e) {
+          console.log("openclaw.json: privacy routing, could not remove privacy-routing-primary.json (" + e.message + ")");
+        }
+      }
       console.log("openclaw.json: OpenClaw " + process.env.OPENCLAW_VERSION + "; config shape " + (schemaNew ? "2026.9" : "2026.7"));
       console.log("openclaw.json: auth.mode =", c.gateway.auth.mode, "; trustedProxies =", JSON.stringify(c.gateway.trustedProxies));
       console.log("openclaw.json: allowedOrigins =", JSON.stringify(c.gateway.controlUi.allowedOrigins));

@@ -91,16 +91,33 @@ export function writeConfig(o: {
 }): any {
   const dir = mkdtempSync(join(o.workRoot, 'state-'));
   writeFileSync(join(dir, 'openclaw.json'), JSON.stringify(o.seed ?? {}, null, 2) + '\n');
-  writeFileSync(join(dir, 'writer.js'), o.program);
+  const r = startWriter({ state: dir, program: o.program, env: o.env, image: o.image });
+  if (r.code !== 0) throw new Error(`config writer failed: ${r.output}`);
+  return r.config;
+}
+
+/**
+ * One start of the writer on a state directory the caller keeps across starts, so that what a
+ * start leaves beside openclaw.json is what the next start finds. Returns the exit status and the
+ * output as well, and does not throw on a failed start: SR-1 of
+ * `docs/TEST-SPEC-small-repairs.md` reads all three. The program is mounted from beside the
+ * directory, so the directory holds only what the writer itself leaves there.
+ */
+export function startWriter(o: { state: string; program: string; env: Env; image?: string }): {
+  code: number;
+  output: string;
+  config: any;
+} {
+  const prog = `${o.state}.writer.js`;
+  writeFileSync(prog, o.program);
   const envArgs: string[] = [];
   for (const [k, v] of Object.entries({ ...BASE_ENV, ...o.env })) envArgs.push('-e', `${k}=${v}`);
   const r = sh([
     'docker', 'run', '--rm', '--user', '0:0',
-    '-v', `${dir}:/state`, ...envArgs,
-    '--entrypoint', 'node', o.image ?? IMAGE_NEW, '/state/writer.js'
+    '-v', `${o.state}:/state`, '-v', `${prog}:/writer.js:ro`, ...envArgs,
+    '--entrypoint', 'node', o.image ?? IMAGE_NEW, '/writer.js'
   ]);
-  if (r.code !== 0) throw new Error(`config writer failed: ${r.output}`);
-  return JSON.parse(readFileSync(join(dir, 'openclaw.json'), 'utf8'));
+  return { code: r.code, output: r.output, config: JSON.parse(readFileSync(join(o.state, 'openclaw.json'), 'utf8')) };
 }
 
 /**
