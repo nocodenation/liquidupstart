@@ -1,9 +1,11 @@
-# Test specification: six small repairs from `BACKLOG.md`
+# Test specification: seven small repairs from `BACKLOG.md`
 
-Status: **signed off on 2026-11-03, and implemented on this branch.** Each block's *What it found*
-comes from the runs after `c38fd78`, the commit that adds the code, and `1c8dd3b`, which gave SR-3
-its control; each block's *Shown able to fail* from `./tests/mutate.sh --case`, which refuses a
-subject with uncommitted changes. All runs started and ended on a clean tree, one at a time; the
+Status: **signed off on 2026-11-03.** SR-1 to SR-5 are implemented on `fix/small-backlog-repairs`
+(#60), and the record below is theirs; SR-6 is implemented on `fix/opencode-refused-key-warning`, and
+its block records its own runs. Each block's *What it found* for SR-1 to SR-5 comes from the runs
+after `c38fd78`, the commit that adds the code, and `1c8dd3b`, which gave SR-3 its control; each
+block's *Shown able to fail* from `./tests/mutate.sh --case`, which refuses a subject with
+uncommitted changes. All runs started and ended on a clean tree, one at a time; the
 tiers and SR-5 ran at `1c8dd3b`:
 
 - **SR tier.** `./tests/run.sh sr` gave 29 pass, 3 skip and 0 fail across four files, in 70 s. The
@@ -25,7 +27,8 @@ tiers and SR-5 ran at `1c8dd3b`:
   on `main` at `6f892f7` the same way on this host, whose bash is 3.2.57 and has no `compat42`. The
   full tier was not run again on the merge.
 
-Feature: `docs/FEATURE-small-repairs.md` (SR-FR1 to SR-FR7).
+
+Feature: `docs/FEATURE-small-repairs.md` (SR-FR1 to SR-FR8).
 
 Files are named `tests/<level>/m-sr.<subject>.test.ts`. Their headers open with `M-SR · <Level> · …`
 and follow the block of `docs/TEST-SPEC-git-integration.md` §4.2. `./tests/run.sh sr` runs them.
@@ -39,6 +42,7 @@ and follow the block of `docs/TEST-SPEC-git-integration.md` §4.2. `./tests/run.
 | The redirect in `config/nginx/templates/nginx.conf` | unit, rendered by `nginx.sh` | Two ports, so that neither can pass as a constant |
 | The null check in `GitRepositories.svelte` | component, mounted card | The state that threw, and the result line that follows it |
 | The round trip on the running stack | system, operator check | Once, recorded |
+| The 401 warning in `_discover_ids` of `config/opencode/entrypoint.sh` | unit, the real script run by #59's fixture; integration, one row in the image | **Full branch coverage** of the new decision: the proxy's own answer and a provider's, for both providers OpenCode asks; each kind of body taken for neither; no 401 at all; the body removed on both ways out |
 | `.env.example` §8 and `README.md` | none | **No test.** Comments and prose; a test would assert a sentence and protect nothing (`CLAUDE.md`, *Coverage where it bites*). The pull request shows the text |
 
 Nothing here depends on a model's answer. SR-5 is an operator check because only a real start under
@@ -78,10 +82,30 @@ both modes shows the round trip on an installation's own state.
 | **SR-4** | Component | **negative** | while a repository test is waiting for its answer, the card raises no error |
 | **SR-4** | Component | positive | …and once the answer arrives, its line is shown |
 | **SR-5** | System | positive | operator check: on the running stack, a start under `only` and one under `opt-in` bring OpenClaw back to the primary model it had |
+| **SR-6** | Unit | positive | the proxy answers Anthropic's list with its own 401, `provider_key_missing`: the warning says the proxy holds no key, and nothing of a refusal |
+| **SR-6** | Unit | positive | …and likewise for OpenAI's list, whose answer `_discover_ids` writes to a file of its own |
+| **SR-6** | Unit | positive | OpenAI's list answers 401 with OpenAI's refusal: the warning says the provider refused the key, and nothing of a missing key |
+| **SR-6** | Unit | positive | …and likewise Anthropic's list with Anthropic's refusal |
+| **SR-6** | Unit | **negative** | …and neither refusal's message reaches stderr, stdout or `opencode.json`: not `Incorrect API key`, not `lu-sr-no***-key`, not `invalid x-api-key` |
+| **SR-6** | Unit | **negative** | a 401 whose body is `Unauthorized`, not JSON, is taken for neither: the line names both |
+| **SR-6** | Unit | **negative** | …nor is `{"error":"provider_key_missing"} junk`, valid JSON with more after it, which `jq` cannot read whole |
+| **SR-6** | Unit | **negative** | …nor a body shaped like a wrapped missing-key answer, `{"detail":{"error":"provider_key_missing"}}` |
+| **SR-6** | Unit | **negative** | …nor an `error` object of a shape no provider was measured giving, `{"error":{"code":"provider_key_missing"}}` |
+| **SR-6** | Unit | **negative** | …nor a 401 with an empty body |
+| **SR-6** | Unit | **negative** | with every list answered 200, stderr carries no `HTTP 401` line |
+| **SR-6** | Unit | positive | after the first and third rows' answers the provider is still left out of `opencode.json`, and the start carries on |
+| **SR-6** | Unit | **negative** | …and after the same answers the list is not asked again: one `HTTP 401` line, and no `unreachable` |
+| **SR-6** | Unit | **negative** | after either provider's refusal its body is not left in `/tmp`, while the list that answered is |
+| **SR-6** | Unit | **negative** | …nor is the body of a list that answered 403 ten times and was given up as unreachable |
+| **SR-6** | Integration | positive | in the OpenCode image, under its own `sh` and `jq`, the missing-key line reaches the container log |
 
 Every case has its negative counterpart above except SR-5. A start that must *not* restore is shown
 at component level by row 8 of §3.1. Repeating it on the stack would show nothing the component
 case does not.
+
+SR-6 has no check on the stack. Its bodies are the ones the running proxy and the two providers
+gave, the unit runs the real script, and its integration row runs it in the real image; a check on
+the stack would add only a refused key, which this change does not set on anyone's installation.
 
 ## 3. Test data
 
@@ -206,6 +230,47 @@ case looks. The answer it then resolves with is `{"ok":false,"message":"…still
 text m-a16 uses. Errors are collected from `console.error` and from errors raised outside the case
 while it runs.
 
+### 3.5 SR-6: the answers to the model lists
+
+The entrypoint runs through `runEntrypoint()` of `tests/lib/opencodefixture.ts` (#59), with
+`BASE_ENV`, `PRIVACY_ROUTING` unset and `ENABLE_ANTHROPIC_CLAUDE_CODE=0`. The local list answers
+`LOCAL` with 200. The list under test answers 401 with one of the bodies below, 403 in row 15; the
+other proxy list answers `OPENAI` or `ANTHROPIC` with 200. Row 11 answers all three lists with 200,
+`ALL_ON`. Rows 5, 12, 13 and 14 read the runs of rows 1, 3 and 4 again rather than repeat them; a
+run is made when a row first needs it, so one that throws fails the rows reading it, not the file.
+
+- **The proxy's own answer, Anthropic:** `{"error":"provider_key_missing","provider":"anthropic"}`,
+  as the running proxy 0.3.0 gave it on 2026-11-03. It is the fixture's `ANTHROPIC_KEY_MISSING`,
+  which the RO cases use as well.
+- **The proxy's own answer, OpenAI:** `{"error":"provider_key_missing","provider":"openai"}`, the
+  same handler with `openai` in place of `anthropic`. The installation it was measured on holds an
+  OpenAI key, so the proxy could not be made to give it without changing that key.
+- **OpenAI's refusal:**
+  `{"error":{"message":"Incorrect API key provided: lu-sr-no***-key. You can find your API key at https://platform.openai.com/account/api-keys.","type":"invalid_request_error","param":null,"code":"invalid_api_key"}}`,
+  OpenAI's answer to `lu-sr-not-a-key` on 2026-11-03. The key is made up and shaped so that nothing
+  takes it for a real one; the fragment OpenAI echoes is what row 5 looks for. Row 15 sends the same
+  body with 403, a pairing invented on purpose: a provider's status for a key without permission.
+- **Anthropic's refusal:**
+  `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_011Cgg9ReqgB89TncJDxGBcD"}`,
+  Anthropic's answer to the same key on the same day.
+- **Not JSON:** `Unauthorized`. **More after it:** `{"error":"provider_key_missing"} junk`, which
+  `jq` reads as `missing` and then fails on. **Wrapped:** `{"detail":{"error":"provider_key_missing"}}`.
+  **Unmeasured object:** `{"error":{"code":"provider_key_missing"}}`. **Empty:** a 401 without a
+  body. All on Anthropic's list, and all invented on purpose: shapes a changed proxy or provider
+  could send, which nothing measured. The three that carry `provider_key_missing` show that the
+  string alone, out of place or followed by more, is not taken for the proxy's answer.
+
+The case compares whole lines, from `WARNING:` to `provider skipped.`, each with the URL it names.
+The line naming both begins as the missing-key line does, so a prefix would let it pass for one.
+
+The stub `curl` empties its output file for an answer without a body, as curl 8.14.1 does, and a run
+reports the files it left in its `/tmp`.
+
+The integration row runs on RO-5's two containers (`tests/integration/m-ro.opencode-reads.test.ts`):
+`liquidupstart/opencode:latest`, the working tree's entrypoint mounted, the same stub `curl`, and the
+Anthropic list answering `KEY_MISSING`. It reads the `only` container's `docker logs`. It lives in
+RO-5's file, so `./tests/run.sh ro` runs it and `./tests/run.sh sr` does not.
+
 ## 4. Cases
 
 ### SR-1 — the primary model after `only`
@@ -219,7 +284,7 @@ while it runs.
 | **Expected** | Row 1: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Rows 2, 3 and 4: primary `anthropic/claude-opus-5`, no record. Row 5: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Row 6: primary `privacy-anthropic/claude-opus-5`, and the record byte for byte as row 1 left it. Rows 7 and 8: primary `privacy-anthropic/claude-opus-5`, no record. Row 9: after the `only` start, no primary and the record `{"dropped":"openai/gpt-5.5"}`; after the `opt-in` start, primary `openai/gpt-5.5`, no record, the output contains `restored primary model openai/gpt-5.5`, and it does not contain `pinned default primary model`. Row 10: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Row 11: primary `anthropic/claude-opus-5`, no record. Rows 12 to 15: exit status 0, primary `privacy-anthropic/claude-opus-5`, no record, and the output contains `removed an unusable privacy-routing-primary.json`. Row 16: primary `privacy-anthropic/claude-opus-5`, and the record holds `{"dropped":"anthropic/claude-opus-5"}`. Row 17: exit status 0, primary `privacy-anthropic/claude-opus-5`, no record, and the output contains `removed an unusable privacy-routing-primary.json`. Row 18: exit status 0, primary `privacy-anthropic/claude-opus-5`, and the output contains `could not remove privacy-routing-primary.json`. Row 19: exit status 0, primary `privacy-anthropic/claude-opus-5`, and the output contains `could not record primary model anthropic/claude-opus-5`. In every row, no file whose name starts with `privacy-routing-primary` is left beside `openclaw.json` other than the record where one is expected, so no temporary file of decision 6 stays behind. |
 | **Dependencies** | Docker, `ghcr.io/openclaw/openclaw:2026.9.1` present locally. Skipped without the image, and the skip names it. |
 | **Shown able to fail** | Fifteen registered, all validated at `c38fd78`, each under the row it is registered for; the counts are of nineteen rows. The record not written, row 1: 8 red, the rows that expect a record or a restore from one (1 to 4, 9, 10, 16 and 19). The restore removed, row 2: 5 red (2, 3, 4, 9, 11). A record already there replaced, row 6: 1 red. An unusable record kept on a drop, row 16: 2 red, 16 and the directory of 19. A record written on every start under `only` that has no usable one, row 7: 2 red, 7 and 17. The record kept after an `opt-in` start, row 2: 5 red. The restore moved after the default block, row 9: 1 red. The string form not handled on the way back, row 11: 1 red. The check that `dropped` is a string removed, row 12; that it is not empty, row 13; for `null`, row 14: 1 red each. The parse left unguarded, row 15: 5 red, 15 to 19, since a directory cannot be read either. The unusable record kept under `only`, row 17: 1 red. The removal left unguarded, row 18: 11 red, every row that removes a record, because the `finally` the mutation puts in has no error to name. The writing left unguarded, row 19: 5 red, every row that writes one. Row 8 has no mutation of its own: it holds on the code before this change as well, and is there as the counterpart of row 2. **Decision 6 has no row.** A failure between the restore and the write of `openclaw.json` cannot be brought about without changing the writer, and in a run that succeeds both orders leave the same files; the order is read in review. |
-| **What it found** | Run at `c38fd78` on a clean tree: 19 / 0. The local review of the implementation added rows 17 to 19, decision 7 and row 9's Codex: a directory at the record's path aborted the start after `openclaw.json` was written, an unusable record outlived an `only` start that dropped nothing, and row 9 restored a model nothing served. It also found `scripts/tests/privacy-routing.test.sh`'s TC-824 passing through the restore, which the feature's §10 records. |
+| **What it found** | Run at `c38fd78` on a clean tree: 19 / 0. The local review of the implementation added rows 17 to 19, decision 7 and row 9's Codex: a directory at the record's path aborted the start after `openclaw.json` was written, an unusable record outlived an `only` start that dropped nothing, and row 9 restored a model nothing served. It also found `scripts/tests/privacy-routing.test.sh`'s TC-824 passing through the restore, which the feature's §11 records. |
 | **Implemented by** | `tests/component/m-sr.primary-restored.test.ts`. |
 | **Covers** | SR-FR1, SR-FR2, UC1 to UC5. |
 
@@ -280,3 +345,18 @@ while it runs.
 | **Dependencies** | The worktree's stack, with the Claude subscription on. |
 | **What it found** | Run on 2026-11-03 on the worktree's stack, `../liquidupstart-wt-50`, with the proxy and the Claude subscription on and routing at `opt-in`. For the two starts, `config/scripts/start/openclaw.sh` of `1c8dd3b` was copied over the worktree's, the only file of the start that differs, and put back afterwards. Before: `anthropic/claude-opus-5` in `openclaw.json` and in `openclaw config get agents.defaults.model` inside `openclaw-gateway`, and no record. **`only`:** `start.sh` exited 0 and printed `dropped primary model anthropic/claude-opus-5` and `pinned default primary model = privacy-anthropic/claude-opus-5`; the file and the gateway named `privacy-anthropic/claude-opus-5`, and the record held `{"dropped":"anthropic/claude-opus-5"}`. **`opt-in`:** `start.sh` exited 0 and printed `restored primary model anthropic/claude-opus-5`; the file, the gateway and `openclaw models status` named `anthropic/claude-opus-5`, the record was gone, the gateway was healthy and `openclaw.localhost` answered 200. Its allowed models listed `privacy-anthropic` without `200k` and `1m`, which is SR-2 on the stack. No sign-in moved: this installation has no file `openclaw_login_paths` lists, and its `auth_profile_store` is empty. The Claude login sits in `volumes/_openclaw-claude`, which the override replaces under `only` and does not move; its `.credentials.json` was refreshed at 13:49 during the run, as the CLI refreshes it, with a token valid for eight hours. Both starts warned, as every start there does, that three declared repositories cannot be cloned while their deploy keys are unregistered. |
 | **Covers** | SR-FR1, SR-FR2, UC1. |
+
+### SR-6 — OpenCode's warning for a refused key
+
+| | |
+|---|---|
+| **Premise** | On a 401 the warning must say what the proxy's answer says: no key held, or a key the provider refused, and both where the answer is of none of the measured shapes (SR-FR8). No body may be printed or left behind. Today it says no key in every case, and leaves the body in `/tmp`. |
+| **Component** | `_discover_ids` in `config/opencode/entrypoint.sh`, run whole by `runEntrypoint()`, with `curl` answering from §3.5; and once in the OpenCode image. |
+| **Steps** | Run the entrypoint once per answer of §3.5. Read stderr, stdout, the exit code, `opencode.json` and the files left in the sandbox's `/tmp`. In the image, read the container log. |
+| **Test data, both sides** | §3.5. |
+| **Expected** | Rows 1 and 2: the missing-key line for `…/anthropic/v1/models` and `…/openai/v1/models`, and no `refused` anywhere on stderr. Rows 3 and 4: the refusal line, and no `holds no key`. Row 5: none of the three message fragments on stderr, on stdout or in `opencode.json`. Rows 6 to 10: the line naming both, for `…/anthropic/v1/models`. Row 11: no `HTTP 401`. Row 12: exit code 0 both times; `opencode.json`'s `provider` holds no `privacy-anthropic` after row 1's answers and no `privacy-openai` after row 3's, and holds the other, which answered 200, each time. Row 13: after either run, exactly one line of stderr contains `HTTP 401`, and none contains `unreachable`. Row 14: after OpenAI's refusal `/tmp` holds `privacy_models.json` and no `privacy_openai_models.json`, after Anthropic's the reverse. Row 15: stderr carries `…/openai/v1/models unreachable (HTTP 403)`, and `/tmp` holds no `privacy_openai_models.json`. Row 16: the container log holds the missing-key line for `…/anthropic/v1/models`. |
+| **Dependencies** | `sh`, `jq`; the fixture refuses to run without `jq`. Row 16: Docker and `liquidupstart/opencode:latest`, skipped without them as RO-5 is, with a notice naming both. |
+| **Shown able to fail** | To be filled in. Planned: the missing-key branch removed (rows 1, 2 and 16 red); the refusal branch removed (rows 3 and 4); OpenAI's shape and Anthropic's each removed from it (row 3, row 4); any other body read as a refusal, as first specified (rows 6 to 10); any `error` object read as a refusal, as the second draft had it (row 9); `jq`'s failure ignored (row 7); the default file read in place of `$_f` (row 2); the body printed to stderr (row 5) and to stdout (row 5); the `return` removed, so that a 401 is asked again (row 13); the body kept after a 401 (row 14) and after the last try (row 15). The first local review found the `return` mutation surviving the first eight rows, which is why row 13 exists. Rows 11 and 12 have no mutation of their own: they hold on the code before this change as well, and are there as the counterparts of the warning rows. |
+| **What it found** | To be filled in. |
+| **Implemented by** | `tests/unit/m-sr.refused-key.test.ts` (rows 1 to 15) and `tests/integration/m-ro.opencode-reads.test.ts` (row 16). |
+| **Covers** | SR-FR8. |

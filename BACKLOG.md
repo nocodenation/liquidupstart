@@ -1995,6 +1995,25 @@ both cases.
 
 ---
 
+`OPEN` **OpenCode reports a provider's 403 or 429 as unreachable.** The privacy proxy passes the
+provider's status through, and `_discover_ids` in `config/opencode/entrypoint.sh` stops early only on
+200 and 401. Any other answer is tried ten times, about 30 seconds per provider, and then reported as
+`unreachable (HTTP 403)`, which sends the operator to the network when the provider refused the
+request. Read from the code on 2026-11-03 by the local review of the refused-key warning, not
+measured. `docs/FEATURE-small-repairs.md` §10 records it as a limit. Not worked: after #49 a finding
+is recorded unless the operator asks for it.
+
+---
+
+`OPEN` **OpenCode's model discovery has no time limit per try.** `_discover_ids` in
+`config/opencode/entrypoint.sh` calls `curl` without `--max-time` or `--connect-timeout`, so its ten
+tries bound how often it asks, not how long. A proxy that accepts the connection and never answers
+holds the start before `opencode web`, and OpenCode does not come up. RO-5's own probe needed `-m 5`
+for the same reason. Read from the code on 2026-11-03 by the local review of the refused-key
+warning, not measured. Not worked: after #49 a finding is recorded unless the operator asks for it.
+
+---
+
 `DONE-ON-#60` **~~`.env.example` says the cleaned Claude route has no tools.~~**
 *Answered on #60 on 2026-11-03: the sentence says that the app's own tools work there and Claude
 Code's do not.* Section 8, at
@@ -2098,7 +2117,7 @@ them back.** The routing-only block in `config/scripts/start/openclaw.sh` keeps 
 writes back what the writer itself writes, the wildcards of `MODEL_WILDCARDS` among them, and nothing
 else. An entry the operator allowed by hand for a single model stays gone, and since #60 a primary
 model restored after `only` that needed it is refused. Read from the code on 2026-11-03 by the local
-review of #60's implementation, not measured on a gateway; `docs/FEATURE-small-repairs.md` §9 records
+review of #60's implementation, not measured on a gateway; `docs/FEATURE-small-repairs.md` §10 records
 it as a limit. Not worked: after #49 a finding is recorded unless the operator asks for it.
 
 ---

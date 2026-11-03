@@ -248,8 +248,10 @@ through unchanged; the proxy adds the key (from §5 of `.env`) and strips the cl
 `privacy` provider or `privacy/*` wildcard left in `openclaw.json` by an earlier version.
 
 **OpenCode** (`config/opencode/entrypoint.sh`) discovers each catalogue from the proxy at start
-(`_discover_ids`, ten tries; a 401 means no key for that provider and the provider is skipped
-with a warning). With `ENABLE_ANTHROPIC_CLAUDE_CODE=1` it also keeps a `privacy` provider at
+(`_discover_ids`, ten tries). On a 401 the provider is skipped with a warning that says whether
+the proxy holds no key for it (its own `provider_key_missing`), the provider refused the key (the
+shapes OpenAI and Anthropic answer in), or, for any other body, that either is possible.
+With `ENABLE_ANTHROPIC_CLAUDE_CODE=1` it also keeps a `privacy` provider at
 `${PRIVACY_PROXY_URL}/v1` with `private-claude{,-opus,-sonnet,-fable}`, the OpenAI-dialect
 door onto the CLI for the case where no Anthropic key is set and discovery cannot run. The
 built-in `anthropic` provider is never pointed at the proxy: "private" is always an explicit

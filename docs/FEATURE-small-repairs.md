@@ -1,16 +1,17 @@
-# Feature: six small repairs from `BACKLOG.md`
+# Feature: seven small repairs from `BACKLOG.md`
 
-Status: **signed off on 2026-11-03, and implemented on this branch.**
-Branch: `fix/small-backlog-repairs`
-Found: six `OPEN` entries of `BACKLOG.md`, each named under its section below. The operator approved
+Status: **signed off on 2026-11-03.** Sections 2 to 7 are implemented on `fix/small-backlog-repairs`
+(#60), section 8 on `fix/opencode-refused-key-warning`. Section 8 was changed after the local reviews
+of its implementation, as it records; the changed version awaits the operator's sign-off.
+Found: seven `OPEN` entries of `BACKLOG.md`, each named under its section below. The operator approved
 them as one package on 2026-10-31, to wait for #56, which has since merged. The test specification is
 `docs/TEST-SPEC-small-repairs.md`.
 
 ## 1. Purpose
 
 Each entry is a defect someone measured and a repair the entry already names. None of them needs a
-decision about how the stack should behave. They go together because each is too small for a pull
-request of its own.
+decision about how the stack should behave. They were approved together because each is too small for
+a pull request of its own; section 8 became one all the same, as below.
 
 | Section | `BACKLOG.md` entry | What changes |
 |---|---|---|
@@ -20,15 +21,13 @@ request of its own.
 | 5 | *The repositories card's result line throws when a repository is tested* | The null check |
 | 6 | *`.env.example` says the cleaned Claude route has no tools* | The sentence says which tools |
 | 7 | *The README gives the host's memory, but Docker Desktop's VM is what runs out* | The memory line names the VM |
+| 8 | *OpenCode's warning for a refused key says that no key is set* | The warning tells a missing key from a refused one |
 
-**Not in this change: *OpenCode's warning for a refused key says that no key is set*.** It was part
-of the package the operator approved. Its line, `config/opencode/entrypoint.sh:120`, sits in
-`_discover_ids`, and #59 changes the two lines above it. A test of the warning would run the
-entrypoint, and the fixture for that, `tests/lib/opencodefixture.ts`, exists only on #59. Built from
-`main`, the repair would conflict with #59 and would need a second copy of that fixture. The operator
-decided on 2026-11-03, when #59 was marked ready for review, that #59 stays as it is: once #59 has
-merged and `main` is merged in here, the entry joins this change as a section of its own, specified
-and tested like the others before any of it is built.
+**Section 8 came later.** Its line in `config/opencode/entrypoint.sh` sits in `_discover_ids`,
+whose two lines above it #59 changed, and the fixture a test of it runs on,
+`tests/lib/opencodefixture.ts`, came with #59. It therefore waited for #59, to join #60 as a section
+of its own. #60 merged first, on 2026-11-03, and the operator decided the same day that section 8
+becomes a pull request of its own.
 
 ## 2. The primary model after `only`
 
@@ -189,7 +188,68 @@ and the proxy held 2.8 GiB. The line gains:
   *Which apps to run* need nothing.
 ```
 
-## 8. Requirements
+## 8. OpenCode's warning for a refused key
+
+`_discover_ids` in `config/opencode/entrypoint.sh` asks the privacy proxy for a provider's models.
+On any 401 it prints *no key for that provider in .env section 5 — provider skipped*. On 2026-10-29
+the key was set and OpenAI had refused it; a direct call with the same key answered 401 as well.
+
+The proxy already tells the two apart, so the warning can read the answer rather than guess it.
+Measured on the running proxy 0.3.0, which `liquidupstart/privacy-proxy:latest` derives from, and
+read in its source, `privacy_proxy/api/routes/models.py`, which is the same at the tags 0.1.2, 0.2.0
+and 0.3.0:
+
+- **No key configured.** The proxy answers 401 itself, with
+  `{"error":"provider_key_missing","provider":"anthropic"}` (measured for `anthropic` and `xai` on
+  2026-11-03).
+- **A key configured.** The proxy passes the provider's status and body through unchanged: its route
+  returns the upstream response's bytes and status. That is read in the source, not measured through
+  the proxy, which would need a refused key on an installation. With the made-up key `lu-sr-not-a-key` on 2026-11-03, OpenAI answered 401 with an `error` object whose
+  `code` is `invalid_api_key`, and Anthropic answered 401 with
+  `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},…}`.
+
+That missing-key answer is the only 401 the proxy gives of its own: across `privacy_proxy/api/` at
+0.3.0 no other place answers 401. Any other 401 on this path is the provider's.
+
+`curl` 8.14.1 in the OpenCode image writes its output file anew on every answer, an empty body
+included (measured on 2026-11-03), so the body read is always that answer's. On a 401 the warning
+recognises the answers that were measured, and nothing else:
+
+- `.error` is the string `provider_key_missing`: the proxy holds no key;
+- `.error.code` is `invalid_api_key`, as OpenAI answers, or `.error.type` is `authentication_error`,
+  as Anthropic answers: the provider refused the key.
+
+Any other body gets a line that names both, which is true either way: one that is not JSON, valid
+JSON with more after it, which `jq` does not read whole, an empty one, and an `error` object of any
+other shape. The proxy is pulled as `latest`, and a release that
+changed its answer, even only by moving `provider_key_missing` into an object, would otherwise turn
+the common case, no Anthropic key beside the Claude subscription, into a refusal that never
+happened.
+The three lines describe what happened rather than tell the operator what to do, since running
+without a provider's key is a choice the stack supports. Each keeps *provider skipped* and names
+`.env` section 5, where the proxy's keys come from:
+
+```
+WARNING: <url> -> HTTP 401: the privacy proxy holds no key for that provider (.env section 5) — provider skipped.
+WARNING: <url> -> HTTP 401: the provider refused the key the privacy proxy sent (.env section 5) — provider skipped.
+WARNING: <url> -> HTTP 401: the privacy proxy holds no key for that provider, or the provider refused it (.env section 5) — provider skipped.
+```
+
+**The provider's message is neither printed nor kept.** OpenAI's names part of the key it refused:
+for `lu-sr-not-a-key` it said `lu-sr-no***-key`, the first eight characters and the last four.
+OpenCode's log is no place for that, nor is its `/tmp`, where agents with a shell work: a list's
+file is removed whenever discovery gives up on it, after a 401 once it is read, and after ten tries
+that never answered 200. The operator acts on which of the two it was, and the warning says that.
+
+The specification as first signed off read every body other than `provider_key_missing` as a
+refusal, told the operator to set or check the key, and kept the body. The second and third local
+reviews of the implementation pointed out each of these, and this section was changed to answer
+them.
+
+Nothing else changes: a 200 is read as before, any other status is tried ten times, the provider is
+left out either way, and the start carries on.
+
+## 9. Requirements
 
 | Id | Requirement |
 |---|---|
@@ -200,8 +260,9 @@ and the proxy held 2.8 GiB. The line gains:
 | SR-FR5 | The repositories card raises no error while a repository test runs |
 | SR-FR6 | `.env.example` §8 says that the cleaned route carries the app's own tools and not Claude Code's |
 | SR-FR7 | `README.md`'s memory line says that on macOS Docker Desktop's memory setting is what counts |
+| SR-FR8 | On a 401 from the privacy proxy's model list, OpenCode's warning says that the proxy holds no key when the body's `error` is `provider_key_missing`, that the provider refused the key when the body is a refusal in the shape OpenAI or Anthropic answer in (`error.code` `invalid_api_key`, `error.type` `authentication_error`), and that either is possible for any other body, one `jq` cannot read whole among them. It does not print the provider's message, and leaves no list's body in `/tmp` once discovery gives up on it |
 
-## 9. Limits
+## 10. Limits
 
 - **UC5:** an installation that went through `only` before this change keeps its privacy model.
 - **The model restored is not checked against what `opt-in` offers.** If the Claude subscription was
@@ -220,13 +281,37 @@ and the proxy held 2.8 GiB. The line gains:
   before `only` takes the backend away, and the writer adds them back after removing them. Found by
   the local review of this specification, measured on the writer and not on a gateway. It is a
   `BACKLOG.md` entry of its own, outside this change.
+- **Section 8 changes the 401 alone.** The proxy passes any status of the provider's through, and
+  `_discover_ids` stops early only on 200 and 401. A 403 or a 429 is tried ten times, about 30
+  seconds, and then reported as `unreachable`, which sends the operator to the network. Read from the
+  code by the local review of section 8, not measured. It is a `BACKLOG.md` entry of its own.
+- **The entrypoint knows the providers' refusal shapes.** Only the proxy knows whether a 401 is its
+  own or passed through. A marker on the 401s it passes through, which is the proxy's own repository's
+  to add, would make the two shapes unnecessary here. Raised by the local review.
+- **A refusal in a shape not measured gets the line naming both.** OpenAI and Anthropic were asked
+  with a made-up key only. A key they refuse for another reason, such as an OpenAI key restricted so
+  that it may chat but not list models, may come back with another `code` or `type`; it is then
+  reported as possibly missing, possibly refused, which is true. Raised by the local review, not
+  measured.
+- **A key xAI refuses answers 400, not 401** (measured on 2026-11-03). OpenCode does not ask the
+  proxy for xAI's models, so this does not reach the warning.
 
-## 10. Files
+## 11. Files
 
 - `config/scripts/start/openclaw.sh`: sections 2 and 3
 - `config/nginx/templates/nginx.conf`: section 4
 - `dashboard/src/lib/components/GitRepositories.svelte`: section 5
 - `.env.example`, `README.md`: sections 6 and 7
+- `config/opencode/entrypoint.sh`: section 8
+- `docs/SPECIFICATION.md` §7.5: the sentence *a 401 means no key for that provider* says that the
+  warning tells a missing key from a refused one
+- `tests/lib/opencodefixture.ts`, its three RO users and `docs/TEST-SPEC-opencode-routing-only.md`:
+  RO's 401 answer is the proxy's measured missing-key body, and its constant is `KEY_MISSING`. It was
+  `REFUSED`, holding `{"detail":"no ANTHROPIC_API_KEY"}`, which no release gives and which section 8
+  would not read as a missing key, while the RO cases stand for one. No RO case reads more than the
+  status. The stub `curl` empties its output file for an answer without a body, as curl does, and a
+  run reports what it left in its `/tmp`. Found by the local reviews of section 8
+- `tests/integration/m-ro.opencode-reads.test.ts`: SR-6's row in the image, on RO-5's containers
 - `tests/lib/openclaw-writer.ts`: `startWriter()`, a start on a state directory kept across runs, for
   SR-1; `writeConfig()` is built on it
 - `scripts/tests/privacy-routing.test.sh`: TC-824 removes the record before each run. The first draft
@@ -237,4 +322,7 @@ and the proxy held 2.8 GiB. The line gains:
 - `tests/contract/m-tr.case-ids.test.ts`, `docs/TEST-SPEC-case-id-traceability.md` and
   `docs/TEST-SPEC-suite-preconditions.md`: SP-2's record names SR-4's mounted card, whose voiced
   skip is filed under `SP-2` as the rule requires
-- `BACKLOG.md`: the six entries struck, as `DONE-ON-#N`
+- `BACKLOG.md`: the seven entries struck, as `DONE-ON-#N`. The entry on allowlist entries added by
+  hand points to its limit as §10, where section 8 moved it. Two entries from the local reviews of
+  section 8, outside it: a provider's 403 or 429 reported as unreachable, and discovery without a
+  time limit per try
