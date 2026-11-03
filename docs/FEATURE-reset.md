@@ -209,6 +209,14 @@ not one this project has met and the fall-through already answers it.
 - **SELinux hosts**, where a bind mount may need `:z` for the container to write; the leg fails
   and falls through. Not a platform this stack has been run on.
 
+- **A daemon on another machine.** *Added 2026-11-03, second review of #32.* With `DOCKER_HOST` or a
+  docker context pointing elsewhere, the `-v "<project-dir>:/v"` of the container leg is read by the
+  daemon on *its* host: the run removes that machine's `<project-dir>/volumes` if the path exists
+  there, or — Docker creating a missing bind source — leaves an empty `<project-dir>` behind on it,
+  and either way the local `[ -e ]` that follows finds ours still present and falls through to
+  `sudo`. The leg does not detect this, and nothing before it would: `cleanup.sh`'s step 1,
+  `docker compose down`, already acts on that daemon. A reset is run where the stack runs.
+
 - **`volumes/nar_builder/m2` by itself.** The issue proposed a leg for that one directory. The
   general leg removes it with everything else, and the per-directory answer — a notice with the
   command, for an operator who wants the leftover gone without a reset — is FR43.

@@ -42,9 +42,12 @@
  *           per build and splices the pins; the pins name every plugin the
  *           default lifecycle binds; the notice's `echo` lines carry
  *           `docker run --pull never --rm --entrypoint rm -v
- *           "${PROJECT_DIR}/volumes/nar_builder:/v" liquidupstart/nar-builder:latest
- *           -rf /v/m2` with `rmdir "${PROJECT_DIR}/volumes/nar_builder"` on the
- *           line after, the old phrase, `$PWD` and `alpine` are absent, the
+ *           '${<var>}/volumes/nar_builder:/v' liquidupstart/nar-builder:latest
+ *           -rf /v/m2` with `rmdir '${<var>}/volumes/nar_builder'` on the line
+ *           after -- single quotes, any identifier for `<var>`, the same in both
+ *           (this said double quotes until the second review of #32, 2026-11-03,
+ *           after the body and the row had moved on) -- the old phrase, `$PWD`
+ *           and `alpine` are absent, the
  *           stripped code holds neither `rm` nor `docker` and still has the
  *           guard `if [ -d "$STALE" ]`, and start.sh invokes the script inside
  *           its `LIQUID_ON` block; each build user is created with an

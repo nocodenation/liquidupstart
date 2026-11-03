@@ -16,7 +16,12 @@
  *           a property of the shell that will paste the line, which only a shell
  *           can answer: the review of #32 (2026-11-03) found the path printed
  *           between double quotes, which carry a space but not a `$`, a backtick
- *           or a `"`, so (5) and (6) evaluate the printed lines with `sh`.
+ *           or a `"`, so (5) and (6) evaluate the printed lines with `sh`. And
+ *           whether the script *writes* that quoting is a property of the bash
+ *           that runs it: the second review (2026-11-03) found the replacement of
+ *           `${var//pat/rep}` written inside the double-quoted expansion, which
+ *           bash quote-removes only from 4.3 on -- macOS ships 3.2 -- so (7) runs
+ *           the script under `bash -O compat42` and (8) is its control.
  * Given:    A fixture made by `mkdtempSync` under the system temp directory with the
  *           prefix `` lu b7-10 a$b`c"d'e- `` -- a space, because the quoting is
  *           half of what the rows prove; `$b`, a backtick, `"` and `'`, because
@@ -35,7 +40,12 @@
  *           `--` to `eval.log` -- the shape of `m-cu.remove-volumes.test.ts`'s
  *           stubs, so a split or a merge cannot hide -- in a separate directory
  *           and log, so (3)'s *no `docker.log`* keeps its meaning. The
- *           counterpart's fixture is the same tree without `m2`.
+ *           counterpart's fixture is the same tree without `m2`. Two more trees
+ *           of the hostile shape, with `m2`, for (7) and (8), so their `eval.log`s
+ *           are their own; in (8)'s root `old.sh`, three lines: `PROJECT_DIR="$1"`,
+ *           the assignment the script carried until the second review,
+ *           `QUOTED="${PROJECT_DIR//\'/\'\\\'\'}"`, verbatim, and
+ *           `printf '%s\n' "$QUOTED"`.
  * When:     `bash config/scripts/start/nar-builder.sh "<fixture>"` -- the `$1`
  *           override no caller passes, there for a case to point the script at a
  *           fixture -- with the working directory the checkout root, so `$PWD`
@@ -45,7 +55,12 @@
  *           begins with the word too), each run as `sh -c "<line>"` with PATH
  *           led by `bin-eval/`. For (6): the
  *           double-quoted form of the same path, the string the script printed
- *           until the review, run the same way.
+ *           until the review, run the same way. For (7): the script again, through
+ *           `bash -O compat42` and, when `bash -O compat31 -c true` exits 0,
+ *           `bash -O compat31`, beside a run of the same bash without the option;
+ *           the two printed lines of each `-O` run evaluated as in (5). For (8):
+ *           `old.sh` through `bash -O compat42` and through `bash`, and the `-v`
+ *           line built from the `-O` run's output evaluated as in (6).
  * Then:     (1) stdout holds `is left over from before 2026-10-10`, the exact string
  *           `docker run --pull never --rm --entrypoint rm -v '<q>/volumes/nar_builder:/v'
  *           liquidupstart/nar-builder:latest -rf /v/m2` with `<q>` the fixture's
@@ -58,14 +73,24 @@
  *           `--entrypoint`, `rm`, `-v`, `<fixture>/volumes/nar_builder:/v`,
  *           `liquidupstart/nar-builder:latest`, `-rf`, `/v/m2`, the path unescaped
  *           and verbatim as the eighth, then `<fixture>/volumes/nar_builder` alone;
- *           (6) `sh` exits non-zero and no `eval.log` exists.
+ *           (6) `sh` exits non-zero and no `eval.log` exists; (7) for each mode
+ *           taken, stdout identical to the default run's and holding (1)'s string,
+ *           both evaluations exit 0, and `eval.log` holds (5)'s two calls once per
+ *           mode; (8) the `-O compat42` output is not `<fixture>` with `'` written
+ *           `'\''`, its evaluation exits non-zero with no `eval.log`, and the
+ *           default run's output is that form.
  * Covers:   B7-10, FR43
  * Unhappy:  (2) and (3) are the negatives -- the old phrase or an unexpanded `$PWD`
  *           reaching the operator, and the script deleting or running anything.
  *           (4) is the counterpart that keeps the notice from becoming noise on
  *           every fresh install. (6) shows the fixture hostile, so (5) is shown
  *           able to fail: a path the old quoting carried would make (5) a pass
- *           about nothing. No tree here needs to be undeletable: the property is
+ *           about nothing. (8) shows the replaced line fail under the mode (7)
+ *           runs in and hold without it, so (7) is about the version and not the
+ *           path; neither mode is a bash 3.2 -- the real 3.2.57 printed a third
+ *           form for the old line, recorded in the specification -- which is why
+ *           (7) holds identity with the default run rather than a wrong string.
+ *           No tree here needs to be undeletable: the property is
  *           that nothing is attempted, and a deletable fixture still there
  *           afterwards shows it. A `:` or a newline in the path is deliberately
  *           not covered: FR43 states both as limits and the script has no branch
@@ -108,7 +133,8 @@ function fixture(withM2: boolean): Fixture {
   return { root, bin, binEval };
 }
 
-const run = (f: Fixture) => sh(['bash', SCRIPT, f.root], repoRoot, { PATH: `${f.bin}:${process.env.PATH}` });
+const run = (f: Fixture, ...bashOpts: string[]) =>
+  sh(['bash', ...bashOpts, SCRIPT, f.root], repoRoot, { PATH: `${f.bin}:${process.env.PATH}` });
 /** One printed line, pasted: what the operator's shell hands the command. */
 const evaluate = (f: Fixture, line: string) => sh([SH, '-c', line], repoRoot, { PATH: `${f.binEval}:${process.env.PATH}` });
 
@@ -127,9 +153,28 @@ function evalCalls(f: Fixture): string[][] | null {
 const stale = fixture(true);
 const fresh = fixture(false);
 const hostile = fixture(true);
+const compat = fixture(true);
+const legacy = fixture(true);
 afterAll(() => {
-  for (const f of [stale, fresh, hostile]) rmSync(f.root, { recursive: true, force: true });
+  for (const f of [stale, fresh, hostile, compat, legacy]) rmSync(f.root, { recursive: true, force: true });
 });
+
+/** The command and the `rmdir` line from a run's stdout: the `docker run ` line and the one after it. */
+function printedLines(stdout: string): [string, string] {
+  const lines = stdout.split('\n').map((l) => l.trim());
+  const at = lines.findIndex((l) => l.startsWith('docker run '));
+  expect(at).toBeGreaterThanOrEqual(0);
+  // The line after the command, not the first that begins `rmdir `: the prose
+  // above the commands says "rmdir takes the empty parent", and the first run
+  // of (5) evaluated that sentence (2026-11-03).
+  const rmdirLine = lines[at + 1] ?? '';
+  expect(rmdirLine.startsWith('rmdir ')).toBe(true);
+  return [lines[at], rmdirLine];
+}
+const argv = (f: Fixture) => [
+  ['run', '--pull', 'never', '--rm', '--entrypoint', 'rm', '-v', `${f.root}/volumes/nar_builder:/v`, IMAGE, '-rf', '/v/m2'],
+  [`${f.root}/volumes/nar_builder`]
+];
 
 describe('B7-10 the stale cache directory is named with the command that works, and touched by nothing', () => {
   const r = run(stale);
@@ -157,22 +202,46 @@ describe('B7-10 the stale cache directory is named with the command that works, 
   });
 
   test('B7-10 the printed lines, evaluated by sh, reach docker and rmdir with the path as one element, verbatim', () => {
-    const lines = r.stdout.split('\n').map((l) => l.trim());
-    const at = lines.findIndex((l) => l.startsWith('docker run '));
-    expect(at).toBeGreaterThanOrEqual(0);
-    const dockerLine = lines[at];
-    // The line after the command, not the first that begins `rmdir `: the prose
-    // above the commands says "rmdir takes the empty parent", and the first run
-    // of this row evaluated that sentence (2026-11-03).
-    const rmdirLine = lines[at + 1] ?? '';
-    expect(rmdirLine.startsWith('rmdir ')).toBe(true);
+    const [dockerLine, rmdirLine] = printedLines(r.stdout);
     expect(evaluate(stale, dockerLine).code).toBe(0);
     expect(evaluate(stale, rmdirLine).code).toBe(0);
-    expect(evalCalls(stale)).toEqual([
-      ['run', '--pull', 'never', '--rm', '--entrypoint', 'rm', '-v', `${stale.root}/volumes/nar_builder:/v`, IMAGE, '-rf', '/v/m2'],
-      [`${stale.root}/volumes/nar_builder`]
-    ]);
+    expect(evalCalls(stale)).toEqual(argv(stale));
   });
+});
+
+test("B7-10 under bash -O compat42 (and compat31 where bash accepts it) the script prints the same lines, with the path's ' written '\\'', and they evaluate to the same argv", () => {
+  // bash quote-removes the replacement of ${var//pat/rep} inside double quotes
+  // only from 4.3 on; macOS ships 3.2. compat42 is this bash's reading of the
+  // old rule, and compat31 is taken when the option is still there (5.3: yes).
+  const modes = ['compat42', 'compat31'].filter((m) => m === 'compat42' || sh(['bash', '-O', m, '-c', 'true']).code === 0);
+  const plain = run(compat);
+  const q = compat.root.replace(/'/g, `'\\''`);
+  expect(plain.stdout).toContain(`docker run --pull never --rm --entrypoint rm -v '${q}/volumes/nar_builder:/v' ${IMAGE} -rf /v/m2`);
+  for (const mode of modes) {
+    const r = run(compat, '-O', mode);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe(plain.stdout);
+    const [dockerLine, rmdirLine] = printedLines(r.stdout);
+    expect(evaluate(compat, dockerLine).code).toBe(0);
+    expect(evaluate(compat, rmdirLine).code).toBe(0);
+  }
+  expect(evalCalls(compat)).toEqual(modes.flatMap(() => argv(compat)));
+});
+
+test('B7-10 the control: the assignment the script held until the second review misquotes the path under bash -O compat42, and sh refuses the line built from it', () => {
+  // The line as it stood, character for character: the replacement written
+  // inside the double-quoted expansion.
+  const old = join(legacy.root, 'old.sh');
+  writeFileSync(old, `PROJECT_DIR="$1"\nQUOTED="\${PROJECT_DIR//\\'/\\'\\\\\\'\\'}"\nprintf '%s\\n' "$QUOTED"\n`);
+  const correct = legacy.root.replace(/'/g, `'\\''`);
+  expect(sh(['bash', old, legacy.root]).stdout).toBe(`${correct}\n`);
+  const under42 = sh(['bash', '-O', 'compat42', old, legacy.root]);
+  expect(under42.code).toBe(0);
+  const wrong = under42.stdout.replace(/\n$/, '');
+  expect(wrong).not.toBe(correct);
+  const line = `docker run --pull never --rm --entrypoint rm -v '${wrong}/volumes/nar_builder:/v' ${IMAGE} -rf /v/m2`;
+  expect(evaluate(legacy, line).code).not.toBe(0);
+  expect(evalCalls(legacy)).toBeNull();
 });
 
 test('B7-10 the negative: the same path double-quoted -- the form printed until the review -- is refused by sh and reaches nothing', () => {

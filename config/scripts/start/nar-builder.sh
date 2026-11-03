@@ -20,7 +20,9 @@
 # path between single quotes, every `'` in it written `'\''`: the one quoting
 # every POSIX shell reads literally, so the pasted line hands docker the path as
 # one argument whatever it holds, short of a newline (double quotes lost a `$b`
-# and ran a backtick; review of #32). `rmdir` for the mount point the container
+# and ran a backtick; review of #32). The replacement sits in a variable because
+# bash quote-removes it inside "${var//pat/rep}" only from 4.3 on, and macOS
+# ships 3.2 (second review of #32). `rmdir` for the mount point the container
 # cannot remove.
 set -euo pipefail
 
@@ -30,7 +32,8 @@ STALE="${PROJECT_DIR}/volumes/nar_builder/m2"
 
 if [ -d "$STALE" ]; then
     size="$(du -sh "$STALE" 2>/dev/null | cut -f1)"
-    QUOTED="${PROJECT_DIR//\'/\'\\\'\'}"
+    q="'\\''"
+    QUOTED="${PROJECT_DIR//\'/$q}"
     echo ""
     echo "Note: volumes/nar_builder/m2 (${size:-unknown size}) is left over from before 2026-10-10"
     echo "  and is no longer mounted. Each build now resolves into its own repository and"

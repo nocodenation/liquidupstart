@@ -68,7 +68,10 @@
  *           that failed -- each falls through to `sudo rm -rf <dir>/volumes` with
  *           the line that says why. CU-4: no `sudo`, or a `sudo` after which the
  *           tree remains -- stderr names it, exit 1, the tree is there. CU-5:
- *           `""`, `volumes-of-nobody`, `/`, `///`, `/.`, `//.`, `/tmp/..` and
+ *           `""`, `volumes-of-nobody`, `/`, `///`, `/.`, `//.`, `<dir>/../..` (one
+ *           `..` per component of `<dir>`, so the climb ends at `/` wherever the
+ *           temp directory lies -- `/tmp/..` until the second review of #32, which
+ *           is `/private` on macOS) and
  *           `<dir>/rootlink` (a symlink to `/`) are refused with `not an absolute
  *           path below /.`, `<dir>/absent` with `not an existing directory.`, all
  *           before any leg; `<dir>/` and `<dir>/sub/..` are accepted and the
@@ -456,7 +459,12 @@ describe('CU-5 the guard, which exists because the function takes an argument', 
     refused('//.', NOT_BELOW_ROOT);
   });
 
-  test('CU-5 the negative: /tmp/.. -- a .. that climbs to / -- is refused the same way', () => refused('/tmp/..', NOT_BELOW_ROOT));
+  test('CU-5 the negative: <dir> followed by one .. per component -- a .. that climbs to / -- is refused the same way', () => {
+    // Built from the fixture rather than `/tmp/..`: on macOS /tmp is a link to
+    // /private/tmp, so `cd -P /tmp/..` is /private and rightly accepted
+    // (second review of #32, 2026-11-03).
+    refused((f) => f.root + '/..'.repeat(f.root.split('/').length - 1), NOT_BELOW_ROOT);
+  });
 
   test('CU-5 the negative: a symbolic link to / is refused the same way', () => {
     refused((f) => {

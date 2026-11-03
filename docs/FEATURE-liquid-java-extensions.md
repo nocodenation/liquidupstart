@@ -260,6 +260,19 @@ mistake is available here and is cheaper to avoid than to repeat.
   not a start script's call — the reason at the top of the script, shared with `liquid.sh`'s notice
   about `volumes/liquid/api`.
 
+  **The line is the same under every bash from 3.2 on.** *Corrected 2026-11-03, second review of
+  #32.* The start scripts run under whatever `bash` the host has, and macOS ships 3.2 (`git.sh`
+  already avoids `mapfile` for it), so the substitution that writes `'\''` has to hold there. It did
+  not: `"${PROJECT_DIR//\'/\'\\\'\'}"` puts the replacement inside the double-quoted expansion, and
+  bash quote-removes it there only from 4.3 on — for a path holding `d'e`, bash 3.2.57 printed
+  `d\'\\'\'e` and bash 5.3 under `shopt -s compat42` `d\'\'\'e`, each of which `sh` refuses as an
+  unterminated quote, so the pasted line ran nothing on exactly the hosts the double quotes had been
+  replaced for. The replacement is held in a variable instead — `q="'\\''"`, then
+  `"${PROJECT_DIR//\'/$q}"` — which every bash from 3.2 to 5.3 expands to the same `'\''`. B7-10
+  (7) holds the output under `bash -O compat42` and `compat31` against the hostile path, (8) is the
+  control showing the old line fail there, and the real 3.2.57 measurement is in the test
+  specification.
+
   *Why a container, and why this image.* #10's entrypoint handed the directory to the build user with
   `chown -R -h builder /m2`, and `builder` is uid 1500: on rootless Docker, the platform this stack
   targets, container uid N is host uid 100000 + N − 1, so every directory of the tree is

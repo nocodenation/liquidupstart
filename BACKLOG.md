@@ -889,9 +889,10 @@ has the directory, still `101499`'s, and the notice #25 added (`config/scripts/s
 told its operator *"you can delete it"* — the instruction that fails. Reproduced 2026-11-03 on a
 rootless host: `Permission denied`. The `$PWD`/`alpine` form above is replaced — `alpine` is not
 local on any installation and would be pulled to run one `rm`, against CS-FR15 — by
-`docker run --pull never --rm --entrypoint rm -v "<project>/volumes/nar_builder:/v"
-liquidupstart/nar-builder:latest -rf /v/m2`, with the project's path resolved into it, which the notice
-now prints (FR43, B7-4, B7-10 in the Java-extensions documents). The leg this entry said `cleanup.sh`
+`docker run --pull never --rm --entrypoint rm -v '<project>/volumes/nar_builder:/v'
+liquidupstart/nar-builder:latest -rf /v/m2`, with the project's path resolved into it between single
+quotes (*the quoting corrected 2026-11-03, review of #32; this line had it double-quoted*), which the
+notice now prints (FR43, B7-4, B7-10 in the Java-extensions documents). The leg this entry said `cleanup.sh`
 had no room for exists now that there is no mount to retire it: `docs/FEATURE-reset.md` — plain `rm`,
 then `rm` from a container with the project directory mounted (the first local of `nginx:latest` and
 `liquidupstart/bun-runner:latest`, never pulled — *corrected 2026-11-03, review of #32: this named the

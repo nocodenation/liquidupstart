@@ -962,7 +962,7 @@
     "case": "B7-10",
     "file": "config/scripts/start/nar-builder.sh",
     "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
-    "from": "QUOTED=\"${PROJECT_DIR//\\'/\\'\\\\\\'\\'}\"",
+    "from": "QUOTED=\"${PROJECT_DIR//\\'/$q}\"",
     "to": "QUOTED=\"${PROJECT_DIR}\"",
     "mustFail": "B7-10 stdout carries the command with the fixture's own path single-quoted, its ' written '\\'', the rmdir line, and the reason a plain rm is refused"
   },
@@ -970,9 +970,17 @@
     "case": "B7-10",
     "file": "config/scripts/start/nar-builder.sh",
     "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
-    "from": "QUOTED=\"${PROJECT_DIR//\\'/\\'\\\\\\'\\'}\"",
+    "from": "QUOTED=\"${PROJECT_DIR//\\'/$q}\"",
     "to": "QUOTED=\"${PROJECT_DIR}\"",
     "mustFail": "B7-10 the printed lines, evaluated by sh, reach docker and rmdir with the path as one element, verbatim"
+  },
+  {
+    "case": "B7-10",
+    "file": "config/scripts/start/nar-builder.sh",
+    "spec": "tests/unit/m-b7.stale-cache-notice.test.ts",
+    "from": "    q=\"'\\\\''\"\n    QUOTED=\"${PROJECT_DIR//\\'/$q}\"",
+    "to": "    QUOTED=\"${PROJECT_DIR//\\'/\\'\\\\\\'\\'}\"",
+    "mustFail": "B7-10 under bash -O compat42 (and compat31 where bash accepts it) the script prints the same lines, with the path's ' written '\\'', and they evaluate to the same argv"
   },
   {
     "case": "B7-10",
@@ -1132,7 +1140,7 @@
     "spec": "tests/unit/m-cu.remove-volumes.test.ts",
     "from": "  elif ! root=\"$(cd -P -- \"$dir\" 2>/dev/null && pwd -P)\"; then\n    why=\"not an existing directory.\"\n  else\n",
     "to": "  else\n    root=\"$dir\"\n",
-    "mustFail": "CU-5 the negative: /tmp/.. -- a .. that climbs to / -- is refused the same way"
+    "mustFail": "CU-5 the negative: <dir> followed by one .. per component -- a .. that climbs to / -- is refused the same way"
   },
   {
     "case": "CU-5",
