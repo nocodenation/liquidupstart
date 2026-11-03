@@ -30,7 +30,12 @@ and the two rows he found missing as RO-1 row 9 and RO-3 row 5. `main` was merge
 - **Full default tier.** 1732 pass, 30 skip and 0 fail across 221 files, in 30 minutes, with the 48
   stack-level files left out as always; the dashboard gave 45 pass and 0 fail. Its stderr carried one
   message, the builder sweep reporting an image a concurrent case's container still held, which it
-  reports by design and which was gone afterwards.
+  reports by design and which was gone afterwards. This worktree had no `dashboard/node_modules`,
+  so the six component files that need it ran one notice each in place of their cases, a case that
+  runs and passes exactly when the dependencies are absent. Run afterwards at `75cd167` with the
+  dependencies installed, those six and `m-sp.preconditions` gave 68 pass and 0 fail, and 6 skip:
+  the notices, which skip once the dependencies are there. The TypeError of
+  `GitRepositories.svelte` was printed three times. The run at `38d230d` lacked them the same way.
 - **Routing.** `scripts/tests/privacy-routing.test.sh`, TC-821 to TC-826, passed.
 
 Feature: `docs/FEATURE-opencode-routing-only.md` (RO-FR1 to RO-FR6, RO-NFR1, RO-NFR2).
