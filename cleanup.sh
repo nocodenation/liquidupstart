@@ -20,8 +20,8 @@
 #   ./cleanup.sh [--keep-images]
 #
 # Exit status
-#   0 on success; 1 for an unknown option, or when volumes/ cannot be deleted and sudo is
-#   unavailable; any failing docker compose call stops the script (set -e).
+#   0 on success; 1 for an unknown option, or when volumes/ cannot be deleted; any failing
+#   docker compose call stops the script (set -e).
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,18 +60,10 @@ fi
 # Remove rendered config files: the narrow cleanup, also usable on its own to force a re-render.
 "${PROJECT_DIR}/scripts/linux/clean-rendered-config.sh"
 
-# Remove persisted data. Container processes may write files owned by
-# subordinate UIDs the host user can't delete directly, so fall back to sudo.
-echo "Removing volumes/..."
-if ! rm -rf "${PROJECT_DIR}/volumes" 2>/dev/null; then
-  echo "Plain removal failed (files owned by another UID); retrying with sudo..."
-  if command -v sudo >/dev/null 2>&1; then
-    sudo rm -rf "${PROJECT_DIR}/volumes"
-  else
-    echo "ERROR: cannot remove volumes/ and sudo is unavailable." >&2
-    exit 1
-  fi
-fi
+# Remove persisted data: plain rm, then rm from a local container, then sudo
+# (scripts/linux/lib/remove-volumes.sh, docs/FEATURE-reset.md).
+. "${PROJECT_DIR}/scripts/linux/lib/remove-volumes.sh"
+lu_remove_volumes "${PROJECT_DIR}"
 
 # Remove the generated environment file.
 echo "Removing .env..."

@@ -16,27 +16,57 @@
  *           rhetorical: `settings.xml` was rejected by Maven with
  *           *Non-parseable settings* because an XML comment contained `--`,
  *           and nothing but a parse would have caught it.
+ *           B7-4 is the notice about the directory the move left behind
+ *           (`config/scripts/start/nar-builder.sh`), read as text. Until #32
+ *           it told the operator *"you can delete it"*, which fails on rootless
+ *           Docker -- the tree is the build user's mapped uid, 101499 -- and
+ *           the old case here pinned that phrase as the requirement while
+ *           refusing `rm -rf` anywhere in the file, printed text included, so
+ *           a notice printing the command that works would have gone red. The
+ *           rewritten rows (2026-11-03, FR43) read the printed lines apart
+ *           from the code: the `echo` must carry the containerised removal,
+ *           and the code must still run nothing. What the script prints at
+ *           run time is B7-10, in tests/unit/m-b7.stale-cache-notice.test.ts.
  * Given:    compose.yml, config/nar_builder/{Dockerfile,build.sh,seed.sh,
- *           lifecycle-pins.xml,BuildServer.java} and
- *           config/scripts/start/nar-builder.sh.
- * When:     Each is read as text, and the pins file is parsed as XML.
+ *           lifecycle-pins.xml,BuildServer.java},
+ *           config/scripts/start/nar-builder.sh and scripts/linux/start.sh.
+ * When:     Each is read as text, and the pins file is parsed as XML. For the
+ *           notice, the `echo` lines are read with their shell escapes
+ *           resolved, and the rest of the script with comment lines **and**
+ *           lines beginning `echo` or `printf` dropped.
  * Then:     No /m2 mount is declared anywhere; the seeding step is invoked by
  *           the image build with one version argument; build.sh copies the seed
  *           per build and splices the pins; the pins name every plugin the
- *           default lifecycle binds; each build user is created with an
+ *           default lifecycle binds; the notice's `echo` lines carry
+ *           `docker run --pull never --rm --entrypoint rm -v
+ *           "${PROJECT_DIR}/volumes/nar_builder:/v" liquidupstart/nar-builder:latest
+ *           -rf /v/m2` with `rmdir "${PROJECT_DIR}/volumes/nar_builder"` on the
+ *           line after, the old phrase, `$PWD` and `alpine` are absent, the
+ *           stripped code holds neither `rm` nor `docker` and still has the
+ *           guard `if [ -d "$STALE" ]`, and start.sh invokes the script inside
+ *           its `LIQUID_ON` block; each build user is created with an
  *           empty, root-owned 555 home, and is the user the server hands a slot
  *           (B7-6, #31); and the sweep's removal runs `rm` through `-execdir`,
  *           never `-exec`, so no path is resolved twice as root (B7-6, the
  *           second review of #55).
- * Covers:   B7-1, B7-2, B7-3, B7-4, B7-6, FR26, FR37, FR38, FR39, FR41, FR42
+ * Covers:   B7-1, B7-2, B7-3, B7-4, B7-6, FR26, FR37, FR38, FR39, FR41, FR42, FR43
  * Unhappy:  B7-1's negative half is the mount coming back, by any spelling.
  *           B7-3's is a pins file that parses but has lost a plugin, which is
  *           how the first attempt failed: with resources, compiler, jar and
  *           surefire pinned a build still refused on maven-install-plugin,
  *           whose goal `package` never reaches.
+ *           B7-4's are the bare phrase (or `$PWD`, or `alpine`) coming back,
+ *           and a `rm` or `docker` appearing in the code rather than in what
+ *           it prints -- a start script removing a directory the operator may
+ *           have copied into is the thing the notice exists instead of.
  *           B7-6's third is a removal through `-exec`, which the review raced
  *           into deleting a root-owned `/victim`; the race is timing, so the
  *           declaration is held and the measurement is FR42's.
+ *
+ * Test data for B7-4: the command is compared as one string, so the flag order
+ * (`--pull never` straight after `run`, CS-22's shape), the image and the quotes
+ * around the path are each held. `alpine` is what BACKLOG.md once offered -- a
+ * public image not already local, which would be pulled to run one `rm`.
  */
 import { test, expect } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -147,19 +177,68 @@ test('B7-3 and both readers take the pins from this one file', () => {
   expect(dockerfile).toContain('COPY lifecycle-pins.xml');
 });
 
-test('B7-4 the stale host directory is named once and not deleted', () => {
-  const notice = read('config/scripts/start/nar-builder.sh');
+const NOTICE = 'config/scripts/start/nar-builder.sh';
+const PRINTED = /^\s*(echo|printf)\b/;
+/** The notice's printed lines, as the operator reads them: `\"` resolved to `"`. */
+const printed = () =>
+  read(NOTICE)
+    .split('\n')
+    .filter((l) => PRINTED.test(l))
+    .map((l) => l.replace(/\\"/g, '"'));
+/** The notice's code: no comment lines and no printed lines. */
+const noticeCode = () =>
+  read(NOTICE)
+    .split('\n')
+    .filter((l) => !/^\s*#/.test(l) && !PRINTED.test(l))
+    .join('\n');
+
+test('B7-4 the stale host directory is named, with the containerised removal printed: --pull never, the builder image, the project path double-quoted', () => {
   // Named, so an installation that ran before the move is told the directory is
-  // dead rather than left to wonder.
-  expect(notice).toContain('volumes/nar_builder/m2');
-  expect(notice).toMatch(/you can delete it/);
-  // And not deleted: removing a directory the operator may have copied
-  // something into is not a start script's call. Same shape as liquid.sh's
-  // notice about volumes/liquid/api.
-  expect(notice).not.toMatch(/\brm\s+-rf?\b/);
+  // dead rather than left to wonder -- and told the command that removes it,
+  // since on rootless Docker a plain rm by the host user is refused (FR43).
+  const lines = printed();
+  expect(lines.join('\n')).toContain('volumes/nar_builder/m2');
+  const at = lines.findIndex((l) =>
+    l.includes(
+      'docker run --pull never --rm --entrypoint rm -v "${PROJECT_DIR}/volumes/nar_builder:/v" liquidupstart/nar-builder:latest -rf /v/m2'
+    )
+  );
+  expect(at).toBeGreaterThanOrEqual(0);
+  // The parent the container cannot remove -- its own mount point -- on the next line.
+  expect(lines[at + 1] ?? '').toContain('rmdir "${PROJECT_DIR}/volumes/nar_builder"');
+});
+
+test('B7-4 the negative: the bare phrase is gone, and so are $PWD and alpine', () => {
+  const notice = read(NOTICE);
+  expect(notice).not.toContain('you can delete it');
+  // The operator pastes the line from wherever they read it, so the path is the
+  // project's, resolved -- not whatever directory they happen to stand in.
+  expect(notice).not.toContain('$PWD');
+  expect(notice).not.toMatch(/alpine/);
+});
+
+test('B7-4 the negative: with comment and printed lines stripped the script runs nothing and removes nothing, and the guard is still there', () => {
+  // The old assertion refused `rm -rf` over the whole file, printed text
+  // included, which barred the fix. Removing a directory the operator may have
+  // copied into is still not a start script's call -- the same shape and reason
+  // as liquid.sh's notice about volumes/liquid/api -- so the code, with what it
+  // prints set apart, must not run rm or docker.
+  const code = noticeCode();
+  expect(code).not.toMatch(/\brm\b/);
+  expect(code).not.toMatch(/\bdocker\b/);
   // It only speaks when there is something to speak about.
-  expect(notice).toMatch(/if \[ -d "\$STALE" \]/);
-  expect(read('scripts/linux/start.sh')).toContain('start/nar-builder.sh');
+  expect(code).toMatch(/if \[ -d "\$STALE" \]/);
+});
+
+test('B7-4 start.sh invokes it, inside the LIQUID_ON block', () => {
+  // The image the notice names is only guaranteed present when Liquid is on
+  // (CS-23), and the notice is only worth having if it runs.
+  const start = read('scripts/linux/start.sh');
+  const open = start.indexOf('if [[ $LIQUID_ON -eq 1 ]]; then');
+  expect(open).toBeGreaterThanOrEqual(0);
+  const close = start.indexOf('\nfi\n', open);
+  expect(close).toBeGreaterThan(open);
+  expect(start.slice(open, close)).toContain('"${PROJECT_DIR}/config/scripts/start/nar-builder.sh"');
 });
 
 /**

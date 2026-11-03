@@ -247,7 +247,7 @@ mistake is available here and is cheaper to avoid than to repeat.
   — with the installation's own path resolved into it, double-quoted — the command that removes it:
 
   ```
-  docker run --rm --pull never --entrypoint rm -v "<project>/volumes/nar_builder:/v" liquidupstart/nar-builder:latest -rf /v/m2
+  docker run --pull never --rm --entrypoint rm -v "<project>/volumes/nar_builder:/v" liquidupstart/nar-builder:latest -rf /v/m2
   ```
 
   and, on the line after it, `rmdir "<project>/volumes/nar_builder"` for the empty parent the removal
