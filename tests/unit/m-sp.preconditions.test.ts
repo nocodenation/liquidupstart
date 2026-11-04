@@ -21,7 +21,9 @@
  *          one carrying `dashboard/node_modules`, plus this checkout; for SP-3, the
  *          registry and two `.invalid` hosts, and a child bun whose whole PATH is
  *          a directory linking `git` and no `curl`; for SP-6, a child bun whose
- *          PATH is an empty directory, so there is no `git` at all
+ *          PATH is an empty directory, so there is no `git` at all; for
+ *          `python3On`, a PATH that is one empty directory and one that is a
+ *          directory holding an executable `python3` stub (#33)
  * When     each discriminator is asked about each
  * Then     it answers for the state in front of it, and the headers of the cases
  *          that depend on it say which precondition they need; and where `git` is
@@ -43,13 +45,16 @@
  *
  * SP-2 holds two computed lists: the files importing `lib/mount`, and every test
  *          file naming `registryReachable` but this one. Each must name its
- *          precondition in its header and gate on it.
+ *          precondition in its header and gate on it. The hand-enumerated entries
+ *          whose precondition is a tool -- `JQ` in m-a17, `PYTHON3` in m-b7 since
+ *          #33 -- must also carry `skipIf(!!<name>)` followed by a voiced skip
+ *          titled `SP-2 …` that names the executable.
  * Unhappy: SP-1's false answers are the half that matters. The true ones are
  *          their counterparts -- a discriminator that always says "no" skips
  *          everything and is indistinguishable from a suite that does not run.
  */
 import { test, expect, describe, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
@@ -60,6 +65,8 @@ import {
   dashboardDepsIn,
   STARTED,
   IN_GIT_REPO,
+  python3On,
+  PYTHON3,
   preconditions,
   registryReachable,
   registryProbeCount
@@ -139,6 +146,23 @@ describe('SP-1 each discriminator answers for the state in front of it', () => {
     });
   });
 
+  test('SP-1 the negative: a PATH that is one empty directory gives no python3', () => {
+    // #33. The whole PATH is a directory nothing can have put a python3 in, so no
+    // host supplies one by accident.
+    expect(python3On(root())).toBe('');
+  });
+
+  test("SP-1 and one holding an executable python3 stub gives that stub's path", () => {
+    // The permitting half, on a stub rather than the host's interpreter, so a host
+    // without python3 runs it too. Without it, a python3On that always answers ''
+    // passes the case above and the constants case alike.
+    const bin = root((p) => {
+      writeFileSync(join(p, 'python3'), '#!/bin/sh\nexit 0\n');
+      chmodSync(join(p, 'python3'), 0o755);
+    });
+    expect(python3On(bin)).toBe(join(bin, 'python3'));
+  });
+
   test('SP-1 the constants describe this checkout, and the line names it', () => {
     // The counterpart for the three above: they are exercised against throwaway
     // roots, so nothing yet says the exported constants are about the place the
@@ -146,6 +170,8 @@ describe('SP-1 each discriminator answers for the state in front of it', () => {
     expect(STARTED).toBe(startedIn(repoRoot));
     expect(IN_GIT_REPO).toBe(inGitRepoAt(repoRoot));
     expect(preconditions()).toContain(repoRoot);
+    expect(PYTHON3).toBe(python3On());
+    expect(preconditions()).toContain('python3=');
   });
 });
 
@@ -328,6 +354,7 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     // These three have no single grep that finds them: `STARTED` is read through a
     // helper, `IN_GIT_REPO` through another, and `JQ` is m-a17's own constant, so
     // they stay enumerated and the enumeration is the thing SP-2 then checks.
+    // `PYTHON3` likewise (#33): the constant's name is also a word a header uses.
     ['tests/contract/m-a3.known-hosts.test.ts', 'STARTED'],
     ['tests/contract/m-a4.clones-governed.test.ts', 'STARTED'],
     ['tests/integration/m-a1.workspace-dir.test.ts', 'STARTED'],
@@ -336,6 +363,7 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     ['tests/contract/m-a16.text-only.test.ts', 'IN_GIT_REPO'],
     ['tests/unit/m-a10.fixture-ceiling.test.ts', 'IN_GIT_REPO'],
     ['tests/contract/m-a17.computed-state.test.ts', 'JQ'],
+    ['tests/contract/m-b7.seeded-cache.test.ts', 'PYTHON3'],
     ...domFiles.map((f) => [f, 'DASHBOARD_DEPS'] as [string, string]),
     ...registryFiles.map((f) => [f, 'registryReachable()'] as [string, string])
   ];
@@ -391,6 +419,9 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
     expect(registryFiles.every((f) => f.endsWith('.test.ts'))).toBe(true);
   });
 
+  // The hand-enumerated preconditions that are a tool, with the executable each names.
+  const TOOLS: Record<string, string> = { JQ: 'jq', PYTHON3: 'python3' };
+
   for (const [file, which] of dependent) {
     test(`SP-2 ${file} names the precondition it skips on`, () => {
       const src = readFileSync(join(repoRoot, file), 'utf8');
@@ -398,6 +429,14 @@ describe('SP-2 a case that needs a precondition says so in its header', () => {
       expect(header).toContain(which);
       // And it has to actually use it, or the header is a claim about nothing.
       expect(src).toContain(`skipIf(!${which})`);
+      // A tool precondition also voices its absence, under the rule and naming the
+      // tool, so a bare host's report says what did not run. #33.
+      const tool = TOOLS[which];
+      if (tool) {
+        const at = src.indexOf(`skipIf(!!${which})`);
+        expect(at).toBeGreaterThanOrEqual(0);
+        expect(src.slice(at)).toMatch(new RegExp(`['"\`]SP-2 [^'"\`]*${tool}`));
+      }
     });
   }
 });

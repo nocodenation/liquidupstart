@@ -2860,14 +2860,17 @@ watch for:
   `m-b4.entrypoint-in-container` imports paths and constants only, and `m-b4.placement-check` runs
   python inside the container. `git grep -n -E "sh\(\[\s*'python3'|'python3',\s*$" -- tests ':!tests/lib'`
   finds the direct callers — on 2026-11-03 exactly `m-b2.load-path-rebuilt` (142, 177),
-  `m-b7.seeded-cache` (151, `B7-3`) and `m-b6.check-index-status` (97, 100); without the
+  `m-b7.seeded-cache` (151, `B7-3`) and `m-b6.check-index-status` (97, 100), and on 2026-11-04,
+  with `B7-3` spawning `PYTHON3`'s path instead of the word, the first and the last; without the
   `':!tests/lib'` it also prints the fixtures' own calls. Without `python3` each of those fails inside `sh()` with
   `Executable not found in $PATH: "python3"`, which reads like a product failure and is not one — the
   #25 review met it on `B7-3` and added the package by hand. One file checks first:
   `m-b2.start-judges-its-copy:80-81` asks `Bun.which('python3')` and throws *python3 is not on PATH*.
-  `B7-3` is **specified** (#33, the *B7-1 to B7-3* block of `TEST-SPEC-liquid-java-extensions.md`)
-  to ask `PYTHON3` from `tests/lib/preconditions.ts` and skip its parse with a voiced `SP-2` line
-  where the tool is absent; until that lands it fails like the others. A follow-up issue for the
+  `B7-3` asks `PYTHON3` from `tests/lib/preconditions.ts` and skips its parse with a voiced `SP-2`
+  line where the tool is absent (*implemented 2026-11-04, #33*; the *B7-1 to B7-3* block of
+  `TEST-SPEC-liquid-java-extensions.md`): in this container without `python3`,
+  `m-b7.seeded-cache` is 22 pass / 1 skip (*21 / 1 until the review of #64 added a row, 2026-11-04;
+  both measured in the container*) and never *Executable not found*. A follow-up issue for the
   other files is to be opened. `docker-cli` is for the files that run `docker run --rm <image>`
   against the host daemon: add a second `-v` for the daemon's socket —
   `$XDG_RUNTIME_DIR/docker.sock` under rootless Docker, `/var/run/docker.sock` otherwise — at
