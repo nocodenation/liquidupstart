@@ -377,10 +377,10 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
     files: ['tests/component/m-oc.config-shape.test.ts', 'tests/system/m-oc.codex-plugin.test.ts'],
     why: 'the codex plugin: component asserts it does not stay enabled unasked, system reads the error it raises'
   },
-  // By design, and the design is in SP-2 itself. **Ten files since #60**, nine since #50, seven
-  // since #52, six since #43 and #46, four since #15, three before: the rule is "a case that needs a
-  // precondition says so in its header", so every file the rule reaches carries
-  // the id, and the DOM list it checks is itself computed. The fourth arrived
+  // By design, and the design is in SP-2 itself. **Eleven files since #33**, ten since #60, nine
+  // since #50, seven since #52, six since #43 and #46, four since #15, three before: the rule is
+  // "a case that needs a precondition says so in its header", so every file the rule reaches
+  // carries the id, and the DOM list it checks is itself computed. The fourth arrived
   // without anyone judging it, which is why the entry now names the set.
   {
     id: 'SP-2',
@@ -393,10 +393,11 @@ const SPANS_FILES: Array<{ id: string; files: string[]; why: string }> = [
       'tests/component/m-oc.pairing-card.test.ts',
       'tests/component/m-sr.result-line-null.test.ts',
       'tests/contract/m-a17.computed-state.test.ts',
+      'tests/contract/m-b7.seeded-cache.test.ts',
       'tests/unit/m-a10.fixture-ceiling.test.ts',
       'tests/unit/m-sp.preconditions.test.ts'
     ],
-    why: 'SP-2 is a rule rather than a single case: the unit file holds the rule, each DOM file carries the voiced skip the rule requires, and m-a17 and m-a10.fixture-ceiling carry one for a precondition of their own, JQ and IN_GIT_REPO -- so the id is the rule plus one instance per file that voices a skip'
+    why: 'SP-2 is a rule rather than a single case: the unit file holds the rule, each DOM file carries the voiced skip the rule requires, and m-a17 and m-a10.fixture-ceiling carry one for a precondition of their own, JQ and IN_GIT_REPO, and m-b7.seeded-cache carries one for PYTHON3 -- so the id is the rule plus one instance per file that voices a skip'
   }
 ];
 

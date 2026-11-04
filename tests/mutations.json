@@ -443,6 +443,46 @@
     "mustFail": "B7-6 and the sweep's removal runs rm from the directory find holds, never on a path resolved again"
   },
   {
+    "case": "B7-3",
+    "file": "config/nar_builder/lifecycle-pins.xml",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": " \u2014 rather than of a build that resolved",
+    "to": " -- rather than of a build that resolved",
+    "mustFail": "B7-3 and the real file's comment holds no fault"
+  },
+  {
+    "case": "B7-3",
+    "file": "config/nar_builder/lifecycle-pins.xml",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId><version>3.2.0</version></plugin>\n",
+    "to": "",
+    "mustFail": "B7-3 the pins file, with its comment stripped as the readers strip it, names every plugin the default lifecycle binds, each at a version"
+  },
+  {
+    "case": "B7-3",
+    "file": "config/nar_builder/lifecycle-pins.xml",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId><version>3.2.0</version></plugin>\n",
+    "to": "",
+    "mustFail": "B7-3 the real file, stripped the same way, begins at <build>, ends at </build> and still holds all eight"
+  },
+  {
+    "case": "B7-3",
+    "file": "config/nar_builder/lifecycle-pins.xml",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId>",
+    "to": "<plugin><!-- pinned --><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId>",
+    "mustFail": "B7-3 the pins file, with its comment stripped as the readers strip it, names every plugin the default lifecycle binds, each at a version"
+  },
+  {
+    "case": "B7-3",
+    "file": "config/nar_builder/lifecycle-pins.xml",
+    "spec": "tests/contract/m-b7.seeded-cache.test.ts",
+    "from": "<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId>",
+    "to": "<plugin><!-- pinned --><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId>",
+    "mustFail": "B7-3 the real file, stripped the same way, begins at <build>, ends at </build> and still holds all eight"
+  },
+  {
     "case": "B7-7",
     "file": "config/nar_builder/Dockerfile",
     "spec": "tests/integration/m-b7.build-home.test.ts",

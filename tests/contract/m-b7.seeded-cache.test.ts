@@ -16,6 +16,15 @@
  *           rhetorical: `settings.xml` was rejected by Maven with
  *           *Non-parseable settings* because an XML comment contained `--`,
  *           and nothing but a parse would have caught it.
+           B7-3 reads the pins the way the readers do (#33, 2026-11-03):
+           `seed.sh` and `build.sh` splice `sed '/<!--/,/-->/d'`'s output, and
+           that range ends at the next *later* line holding `-->`, so a
+           one-line comment on a plugin line deletes the plugin and every line
+           after it -- which the old check, counting names on the raw file,
+           could not see. `stripComment` restates that rule and `commentFault`
+           restates XML 1.0 §2.5, each in TypeScript; the `xml.etree` parse is
+           kept for what neither reaches, and runs only where there is a
+           `python3`.
  *           B7-4 is the notice about the directory the move left behind
  *           (`config/scripts/start/nar-builder.sh`), read as text. Until #32
  *           it told the operator *"you can delete it"*, which fails on rootless
@@ -33,14 +42,19 @@
  * Given:    compose.yml, config/nar_builder/{Dockerfile,build.sh,seed.sh,
  *           lifecycle-pins.xml,BuildServer.java},
  *           config/scripts/start/nar-builder.sh and scripts/linux/start.sh.
- * When:     Each is read as text, and the pins file is parsed as XML. For the
+ * When:     Each is read as text; the pins file is stripped as the readers
+ *           strip it, scanned for comment faults, and -- where PYTHON3 holds --
+ *           parsed as XML; `stripComment` and `commentFault` are also fed the
+ *           fixtures below. For the
  *           notice, the `echo` lines are read with their shell escapes
  *           resolved, and the rest of the script with comment lines **and**
  *           lines beginning `echo` or `printf` dropped.
  * Then:     No /m2 mount is declared anywhere; the seeding step is invoked by
  *           the image build with one version argument; build.sh copies the seed
- *           per build and splices the pins; the pins name every plugin the
- *           default lifecycle binds; the notice's `echo` lines carry
+ *           per build and splices the pins; the stripped pins begin at
+ *           `<build>`, end at `</build>` and name every plugin the default
+ *           lifecycle binds, each at a version; the raw file has no comment
+ *           fault and parses; the notice's `echo` lines carry
  *           `docker run --pull never --rm --entrypoint rm -v
  *           '${<var>}/volumes/nar_builder:/v' liquidupstart/nar-builder:latest
  *           -rf /v/m2` with `rmdir '${<var>}/volumes/nar_builder'` on the line
@@ -55,12 +69,18 @@
  *           (B7-6, #31); and the sweep's removal runs `rm` through `-execdir`,
  *           never `-exec`, so no path is resolved twice as root (B7-6, the
  *           second review of #55).
- * Covers:   B7-1, B7-2, B7-3, B7-4, B7-6, FR26, FR37, FR38, FR39, FR41, FR42, FR43
+ * Covers:   B7-1, B7-2, B7-3, B7-4, B7-6, FR26, FR37, FR38, FR39, FR41, FR42, FR43;
+ *           SP-2 for the voiced skip of the parse
+ * Precondition: PYTHON3 -- `python3` on PATH, for the `xml.etree` parse alone.
+ *           Where it is absent the parse is skipped and the `SP-2` line says so;
+ *           the Linux test recipe's container lacks it unless it is added.
  * Unhappy:  B7-1's negative half is the mount coming back, by any spelling.
  *           B7-3's is a pins file that parses but has lost a plugin, which is
  *           how the first attempt failed: with resources, compiler, jar and
  *           surefire pinned a build still refused on maven-install-plugin,
- *           whose goal `package` never reaches.
+ *           whose goal `package` never reaches. And since #33, a plugin hidden
+ *           by a one-line comment on its own line; a `--` inside a comment, a
+ *           comment closed by `--->`, and one never closed.
  *           B7-4's are the bare phrase (or `$PWD`, or `alpine`) coming back,
  *           and a `rm` or `docker` appearing in the code rather than in what
  *           it prints -- a start script removing a directory the operator may
@@ -68,6 +88,15 @@
  *           B7-6's third is a removal through `-exec`, which the review raced
  *           into deleting a root-owned `/victim`; the race is timing, so the
  *           declaration is held and the measurement is FR42's.
+ *
+ * Test data for B7-3 (#33): the real file -- a 45-line comment with em-dashes
+ * and no `--`, then `<build>` to `</build>` with the eight plugins one per line.
+ * HIDDEN puts `<!-- pinned -->` on the install line and must strip to
+ * `<build>\n  <plugins>\n`; REARM, two multi-line comments around `b`, must
+ * strip to `a\nb\nc\n` -- both measured with sed in the builder image.
+ * `commentFault` refuses `<!-- a -- b -->`, `<!-- a --->` and `<!-- never
+ * closed`, each with `<build/>` after it, and accepts `<!-- a - b -->` and the
+ * real file: the same answers Python's `xml.etree` gave on each, 2026-11-03.
  *
  * Test data for B7-4: the command is matched as one pattern, so the flag order
  * (`--pull never` straight after `run`, CS-22's shape), the image and the single
@@ -81,6 +110,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
+import { PYTHON3 } from '../lib/preconditions';
 
 const read = (p: string) => readFileSync(join(repoRoot, p), 'utf8');
 /**
@@ -141,39 +171,142 @@ test('B7-2 the image build owns the seeding step, with the api version resolved 
   expect(code('config/nar_builder/Dockerfile')).not.toMatch(/chown[^\n]*builder[^\n]*m2-seed/);
 });
 
-test('B7-3 the pins file parses, and names every plugin the default lifecycle binds', () => {
-  // It parses: `settings.xml` once did not, because an XML comment held `--`,
-  // and Maven answered `Non-parseable settings`. A `.xml` file nobody parses is
-  // a file nobody has checked.
-  // A real parse, by a real parser, rather than a regex that would agree with
-  // the file whatever is in it.
+/**
+ * The pins as the readers splice them. `seed.sh:92` and `build.sh:445` run
+ * `sed '/<!--/,/-->/d'`, and GNU sed's range ends at the next **later** line
+ * holding `-->` -- so a one-line `<!-- x -->` deletes its own line and everything
+ * up to the next `-->`, or to the end of the file. After a close, the next line
+ * holding `<!--` opens another range. Measured in the builder image, 2026-11-03.
+ */
+const stripComment = (text: string): string => {
+  const lines = text.split('\n');
+  if (lines[lines.length - 1] === '') lines.pop();
+  const kept: string[] = [];
+  let open = false;
+  for (const l of lines) {
+    if (open) {
+      if (l.includes('-->')) open = false;
+    } else if (l.includes('<!--')) {
+      open = true;
+    } else {
+      kept.push(l);
+    }
+  }
+  return kept.map((l) => `${l}\n`).join('');
+};
+
+type CommentFault = { fault: '--' | 'open'; at: number } | null;
+/**
+ * The first comment fault in the raw text, or null. XML 1.0 §2.5: a comment's
+ * text may not hold `--`, so the first `--` after the four characters of the
+ * opener has to be the closer's, immediately followed by `>`. Searched from the
+ * opener itself it would find the opener's own `--` and refuse every comment.
+ */
+const commentFault = (text: string): CommentFault => {
+  let at = text.indexOf('<!--');
+  while (at !== -1) {
+    const dash = text.indexOf('--', at + 4);
+    if (dash === -1) return { fault: 'open', at };
+    if (text[dash + 2] !== '>') return { fault: '--', at: dash };
+    at = text.indexOf('<!--', dash + 3);
+  }
+  return null;
+};
+
+const PLUGINS = [
+  'maven-resources-plugin',
+  'maven-compiler-plugin',
+  'maven-jar-plugin',
+  'maven-surefire-plugin',
+  'maven-install-plugin',
+  'maven-deploy-plugin',
+  'maven-clean-plugin',
+  'maven-site-plugin'
+];
+// `maven-install-plugin` because it is the plugin the first attempt missed.
+const HIDDEN =
+  '<build>\n  <plugins>\n    <plugin><!-- pinned --><artifactId>maven-install-plugin</artifactId><version>3.2.0</version></plugin>\n    <plugin><artifactId>maven-site-plugin</artifactId><version>3.12.1</version></plugin>\n  </plugins>\n</build>\n';
+const REARM = 'a\n<!--\nx\n-->\nb\n<!--\ny\n-->\nc\n';
+
+test('B7-3 the pins file, with its comment stripped as the readers strip it, names every plugin the default lifecycle binds, each at a version', () => {
+  // Including the goals `package` never executes: with resources, compiler, jar
+  // and surefire pinned, a build still refused on maven-install-plugin. Read off
+  // the stripped text, since that is what Maven gets; until #33 it was the raw file.
+  const stripped = stripComment(pins);
+  const pinned = [...stripped.matchAll(/<artifactId>(maven-[a-z]+-plugin)<\/artifactId><version>([^<]+)</g)];
+  const versions = new Map(pinned.map(([, name, version]) => [name, version]));
+  for (const plugin of PLUGINS) expect(versions.get(plugin) ?? `${plugin} unpinned`).toMatch(/^\d+\.\d+/);
+  expect(pinned.length).toBeGreaterThanOrEqual(8);
+});
+
+test('B7-3 the negative: a plugin on a line that also opens a comment is not counted, and nothing after that line is either', () => {
+  // The third line opens a range and no later line holds `-->`. sed prints these
+  // 20 bytes in the builder image. Python parses the fragment: the defect is only
+  // in what the readers splice.
+  const stripped = stripComment(HIDDEN);
+  expect(stripped).toBe('<build>\n  <plugins>\n');
+  expect(stripped).not.toContain('maven-install-plugin');
+  expect(stripped).not.toContain('maven-site-plugin');
+  expect(stripped).not.toContain('</build>');
+});
+
+test('B7-3 the real file, stripped the same way, begins at <build>, ends at </build> and still holds all eight', () => {
+  const stripped = stripComment(pins);
+  expect(stripped.startsWith('<build>\n')).toBe(true);
+  expect(stripped.endsWith('</build>\n')).toBe(true);
+  for (const plugin of PLUGINS) expect(stripped).toContain(`<artifactId>${plugin}</artifactId>`);
+});
+
+test('B7-3 and a second comment after the first is stripped too: the range re-arms', () => {
+  // The first range closes on its `-->`; the second `<!--` must open another,
+  // or `y` is spliced into the pom. sed: `a\nb\nc\n`.
+  expect(stripComment(REARM)).toBe('a\nb\nc\n');
+});
+
+test('B7-3 the negative: a -- inside an XML comment is refused, in TypeScript and without a parser', () => {
+  // `settings.xml` was refused by Maven with *Non-parseable settings* for this.
+  // Python: invalid token, line 1, column 9.
+  expect(commentFault('<!-- a -- b -->\n<build/>')).toEqual({ fault: '--', at: 7 });
+});
+
+test('B7-3 the negative: a comment closed by ---> is refused', () => {
+  // The first `--` after the opener is followed by `-`. Python: line 1, column 9.
+  expect(commentFault('<!-- a --->\n<build/>')).toEqual({ fault: '--', at: 7 });
+});
+
+test('B7-3 the negative: a comment opened and never closed is refused', () => {
+  // Under the readers' sed it would swallow the file to its end. Python: unclosed
+  // token, line 1, column 0.
+  expect(commentFault('<!-- never closed\n<build/>')).toEqual({ fault: 'open', at: 0 });
+});
+
+test('B7-3 a single - inside a comment is accepted', () => {
+  // The fault is two characters; the counterpart carries one. Python parses it.
+  expect(commentFault('<!-- a - b -->\n<build/>')).toBeNull();
+});
+
+test("B7-3 and the real file's comment holds no fault", () => {
+  // Its prose carries em-dashes. The row a `--` put back into the comment reddens.
+  expect(commentFault(pins)).toBeNull();
+});
+
+test.skipIf(!PYTHON3)('B7-3 where PYTHON3 holds, the whole file parses in xml.etree', () => {
+  // For what a hand-written rule does not reach: a mismatched tag, an undefined
+  // entity, an unquoted attribute, two roots.
   const parsed = sh([
-    'python3',
+    PYTHON3,
     '-c',
     'import sys,xml.etree.ElementTree as ET; ET.parse(sys.argv[1])',
     join(repoRoot, pinsPath)
   ]);
   expect(parsed.code).toBe(0);
   expect(parsed.stderr).toBe('');
+});
 
-  // Every plugin `package` causes a version to be resolved for -- including the
-  // goals it never executes, which is the half that was missed first.
-  for (const plugin of [
-    'maven-resources-plugin',
-    'maven-compiler-plugin',
-    'maven-jar-plugin',
-    'maven-surefire-plugin',
-    'maven-install-plugin',
-    'maven-deploy-plugin',
-    'maven-clean-plugin',
-    'maven-site-plugin'
-  ]) {
-    expect(pins).toContain(`<artifactId>${plugin}</artifactId>`);
-  }
-  // Each one pinned to an actual version rather than left to resolution.
-  const pinned = [...pins.matchAll(/<artifactId>maven-[a-z]+-plugin<\/artifactId><version>([^<]+)</g)];
-  expect(pinned.length).toBeGreaterThanOrEqual(8);
-  for (const [, version] of pinned) expect(version).toMatch(/^\d+\.\d+/);
+test.skipIf(!!PYTHON3)('SP-2 the parse in this file needs python3 on PATH, which is absent here', () => {
+  // Filed under the rule, so a bare host's report never shows a B7-3 pass for a
+  // parse that did not run.
+  expect(PYTHON3).toBe('');
 });
 
 test('B7-3 and both readers take the pins from this one file', () => {

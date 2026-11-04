@@ -156,9 +156,26 @@ export function registryReachable(url = 'https://registry.npmjs.org/'): boolean 
   return ok;
 }
 
+/**
+ * Where is `python3` on this `PATH`? The path of the first executable one, or
+ * `''` when there is none. #33: `B7-3` spawned it unasked and failed inside
+ * `sh()` with `Executable not found in $PATH: "python3"` in the Linux test
+ * recipe's container, which reads like a product failure and is not one.
+ *
+ * A function of a `PATH` as well as a constant, so both answers can be put to
+ * it, as the discriminators of a root are. `Bun.which` never throws, so there is
+ * no ENOENT branch here. *Found and executable*, not *runs*, which is what
+ * m-a17's `JQ` asks: no host has shown a `python3` that is present and does not
+ * run. SP-1.
+ */
+export function python3On(path: string = process.env.PATH ?? ''): string {
+  return Bun.which('python3', { PATH: path }) ?? '';
+}
+
 export const STARTED = startedIn(repoRoot);
 export const IN_GIT_REPO = inGitRepoAt(repoRoot);
 export const DASHBOARD_DEPS = dashboardDepsIn(repoRoot);
+export const PYTHON3 = python3On();
 
 /**
  * One line naming what holds here, for a header or a failure message. Not
@@ -166,5 +183,5 @@ export const DASHBOARD_DEPS = dashboardDepsIn(repoRoot);
  * cases assert on.
  */
 export function preconditions(): string {
-  return `started=${STARTED} git=${IN_GIT_REPO} dashboard-deps=${DASHBOARD_DEPS} at ${repoRoot}`;
+  return `started=${STARTED} git=${IN_GIT_REPO} dashboard-deps=${DASHBOARD_DEPS} python3=${PYTHON3} at ${repoRoot}`;
 }
