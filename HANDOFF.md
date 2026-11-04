@@ -1,4 +1,4 @@
-# Handover — 2026-11-03
+# Handover — 2026-11-04
 
 > **Committed on `main` since 2026-10-10.** It used to be kept staged-and-uncommitted here while the
 > committed copy lived on #19. There is one copy now and it is this one. #19 carried an older version
@@ -9,15 +9,53 @@
 Read this first. It is the map and the current state; the specifications are the documents in `docs/`.
 
 **The state below is dated per section, and the current state is the first one.** *Where it stands,
-2026-11-03, evening* has the live picture, *2026-11-03, afternoon* under it, *2026-11-03, morning* under that, *2026-11-02* under that, *2026-11-01* under that, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
+2026-11-04* has the live picture, *2026-11-03, evening* under it, *2026-11-03, afternoon* under that, *2026-11-03, morning* under that, *2026-11-02* under that, *2026-11-01* under that, *2026-10-31* under that, *2026-10-30, afternoon* under that, *2026-10-30, morning* under that, *2026-10-29, evening* under that, *2026-10-28, afternoon* under that, *2026-10-28, earlier* under that, *2026-10-27, later* under that, *2026-10-27, morning* under that, *2026-10-26, later* under that, *2026-10-26, morning* under that, *2026-10-25* under that, *2026-10-23* under that, then *2026-10-22, late*, *…evening*, the six rounds, and *2026-10-22*, the morning; *2026-10-21, evening* under that is round one of #45, and *…the end of
 the review series* below that gathers what the series found. The sections under those are the
 series' other sessions, each as it ended, and *2026-10-20* under them is the day it began. Read the
-first twenty-two and the review bodies they point to; the rest of this file is the map and the lessons.
+first twenty-three and the review bodies they point to; the rest of this file is the map and the lessons.
 
 Everything after *What is being built* was written on 2026-09-09 and describes the end of 2026-09-08,
 unless a paragraph carries its own later date. It still says "three features and two repairs, on five
 branches"; `./scripts/state.sh` on #43 gives the count of ours that are open. **Where an older section makes a claim about the present,
 believe the dated one.**
+
+## Where it stands, 2026-11-04: #63 merged, and no pull request of ours open
+
+**Timur approved and merged #63 at 05:58Z**, as `5bc0468`. It was the last pull request we open.
+None of ours is open now; a new one waits for the operator's explicit word, and a finding becomes one
+line in `BACKLOG.md`.
+
+**What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
+B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this
+file, which no test opens. The nine files that read a document ran on `main` at `5bc0468`, with
+`tests/run.sh`'s 60-second limit: 185 pass, 1 skip, 0 fail. Called without `--timeout`, bun gives
+each case five seconds, and M1-2, which starts OpenClaw 2026.7.1, fails on that limit alone.
+
+**Timur opened #64 at 07:18Z**: B7-3 asks `PYTHON3` before its parse, the implementation on issue 33.
+No review is asked of us. It changes this file under *Next*, at the `python3` paragraph, and not this
+section.
+
+**Worktrees.** `../liquidupstart-wt-59`, `../liquidupstart-wt-sr` and `../liquidupstart-wt-50` were
+removed on 2026-11-03, `wt-50`'s stack stopped first; no container runs on this machine. The
+OpenRouter key `wt-50`'s `.env` held went with it and is entered again in the dashboard when needed.
+`../liquidupstart-wt-rk` holds #63's merged branch.
+
+**Open, and whose**, replacing the list of the section below:
+- **the operator's:**
+  - whether `../liquidupstart-wt-rk` and the local branches of merged pull requests stay, among them
+    `fix/small-backlog-repairs` with the unpushed `aec8868`, which nothing needs;
+  - whether 0.8.0 runs again;
+  - `LOCAL_LLM_API_BASE`'s two roles, in `FINISH.md`'s waiting table;
+  - #7 and #8, which are not ours, as before;
+- **the operator's or Timur's:** the Docker Hub namespace, put off for later;
+- **Timur's:**
+  - #64 and the rest of issue 33, B7-10 on macOS's bash among it;
+  - an answer on OpenCode 2;
+  - privacy-proxy#1, and #2 with its comment;
+  - the Copilot discussion, when there is time for it;
+  - `45-26`, the 0.8.1 question, and #34, #57 and #58;
+- **ours:** nothing until the operator asks. Hermes's switch, decided on 2026-10-31, and every other
+  `OPEN` entry in `BACKLOG.md`, the two #63 found among them, wait for the operator's yes.
 
 ## Where it stands, 2026-11-03, evening: #59, #60 and #62 merged, and #63 the last pull request open
 
