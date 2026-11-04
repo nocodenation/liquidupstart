@@ -2831,7 +2831,8 @@ watch for:
   `B7-3` asks `PYTHON3` from `tests/lib/preconditions.ts` and skips its parse with a voiced `SP-2`
   line where the tool is absent (*implemented 2026-11-04, #33*; the *B7-1 to B7-3* block of
   `TEST-SPEC-liquid-java-extensions.md`): in this container without `python3`,
-  `m-b7.seeded-cache` is 21 pass / 1 skip and never *Executable not found*. A follow-up issue for the
+  `m-b7.seeded-cache` is 22 pass / 1 skip (*21 / 1 until the review of #64 added a row, 2026-11-04;
+  both measured in the container*) and never *Executable not found*. A follow-up issue for the
   other files is to be opened. `docker-cli` is for the files that run `docker run --rm <image>`
   against the host daemon: add a second `-v` for the daemon's socket —
   `$XDG_RUNTIME_DIR/docker.sock` under rootless Docker, `/var/run/docker.sock` otherwise — at

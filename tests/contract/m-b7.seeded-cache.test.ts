@@ -16,15 +16,15 @@
  *           rhetorical: `settings.xml` was rejected by Maven with
  *           *Non-parseable settings* because an XML comment contained `--`,
  *           and nothing but a parse would have caught it.
-           B7-3 reads the pins the way the readers do (#33, 2026-11-03):
-           `seed.sh` and `build.sh` splice `sed '/<!--/,/-->/d'`'s output, and
-           that range ends at the next *later* line holding `-->`, so a
-           one-line comment on a plugin line deletes the plugin and every line
-           after it -- which the old check, counting names on the raw file,
-           could not see. `stripComment` restates that rule and `commentFault`
-           restates XML 1.0 §2.5, each in TypeScript; the `xml.etree` parse is
-           kept for what neither reaches, and runs only where there is a
-           `python3`.
+ *           B7-3 reads the pins the way the readers do (#33, 2026-11-03):
+ *           `seed.sh` and `build.sh` splice `sed '/<!--/,/-->/d'`'s output, and
+ *           that range ends at the next *later* line holding `-->`, so a
+ *           one-line comment on a plugin line deletes the plugin and every line
+ *           after it -- which the old check, counting names on the raw file,
+ *           could not see. `stripComment` restates that rule and `commentFault`
+ *           restates XML 1.0 §2.5, each in TypeScript; the `xml.etree` parse is
+ *           kept for what neither reaches, and runs only where there is a
+ *           `python3`.
  *           B7-4 is the notice about the directory the move left behind
  *           (`config/scripts/start/nar-builder.sh`), read as text. Until #32
  *           it told the operator *"you can delete it"*, which fails on rootless
@@ -79,8 +79,9 @@
  *           how the first attempt failed: with resources, compiler, jar and
  *           surefire pinned a build still refused on maven-install-plugin,
  *           whose goal `package` never reaches. And since #33, a plugin hidden
- *           by a one-line comment on its own line; a `--` inside a comment, a
- *           comment closed by `--->`, and one never closed.
+ *           by a one-line comment on its own line; a `--` inside a comment, or
+ *           inside a second comment after a proper one, a comment closed by
+ *           `--->`, and one never closed -- `<!--->` among them.
  *           B7-4's are the bare phrase (or `$PWD`, or `alpine`) coming back,
  *           and a `rm` or `docker` appearing in the code rather than in what
  *           it prints -- a start script removing a directory the operator may
@@ -94,9 +95,12 @@
  * HIDDEN puts `<!-- pinned -->` on the install line and must strip to
  * `<build>\n  <plugins>\n`; REARM, two multi-line comments around `b`, must
  * strip to `a\nb\nc\n` -- both measured with sed in the builder image.
- * `commentFault` refuses `<!-- a -- b -->`, `<!-- a --->` and `<!-- never
- * closed`, each with `<build/>` after it, and accepts `<!-- a - b -->` and the
- * real file: the same answers Python's `xml.etree` gave on each, 2026-11-03.
+ * `commentFault` refuses `<!-- a -- b -->`, `<!-- a --->`, `<!-- never
+ * closed` and `<!--->`, each with `<build/>` after it, and `<!-- a -->` followed
+ * by `<!-- b -- c -->` -- the one fixture with two comments, since a helper that
+ * stopped after the first passed every other (the review of #64, 2026-11-04) --
+ * and accepts `<!-- a - b -->` and the real file: the same answers Python's
+ * `xml.etree` gave on each, 2026-11-03 and 2026-11-04.
  *
  * Test data for B7-4: the command is matched as one pattern, so the flag order
  * (`--pull never` straight after `run`, CS-22's shape), the image and the single
@@ -269,6 +273,13 @@ test('B7-3 the negative: a -- inside an XML comment is refused, in TypeScript an
   expect(commentFault('<!-- a -- b -->\n<build/>')).toEqual({ fault: '--', at: 7 });
 });
 
+test('B7-3 the negative: a -- in a second comment, after one that closed properly, is refused', () => {
+  // The walk past the first comment. Every other fixture and the real file hold
+  // one, so `while` read as `if` passed them all -- the review of #64,
+  // 2026-11-04. 18 is the second comment's `--`. Python: line 2, column 9.
+  expect(commentFault('<!-- a -->\n<!-- b -- c -->\n<build/>')).toEqual({ fault: '--', at: 18 });
+});
+
 test('B7-3 the negative: a comment closed by ---> is refused', () => {
   // The first `--` after the opener is followed by `-`. Python: line 1, column 9.
   expect(commentFault('<!-- a --->\n<build/>')).toEqual({ fault: '--', at: 7 });
@@ -278,6 +289,11 @@ test('B7-3 the negative: a comment opened and never closed is refused', () => {
   // Under the readers' sed it would swallow the file to its end. Python: unclosed
   // token, line 1, column 0.
   expect(commentFault('<!-- never closed\n<build/>')).toEqual({ fault: 'open', at: 0 });
+  // And `<!--->`: past the opener's four characters the text is `->`, so nothing
+  // closes it. A search starting three characters in finds the opener's own
+  // `--` and reads it as closed -- the review of #64, 2026-11-04. Python: the
+  // same unclosed token, line 1, column 0.
+  expect(commentFault('<!--->\n<build/>')).toEqual({ fault: 'open', at: 0 });
 });
 
 test('B7-3 a single - inside a comment is accepted', () => {
