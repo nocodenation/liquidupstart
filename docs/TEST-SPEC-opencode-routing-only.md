@@ -123,11 +123,16 @@ entrypoint is taken for each run, with `/root/.config/opencode` and `/tmp/` poin
 | the same, without `created` | 200 | `{"data":[{"id":"gpt-5.6-luna"},{"id":"gpt-3.5-turbo-0125"},{"id":"gpt-6.1-terra"},{"id":"gpt-5-mini"}]}` |
 | the same, with a tie | 200 | `{"data":[{"id":"gpt-5.6-luna","created":1781000000},{"id":"gpt-6.1-terra","created":1790000000},{"id":"gpt-3.5-turbo-0125","created":1706140800},{"id":"gpt-6.1-sol","created":1790000000},{"id":"gpt-5-mini","created":1754500000}]}` |
 | `http://privacy-proxy:8080/anthropic/v1/models` | 200 | `{"data":[{"id":"claude-sonnet-5","created_at":"2026-09-01T00:00:00Z"},{"id":"claude-opus-5","created_at":"2026-08-01T00:00:00Z"}]}` |
-| the same, refused | 401 | `{"detail":"no ANTHROPIC_API_KEY"}` |
+| the same, no key held | 401 | `{"error":"provider_key_missing","provider":"anthropic"}` |
 | any, unreachable | `000` | none |
 
 **Why the data is shaped this way.**
 
+- The 401 is the proxy's own answer when it holds no Anthropic key, as the running proxy 0.3.0 gave
+  it on 2026-11-03; *refused* in the rows above means refused by the proxy. Until then the row held
+  `{"detail":"no ANTHROPIC_API_KEY"}`, which no release gives. No RO case reads more than the
+  status, but since SR-6 the warning reads the body (`docs/TEST-SPEC-small-repairs.md`), and the
+  fixture's constant is `KEY_MISSING`.
 - The local list starts with `particle-ai/particle-1`, the model measured first on OpenRouter on
   2026-10-31. Its embedding entry shows that the existing filter still applies.
 - The OpenAI list carries the order measured on 2026-10-31: `gpt-5.6-luna` first and

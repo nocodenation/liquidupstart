@@ -33,16 +33,17 @@
  * `gpt-6.1-sol` the same highest `created`, Terra listed before Sol but not first, and Sol
  * sorting first alphabetically. The Anthropic list puts `claude-sonnet-5` before
  * `claude-opus-5`, the reverse of alphabetical order; refused, it answers 401 with
- * `{"detail":"no ANTHROPIC_API_KEY"}`.
+ * `{"error":"provider_key_missing","provider":"anthropic"}`, the proxy's own answer when it
+ * holds no Anthropic key.
  */
 import { test, expect, describe } from 'bun:test';
 import {
-  ALL_ON, BASE_ENV, LOCAL, OPENAI, OPENAI_TIED, OPENAI_UNDATED, OPENAI_WITH_DROPPED, REFUSED, UNREACHABLE,
+  ALL_ON, BASE_ENV, KEY_MISSING, LOCAL, OPENAI, OPENAI_TIED, OPENAI_UNDATED, OPENAI_WITH_DROPPED, UNREACHABLE,
   ok, runEntrypoint
 } from '../lib/opencodefixture';
 
 const only = (cli: '0' | '1') => ({ ...BASE_ENV, PRIVACY_ROUTING: 'only', ENABLE_ANTHROPIC_CLAUDE_CODE: cli });
-const noAnthropic = (openai: string) => ({ local: ok(LOCAL), openai: ok(openai), anthropic: REFUSED });
+const noAnthropic = (openai: string) => ({ local: ok(LOCAL), openai: ok(openai), anthropic: KEY_MISSING });
 
 describe('RO-1 the default under only', () => {
   test('RO-1 with every privacy route on offer, privacy-anthropic and the first id the proxy lists', () => {

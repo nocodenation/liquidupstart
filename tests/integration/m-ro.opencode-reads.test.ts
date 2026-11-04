@@ -17,16 +17,18 @@
  * Then:     Under `only` the ids are exactly `llamacpp`, `privacy-openai` and `privacy`, and
  *           the default `privacy/private-claude` is one of the models OpenCode offers. Under
  *           `opt-in` the same OpenCode offers `opencode` (Zen) and `openai`.
- * Covers:   RO-5, RO-FR1, RO-FR3
+ *           And SR-6's row in the image: the `only` container's log carries the missing-key
+ *           line for the Anthropic list, written by the image's own `sh` (dash) and `jq`.
+ * Covers:   RO-5, RO-FR1, RO-FR3, SR-6, SR-FR8
  * Negative: under `only`, neither `opencode` nor `openai` is offered, although
  *           `OPENAI_API_KEY` reached the container.
  * Counterpart: under `opt-in` both are, so the check is able to see them at all.
  *
- * Test data: RO-1's answers with the Anthropic list refused (401) and
- * `ENABLE_ANTHROPIC_CLAUDE_CODE=1`, `OPENAI_API_KEY=sk-ro-stray`, and `PRIVACY_ROUTING=only` in
- * one container and unset in the other. Precondition: Docker and the image; without them the
- * cases are skipped, and the reason is printed. The containers carry the suite's fixture
- * labels, so a run cut off midway leaves nothing the sweep cannot find.
+ * Test data: RO-1's answers with the Anthropic list refused by the proxy for want of a key
+ * (401) and `ENABLE_ANTHROPIC_CLAUDE_CODE=1`, `OPENAI_API_KEY=sk-ro-stray`, and
+ * `PRIVACY_ROUTING=only` in one container and unset in the other. Precondition: Docker and the
+ * image; without them the cases are skipped, and the reason is printed. The containers carry the
+ * suite's fixture labels, so a run cut off midway leaves nothing the sweep cannot find.
  */
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -35,11 +37,11 @@ import { join } from 'node:path';
 import { repoRoot } from '../lib/paths';
 import { sh } from '../lib/shell';
 import { containerName, fixtureLabels } from '../lib/dashboardserver';
-import { BASE_ENV, LOCAL, OPENAI, REFUSED, STUB_CURL, ok, writeAnswers } from '../lib/opencodefixture';
+import { BASE_ENV, KEY_MISSING, LOCAL, OPENAI, STUB_CURL, ok, writeAnswers } from '../lib/opencodefixture';
 
 const IMAGE = 'liquidupstart/opencode:latest';
 const READY = sh(['docker', 'image', 'inspect', IMAGE]).code === 0;
-if (!READY) console.warn(`RO-5 skipped: ${IMAGE} is not there (./config/scripts/build/opencode.sh builds it)`);
+if (!READY) console.warn(`RO-5 and SR-6's image row skipped: ${IMAGE} is not there (./config/scripts/build/opencode.sh builds it)`);
 
 type Seen = { ids: string[]; models: Record<string, string[]>; model: string | undefined };
 
@@ -92,14 +94,16 @@ async function seen(name: string): Promise<Seen> {
 
 let only: Seen;
 let optIn: Seen;
+let onlyName = '';
 
 beforeAll(async () => {
   if (!READY) return;
   mkdirSync(join(box, 'bin'));
   writeFileSync(join(box, 'bin', 'curl'), STUB_CURL);
   chmodSync(join(box, 'bin', 'curl'), 0o755);
-  writeAnswers(join(box, 'answers'), { local: ok(LOCAL), openai: ok(OPENAI), anthropic: REFUSED });
+  writeAnswers(join(box, 'answers'), { local: ok(LOCAL), openai: ok(OPENAI), anthropic: KEY_MISSING });
   const a = start('only');
+  onlyName = a;
   const b = start('opt-in');
   [only, optIn] = await Promise.all([seen(a), seen(b)]);
 }, 200_000);
@@ -124,5 +128,13 @@ describe.skipIf(!READY)('RO-5 OpenCode 1.19.5 reads the file as meant', () => {
   test('RO-5 the counterpart: under opt-in, the same OpenCode offers opencode and openai', () => {
     expect(optIn.ids).toContain('opencode');
     expect(optIn.ids).toContain('openai');
+  });
+});
+
+describe.skipIf(!READY)('SR-6 the 401 warning in the image', () => {
+  test('SR-6 in the image, the missing-key line reaches the container log', () => {
+    expect(sh(['docker', 'logs', onlyName]).output).toContain(
+      `WARNING: ${BASE_ENV.PRIVACY_PROXY_URL}/anthropic/v1/models -> HTTP 401: the privacy proxy holds no key for that provider (.env section 5) — provider skipped.`
+    );
   });
 });

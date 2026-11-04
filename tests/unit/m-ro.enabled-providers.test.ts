@@ -20,12 +20,13 @@
  * Counterpart: the first row, every provider the mode keeps is listed.
  *
  * Test data: as RO-1's. All on is all three answers 200 with `ENABLE_ANTHROPIC_CLAUDE_CODE=1`.
- * The refused row answers the Anthropic list with 401 and `{"detail":"no ANTHROPIC_API_KEY"}`.
+ * The refused row answers the Anthropic list with 401 and
+ * `{"error":"provider_key_missing","provider":"anthropic"}`, the proxy's answer without the key.
  * The stray key is `OPENAI_API_KEY=sk-ro-stray`. The CLI-off row is all on with
  * `ENABLE_ANTHROPIC_CLAUDE_CODE=0`.
  */
 import { test, expect, describe } from 'bun:test';
-import { ALL_ON, BASE_ENV, LOCAL, OPENAI, REFUSED, ok, runEntrypoint } from '../lib/opencodefixture';
+import { ALL_ON, BASE_ENV, KEY_MISSING, LOCAL, OPENAI, ok, runEntrypoint } from '../lib/opencodefixture';
 
 const ONLY = { ...BASE_ENV, PRIVACY_ROUTING: 'only', ENABLE_ANTHROPIC_CLAUDE_CODE: '1' };
 
@@ -36,7 +37,7 @@ describe('RO-3 under only, the providers OpenCode may offer', () => {
   });
 
   test('RO-3 the negative: privacy-anthropic is left out when the proxy refuses it', () => {
-    const r = runEntrypoint({ local: ok(LOCAL), openai: ok(OPENAI), anthropic: REFUSED }, ONLY);
+    const r = runEntrypoint({ local: ok(LOCAL), openai: ok(OPENAI), anthropic: KEY_MISSING }, ONLY);
     expect(r.config.enabled_providers).toEqual(['llamacpp', 'privacy-openai', 'privacy']);
   });
 

@@ -114,12 +114,27 @@ _PRIVACY_DEFAULT=""
 if [ -n "${PRIVACY_PROXY_URL:-}" ]; then
     _discover_ids() {
         _i=0
+        _f="${3:-/tmp/privacy_models.json}"
         while [ "$_i" -lt 10 ]; do
-            _c="$(curl -s -o "${3:-/tmp/privacy_models.json}" -w '%{http_code}' "$1" 2>/dev/null || true)"
-            [ "$_c" = "200" ] && { jq -r ".data[].id | select(test(\"${2:-.}\"))" "${3:-/tmp/privacy_models.json}" 2>/dev/null; return; }
-            [ "$_c" = "401" ] && { echo "WARNING: ${1} -> HTTP 401: no key for that provider in .env section 5 — provider skipped." >&2; return; }
+            _c="$(curl -s -o "$_f" -w '%{http_code}' "$1" 2>/dev/null || true)"
+            [ "$_c" = "200" ] && { jq -r ".data[].id | select(test(\"${2:-.}\"))" "$_f" 2>/dev/null; return; }
+            if [ "$_c" = "401" ]; then
+                # The proxy's own 401, and OpenAI's and Anthropic's refusals, which the proxy passes
+                # through unchanged; measured 2026-11-03. Any other body, or one jq cannot read
+                # whole, may be either. No body is printed or kept: OpenAI's quotes part of the key.
+                _k="$(jq -r 'if .error == "provider_key_missing" then "missing" elif .error.code == "invalid_api_key" or .error.type == "authentication_error" then "refused" else empty end' "$_f" 2>/dev/null)" || _k=""
+                case "$_k" in
+                    missing) _why="the privacy proxy holds no key for that provider" ;;
+                    refused) _why="the provider refused the key the privacy proxy sent" ;;
+                    *) _why="the privacy proxy holds no key for that provider, or the provider refused it" ;;
+                esac
+                rm -f "$_f"
+                echo "WARNING: ${1} -> HTTP 401: ${_why} (.env section 5) — provider skipped." >&2
+                return
+            fi
             _i=$((_i + 1)); sleep 3
         done
+        rm -f "$_f"
         echo "WARNING: ${1} unreachable (HTTP ${_c}) — provider skipped." >&2
     }
     _privacy_provider() {
