@@ -1600,7 +1600,10 @@ deciding under a milestone that is otherwise closed.
 *Settled 2026-10-26 against the cut line: the leftover is litter, as checked above, and touches
 nothing of anyone else's.*
 
-`SETTLED` **A locally built image can belong to another branch, and nothing on this one says so.**
+`OPEN` **A locally built image can belong to another branch, and nothing on this one says so.**
+*Re-opened 2026-11-04 by the operator's decision, and specified as `docs/FEATURE-image-inputs.md`
+together with #34 and the stale half of the privacy-proxy entry below; see the correction at the end
+of this entry.*
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
 version takes. The image on the machine, `liquidupstart/openclaw:latest`, was **2026.9.1** — built
@@ -1629,6 +1632,23 @@ A cheap first move is a start-time line naming what each locally built image was
 
 *Settled 2026-10-26 against the cut line: the OpenClaw probe reached `main` with #11 on 2026-09-14,
 and a line for every locally built image is recorded and not raised again.*
+
+*Re-opened 2026-11-04, and the premise above corrected.* The cheap first move named
+`.liquidupstart-version` and the build manifest as if they said what an image was built from. They
+do not: both are the installer's files -- `install.sh`, `update.sh` and `install-local.sh` write
+them, `.liquidupstart-manifest` is the installed file list -- and a plain checkout has neither, which
+is why `run.sh --version` falls back to `checkout-<sha>`. Nothing on the machine records an image's
+origin: no product image carries a label of ours, and the upstream labels the local images inherit
+(`org.opencontainers.image.revision` on `liquidupstart/openclaw:latest` is OpenClaw's own) say
+nothing about this checkout. Measured on 2026-11-04 on this host: `liquidupstart/nar-builder:latest`
+from 2026-10-27 has the seed #34's probe looks for and is stale all the same -- `build.sh`,
+`BuildServer.java` and `entrypoint.sh` differ from the tree, there is no `builder2` user, and
+`/home/builder` is `builder 750` -- so #31's isolation is silently missing from it, and a
+symptom-probe would not say so. The answer is a label of our own, `io.liquidupstart.inputs`, holding
+a digest of the inputs that reach the image, written by every build script and compared by the start
+and by `stackState()`. The operator decided on 2026-11-04 to build it as one change with #34 and with
+the stale half of the privacy-proxy entry below; `docs/FEATURE-image-inputs.md` is the
+specification, and the issue the implementation is answered on is #34.
 
 `DONE-ON-#9` **~~The toolbox image had no `git` and no `openssh`, and the start script's git step runs inside it.~~
 Repaired on #9, merged 2026-09-30; struck 2026-10-26.**
@@ -1931,7 +1951,14 @@ half no longer reaches `compose up`. After Timur's review of 2026-10-30 every co
 `liquidupstart/*` image also says `pull_policy: never`, so a missing image stops `up` at *No such
 image* rather than being fetched from Docker Hub, and `CS-23` holds `builtImages()`, the start's
 pre-flight and the build to one answer for every combination of the switches. `update.sh` still
-leaves the image in place, and the stale half is open.
+leaves the image in place, and the stale half is open. *The stale half is specified on 2026-11-04 as
+`docs/FEATURE-image-inputs.md`, one change with #34 and the re-opened entry above, as decided on
+2026-10-29: the label is `io.liquidupstart.inputs`, `stackState()` compares it with the build
+script's own answer and the launchpad card names a stale image (IM-FR6), and the start names it
+before `down.sh` (IM-FR5). The sentence above, "a stale image needs a build to be asked for", was
+decided otherwise by the operator on 2026-11-04: it is reported, not required -- `needBuild` stays
+for missing images, because every existing installation is unlabelled after the upgrade and a
+required build would have blocked Start everywhere. This entry closes with that implementation.*
 
 ---
 

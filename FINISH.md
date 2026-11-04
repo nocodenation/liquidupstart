@@ -64,7 +64,7 @@ defect `A1` on #17 was.
 | The Claude login expiry; `volumes/_openclaw-claude/skills` not removable | Carried over from the 2026.9.1 migration. Neither makes anything claim something false. *The OpenClaw CLI's gateway token stood here too until 2026-10-26; its key is item 13.* |
 | The deploy-key wait handling one key at a time | A design preference, with the reasoning recorded |
 | A run killed mid-clone leaves a clone the next run adopts | Narrow window, never observed, and the record says so |
-| The toolbox image not following its own Dockerfile | Raised by the reviewer as *"not asked for"*; the durable form is a label and it touches the dashboard's build path |
+| The toolbox image not following its own Dockerfile | Raised by the reviewer as *"not asked for"*; the durable form is a label and it touches the dashboard's build path. *That form is specified on 2026-11-04 in `docs/FEATURE-image-inputs.md` (IM-FR6, the toolbox), together with the re-opened `BACKLOG.md` entry on a locally built image belonging to another branch; this row describes the cut line of 2026-10-26* |
 | `A16-19` naming two cases | #24 renumbered it to `A16-30`, on `main` since 2026-10-21 |
 | `S3` — the builder's port trusts any container on the stack network | **Decided by the operator on 2026-10-26: not built.** A trust boundary, not a defect, and `BACKLOG.md` keeps the honest statement that any container on the stack can trigger a build |
 | The `operator.admin` rule | **Decided by the operator on 2026-10-26: not built.** The direction is specified and reviewed on #15, merged 2026-10-20, and `BACKLOG.md` keeps what building the rule would take |

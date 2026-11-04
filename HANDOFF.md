@@ -25,6 +25,18 @@ believe the dated one.**
 None of ours is open now; a new one waits for the operator's explicit word, and a finding becomes one
 line in `BACKLOG.md`.
 
+**Later that day, a specification round on `fix/issue-34-image-inputs`** (from `main` at `da9a85c`),
+documentation only and uncommitted: the operator re-opened `BACKLOG.md`'s *A locally built image can
+belong to another branch* and asked for #34, the stale half of the privacy-proxy entry and §3 of the
+switches feature to be done as one change. `docs/FEATURE-image-inputs.md` and
+`docs/TEST-SPEC-image-inputs.md` (prefix `IM`) are the result, with the measurements of the day in
+the feature's §8. The operator answered its §7 the same day: a stale image is a notice on the
+launchpad card with Start enabled, `needBuild` stays for missing images only (decision 4, changed,
+because every existing installation is unlabelled after the upgrade); the stray
+`config/opencode/Dockerfile` goes with the implementation; `-dirty` stays in the source label. The
+sign-off of the feature's §6 comes before any code. #34 is still Timur's in the list below until
+then.
+
 **What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
 B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this
 file, which no test opens. The nine files that read a document ran on `main` at `5bc0468`, with

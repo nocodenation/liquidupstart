@@ -89,7 +89,13 @@ switched off in `.env`'s *Which apps to run*: their services run under the compo
 `liquid` (`liquid`, `nar_builder`), `openclaw` (`openclaw-gateway`) and `opencode`, which
 `start.sh` activates for what is on (`docs/FEATURE-component-switches.md`).
 `dashboard/src/lib/server/project.ts:builtImages()` lists the images of the components that are on,
-`bun-runner` always among them, as the prerequisite set for a start.
+`bun-runner` always among them, as the prerequisite set for a start. *Specified on 2026-11-04, not
+yet built:* each built image, the dashboard's `toolbox` included, carries `io.liquidupstart.inputs`,
+a digest of the rendered Dockerfile, the build arguments and the copied files, and
+`io.liquidupstart.source`, the checkout it came from; the start names every image whose inputs have
+changed since it was built, before `down.sh`, and starts anyway, and the launchpad card names such
+an image beside a Start that stays enabled; `needBuild` keeps asking for missing images only
+(`docs/FEATURE-image-inputs.md`).
 
 Both agents receive the same skill set from `config/agents/skills/` (Postgres/pgvector RAG,
 PostgREST, Liquid, Nextcloud WebDAV, OpenProject) plus `config/agents/instructions.md`.
