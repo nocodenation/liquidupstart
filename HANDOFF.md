@@ -26,16 +26,20 @@ None of ours is open now; a new one waits for the operator's explicit word, and 
 line in `BACKLOG.md`.
 
 **Later that day, a specification round on `fix/issue-34-image-inputs`** (from `main` at `da9a85c`),
-documentation only and uncommitted: the operator re-opened `BACKLOG.md`'s *A locally built image can
-belong to another branch* and asked for #34, the stale half of the privacy-proxy entry and §3 of the
-switches feature to be done as one change. `docs/FEATURE-image-inputs.md` and
-`docs/TEST-SPEC-image-inputs.md` (prefix `IM`) are the result, with the measurements of the day in
-the feature's §8. The operator answered its §7 the same day: a stale image is a notice on the
-launchpad card with Start enabled, `needBuild` stays for missing images only (decision 4, changed,
-because every existing installation is unlabelled after the upgrade); the stray
-`config/opencode/Dockerfile` goes with the implementation; `-dirty` stays in the source label. The
-sign-off of the feature's §6 comes before any code. #34 is still Timur's in the list below until
-then.
+documentation only, **committed by the operator as `4468779` and pushed**: the operator re-opened
+`BACKLOG.md`'s *A locally built image can belong to another branch* and asked for #34, the inputs
+half of the privacy-proxy entry and §3 of the switches feature to be done as one change.
+`docs/FEATURE-image-inputs.md` and `docs/TEST-SPEC-image-inputs.md` (prefix `IM`) are the result,
+with the measurements of the day in the feature's §8. The operator answered its §7 the same day: a
+stale image is a notice on the launchpad card with Start enabled, `needBuild` stays for missing
+images only (decision 4, changed, because every existing installation is unlabelled after the
+upgrade); the stray `config/opencode/Dockerfile` goes with the implementation; `-dirty` stays in the
+source label. **An independent review of `4468779` then asked for changes**, and a fix round applied
+every finding, each verified against the code first, with the operator's two decisions on it: the
+privacy-proxy entry's base-drift half stays open, and `config/scripts/build/openclaw.sh` moves to
+`load_env_file` in this change. The feature's §9 lists what changed; the test specification's
+overview is one scenario per row now. The sign-off of the feature's §6 comes before any code. #34
+is still Timur's in the list below until then.
 
 **What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
 B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this

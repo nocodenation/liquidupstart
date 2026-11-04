@@ -1853,7 +1853,10 @@ search. Among them: `get_env` in `scripts/linux/start.sh`; `env_value` in
 `scripts/linux/build.sh` for `PRIVACY_PROXY_ENABLE`, and in `config/scripts/start/liquid.sh` and
 `nginx.sh`; an awk `get_env` in `config/scripts/openclaw-pairing.sh`; `load_env_file` in
 `config/scripts/build/lib/dockerfile-render.sh` for the Liquid, OpenCode and privacy-proxy builds,
-while `config/scripts/build/openclaw.sh` and `hermes.sh` still run `source .env`; and `splitValue` in
+while `config/scripts/build/openclaw.sh` and `hermes.sh` still run `source .env` -- *the OpenClaw
+half of that is answered by `docs/FEATURE-image-inputs.md` IM-FR9, decided on 2026-11-04, because
+its `--inputs` is run by the start and the dashboard on every `.env` the operator writes; `hermes.sh`
+still sources, disabled, and stays here* -- and `splitValue` in
 `dashboard/src/lib/env-file.ts`. They differ on comments, quotes and `$`, so one line
 can mean different things to start, build and dashboard. And `formatValue` there escapes `"` and not
 `\`, so a value ending in a backslash is written as a line compose cannot close. #52 brings
@@ -1958,7 +1961,44 @@ script's own answer and the launchpad card names a stale image (IM-FR6), and the
 before `down.sh` (IM-FR5). The sentence above, "a stale image needs a build to be asked for", was
 decided otherwise by the operator on 2026-11-04: it is reported, not required -- `needBuild` stays
 for missing images, because every existing installation is unlabelled after the upgrade and a
-required build would have blocked Start everywhere. This entry closes with that implementation.*
+required build would have blocked Start everywhere. **What that implementation closes is the inputs
+half of this entry, and not the whole of it.** What was met on the day was two things: an image
+skipped by `build.sh` while the proxy was off, whose inputs had changed since -- the digest covers
+that -- and an image whose released base, `ghcr.io/nocodenation/privacy-proxy:latest`, had moved from
+0.1.2 to 0.3.0 underneath an unchanged Dockerfile, which is drift of the base image and which the
+digest does not see (`docs/FEATURE-image-inputs.md` §3). The review of the specification's commit
+`4468779` found the first version claiming both, and the operator decided on 2026-11-04 that the
+base-drift half stays open here and that no label of the base image's identity is added: comparing
+an image's base with the registry's is a network question and a change of its own. So this entry
+stays `OPEN` for that half after the implementation lands.*
+
+---
+
+`OPEN` **The first dashboard task makes a clean checkout `-dirty`.** `config/toolbox/toolbox-entry.sh:6-7`
+runs `chmod +x ./*.sh` and `find ./scripts ./config -name '*.sh' -type f -exec chmod +x {} +` on
+every start of the toolbox, over the project directory the dashboard mounts at its host path.
+`scripts/linux/lib/remove-volumes.sh` is tracked as `100644`, and this checkout has `core.fileMode`
+`true`, so after the first Build, Start or Stop pressed in the dashboard `git status --porcelain`
+reports that file as modified. From then on `run.sh --version` says `checkout-<sha>-dirty`, and so
+does the `io.liquidupstart.source` label of every image built afterwards
+(`docs/FEATURE-image-inputs.md` IM-FR2), while nothing the operator did changed. Found by the
+review of `4468779` on 2026-11-04. The honest options: track the file as `100755`, since every other
+`.sh` the entry script touches already is; or have the entry script leave files alone whose mode
+git records. Not this change's: the label reports what git says, and what git says is true.
+
+---
+
+`OPEN` **The not-running card says the images do not exist when only the rebuild marker says so.**
+`dashboard/src/routes/+page.svelte:98-101` prints *The service images don't exist yet — run Build
+once before starting* whenever `needBuild` is true, and `stackState()` makes it true for
+`.needs-rebuild` as well as for a missing image (`dashboard/src/lib/server/project.ts:190-199`).
+After `update.sh` the images are gone too, so the sentence is true there; but the marker is dropped
+by hand or left behind by an update that failed after dropping it, and then the card names a cause
+that is not the cause. `docs/FEATURE-image-inputs.md` IM-FR6 replaces the sentence by one line per
+list of `images`, and a marker set with every image present fills no list, so the card would then
+say nothing about why Build comes first. Recorded by the review of `4468779` on 2026-11-04; the line
+for the marker is a sentence in `imagesNote()`'s caller once the marker is returned beside the
+lists, which is outside that feature.
 
 ---
 
@@ -2822,6 +2862,11 @@ the dashboard's build path, which no case currently drives.
 Recorded 2026-09-30.
 
 *Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
+*The durable form above is specified on 2026-11-04 in `docs/FEATURE-image-inputs.md`: the label is
+`io.liquidupstart.inputs`, `config/scripts/build/toolbox.sh` writes it, and the run route rebuilds
+the toolbox when the label is missing or differs from the script's own answer (its decision 12 and
+IM-FR6), without removing the working image first. This entry closes with that implementation.*
 
 ---
 
