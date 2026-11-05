@@ -338,7 +338,9 @@ liquid,openclaw,privacy-proxy,toolbox}.sh` each:
   `PRIVACY_PROXY_DEV_SOURCE_OFFER_CONTACT` (decision 16), so that `.env` alone decides the render
   and the arguments;
 - compute the digest after rendering and after their own edits of the rendered file, and before
-  `docker image rm "$IMAGE"` (`toolbox.sh` has no such line, decision 12);
+  any `docker` command: before `docker image rm "$IMAGE"` in the five scripts that have one, and in
+  `privacy-proxy.sh`, which has none, before the `docker build` of the dev base image that
+  `PRIVACY_PROXY_DEV_SRC` asks for (`toolbox.sh` has no `image rm` either, decision 12);
 - on a digest that cannot be computed, print the reader's error, then
   `::aiw-error::The inputs of <image> could not be computed: <reader's message>. The Dockerfile was rendered from <template path>. The build was not started.`
   to stderr -- the template path, because the reader's line numbers are the rendered file's, which
@@ -354,7 +356,9 @@ liquid,openclaw,privacy-proxy,toolbox}.sh` each:
 the base image is the developer's (§3). **`scripts/linux/rebuild.sh` asks before it stops
 anything:** it runs `build.sh --inputs` -- which, since `build.sh` passes its arguments through to
 every script it runs, prints one digest per image that is on and exits non-zero when any cannot be
-computed -- before `down.sh`, with stdout discarded, and on a non-zero exit prints the scripts'
+computed; `build.sh` sends its closing `Done.` to stderr when its arguments hold `--inputs`, so its
+stdout is the digests alone, as IM-FR4 asks of each script -- before `down.sh`, with stdout
+discarded, and on a non-zero exit prints the scripts'
 stderr and `Nothing has been stopped; the stack is as it was.` and exits 1. Without it a refused
 Dockerfile would be found after `down.sh` had emptied the stack, which is the shape CS-3 removed for
 a refused switch value.
@@ -407,11 +411,14 @@ is not asked about, as it is not in `LU_IMAGES`.
   `{ running, needBuild, images: { missing: string[]; stale: string[]; unlabelled: string[] } }`.
   For each image `builtImages()` names it runs, in parallel, `docker image inspect -f '{{index
   .Config.Labels "io.liquidupstart.inputs"}}' <image>` and `bash config/scripts/build/<name>.sh
-  --inputs` in `ENV_DIR`, stderr discarded on success. **Docker's answer decides first:** its exit
-  1 puts the image in `missing`, whatever the script said. For an image that exists, an empty
-  label puts it in `unlabelled`; a script that exits non-zero is logged once to the server's stderr
-  with its `Error:` line and puts the image in none of the three (decision 13); otherwise a label
-  differing from the script's answer puts it in `stale`. `needBuild` is true when `missing` is
+  --inputs` in `ENV_DIR`, stderr discarded on success. **The order of the checks is the one
+  `lu_image_notice` applies (IM-FR5), everywhere an image is judged -- here, in the CLI notice and
+  in the run route:** docker's answer first, then the script's, then the label, then the
+  comparison. So: docker's exit 1 puts the image in `missing`, whatever the script said. For an
+  image that exists, a script that exits non-zero is logged once to the server's stderr with its
+  `Error:` line and puts the image in none of the three (decision 13), whatever its label says;
+  otherwise an empty label puts it in `unlabelled`; otherwise a label differing from the script's
+  answer puts it in `stale`. `needBuild` is true when `missing` is
   non-empty, or the rebuild marker is set -- exactly as today (decision 4, as changed). `stale` and
   `unlabelled` never enter it.
 - `imagesNote(images): string[]` in `dashboard/src/lib/image-inputs.ts` gives the lines, missing
@@ -435,18 +442,21 @@ is not asked about, as it is not in `LU_IMAGES`.
   line's remedy is a button on the same card.
 - `dashboard/src/routes/run/+server.ts`, before running a task in the toolbox, asks docker for
   `liquidupstart/toolbox:latest`'s inputs label and `bash config/scripts/build/toolbox.sh --inputs`
-  for the expected one, and then:
-  - image missing, or label empty, or label differing: runs `bash config/scripts/build/toolbox.sh`,
-    streaming its output as it streams the build today, after the line
-    `Helper toolbox image is missing or was built from other inputs - building it...`; a failed
-    script is reported as the failed build is today, with its exit code, and the task does not run.
-    The first task after the upgrade, Stop included, takes this path once (decision 12);
-  - `--inputs` exits non-zero and the image exists: writes
-    `Helper toolbox image could not be checked: <Error: line>. Running the task with the image that is there.`
-    and runs the task;
-  - `--inputs` exits non-zero and the image is missing: writes the same `Error:` line and
+  for the expected one, and decides in the order of IM-FR5 -- docker, the script, the label, the
+  comparison:
+  - image missing and `--inputs` exiting non-zero: writes the script's `Error:` line and
     `[toolbox build not attempted: its inputs could not be computed]`, and does not run the task,
     since the build would fail at the same point (IM-FR3);
+  - image missing otherwise: runs `bash config/scripts/build/toolbox.sh`, streaming its output as it
+    streams the build today, after the line
+    `Helper toolbox image is missing or was built from other inputs - building it...`; a failed
+    script is reported as the failed build is today, with its exit code, and the task does not run;
+  - image present and `--inputs` exiting non-zero, whatever the label says: writes
+    `Helper toolbox image could not be checked: <Error: line>. Running the task with the image that is there.`
+    and runs the task;
+  - image present with an empty label, or a label differing from the script's answer: builds as
+    above, then runs the task. The first task after the upgrade, Stop included, takes this path
+    once (decision 12);
   - label matching: runs the task.
 
 **IM-FR7 -- the harness builds labelled images.** `builderImage()` in `tests/lib/builderimage.ts`
@@ -567,7 +577,8 @@ sign-off before any code is written:
    the images, where the operator's decision named only `needBuild`. The fixed sentence *The
    service images don't exist yet* would be false for a stale image. The lines show on the running
    card and on `/done` as well as on the not-running card.
-5. **IM-FR6**: an image whose digest cannot be computed is in none of the three lists. The
+5. **IM-FR6**: an image whose digest cannot be computed is in none of the three lists, whatever
+   its label says, because the script is judged before the label (IM-FR5's order). The
    fixture projects of the component tier copy `config/scripts/start` and not
    `config/scripts/build`, so every existing `stackState()` case runs with no build script, and this
    is also what keeps them green (`docs/TEST-SPEC-image-inputs.md` §4).

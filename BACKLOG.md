@@ -1602,7 +1602,7 @@ nothing of anyone else's.*
 
 `OPEN` **A locally built image can belong to another branch, and nothing on this one says so.**
 *Re-opened 2026-11-04 by the operator's decision, and specified as `docs/FEATURE-image-inputs.md`
-together with #34 and the stale half of the privacy-proxy entry below; see the correction at the end
+together with #34 and the inputs half of the privacy-proxy entry below; see the correction at the end
 of this entry.*
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
@@ -1647,7 +1647,7 @@ from 2026-10-27 has the seed #34's probe looks for and is stale all the same -- 
 symptom-probe would not say so. The answer is a label of our own, `io.liquidupstart.inputs`, holding
 a digest of the inputs that reach the image, written by every build script and compared by the start
 and by `stackState()`. The operator decided on 2026-11-04 to build it as one change with #34 and with
-the stale half of the privacy-proxy entry below; `docs/FEATURE-image-inputs.md` is the
+the inputs half of the privacy-proxy entry below; `docs/FEATURE-image-inputs.md` is the
 specification, and the issue the implementation is answered on is #34.
 
 `DONE-ON-#9` **~~The toolbox image had no `git` and no `openssh`, and the start script's git step runs inside it.~~
@@ -1954,7 +1954,7 @@ half no longer reaches `compose up`. After Timur's review of 2026-10-30 every co
 `liquidupstart/*` image also says `pull_policy: never`, so a missing image stops `up` at *No such
 image* rather than being fetched from Docker Hub, and `CS-23` holds `builtImages()`, the start's
 pre-flight and the build to one answer for every combination of the switches. `update.sh` still
-leaves the image in place, and the stale half is open. *The stale half is specified on 2026-11-04 as
+leaves the image in place, and the stale half is open. *The inputs half is specified on 2026-11-04 as
 `docs/FEATURE-image-inputs.md`, one change with #34 and the re-opened entry above, as decided on
 2026-10-29: the label is `io.liquidupstart.inputs`, `stackState()` compares it with the build
 script's own answer and the launchpad card names a stale image (IM-FR6), and the start names it

@@ -38,8 +38,11 @@ source label. **An independent review of `4468779` then asked for changes**, and
 every finding, each verified against the code first, with the operator's two decisions on it: the
 privacy-proxy entry's base-drift half stays open, and `config/scripts/build/openclaw.sh` moves to
 `load_env_file` in this change. The feature's §9 lists what changed; the test specification's
-overview is one scenario per row now. The sign-off of the feature's §6 comes before any code. #34
-is still Timur's in the list below until then.
+overview is one scenario per row now. The operator committed that round as `b079c05`; its
+re-review on 2026-11-05 approved once one order of checks was written everywhere an image is judged
+(docker, script, label, comparison) and six small slips were corrected, which a final pass did. The
+sign-off of the feature's §6 comes before any code. #34 is still Timur's in the list below until
+then.
 
 **What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
 B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this
