@@ -72,7 +72,14 @@ premise row; the specified header gains B6-22; the LAN request's omission has it
 `mutate.sh`'s inability to expect an outcome per host is a second `BACKLOG.md` entry.
 `docs/TEST-SPEC-liquid-java-extensions.md`'s B6-21 to B6-23 are twelve rows, one per scenario, and
 the block states the probe, the header and two registry entries, B6-23's and B6-22's. Nothing in
-`tests/` or `config/` changed; the implementation waits for sign-off. The probes and the prototype
+`tests/` or `config/` changed; the implementation waits for sign-off. **2026-11-06, the
+implementation ran, on `fix/issue-57-b6-23-implementation` stacked on #66:** the rewritten
+`m-b6.vhost-allow-list.test.ts` twice, 12 pass, 0 fail, 19.5 s each, the host arriving as
+`10.231.91.128`, nothing left under `/tmp/b6s3*`; `tests/mutate.sh` against an untracked copy, the
+B6-23 entry `VALIDATED` 1 red and 11 green, the B6-22 entry `VALIDATED` 4 red and 8 green with the
+four tests the block names; `--gaps` `registered=217 orphaned=0`; `m-tr.case-ids` with
+`m-mu.runner` 141 pass, 0 fail. No Docker Desktop run; the Desktop figures stay expectations. The
+block's *What it found* row carries the readings. The probes and the prototype
 of both rounds are under this session's scratchpad,
 `/tmp/claude-1000/-home-iztiev-Projects-github-nocodenation-liquidupstart/53bd164c-c135-4bdd-9e7b-230a2b8557a4/scratchpad/`,
 `issue57/` and `review57/`, which does not outlive the session; the readings that matter are quoted

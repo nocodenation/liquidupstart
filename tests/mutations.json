@@ -411,6 +411,22 @@
     "mustFail": "A6-2 the protected default branch is refused, naming the branch, the policy and the way forward"
   },
   {
+    "case": "B6-23",
+    "file": "config/nginx/templates/nginx.conf",
+    "spec": "tests/integration/m-b6.vhost-allow-list.test.ts",
+    "from": "    deny SYSTEM_NETWORK_GATEWAY;\n    allow SYSTEM_NETWORK_SUBNET;",
+    "to": "    allow SYSTEM_NETWORK_GATEWAY;\n    deny SYSTEM_NETWORK_GATEWAY;\n    allow SYSTEM_NETWORK_SUBNET;",
+    "mustFail": "B6-23 and the vhost refuses it either way"
+  },
+  {
+    "case": "B6-22",
+    "file": "config/nginx/templates/nginx.conf",
+    "spec": "tests/integration/m-b6.vhost-allow-list.test.ts",
+    "from": "    deny SYSTEM_NETWORK_GATEWAY;",
+    "to": "    # deny SYSTEM_NETWORK_GATEWAY;",
+    "mustFail": "B6-22 the template denies it before it allows the subnet"
+  },
+  {
     "case": "B6-46",
     "file": "config/nar_builder/build.sh",
     "spec": "tests/integration/m-b6.installation-faults.test.ts",
