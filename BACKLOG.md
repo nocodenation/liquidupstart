@@ -2356,6 +2356,20 @@ it starts, and the Liquid image's versions when a selected file reads them, and 
 whether the dashboard dependencies are there would be read at the moment it matters. Not worked: after #49 a finding is recorded unless
 the operator asks for it.
 
+`OPEN` **`NFR1` as `TEST-SPEC-liquid-java-extensions.md` uses it is defined by no feature document.**
+Its traceability row reads *NFR1 The stack is reachable only where it should be* and lists B5-10 to
+B5-14 and, since 2026-11-06, B6-21 to B6-23; the *Covers* rows of those blocks and the header of
+`tests/integration/m-b6.vhost-allow-list.test.ts` cite the same id. `docs/FEATURE-liquid-java-extensions.md`
+numbers its requirements on from the git integration's and defines one non-functional requirement,
+NFR7; the only NFR1 in `docs/` is `FEATURE-git-integration.md`'s, *Credentials are configured
+through `.env`*, which is not what those eight cases hold. So the row traces to a sentence that
+exists only in the test specification, and a reviewer reading the feature for the requirement finds
+a different one under that number. A repair gives the reachability requirement a number of its own
+in the extensions feature, NFR8 say, with the vhost's allow-list and the builder's header check as
+its text, and moves the row, the *Covers* lines and the header to it. Found 2026-11-06 while
+specifying #57, which added the three B6 cases to the row and left its id as it was. Not worked:
+after #49 a finding is recorded unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so

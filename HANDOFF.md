@@ -47,6 +47,25 @@ verified against the code, with the operator's decision that `/done`'s rebuild f
 `isBuildAffecting` stay as they are (a `BACKLOG.md` entry records the computed replacement); the
 feature's §9 lists what changed. #34 is still Timur's in the list below until then.
 
+**2026-11-06, a specification round on `fix/issue-57-b6-23-gateway-deny`** (from `main` at
+`b670747`), documentation only, for #57: B6-23 red on this host, rootless Docker 29.9.3 with
+rootlesskit's builtin port driver, because its fixture denied the pinned `.5` while the host arrives
+as the gateway `.128`. The operator decided the six points as recommended: B6-23 asks the product's
+own `nar-builder.localhost` block, cut from the template and rendered with the gateway `nginx.sh`'s
+lines compute, with a `resolver 127.0.0.11` line prepended; its control is the same block minus the
+deny line, with a computed expectation, and a `tests/mutations.json` entry deleting the template's
+deny line, accepted as `unresolved` on Docker Desktop; B6-21's header case goes, the template never
+had that line and B5-10 holds it in `BuildServer.java`; B6-22's regex is anchored, since the
+unanchored one accepted the line commented out; the stale header, case name and spec sentence are
+corrected. `docs/TEST-SPEC-liquid-java-extensions.md`'s B6-21 to B6-23 are eleven rows, one per
+scenario, and the block states the probe, the header and the two registry entries; `BACKLOG.md`
+records that no feature document defines the NFR1 the row names. Nothing in `tests/` or `config/`
+changed; the implementation waits for sign-off. The probe and prototype of the round are under the
+session's scratchpad, `issue57/`, not in the tree. A stack was running on this machine during the
+round — `proxy`, OpenProject, Nextcloud, pgAdmin, PostgREST, `openclaw-gateway` — which the
+2026-11-03 line above no longer describes; the prototype's fixed ports 18891 to 18896 did not
+collide with it.
+
 **What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
 B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this
 file, which no test opens. The nine files that read a document ran on `main` at `5bc0468`, with
