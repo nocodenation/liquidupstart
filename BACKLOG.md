@@ -2405,7 +2405,13 @@ container and network names carry the probe's pid (`b6s3$$`, since #19), but the
 `10.231.91.0/24` with `--ip-range 10.231.91.128/25`, the pinned client is always `10.231.91.5`, and
 the five nginx containers publish `18891`, `18892`, `18894`, `18895` and `18896` on the host; a
 second run's `docker network create` fails on the overlapping subnet, or its `docker run -p` on the
-port in use, and its `beforeAll` throws *did not finish*. The specification's *Dependencies* row
+port in use. The probe has no `set -e`, so it carries on and prints its marker, and `beforeAll`
+does not throw: two runs started 2 s apart on 2026-11-06 gave 12 pass for the first and 4 pass, 8
+fail for the second, `Received ""` where an address or a status was expected. Worse than a clean
+failure, the second run's host-side requests go to the shared ports and can be answered by the
+first run's containers, so a second run can read the first one's answers. *Measured by the check
+of `400a5d0`, which corrected this entry's first wording, "its `beforeAll` throws *did not
+finish*".* The specification's *Dependencies* row
 states the condition, and HANDOFF's 2026-10-16 note records what two suites at once cost on this
 host. Per-run values — a subnet and ports derived from the pid, or found free — would remove it.
 Found 2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a finding is recorded
@@ -2422,6 +2428,30 @@ and the 403 row reads `000`. But the premise exists to fail by name on a wrong c
 gateway is a wrong cut it does not name; a repair has it assert a non-empty `$2` — an IPv4 literal
 — before counting. Found 2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a
 finding is recorded unless the operator asks for it.
+
+`OPEN` **A `SIGKILL` of bun during B6-21 to B6-23 leaves the probe's script file, and
+`tests/mutate.sh` always takes that path on a budget overrun.** The test writes the probe to
+`$TMPDIR/m-b6-vhost-*/vhost.sh` and removes it in a `finally`; a KILL skips the `finally`, and the
+probe, which cleans up its containers and network through its PIPE trap, cannot remove the file it
+runs from. `mutate.sh` sends a TERM, waits one second and sends a KILL (lines 291 to 293 and 457 to
+459), and the probe's cleanup takes about 3.5 s, so the KILL lands first every time — measured by the
+check of `400a5d0`. Running the probe as `sh -c "$PROBE" sh TEMPLATE GATEWAY` needs no file and
+would remove the limit. Found 2026-11-06 by the check of `400a5d0` on #57. Not worked: after #49 a
+finding is recorded unless the operator asks for it.
+
+`OPEN` **The signal handler in B6-21 to B6-23 waits for the probe without a bound.** A TERM or INT
+to bun is passed to the probe, and bun exits when the probe has; the probe exits when its current
+foreground command ends and its cleanup has run. That command can be a `docker run` of curl, which
+has no `--max-time`, or an image pull, and a second Ctrl-C does not get out. Separately, if
+`beforeAll`'s 900 s timeout fired, the probe would keep running and the `finally` would not run
+before bun exits. Found 2026-11-06, by reading, by the check of `400a5d0` on #57. Not worked: after
+#49 a finding is recorded unless the operator asks for it.
+
+`OPEN` **B6-21 to B6-23's `Bun.spawn` does not pass the harness's `childEnv`.** The probe is spawned
+with bun's environment as it is, not with the `childEnv` that `sh()` uses (`LC_ALL=C`,
+`GIT_REPOSITORIES` removed). Nothing in the probe depends on either today; it is a drift from the
+harness's convention. Found 2026-11-06, by reading, by the check of `400a5d0` on #57. Not worked:
+after #49 a finding is recorded unless the operator asks for it.
 
 ## Carried over from the 2026.9.1 migration
 

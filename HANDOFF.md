@@ -90,7 +90,7 @@ above no longer describes; the probes' fixed ports 18891 to 18896 did not collid
 **An independent review of `258e88c` found nothing blocking, and a fix round the same day applied
 its four findings, each measured first**: the header's "a run leaves nothing on the machine" was
 false on a signal — `/bin/sh` is dash here, whose `trap … EXIT` does not run on SIGTERM or SIGINT,
-so an interrupted probe left six containers, the network and `/tmp/b6s3<pid>`, and a probe whose bun
+so an interrupted probe left five containers, the network and `/tmp/b6s3<pid>`, and a probe whose bun
 had gone died of SIGPIPE at its next `echo` with the same result. The probe traps INT, TERM and PIPE
 to an `exit` now, and is spawned asynchronously so that a TERM or INT to bun is passed to it before
 bun exits; a probe interrupted by either signal, a Ctrl-C of the group, and a TERM or INT to bun
