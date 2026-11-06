@@ -2010,11 +2010,31 @@ replace.** `dashboard/src/lib/env-meta.ts:60` lists the keys a save calls build-
 from the images themselves: a save that changed a build input makes the next `--inputs` answer
 differ from the label, and the launchpad names the image. So after such a save `/done` disables
 Start where the launchpad offers it beside a stale line for the very same image, and a key the list
-forgets -- `PRIVACY_PROXY_SYSTEM_DEPENDENCIES` is read by the privacy-proxy build and in no list,
-nor in `.env.example` -- changes an image without `rebuild=1` while the digest sees it. The operator
+forgets -- `PRIVACY_PROXY_DEV_SRC`, in `.env.example` §13 and editable in the form, for which
+`isBuildAffecting` answers false -- changes the privacy-proxy build without `rebuild=1` while the
+digest sees it. The operator
 decided on 2026-11-06 that both stay as they are, as existing behaviour outside that change, and
 that replacing the flag and the list with the digest's answer is recorded here as its own change:
 `/done` would read `stackState().images` as the launchpad does, and `isBuildAffecting` would go.
+
+---
+
+`OPEN` **The tree-tagged toolbox images the suite builds are never swept.** `toolboxImage()`,
+specified in `docs/FEATURE-image-inputs.md` §5 for A8-19, builds
+`liquidupstart/toolbox:tree-<digest>` so a case never touches the operator's `toolbox:latest`, and
+the harness sweep removes `liquidupstart/nar-builder` references only. So one toolbox image is left
+per change to the toolbox's inputs, as the builder's tree tags were before their sweep. The remedy is
+to extend the sweep to the toolbox's tree tags, keeping the current one. Recorded by the check of
+#65's fixes on 2026-11-06.
+
+---
+
+`OPEN` **Whether flags on `RUN` other than `--mount=` are refused by the image-inputs reader is not
+said.** `docs/FEATURE-image-inputs.md` IM-FR1 refuses `--mount=` in flag position after `RUN` and
+lists the four flags it accepts on `COPY` and `ADD`, but leaves `RUN --network=` and
+`RUN --security=` open. Neither reads the build context, and no tracked Dockerfile uses either. It
+has to be settled before a `POST_INSTALLATION_COMMANDS` value or a future Dockerfile does, since a
+reader that refuses them fails that build. Recorded by the check of #65's fixes on 2026-11-06.
 
 ---
 

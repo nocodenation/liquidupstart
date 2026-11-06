@@ -586,7 +586,7 @@ launchpad reads as today. The full suite is as green as on `main`.
 | `lu_image_inputs_digest <rendered-dockerfile> <context> [KEY=VALUE ...]` | IM-FR1's 64-hex digest on stdout; exit 1 with the reader's error when a source cannot be read |
 | `lu_build_env_reset` | unsets IM-FR3's build-affecting keys in the calling shell; never fails |
 | `lu_image_source [project-dir]` | IM-FR2's source string; never fails |
-| `lu_image_found_labels <image>` | one `docker image inspect -f` call: the image's `io.liquidupstart.inputs` and `io.liquidupstart.source` labels on one line, separated by a tab, each empty when absent; docker's exit status, so 1 for a missing image. One call rather than two, and the same call that tells a missing image, because the pre-flight pays it once per image (IM-NFR1) |
+| `lu_image_found_labels <image>` | one `docker image inspect -f` call: the image's `io.liquidupstart.inputs` and `io.liquidupstart.source` labels on one line, separated by a tab that the format writes as `{{"\t"}}`, so no literal tab reaches docker's argv, each empty when absent; docker's exit status, so 1 for a missing image. One call rather than two, and the same call that tells a missing image, because the pre-flight pays it once per image (IM-NFR1) |
 | `lu_image_notice <image> <expected> <found-inputs> <found-source>` | IM-FR5's line for those values on stdout, or nothing, in IM-FR5's order of precedence; exit 0 either way |
 
 **Build scripts.** Each of the seven accepts `--inputs` beside `--no-cache`; calls
