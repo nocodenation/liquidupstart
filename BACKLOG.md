@@ -2370,6 +2370,23 @@ its text, and moves the row, the *Covers* lines and the header to it. Found 2026
 specifying #57, which added the three B6 cases to the row and left its id as it was. Not worked:
 after #49 a finding is recorded unless the operator asks for it.
 
+`OPEN` **`tests/mutate.sh` cannot expect an outcome that differs by host, so a registry entry that
+validates only where the host arrives as the gateway leaves the registry's result machine-dependent.**
+The B6-23 entry specified for #57 inserts `allow SYSTEM_NETWORK_GATEWAY;` before the template's
+deny line; on rootless Docker the host request arrives as the gateway, the named test reddens and
+the entry is `VALIDATED`, while on Docker Desktop the host arrives as `192.168.65.1`, `deny all`
+refuses it with or without the mutation, nothing reddens and the same entry is `UNRESOLVED`. The
+registry's shape — `case`, `file`, `spec`, `from`, `to`, `mustFail`, `all`, `exempt` — has no field
+for "expected unresolved on a host of this kind", and the runner's four outcomes (`mutate.sh` lines
+1080 to 1091) are decided from the red and green counts alone. So `./tests/mutate.sh` on a Mac
+reports one `UNRESOLVED` that is not a question for the author, and a reader of the tally cannot
+tell it from the four-out-of-thirteen kind `PROCEDURE-mutation-control.md` warns about without
+opening the specification. Found 2026-11-06 by the review of `f9e7468`. A repair is either a field
+the runner reads — the host condition stated as a command whose exit code says whether the entry
+can validate here, in the computed-answer shape `CLAUDE.md` asks for — or a line in the runner's
+report that names the entries whose specification declares the condition. Not worked: after #49 a
+finding is recorded unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
