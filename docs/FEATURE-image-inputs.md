@@ -1,9 +1,10 @@
 # Feature: an image records the inputs it was built from, and a start says when they changed
 
 Status: **specified on 2026-11-04, not implemented; revised the same day for the operator's answers
-to §7 and again for the independent review of `4468779`.** Written against the code of `main` at
-`da9a85c`, with the measurements in §8 taken that day. Nothing in the product changes until the
-operator signs this off.
+to §7 and for the independent review of `4468779`, on 2026-11-05 for the re-review of `b079c05`,
+and on 2026-11-06 for the review of #65 (`c1b690b`).** Written against the code of `main` at
+`da9a85c`, with the measurements in §8 taken on those days. Nothing in the product changes until
+the operator signs this off.
 Branch: `fix/issue-34-image-inputs`
 Issue: #34, and the general class it was folded into (the comment on #34 of 2026-10-16). The test
 specification is `docs/TEST-SPEC-image-inputs.md`.
@@ -177,7 +178,7 @@ to §7 and to the review of `4468779`.
     a missing image. The real case: `PRIVACY_PROXY_DEV_SRC` naming a directory outside the project
     is mounted into the toolbox at its host path and into the dashboard container not at all
     (`run.sh:150` mounts the project directory only), so `privacy-proxy.sh` exits 1 in the dashboard
-    at its *has no Dockerfile* check (`:44-46`) while the image may well be missing.
+    at its *has no Dockerfile* check (`:41-45`) while the image may well be missing.
 14. **The source label is display only, and `-dirty` stays in it.** `io.liquidupstart.source`
     names where the image came from in the words `run.sh --version` uses, so the notice can say
     *was built from checkout-5bc0468-dirty*. It does not enter the digest and is never compared:
@@ -210,6 +211,15 @@ to §7 and to the review of `4468779`.
 
 ## 3. What this does not cover, deliberately
 
+- **Content a `RUN` fetches from the network.** `npm install -g opencode-ai`
+  (`config/opencode/templates/Dockerfile:9`) names no version; the privacy proxy's Claude CLI is
+  fetched at `CLAUDE_CODE_VERSION=latest` (`config/privacy-proxy/templates/Dockerfile:5`); every
+  `apt-get install` takes what the mirror has that day; the toolbox fetches Docker's apt key and
+  repository (`config/toolbox/Dockerfile:13`). None of that is in the Dockerfile's bytes beyond
+  the words that ask for it, so two builds from one digest can hold two OpenCode versions, and an
+  image whose label matches is one built from these inputs, not one that is up to date. *Matching*
+  means *built from this checkout and this `.env`*; the notice never claims more. `BACKLOG.md` has
+  an entry for pinning what can be pinned.
 - **Drift of the base image.** `FROM ghcr.io/nocodenation/liquid-nifi:latest`, `FROM node:lts-slim`
   and `FROM oven/bun:latest` move under the stack whenever upstream publishes, and `FROM
   ghcr.io/openclaw/openclaw:2026.9.1` moves when the pin is edited. The pin is in the Dockerfile's
@@ -266,7 +276,8 @@ The byte string is the concatenation, in this order, of:
 3. For each source of each `COPY` and `ADD` in the rendered Dockerfile, in the order of the
    instructions and of the sources within one instruction: for each regular file under that source
    -- the file itself, or every regular file under a directory, **the files' context-relative
-   paths sorted bytewise as whole strings (`find … -type f | LC_ALL=C sort`)** -- `file` NUL
+   paths sorted bytewise as whole strings (`find … -type f -print0 | LC_ALL=C sort -z`, so a
+   name holding a newline is one name)** -- `file` NUL
    `<path>` NUL `<bytes>` NUL, where `<path>` is the file's path relative to the context with any
    leading `./` removed. A whole-path sort and a per-directory walk differ when a name holds a byte
    below `/` (0x2F), such as `.`: `tools/a.txt` sorts before `tools/a/x` as whole paths and after
@@ -280,30 +291,52 @@ NUL is the separator because it is the one byte a path cannot hold.
 to read and the context its sources are resolved against -- two arguments, because a templated
 Dockerfile is rendered into a temporary file (`opencode.sh:29-31`) and its context is
 `config/<image>`, not the temporary file's directory. It prints one source per line, in that order,
-with any leading `./` removed, and exits 0. It joins lines continued with a trailing `\`, reads the
-instruction word case-insensitively, skips the body of a heredoc (`<<` on any instruction, to its
-terminator), accepts the flags `--chown=`, `--chmod=` and `--link`, and skips a `COPY`/`ADD`
-carrying `--from=<stage>` entirely when `<stage>` is a name an earlier `FROM … AS <stage>` in the
-same file declares, since its source is another stage whose inputs are already in the Dockerfile
-and the arguments. It exits 1 and prints
+with any leading `./` removed, and exits 0.
+
+How it reads the file:
+- lines are split on `\n`, and a last line without one is a line (`config/liquid/templates/Dockerfile`
+  ends in `]` with no newline, §8.8);
+- a line ending in `\` continues on the next; a line that starts with `#` inside a continuation is
+  dropped, as docker drops it, and does not end the continuation;
+- a parser directive on the leading comment lines, `# escape=` or `# syntax=`, is refused: the
+  first changes what a continuation is, the second which frontend reads the file, and the reader
+  knows one of each;
+- the instruction word is read case-insensitively;
+- a heredoc opens where a word of an instruction is `<<` or `<<-` followed by an optionally
+  quoted terminator word -- BuildKit's rule -- and its body runs to the line holding that word
+  alone; `<<<` and `$((1<<2))` are not heredocs;
+- a flag is a word starting with `--` in the positions straight after the instruction word, before
+  the first word that is not one; `--mount=` counts only there, so `RUN echo --mount=x` is text.
+
+A `COPY`/`ADD` carrying `--from=<stage>` is skipped entirely when `<stage>` is a name an earlier
+`FROM … AS <stage>` in the same file declares, since its source is another stage whose inputs are
+already in the Dockerfile and the arguments. Under a directory source, every regular file is read
+(IM-FR1's walk), an empty directory contributes nothing, like a mode (§3), and a symlink is refused
+as it is at the top. The flags accepted are exactly `--chown=`, `--chmod=`, `--link` and
+`--from=`.
+
+It exits 1 and prints
 `Error: <dockerfile>:<line>: <instruction> is not a form the image-inputs digest can read` to stderr,
-with the instruction's text, on any of: the JSON array form; a source holding `*`, `?` or `[`; a
-URL; a heredoc as a source; a heredoc that no terminator closes before the end of the file;
-`--parents` or `--exclude=`; `--from=` naming anything but a declared stage, which is an external
-image; any instruction carrying `--mount=`, whose bind and cache mounts read the context or the
-host outside the digest; a source naming the context itself (`.` or `./`); a source that does not
-exist under the context, or leads out of it (`..`); a symlink; fewer than two arguments. Before
-any instruction is read, a `.dockerignore` in the context is refused, with the line
+with the path as it was given and the instruction's text, on any of: the JSON array form; a source
+holding `*`, `?` or `[`, whether or not a file of that name exists; a source holding `$`; an
+absolute source; a URL; a heredoc as a source; a heredoc that no terminator closes before the end
+of the file; any flag not in the accepted four (`--parents`, `--exclude=`, `--checksum=`,
+`--keep-git-dir` among them); `--from=` naming anything but a declared stage, which is an external
+image; `--mount=` as a flag of `RUN`, whose bind and cache mounts read the context or the host
+outside the digest; a source naming the context itself (`.` or `./`); a source that does not exist
+under the context, or leads out of it (`..`); a symlink, at the top or under a directory source;
+fewer than two arguments. Before any instruction is read, a `.dockerignore` in the context is
+refused, with the line
 `Error: <context>/.dockerignore: a .dockerignore changes what docker copies, and the image-inputs digest cannot read it`,
 because it would make docker copy less than the digest hashed. The forms refused are the ones
 whose set of bytes this function cannot determine from the Dockerfile and the directory alone. On
-this tree every Dockerfile a build script uses is accepted -- the two `--from=` instructions name
-the stages `claude-cli` and `build`, declared in their files; no Dockerfile carries `--mount=`; no
-build context holds a `.dockerignore` or a symlink (§8.8) -- and `dashboard/Dockerfile` alone is
-refused, for `dashboard/.dockerignore` first and for its `COPY . .` had the context passed
-(decision 5). A `POST_INSTALLATION_COMMANDS` value can put `<<` into a rendered Dockerfile; an
-unterminated one is refused by the rule above, and a terminated one is a `RUN` whose body is
-skipped.
+this tree every Dockerfile a build script uses is accepted -- the one `--from=` instruction among
+them, `privacy-proxy`'s, names the stage `claude-cli` its line 3 declares, and `dashboard/Dockerfile`'s
+two name `build`; no Dockerfile carries `--mount=` or a parser directive; no build context holds a
+`.dockerignore` or a symlink (§8.8) -- and `dashboard/Dockerfile` alone is refused, for
+`dashboard/.dockerignore` first and for its `COPY . .` had the context passed (decision 5). A
+`POST_INSTALLATION_COMMANDS` value can put `<<` into a rendered Dockerfile; an unterminated one is
+refused by the rule above, and a terminated one is a `RUN` whose body is skipped.
 
 **IM-FR2 -- the labels.** Every build of the seven images passes to `docker build`:
 
@@ -314,10 +347,13 @@ skipped.
   rev-parse --short HEAD` prints it (seven characters on this repository today, more when git needs
   them), with `-dirty` appended when `git status --porcelain` prints anything, when `git` is on
   `PATH` and `git rev-parse --is-inside-work-tree` answers yes in the project directory; otherwise
-  `unknown`. This is `run.sh`'s `version()` rule, line for line (`run.sh:17-25`), and
-  `lu_image_source [project-dir]` in the library computes it; IM-4 holds the two to one answer. A
-  git that refuses the directory -- `dubious ownership` inside a rootful container, where the
-  host's files belong to another uid -- gives `unknown`, which is a true statement about what
+  `unknown`. This is `run.sh`'s `version()` rule (`run.sh:17-25`), with its two edges kept as
+  `run.sh` has them: a version file that is not readable (`[ -r ]`) counts as absent, and a work
+  tree in which `git rev-parse --short HEAD` fails gives `checkout-unknown`, `-dirty` appended as
+  for any other. `lu_image_source [project-dir]` in the library computes it, and IM-4 holds the
+  two to one answer. A git that refuses the directory altogether -- `dubious ownership` inside a
+  rootful container, where the host's files belong to another uid -- fails
+  `rev-parse --is-inside-work-tree` and gives `unknown`, which is a true statement about what
   could be read (decision 14).
 
 The namespace `io.liquidupstart.` is this project's; no upstream image uses it (§8.3). The label
@@ -351,6 +387,13 @@ liquid,openclaw,privacy-proxy,toolbox}.sh` each:
   `--label "io.liquidupstart.inputs=${DIGEST}" --label "io.liquidupstart.source=${SOURCE}"` on the
   `docker build` line, so a reader and IM-3 see them at a glance.
 
+The two files this feature adds under `config/scripts/build/`, `lib/image-inputs.sh` and
+`toolbox.sh`, are tracked as `100755`, as every script there is today (`git ls-files -s
+config/scripts/build/`, 2026-11-06: eight files, all `100755`). `config/toolbox/toolbox-entry.sh:7`
+runs `chmod +x` over every `*.sh` under `config/` on each dashboard task, so a file tracked
+`100644` would make the checkout `-dirty` at the first task (the `BACKLOG.md` entry on that), and
+the source label of every image built afterwards with it. IM-3 holds the modes.
+
 `privacy-proxy.sh` with `PRIVACY_PROXY_DEV_SRC` set computes the digest of the product image with
 `PRIVACY_PROXY_BASE_IMAGE=liquidupstart/privacy-proxy-base:dev`, and labels the product image only;
 the base image is the developer's (§3). **`scripts/linux/rebuild.sh` asks before it stops
@@ -378,49 +421,57 @@ The other arguments (`--no-cache`) are accepted and ignored with `--inputs`. A c
 discards stderr; one that fails quotes the first stderr line that starts with `Error:`, or the
 first line when none does.
 
-**IM-FR5 -- the start's notice.** `scripts/linux/start.sh`, in its pre-flight after the
-missing-image check of CS-4 and before `down.sh`, for every image in `LU_IMAGES` -- the images of
-what is on, the privacy proxy's included while it is on -- in that order:
+**IM-FR5 -- the start's notice.** `scripts/linux/start.sh`, in its pre-flight where CS-4's
+missing-image check stands, before `down.sh`, asks docker **once per image** for every image in
+`LU_IMAGES` -- the images of what is on, the privacy proxy's included while it is on -- in that
+order: `lu_image_found_labels <image>` runs one `docker image inspect -f` reading both labels,
+`io.liquidupstart.inputs` and `io.liquidupstart.source`, and exits 1 for an image that does not
+exist. That one call is CS-4's existence check and this feature's label read together, so the
+pre-flight costs one engine call per image (IM-NFR1), and CS-4's refusal is unchanged in text and
+in place: with any image missing, the start prints CS-4's lines and exits 1 before anything else
+is printed or stopped. With every image present, for each in the same order it:
 
 - computes the expected digest with `"${PROJECT_DIR}/config/scripts/build/${_image}.sh" --inputs`,
   stdout captured, stderr captured to a temporary file; when the script exits non-zero, the
   expected value handed on is the first stderr line starting with `Error:`, or the first line;
-- reads the image's `io.liquidupstart.inputs` and `io.liquidupstart.source` labels;
-- prints `lu_image_notice <image> <expected> <found-inputs> <found-source>`'s answer on stdout.
+- prints `lu_image_notice <image> <expected> <found-inputs> <found-source>`'s answer on stdout,
+  `<image>` being the full reference as `start.sh` names it, `liquidupstart/<name>:latest`, which
+  the function prints as given.
 
 `lu_image_notice` decides in this order, and prints exactly one of:
 
 1. when `<expected>` does not match `^[0-9a-f]{64}$`, it is the reason the digest could not be
    computed:
-   `Note: the inputs of liquidupstart/<name>:latest could not be computed (<expected>), so it is not checked.`;
+   `Note: the inputs of <image> could not be computed (<expected>), so it is not checked.`;
 2. when `<found-inputs>` is empty:
-   `Note: liquidupstart/<name>:latest was built before images recorded their inputs; rebuild to make this checkable: ./scripts/linux/build.sh`;
+   `Note: <image> was built before images recorded their inputs; rebuild to make this checkable: ./scripts/linux/build.sh`;
 3. when the two digests are equal: nothing;
 4. otherwise, with `<found-source>` not empty:
-   `Note: liquidupstart/<name>:latest was built from <source> and its inputs have changed since. Rebuild it: ./scripts/linux/build.sh`,
+   `Note: <image> was built from <source> and its inputs have changed since. Rebuild it: ./scripts/linux/build.sh`,
    and with it empty the same line with `an unrecorded source` in place of `<source>` -- an image
    nobody's build script made.
 
 It exits 0 whatever it printed, and the start continues to `down.sh` whatever was printed. An image
-missing at this point does not arise: CS-4 has exited already. An image of a component that is off
-is not asked about, as it is not in `LU_IMAGES`.
+missing at this point does not arise: the same loop's existence half has exited already. An image
+of a component that is off is not asked about, as it is not in `LU_IMAGES`.
 
 **IM-FR6 -- the dashboard.**
 
 - `stackState()` in `dashboard/src/lib/server/project.ts` returns
   `{ running, needBuild, images: { missing: string[]; stale: string[]; unlabelled: string[] } }`.
-  For each image `builtImages()` names it runs, in parallel, `docker image inspect -f '{{index
-  .Config.Labels "io.liquidupstart.inputs"}}' <image>` and `bash config/scripts/build/<name>.sh
-  --inputs` in `ENV_DIR`, stderr discarded on success. **The order of the checks is the one
+  For each image `builtImages()` names it runs, in parallel, one `docker image inspect -f` reading
+  both labels, as `lu_image_found_labels` does, and `bash config/scripts/build/<name>.sh --inputs`
+  in `ENV_DIR`, stderr discarded on success. **The order of the checks is the one
   `lu_image_notice` applies (IM-FR5), everywhere an image is judged -- here, in the CLI notice and
   in the run route:** docker's answer first, then the script's, then the label, then the
   comparison. So: docker's exit 1 puts the image in `missing`, whatever the script said. For an
-  image that exists, a script that exits non-zero is logged once to the server's stderr with its
-  `Error:` line and puts the image in none of the three (decision 13), whatever its label says;
-  otherwise an empty label puts it in `unlabelled`; otherwise a label differing from the script's
-  answer puts it in `stale`. `needBuild` is true when `missing` is
-  non-empty, or the rebuild marker is set -- exactly as today (decision 4, as changed). `stale` and
-  `unlabelled` never enter it.
+  image that exists, a script that exits non-zero is logged to the server's stderr -- one line per
+  failing image per `stackState()` call, so one per page load -- with its `Error:` line, and puts
+  the image in none of the three (decision 13), whatever its label says; otherwise an empty label
+  puts it in `unlabelled`; otherwise a label differing from the script's answer puts it in `stale`.
+  **`needBuild` is `missing.length > 0`.** The rebuild marker `.needs-rebuild` is cleared, as
+  today, whenever no image is missing (`project.ts:190-198`), so it never makes `needBuild` true
+  on its own; `stale` and `unlabelled` never enter it (decision 4, as changed).
 - `imagesNote(images): string[]` in `dashboard/src/lib/image-inputs.ts` gives the lines, missing
   first, each listing its images comma-separated in `builtImages()`' order, and an empty array when
   the three lists are empty:
@@ -430,11 +481,22 @@ is not asked about, as it is not in `LU_IMAGES`.
   The launchpad's `load` and `/done`'s `load` each return `imagesNote: string[]`, and the pages
   render **one `<p class="warn">` per line** -- not one paragraph with newlines, which HTML
   collapses to spaces. Where: on the launchpad's not-running card, in place of today's fixed
-  sentence when the array is not empty; on the launchpad's running card, above its `TaskRunner`,
-  because a stale image is stale whether or not containers run from it and the Restart there would
-  run it again; and on `/done`, under its existing `rebuild`/`needBuild` paragraphs, because that
-  page is where a save sends the operator to build or start. The sentences are worded for all
-  three places. With all three lists empty, each page says what it says today.
+  *The service images don't exist yet* sentence, which goes, so that with `needBuild` true the
+  missing line is what the card says, and with `needBuild` false the card keeps today's *Start all
+  services to get the dashboard of URLs and credentials.* and the stale or unlabelled lines follow
+  it; on the launchpad's running card, above its `TaskRunner`, because a stale image is stale
+  whether or not containers run from it and the Restart there would run it again; and on `/done`,
+  under its existing `rebuild`/`needBuild` paragraphs, because that page is where a save sends the
+  operator to build or start. The sentences are worded for all three places. With all three lists
+  empty, each page says what it says today. **`/done` keeps its own gate as it is**, by the
+  operator's decision of 2026-11-06: its `load` computes `needBuild: rebuild || needBuild || first`
+  (`done/+page.server.ts:10`), where `rebuild` is the query flag a build-affecting save sets through
+  `isBuildAffecting` (`env-meta.ts:60`) and `first` the first configuration's; both are existing
+  behaviour outside this change. The consequence, stated so it is a decision: after a save that
+  changed `SYSTEM_DEPENDENCIES` or another build-affecting key, `/done` disables Start until a
+  Build, where the launchpad -- whose `needBuild` reads `missing` alone -- would offer Start beside
+  a stale line for the very same image. The flag is a remembered rule the digest could replace, and
+  `BACKLOG.md` has an entry for that.
 - Start is gated as today and no more: `TaskRunner.svelte` disables it while `needBuild` holds and
   no build has run in the page, which is the missing case alone. A stale or unlabelled image leaves
   Start enabled beside its line, as the CLI's notice leaves the start to run (decision 3). Rebuild
@@ -448,15 +510,21 @@ is not asked about, as it is not in `LU_IMAGES`.
     `[toolbox build not attempted: its inputs could not be computed]`, and does not run the task,
     since the build would fail at the same point (IM-FR3);
   - image missing otherwise: runs `bash config/scripts/build/toolbox.sh`, streaming its output as it
-    streams the build today, after the line
-    `Helper toolbox image is missing or was built from other inputs - building it...`; a failed
-    script is reported as the failed build is today, with its exit code, and the task does not run;
+    streams the build today, after the line `Helper toolbox image is missing - building it...`; a
+    failed script is reported as the failed build is today, `[toolbox build failed with exit code
+    N]`, and the task does not run, since there is no image to run it in;
   - image present and `--inputs` exiting non-zero, whatever the label says: writes
     `Helper toolbox image could not be checked: <Error: line>. Running the task with the image that is there.`
     and runs the task;
-  - image present with an empty label, or a label differing from the script's answer: builds as
-    above, then runs the task. The first task after the upgrade, Stop included, takes this path
-    once (decision 12);
+  - image present with an empty label: runs the script after the line
+    `Helper toolbox image carries no record of its inputs - building it...`; with a label differing
+    from the script's answer, after `Helper toolbox image was built from other inputs - building
+    it...` -- one line per cause, as decision 12 promises. On success the task runs in the new
+    image. **On failure the old image is still there (decision 12: nothing removed it), so the
+    route writes `[toolbox rebuild failed with exit code N; running the task with the image that is
+    there]` and runs the task in it**, as it does when the inputs could not be checked: a toolbox
+    that worked yesterday is the better of the two outcomes of a build that failed offline. The
+    first task after the upgrade, Stop included, takes the empty-label path once;
   - label matching: runs the task.
 
 **IM-FR7 -- the harness builds labelled images.** `builderImage()` in `tests/lib/builderimage.ts`
@@ -490,8 +558,10 @@ the script's `${ENABLE_ANTHROPIC_CLAUDE_CODE:-0}` and `resolve_image_settings OP
 
 **IM-NFR1 -- cost.** The pre-flight adds under one second to a start and under one second to a
 launchpad load: seven whole contexts hash in 0.31 s, one script's render-and-hash path takes 54 ms,
-and six single `docker image inspect` calls, one per image as the design makes them, take 0.30 s
-(§8.6).
+and six `docker image inspect` calls, one per image reading both labels as `lu_image_found_labels`
+does -- the one engine call the start pays per image, since it is also CS-4's existence check
+(IM-FR5) -- take 0.33 s (§8.6). The review of #65 measured the first version's two label reads per
+image plus CS-4's own call at about 1.0 s, which is why the design makes one call.
 
 **IM-NFR2 -- the digest does not flap.** Over one checkout and one `.env`, the digest of an image is
 the same on every computation: from the host, from the dashboard's container and from the toolbox,
@@ -516,8 +586,7 @@ launchpad reads as today. The full suite is as green as on `main`.
 | `lu_image_inputs_digest <rendered-dockerfile> <context> [KEY=VALUE ...]` | IM-FR1's 64-hex digest on stdout; exit 1 with the reader's error when a source cannot be read |
 | `lu_build_env_reset` | unsets IM-FR3's build-affecting keys in the calling shell; never fails |
 | `lu_image_source [project-dir]` | IM-FR2's source string; never fails |
-| `lu_image_found_inputs <image>` | the image's `io.liquidupstart.inputs` label, empty when unlabelled; docker's exit status, so 1 for a missing image |
-| `lu_image_found_source <image>` | the same for `io.liquidupstart.source` |
+| `lu_image_found_labels <image>` | one `docker image inspect -f` call: the image's `io.liquidupstart.inputs` and `io.liquidupstart.source` labels on one line, separated by a tab, each empty when absent; docker's exit status, so 1 for a missing image. One call rather than two, and the same call that tells a missing image, because the pre-flight pays it once per image (IM-NFR1) |
 | `lu_image_notice <image> <expected> <found-inputs> <found-source>` | IM-FR5's line for those values on stdout, or nothing, in IM-FR5's order of precedence; exit 0 either way |
 
 **Build scripts.** Each of the seven accepts `--inputs` beside `--no-cache`; calls
@@ -556,9 +625,21 @@ followed by `-dirty`, or `unknown`.
 **Harness, `tests/lib/builderimage.ts`.** `builderLabels()` is unchanged and returns its three
 labels. `productInputsLabels(dockerfile, context, args)` computes IM-FR2's two through the library
 with `bash -c`, so the harness does not re-implement the digest, and `builderImage()` passes both
-sets to its `docker build`.
+sets to its `docker build`. `builderContextFiles(dir = BUILD_CONTEXT): string[]` is the list
+`builderContextDigest()` walks, context-relative and in its order, exported so IM-6 (4) can compare
+it with the reader's answer rather than re-walking the directory itself.
 
-## 6. Signed off, and what refines the decisions
+**Harness, `tests/lib/toolboximage.ts`, new.** `toolboxImage(): string` builds
+`liquidupstart/toolbox:tree-<digest>` from `config/toolbox` as it stands in the tree, `<digest>`
+being the product digest the library computes for it, with `productInputsLabels()` and
+`builderLabels()`, memoised per process, as `builderImage()` does for the builder. A case that needs
+the toolbox runs this tag and never the operator's `liquidupstart/toolbox:latest` (A8-19, §4 of the
+test specification). The image is content-addressed, so a run over the same tree reuses it and its
+layers come from the cache of the operator's own toolbox build where the Dockerfile has not
+changed; it is never swept, because `sweepAbandonedBuilderObjects` sweeps refs under
+`liquidupstart/nar-builder` alone, and that is stated here rather than left to be found.
+
+## 6. For sign-off: what refines the decisions
 
 The decisions here that refine what the operator decided on 2026-11-04, each with its reason, for
 sign-off before any code is written:
@@ -641,13 +722,17 @@ were tagged `lu-im-probe:*` and removed afterwards; nothing of the installation 
    equal hashes. macOS is not measured (§3).
 6. **Cost.** Hashing all seven contexts whole, with paths and contents: 0.31 s. One render-and-hash
    path for `openclaw`, `.env.example` loaded and settings resolved: 54 ms. Six `docker image
-   inspect` calls, one per image: 0.30 s (one call over all six, which the design does not use
+   inspect` calls, one per image reading one label: 0.30 s; reading both labels in that one call,
+   as `lu_image_found_labels` does, 0.33 s, measured 2026-11-06 for the review of #65 (one call over all six, which the design does not use
    because of 3, took 0.19 s).
 7. **The installed images are stale, and a seed probe would not say so.** All built 2026-10-27.
    `nar-builder:latest` has `/opt/builder/m2-seed`; `build.sh`, `BuildServer.java` and
    `entrypoint.sh` differ from the tree; `id builder2` answers *no such user*; `/home/builder` is
    `builder 750`. `opencode:latest`'s `/usr/local/bin/entrypoint.sh` differs from the tree.
-8. **No build context holds a symlink or a `.dockerignore`**, and no Dockerfile in the tree carries
+8. **No build context holds a symlink or a `.dockerignore`**, no Dockerfile carries a parser
+   directive (`grep -n '^# *\(escape\|syntax\)=' …` over the ten: nothing), one of them ends without
+   a newline (`config/liquid/templates/Dockerfile`, whose last byte is `]`; the other nine end in
+   `\n`), and no Dockerfile in the tree carries
    `--mount=`. `find … -type l` over the eight directories under `config/` that are contexts: none;
    `git ls-files | grep dockerignore`: `dashboard/.dockerignore` alone; `grep -rn 'mount='` over
    the ten Dockerfiles: nothing.
@@ -691,4 +776,23 @@ were tagged `lu-im-probe:*` and removed afterwards; nothing of the installation 
   `.env` alone deciding the render (decision 16); `rebuild.sh`'s pre-check (IM-FR3); and the
   operator's two decisions on it, the base-drift half left open (decision 1) and `openclaw.sh`
   moving to `load_env_file` (decision 17, IM-FR9). The test specification's overview was rewritten
-  to one scenario per row.
+  to one scenario per row. The operator committed the round as `b079c05`.
+- **2026-11-05, the re-review of `b079c05`** -- approved once one order of checks was written
+  everywhere an image is judged (docker, script, label, comparison; IM-FR5, IM-FR6) and six slips
+  were corrected: the reset mutation's script, the digest before the dev-base build, the fixture's
+  line count, `build.sh`'s `Done.` under `--inputs`, three "stale half" lines, and
+  `m-cs.pairing-mount`'s data. The operator committed it as `c1b690b` and opened #65.
+- **2026-11-06, the review of #65** -- a new independent review asked for changes, each verified
+  against the code before it was applied. What changed: the IM-4 fixture ignores its version file
+  (an untracked file is `-dirty`); the glob rows have the files their names look like; a toolbox
+  rebuild that fails with an image present runs the task in it (IM-FR6, IM-8); the `BACKLOG.md`
+  entry on the rebuild marker was withdrawn, since `stackState()` clears the marker whenever no
+  image is missing, and `needBuild` is `missing.length > 0` (IM-FR6); one `inspect` per image
+  reading both labels, folded into CS-4's existence check (IM-FR5, IM-NFR1, measured 0.33 s); the
+  reader's remaining branches (IM-FR1); the new scripts' modes (IM-FR3); content a `RUN` fetches
+  (§3); `/done`'s own gate kept by the operator's decision, with its consequence (IM-FR6); the
+  toolbox's line per cause; the not-running card's sentence; the log's frequency; the fixture's
+  libraries; `builderContextFiles()` and `toolboxImage()` (§5), so no case builds the operator's
+  toolbox; `lu_image_notice`'s `<image>` as given; the boundary row's newlines; three slips
+  (`privacy-proxy.sh:41-45`, one `--from=` among the build-script Dockerfiles, `run.sh`'s two
+  edges in IM-FR2); and §6's heading, which said *signed off* of a document that is not.

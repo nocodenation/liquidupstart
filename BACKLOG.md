@@ -1988,17 +1988,33 @@ git records. Not this change's: the label reports what git says, and what git sa
 
 ---
 
-`OPEN` **The not-running card says the images do not exist when only the rebuild marker says so.**
-`dashboard/src/routes/+page.svelte:98-101` prints *The service images don't exist yet — run Build
-once before starting* whenever `needBuild` is true, and `stackState()` makes it true for
-`.needs-rebuild` as well as for a missing image (`dashboard/src/lib/server/project.ts:190-199`).
-After `update.sh` the images are gone too, so the sentence is true there; but the marker is dropped
-by hand or left behind by an update that failed after dropping it, and then the card names a cause
-that is not the cause. `docs/FEATURE-image-inputs.md` IM-FR6 replaces the sentence by one line per
-list of `images`, and a marker set with every image present fills no list, so the card would then
-say nothing about why Build comes first. Recorded by the review of `4468779` on 2026-11-04; the line
-for the marker is a sentence in `imagesNote()`'s caller once the marker is returned beside the
-lists, which is outside that feature.
+`OPEN` **What a `RUN` fetches from the network is unpinned, and no digest can see it move.**
+`config/opencode/templates/Dockerfile:9` runs `npm install -g opencode-ai` with no version;
+`config/privacy-proxy/templates/Dockerfile:5` fetches the Claude CLI at `CLAUDE_CODE_VERSION=latest`;
+every `apt-get install` in the seven Dockerfiles takes what the mirror has that day; and
+`config/toolbox/Dockerfile:13` fetches Docker's apt key and repository. `docs/FEATURE-image-inputs.md`
+labels each image with a digest of its inputs -- the rendered Dockerfile, the build arguments, the
+copied files -- and says so in its §3: two builds from one digest can hold two OpenCode versions,
+and a label that matches means *built from this checkout and this `.env`*, not *up to date*. The
+remedy is to pin what can be pinned -- `opencode-ai@<version>` as OpenClaw's base is pinned, a
+`CLAUDE_CODE_VERSION` in `.env.example` -- so that moving is a choice in the Dockerfile's bytes,
+which the digest then sees, rather than an event. Each pin is a decision about when that component
+moves, and none is this change's. Recorded by the review of #65 on 2026-11-06.
+
+---
+
+`OPEN` **`/done`'s rebuild flag and `isBuildAffecting` are a remembered rule the digest could
+replace.** `dashboard/src/lib/env-meta.ts:60` lists the keys a save calls build-affecting, and
+`dashboard/src/routes/done/+page.server.ts:10` makes `/done` demand a Build when such a save set
+`rebuild=1`, whatever the images say. `docs/FEATURE-image-inputs.md` computes the same question
+from the images themselves: a save that changed a build input makes the next `--inputs` answer
+differ from the label, and the launchpad names the image. So after such a save `/done` disables
+Start where the launchpad offers it beside a stale line for the very same image, and a key the list
+forgets -- `PRIVACY_PROXY_SYSTEM_DEPENDENCIES` is read by the privacy-proxy build and in no list,
+nor in `.env.example` -- changes an image without `rebuild=1` while the digest sees it. The operator
+decided on 2026-11-06 that both stay as they are, as existing behaviour outside that change, and
+that replacing the flag and the list with the digest's answer is recorded here as its own change:
+`/done` would read `stackState().images` as the launchpad does, and `isBuildAffecting` would go.
 
 ---
 

@@ -41,8 +41,11 @@ privacy-proxy entry's base-drift half stays open, and `config/scripts/build/open
 overview is one scenario per row now. The operator committed that round as `b079c05`; its
 re-review on 2026-11-05 approved once one order of checks was written everywhere an image is judged
 (docker, script, label, comparison) and six small slips were corrected, which a final pass did. The
-sign-off of the feature's §6 comes before any code. #34 is still Timur's in the list below until
-then.
+sign-off of the feature's §6 comes before any code. The operator opened #65 from `c1b690b`; a new
+independent review of it on 2026-11-06 asked for changes, and a fourth round applied them, each
+verified against the code, with the operator's decision that `/done`'s rebuild flag and
+`isBuildAffecting` stay as they are (a `BACKLOG.md` entry records the computed replacement); the
+feature's §9 lists what changed. #34 is still Timur's in the list below until then.
 
 **What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
 B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this
