@@ -1600,7 +1600,10 @@ deciding under a milestone that is otherwise closed.
 *Settled 2026-10-26 against the cut line: the leftover is litter, as checked above, and touches
 nothing of anyone else's.*
 
-`SETTLED` **A locally built image can belong to another branch, and nothing on this one says so.**
+`OPEN` **A locally built image can belong to another branch, and nothing on this one says so.**
+*Re-opened 2026-11-04 by the operator's decision, and specified as `docs/FEATURE-image-inputs.md`
+together with #34 and the inputs half of the privacy-proxy entry below; see the correction at the end
+of this entry.*
 Met on 2026-09-07, during the first dashboard-driven start this project has ever performed. This
 branch pins `ghcr.io/openclaw/openclaw:2026.7.1` and its start script writes the configuration that
 version takes. The image on the machine, `liquidupstart/openclaw:latest`, was **2026.9.1** — built
@@ -1629,6 +1632,23 @@ A cheap first move is a start-time line naming what each locally built image was
 
 *Settled 2026-10-26 against the cut line: the OpenClaw probe reached `main` with #11 on 2026-09-14,
 and a line for every locally built image is recorded and not raised again.*
+
+*Re-opened 2026-11-04, and the premise above corrected.* The cheap first move named
+`.liquidupstart-version` and the build manifest as if they said what an image was built from. They
+do not: both are the installer's files -- `install.sh`, `update.sh` and `install-local.sh` write
+them, `.liquidupstart-manifest` is the installed file list -- and a plain checkout has neither, which
+is why `run.sh --version` falls back to `checkout-<sha>`. Nothing on the machine records an image's
+origin: no product image carries a label of ours, and the upstream labels the local images inherit
+(`org.opencontainers.image.revision` on `liquidupstart/openclaw:latest` is OpenClaw's own) say
+nothing about this checkout. Measured on 2026-11-04 on this host: `liquidupstart/nar-builder:latest`
+from 2026-10-27 has the seed #34's probe looks for and is stale all the same -- `build.sh`,
+`BuildServer.java` and `entrypoint.sh` differ from the tree, there is no `builder2` user, and
+`/home/builder` is `builder 750` -- so #31's isolation is silently missing from it, and a
+symptom-probe would not say so. The answer is a label of our own, `io.liquidupstart.inputs`, holding
+a digest of the inputs that reach the image, written by every build script and compared by the start
+and by `stackState()`. The operator decided on 2026-11-04 to build it as one change with #34 and with
+the inputs half of the privacy-proxy entry below; `docs/FEATURE-image-inputs.md` is the
+specification, and the issue the implementation is answered on is #34.
 
 `DONE-ON-#9` **~~The toolbox image had no `git` and no `openssh`, and the start script's git step runs inside it.~~
 Repaired on #9, merged 2026-09-30; struck 2026-10-26.**
@@ -1833,7 +1853,10 @@ search. Among them: `get_env` in `scripts/linux/start.sh`; `env_value` in
 `scripts/linux/build.sh` for `PRIVACY_PROXY_ENABLE`, and in `config/scripts/start/liquid.sh` and
 `nginx.sh`; an awk `get_env` in `config/scripts/openclaw-pairing.sh`; `load_env_file` in
 `config/scripts/build/lib/dockerfile-render.sh` for the Liquid, OpenCode and privacy-proxy builds,
-while `config/scripts/build/openclaw.sh` and `hermes.sh` still run `source .env`; and `splitValue` in
+while `config/scripts/build/openclaw.sh` and `hermes.sh` still run `source .env` -- *the OpenClaw
+half of that is answered by `docs/FEATURE-image-inputs.md` IM-FR9, decided on 2026-11-04, because
+its `--inputs` is run by the start and the dashboard on every `.env` the operator writes; `hermes.sh`
+still sources, disabled, and stays here* -- and `splitValue` in
 `dashboard/src/lib/env-file.ts`. They differ on comments, quotes and `$`, so one line
 can mean different things to start, build and dashboard. And `formatValue` there escapes `"` and not
 `\`, so a value ending in a backslash is written as a line compose cannot close. #52 brings
@@ -1931,7 +1954,87 @@ half no longer reaches `compose up`. After Timur's review of 2026-10-30 every co
 `liquidupstart/*` image also says `pull_policy: never`, so a missing image stops `up` at *No such
 image* rather than being fetched from Docker Hub, and `CS-23` holds `builtImages()`, the start's
 pre-flight and the build to one answer for every combination of the switches. `update.sh` still
-leaves the image in place, and the stale half is open.
+leaves the image in place, and the stale half is open. *The inputs half is specified on 2026-11-04 as
+`docs/FEATURE-image-inputs.md`, one change with #34 and the re-opened entry above, as decided on
+2026-10-29: the label is `io.liquidupstart.inputs`, `stackState()` compares it with the build
+script's own answer and the launchpad card names a stale image (IM-FR6), and the start names it
+before `down.sh` (IM-FR5). The sentence above, "a stale image needs a build to be asked for", was
+decided otherwise by the operator on 2026-11-04: it is reported, not required -- `needBuild` stays
+for missing images, because every existing installation is unlabelled after the upgrade and a
+required build would have blocked Start everywhere. **What that implementation closes is the inputs
+half of this entry, and not the whole of it.** What was met on the day was two things: an image
+skipped by `build.sh` while the proxy was off, whose inputs had changed since -- the digest covers
+that -- and an image whose released base, `ghcr.io/nocodenation/privacy-proxy:latest`, had moved from
+0.1.2 to 0.3.0 underneath an unchanged Dockerfile, which is drift of the base image and which the
+digest does not see (`docs/FEATURE-image-inputs.md` §3). The review of the specification's commit
+`4468779` found the first version claiming both, and the operator decided on 2026-11-04 that the
+base-drift half stays open here and that no label of the base image's identity is added: comparing
+an image's base with the registry's is a network question and a change of its own. So this entry
+stays `OPEN` for that half after the implementation lands.*
+
+---
+
+`OPEN` **The first dashboard task makes a clean checkout `-dirty`.** `config/toolbox/toolbox-entry.sh:6-7`
+runs `chmod +x ./*.sh` and `find ./scripts ./config -name '*.sh' -type f -exec chmod +x {} +` on
+every start of the toolbox, over the project directory the dashboard mounts at its host path.
+`scripts/linux/lib/remove-volumes.sh` is tracked as `100644`, and this checkout has `core.fileMode`
+`true`, so after the first Build, Start or Stop pressed in the dashboard `git status --porcelain`
+reports that file as modified. From then on `run.sh --version` says `checkout-<sha>-dirty`, and so
+does the `io.liquidupstart.source` label of every image built afterwards
+(`docs/FEATURE-image-inputs.md` IM-FR2), while nothing the operator did changed. Found by the
+review of `4468779` on 2026-11-04. The honest options: track the file as `100755`, since every other
+`.sh` the entry script touches already is; or have the entry script leave files alone whose mode
+git records. Not this change's: the label reports what git says, and what git says is true.
+
+---
+
+`OPEN` **What a `RUN` fetches from the network is unpinned, and no digest can see it move.**
+`config/opencode/templates/Dockerfile:9` runs `npm install -g opencode-ai` with no version;
+`config/privacy-proxy/templates/Dockerfile:5` fetches the Claude CLI at `CLAUDE_CODE_VERSION=latest`;
+every `apt-get install` in the seven Dockerfiles takes what the mirror has that day; and
+`config/toolbox/Dockerfile:13` fetches Docker's apt key and repository. `docs/FEATURE-image-inputs.md`
+labels each image with a digest of its inputs -- the rendered Dockerfile, the build arguments, the
+copied files -- and says so in its §3: two builds from one digest can hold two OpenCode versions,
+and a label that matches means *built from this checkout and this `.env`*, not *up to date*. The
+remedy is to pin what can be pinned -- `opencode-ai@<version>` as OpenClaw's base is pinned, a
+`CLAUDE_CODE_VERSION` in `.env.example` -- so that moving is a choice in the Dockerfile's bytes,
+which the digest then sees, rather than an event. Each pin is a decision about when that component
+moves, and none is this change's. Recorded by the review of #65 on 2026-11-06.
+
+---
+
+`OPEN` **`/done`'s rebuild flag and `isBuildAffecting` are a remembered rule the digest could
+replace.** `dashboard/src/lib/env-meta.ts:60` lists the keys a save calls build-affecting, and
+`dashboard/src/routes/done/+page.server.ts:10` makes `/done` demand a Build when such a save set
+`rebuild=1`, whatever the images say. `docs/FEATURE-image-inputs.md` computes the same question
+from the images themselves: a save that changed a build input makes the next `--inputs` answer
+differ from the label, and the launchpad names the image. So after such a save `/done` disables
+Start where the launchpad offers it beside a stale line for the very same image, and a key the list
+forgets -- `PRIVACY_PROXY_DEV_SRC`, in `.env.example` §13 and editable in the form, for which
+`isBuildAffecting` answers false -- changes the privacy-proxy build without `rebuild=1` while the
+digest sees it. The operator
+decided on 2026-11-06 that both stay as they are, as existing behaviour outside that change, and
+that replacing the flag and the list with the digest's answer is recorded here as its own change:
+`/done` would read `stackState().images` as the launchpad does, and `isBuildAffecting` would go.
+
+---
+
+`OPEN` **The tree-tagged toolbox images the suite builds are never swept.** `toolboxImage()`,
+specified in `docs/FEATURE-image-inputs.md` §5 for A8-19, builds
+`liquidupstart/toolbox:tree-<digest>` so a case never touches the operator's `toolbox:latest`, and
+the harness sweep removes `liquidupstart/nar-builder` references only. So one toolbox image is left
+per change to the toolbox's inputs, as the builder's tree tags were before their sweep. The remedy is
+to extend the sweep to the toolbox's tree tags, keeping the current one. Recorded by the check of
+#65's fixes on 2026-11-06.
+
+---
+
+`OPEN` **Whether flags on `RUN` other than `--mount=` are refused by the image-inputs reader is not
+said.** `docs/FEATURE-image-inputs.md` IM-FR1 refuses `--mount=` in flag position after `RUN` and
+lists the four flags it accepts on `COPY` and `ADD`, but leaves `RUN --network=` and
+`RUN --security=` open. Neither reads the build context, and no tracked Dockerfile uses either. It
+has to be settled before a `POST_INSTALLATION_COMMANDS` value or a future Dockerfile does, since a
+reader that refuses them fails that build. Recorded by the check of #65's fixes on 2026-11-06.
 
 ---
 
@@ -2795,6 +2898,11 @@ the dashboard's build path, which no case currently drives.
 Recorded 2026-09-30.
 
 *Settled in `FINISH.md`'s table of settled entries, which gives the reason. 2026-10-26.*
+
+*The durable form above is specified on 2026-11-04 in `docs/FEATURE-image-inputs.md`: the label is
+`io.liquidupstart.inputs`, `config/scripts/build/toolbox.sh` writes it, and the run route rebuilds
+the toolbox when the label is missing or differs from the script's own answer (its decision 12 and
+IM-FR6), without removing the working image first. This entry closes with that implementation.*
 
 ---
 

@@ -25,6 +25,28 @@ believe the dated one.**
 None of ours is open now; a new one waits for the operator's explicit word, and a finding becomes one
 line in `BACKLOG.md`.
 
+**Later that day, a specification round on `fix/issue-34-image-inputs`** (from `main` at `da9a85c`),
+documentation only, **committed by the operator as `4468779` and pushed**: the operator re-opened
+`BACKLOG.md`'s *A locally built image can belong to another branch* and asked for #34, the inputs
+half of the privacy-proxy entry and §3 of the switches feature to be done as one change.
+`docs/FEATURE-image-inputs.md` and `docs/TEST-SPEC-image-inputs.md` (prefix `IM`) are the result,
+with the measurements of the day in the feature's §8. The operator answered its §7 the same day: a
+stale image is a notice on the launchpad card with Start enabled, `needBuild` stays for missing
+images only (decision 4, changed, because every existing installation is unlabelled after the
+upgrade); the stray `config/opencode/Dockerfile` goes with the implementation; `-dirty` stays in the
+source label. **An independent review of `4468779` then asked for changes**, and a fix round applied
+every finding, each verified against the code first, with the operator's two decisions on it: the
+privacy-proxy entry's base-drift half stays open, and `config/scripts/build/openclaw.sh` moves to
+`load_env_file` in this change. The feature's §9 lists what changed; the test specification's
+overview is one scenario per row now. The operator committed that round as `b079c05`; its
+re-review on 2026-11-05 approved once one order of checks was written everywhere an image is judged
+(docker, script, label, comparison) and six small slips were corrected, which a final pass did. The
+sign-off of the feature's §6 comes before any code. The operator opened #65 from `c1b690b`; a new
+independent review of it on 2026-11-06 asked for changes, and a fourth round applied them, each
+verified against the code, with the operator's decision that `/done`'s rebuild flag and
+`isBuildAffecting` stay as they are (a `BACKLOG.md` entry records the computed replacement); the
+feature's §9 lists what changed. #34 is still Timur's in the list below until then.
+
 **What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
 B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this
 file, which no test opens. The nine files that read a document ran on `main` at `5bc0468`, with

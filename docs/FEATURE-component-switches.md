@@ -86,7 +86,9 @@ code, and four of them refine the issue's proposal; §6 lists those, all signed 
     Turning one on needs a build only when its image is missing. `stackState()` already computes
     `needBuild` from whether the images exist, so `builtImages()` takes the switches into account
     and the build is asked for exactly when it is needed (UC4). This is a computed answer instead
-    of a flag.
+    of a flag. *Its limit, a stale image, was deferred here on 2026-10-29 and is specified on
+    2026-11-04 in `docs/FEATURE-image-inputs.md`, which extends the computed answer to the image's
+    inputs (§3, the last bullet).*
 11. **§8, OPENCLAW CONFIGURATION, is not hidden wholesale when OpenClaw is off.** The issue
     proposed hiding it. It holds four keys, and one of them is read elsewhere:
     `ENABLE_ANTHROPIC_CLAUDE_CODE` is read by OpenCode (`config/opencode/entrypoint.sh:157`) and by
@@ -178,6 +180,13 @@ day.
   (the update test's second entry in `BACKLOG.md`). A label on each image carrying a hash of its build
   inputs, compared with `.env` by `stackState()`, would cover both; it is left to a change of its own,
   as the operator decided when signing off decision 10 on 2026-10-29, and `BACKLOG.md` has a line.
+  *That change is specified on 2026-11-04 as `docs/FEATURE-image-inputs.md`: the label is
+  `io.liquidupstart.inputs`, a digest of the rendered Dockerfile, the build arguments and the copied
+  files, written by every build script and compared by the start and by `stackState()` (IM-FR5,
+  IM-FR6). `needBuild` stays as this feature left it, true for a missing image only: the operator
+  decided on 2026-11-04 that a stale image is reported on the launchpad card and by the start, with
+  Start left enabled, because every existing installation is unlabelled after the upgrade. Once it
+  lands, this bullet's "nothing asks for a build" becomes "the start and the card say so".*
 
 ## 4. Requirements
 
@@ -339,7 +348,10 @@ not answer, and the hint says *may*.
   lists of the same images, kept by hand in two languages. CS-23 asks all three for every
   combination of the switches and the privacy proxy, and requires one answer.
 - `stackState().needBuild` is true when an image of a component that is on is missing, as it is
-  today for all five.
+  today for all five. *`docs/FEATURE-image-inputs.md` IM-FR6 leaves that as it is -- a stale or
+  unlabelled image is returned beside it in `images` and named on the card, and does not make
+  `needBuild` true (its decision 4, as the operator changed it on 2026-11-04); `builtImages()` and
+  the pre-flight's list are unchanged by it.*
 - The three keys are not in `isBuildAffecting` (decision 10).
 
 **CS-FR9 — the launchpad.**
