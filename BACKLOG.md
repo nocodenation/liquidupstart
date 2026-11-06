@@ -2356,6 +2356,103 @@ it starts, and the Liquid image's versions when a selected file reads them, and 
 whether the dashboard dependencies are there would be read at the moment it matters. Not worked: after #49 a finding is recorded unless
 the operator asks for it.
 
+`OPEN` **`NFR1` as `TEST-SPEC-liquid-java-extensions.md` uses it is defined by no feature document.**
+Its traceability row reads *NFR1 The stack is reachable only where it should be* and lists B5-10 to
+B5-14 and, since 2026-11-06, B6-21 to B6-23; the *Covers* rows of those blocks and the header of
+`tests/integration/m-b6.vhost-allow-list.test.ts` cite the same id. `docs/FEATURE-liquid-java-extensions.md`
+numbers its requirements on from the git integration's and defines one non-functional requirement,
+NFR7; the only NFR1 in `docs/` is `FEATURE-git-integration.md`'s, *Credentials are configured
+through `.env`*, which is not what those eight cases hold. So the row traces to a sentence that
+exists only in the test specification, and a reviewer reading the feature for the requirement finds
+a different one under that number. A repair gives the reachability requirement a number of its own
+in the extensions feature, NFR8 say, with the vhost's allow-list and the builder's header check as
+its text, and moves the row, the *Covers* lines and the header to it. Found 2026-11-06 while
+specifying #57, which added the three B6 cases to the row and left its id as it was. Not worked:
+after #49 a finding is recorded unless the operator asks for it.
+
+`OPEN` **`tests/mutate.sh` cannot expect an outcome that differs by host, so a registry entry that
+validates only where the host arrives as the gateway leaves the registry's result machine-dependent.**
+The B6-23 entry specified for #57 inserts `allow SYSTEM_NETWORK_GATEWAY;` before the template's
+deny line; on rootless Docker the host request arrives as the gateway, the named test reddens and
+the entry is `VALIDATED`, while on Docker Desktop the host arrives as `192.168.65.1`, `deny all`
+refuses it with or without the mutation, nothing reddens and the same entry is `UNRESOLVED`. The
+registry's shape — `case`, `file`, `spec`, `from`, `to`, `mustFail`, `all`, `exempt` — has no field
+for "expected unresolved on a host of this kind", and the runner's four outcomes (`mutate.sh` lines
+1080 to 1091) are decided from the red and green counts alone. So `./tests/mutate.sh` on a Mac
+reports one `UNRESOLVED` that is not a question for the author, and a reader of the tally cannot
+tell it from the four-out-of-thirteen kind `PROCEDURE-mutation-control.md` warns about without
+opening the specification. Found 2026-11-06 by the review of `f9e7468`. A repair is either a field
+the runner reads — the host condition stated as a command whose exit code says whether the entry
+can validate here, in the computed-answer shape `CLAUDE.md` asks for — or a line in the runner's
+report that names the entries whose specification declares the condition. Not worked: after #49 a
+finding is recorded unless the operator asks for it.
+
+`OPEN` **B6-21 to B6-23's probe waits for the nginx ports, not for the upstream behind them.**
+`tests/integration/m-b6.vhost-allow-list.test.ts`'s probe polls its five published ports until each
+answers something other than `000`, then asks; the stub upstream, `python3 -m http.server 8770` in
+a `python:3-alpine` container under the alias `nar_builder`, is never waited for. On a machine slow
+enough for nginx to answer before the interpreter has started, the rows that expect `200` —
+`without-denied-address`, `with-other-address`, `reverted-from-host`, `product-from-agent` — would
+read `502` from `@lu_unavailable` or nginx's own, while the `403` rows, decided before anything is
+proxied, would stay green. Never observed: on this host the upstream has been up by the time the
+five nginx containers answer, every run. The probe this one replaced had the same gap. A repair
+waits on the upstream too, through one of the vhosts or with a sixth published port. Found
+2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a finding is recorded unless
+the operator asks for it.
+
+`OPEN` **Two runs of B6-21 to B6-23 at once collide on the probe's fixed ports and subnet.** The
+container and network names carry the probe's pid (`b6s3$$`, since #19), but the network is always
+`10.231.91.0/24` with `--ip-range 10.231.91.128/25`, the pinned client is always `10.231.91.5`, and
+the five nginx containers publish `18891`, `18892`, `18894`, `18895` and `18896` on the host; a
+second run's `docker network create` fails on the overlapping subnet, or its `docker run -p` on the
+port in use. The probe has no `set -e`, so it carries on and prints its marker, and `beforeAll`
+does not throw: two runs started 2 s apart on 2026-11-06 gave 12 pass for the first and 4 pass, 8
+fail for the second, `Received ""` where an address or a status was expected. Worse than a clean
+failure, the second run's host-side requests go to the shared ports and can be answered by the
+first run's containers, so a second run can read the first one's answers. *Measured by the check
+of `400a5d0`, which corrected this entry's first wording, "its `beforeAll` throws *did not
+finish*".* The specification's *Dependencies* row
+states the condition, and HANDOFF's 2026-10-16 note records what two suites at once cost on this
+host. Per-run values — a subnet and ports derived from the pid, or found free — would remove it.
+Found 2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a finding is recorded
+unless the operator asks for it.
+
+`OPEN` **B6-23's premise would count `    deny ;` as the rendered deny line if the gateway were
+empty.** The probe receives the gateway as `$2` and the premise row asserts `product-deny-line=1`
+by `grep -cx "    deny ${GATEWAY};"`; with an empty `$2` the substitution renders `    deny ;`, the
+count still finds one such line, and the premise stays green. Nothing passes wrongly: the B6-22
+renderer scenario compares the computed value with docker's `network-gateway` in the same run and
+goes red on an empty string, and nginx refuses the rendered block — *invalid number of arguments in
+"deny" directive*, measured with `nginx -t` on 2026-11-06 — so the product container never answers
+and the 403 row reads `000`. But the premise exists to fail by name on a wrong cut, and an empty
+gateway is a wrong cut it does not name; a repair has it assert a non-empty `$2` — an IPv4 literal
+— before counting. Found 2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a
+finding is recorded unless the operator asks for it.
+
+`OPEN` **A `SIGKILL` of bun during B6-21 to B6-23 leaves the probe's script file, and
+`tests/mutate.sh` always takes that path on a budget overrun.** The test writes the probe to
+`$TMPDIR/m-b6-vhost-*/vhost.sh` and removes it in a `finally`; a KILL skips the `finally`, and the
+probe, which cleans up its containers and network through its PIPE trap, cannot remove the file it
+runs from. `mutate.sh` sends a TERM, waits one second and sends a KILL (lines 291 to 293 and 457 to
+459), and the probe's cleanup takes about 3.5 s, so the KILL lands first every time — measured by the
+check of `400a5d0`. Running the probe as `sh -c "$PROBE" sh TEMPLATE GATEWAY` needs no file and
+would remove the limit. Found 2026-11-06 by the check of `400a5d0` on #57. Not worked: after #49 a
+finding is recorded unless the operator asks for it.
+
+`OPEN` **The signal handler in B6-21 to B6-23 waits for the probe without a bound.** A TERM or INT
+to bun is passed to the probe, and bun exits when the probe has; the probe exits when its current
+foreground command ends and its cleanup has run. That command can be a `docker run` of curl, which
+has no `--max-time`, or an image pull, and a second Ctrl-C does not get out. Separately, if
+`beforeAll`'s 900 s timeout fired, the probe would keep running and the `finally` would not run
+before bun exits. Found 2026-11-06, by reading, by the check of `400a5d0` on #57. Not worked: after
+#49 a finding is recorded unless the operator asks for it.
+
+`OPEN` **B6-21 to B6-23's `Bun.spawn` does not pass the harness's `childEnv`.** The probe is spawned
+with bun's environment as it is, not with the `childEnv` that `sh()` uses (`LC_ALL=C`,
+`GIT_REPOSITORIES` removed). Nothing in the probe depends on either today; it is a drift from the
+harness's convention. Found 2026-11-06, by reading, by the check of `400a5d0` on #57. Not worked:
+after #49 a finding is recorded unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so
