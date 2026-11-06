@@ -2387,6 +2387,42 @@ can validate here, in the computed-answer shape `CLAUDE.md` asks for — or a li
 report that names the entries whose specification declares the condition. Not worked: after #49 a
 finding is recorded unless the operator asks for it.
 
+`OPEN` **B6-21 to B6-23's probe waits for the nginx ports, not for the upstream behind them.**
+`tests/integration/m-b6.vhost-allow-list.test.ts`'s probe polls its five published ports until each
+answers something other than `000`, then asks; the stub upstream, `python3 -m http.server 8770` in
+a `python:3-alpine` container under the alias `nar_builder`, is never waited for. On a machine slow
+enough for nginx to answer before the interpreter has started, the rows that expect `200` —
+`without-denied-address`, `with-other-address`, `reverted-from-host`, `product-from-agent` — would
+read `502` from `@lu_unavailable` or nginx's own, while the `403` rows, decided before anything is
+proxied, would stay green. Never observed: on this host the upstream has been up by the time the
+five nginx containers answer, every run. The probe this one replaced had the same gap. A repair
+waits on the upstream too, through one of the vhosts or with a sixth published port. Found
+2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a finding is recorded unless
+the operator asks for it.
+
+`OPEN` **Two runs of B6-21 to B6-23 at once collide on the probe's fixed ports and subnet.** The
+container and network names carry the probe's pid (`b6s3$$`, since #19), but the network is always
+`10.231.91.0/24` with `--ip-range 10.231.91.128/25`, the pinned client is always `10.231.91.5`, and
+the five nginx containers publish `18891`, `18892`, `18894`, `18895` and `18896` on the host; a
+second run's `docker network create` fails on the overlapping subnet, or its `docker run -p` on the
+port in use, and its `beforeAll` throws *did not finish*. The specification's *Dependencies* row
+states the condition, and HANDOFF's 2026-10-16 note records what two suites at once cost on this
+host. Per-run values — a subnet and ports derived from the pid, or found free — would remove it.
+Found 2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a finding is recorded
+unless the operator asks for it.
+
+`OPEN` **B6-23's premise would count `    deny ;` as the rendered deny line if the gateway were
+empty.** The probe receives the gateway as `$2` and the premise row asserts `product-deny-line=1`
+by `grep -cx "    deny ${GATEWAY};"`; with an empty `$2` the substitution renders `    deny ;`, the
+count still finds one such line, and the premise stays green. Nothing passes wrongly: the B6-22
+renderer scenario compares the computed value with docker's `network-gateway` in the same run and
+goes red on an empty string, and nginx refuses the rendered block — *invalid number of arguments in
+"deny" directive*, measured with `nginx -t` on 2026-11-06 — so the product container never answers
+and the 403 row reads `000`. But the premise exists to fail by name on a wrong cut, and an empty
+gateway is a wrong cut it does not name; a repair has it assert a non-empty `$2` — an IPv4 literal
+— before counting. Found 2026-11-06 by the review of `258e88c` on #57. Not worked: after #49 a
+finding is recorded unless the operator asks for it.
+
 ## Carried over from the 2026.9.1 migration
 
 *Merged from `main` with #11 on 2026-09-14. Open against the same codebase, recorded separately so

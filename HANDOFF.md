@@ -72,9 +72,10 @@ premise row; the specified header gains B6-22; the LAN request's omission has it
 `mutate.sh`'s inability to expect an outcome per host is a second `BACKLOG.md` entry.
 `docs/TEST-SPEC-liquid-java-extensions.md`'s B6-21 to B6-23 are twelve rows, one per scenario, and
 the block states the probe, the header and two registry entries, B6-23's and B6-22's. Nothing in
-`tests/` or `config/` changed; the implementation waits for sign-off. **2026-11-06, the
-implementation ran, on `fix/issue-57-b6-23-implementation` stacked on #66:** the rewritten
-`m-b6.vhost-allow-list.test.ts` twice, 12 pass, 0 fail, 19.5 s each, the host arriving as
+`tests/` or `config/` changed in that round; the implementation waited for the specification's
+sign-off. **2026-11-06, the implementation ran, on `fix/issue-57-b6-23-implementation` stacked on
+#66:** the rewritten `m-b6.vhost-allow-list.test.ts` twice, 12 pass, 0 fail, 19.5 s each, the host
+arriving as
 `10.231.91.128`, nothing left under `/tmp/b6s3*`; `tests/mutate.sh` against an untracked copy, the
 B6-23 entry `VALIDATED` 1 red and 11 green, the B6-22 entry `VALIDATED` 4 red and 8 green with the
 four tests the block names; `--gaps` `registered=217 orphaned=0`; `m-tr.case-ids` with
@@ -86,6 +87,18 @@ of both rounds are under this session's scratchpad,
 in the specification's *Measured* row. A stack was running on this machine during both rounds —
 `proxy`, OpenProject, Nextcloud, pgAdmin, PostgREST, `openclaw-gateway` — which the 2026-11-03 line
 above no longer describes; the probes' fixed ports 18891 to 18896 did not collide with it.
+**An independent review of `258e88c` found nothing blocking, and a fix round the same day applied
+its four findings, each measured first**: the header's "a run leaves nothing on the machine" was
+false on a signal — `/bin/sh` is dash here, whose `trap … EXIT` does not run on SIGTERM or SIGINT,
+so an interrupted probe left six containers, the network and `/tmp/b6s3<pid>`, and a probe whose bun
+had gone died of SIGPIPE at its next `echo` with the same result. The probe traps INT, TERM and PIPE
+to an `exit` now, and is spawned asynchronously so that a TERM or INT to bun is passed to it before
+bun exits; a probe interrupted by either signal, a Ctrl-C of the group, and a TERM or INT to bun
+alone each leave nothing, measured; a KILL of bun leaves the one-file `$TMPDIR/m-b6-vhost-*`, stated
+as the limit. The block's opening note and its registry row now say the rootless figures were
+measured and only the Desktop ones remain expectations, and three findings beside the change are
+`BACKLOG.md` entries: the probe waits for nginx, not for its upstream; two runs collide on the fixed
+ports and subnet; an empty gateway would satisfy the premise's deny-line count.
 
 **What `main` was checked with.** The full default tier gave 1843 / 19 / 2 at `d4224cd`, the two
 B7-10 cases. Since then only Markdown has changed: #62's specification round, #63's results and this

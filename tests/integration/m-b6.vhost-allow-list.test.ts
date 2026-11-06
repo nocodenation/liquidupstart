@@ -76,10 +76,19 @@
  * machine. What a host request arrives as is host-dependent -- the gateway on
  * rootless Docker, 192.168.65.1 on Docker Desktop -- so it is measured and
  * printed, and B6-23's control computes its expectation from that measurement.
- * The probe writes under /tmp/$RUN and its trap removes that directory with the
- * containers and the network, so a run leaves nothing on the machine (M-A11).
+ * The probe writes under /tmp/$RUN and its traps remove that directory with the
+ * containers and the network: on exit, and on INT, TERM and PIPE, which dash
+ * does not route through the EXIT trap by itself. The script the test writes
+ * is removed once the probe has returned, whatever it returned, and a TERM or
+ * INT sent to bun while the probe runs is passed on to the probe before bun
+ * exits with the signal's code. So a run leaves nothing on the machine (M-A11),
+ * measured 2026-11-06 for a finished run, a probe interrupted by either signal,
+ * a Ctrl-C of bun's process group, and a TERM or INT to bun alone. The limit is
+ * a KILL of bun: the probe, writing to the closed pipe, still exits through its
+ * PIPE trap and takes the containers, the network and /tmp/$RUN with it, and
+ * the one-file $TMPDIR/m-b6-vhost-* directory is what remains.
  */
-import { test, expect, describe, beforeAll, afterAll } from 'bun:test';
+import { test, expect, describe, beforeAll } from 'bun:test';
 import { join } from 'node:path';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -87,7 +96,6 @@ import { sh } from '../lib/shell';
 import { repoRoot } from '../lib/paths';
 
 const work = mkdtempSync(join(tmpdir(), 'm-b6-vhost-'));
-const work2 = mkdtempSync(join(tmpdir(), 'm-b6-vhost-env-'));
 const probe = join(work, 'vhost.sh');
 const TEMPLATE = join(repoRoot, 'config/nginx/templates/nginx.conf');
 const RENDERER = join(repoRoot, 'config/scripts/start/nginx.sh');
@@ -120,6 +128,12 @@ const PROBE =
     "  rm -rf \"/tmp/$RUN\"",
     "}",
     "trap cleanup EXIT",
+    "# dash runs the EXIT trap on exit, not on a signal: without these an interrupted",
+    "# run left the six containers, the network and /tmp/$RUN behind, and so did a",
+    "# run whose reader had gone, dying of SIGPIPE at its next echo (#57).",
+    "trap 'exit 130' INT",
+    "trap 'exit 143' TERM",
+    "trap 'exit 141' PIPE",
     "mkdir -p \"/tmp/$RUN\"",
     "docker run -d --name \"${RUN}-up\" --network \"$NET\" --network-alias nar_builder \\",
     "  python:3-alpine sh -c \"cd /tmp && printf ok > index.html && python3 -m http.server 8770\" >/dev/null",
@@ -202,29 +216,61 @@ writeFileSync(probe, PROBE, { mode: 0o755 });
 // pool, evaluated the way B6-22 asserts it. This is the only way it reaches the
 // probe.
 const computeGateway = () => {
+  const work2 = mkdtempSync(join(tmpdir(), 'm-b6-vhost-env-'));
   const env = join(work2, 'env');
   writeFileSync(env, 'SYSTEM_NETWORK_SUBNET=10.231.91.0/24\nSYSTEM_NETWORK_POOL=10.231.91.128/25\n');
-  return sh(['bash', '-c',
-    `set -eu
-     ENV_FILE=${env}
-     NETWORK_SUBNET="$(grep -E '^SYSTEM_NETWORK_SUBNET=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
-     eval "$(sed -n '/^# Docker.s own address on this network/,/^fi$/p' ${RENDERER})"
-     printf '%s' "$NETWORK_GATEWAY"`]);
+  try {
+    return sh(['bash', '-c',
+      `set -eu
+       ENV_FILE=${env}
+       NETWORK_SUBNET="$(grep -E '^SYSTEM_NETWORK_SUBNET=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"')"
+       eval "$(sed -n '/^# Docker.s own address on this network/,/^fi$/p' ${RENDERER})"
+       printf '%s' "$NETWORK_GATEWAY"`]);
+  } finally {
+    rmSync(work2, { recursive: true, force: true });
+  }
 };
 
 let out = '';
 let gateway = { code: -1, stdout: '' };
-beforeAll(() => {
+beforeAll(async () => {
   gateway = computeGateway();
-  const r = sh(['sh', probe, TEMPLATE, gateway.stdout]);
+  // Spawned, not spawnSync: a TERM or INT sent to bun alone while the probe runs
+  // is passed on to the probe, whose trap cleans up, and bun then exits as the
+  // default disposition would have. With spawnSync bun either died at once,
+  // leaving the script and an orphaned probe, or held the signal until the
+  // file had run and dropped it (measured, bun 1.4.2, #57).
+  const p = Bun.spawn(['sh', probe, TEMPLATE, gateway.stdout], { cwd: repoRoot, stdout: 'pipe', stderr: 'pipe' });
+  const onSignal = (sig: 'SIGTERM' | 'SIGINT') => {
+    p.kill(sig);
+    p.exited.then(() => {
+      rmSync(work, { recursive: true, force: true });
+      process.exit(sig === 'SIGINT' ? 130 : 143);
+    });
+  };
+  const onTerm = () => onSignal('SIGTERM');
+  const onInt = () => onSignal('SIGINT');
+  process.on('SIGTERM', onTerm);
+  process.on('SIGINT', onInt);
+  let r;
+  try {
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(p.stdout).text(),
+      new Response(p.stderr).text(),
+      p.exited
+    ]);
+    r = { code, output: stdout + stderr };
+  } finally {
+    process.off('SIGTERM', onTerm);
+    process.off('SIGINT', onInt);
+    // Before the throw below, which left vhost.sh behind after a failed probe.
+    rmSync(work, { recursive: true, force: true });
+  }
   out = r.output;
   if (!out.includes('product-from-agent=')) {
     throw new Error(`the vhost probe did not finish (exit ${r.code}):\n${out}`);
   }
-  rmSync(work, { recursive: true, force: true });
 }, 900_000);
-
-afterAll(() => rmSync(work2, { recursive: true, force: true }));
 
 const field = (name) => (out.match(new RegExp(`${name}=([^\\n]*)`)) ?? [, ''])[1];
 
